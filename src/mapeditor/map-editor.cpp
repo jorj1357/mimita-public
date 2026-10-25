@@ -1245,13 +1245,9 @@ bool MapEditor::reload()
 void MapEditor::rebuildGeometry()
 {
     if (!gpWorld) return;
-    // Drop authored geometry first, then rebuild base collision from the current
-    // render vertices. This keeps moved GLB objects on the same collision path
-    // as authored blocks instead of truncating the rebuilt base count.
     if (gpWorld->authoredGeometryApplied)
         clearAuthoredMapGeometry(*gpWorld);
     gpWorld->authoredGeometryApplied = false;
-    buildCollisionMeshFromRenderMesh(*gpWorld);
     applyAuthoredMapGeometry(*gpWorld, mapId());
 }
 

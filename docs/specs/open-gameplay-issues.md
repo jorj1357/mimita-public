@@ -177,6 +177,174 @@ effects build confidence that a hit counted, and which only add clutter? What
 visual hierarchy makes the current objective obvious without covering the
 fight?
 
+## Gamemode settings masterlist and validation handoff — 2026-10-25
+
+**Audience:** contributors working on gamemode configuration, player
+presentation, avatars, and configuration diagnostics.
+
+**Goal:** make one readable master file define every setting that a gamemode
+may use. Keep every mode JSON complete and valid against that master, while
+preserving each mode's existing values. Make configuration errors visible in
+the game and in `events.jsonl`, with the exact file and setting path.
+
+This is an open design and implementation handoff. It does not claim that the
+masterlist, validator, avatar sets, or in-game error notice already exist.
+
+### Requested configuration ownership
+
+Use `config/gamemodes/masterlist/gamemode-masterlist.json` as the central
+definition and contributor guide. Put a short README-style explanation at the
+top of that file: what each setting means, its type and valid range/options,
+the default, whether a mode may override it, and whether a mode is allowed to
+ignore it.
+
+The master should cover the whole supported gamemode configuration, including
+presentation settings and avatar policy. It should describe named avatar
+groups such as `all`, `gameplay_safe`, `counterstrike`, and `competitive`.
+Competitive can exclude headless avatars and avatars missing limbs; the other
+groups should have their own explicit membership rules. The master defines
+which settings and values exist. Each mode chooses its own values and avatar
+group where appropriate.
+
+Use `config/playervisuals.json` and `config/hitfx.json` as shared presentation
+starting values. A gamemode can override supported values for its own style.
+The mode loader must actually consume every setting that the master says a
+mode can use. In particular, listing a setting in JSON must not silently make
+it appear supported when the loader ignores it. Trace why the player trail in
+`config/playervisuals.json` is not visible in TDM and record the owning code
+path before deciding whether it needs shared support or a TDM override.
+
+### Contributor handoff
+
+1. **Inventory the contract.** Compare the masterlist proposal with the
+   current gamemode loader, `config/playervisuals.json`, `config/hitfx.json`,
+   and every `config/gamemodes/*.json`. List recognized keys, ignored keys,
+   type/range checks, defaults, and settings currently present in only some
+   modes. Use the actual loader as evidence; do not assume a JSON field takes
+   effect merely because it parses.
+2. **Preserve existing mode choices.** Before generating or synchronizing
+   files, import each mode's current values into the central definition. Do
+   not replace mode-specific numbers with generic defaults. Document which
+   settings each mode intentionally does not use and what runtime behavior
+   that means.
+3. **Choose one synchronization rule.** The desired outcome is both one
+   central place to define supported settings and complete per-mode JSON
+   files. Specify whether mode files are generated from the master plus
+   per-mode values, or are edited files that a validator only checks. If
+   generation is chosen, the master must store all existing per-mode values
+   before the first generation. If files remain hand-edited, validation must
+   report missing fields without silently overwriting them. In either case,
+   ordinary validation must preserve values and never rewrite mode files
+   unexpectedly.
+4. **Validate strictly.** Check every mode file against the master for
+   missing required fields, unknown keys, invalid JSON, wrong types, invalid
+   ranges/options, duplicate mode IDs, and a file whose declared ID does not
+   match its intended identity. Make the runtime loader and offline validator
+   agree about accepted keys and values. A bad file discovered during initial
+   directory loading must not leave behind a default or partially initialized
+   mode. During reload, keep the last known-good mode if the replacement is
+   invalid.
+5. **Show actionable errors.** When configuration is invalid, show an
+   in-game tip naming the JSON file and exact setting path, for example
+   `config/gamemodes/tdm.json → presentation.trail.enabled`. Also write a
+   structured event to the current run's `events.jsonl` with the file path,
+   setting path, error category, and explanation. While the same issue
+   remains, rate-limit repeated journal events to at most one per second and
+   avoid flooding the player with duplicate tips. Clear or resolve the notice
+   when the configuration becomes valid.
+6. **Prove the full path.** Verify that all mode files contain the required
+   options, that known-good values survive synchronization, and that unknown
+   or malformed settings are rejected with the same explanation in the
+   validator, in-game tip, and journal. Then trace and verify the TDM trail
+   from the shared setting or mode override through rendering. Report build,
+   runtime journal, and visual/playtest evidence separately.
+
+### Source findings to verify during implementation
+
+- `src/gamemode/gamemode.cpp` loads mode files and maps JSON fields into
+  runtime settings. The loader currently does not consistently reject
+  unrecognized keys or wrong types, so a field can be present without taking
+  effect.
+- Initial directory loading must distinguish a successfully loaded mode from
+  a failed parse. A malformed file must not register a default `duel` entry
+  just because the temporary mode starts with that ID.
+- `src/config/player-visuals-config.cpp` owns the shared player-visuals
+  configuration and already has structured applied/rejected events. Reuse
+  the existing configuration and notification owners where possible rather
+  than adding a parallel diagnostics system.
+- The desired user-facing report is still pending: the TDM trail symptom has
+  not been tied to a verified first failing step in the runtime data path.
+
+### Decisions and boundaries
+
+- Keep existing mode-specific numeric values unless a contributor documents
+  a deliberate gameplay change.
+- The masterlist defines the supported settings and possible values; modes
+  select values from that contract. A mode may intentionally not use a setting
+  only when the contract says that is allowed and the behavior is explicit.
+- Do not make “copy the defaults into every file” the only source-of-truth
+  rule. That would duplicate shared values and make it unclear which copy a
+  contributor should edit. Define how central settings and per-mode values
+  combine before implementing synchronization.
+- This handoff authorizes investigation and design discussion. It does not
+  claim a finished schema, generated files, fixed loader, or verified TDM
+  trail.
+
+## New intake — Payload map editor usability and cart placement — 2026-10-25
+
+**Reported:** 2026-10-25 14:28 EDT (2026-10-25T18:28:00Z, as supplied by the
+player). The attached screenshot shows the Payload 2 map editor open with an
+object list headed `OBJECTS 248` and `PgUp/PgDn`, route entries, the cart origin,
+and a crowded 3D view with overlapping map labels and geometry.
+
+The player requests these map-editor improvements:
+
+- Give the object list a visible scrollbar and reuse the existing scrollbar
+  function. Keep the current PgUp/PgDn scrolling available.
+- Add a search box that filters the object list.
+- Clearly highlight the selected row with a box or outline in the object list.
+- When an object-list row is selected, pressing `F` should move the editor
+  camera to focus that object from about one meter away. The screenshot's help
+  strip already advertises `F frame`; verify whether that works for an
+  outliner-selected object and what distance it uses before changing it.
+- Increase the editor text sizes because the current text is hard to read. The
+  player suggests putting font sizes, and possibly other editor presentation
+  values, in JSON so they can be adjusted. Choose and document the configuration
+  owner before implementation.
+- Add `mapeditor_camspeed <multiplier>`, where `1` is the default speed, `10`
+  is ten times faster, `100` is one hundred times faster, and `0.1` is one tenth
+  speed. Support other positive multipliers on the same scale.
+
+**Reported responsiveness issue:** As of 2026-10-25 14:28 EDT (time supplied by
+the player), saving, undoing, and moving objects each cause at least about one
+second of apparent freeze, during which the editor feels unusable. This is a
+human-observed report; the stall duration, first expensive operation, and
+whether the three actions share a cause have not been measured or traced.
+Profile each action separately before choosing a fix.
+
+**Cart placement question:** The player is confused about where the cart is and
+why it does not automatically move to the start checkpoint. In the current
+runtime, `payloadRuntimeReset` starts `distanceTravelled` at zero, and the
+route sampler places the cart at `cartOrigin` at that distance. The authored
+first route point is therefore the route's reference point; it does not
+automatically replace `cart_origin`. The map validator explicitly warns when
+the first enabled route point and cart origin differ. In the current
+`payload2.json`, `cart_origin.position` is `[-234, -22, 1429]`, while the first
+route point `cp1` is `[-326, -34, 1138]`, so they are far apart. The editor should
+make this relationship easier to understand and author. Decide whether the
+editor should offer an explicit “move cart origin to route start” action or
+whether initialization should use the first route point; preserve intentional
+offsets only if the specification says they are supported and visible to the
+author. No runtime change or desired automatic-placement rule is decided by
+this intake.
+
+Evidence inspected: `src/gamemode/payload-runtime.cpp::payloadRuntimeReset`,
+`payloadRoutePositionAtDistance`, and `payloadRuntimeUpdateTransforms`;
+`src/gamemode/map-config.cpp::validatePayloadAuthoring`; and
+`config/maps/payload2.json` (`payload.cart_origin.position` and `payload.route[0]`).
+The runtime placement explanation is source evidence, not live visual
+acceptance. The player’s editor usability and freeze reports remain unmeasured.
+
 ## New intake — 2026-10-21
 
 These are player reports from a play session. They are recorded as observed or
@@ -193,7 +361,7 @@ shards with heavy overlap. The original shape defects were traced to randomized 
 | Area | Player report / desired result | Status and open detail | Owner / route |
 |---|---|---|---|
 | **Presentation — first priority** | Make the game's presentation clearer overall. For Duel, spectators should see both sides, team and actor names, each side's kills, kills remaining to win, and who is ahead. | Design conversation requested. The possible layout above is only a starting sketch; active-player and spectator information priorities still need agreement. | [`graphics/graphics-presentation.md`](graphics/graphics-presentation.md), [`gui/guiv2.md`](gui/guiv2.md), [`gamemodes/duel.md`](gamemodes/duel.md) |
-| **Blocker — map authoring for Payload and Zombie Tower** | The player considers the current authoring workflow a blocker: placing Payload cart routes, Zombie Tower monster spawn volumes, and map blocks is too hard through repeated commands and JSON edits. They want a better in-game map/entity editor to place, select, move, duplicate, and remove map content, then save those edits to the map. A future Lua interpreter or Roblox Studio-like creation environment is an idea they may want to start toward. | Human-reported blocker to building these maps and modes. The current Entity Editor documents command-based map-entity creation/editing and JSON save/reload, but not viewport drag editing, copy/paste, or editing static map blocks/geometry. Payload's cart route/map-data contract is not fully specified. First define and build a small editor slice for persistent map entities and route points; investigate the actual Zombie Tower playable length and authoring flow separately. Treat general block editing and Lua/studio-like scripting as later steps after the saveable editor foundation works. | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`gamemodes/zombie-tower/zombie-tower.md`](gamemodes/zombie-tower/zombie-tower.md), [`gamemodes/payload.md`](gamemodes/payload.md) |
+| **Blocker — map authoring for Payload and Zombie Tower** | The player considers the current authoring workflow a blocker: placing Payload cart routes, Zombie Tower monster spawn volumes, and map blocks is too hard through repeated commands and JSON edits. They want a better in-game map/entity editor to place, select, move, duplicate, and remove map content, then save those edits to the map. A future Lua interpreter or Roblox Studio-like creation environment is an idea they may want to start toward. | Human-reported blocker to building these maps and modes. The current Entity Editor supports viewport selection/dragging for several object types, but editor discoverability, the object list, readability, and responsiveness remain open. See the 2026-10-25 intake above for the requested scrollbar/search, selected-row highlight, F-to-focus, configurable larger text, camera-speed multiplier, reported one-second freezes, and Payload cart-origin/start-route confusion. Investigate Zombie Tower authoring separately. Treat broader block-editing and scripting ideas as later work. | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`gamemodes/zombie-tower/zombie-tower.md`](gamemodes/zombie-tower/zombie-tower.md), [`gamemodes/payload.md`](gamemodes/payload.md) |
 | Live Blender-to-game map editing | The player wants to edit a map in Blender and see the game update without repeatedly exporting/loading by hand. A possible first step is a Python watcher that observes the selected map's Blender source or exported `.glb` and asks the game to reload the changed map; the longer-term goal is doing more of the map editing inside the game. | Early idea; no file-watching, Blender export, reload protocol, safety checks, or editor ownership has been selected or verified. Write a focused workflow/architecture spec before implementation: define whether the watched source is `.blend`, exported `.glb`, or both; how Blender produces a valid new asset; how the game detects a complete save, validates and safely reloads it, and reports errors; and how the in-game editor grows toward the same workflow. Keep this connected to the Zombie Tower spawn-volume authoring blocker, but treat it as a reusable map-authoring workflow rather than a Zombie Tower-only feature. | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`../features/live-code-development/live-code-development.md`](../features/live-code-development/live-code-development.md), [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md) |
 | NPC combat | NPCs should use both shotgun and revolver, change weapons much faster, and begin shooting promptly after spawning. NPCs should normally deal more damage, move more visibly, and have fewer barriers to reaching or hitting an opponent. NPCs should be able to use melee. | User-reported; not reproduced. Exact damage, switching cadence, movement style, and allowed obstacles need owner-level decisions and evidence. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`weapons/melee-weapons.md`](weapons/melee-weapons.md) |
 | Shot and cooldown reliability | Some shots seem to be rejected or lost because of a cooldown; firing does not always count. | User-reported; not reproduced. Trace input, cooldown, and authoritative shot result before naming the failing step. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |

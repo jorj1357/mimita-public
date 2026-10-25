@@ -11,6 +11,8 @@
 #include "map/map_loader.h"
 #include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
+#include "map/map-static-union.h"
+#include "config/collision-lod-config.h"
 #include "combat/weapon-model-cache.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -71,6 +73,7 @@ bool loadWorldFromGLB(World& world, const char* path)
 
     World candidate;
     candidate.renderRevision = world.renderRevision + 1;
+    StaticUnionStats topStaticStats;
 
     Debug::log(Debug::Category::GLB, "[WORLD GLB] before loadGLB\n");
 
@@ -101,6 +104,11 @@ bool loadWorldFromGLB(World& world, const char* path)
 
     tStart = std::chrono::steady_clock::now();
     buildCollisionMeshFromRenderMesh(candidate);
+    topStaticStats.inputTriangles = static_cast<uint32_t>(candidate.collisionMesh.triangles.size());
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            candidate.collisionMesh.triangles, candidate.collisionMesh.solidIds,
+            &topStaticStats);
     timing.collision_triangles = msSince(tStart);
     metrics.collisionTriangleCount = candidate.collisionMesh.triangles.size();
 
@@ -178,7 +186,10 @@ bool loadWorldFromGLB(World& world, const char* path)
             {"source_bytes", metrics.glbFileBytes},
             {"render_vertices", metrics.finalExpandedVertexCount},
             {"render_triangles", metrics.renderTriangleCount},
-            {"collision_triangles", metrics.collisionTriangleCount},
+            {"collision_triangles", world.collisionMesh.triangles.size()},
+            {"collision_triangles_initial", topStaticStats.inputTriangles},
+            {"static_removed_triangles", topStaticStats.removedTriangles},
+            {"static_removal_fallback", topStaticStats.fallback},
             {"collision_chunks", metrics.collisionChunkCount},
             {"spawn_points", world.spawnPoints.size()},
             {"glb_objects", world.mesh.objects.size()},
@@ -330,6 +341,9 @@ bool loadWorldTemplate(const char* path, World& outTemplate)
     }
 
     buildCollisionMeshFromRenderMesh(candidate);
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            candidate.collisionMesh.triangles, candidate.collisionMesh.solidIds);
     buildCollisionChunks(candidate, nullptr);
 
     releaseMeshGLResources(outTemplate.mesh);
@@ -398,6 +412,8 @@ void appendWorldInstance(World& target, const World& templateWorld,
     const bool hadTriangles = !dc.triangles.empty();
     glm::vec3 lo = hadTriangles ? dc.boundsMin : glm::vec3(FLT_MAX);
     glm::vec3 hi = hadTriangles ? dc.boundsMax : glm::vec3(-FLT_MAX);
+    if (dc.solidIds.size() != dc.triangles.size())
+        dc.solidIds.assign(dc.triangles.size(), 0);
     dc.triangles.reserve(dc.triangles.size() + sc.triangles.size());
     for (const CollisionTriangle& t : sc.triangles)
     {
@@ -409,6 +425,7 @@ void appendWorldInstance(World& target, const World& templateWorld,
         const float len = glm::length(n);
         nt.normal = len > 0.0001f ? n / len : t.normal;
         dc.triangles.push_back(nt);
+        dc.solidIds.push_back(0);
         lo = glm::min(lo, glm::min(nt.a, glm::min(nt.b, nt.c)));
         hi = glm::max(hi, glm::max(nt.a, glm::max(nt.b, nt.c)));
     }
@@ -434,6 +451,10 @@ void truncateWorldInstances(World& target, size_t baseVertCount,
     CollisionMeshCache& c = target.collisionMesh;
     if (baseCollisionCount < c.triangles.size())
         c.triangles.resize(baseCollisionCount);
+    if (c.solidIds.size() > baseCollisionCount)
+        c.solidIds.resize(baseCollisionCount);
+    if (c.solidIds.size() != c.triangles.size())
+        c.solidIds.assign(c.triangles.size(), 0);
 
     if (c.triangles.empty())
     {

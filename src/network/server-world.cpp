@@ -3,6 +3,7 @@
 #include "tinygltf/tiny_gltf.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "map/map-loader-collision.h"
+#include "map/map-static-union.h"
 #include "config/collision-lod-config.h"
 #include "debug/structured-log.h"
 
@@ -150,8 +151,25 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
     glm::mat4 transform = parent * nodeTransform(node);
 
     if (node.mesh >= 0 && node.mesh < (int)model.meshes.size())
+    {
+        const size_t firstTriangle = world.triangles.size();
         for (const tinygltf::Primitive& prim : model.meshes[node.mesh].primitives)
             appendPrimitive(model, prim, transform, world);
+        if (world.triangles.size() > firstTriangle)
+        {
+            const size_t count = world.triangles.size() - firstTriangle;
+            if (isClosedSolidTriangleRange(
+                    world.triangles, firstTriangle, world.triangles.size()))
+            {
+                const uint32_t solidId = world.nextSolidId++;
+                world.solidIds.insert(world.solidIds.end(), count, solidId);
+            }
+            else
+            {
+                world.solidIds.insert(world.solidIds.end(), count, 0);
+            }
+        }
+    }
 
     for (int child : node.children)
         walkNode(model, child, transform, world);
@@ -211,6 +229,12 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         return false;
     }
 
+    world.triangles.clear();
+    world.solidIds.clear();
+    world.nextSolidId = 1;
+    world.boundsMin = glm::vec3(0.0f);
+    world.boundsMax = glm::vec3(0.0f);
+
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
         for (int node : model.scenes[sceneIndex].nodes)
@@ -263,7 +287,12 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
 
     // Build uniform spatial grid for broadphase collision queries
     decimateCollisionTriangleList(world.triangles,
-                                  CollisionLodConfig::instance().cellSize());
+                                  CollisionLodConfig::instance().cellSize(),
+                                  &world.solidIds);
+    StaticUnionStats staticStats;
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            world.triangles, world.solidIds, &staticStats);
     buildHeadlessCollisionChunks(world);
 
     printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
@@ -281,6 +310,8 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
             {"source_exists", sourceBytes > 0},
             {"source_bytes", sourceBytes},
             {"collision_triangles", world.triangles.size()},
+            {"static_removed_triangles", staticStats.removedTriangles},
+            {"static_removal_fallback", staticStats.fallback},
             {"spawn_points", world.spawnPoints.size()},
             {"bounds_min", {world.boundsMin.x, world.boundsMin.y, world.boundsMin.z}},
             {"bounds_max", {world.boundsMax.x, world.boundsMax.y, world.boundsMax.z}}},
@@ -364,6 +395,10 @@ void appendHeadlessWorldInstance(HeadlessWorld& target,
     const glm::mat3 normalMatrix =
         glm::transpose(glm::inverse(glm::mat3(transform)));
 
+    if (target.solidIds.size() != target.triangles.size())
+        target.solidIds.assign(target.triangles.size(), 0);
+    const size_t firstTriangle = target.triangles.size();
+
     target.triangles.reserve(target.triangles.size() + templateWorld.triangles.size());
     for (const CollisionTriangle& t : templateWorld.triangles)
     {
@@ -375,9 +410,19 @@ void appendHeadlessWorldInstance(HeadlessWorld& target,
         const float len = glm::length(n);
         nt.normal = len > 0.0001f ? n / len : t.normal;
         target.triangles.push_back(nt);
+        target.solidIds.push_back(0);
 
         target.boundsMin = glm::min(target.boundsMin, glm::min(nt.a, glm::min(nt.b, nt.c)));
         target.boundsMax = glm::max(target.boundsMax, glm::max(nt.a, glm::max(nt.b, nt.c)));
+    }
+
+    if (target.triangles.size() > firstTriangle &&
+        isClosedSolidTriangleRange(
+            target.triangles, firstTriangle, target.triangles.size()))
+    {
+        const uint32_t instanceSolidId = target.nextSolidId++;
+        for (size_t i = firstTriangle; i < target.triangles.size(); ++i)
+            target.solidIds[i] = instanceSolidId;
     }
 
     buildHeadlessCollisionChunks(target);
@@ -387,6 +432,10 @@ void truncateHeadlessWorld(HeadlessWorld& target, size_t baseTriangleCount)
 {
     if (baseTriangleCount < target.triangles.size())
         target.triangles.resize(baseTriangleCount);
+    if (target.solidIds.size() > baseTriangleCount)
+        target.solidIds.resize(baseTriangleCount);
+    if (target.solidIds.size() != target.triangles.size())
+        target.solidIds.assign(target.triangles.size(), 0);
 
     if (target.triangles.empty())
     {

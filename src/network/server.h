@@ -148,6 +148,8 @@ struct HeadlessSubGrid
 struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
+    std::vector<uint32_t> solidIds;
+    uint32_t nextSolidId = 1;
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
     std::vector<ServerSpawnPoint> spawnPoints;

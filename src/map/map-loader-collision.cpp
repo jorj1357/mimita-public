@@ -1,4 +1,5 @@
 #include "map-loader-collision.h"
+#include "map/map-static-union.h"
 #include "world/world.h"
 #include "world/world-gltf-loader.h"
 #include "physics/physics-types.h"
@@ -76,6 +77,35 @@ void buildCollisionMeshFromRenderMesh(World& world)
     constexpr float MAX_WORLD_EXTENT = kMaxWorldExtent;
     constexpr float MIN_TRI_AREA = 0.000001f;
 
+    std::vector<uint32_t> vertexSolidIds(world.mesh.verts.size(), 0);
+    uint32_t nextSolidId = 1;
+    const auto assignObjectRange = [&](const MapGLBObject& object) {
+        const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
+        const size_t last = std::min(object.vertexFirst + object.vertexCount,
+                                      world.mesh.verts.size());
+        if (first >= last || (last - first) % 3 != 0)
+            return;
+        std::vector<CollisionTriangle> objectTriangles;
+        objectTriangles.reserve((last - first) / 3);
+        for (size_t ti = first; ti + 2 < last; ti += 3)
+        {
+            CollisionTriangle triangle;
+            triangle.a = world.mesh.verts[ti + 0].pos;
+            triangle.b = world.mesh.verts[ti + 1].pos;
+            triangle.c = world.mesh.verts[ti + 2].pos;
+            objectTriangles.push_back(triangle);
+        }
+        if (!isClosedSolidTriangleRange(objectTriangles, 0, objectTriangles.size()))
+            return;
+        const uint32_t solidId = nextSolidId++;
+        for (size_t vi = first; vi < last; ++vi)
+            vertexSolidIds[vi] = solidId;
+    };
+    for (const MapGLBObject& object : world.mesh.objects)
+        assignObjectRange(object);
+    for (const MapGLBObject& object : world.authoredObjects)
+        assignObjectRange(object);
+
     for (size_t i = 0; i + 2 < world.mesh.verts.size(); i += 3)
     {
         const uint32_t ra = vertRep[i + 0];
@@ -117,7 +147,14 @@ void buildCollisionMeshFromRenderMesh(World& world)
         }
         tri.normal = n / nLen;
 
+        uint32_t solidId = 0;
+        if (vertexSolidIds[i] != 0 &&
+            vertexSolidIds[i] == vertexSolidIds[i + 1] &&
+            vertexSolidIds[i] == vertexSolidIds[i + 2])
+            solidId = vertexSolidIds[i];
+
         world.collisionMesh.triangles.push_back(tri);
+        world.collisionMesh.solidIds.push_back(solidId);
 
         if (!boundsSet)
         {
@@ -351,6 +388,9 @@ void redecimateCollision(World& world)
         return;
 
     buildCollisionMeshFromRenderMesh(world);
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            world.collisionMesh.triangles, world.collisionMesh.solidIds);
     buildCollisionChunks(world, nullptr);
 
     printf("[COLLISION LOD] re-decimated collision revision=%u cellSize=%.2f tris=%zu\n",
@@ -361,10 +401,16 @@ void redecimateCollision(World& world)
 
 // Decimate a triangle list by vertex clustering (in place). Mirrors the render-mesh
 // decimation for server / NPC collision worlds that have no render mesh.
-void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float cellSize)
+void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float cellSize,
+                                   std::vector<uint32_t>* solidIds)
 {
     if (cellSize <= 0.001f || tris.empty())
         return;
+
+    const bool carrySolidIds =
+        solidIds && solidIds->size() == tris.size();
+    if (solidIds && !carrySolidIds)
+        solidIds->clear();
 
     std::vector<glm::vec3> pool;
     pool.reserve(tris.size() * 3);
@@ -398,6 +444,9 @@ void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float c
 
     std::vector<CollisionTriangle> out;
     out.reserve(tris.size());
+    std::vector<uint32_t> outSolidIds;
+    if (carrySolidIds)
+        outSolidIds.reserve(tris.size());
     for (size_t ti = 0; ti < tris.size(); ++ti)
     {
         const uint32_t ra = triVertRep[ti * 3 + 0];
@@ -415,6 +464,10 @@ void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float c
             continue;
         t.normal = n / len;
         out.push_back(t);
+        if (carrySolidIds)
+            outSolidIds.push_back((*solidIds)[ti]);
     }
     tris = std::move(out);
+    if (carrySolidIds)
+        *solidIds = std::move(outSolidIds);
 }

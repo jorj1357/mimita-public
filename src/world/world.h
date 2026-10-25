@@ -177,9 +177,9 @@ struct World {
     // Derived authored-map geometry appended after the GLB base. The counts
     // capture the base so an editor rebuild removes only its own tail.
     bool authoredGeometryApplied = false;
+    std::vector<MapGLBObject> authoredObjects;
     size_t authoredBaseVertexCount = 0;
     size_t authoredBaseBatchCount = 0;
-    size_t authoredBaseCollisionCount = 0;
 
     void clear();
     void rebuildChunks();

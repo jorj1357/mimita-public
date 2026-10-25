@@ -14,4 +14,5 @@ void buildCollisionMeshFromRenderMesh(World& world);
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics = nullptr);
 void buildCollisionSubGrids(World& world);
 void redecimateCollision(World& world);
-void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float cellSize);
+void decimateCollisionTriangleList(std::vector<CollisionTriangle>& tris, float cellSize,
+                                   std::vector<uint32_t>* solidIds = nullptr);

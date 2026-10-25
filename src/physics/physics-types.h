@@ -16,6 +16,7 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <limits>
@@ -138,6 +139,10 @@ struct CollisionTriangleOBB
 struct CollisionMeshCache
 {
     std::vector<CollisionTriangle> triangles;
+    // Optional parallel source-solid identity. A nonzero value groups triangles
+    // that came from one authored solid so static hidden-face removal can avoid
+    // comparing faces belonging to the same object. Zero means unknown.
+    std::vector<uint32_t> solidIds;
     // Cached per-triangle AABB, parallel to `triangles`. Built once when the
     // world collision mesh/chunks are built so the actor narrowphase never
     // recomputes a world triangle's bounds inside a per-pair loop.
@@ -150,6 +155,7 @@ struct CollisionMeshCache
     void clear()
     {
         triangles.clear();
+        solidIds.clear();
         triangleAABBs.clear();
         triangleOBBs.clear();
         boundsMin = glm::vec3(0.0f);

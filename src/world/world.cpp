@@ -124,9 +124,9 @@ void World::clear()
     spawnPoints.clear();
     selectedSpawnIndex = -1;
     authoredGeometryApplied = false;
+    authoredObjects.clear();
     authoredBaseVertexCount = 0;
     authoredBaseBatchCount = 0;
-    authoredBaseCollisionCount = 0;
     mesh = Mesh{};
     skyMesh = Mesh{};
     collisionMesh.clear();

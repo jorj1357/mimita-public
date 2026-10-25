@@ -52,14 +52,16 @@ bool CollisionLodConfig::load(const std::string& path)
             const float v = j.value("cellSize", mCellSize);
             mCellSize = std::max(0.1f, std::min(v, 4.0f));
         }
+        if (j.contains("static_face_removal"))
+            mStaticFaceRemoval = j.value("static_face_removal", true);
         ++mRevision;
 
         std::error_code ec;
         mLastWrite = std::filesystem::last_write_time(path, ec);
         mLastCheck = std::chrono::steady_clock::now();
 
-        printf("[COLLISION LOD] loaded cellSize=%.2f enabled=%d revision=%u\n",
-               mCellSize, (int)mEnabled, mRevision);
+        printf("[COLLISION LOD] loaded cellSize=%.2f enabled=%d static_face_removal=%d revision=%u\n",
+               mCellSize, (int)mEnabled, (int)mStaticFaceRemoval, mRevision);
         return true;
     }
     catch (const std::exception& e)

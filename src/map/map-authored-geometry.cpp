@@ -13,8 +13,10 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/structured-log.h"
+#include "config/collision-lod-config.h"
 #include "gamemode/map-config.h"
 #include "map/map-loader-collision.h"
+#include "map/map-static-union.h"
 #include "network/server.h"
 #include "physics/physical-entity.h"
 #include "world/texture-store.h"
@@ -98,26 +100,21 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
             batch.boundsMax = glm::max(batch.boundsMax, v.pos);
         }
     }
+    const size_t firstVertex = batch.first;
+    const size_t vertexCount = batch.count;
+    const glm::vec3 blockBoundsMin = batch.boundsMin;
+    const glm::vec3 blockBoundsMax = batch.boundsMax;
     world.mesh.batches.push_back(std::move(batch));
-}
 
-void appendBlockCollision(World& world, const AuthoredBlock& block)
-{
-    const glm::mat4 transform = blockTransform(block);
-    std::vector<CollisionTriangle> local;
-    buildBoxCollisionTriangles(local, glm::vec3(0.0f), block.size * 0.5f);
-    world.collisionMesh.triangles.reserve(world.collisionMesh.triangles.size() + local.size());
-    for (const CollisionTriangle& source : local) {
-        CollisionTriangle tri;
-        tri.a = glm::vec3(transform * glm::vec4(source.a, 1.0f));
-        tri.b = glm::vec3(transform * glm::vec4(source.b, 1.0f));
-        tri.c = glm::vec3(transform * glm::vec4(source.c, 1.0f));
-        const glm::vec3 normal = glm::cross(tri.b - tri.a, tri.c - tri.a);
-        const float length = glm::length(normal);
-        if (length < 1e-6f) continue;
-        tri.normal = normal / length;
-        world.collisionMesh.triangles.push_back(tri);
-    }
+    MapGLBObject object;
+    object.id = "block:" + block.id;
+    object.name = block.id;
+    object.transform = transform;
+    object.vertexFirst = firstVertex;
+    object.vertexCount = vertexCount;
+    object.boundsMin = blockBoundsMin;
+    object.boundsMax = blockBoundsMax;
+    world.authoredObjects.push_back(std::move(object));
 }
 
 bool ensureMapLoaded(const std::string& mapId)
@@ -141,22 +138,14 @@ void clearAuthoredMapGeometry(World& world)
 {
     if (!world.authoredGeometryApplied) return;
     if (world.mesh.verts.size() < world.authoredBaseVertexCount ||
-        world.mesh.batches.size() < world.authoredBaseBatchCount ||
-        world.collisionMesh.triangles.size() < world.authoredBaseCollisionCount) {
+        world.mesh.batches.size() < world.authoredBaseBatchCount) {
         world.authoredGeometryApplied = false;
         return;
     }
     world.mesh.verts.resize(world.authoredBaseVertexCount);
     world.mesh.batches.resize(world.authoredBaseBatchCount);
-    world.collisionMesh.triangles.resize(world.authoredBaseCollisionCount);
-    world.collisionMesh.boundsMin = glm::vec3(0.0f);
-    world.collisionMesh.boundsMax = glm::vec3(0.0f);
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-        const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
-        const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
-        world.collisionMesh.boundsMin = glm::min(world.collisionMesh.boundsMin, mn);
-        world.collisionMesh.boundsMax = glm::max(world.collisionMesh.boundsMax, mx);
-    }
+    world.authoredObjects.clear();
+    world.collisionMesh.clear();
     buildCollisionChunks(world, nullptr);
     world.renderRevision++;
 }
@@ -171,7 +160,6 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
     else {
         world.authoredBaseVertexCount = world.mesh.verts.size();
         world.authoredBaseBatchCount = world.mesh.batches.size();
-        world.authoredBaseCollisionCount = world.collisionMesh.triangles.size();
         world.authoredGeometryApplied = true;
     }
 
@@ -182,25 +170,14 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
         if (block.size.x <= 0.0001f || block.size.y <= 0.0001f || block.size.z <= 0.0001f)
             continue;
         appendBlockMesh(world, block);
-        appendBlockCollision(world, block);
         ++added;
     }
 
-    if (added > 0) {
-        bool first = true;
-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
-            const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
-            if (first) {
-                world.collisionMesh.boundsMin = mn;
-                world.collisionMesh.boundsMax = mx;
-                first = false;
-            } else {
-                world.collisionMesh.boundsMin = glm::min(world.collisionMesh.boundsMin, mn);
-                world.collisionMesh.boundsMax = glm::max(world.collisionMesh.boundsMax, mx);
-            }
-        }
-    }
+    buildCollisionMeshFromRenderMesh(world);
+    StaticUnionStats unionStats;
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            world.collisionMesh.triangles, world.collisionMesh.solidIds, &unionStats);
     buildCollisionChunks(world, nullptr);
     world.renderRevision++;
     StructuredLogger::instance().writeEvent(
@@ -212,6 +189,8 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId)
                        {"applied_count", added},
                        {"render_vertices", world.mesh.verts.size()},
                        {"collision_triangles", world.collisionMesh.triangles.size()},
+                       {"static_removed_triangles", unionStats.removedTriangles},
+                       {"static_removal_fallback", unionStats.fallback},
                        {"render_revision", world.renderRevision}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] map=%s blocks=%zu applied=%zu verts=%zu tris=%zu revision=%llu\n",
@@ -236,6 +215,12 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
         MimitaNet::appendHeadlessWorldInstance(world, cube, blockTransform(block));
         ++added;
     }
+
+    StaticUnionStats unionStats;
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(
+            world.triangles, world.solidIds, &unionStats);
+    MimitaNet::buildHeadlessCollisionChunks(world);
 
     // Authored spawnpoint entities extend the GLB spawn list. The base count
     // keeps repeated map rebuilds from duplicating them.
@@ -267,6 +252,8 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                        {"authored_spawn_count", spawnsAdded},
                        {"spawn_points", world.spawnPoints.size()},
                        {"collision_triangles", world.triangles.size()},
+                       {"static_removed_triangles", unionStats.removedTriangles},
+                       {"static_removal_fallback", unionStats.fallback},
                        {"headless", true}},
         __FILE__, __LINE__, __FUNCTION__);
     printf("[MAP AUTHORED] headless map=%s blocks=%zu applied=%zu spawns=+%zu total_spawns=%zu tris=%zu\n",

@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "cellSize": 0.5,
+  "static_face_removal": true,
   "_future": {
     "perMeshOverrides": {},
     "renderLod": { "enabled": false, "distance": 60.0 }

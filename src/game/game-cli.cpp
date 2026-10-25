@@ -60,6 +60,7 @@
 #include "gamemode/map-config.h"
 #include "gamemode/payload-runtime.h"
 #include "map/map-authored-geometry.h"
+#include "map/map-static-union.h"
 #include "gamemode/mode-pack-registry.h"
 #include "gamemode/action-graph.h"
 #include "gamemode/capability-registry.h"
@@ -1986,6 +1987,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = authoredMapGeometrySelfTest(report);
         printf("[MAP AUTHORED GEOMETRY SELFTEST]\n%s", report.c_str());
         printf("[MAP AUTHORED GEOMETRY SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--static-face-removal-selftest") {
+        std::string report;
+        const bool ok = staticFaceRemovalSelfTest(report);
+        printf("[STATIC FACE REMOVAL SELFTEST]\n%s", report.c_str());
+        printf("[STATIC FACE REMOVAL SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

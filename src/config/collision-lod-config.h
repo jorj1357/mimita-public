@@ -24,6 +24,7 @@ public:
 
     bool enabled() const { return mEnabled; }
     float cellSize() const { return mCellSize; }
+    bool staticFaceRemoval() const { return mStaticFaceRemoval; }
     unsigned revision() const { return mRevision; }
 
 private:
@@ -31,6 +32,7 @@ private:
 
     bool mEnabled = true;
     float mCellSize = 0.5f;
+    bool mStaticFaceRemoval = true;
     unsigned mRevision = 0;
 
     std::string mPath;
