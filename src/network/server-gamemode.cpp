@@ -295,8 +295,10 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
         if (modeAvatar.avatar.configured) {
             out.allowedAvatars = modeAvatar.avatar.allowed;
             out.deniedAvatars = modeAvatar.avatar.denied;
-            if (modeAvatar.avatar.forced && !modeAvatar.avatar.name.empty())
+            if (modeAvatar.avatar.forced && !modeAvatar.avatar.name.empty()) {
                 out.avatarName = modeAvatar.avatar.name;
+                out.avatarForced = true;
+            }
         }
     }
     // Melee first match: force both the human and the NPC onto the Captain
@@ -307,6 +309,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // that already special-cases the Melee avatar.
     if (d.matchMode == "melee") {
         out.avatarName = "captainfalcon";
+        out.avatarForced = true;
     }
     // A mode may force one movement profile for every actor, independent of
     // role. Forced before the matchActors lookup so actors without a roster
@@ -332,6 +335,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                     out.health = def->health;
                     out.startingWeapon = def->startingWeapon;
                     out.avatarName = def->avatarName;
+                    out.avatarForced = def->avatarForced;
                     out.movementPreset = def->movementPreset;
                     out.actorPresetId = def->actorPresetId;
                     if (const CommunityWeaponSet* set =
@@ -393,14 +397,20 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     out.roleId = def->id;
     out.health = def->health;
     out.startingWeapon = def->startingWeapon;
-    if (!def->avatarName.empty()) out.avatarName = def->avatarName;
+    if (!def->avatarName.empty()) {
+        out.avatarName = def->avatarName;
+        out.avatarForced = def->avatarForced;
+    }
     if (!def->allowedAvatars.empty()) out.allowedAvatars = def->allowedAvatars;
     if (!def->deniedAvatars.empty()) out.deniedAvatars = def->deniedAvatars;
     if (!def->actorPresetId.empty()) {
         if (const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(def->actorPresetId)) {
             out.allowedAvatars = preset->allowedAvatars;
             out.deniedAvatars = preset->deniedAvatars;
-            if (out.avatarName.empty()) out.avatarName = preset->avatarName;
+            if (out.avatarName.empty() && !preset->avatarName.empty()) {
+                out.avatarName = preset->avatarName;
+                out.avatarForced = preset->avatarForced;
+            }
         }
     }
 
@@ -412,6 +422,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 MatchRoleRegistry::instance().get(it->second.roleId)) {
             if (teamRole->avatarForced && !teamRole->avatarName.empty()) {
                 out.avatarName = teamRole->avatarName;
+                out.avatarForced = true;
                 if (teamRole->health > 0) out.health = teamRole->health;
             }
             if (!teamRole->allowedAvatars.empty()) out.allowedAvatars = teamRole->allowedAvatars;
@@ -426,6 +437,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // cannot silently leave a Melee actor on default movement.
     if (d.matchMode == "melee") {
         out.avatarName = "captainfalcon";
+        out.avatarForced = true;
     }
     {
         const Gamemode& modeCfg = GamemodeRegistry::instance().get(d.matchMode);
@@ -514,8 +526,10 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
             }
             if (!preset->startingWeapon.empty())
                 out.startingWeapon = preset->startingWeapon;
-            if (preset->avatarForced && !preset->avatarName.empty())
+            if (preset->avatarForced && !preset->avatarName.empty()) {
                 out.avatarName = preset->avatarName;
+                out.avatarForced = true;
+            }
             if (!preset->allowedAvatars.empty()) out.allowedAvatars = preset->allowedAvatars;
             if (!preset->deniedAvatars.empty()) out.deniedAvatars = preset->deniedAvatars;
             if (it->second.controller == ActorController::Npc &&

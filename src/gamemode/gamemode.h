@@ -217,6 +217,16 @@ struct GamemodeAvatarPolicy {
     std::string group;
 };
 
+// NPC-only selection from the masterlist's named avatar groups. A stable
+// assignment belongs to the NPC actor and survives its later lives.
+struct GamemodeNpcAvatarPolicy {
+    bool configured = false;
+    std::string group;
+    std::vector<std::string> allowed;
+    std::vector<std::string> denied;
+    std::string spawnPolicy = "reroll_each_spawn";
+};
+
 // Optional Payload rules. Map data owns cart origin/route/interaction geometry;
 // this block owns mode-wide timing and movement rules.
 struct GamemodePayload {
@@ -307,6 +317,7 @@ struct Gamemode {
     GamemodeNpcTravel npcTravel;
     GamemodeAimFov aimFov;
     GamemodeAvatarPolicy avatar;
+    GamemodeNpcAvatarPolicy npcAvatar;
     GamemodePayload payload;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
@@ -377,6 +388,7 @@ private:
     std::string directory_;
     nlohmann::json mMasterlist;
     bool mMasterlistLoaded = false;
+    std::filesystem::file_time_type mMasterlistWriteTime{};
     std::vector<std::string> mValidationErrors;
 };
 

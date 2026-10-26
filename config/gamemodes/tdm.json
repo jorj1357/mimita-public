@@ -10,7 +10,7 @@
     "BLUE"
   ],
   // "goal_value": 50,
-  "goal_value": 300,
+  "goal_value": 50,
   "weapon_set_id": 29,
   "time_limit_seconds": 180,
   "time_limit_outcome": "stalemate",
@@ -37,7 +37,7 @@
       "display_name": "RED",
       // "capacity": 5,
       // "capacity": 55,
-      "capacity": 99,
+      "capacity": 5,
       "role": "elite_fighter",
       "npc_role": "elite_npc",
       "spawn_group": "red_spawn",
@@ -55,7 +55,7 @@
       "display_name": "BLUE",
       // "capacity": 5,
       // "capacity": 55,
-      "capacity": 99,
+      "capacity": 5,
       "role": "elite_fighter",
       "npc_role": "elite_npc",
       "spawn_group": "blue_spawn",
@@ -240,28 +240,15 @@
   },
   "avatar": {
     "enabled": true,
-    "forced": false,
+    "forced": true,
     "name": "",
-    "allowed": [
-      "abusiveboy",
-      "abusivegirl",
-      "abusivegirl2",
-      "abusivegirl3",
-      "abusivegirlheadless",
-      "abusivegirlheadless2",
-      "abusivegirlheadless3",
-      "abusivegirlheadless4",
-      "boiledboy",
-      "headless",
-      "headlessgirl",
-      "headlessgirl2",
-      "headlessgirl3",
-      "headlessredux",
-      "headlessredux2",
-      "jason",
-      "jasonheadless"
-    ],
+    "allowed": [],
     "denied": [],
-    "group": ""
+    "group": "competitive_no_headless"
+  },
+  "npc_avatar": {
+    "enabled": true,
+    "group": "competitive_no_headless",
+    "spawn_policy": "keep_per_npc"
   }
 }

@@ -1,3 +1,220 @@
+## New intake — 2026-10-26
+
+- **Dev-loop TDM launch fails before server logger readiness:** Build 3368
+  published successfully, but two `tdm npc elite` launch requests timed out
+  after 20 seconds while the server process was alive and no `logger.started`
+  event appeared. Build 3369 was also published; its TDM launch was still in
+  `launching_server` with no ready server or client at the last status check.
+  The server's legacy text log showed gameplay was already running, while the
+  shared journal had no server event. A closed 2.2 GB legacy text log pushed
+  the `logs` tree above the structured logger's 1 GB quota, and the quota
+  pruner only considered completed run directories. That log was preserved in
+  `.dev/archived-logs/2026-10-26/`; the tree then measured about 322 MB and
+  build 3369 launched both server and client. The pruner now also considers
+  closed legacy text logs. Build 3371 launched successfully with server and
+  client journal readiness in Payload mode. Runtime proof of the pruner's
+  over-quota branch and TDM avatar gameplay remains open. This is separate
+  from the stale displayed launch-mode issue below.
+- **TDM NPCs stop shooting after one NPC is killed:** The player reports
+  surviving NPCs stop shooting at them after the player kills one NPC. This
+  has not been reproduced and does not establish whether targeting, combat
+  state, NPC replacement, or another event is responsible. Reproduce in a
+  confirmed TDM run and compare surviving NPC target acquisition, legal-shot
+  decisions, accepted shots, and state changes immediately before and after
+  the first NPC death.
+- **TDM NPCs sometimes do not acknowledge or damage a nearby player:** The
+  player reports that while walking close to NPCs they sometimes appear not to
+  notice or attack, without an obvious trigger. The player says the session
+  journal shows the behavior, but did not identify a journal path or run ID in
+  this report; the available 2026-10-26 journals inspected for context are
+  Payload or Sandbox runs, not a confirmed TDM reproduction. Capture the exact
+  TDM run and compare target/visibility/team eligibility, target acquisition,
+  legal attack decisions, attack requests, accepted damage, and NPC state
+  around a close pass. Keep this separate from NPCs stopping after a teammate
+  death until evidence shows they share a cause.
+- **Repeated position corrections at high speed above map geometry:** The
+  player reports that moving far from map geometry at about 250 m/s causes
+  repeated snapping each tick to a position above the general map area. The
+  reported speed drops toward 10 m/s, after which the player can descend
+  without further snapping. This ordinary-movement case is distinct from the
+  previously journaled correction after an explicit teleport into blocking
+  geometry. Reproduce while recording client predicted position/velocity,
+  server accepted position/velocity, correction reason and magnitude, and
+  collision contacts; root cause is unknown.
+- **Dev-loop status stays on an old game mode:** Reported 2026-10-26 09:39 EDT
+  (13:39Z): the player was playing TDM, but the dev-loop still showed the
+  `duel_presentation` launch mode from a session started about 12 hours earlier.
+  This is a user report; no status/journal snapshot was captured after the
+  reported switch to TDM. Determine whether status reports the launch profile
+  or the server's live mode, and update it on mode changes or label those values
+  separately so old launch mode is not presented as the current game mode.
+- **NPC avatars need mode-selected groups and per-NPC respawn identity:** The
+  player wants modes to select reusable NPC avatar groups from the gamemode
+  masterlist and choose whether NPCs reroll avatars on death or keep one avatar
+  per NPC across respawns. Desired TDM behavior is one stable avatar per NPC:
+  NPC A remains A, B remains B, and so on; other modes may opt to reroll. Source
+  inspection found NPC avatar selection currently draws from every valid avatar
+  folder and seeds the selection with the transform epoch, while the mode
+  avatar group is not consulted by that picker. This is a feature request and
+  source finding, not a runtime reproduction.
+  2026-10-26 implementation update: the shared NPC spawn finalizer now
+  filters against the mode's `npc_avatar.group` and applies its
+  `keep_per_npc` or `reroll_each_spawn` rule. TDM selects
+  `competitive_no_headless` and `keep_per_npc`. Configuration validation and
+  build passed; live TDM avatar verification remains open. The dev-loop
+  logging blockage was resolved, and the current verified run is Payload.
+- **Live NPC weapon-profile updates across roles and modes:** The player
+  changed `config/behavior-profiles.json` so the selected NPC profile cycles
+  only the revolver and shotgun. While editing the `balanced` profile around
+  line 70 during play, the player reports that NPCs do not appear to change.
+  They want profile edits to apply live to every NPC role in every gamemode.
+  The cause is unconfirmed: trace the active config path, profile reload, role
+  resolution, and when already-running NPCs adopt updates before changing the
+  owner.
+- **TDM join requires repeated attempts:** The player reports needing about
+  nine join attempts before becoming able to play, rather than joining once
+  and immediately moving around in the match. The attached screenshot shows
+  several system messages for `Guest(6281)` variants joining the game; it
+  supports repeated join activity but does not identify why it happens or
+  whether each message is a distinct connection, retry, or player identity.
+  Reproduce in confirmed TDM and trace the complete join path from request
+  through server acceptance, roster/team assignment, spawn, and controllable
+  gameplay. Record each attempt's client/server state and identity so the
+  first failed or repeated step is clear.
+- **TDM slope collision failure on `tdmtest3`:** After recent collision changes,
+  the player reports falling through slopes while spawning into `tdmtest3`.
+  They are unsure whether seam tolerances or another collision issue is
+  responsible. Reproduce on the exact map and capture the spawn transform,
+  loaded collision geometry, slope contacts, grounded state, and first
+  position divergence. The supplied build 3371 journal is a Sandbox run on
+  `funworld3`; it contains collision summaries but does not reproduce this
+  TDM/map report. Seam tolerance or solidification changes remain unselected.
+- **Map blocks may need automatic solid collision:** The player is unsure how
+  blocks should become solid and proposes either making blocks solid
+  automatically or providing a mode where that behavior is enabled. This is
+  an open design question, not a decided global rule. Clarify which block
+  types and modes should be affected, how collision is authored/validated, and
+  whether existing maps need an opt-in migration before implementation.
+- **Repeated position-correction snapping:** The player reports random
+  position corrections that snap repeatedly, and suspects the journal may
+  show a client/server disagreement. This may overlap the separate high-speed
+  correction report above, but the current report does not give a trigger,
+  map, or exact actor. Inspect the cited run for paired client prediction,
+  server acceptance, correction reason/magnitude, and collision state; do not
+  infer a network cause from the visual snap alone. The supplied build 3371
+  journal is Sandbox on `funworld3` and has no movement correction event that
+  establishes this repeated behavior, so reproduce the report with those
+  owner-level records enabled.
+- **NPC aim accuracy and movement feel:** The player wants NPC difficulty,
+  movement, and firing speed to remain otherwise the same while NPCs become
+  less accurate. They also want NPC movement to feel more developed. They are
+  unsure whether behavior-profile JSON edits currently take effect live, so
+  first verify the active config path and hot-reload/adoption behavior with a
+  visible, attributable change. Then tune accuracy alone while preserving
+  firing cadence and other difficulty settings, and investigate movement as a
+  separate issue against the NPC movement owner and real scenarios. The player
+  says they move much faster than NPCs and wants NPCs to combine the abilities
+  available in their mode, including dash, down-dash, bunny hopping, and air
+  strafing; TDM is reported to have these abilities, but NPCs use dash only a
+  little and do not maintain comparable speed. Determine whether NPC intent,
+  ability eligibility, sequencing, execution, or control difficulty causes
+  the gap. The player prefers skilled, risky high-speed movement—even around
+  500 m/s in competitive play—over a hard speed limit; that figure is an
+  aspirational example, not a tuned target or acceptance threshold. This
+  overlaps the authored movement repertoire in
+  [`npc-behavior.md`](npc-behavior/npc-behavior.md), which describes dash /
+  down-dash chains, rapid dash bursts, bunny hops, and air strafing; that spec's
+  implementation status says current chance-based inputs do not yet provide
+  authored, event-sequenced movement recipes. Verify the active TDM behavior
+  and execution path before treating the designed repertoire as available in
+  live play.
+- **Gunshot audio should remain audible at long range:** The player reports
+  that distant LMG fire can become inaudible around 50 m. Desired example
+  attenuation: at 50 m, about 10% of the source volume; at 500 m, about 5%; at
+  2,500 m, about 1%; and at 3,000 m, inaudible. Treat these as user-proposed
+  targets to validate against the audio distance/falloff owner, not as
+  measured current behavior or a settled curve. Check weapon-specific source
+  levels and spatial attenuation before selecting interpolation and maximum
+  distance.
+- **Blocks snag actors and spawn ramps catch at their seam:** The player
+  reports getting caught on block edges, especially at the seam between the
+  two steep spawn ramps on `tdmtest3`, and wants the ramps treated as one
+  continuous object. They say the snag is noticeable while shooting. Scenario
+  `devscripts/scenarios/user/scenario-20261026_190510-caught.jsonl` records a
+  Sandbox capture on `tdmtest3` with 5,174 input frames and 231 frames with
+  primary fire held/pressed, but records no collision contacts or stuck-state
+  marker; it cannot by itself tie firing to a specific snag. Reproduce at the
+  ramp seam and block edges, then trace the first collision/contact and
+  movement divergence. Do not assume joining the ramp meshes into one object
+  is the correct fix before checking seam geometry and collision continuity.
+- **Falling through map geometry on `tdmtest3`:** The player reports being
+  able to pass through geometry and falling through the map. Scenario
+  `devscripts/scenarios/user/scenario-20261026_191024-fallthru.jsonl` records
+  Sandbox on `tdmtest3`, 5,883 input frames, and 2,875 frames marked
+  ungrounded; it does not include collision contacts or prove which surface
+  failed. Reproduce and capture loaded collision geometry, contact queries,
+  grounded transitions, and the first position divergence. The suggestion to
+  make blocks solid automatically remains a design hypothesis; first
+  determine whether these map surfaces are missing collision or collision
+  response is failing.
+- **Repeated correction far outside world geometry:** The player reports
+  repeatedly snapping back to a previous position when moving too far from
+  world geometry, and wants to be allowed to fall through the void instead.
+  This may overlap the existing high-speed correction report, but this report
+  specifically asks that void movement not be pulled back to stale position.
+  Reproduce with paired client-predicted and server-accepted positions,
+  correction reason/magnitude, world bounds, and collision contacts; decide
+  expected out-of-world behavior before changing correction policy.
+- **Melee-focused modes and NPC melee combat:** The player wants modes built
+  around swords and other physical melee weapons to make movement a larger
+  part of combat, with NPCs able to use the same weapons. This is a distinct
+  proposal from the existing Smash Bros-inspired arena mode. Weapon concepts
+  and open decisions:
+  - `swordsword`: intended as a strong basic sword, but the player reports it
+    is not functional yet. They propose that a click/attack might add an
+    impulse in the attack direction, with damage still to tune. This conflicts
+    with the current [`SwordSword behavior contract`](weapons/melee/swordsword.md),
+    which says attack input does not add forward velocity or an impulse to the
+    wielder. Keep this as a proposed spec change until the user settles that
+    behavior; do not silently treat it as already decided.
+  - `spyknife`: the model is reportedly missing and damage is inconsistent.
+    Trace the model path and full authoritative damage path against the shared
+    physical-contact contract in
+    [`melee-weapons.md`](weapons/melee/melee-weapons.md), and determine whether
+    it uses that reusable path or a separate special path before changing it.
+    Backstab behavior is undecided because the player feels the game may be
+    too fast for reliable backstabs.
+  - `chainsaw`: close range and high damage; unlike the sword, it should not
+    add the proposed attack impulse.
+  - Mace, morningstar, bat, or hammer: a heavy windup followed by high damage
+    and knockback, with a dedicated animation that could be procedural or
+    Blender-authored. Whether attacking slows the user remains open.
+  - `hafs` (“huge awesome freaking sword”): make the existing weapon work and
+    remove its current slowing effect. The player proposes disabling dash and
+    double jump while equipped while retaining freeze and down-dash; verify
+    the current behavior and decide the ability tradeoffs with the weapon
+    owner.
+  - All melee items should be physical objects that can block attacks. On
+    weapon-to-weapon contact, the player proposes angle/speed/force-dependent
+    knockback to both actors and a spark effect. The momentum split and
+    magnitudes, including the suggested fast-versus-stationary example, are
+    illustrative only and need a collision, physics, and balance design before
+    becoming requirements. The blocking proposal also needs reconciliation
+    with the current SwordSword contract, whose defensive pose is animation
+    only and does not block or reduce damage.
+- **Map scale and enemy readability:** The player suspects maps that feel too
+  large make enemies hard to see. They propose experimenting with roughly
+  10-by-10-meter block-scale layouts or ensuring a point of interest or event
+  about every 50 meters. These are design hypotheses, not fixed map rules.
+  Enemies reportedly remain too small or hard to locate even when forced to a
+  larger size. The player does not want a hard movement speed cap and thinks
+  very high speed could be a competitive strategy if difficult to maintain
+  and control; whether scale, sightlines, map rhythm, camera/readability, or
+  familiarity is the main problem is unknown. Evaluate through map-authoring
+  and live play experiments, connected to the existing Entity Editor and
+  Blender-to-game live-edit/sync request. Treat both the 10 m / 50 m layout
+  examples and 500 m/s speed example as hypotheses, not settled limits.
+
 ## New intake — 2026-10-25, 00:21 UTC
 
 - **Event-driven completion for AI-run gameplay scenarios:** Running the game
@@ -385,16 +602,16 @@ requested behavior, not as confirmed causes. The six attached screenshots
 `codex-clipboard-1d93ad7b-2665-4f18-8c7b-420e912524e6.png`, and
 `codex-clipboard-cec704f2-58e0-454c-9d53-8cb2415c12e9.png`) show blood and
 world-impact marks appearing as clipped, blocky bars, stretched shapes, or
-shards with heavy overlap. The original shape defects were traced to randomized blood-sprite stretching and crack chains that mapped the full PNG onto every narrow segment. The fix is implemented and built as 2741: blood spray uses equal axes, and each world crack draws the complete square PNG once with uniform size and in-plane rotation. The render summary now reports visible blood and crack aspect ratios. The PNG alpha path remains enabled. This does not identify every large red/transparent shape visible in the screenshots; non-textured hit effects and tracers also have separate render paths. The active Duel session remains on build 2733, so gameplay visual acceptance is pending.
+shards with heavy overlap. The original shape defects were traced to randomized blood-sprite stretching and crack chains that mapped the full PNG onto every narrow segment. The fix is implemented and built as 2741: blood spray uses equal axes, and each world crack draws the complete square PNG once with uniform size and in-plane rotation. The render summary now reports visible blood and crack aspect ratios. The PNG alpha path remains enabled. The player reported on 2026-10-26 that bullet-hole visuals still do not look accurate to the intended appearance, so this fix has not established visual acceptance for bullet-hole appearance. Reproduce and compare against the intended reference before deciding whether the renderer, decal placement, or source art needs adjustment. This does not identify every large red/transparent shape visible in the screenshots; non-textured hit effects and tracers also have separate render paths.
 
 | Area | Player report / desired result | Status and open detail | Owner / route |
 |---|---|---|---|
 | **Presentation — first priority** | Make the game's presentation clearer overall. For Duel, spectators should see both sides, team and actor names, each side's kills, kills remaining to win, and who is ahead. | Design conversation requested. The possible layout above is only a starting sketch; active-player and spectator information priorities still need agreement. | [`graphics/graphics-presentation.md`](graphics/graphics-presentation.md), [`gui/guiv2.md`](gui/guiv2.md), [`gamemodes/duel.md`](gamemodes/duel.md) |
 | **Blocker — map authoring for Payload and Zombie Tower** | The player considers the current authoring workflow a blocker: placing Payload cart routes, Zombie Tower monster spawn volumes, and map blocks is too hard through repeated commands and JSON edits. They want a better in-game map/entity editor to place, select, move, duplicate, and remove map content, then save those edits to the map. A future Lua interpreter or Roblox Studio-like creation environment is an idea they may want to start toward. | Human-reported blocker to building these maps and modes. The current Entity Editor supports viewport selection/dragging for several object types, but editor discoverability, the object list, readability, and responsiveness remain open. See the 2026-10-25 intake above for the requested scrollbar/search, selected-row highlight, F-to-focus, configurable larger text, camera-speed multiplier, reported one-second freezes, and Payload cart-origin/start-route confusion. Investigate Zombie Tower authoring separately. Treat broader block-editing and scripting ideas as later work. | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`gamemodes/zombie-tower/zombie-tower.md`](gamemodes/zombie-tower/zombie-tower.md), [`gamemodes/payload.md`](gamemodes/payload.md) |
 | Live Blender-to-game map editing | The player wants to edit a map in Blender and see the game update without repeatedly exporting/loading by hand. A possible first step is a Python watcher that observes the selected map's Blender source or exported `.glb` and asks the game to reload the changed map; the longer-term goal is doing more of the map editing inside the game. | Early idea; no file-watching, Blender export, reload protocol, safety checks, or editor ownership has been selected or verified. Write a focused workflow/architecture spec before implementation: define whether the watched source is `.blend`, exported `.glb`, or both; how Blender produces a valid new asset; how the game detects a complete save, validates and safely reloads it, and reports errors; and how the in-game editor grows toward the same workflow. Keep this connected to the Zombie Tower spawn-volume authoring blocker, but treat it as a reusable map-authoring workflow rather than a Zombie Tower-only feature. | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`../features/live-code-development/live-code-development.md`](../features/live-code-development/live-code-development.md), [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md) |
-| NPC combat | NPCs should use both shotgun and revolver, change weapons much faster, and begin shooting promptly after spawning. NPCs should normally deal more damage, move more visibly, and have fewer barriers to reaching or hitting an opponent. NPCs should be able to use melee. | User-reported; not reproduced. Exact damage, switching cadence, movement style, and allowed obstacles need owner-level decisions and evidence. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`weapons/melee-weapons.md`](weapons/melee-weapons.md) |
+| NPC combat | NPCs should use both shotgun and revolver, change weapons much faster, and begin shooting promptly after spawning. NPCs should normally deal more damage, move more visibly, and have fewer barriers to reaching or hitting an opponent. NPCs should be able to use melee. In TDM, the player reports surviving NPCs stop shooting after the player kills one NPC. While editing `config/behavior-profiles.json`'s `balanced` profile around line 70 during play, the player reports NPCs do not appear to change; they want edits to apply live to every NPC role in every gamemode. | User-reported; not reproduced. The TDM report does not establish whether targeting, combat state, NPC replacement, or another event is responsible. Compare target acquisition and legal/accepted shots before and after the first NPC death. For live edits, trace profile loading/reload, role selection, mode overrides, and when running NPCs adopt updates. Exact damage, switching cadence, movement style, and allowed obstacles need owner-level decisions and evidence. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`../architecture/json-configuration/json-configuration.md`](../architecture/json-configuration/json-configuration.md), [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md) |
 | Shot and cooldown reliability | Some shots seem to be rejected or lost because of a cooldown; firing does not always count. | User-reported; not reproduced. Trace input, cooldown, and authoritative shot result before naming the failing step. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |
-| Blood and world-impact marks | Effects should appear consistently when any actor hits another actor, including NPC-to-player hits. Blood, bullet holes, and world cracks should preserve the complete authored PNG shape and alpha, with only uniform size changes and in-plane rotation. | Shape fix implemented and built as 2741: blood spray has equal billboard axes, and a world crack renders once as the complete square PNG (configured diameter 2 world units), with uniform sizing and in-plane rotation. The render summary records visible blood/crack aspect ratios. Gameplay visual acceptance remains pending because the active Duel session is still build 2733. Large red/transparent geometry in the screenshots is a separate unidentified artifact. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md), [`weapons/weapons.md`](weapons/weapons.md); code owners: `src/effects/hit-effects.cpp::HitEffects::onHit()`, `src/effects/effect-part-blood.cpp::EffectPartSystem::spawnBloodEffect()`, `src/ragdoll/ragdoll-mode.cpp::RagdollModeSystem::sprayCorpseBlood()`, `src/effects/effect-part.cpp::EffectPartSystem::spawnWorldCracks()`, `src/effects/effect-part-render.cpp` crack decal batching |
+| Blood and world-impact marks | Effects should appear consistently when any actor hits another actor, including NPC-to-player hits. Blood, bullet holes, and world cracks should preserve the complete authored PNG shape and alpha, with only uniform size changes and in-plane rotation. | Earlier shape work was implemented and built as 2741, but the player reports on 2026-10-26 that bullet-hole visuals still do not look accurate to the intended appearance. Visual acceptance remains open; reproduce and compare against the intended reference before deciding whether the renderer, decal placement, or source art needs adjustment. Large red/transparent geometry in the earlier screenshots is a separate unidentified artifact. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md), [`weapons/weapons.md`](weapons/weapons.md); code owners: `src/effects/hit-effects.cpp::HitEffects::onHit()`, `src/effects/effect-part-blood.cpp::EffectPartSystem::spawnBloodEffect()`, `src/ragdoll/ragdoll-mode.cpp::RagdollModeSystem::sprayCorpseBlood()`, `src/effects/effect-part.cpp::EffectPartSystem::spawnWorldCracks()`, `src/effects/effect-part-render.cpp` crack decal batching |
 | Shotgun pellet direction | Each pellet from an NPC shotgun shot should travel along its own shot direction; the player reports pellets appearing aligned to world axes. | User-reported; not reproduced. | [`weapons/weapons.md`](weapons/weapons.md), [`networking/networking.md`](networking/networking.md) |
 | Performance / frame pacing | Play felt somewhat choppy; turning OBS off seemed to help, but the player is unsure whether the difference was real. | Unconfirmed impression; no measured frame-time or controlled comparison yet. Do not treat OBS as the cause without measurement. | [`performance/performance.md`](performance/performance.md) |
 | Intermittent severe choppiness and launch failure after long PC uptime | **Reported 2026-10-25 11:04 EDT (2026-10-25T15:04:00Z, time as supplied):** after leaving the PC on for about two or three days, the player launched a new `mimita.exe` and saw choppy gameplay with highly variable FPS (usually reported around 150–300, sometimes 600–900), plus performance readouts that jumped between near-zero and very high physics/networking times. The supplied screenshot shows a single HUD sample with `FPS: 372 AVG: 63`, `MAX: 1609.89ms`, and `PHYS 361.83`; these display values are not a controlled frame-time distribution. The player also reports a zero-byte `events.jsonl` at `C:\mimita-v9\logs\10-25-2026\20261025_103325\events.jsonl` and a dev-loop launch failure (`latest=3172`, server alive, client dead). | **Unresolved; user-reported with partial journal evidence.** The player closed older MiMITA game processes in Task Manager and said performance seemed better afterward. This is a useful correlation, not a confirmed cause or fix. Earlier inspected journals on 2026-10-25 show multiple client PIDs in one run and severe isolated frame stalls (including a 2,218 ms frame with about 2,216 ms attributed to synchronous audio cache lookup); another inspected run had one client and a separate server process, so old processes do not yet explain all recorded stalls. The inspected dev-loop status for run `20261025_134032` reports build 3172, server alive, client dead, and “dashboard launch failed”; these observations may be from different attempts than the 11:04 report. Reproduce through the dev-loop after recording all existing MiMITA PIDs, selected executable/build, server/client PIDs, and the exact `EVENTS_JSONL_PATH`. Confirm whether the selected EXE starts and writes to that journal, correlate process count/lifetime with frame-time threshold distribution and subsystem costs, and capture the first launch-stage failure reason. Compare before/after closing old processes only if the same scenario and build can be held constant. Do not treat average FPS or a single timing sample as proof of smoothness; report the fraction of frames over 4.17 ms. | [`performance/performance.md`](performance/performance.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md) |
@@ -403,14 +620,15 @@ shards with heavy overlap. The original shape defects were traced to randomized 
 | World-hit sound | World-hit sounds should scale with impact force and choose from multiple sounds instead of always using one. The player pointed to `assets/sound/hitworld2.mp3` and said ricochet already has a related precedent. | User-reported desired behavior. Current ricochet behavior and how force should affect loudness, pitch, or sample choice were not verified or specified. | [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md), [`weapons/weapons.md`](weapons/weapons.md), `config/audio-recipes.json` |
 | Sound asset organization | Make sound files easier to find using meaningful folders and short event names, for example `assets/sound/entity/general/death1.wav`, instead of loose, long descriptive filenames. | Organization proposal; confirm naming, variant numbering, and how recipes refer to files before migrating assets. | [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md), [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md) |
 | Replay export | Replay export reportedly broke after the fullscreen modes were added. | User-reported regression; not reproduced here. | [`replay/replay.md`](replay/replay.md) |
-| Spy Knife | The equipped Spy Knife model is not visible. Hits can appear client-side without changing the target's authoritative health. | User-reported; not reproduced. Trace model presentation and authoritative damage as separate paths. | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Spy Knife | The equipped Spy Knife model is reportedly missing; attacks appear inconsistent and may show client-side hits without reliably changing authoritative health. The player also wants to know whether Spy Knife uses shared melee action/damage logic or a separate special path. | User-reported; not reproduced. Trace model asset/presentation, attack registration, and authoritative damage separately; compare its implementation path with the shared melee owner before proposing changes. Backstab behavior remains undecided. | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
 | Duel avatars | Duel needs an avatar limit. | Need a product decision describing which avatars are allowed or how the limit is chosen. | [`gamemodes/duel.md`](gamemodes/duel.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
 | Legacy Duel cleanup | Remove old offline/local Duel gameplay paths. Duel and other gameplay modes must be client/server; there is no supported or maintained offline gameplay implementation. Keep the current networked mode path and remove obsolete local Duel code after tracing its callers. | Requested for future cleanup; exact legacy owners and safe deletion boundary need a repository-wide call-site audit. | [`gamemodes/duel.md`](gamemodes/duel.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md) |
 | Juggernaut avatars and outlines | Limit both Juggernaut roles to the JSON allowlist of normal boy/girl body avatars; exclude oversized and monster avatars. Friendly outlines are off. Enemy outlines are faint red. | Requirements now recorded in the mode and role JSON; runtime behavior still needs live Juggernaut verification. | [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), `config/gamemodes/juggernaut.json`, `config/actor-presets/juggernaut_fighter.json`, `config/actor-presets/juggernaut_arcade.json` |
 | Invisible avatars | Avatars sometimes become invisible again; the exact affected actor and session are unclear. Trace identity selection, asset/model loading, replication, entity binding, and render submission separately. | **Source/journal trace (2026-10-21), likely network identity failure found; visual cause not confirmed:** live Duel run `20261021_084608` recorded 62 avatar-load queue rejections (`worker_queue_full`, queue depth 3 / limit 2), all marked retryable; 58 NPC rebinds later reported an avatar instance and loaded model. More importantly, remote avatar cache folders use `remote_` plus 24 hash characters (31 characters total), but snapshot avatar fields are 24 bytes including the terminator (23 usable characters). The server copies names into that field with `strncpy(..., sizeof(field)-1)`, so a 31-character remote ID is truncated on the wire. The journal contains a failed lookup for `remote_568d80ddb4e934de` (23 characters) because its `avatar.json` was missing or invalid, matching that truncation shape. Failed cache entries also count as `isAvatarLoadPending`, preventing the render-side retry path from reapplying the failed identity. This is a strong mechanism for a remote avatar to remain on fallback presentation, but the journal does not identify it as the avatar the player saw disappear, and normal live-actor render submission is not recorded. Next reproduction should capture mode/map, actor kind/name/avatar ID and exact first failing event. | [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md), `src/avatar/avatar-atlas.cpp`, `src/network/avatar-network-client.cpp`, `src/network/server-players.cpp`, `src/network/multiplayer-tick.cpp`, `src/render/render-player.cpp`; journal: `logs/2026-10-21/20261021_084608/events.jsonl` |
+| TDM invisible enemy players at 99 per team | The player reports that in TDM with 99 players on each team, some players on the enemy team are invisible. Expected result: all enemy-team players are visible. | New user report; not reproduced, and no cause is known. Current working-tree `config/gamemodes/tdm.json` sets team capacity to 24, but the report described 99 per team; no run journal, actual roster counts, or affected actor IDs were supplied. Reproduce with confirmed team counts; compare expected roster, server spawn/replication, client entity binding, avatar/model readiness, and render submission for the invisible actors. Do not assume a population limit, networking fault, or avatar-loading cause until traced. | [`gamemodes/teamdeathmatch.md`](teamdeathmatch.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md), `src/network/multiplayer-tick.cpp`, `src/render/render-player.cpp` |
 | Aim feel and shot confidence | Crosshair aim in `gameplay.json` feels more reliable but less fun. Physical gun aiming feels more immersive, but the player is unsure shots line up with what they saw. | Open feel report; no aim-mode change requested or decided. Compare visible aim, shot direction, and hit result before choosing. | [`weapons/weapons.md`](weapons/weapons.md), [`gui/gui-general.md`](gui/gui-general.md) |
 | Avatar head movement | Avatar heads seem to lean too far backward while moving forward. The player remembers them behaving more normally before ragdoll edits, possibly about a week earlier, but is unsure when the change began or what the intended motion was. | User-reported and uncertain; no cause or prior behavior established. | [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
-| Player jitter and NPC geometry recovery | The player reports jitter when far from map geometry and NPCs remaining stuck inside geometry after recent player-world collision and networking improvements; NPCs should be pushed back out into clear space. | User-reported; not reproduced. The link between the symptoms and collision, movement correction, or networking is unconfirmed. Trace the first embedded actor position/contact and later position writers before choosing a recovery path. | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`movement/movement.md`](movement/movement.md), [`networking/networking.md`](networking/networking.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md) |
+| Player jitter, repeated high-speed position corrections, and NPC geometry recovery | The player reports jitter when far from map geometry and NPCs remaining stuck inside geometry; NPCs should be pushed back out into clear space. Separately, the player reports moving far from geometry at about 250 m/s triggers repeated corrections each tick to a position above the map area; speed drops toward 10 m/s, after which they can descend without more snapping. | User-reported; the high-speed ordinary-movement case is not reproduced and is distinct from the journaled correction after an explicit teleport into blocking geometry. The link between symptoms and collision, movement correction, or networking is unconfirmed. Trace predicted and accepted positions/velocities, correction reasons/magnitudes, collision contacts, and NPC recovery. | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`movement/movement.md`](movement/movement.md), [`networking/networking.md`](networking/networking.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md) |
 
 ## New intake — 2026-10-22
 
@@ -430,6 +648,7 @@ change.
 | Juggernaut build 2843 has severe startup and frame/tick pacing problems | In the 2026-10-22 15:48 session on `dust2cyberiav4`, spawning produced a large stutter; play then felt choppy, client ticks inconsistent, server tick far behind, and performance did not remain near the 240 FPS target. The player also reports snapshot age rising from roughly 10–20 ms to 230–350 ms and occasional whole-game freezes followed by disconnects. | Journal `logs/2026-10-22/20261022_194716/events.jsonl` identifies build 2843, mode 9 (Juggernaut), and a connected client/server. It records 38 frame-budget spike events; the first 60-frame resource window averaged 26.48 ms with a 1357.04 ms maximum. With 67 NPCs and one player, early server windows reached 170.72 ms average / 1183.58 ms maximum and 34.17 ms average / 1163.10 ms maximum; later averages were mostly 4–8 ms, so a steadily worsening server cost is not established. Logged working set rose from about 223 MB to 4.57 GB over roughly 57 seconds; the journal does not establish why. A 240 FPS target is recorded, not achieved frame rate. The journal ends connected and has no disconnect event; its snapshot window gives interarrival timing, not the reported snapshot-age measure. Reproduce with correlated client/server tick, snapshot age, frame and subsystem timings, memory, and disconnect/freeze evidence; trace the first divergence. Root cause remains open. | [`performance/performance.md`](performance/performance.md), [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), [`networking/networking.md`](networking/networking.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md) |
 | Juggernaut NPC navigation, avatar appearance, and collision fit on Dust2CyberiaV4 | In the same build 2843 session, the player reports NPCs stuck in map corners, some avatar textures appearing chopped, and collision sizes that do not fit avatar scale (large avatars need larger collision; small avatars need smaller collision). | Journal records 1,014 NPC stuck episodes and 306 recovery events, including repeated positions around x=-871 to -882, y=114 to 123, z=2343 to 2348; map geometry has not been checked, so these are not confirmed corner locations. Texture appearance and avatar-scale collision mismatch remain visual/player reports with no root cause established. Reproduce each symptom and trace navigation recovery, avatar asset/render state, and the collision shape owner separately. | [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`performance/performance.md`](performance/performance.md) |
 | Dev-loop rainbow clock/status time feels slow to update | The player says the rainbow dev-loop display's time/status update does not feel quick enough. | Lower-priority user report. The dev-loop contract says status animation normally updates on a one-second cadence and keypress-triggered feedback redraws immediately. Compare the visible clock/status refresh with that contract and inspect whether the display is delayed or only the changing seconds are expected to tick once per second. | [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |
+| Dev-loop status continues to show an old launch mode after the live game mode changes | Reported 2026-10-26 09:39 EDT: while playing TDM, the dev-loop reportedly still showed the `duel_presentation` launch mode from about 12 hours earlier. | User-reported; no status or journal capture after the reported mode switch is available. Confirm which mode the status field represents, then publish the server's current mode on mode changes or show launch mode and live mode separately with clear labels. | [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md) |
 | Juggernaut performance run hangs with extreme private-memory use; reconnect/disconnect can freeze the game | During performance work reported at 2026-10-22 16:34 (time as supplied), the client stopped writing to its journal at 2026-10-22T20:31:13Z and Windows reported it as not responding. The process was still present, so this is a reported hang, not a confirmed crash. Private memory was about 22.6 GB and physical memory free about 0.4 GB. The player preserved the run state and stopped further load measurements. The player also reports 20–30 second freezes during reconnect or disconnect. | Treat the new run as a reproduced severe stall based on the player's report; no matching journal path was supplied here, and no additional load measurements were taken. Investigate the last journal events and the client frame-loop/thread/queue state at the stall, plus allocation/retention owners for private memory. A single blocked thread or queue is a hypothesis, not an established cause. Consider whether networking and reconnect/disconnect work can be isolated from the game loop after tracing the actual blocking path; do not select a thread redesign before that evidence. | [`performance/performance.md`](performance/performance.md), [`networking/networking.md`](networking/networking.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md) |
 | Build output prints extremely slowly | The player reports that while building the game, output can appear at roughly one character per second. | User-reported; build duration and output-delivery delay have not been separated. Compare the build process's output production with when the dashboard/terminal receives and redraws it; inspect pipe reading, buffering, and progress rendering. Keep useful progress and errors readable without making output capture delay the build or UI. | [`../operations/build-and-exe/build-and-exe.md`](../operations/build-and-exe/build-and-exe.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |
 | Resource diagnostics need to survive game hangs and identify retained memory | The player summarizes current coverage: `performance.resource-window` writes frame timing, some memory readings, allocation totals and counts for instrumented scopes to `events.jsonl`; the allocation tracker counts `new` calls/bytes but lacks caller attribution and outstanding retained memory; the dev-loop watcher checks process health/status but does not continuously record game/system resource use. | User wants broader diagnostics so a hang can still be explained after the game stops writing, memory use can be attributed to allocation owners and tracked while retained, and resource use can be monitored externally. Per-function coverage and always-on monitoring need a low-overhead design and measurement so diagnostics do not worsen the game's resource use. Relates to the Juggernaut hang/high-memory report above. | [`performance/performance.md`](performance/performance.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md), [`../architecture/accessibility/accessibility.md`](../architecture/accessibility/accessibility.md) |
@@ -470,16 +689,16 @@ intentionally skipped for v1.
 | Avatar texture stretching has returned after a reported earlier fix | Player says avatar textures are distorted again; earlier fix details and current cause are unknown | Capture the affected avatar/material and compare the current render path with the earlier fix; distinguish avatar defects from intentional world texture distortion | [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`visuals/visuals.md`](visuals/visuals.md) |
 | JSON actor collision capsule edits do not apply live | Player wants capsule-size changes for all actors to take effect during play; the reported JSON edits did not change live collision | Trace JSON reload through actor-profile application and collision-shape use; establish safe live-update behavior for existing actors | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`actor-presets/actor-presets.md`](actor-presets/actor-presets.md), [`../architecture/json-configuration/json-configuration.md`](../architecture/json-configuration/json-configuration.md) |
 | Juggernaut stutters and NPC motion appears to fall to 6 Hz after two or three NPC deaths | Reported 2026-10-22 18:04–18:05 (time as supplied); game starts smooth, then FPS drops and NPC updates appear choppy after deaths | Compare pre/post-death frame, server-tick and NPC-update costs with corpse/ragdoll/effect creation; corpse involvement is a hypothesis only | [`performance/performance.md`](performance/performance.md), [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
-| Juggernaut NPCs get stuck and avatar visuals/collision fit are poor on Dust2CyberiaV4 | User reports corner-stuck NPCs, chopped avatar textures, and collision sizes that do not fit avatar scale; journal has repeated NPC stuck/recovery events, but map corners and visual causes are unverified | Reproduce and inspect navigation recovery, avatar asset/render state, and actor collision shapes | [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
+| Juggernaut NPCs get stuck and avatar visuals/collision fit are poor on Dust2CyberiaV4 | User reports corner-stuck NPCs, chopped avatar textures, and avatar/world collision sizes that do not fit model scale: a large NPC avatar appears to collide as if it were normal-sized instead of according to its displayed size. Small-avatar mismatch was also reported. Journal has repeated NPC stuck/recovery events, but map corners, visual causes, and collision behavior are unverified. | Reproduce and inspect navigation recovery, avatar asset/render state, and actor collision shapes; establish whether NPC collision dimensions should scale with model size and trace the owning collision-shape/config path before changing it. | [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
 | Dev-loop rainbow clock/status time feels slow to update | Lower-priority player report; documented status animation cadence is one second with immediate redraw on key-triggered status changes | Compare visible update behavior with the dev-loop contract | [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |
 | Enemies are hard to locate and confirmed damage is unclear, especially against the Juggernaut | User wants clearer enemy presentation and visible proof when damage registers; blood, in-world numbers, other effects, and map or movement changes are options for discussion | Open design issue; the feedback approach and whether map or movement changes are needed remain undecided. Existing blood/world-impact consistency and shape tracking stays a separate issue. | [`graphics/graphics-presentation.md`](graphics/graphics-presentation.md), [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), [`weapons/weapons.md`](weapons/weapons.md), [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md) |
 | Player wants to create specs, Blender assets, sounds, and other content while AI codes | Workflow request for useful parallel human/AI work with clear task ownership and a way to integrate results | Workflow, tools, and conflict handling remain open; no implementation or collaboration mechanism is claimed here. | [`../features/live-code-development/live-collaboration-feature.md`](../features/live-code-development/live-collaboration-feature.md), [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md), [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md) |
 | Player jitters far from map geometry and NPCs remain embedded in geometry | User reports both symptoms; cause and whether they share an owner are unconfirmed. NPCs should be moved back out to clear space. | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`movement/movement.md`](movement/movement.md), [`networking/networking.md`](networking/networking.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md) |
 | Griever behavior still does not fully match intent: server position errors, hovering, and a report that it rolls but does not bounce enough | Prior reports and an attempt note exist; current root cause and latest runtime result are not established in this document | [`griever-monster/griever-monster.md`](griever-monster/griever-monster.md), [`movement/movement.md`](movement/movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
 | Custom animation authoring for monsters and attacks | Runtime animation system is specified; Blender export remains a proposal with open format/authoring decisions | [`animations/animations.md`](animations/animations.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md), [`gamemodes/zombie-tower.md`](gamemodes/zombie-tower.md) |
-| Spy Knife shows predicted hit effects but NPC health does not change; PvP is reported absent/nonfunctional | NPC mismatch already documented; PvP report not reproduced | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
+| Spy Knife shows predicted hit effects but NPC health does not change; PvP is reported absent/nonfunctional | NPC mismatch already documented; PvP report not reproduced | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
 | Godball and HAFS need further investigation | Existing Godball and HAFS definitions/specs found; exact failing behavior unspecified | [`weapons/weapons.md`](weapons/weapons.md), `config/weapons.json` (`godball`, `hafs`) |
-| SwordSword needs its own model, attacks, animation, damage, and collision coverage | Informal notes now linked to explicit open issues; no runtime proof here | [`weapons/swordsword.md`](weapons/swordsword.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
+| SwordSword is intended as a strong basic sword but is not functional; attack impulse, damage, model, animation, and collision need review | New user report; the desired attack impulse and damage are not decided. The proposed wielder impulse conflicts with the current SwordSword contract and needs an explicit spec decision. | [`weapons/melee/swordsword.md`](weapons/melee/swordsword.md), [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
 | Ragdoll/limb collision is inconsistent; long-arm grabbing should not tunnel | Existing `RAG-011` already forbids free tunneling; reported runtime gap needs reproduction | [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
 | Weapon collision can snag or launch the Juggernaut out of Juggernaut4 | User-reported; collision shape/bevel proposal is undecided | [`moving-physical-objects/moving-physical-objects.md`](moving-physical-objects/moving-physical-objects.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
 | Entity Editor spawn points should work immediately in Sandbox for players and NPCs | Authored points already serve some gamemode respawn/map-change paths; initial join and `npc_spawn` use separate GLB/local-world paths | [`entity-editor/entity-editor.md`](entity-editor/entity-editor.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md) |
@@ -756,8 +975,8 @@ acceptance rather than bundling it into the respawn bug fix by assumption.
 | Rank | Report | Why this priority | Owner |
 |---|---|---|---|
 | 5 | NPC combat needs stronger challenge, rapid legal weapon rotation, and authored movement sequences; three-NPC play reportedly drops frame rate. | Affects core match quality. First separate behavior tuning from measured performance; current selected resource windows do not establish NPC count as the bottleneck. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`performance/performance.md`](performance/performance.md) |
-| 6 | Knife/melee should be a viable option and a full melee mode should support NPCs; Blender-authored attacks should run on deterministic ticks. | Large feature set with multiple open combat decisions. NPC participation is now specified; hitstun, scoring, recovery, and balance still need design decisions. | [`weapons/melee-weapons.md`](weapons/melee-weapons.md), [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
-| 7 | Bullet-hole and blood marks appear stretched/broken; intended appearance is complete recognizable PNG stamps with state-aware variants. | Visible quality issue with screenshots, but rendering cause and exact alive/dead variant policy need a focused repro and authoring decision. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md) |
+| 6 | Physical melee weapons should support movement-focused modes and NPC combat; SwordSword, Spy Knife, chainsaw, heavy weapons, HAFS, and weapon clashes need owner-level review. | User has proposed per-weapon differences and shared physical blocking/contact. Attack impulse, weapon-clash momentum, HAFS movement restrictions, and mode rules remain open; the SwordSword impulse proposal conflicts with its current behavior contract and needs explicit resolution. | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
+| 7 | Bullet-hole visuals still do not look accurate to the intended appearance; bullet-hole rendering remains visually incorrect despite earlier shape work. | Latest user report (2026-10-26); not visually verified in the current session. Reproduce and compare the in-game marks with the intended reference before deciding whether the renderer, decal placement, or source art needs adjustment. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md) |
 | 8 | Replay export and ragdolls are reported unreliable; export should work headless and show progress every 60 ticks. | Useful creator workflow, but the current report lacks a failing export journal; first isolate recording, serialization, playback, and presentation. | [`replay/replay.md`](replay/replay.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
 
 ### Needs planning: architecture, scale, and future capabilities
@@ -767,6 +986,7 @@ acceptance rather than bundling it into the respawn bug fix by assumption.
 | Multi-core execution, low-power support, and 240 FPS / aspirational 999 FPS. | The current journal is not a per-thread profile. Establish representative hardware, CPU/GPU/frame pacing measurements, determinism constraints, and a staged target before redesigning concurrency. | [`performance/performance.md`](performance/performance.md) |
 | Combined adverse-network and low-render-rate testing (500 ms latency and about 23 FPS). | Existing networking docs define prediction/rewind and network scenarios; combined latency, loss/jitter, and low-FPS acceptance needs a bounded matrix and reproducible harness. The current screenshot shows about 8 ms ping, not this test. | [`networking/networking.md`](networking/networking.md) |
 | Avatar-specific NPC collision, grappling hook/upward mobility, additional movement-tech library, generalized weapon/tool components, vehicles, and Juggernaut crowd readability. | These need explicit gameplay shape, ownership, performance budgets, and acceptance cases. Avoid making one bespoke subsystem for each item. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`movement/movement.md`](movement/movement.md), [`weapons/weapons.md`](weapons/weapons.md), [`gamemodes/juggernaut4.md`](gamemodes/juggernaut4.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md) |
+| Mode-configurable NPC avatar groups and respawn identity. | Reuse masterlist avatar groups for NPC avatar filtering, then let each mode select stable-per-NPC identity or reroll-per-life behavior. TDM should assign one eligible avatar to each NPC and retain that avatar through deaths/respawns; it should not force one shared avatar on the entire team. Selection must key to a persistent NPC/roster identity and the server must replicate the chosen name. Preserve other modes' current or explicitly selected reroll behavior. | [`actor-presets/actor-presets.md`](actor-presets/actor-presets.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`gamemodes/teamdeathmatch.md`](gamemodes/teamdeathmatch.md), `src/npc/npc-avatar.cpp`, `src/network/server-gamemode.cpp`, `src/network/server-npcs.cpp` |
 
 ### Already documented sufficiently; no duplicate spec added
 

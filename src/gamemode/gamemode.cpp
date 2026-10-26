@@ -191,8 +191,6 @@ GamemodeRegistry& GamemodeRegistry::instance()
 
 bool GamemodeRegistry::loadMasterlist()
 {
-    mMasterlistLoaded = false;
-    mMasterlist = json{};
     if (directory_.empty()) return false;
 
     const std::filesystem::path path =
@@ -200,7 +198,7 @@ bool GamemodeRegistry::loadMasterlist()
     std::ifstream file(path);
     if (!file.is_open()) {
         Debug::warn(Debug::Category::Duel,
-            "[GAMEMODE] Missing masterlist %s; using permissive legacy loading.\n",
+            "[GAMEMODE] Missing masterlist %s; retaining previous validation.\n",
             path.string().c_str());
         return false;
     }
@@ -209,19 +207,20 @@ bool GamemodeRegistry::loadMasterlist()
         if (!root.is_object() || !root.contains("settings") ||
             !root["settings"].is_object()) {
             Debug::warn(Debug::Category::Duel,
-                "[GAMEMODE] Masterlist %s has no settings object; using permissive legacy loading.\n",
+                "[GAMEMODE] Masterlist %s has no settings object; retaining previous validation.\n",
                 path.string().c_str());
             return false;
         }
         mMasterlist = std::move(root);
         mMasterlistLoaded = true;
+        mMasterlistWriteTime = getLastWrite(path.string());
         Debug::warn(Debug::Category::Duel,
             "[GAMEMODE] Loaded masterlist %s (%zu settings)\n",
             path.string().c_str(), mMasterlist["settings"].size());
         return true;
     } catch (const std::exception& e) {
         Debug::error(Debug::Category::Duel,
-            "[GAMEMODE] Masterlist parse error in %s: %s; using permissive legacy loading.\n",
+            "[GAMEMODE] Masterlist parse error in %s: %s; retaining previous validation.\n",
             path.string().c_str(), e.what());
         return false;
     }
@@ -365,6 +364,20 @@ void GamemodeRegistry::pollReload()
     if (directory_.empty()) return;
 
     bool changed = false;
+    const std::filesystem::path masterPath =
+        std::filesystem::path(directory_) / "masterlist" / "gamemode-masterlist.json";
+    const auto masterWriteTime = getLastWrite(masterPath.string());
+    if (masterWriteTime != std::filesystem::file_time_type{} &&
+        masterWriteTime != mMasterlistWriteTime) {
+        mMasterlistWriteTime = masterWriteTime;
+        if (loadMasterlist()) {
+            changed = true;
+            // Re-resolve named avatar groups in every mode, including files
+            // whose own timestamp did not change.
+            for (auto& slot : modes_)
+                loadFile(slot.path, slot);
+        }
+    }
     for (auto& slot : modes_) {
         const auto writeTime = getLastWrite(slot.path);
         if (writeTime == std::filesystem::file_time_type{} || writeTime == slot.writeTime)
@@ -554,6 +567,18 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     if (item.is_string()) next.avatar.denied.push_back(item.get<std::string>());
             }
             applyAvatarGroup(next.avatar);
+        }
+
+        if (root.contains("npc_avatar") && root["npc_avatar"].is_object()) {
+            const auto& a = root["npc_avatar"];
+            next.npcAvatar.configured = optBool(a, "enabled", false);
+            next.npcAvatar.group = optString(a, "group", "");
+            next.npcAvatar.spawnPolicy = optString(a, "spawn_policy", "reroll_each_spawn");
+            GamemodeAvatarPolicy group;
+            group.group = next.npcAvatar.group;
+            applyAvatarGroup(group);
+            next.npcAvatar.allowed = std::move(group.allowed);
+            next.npcAvatar.denied = std::move(group.denied);
         }
 
         // ── Payload rules (optional). Map data owns the cart origin, route,

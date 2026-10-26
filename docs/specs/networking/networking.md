@@ -1183,7 +1183,11 @@ Example:
 * Hold or gradually slow.
 * Wait for authoritative state.
 * Do not let the player travel indefinitely based on old information.
-* Todo: put like server disagree effect where its like a sphere that surrounds them? Like shows that we dont know where theure about to go? idk
+An optional uncertainty sphere around an extrapolated remote position may show
+where the client does not know the actor's exact current location. Keep this
+uncertainty display distinct from the server-disagreement correction effect in
+section 74: uncertainty means a fresh authoritative position has not arrived;
+disagreement means the server has corrected or rejected a prediction.
 ________________
 
 
@@ -4345,9 +4349,9 @@ ________________
 
 
 74. Server disagreement feedback
-Corrections should be measurable. Every actual server correction is visible
-once; ordinary prediction smoothing that the server did not correct remains
-quiet.
+Corrections should be measurable. Every actual server correction emits one
+disagreement event; when its visual is enabled, it is shown once. Ordinary
+prediction smoothing that the server did not correct remains quiet.
 A disagreement event contains:
 struct DisagreementEvent
 {
@@ -4390,9 +4394,61 @@ Do not rate-limit distinct server correction events. Deduplicate retransmission
 of the same event ID so one correction creates one visible effect.
 
 
-These should be cool like interesting effects to help players learn the flow of the game and report bugs easier.
-Like if u see a huge sphere that sas “insufficient_ammo” whevner u shoot, its a lot easier to debug
-Alsoit looksk super cool and fun, it has like real time  server tick/heartbeat  having an effect on the game, like a referee 
+The disagreement display is an intentional player-facing feature as well as a
+debug aid. Showing a clear reason such as `attack_no_ammo` helps players
+understand why a predicted action did not happen and helps developers identify
+the failing network/gameplay stage. The effect can make the server's
+authoritative decision feel present, like a referee responding in real time.
+Its presentation must not change authoritative gameplay state.
+
+### Per-reason disagreement display controls
+
+`config/networkingconfig.json` should provide a global visual switch and
+independent Boolean switches for disagreement reasons. A reason switch controls
+only its player-facing effect, text, and sound; server validation, state
+correction, and structured diagnostics continue when its visual is off. For
+example:
+
+```json
+"disagreement_visuals": {
+  "enabled": true,
+  "by_reason": {
+    "position_correction": true,
+    "attack_cooldown": false,
+    "attack_no_ammo": true,
+    "damage_rejected": true,
+    "projectile_mismatch": true
+  }
+}
+```
+
+Each `by_reason` value is a Boolean. `enabled: false` hides every disagreement
+visual; when enabled, each reason uses its own value, with an omitted reason
+following the global value until an explicit default is selected. The reason
+keys must map to stable server reason codes rather than fragile display text.
+Position correction and rejected attacks are separate categories, so a player
+can keep position corrections visible while hiding expected cooldown
+rejections. This configuration is a desired schema; the current networking
+config loader reads only `disagreement_visuals.enabled`, and position-correction
+effects currently remain visible even when that switch is off. Per-reason
+switches have not yet been implemented or runtime-verified.
+
+### Exploratory mode idea: the server as a boss
+
+The player proposes a mode where the server is represented as a powerful
+entity, possibly alongside a Blender-authored camera/entity that flies around
+placing blocks. The mode could let players intentionally enable or disable
+simulated poor networking, with disagreement events contributing to damage
+against that server entity. This is an exploratory theme, not a decided game
+rule. It needs design work on what a disagreement means as a combat event, how
+network conditions are controlled, and how the mode remains fair and
+reproducible. Ordinary production disagreement effects remain diagnostic
+presentation only; accidental packet loss, bugs, or real corrections must not
+become boss damage without an explicit mode-owned, server-authoritative rule.
+
+The directional sphere, reason label, sound, severity, and live tick/heartbeat
+feedback are presentation choices that can be tuned after the event and
+per-reason controls are defined.
 ________________
 
 

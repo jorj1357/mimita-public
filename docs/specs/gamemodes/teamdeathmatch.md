@@ -30,6 +30,10 @@ Status: current first-version behavior
 - TDM keeps health bars visible and requests green teammate and red enemy
   player mesh wireframes through its JSON presentation settings. Death
   ragdolls are enabled for TDM.
+- TDM selects NPC avatars from the masterlist's `competitive_no_headless`
+  group. Each NPC keeps its own selected avatar across deaths and respawns.
+  A different mode may choose another named group and `reroll_each_spawn`
+  through its `npc_avatar` block; the shared spawn owner applies both choices.
 
 Death ragdolls are shown by default through the global ragdoll-death setting.
 A gamemode may explicitly set `ragdoll_enabled: false` to suppress them; TDM

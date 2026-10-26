@@ -250,7 +250,8 @@
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
     "max_external_impulse_speed": 9999.0,
-    "external_impulse_resistance_multiplier": 1.0,
+    // "external_impulse_resistance_multiplier": 1.0,
+    "external_impulse_resistance_multiplier": 10.0,
     // "external_impulse_resistance_multiplier": 99.0,
 
     // Match the current fast Source preset's knockback behavior.
@@ -291,7 +292,8 @@
     // "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
-    "speed_limit": 50.0,
+    // "speed_limit": 50.0,
+    "speed_limit": 20.0,
 
     // "fixed" = acceleration/impulses are prevented from exceeding the limit.
     // "clamp" = final horizontal velocity is clamped after movement.

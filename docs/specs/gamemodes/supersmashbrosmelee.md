@@ -240,7 +240,7 @@ When shield durability reaches zero from a hit or natural exhaustion after 300 h
 
 ## 35. Cross-mode reuse contract
 
-**PROPOSED:** Package reusable move definitions and presentation separately from mode policy. A move can specify attack behavior; a consuming mode decides whether a confirmed hit applies percent, health damage, stagger, or another allowed result. Reuse must pass through existing combat authority and weapon/action identity contracts. Do not assume that fighter percent rules globally replace ordinary health or weapon behavior.
+**PROPOSED:** Package reusable move definitions and presentation separately from mode policy. A move can specify attack behavior; a consuming mode decides whether a confirmed hit applies percent, health damage, stagger, or another allowed result. Reuse must pass through existing combat authority and weapon/action identity contracts. Do not assume that fighter percent rules globally replace ordinary health or weapon behavior. Crouching is also shared actor behavior: the Left Ctrl crouch input and grounded crouch animation established for Melee must be wired through the shared actor input/animation path in every gamemode, rather than being gated on Melee or Counter-Strike.
 
 ## 36. Animation system relationship
 
@@ -385,7 +385,7 @@ illustrative stable IDs; timings and detailed tuning remain open.
 | Airborne: Ctrl held + right click | `b_air_down_strike` | Play the same `downkick_a` animation with the stronger B-move combat values and configured forward/downward impulse. |
 | Q held | `shield` | Hold-based 50-point / 300-tick shield described in section 29. |
 | E | `grab` | Starts the configurable pull grab described in section 30; never freezes the victim. |
-| Left Ctrl without attack | `crouch_or_fast_fall` | Existing crouch/downward movement behavior on ground/air; the pose implementation is open. |
+| Left Ctrl without attack | `crouch_or_fast_fall` | On the ground, enter crouch and play the crouch animation while held; release returns to standing. In air, preserve the downward/fast-fall behavior. This shared action and grounded animation must also be wired into every gamemode. |
 
 Every move definition in the single `weapons.json` move-set entry needs a
 stable action ID, input/chord and grounded/airborne condition, double-click

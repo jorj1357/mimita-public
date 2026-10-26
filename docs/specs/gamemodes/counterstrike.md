@@ -702,12 +702,15 @@ Exact input semantics remain configurable.
 
 19. Crouch
 
-jorj 2026 10 06 1302 todo: crouching just does not exist right now, prob bind it to left control, press down = crouch , press up = no more crouch
-and edit how fast you go into crouch, if there is like a fatigue, e.g. u cant crouch over and over super quick, a cooldown can be editable in a .json contrlling crouch behvaior, etc.
+Counter-Strike requires the shared crouch action. Melee mode has established
+Left Ctrl as the first crouch/down input; the remaining work is to make that
+same input, actor state, and crouch animation available in every gamemode.
+When grounded, holding Left Ctrl enters crouch and plays the crouch animation;
+releasing it returns to standing and the appropriate normal animation. The
+airborne Left Ctrl behavior remains the shared downward/fast-fall action defined
+by Melee, not a second crouch implementation.
 
-Counter-Strike mode requires crouching.
-
-Crouch should eventually affect:
+Crouch behavior may affect:
 
     actor stance;
 
@@ -721,9 +724,12 @@ Crouch should eventually affect:
 
     animation.
 
-Implementation must be generalized.
-
-    Do not add a Counter-Strike-only crouch.
+Use the shared actor input, state, and animation owners. Do not gate crouch
+availability on a gamemode or add a Counter-Strike-only implementation. Any
+mode-specific tuning of crouch speed, collision, or weapon stability belongs in
+configuration and must not duplicate the action or animation path. Whether
+crouch needs a transition speed, fatigue, or cooldown remains open; the general
+movement contract does not add a timer without a defined gameplay need.
 
 20. Fall damage
 

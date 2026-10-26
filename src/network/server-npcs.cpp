@@ -430,6 +430,15 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
 
 void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 {
+    const ServerGamemodeState& modeState = serverGamemodeState();
+    const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
+    if (mode.npcAvatar.configured) {
+        const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
+        assignNpcAvatarForMode(npc, mode.npcAvatar, modeState.matchMode,
+                               profile.avatarForced ? profile.avatarName : "",
+                               profile.allowedAvatars,
+                               profile.deniedAvatars);
+    }
     npc.wakeupTimer = static_cast<float>(
         NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
 
@@ -469,11 +478,13 @@ static void respawnServerNpc(Npc& npc)
     npc.body.respawnPosition = spawnPos;
     // New life: bump the lifecycle counter so clients detect the respawn.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
-    assignNpcAvatar(npc);
+    const Gamemode& mode = GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+    if (!mode.npcAvatar.configured)
+        assignNpcAvatar(npc);
     // Reapply the actor's role stats/loadout for the new life so role identity
     // is never lost across respawn.
     const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
-    if (!profile.avatarName.empty())
+    if (!mode.npcAvatar.configured && !profile.avatarName.empty())
         npc.avatarName = profile.avatarName;
     const int overrideHp = serverGameOverrides().maxHpOverride;
     const int maxHp = overrideHp > 0 ? overrideHp

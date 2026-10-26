@@ -257,5 +257,10 @@
     "allowed": [],
     "denied": [],
     "group": ""
+  },
+  "npc_avatar": {
+    "enabled": false,
+    "group": "",
+    "spawn_policy": "reroll_each_spawn"
   }
 }

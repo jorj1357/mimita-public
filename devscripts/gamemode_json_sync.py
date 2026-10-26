@@ -30,7 +30,7 @@ HEADER = (
     "// config/gamemodes/masterlist/gamemode-masterlist.json\n"
     "// null means inherit the shared config/playervisuals.json value.\n"
 )
-OPTIONAL_ENABLED = ("payload", "npc_targeting", "npc_travel", "avatar")
+OPTIONAL_ENABLED = ("payload", "npc_targeting", "npc_travel", "avatar", "npc_avatar")
 
 
 def default_for(schema: dict):

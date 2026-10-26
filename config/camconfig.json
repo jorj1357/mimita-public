@@ -11,7 +11,8 @@
   "lensDistortionEdgeDarkness": 10.01,
   "lensDistortionPeripheralBlur": 10.01,
   "hitFlinch": {
-    "enabled": true,
+    // "enabled": true,
+    "enabled": false,
     "low": 1.0,
     "high": 99.0,
     "damageAtHigh": 100.0,

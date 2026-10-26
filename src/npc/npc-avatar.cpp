@@ -9,6 +9,7 @@
 */
 #include "npc/npc-avatar.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -19,6 +20,9 @@
 
 #include "avatar/avatar.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
+#include "gamemode/gamemode.h"
+#include "gamemode/match-roles.h"
 #include "npc/npc.h"
 #include "perf/perf-spike.h"
 
@@ -73,10 +77,8 @@ std::string forcedAvatarName()
     return path.parent_path().filename().string();
 }
 
-std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
+const std::vector<std::string>& avatarChoices()
 {
-    const std::string forced = forcedAvatarName();
-    if (!forced.empty()) return forced;
     const auto now = std::chrono::steady_clock::now();
     if (!gAvatarChoicesLoaded ||
         now - gAvatarChoicesLastRefresh >= std::chrono::seconds(1)) {
@@ -85,7 +87,14 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
         gAvatarChoicesLastRefresh = now;
         gAvatarChoicesLoaded = true;
     }
-    const std::vector<std::string>& avatars = gAvatarChoices;
+    return gAvatarChoices;
+}
+
+std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
+{
+    const std::string forced = forcedAvatarName();
+    if (!forced.empty()) return forced;
+    const std::vector<std::string>& avatars = avatarChoices();
     if (avatars.empty()) return {};
     // Deterministic: same NPC + same life (epoch) = same avatar.
     // New life (new epoch) produces a different but stable avatar.
@@ -93,6 +102,23 @@ std::string chooseAvatar(std::uint32_t npcId, std::uint16_t transformEpoch)
     std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
     std::uniform_int_distribution<size_t> dist(0, avatars.size() - 1);
     return avatars[dist(rng)];
+}
+
+bool applyAvatar(Npc& npc, const std::string& name)
+{
+    if (name.empty()) {
+        npc.avatarName.clear();
+        return false;
+    }
+    if (glfwGetCurrentContext() &&
+        !AvatarSystem::instance().applyAvatarToPlayer(npc.body, name)) {
+        npc.avatarName.clear();
+        Debug::warn(Debug::Category::Avatar,
+            "[NPC AVATAR] failed to apply avatar=%s npc=%u\n", name.c_str(), npc.id);
+        return false;
+    }
+    npc.avatarName = name;
+    return true;
 }
 }
 
@@ -121,22 +147,52 @@ bool assignNpcAvatar(Npc& npc)
         Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] no valid avatar folders; npc=%u retains default appearance\n", npc.id);
         return false;
     }
-    // Headless servers have no GL context — skip GPU loading, just store the name.
-    // Clients will load the avatar visuals themselves from the name in snapshots.
-    if (glfwGetCurrentContext()) {
-        if (!AvatarSystem::instance().applyAvatarToPlayer(npc.body, name)) {
-            npc.avatarName.clear();
-            Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] failed to apply avatar=%s npc=%u\n", name.c_str(), npc.id);
-            return false;
-        }
-        Debug::warn(Debug::Category::Avatar,
-            "[NPC AVATAR SERVER] npc=%u avatar='%s' epoch=%u atlas=%u model=%s\n",
-            npc.id, name.c_str(), (unsigned)npc.transformEpoch,
-            npc.body.avatarInstance ? npc.body.avatarInstance->atlasTexture : 0,
-            npc.body.avatarInstance ? npc.body.avatarInstance->definition.playerModel.c_str() : "?");
-    } else {
-        Debug::warn(Debug::Category::Avatar, "[NPC AVATAR] headless server, skipping GL apply for avatar=%s npc=%u\n", name.c_str(), npc.id);
+    return applyAvatar(npc, name);
+}
+
+bool assignNpcAvatarForMode(Npc& npc, const GamemodeNpcAvatarPolicy& policy,
+                            const std::string& modeId, const std::string& preferredName,
+                            const std::vector<std::string>& roleAllowed,
+                            const std::vector<std::string>& roleDenied)
+{
+    const std::string previous = npc.avatarName;
+    const auto& avatars = avatarChoices();
+    const auto permitted = [&](const std::string& name) {
+        return std::find(avatars.begin(), avatars.end(), name) != avatars.end() &&
+            isAvatarAllowedByPolicy(name, policy.allowed, policy.denied) &&
+            isAvatarAllowedByPolicy(name, roleAllowed, roleDenied);
+    };
+    std::vector<std::string> candidates;
+    for (const auto& name : avatars)
+        if (permitted(name)) candidates.push_back(name);
+
+    std::string selected;
+    const bool keep = policy.spawnPolicy == "keep_per_npc";
+    if (!preferredName.empty() && permitted(preferredName))
+        selected = preferredName;
+    else if (keep && permitted(previous))
+        selected = previous;
+    else if (!candidates.empty()) {
+        const std::uint64_t seed = static_cast<std::uint64_t>(npc.id) * 65537ULL +
+            (keep ? 0 : npc.transformEpoch);
+        std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+        std::uniform_int_distribution<size_t> dist(0, candidates.size() - 1);
+        size_t index = dist(rng);
+        if (!keep && candidates.size() > 1 && candidates[index] == previous)
+            index = (index + 1) % candidates.size();
+        selected = candidates[index];
     }
-    npc.avatarName = name;
-    return true;
+    const bool applied = applyAvatar(npc, selected);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar,
+        applied ? StructuredLevel::Important : StructuredLevel::Errors,
+        "npc.avatar.spawn-selection", std::to_string(npc.id),
+        applied ? "selected" : "no-allowed-avatar", npc.transformEpoch,
+        nlohmann::json{{"actor", npc.id}, {"mode", modeId}, {"group", policy.group},
+                       {"spawn_policy", policy.spawnPolicy}, {"epoch", npc.transformEpoch},
+                       {"previous", previous}, {"preferred", preferredName},
+                       {"selected", npc.avatarName}, {"candidate_count", candidates.size()},
+                       {"allowed", applied}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return applied;
 }

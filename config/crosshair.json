@@ -1,6 +1,7 @@
 {
   // "alpha": 255,
-  "alpha": 200,
+  // "alpha": 200,
+  "alpha": 150,
   // "alpha": 100,
   "blue": 255,
   // "blue": 1,
@@ -29,8 +30,8 @@
   // "showRight": false,
   "showTop": true,
   // "showTop": false,
-  // "size": 8,
-  "size": 4,
+  "size": 8,
+  // "size": 4,
   "thickness": 2
   // "thickness": 20
   // "thickness": 1

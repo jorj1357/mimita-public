@@ -437,6 +437,7 @@ struct ActorSpawnProfile
     int weaponSetId = 0;                  // 0 = no override
     std::string startingWeapon;
     std::string avatarName;
+    bool avatarForced = false;
     std::vector<std::string> allowedAvatars;
     std::vector<std::string> deniedAvatars;
     std::vector<std::string> weapons;     // resolved role loadout (may be empty)

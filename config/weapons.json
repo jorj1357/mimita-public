@@ -1462,11 +1462,11 @@
     "pose_id": "large_machine_gun",
     "beam_thickness": 1.0,
     "beam_world_thickness": 0.0,
-    "shooter_knockback": 1.0,
+    "shooter_knockback": 5.0,
     "shooter_knockback_vertical": 0.01,
     "self_impulse_multiplier": 1.0,
     "victim_knockback": 0.01,
-    "victim_knockback_per_damage": 0.5,
+    "victim_knockback_per_damage": 0.1,
     "victim_knockback_vertical_fraction": 0.04,
     "enemy_impulse_multiplier": 1.0,
     "sound": {

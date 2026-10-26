@@ -23,6 +23,8 @@
       // field here.
       "id": "elite_squad",
       "skill_tier": "elite",
+      // "aim_error_deg": 0.6,
+      "aim_error_deg": 10.0,
       "focus_enabled": true,
       "swarm": true,
       "navigation_backend": "recast",
@@ -36,12 +38,19 @@
         "shotgun": 2,
         "revolver": 6,
         "rocket_launcher": 1,
+        // "rocket_launcher": 0,
         "projectile_rifle": 2,
+        // "projectile_rifle": 0,
         "hitscan_rifle": 6,
+        // "hitscan_rifle": 0,
         "big_shotgun": 1,
+        // "big_shotgun": 0,
         "large_machine_gun": 12,
+        // "large_machine_gun": 0,
         "force_punch": 1,
+        // "force_punch": 0,
         "spyknife": 1
+        // "spyknife": 0
       },
       "weapon_visit_jitter_shots": 0,
       "weapon_switch_delay_min": 0.02,
@@ -61,16 +70,21 @@
     {
       // Aiming: smaller aim_error_deg = more accurate shooting.
       "id": "balanced",
+      // 2026 10 26 1530 jorj todo
+      // make this less cofnusing, this does nto change the elite profile aim error
+      // it actuallt is changed up there next to elite_squad 
       "aim_error_deg": 5.0,
+      // "aim_error_deg": 50.0,
       // Seconds to wait before reacting to a newly seen target.
-      // "reaction_delay": 0.15,
-      "reaction_delay": 0.95,
+      "reaction_delay": 0.15,
+      // "reaction_delay": 0.95,
       // Shooting speed multiplier: 1.0 = normal, 2.0 = twice as fast.
-      "fire_cadence_multiplier": 1.0,
+      // "fire_cadence_multiplier": 1.0,
+      "fire_cadence_multiplier": 0.2,
       // Attack willingness: 0.0 = passive, 1.0 = very aggressive.
-      "aggression": 0.6,
+      "aggression": 0.9,
       // Preferred distance during visible combat. This is not movement speed.
-      "preferred_range": 12.0,
+      "preferred_range": 2.0,
       // Target selection: bonus for keeping the current target.
       "target_stickiness": 0.3,
       // How much better a new target must be before switching to it.

@@ -5,10 +5,10 @@
     "Every mode file must contain every setting below, in the same order. The runtime rejects a mode that is missing any field.",
     "required=true is retained for documentation, but complete mode files are required as a whole: the loader and offline checker reject missing fields.",
     "null means inherit the shared config/playervisuals.json value (used by presentation layers and trails).",
-    "Optional policy blocks (payload, npc_targeting, npc_travel, avatar) contain enabled:false when the mode does not use them; the loader then ignores the block and preserves its previous behavior.",
+    "Optional policy blocks (payload, npc_targeting, npc_travel, avatar, npc_avatar) contain enabled:false when the mode does not use them; the loader then ignores the block and preserves its previous behavior.",
     "Nested object schemas use fields. Arrays use item. Objects whose keys are arbitrary use additional.",
     "enum lists the only accepted string values. min/max are inclusive numeric limits.",
-    "avatar_groups are named allow/deny policies. A mode may set avatar.group instead of repeating the lists.",
+    "avatar_groups are named allow/deny policies. A mode may set avatar.group or npc_avatar.group to reuse them.",
     "Run: python devscripts/gamemode_json_sync.py --check  (reports missing/unknown/out-of-order fields)",
     "Run: python devscripts/gamemode_json_sync.py --write  (explicit canonical migration)"
   ],
@@ -1285,12 +1285,36 @@
             "all",
             "gameplay_safe",
             "counterstrike",
-            "competitive"
+            "competitive",
+            "competitive_no_headless"
           ],
           "default": ""
         }
       },
       "description": "Mode-wide avatar policy. Role/actor-preset policy refines it per actor."
+    },
+    "npc_avatar": {
+      "type": "object",
+      "required": false,
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable NPC-only avatar selection from a named avatar group."
+        },
+        "group": {
+          "type": "string",
+          "enum": ["", "all", "gameplay_safe", "counterstrike", "competitive", "competitive_no_headless"],
+          "default": ""
+        },
+        "spawn_policy": {
+          "type": "string",
+          "enum": ["keep_per_npc", "reroll_each_spawn"],
+          "default": "reroll_each_spawn",
+          "description": "Keep each NPC's chosen avatar for its later lives, or choose again on every spawn."
+        }
+      },
+      "description": "NPC avatar group and respawn identity rule; applies to every mode through the shared spawn path."
     }
   },
   "avatar_groups": {
@@ -1339,6 +1363,16 @@
         "abusivegirlheadless3",
         "abusivegirlheadless4",
         "jasonheadless"
+      ]
+    },
+    "competitive_no_headless": {
+      "allowed": [
+        "*"
+      ],
+      "denied": [
+        "*monster*",
+        "*headless*",
+        "*girl*"
       ]
     }
   }

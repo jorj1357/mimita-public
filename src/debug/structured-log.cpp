@@ -164,7 +164,7 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
     if (total <= targetBytes) return 0;
     uint64_t reclaimed = 0;
 
-    std::vector<std::filesystem::path> runs;
+    std::vector<std::filesystem::path> completedLogs;
     std::error_code ec;
     for (std::filesystem::directory_iterator dayIt(root, ec), dayEnd;
          dayIt != dayEnd; dayIt.increment(ec)) {
@@ -175,12 +175,19 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
             if (ec) { ec.clear(); continue; }
             if (runIt->is_directory(ec) && !ec && !samePath(runIt->path(), activeRunDir) &&
                 std::filesystem::is_regular_file(runIt->path() / "events.jsonl", ec) && !ec)
-                runs.push_back(runIt->path());
+                completedLogs.push_back(runIt->path());
+            // Legacy LogManager files sit directly in date folders. They are
+            // included in the tree quota, so completed ones must be eligible
+            // for pruning or one oversized text log can silence every new
+            // canonical journal (including logger.started).
+            else if (runIt->is_regular_file(ec) && !ec &&
+                     runIt->path().extension() == ".txt")
+                completedLogs.push_back(runIt->path());
             ec.clear();
         }
         ec.clear();
     }
-    std::sort(runs.begin(), runs.end(), [](const auto& a, const auto& b) {
+    std::sort(completedLogs.begin(), completedLogs.end(), [](const auto& a, const auto& b) {
         std::error_code ea, eb;
         const auto ta = std::filesystem::last_write_time(a, ea);
         const auto tb = std::filesystem::last_write_time(b, eb);
@@ -188,21 +195,27 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
         return a.string() < b.string();
     });
 
-    for (const auto& run : runs) {
+    for (const auto& run : completedLogs) {
         if (total <= targetBytes) break;
-        const uint64_t runBytes = directoryFileBytes(run);
+        const bool directory = std::filesystem::is_directory(run, ec) && !ec;
+        ec.clear();
+        const uint64_t runBytes = directory ? directoryFileBytes(run) :
+            std::filesystem::file_size(run, ec);
+        if (ec) { ec.clear(); continue; }
         if (!runBytes) continue;
 
-        HANDLE lease = OpenEventA(SYNCHRONIZE, FALSE,
-            runLeaseName(root, run.filename().string()).c_str());
-        if (lease) {
-            CloseHandle(lease);
-            continue;
+        if (directory) {
+            HANDLE lease = OpenEventA(SYNCHRONIZE, FALSE,
+                runLeaseName(root, run.filename().string()).c_str());
+            if (lease) {
+                CloseHandle(lease);
+                continue;
+            }
         }
 
-        // Renaming an open run directory fails on Windows because the logger's
-        // FILE handle does not grant delete sharing. That makes this a safe
-        // active-run check without relying on stale PID metadata.
+        // Renaming an open run directory or legacy text log fails on Windows
+        // when its writer has not granted delete sharing. Never remove an
+        // active writer's file based on stale PID metadata.
         const auto parked = run.parent_path() /
             (".prune-" + run.filename().string() + "-" +
              std::to_string(GetCurrentProcessId()));

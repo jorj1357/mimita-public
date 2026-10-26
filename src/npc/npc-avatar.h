@@ -11,9 +11,15 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 class Npc;
+struct GamemodeNpcAvatarPolicy;
 
 void pollNpcAvatarConfig();
 std::string npcAvatarNameForLife(std::uint32_t npcId, std::uint16_t transformEpoch);
 bool assignNpcAvatar(Npc& npc);
+bool assignNpcAvatarForMode(Npc& npc, const GamemodeNpcAvatarPolicy& policy,
+                            const std::string& modeId, const std::string& preferredName,
+                            const std::vector<std::string>& roleAllowed,
+                            const std::vector<std::string>& roleDenied);
