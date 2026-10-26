@@ -8,7 +8,7 @@
     "lifetime": 0.1,
     "scale": 0.2,
     "end_scale": 0.0,
-    "start_alpha": 1.0,
+    "start_alpha": 0.5,
     "end_alpha": 0.0,
     "color": [1.0, 0.82, 0.05],
     "renderDistance": 1250.0,
@@ -44,8 +44,8 @@
     "lifetime": 0.14,
     "scale": 0.28,
     "end_scale": 0.04,
-    "start_alpha": 1.0,
-    "end_alpha": 0.15,
+    "start_alpha": 0.6,
+    "end_alpha": 0.0,
     "color": [0.18, 0.55, 1.0]
   },
   "heavy_shotgun": {

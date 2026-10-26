@@ -3,14 +3,16 @@
         "r": 0.35,
         "g": 0.35,
         "b": 0.40,
-        "intensity": 1.0
+        // "intensity": 1.0
         // "intensity": 1.5
         // "intensity": 0.1
+        "intensity": 0.5
         // "intensity": 2.0
     },
     "light": {
         "dir": { "x": -0.35, "y": -0.1, "z": -1.0 },
-        "diffuseStrength": 1.0
+        // "diffuseStrength": 1.0
+        "diffuseStrength": 0.3
     },
     "edge": {
         // "darkness": 0.51,
@@ -28,8 +30,10 @@
         "strength": 1.0
     },
     "texture": {
-        // "contrast": 1.0,
-        "contrast": 1.1,
+        "contrast": 1.0,
+        // "contrast": 1.1,
+        // "contrast": 0.9,
+        // "contrast": 0.1,
         // "contrast": 1.5,
         // "contrast": 2.0,
         // "brightness": 1.0

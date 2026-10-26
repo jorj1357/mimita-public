@@ -32,6 +32,17 @@
   legal attack decisions, attack requests, accepted damage, and NPC state
   around a close pass. Keep this separate from NPCs stopping after a teammate
   death until evidence shows they share a cause.
+- **TDM NPC-versus-NPC kills do not show death ragdolls:** The player reports
+  that when an NPC kills another NPC in TDM, no death ragdoll appears, while a
+  player killing an NPC does produce one. The TDM specification and current
+  `config/gamemodes/tdm.json` both say death ragdolls are enabled, so the
+  expected result is a ragdoll for either killer type when the victim's death
+  presentation is enabled. This comparison is user-reported and has not been
+  reproduced from a supplied run journal. In a confirmed TDM run, compare the
+  lethal damage/death transition and corpse-presentation request for NPC-vs-NPC
+  and player-vs-NPC deaths, including victim life identity, resolved mode and
+  global ragdoll settings, request result, and client presentation. Determine
+  the first stage that differs before assuming the setting is ignored.
 - **Repeated position corrections at high speed above map geometry:** The
   player reports that moving far from map geometry at about 250 m/s causes
   repeated snapping each tick to a position above the general map area. The

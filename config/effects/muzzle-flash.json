@@ -1,5 +1,12 @@
 {
-  "enabled": true,
+  // "enabled": true,
+  // disabled 2026 10 26 1556 bc this jorj
+  // this was like the old version of muzzle falsh ebfore doing actual ligths
+  // its cool to see what 
+  // it worked for long time then now its not needed anmore
+  // during work on making presentaiton better, visually readable more
+  "enabled": false,
+
   "color": [1.0, 1.0, 1.0],
   "lifetime": 0.0166,
   "scale": 0.5,
