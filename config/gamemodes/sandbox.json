@@ -89,6 +89,7 @@
     "killfeed": null,
     "ragdolls": null,
     "enemy_healthbars": null,
+    "friendly_healthbars": null,
     "player_outlines": true,
     "friendly_outlines": true,
     "player_wireframes": null,

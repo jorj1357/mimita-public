@@ -935,6 +935,67 @@ static uint32_t payloadSpawnCart(ServerGamemodeState& d)
     return id;
 }
 
+static void payloadSyncCartFromMap(ServerGamemodeState& d, uint32_t tick)
+{
+    if (!d.payloadMode || MapConfigRegistry::instance().mapId() != d.mapId)
+        return;
+    const PayloadConfig& authored = MapConfigRegistry::instance().current().payload;
+    if (!authored.present || !authored.hasCartOrigin)
+        return;
+
+    MimitaGamemode::PayloadRuntime& runtime = d.payloadRuntime;
+    const glm::vec3 size = glm::max(authored.cartSize, glm::vec3(0.1f));
+    const bool sizeChanged = runtime.cartSize != size;
+    const bool transformChanged = runtime.cartOrigin != authored.cartOrigin ||
+        runtime.cartYaw != glm::radians(authored.cartYaw) ||
+        runtime.cartFixedFacing != authored.cartFixedFacing ||
+        runtime.interactionSize != glm::max(authored.interactionSize, glm::vec3(0.1f)) ||
+        runtime.interactionOffset != authored.interactionOffset ||
+        runtime.interactionRotationEuler != authored.interactionRotationEuler;
+    if (!sizeChanged && !transformChanged)
+        return;
+
+    const glm::vec3 oldSize = runtime.cartSize;
+    const glm::vec3 oldPosition = runtime.cartPosition;
+    runtime.cartOrigin = authored.cartOrigin;
+    runtime.cartYaw = glm::radians(authored.cartYaw);
+    runtime.cartFixedFacing = authored.cartFixedFacing;
+    runtime.cartSize = size;
+    runtime.interactionSize = glm::max(authored.interactionSize, glm::vec3(0.1f));
+    runtime.interactionOffset = authored.interactionOffset;
+    runtime.interactionRotationEuler = authored.interactionRotationEuler;
+    MimitaGamemode::payloadRuntimeUpdateTransforms(runtime);
+    runtime.cartDelta = runtime.cartPosition - oldPosition;
+
+    // The reliable spawn carries box dimensions to clients. Recreating the
+    // cart on size changes updates both the server collision mesh and every
+    // client's rendered model/collision box without a new packet type.
+    if (sizeChanged)
+        d.payloadCartEntityId = payloadSpawnCart(d);
+    else if (d.payloadCartEntityId != 0)
+        PhysicalEntitySystem::instance().moveKinematic(
+            d.payloadCartEntityId, runtime.cartTransform, 1.0f / 60.0f);
+
+    ++d.stateVersion;
+    d.stateBroadcastPending = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "payload.cart-map-reloaded", d.mapId,
+        "live cart geometry and transforms applied", tick,
+        nlohmann::json{{"size_changed", sizeChanged},
+                       {"old_size", {oldSize.x, oldSize.y, oldSize.z}},
+                       {"size", {size.x, size.y, size.z}},
+                       {"cart_entity", d.payloadCartEntityId},
+                       {"position", {runtime.cartPosition.x, runtime.cartPosition.y,
+                                     runtime.cartPosition.z}},
+                       {"facing_mode", runtime.cartFixedFacing ? "fixed" : "route"},
+                       {"yaw_degrees", authored.cartYaw},
+                       {"interaction_size", {runtime.interactionSize.x,
+                                             runtime.interactionSize.y,
+                                             runtime.interactionSize.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void serverCommunityStartMatch(bool skipIntermission, const std::string& requestedMode)
 {
     ServerGamemodeState& d = serverGamemodeState();
@@ -3007,11 +3068,6 @@ static void serverPayloadTick(ServerGamemodeState& d,
                               uint32_t tick)
 {
     if (!d.payloadMode || d.phase != DUEL_PHASE_ACTIVE) return;
-
-    // Cart facing is authored map data and may be hot-reloaded live.
-    const MapObjectiveConfig& payloadMap = MapConfigRegistry::instance().current();
-    d.payloadRuntime.cartYaw = glm::radians(payloadMap.payload.cartYaw);
-    d.payloadRuntime.cartFixedFacing = payloadMap.payload.cartFixedFacing;
 
     std::array<MimitaGamemode::PayloadActorView, 64> actors{};
     int actorCount = 0;
@@ -5784,6 +5840,7 @@ void serverGamemodeTick(SOCKET sock,
         MapConfigRegistry::instance().pollReload();
         lastMapConfigPollMs = mapPollNow;
     }
+    payloadSyncCartFromMap(d, tick);
     // The server normally polls gamemode JSON from its outer loop. Keep this
     // bounded fallback here too so a hosted server applies wave tuning without
     // a restart, while avoiding filesystem work on every 60 Hz tick.

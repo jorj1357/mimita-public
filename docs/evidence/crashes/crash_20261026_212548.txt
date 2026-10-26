@@ -1,0 +1,31 @@
+Crash Report (uncaught C++ exception)
+=====================================
+Timestamp (local): 2026-10-26_17-25-48
+Process ID: 28132
+Thread ID: 6696
+Exception type: unknown
+What: (none)
+
+Recent activity (oldest first):
+  [frame-spike] frame=1 totalMs=903.1 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=403.8 scopes=86
+  [frame-spike] frame=33 totalMs=122.8 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=101.7 scopes=93
+  [frame-spike] frame=211 totalMs=110.8 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=90.0 scopes=92
+  [frame-spike] frame=335 totalMs=116.0 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=95.2 scopes=92
+  [frame-spike] frame=337 totalMs=104.1 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=86.4 scopes=80
+  [frame-spike] frame=339 totalMs=106.7 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=88.8 scopes=81
+  [frame-spike] frame=469 totalMs=118.5 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=98.5 scopes=80
+  [frame-spike] frame=757 totalMs=130.5 budgetMs=4.2 top=Rendering::ReplayActors::Actor topMs=99.5 scopes=93
+  [frame-spike] frame=900 totalMs=2602.8 budgetMs=4.2 top=EngineTick::Work topMs=2597.9 scopes=92
+  [frame-spike] frame=2813 totalMs=329.7 budgetMs=4.2 top=EngineTick::Work topMs=325.1 scopes=89
+
+Stack (most recent call first):
+  00 mimita.exe+0x17c91c (link 0x14017c91c)
+  01 ZN10__cxxabiv111__terminateEPFvvE+0x6
+  02 ZSt9terminatev+0x13
+  03 mimita.exe+0x8ed184 (link 0x1408ed184)
+  04 mimita.exe+0x4e20b5 (link 0x1404e20b5)
+  05 initterm_e+0x1ba
+  06 mimita.exe+0x145b (link 0x14000145b)
+  07 BaseThreadInitThunk+0x17
+  08 RtlUserThreadStart+0x2c
+

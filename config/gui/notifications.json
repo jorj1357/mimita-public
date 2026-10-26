@@ -13,7 +13,11 @@
     "padding_y": 8,
     "gap_title_text": 6,
     "gap_text_action": 8,
-    "max_text_height": 1320
+    "max_text_height": 1320,
+    "dev_timer_tip": {
+      "title_color": [1.0, 1.0, 1.0],
+      "text_color": [1.0, 1.0, 1.0]
+    }
   },
   "elements": [
     {

@@ -126,6 +126,7 @@
     "killfeed": true,
     "ragdolls": true,
     "enemy_healthbars": false,
+    "friendly_healthbars": null,
     "player_outlines": false,
     "friendly_outlines": false,
     "player_wireframes": null,

@@ -109,6 +109,7 @@ void engineTick(Engine& engine)
     const uint64_t rewardTicks = gChatUiTickClock.tick();
     updateChatTypingHeartbeat(gChatWindowState, gChatUiTickClock);
     NotificationSystem::instance().advanceTicks();
+    NotificationSystem::instance().updateDevTimerTips();
     for (uint64_t i = 0; i < rewardTicks; ++i) RewardPopupSystem::instance().tick();
     if (GAME_STATE == GAME_PLAYING)
         NotificationSystem::instance().updateTips();

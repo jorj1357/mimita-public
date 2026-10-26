@@ -40,9 +40,14 @@ public:
     void setModeVisibilityOverride(bool hideWorldHealthbars);
     void setModeEnemyVisibilityOverride(bool enabled);
     void clearModeEnemyVisibilityOverride();
+    void setModeFriendlyVisibilityOverride(bool enabled);
+    void clearModeFriendlyVisibilityOverride();
     bool worldHealthbarsVisible() const { return !mHideWorldHealthbarsForMode; }
     bool enemyHealthbarsVisible() const {
         return !mHasEnemyHealthbarsOverride || mEnemyHealthbarsEnabled;
+    }
+    bool friendlyHealthbarsVisible() const {
+        return !mHasFriendlyHealthbarsOverride || mFriendlyHealthbarsEnabled;
     }
     // Melee-style per-mode percent display (replaces the healthbar above head).
     void setModePercentAboveHead(bool percentAboveHead) { mPercentAboveHeadForMode = percentAboveHead; }
@@ -60,5 +65,7 @@ private:
     bool mHideWorldHealthbarsForMode = false;
     bool mHasEnemyHealthbarsOverride = false;
     bool mEnemyHealthbarsEnabled = true;
+    bool mHasFriendlyHealthbarsOverride = false;
+    bool mFriendlyHealthbarsEnabled = true;
     bool mPercentAboveHeadForMode = false;
 };

@@ -148,6 +148,18 @@ void HealthbarConfig::clearModeEnemyVisibilityOverride()
     mEnemyHealthbarsEnabled = true;
 }
 
+void HealthbarConfig::setModeFriendlyVisibilityOverride(bool enabled)
+{
+    mHasFriendlyHealthbarsOverride = true;
+    mFriendlyHealthbarsEnabled = enabled;
+}
+
+void HealthbarConfig::clearModeFriendlyVisibilityOverride()
+{
+    mHasFriendlyHealthbarsOverride = false;
+    mFriendlyHealthbarsEnabled = true;
+}
+
 HealthbarConfigData& HealthbarConfig::edit()
 {
     return mData;

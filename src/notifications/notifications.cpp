@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 #include <shellapi.h>
@@ -32,6 +33,7 @@
 #include "gui/font-stuff/font-loader.h"
 #include "utils/tips.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 using json = nlohmann::json;
 
@@ -102,6 +104,15 @@ std::vector<std::string> splitLines(const std::string& text)
     }
     lines.push_back(text.substr(pos));
     return lines;
+}
+
+void replaceAll(std::string& text, const std::string& token, const std::string& value)
+{
+    size_t pos = 0;
+    while ((pos = text.find(token, pos)) != std::string::npos) {
+        text.replace(pos, token.size(), value);
+        pos += value.size();
+    }
 }
 
 } // namespace
@@ -199,6 +210,17 @@ void NotificationSystem::loadGuiConfig()
         mGapTitleText = r.value("gap_title_text", 6.0f);
         mGapTextAction = r.value("gap_text_action", 8.0f);
         mMaxTextHeight = r.value("max_text_height", 120.0f);
+        if (r.contains("dev_timer_tip")) {
+            const auto& tip = r.at("dev_timer_tip");
+            auto titleColor = tip.at("title_color").get<std::vector<float>>();
+            auto textColor = tip.at("text_color").get<std::vector<float>>();
+            if (titleColor.size() != 3 || textColor.size() != 3 ||
+                !std::all_of(titleColor.begin(), titleColor.end(), [](float c) { return c >= 0.0f && c <= 1.0f; }) ||
+                !std::all_of(textColor.begin(), textColor.end(), [](float c) { return c >= 0.0f && c <= 1.0f; }))
+                throw std::runtime_error("dev_timer_tip colors must be RGB values in [0,1]");
+            mDevTimerTitleColor = std::move(titleColor);
+            mDevTimerTextColor = std::move(textColor);
+        }
         std::error_code ec;
         mGuiConfigLastWrite = std::filesystem::last_write_time(mGuiConfigPath, ec);
         Debug::log(Debug::Category::Gui,
@@ -232,6 +254,75 @@ void NotificationSystem::loadTipsConfig()
                    (unsigned long long)mTipMaxTicks);
     } catch (const std::exception& e) {
         Debug::log(Debug::Category::Gui, "[TIPS CONFIG] parse error: %s\n", e.what());
+    }
+}
+
+void NotificationSystem::loadDevTimerTipsConfig()
+{
+    std::ifstream file(mDevTimerTipsConfigPath);
+    if (!file.is_open()) return;
+    std::error_code ec;
+    mDevTimerTipsConfigLastWrite = std::filesystem::last_write_time(mDevTimerTipsConfigPath, ec);
+    try {
+        const json j = json::parse(file, nullptr, true, true);
+        const bool enabled = j.at("enabled").get<bool>();
+        const auto title = j.at("title").get<std::string>();
+        const auto format = j.at("text_format").get<std::string>();
+        const auto duration = j.at("duration_ticks").get<uint64_t>();
+        const auto mode = j.value("mode", std::string("random"));
+        const auto repeatMessage = j.value("repeat_message", std::string());
+        const auto messages = j.value("messages", std::vector<std::string>());
+        if (title.empty() || format.find("{seconds}") == std::string::npos ||
+            format.find("{message}") == std::string::npos || duration == 0 ||
+            (mode != "random" && mode != "repeat") ||
+            (mode == "random" && messages.empty()) ||
+            (mode == "repeat" && repeatMessage.empty()) ||
+            std::any_of(messages.begin(), messages.end(), [](const std::string& s) { return s.empty(); }))
+            throw std::runtime_error("invalid timer title, format, duration, mode, or messages");
+        if (enabled && !mDevTimerTipsEnabled) mDevTimerLoggedTips = 0;
+        mDevTimerTipsEnabled = enabled;
+        mDevTimerTitle = title;
+        mDevTimerTextFormat = format;
+        mDevTimerDurationTicks = duration;
+        mDevTimerMode = mode;
+        mDevTimerRepeatMessage = repeatMessage;
+        mDevTimerMessages = messages;
+        mLastDevTimerMessage = -1;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "dev_timer_tips.config_loaded", "", "validated local timer tip configuration",
+            (uint32_t)nowTick(), {{"enabled", enabled}, {"mode", mode},
+                                  {"message_count", messages.size()},
+                                  {"duration_ticks", duration}}, __FILE__, __LINE__, __func__);
+    } catch (const std::exception& e) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Errors,
+            "dev_timer_tips.config_rejected", "", e.what(), (uint32_t)nowTick(),
+            {{"path", mDevTimerTipsConfigPath}}, __FILE__, __LINE__, __func__);
+    }
+}
+
+bool NotificationSystem::saveDevTimerTipsConfig()
+{
+    try {
+        json j = {{"enabled", mDevTimerTipsEnabled}, {"title", mDevTimerTitle},
+                  {"text_format", mDevTimerTextFormat},
+                  {"duration_ticks", mDevTimerDurationTicks}, {"mode", mDevTimerMode},
+                  {"repeat_message", mDevTimerRepeatMessage}, {"messages", mDevTimerMessages}};
+        std::ofstream file(mDevTimerTipsConfigPath);
+        if (!file.is_open()) return false;
+        file << j.dump(2) << '\n';
+        file.close();
+        if (!file.good()) return false;
+        std::error_code ec;
+        mDevTimerTipsConfigLastWrite = std::filesystem::last_write_time(mDevTimerTipsConfigPath, ec);
+        return !ec;
+    } catch (const std::exception& e) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Errors,
+            "dev_timer_tips.config_save_failed", "", e.what(), (uint32_t)nowTick(),
+            {{"path", mDevTimerTipsConfigPath}}, __FILE__, __LINE__, __func__);
+        return false;
     }
 }
 
@@ -274,6 +365,12 @@ void NotificationSystem::pollReload()
     }
     {
         std::error_code ec;
+        auto wt = std::filesystem::last_write_time(mDevTimerTipsConfigPath, ec);
+        if (!ec && wt != mDevTimerTipsConfigLastWrite)
+            loadDevTimerTipsConfig();
+    }
+    {
+        std::error_code ec;
         auto wt = std::filesystem::last_write_time(mGuiConfigPath, ec);
         if (!ec && wt != mGuiConfigLastWrite) {
             mGuiConfigLastWrite = wt;
@@ -300,6 +397,40 @@ void NotificationSystem::updateTips()
     }
 }
 
+void NotificationSystem::updateDevTimerTips()
+{
+    if (!mDevTimerTipsEnabled ||
+        (mDevTimerMode == "random" && mDevTimerMessages.empty())) return;
+    const auto seconds = (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - mSessionStart).count();
+    if (seconds == 0 || seconds == mLastDevTimerSecond) return;
+    mLastDevTimerSecond = seconds;
+
+    int index = -1;
+    std::string selectedMessage = mDevTimerRepeatMessage;
+    if (mDevTimerMode == "random") {
+        std::uniform_int_distribution<int> dist(0, (int)mDevTimerMessages.size() - 1);
+        index = dist(mDevTimerRng);
+        if (mDevTimerMessages.size() > 1 && index == mLastDevTimerMessage)
+            index = (index + 1) % (int)mDevTimerMessages.size();
+        mLastDevTimerMessage = index;
+        selectedMessage = mDevTimerMessages[index];
+    }
+    std::string message = mDevTimerTextFormat;
+    replaceAll(message, "{seconds}", std::to_string(seconds));
+    replaceAll(message, "{message}", selectedMessage);
+    const bool posted = pushWithAccent(mDevTimerTitle, message, mDevTimerDurationTicks,
+                                       {}, Accent::DevTimer, true);
+    if (++mDevTimerLoggedTips <= 3 || seconds % 60 == 0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "dev_timer_tips.tick", "", posted ? "notification posted" : "notifications disabled or muted",
+            (uint32_t)nowTick(), {{"elapsed_seconds", seconds}, {"mode", mDevTimerMode},
+                                  {"message_index", index},
+                                  {"posted", posted}}, __FILE__, __LINE__, __func__);
+    }
+}
+
 void NotificationSystem::scheduleNextTip()
 {
     static bool seeded = false;
@@ -318,12 +449,13 @@ void NotificationSystem::push(const std::string& title, const std::string& messa
     pushWithAccent(title, message, durationTicks, action, Accent::Default);
 }
 
-void NotificationSystem::pushWithAccent(const std::string& title,
+bool NotificationSystem::pushWithAccent(const std::string& title,
                                         const std::string& message,
                                         uint64_t durationTicks,
-                                        const Action& action, Accent accent)
+                                        const Action& action, Accent accent,
+                                        bool instantText)
 {
-    if (!mEnabled || tempMuted()) return;
+    if (!mEnabled || tempMuted()) return false;
     pruneExpired();
 
     Notification n;
@@ -338,7 +470,7 @@ void NotificationSystem::pushWithAccent(const std::string& title,
     // timer AFTER typing finishes so the full text stays visible for the
     // requested duration.
     n.revealTicks = 0;
-    if (mTypewriterEnabled && !n.message.empty()) {
+    if (mTypewriterEnabled && !instantText && !n.message.empty()) {
         uint64_t typeTicks =
             (uint64_t)((n.message.size() + mCharsPerTick - 1) / mCharsPerTick) +
             mTypewriterDelayTicks;
@@ -346,11 +478,18 @@ void NotificationSystem::pushWithAccent(const std::string& title,
         n.durationTicks += typeTicks;
     }
 
+    if (accent == Accent::DevTimer && (int)mNotifications.size() >= mMaxCount) {
+        auto oldTimer = std::find_if(mNotifications.begin(), mNotifications.end(),
+            [](const Notification& existing) { return existing.accent == Accent::DevTimer; });
+        if (oldTimer == mNotifications.end()) return false;
+        mNotifications.erase(oldTimer);
+    }
     mNotifications.push_back(n);
     recordHistory(n);
 
     if ((int)mNotifications.size() > mMaxCount)
         mNotifications.erase(mNotifications.begin());
+    return true;
 }
 
 void NotificationSystem::pushCritical(const std::string& title,
@@ -456,6 +595,27 @@ void NotificationSystem::setTipsEnabled(bool on)
 {
     mTipsEnabled = on;
     saveTipsConfig();
+}
+
+bool NotificationSystem::setDevTimerTipsEnabled(bool on)
+{
+    if (mDevTimerTitle.empty() ||
+        (mDevTimerMode == "random" && mDevTimerMessages.empty()) ||
+        (mDevTimerMode == "repeat" && mDevTimerRepeatMessage.empty())) return false;
+    const bool previous = mDevTimerTipsEnabled;
+    mDevTimerTipsEnabled = on;
+    if (!saveDevTimerTipsConfig()) {
+        mDevTimerTipsEnabled = previous;
+        return false;
+    }
+    mLastDevTimerSecond = (uint64_t)std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - mSessionStart).count();
+    if (on) mDevTimerLoggedTips = 0;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Gui, StructuredLevel::Important,
+        "dev_timer_tips.toggled", "", "saved local preference", (uint32_t)nowTick(),
+        {{"enabled", on}, {"elapsed_seconds", mLastDevTimerSecond}}, __FILE__, __LINE__, __func__);
+    return true;
 }
 
 void NotificationSystem::setTempMuteHours(float hours)
@@ -620,6 +780,11 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
         color.g = 0.62f;
         color.b = 1.0f;
     }
+    else if (notif.accent == Accent::DevTimer) {
+        color.r = mDevTimerTextColor[0];
+        color.g = mDevTimerTextColor[1];
+        color.b = mDevTimerTextColor[2];
+    }
     float yPx = sy + vShift - sc.scrollY;
     for (const std::string& ln : L.lines) {
         float lx = sx;
@@ -762,6 +927,10 @@ void NotificationSystem::render(bool inGameplay)
                     tmp.textColor[0] = 0.78f;
                     tmp.textColor[1] = 0.62f;
                     tmp.textColor[2] = 1.0f;
+                } else if (notif.accent == Accent::DevTimer) {
+                    tmp.textColor[0] = mDevTimerTitleColor[0];
+                    tmp.textColor[1] = mDevTimerTitleColor[1];
+                    tmp.textColor[2] = mDevTimerTitleColor[2];
                 }
             }
             UIRect r = {box.x + padX, box.y + padY,

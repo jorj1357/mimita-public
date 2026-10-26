@@ -250,6 +250,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     NotificationSystem::instance().loadConfig();
     NotificationSystem::instance().loadGuiConfig();
     NotificationSystem::instance().loadTipsConfig();
+    NotificationSystem::instance().loadDevTimerTipsConfig();
     Tips::load();
     NotificationSystem::instance().pushBuildNotice();
 

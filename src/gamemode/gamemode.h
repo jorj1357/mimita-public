@@ -150,6 +150,7 @@ struct GamemodePresentation {
     bool hasKillfeed = false;            bool killfeed = true;
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
+    bool hasFriendlyHealthbars = false;  bool friendlyHealthbars = true;
     bool hasPlayerOutlines = false;      bool playerOutlines = true;
     bool hasFriendlyOutlines = false;     bool friendlyOutlines = false;
     bool hasPlayerWireframes = false;     bool playerWireframes = false;

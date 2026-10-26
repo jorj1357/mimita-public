@@ -605,6 +605,12 @@
           "default": null,
           "nullable": true
         },
+        "friendly_healthbars": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
         "player_outlines": {
           "type": "boolean",
           "required": false,

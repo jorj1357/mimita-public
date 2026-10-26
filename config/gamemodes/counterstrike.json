@@ -154,6 +154,7 @@
     "killfeed": true,
     "ragdolls": null,
     "enemy_healthbars": null,
+    "friendly_healthbars": null,
     "player_outlines": false,
     "friendly_outlines": true,
     "player_wireframes": null,

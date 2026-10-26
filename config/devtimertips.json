@@ -1,0 +1,24 @@
+{
+  "duration_ticks": 120,
+  "enabled": true,
+  "messages": [
+    "2026 10 26 NOTHING IS IMPOSSIBLLBLELELEEEE ",
+    "2026 10 26 ITS DOABLE ITS  DOABLE ",
+    "TODO 2026 10 26: payload",
+    "TODO 2026 10 26: vehicles... hmmm",
+    "TODO 2026 10 26: do what is immediately in frnt of me",
+    "TODO 2026 10 26: map editorrr",
+    "TODO 2026 10 26: replay export need bettering",
+    "TODO 2026 10 26: the present is in control now!!!!!!!!!!",
+    "TODO 2026 10 26: go go go focus focus focus Lock in... Lock in... ",
+    "TODO 2026 10 26: avatar replication plzzz",
+    "TODO 2026 10 26: avatar editor better ",
+    "TODO 2026 10 26: survive the disastersss",
+    "TODO 2026 10 26: npc animations better niceer smoother",
+    "TODO 2026 10 26: zombie tower plzzzz full"
+  ],
+  "mode": "repeat",
+  "repeat_message": "TODO 2026 10 26: payload cart path",
+  "text_format": "{seconds}s — {message}",
+  "title": "TIME PLAYED"
+}

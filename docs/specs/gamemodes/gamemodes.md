@@ -119,6 +119,17 @@ shared score-limit check runs before the timeout check, so reaching the goal on
 the timeout tick wins. This setting belongs to mode data and must not require a
 mode-ID-specific code path.
 
+## Per-mode friendly and enemy healthbars
+
+The gamemode masterlist exposes `presentation.friendly_healthbars` and
+`presentation.enemy_healthbars` as independent nullable boolean overrides for
+all modes. A concrete `true` or `false` controls that team's world-space
+healthbars; `null` keeps the shared HUD behavior. `hide_healthbars` remains the
+broader switch that hides all live-world healthbars. The local player's own
+healthbar is controlled separately by `config/healthbar.json`. Payload enables
+friendly healthbars explicitly so its map can show teammate health without
+requiring an enemy-healthbar change.
+
 ## Authored map spawnpoint consumption
 
 `MapConfigRegistry` owns authored map entities. The Entity Editor owns how a

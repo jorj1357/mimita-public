@@ -188,6 +188,15 @@ HealthbarRenderResult drawPlayerHealthbar(
             player.username.c_str());
         return result;
     }
+    if (isLiveWorld && !isEnemy && !isLocalPlayer &&
+        !HealthbarConfig::instance().friendlyHealthbarsVisible())
+    {
+        result.cullReason = HealthbarCullReason::Disabled;
+        Debug::log(Debug::Category::Gui,
+            "[HEALTHBAR] SKIPPED entity=%s reason=ModeFriendlyHealthbarsDisabled\n",
+            player.username.c_str());
+        return result;
+    }
     // Resolve the head/bone anchor only after the disabled gates, so hidden
     // healthbars do not pay for skeleton searches and attachment transforms.
     result.anchor = playerHealthbarAnchor(

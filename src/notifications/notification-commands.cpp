@@ -165,4 +165,29 @@ void registerNotificationCommands()
         },
         "2026-08-03", CommandCategory::UI
     });
+
+    Terminal::instance().registerCommand({
+        "devtimertips", "Show a session timer and personal reminder each second", "devtimertips [0|1]",
+        [](const std::vector<std::string>& args) {
+            NotificationSystem& ns = NotificationSystem::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog(ns.devTimerTipsEnabled()
+                    ? "[DEV TIMER TIPS] enabled" : "[DEV TIMER TIPS] disabled");
+                return;
+            }
+            if (args.size() != 1 || (args[0] != "0" && args[0] != "1")) {
+                Terminal::instance().addLog("[DEV TIMER TIPS] usage: devtimertips [0|1]");
+                return;
+            }
+            const bool on = args[0] == "1";
+            if (!ns.setDevTimerTipsEnabled(on)) {
+                Terminal::instance().addLog("[DEV TIMER TIPS] could not save config/devtimertips.json");
+                return;
+            }
+            Terminal::instance().addLog(on
+                ? "[DEV TIMER TIPS] enabled and saved"
+                : "[DEV TIMER TIPS] disabled and saved");
+        },
+        "2026-10-26", CommandCategory::UI
+    });
 }

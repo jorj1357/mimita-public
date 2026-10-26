@@ -218,6 +218,7 @@ void CommunityMatchClient::reset()
     mForceFirstPerson = false;
     HealthbarConfig::instance().setModeVisibilityOverride(false);
     HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
+    HealthbarConfig::instance().clearModeFriendlyVisibilityOverride();
     HealthbarConfig::instance().setModePercentAboveHead(false);
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
@@ -410,6 +411,11 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             modeConfig.presentation.enemyHealthbars);
     else
         HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
+    if (modeConfig.presentation.hasFriendlyHealthbars)
+        HealthbarConfig::instance().setModeFriendlyVisibilityOverride(
+            modeConfig.presentation.friendlyHealthbars);
+    else
+        HealthbarConfig::instance().clearModeFriendlyVisibilityOverride();
     // Melee-style modes show each fighter's percent above the head instead of
     // the ordinary healthbar (data-driven per mode).
     HealthbarConfig::instance().setModePercentAboveHead(modeConfig.features.percentAboveHead);
@@ -763,6 +769,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         {"killfeed", p.hasKillfeed ? nlohmann::json(p.killfeed) : nlohmann::json(nullptr)},
         {"ragdolls", p.hasRagdolls ? nlohmann::json(p.ragdolls) : nlohmann::json(nullptr)},
         {"enemy_healthbars", p.hasEnemyHealthbars ? nlohmann::json(p.enemyHealthbars) : nlohmann::json(nullptr)},
+        {"friendly_healthbars", p.hasFriendlyHealthbars ? nlohmann::json(p.friendlyHealthbars) : nlohmann::json(nullptr)},
         {"player_outlines", p.hasPlayerOutlines ? nlohmann::json(p.playerOutlines) : nlohmann::json(nullptr)},
         {"friendly_outlines", p.hasFriendlyOutlines ? nlohmann::json(p.friendlyOutlines) : nlohmann::json(nullptr)},
         {"player_wireframes", p.hasPlayerWireframes ? nlohmann::json(p.playerWireframes) : nlohmann::json(nullptr)},

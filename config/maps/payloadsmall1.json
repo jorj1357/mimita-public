@@ -1,0 +1,101 @@
+{
+  "blocks": [],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "entities": [],
+  "glb_objects": [
+    {
+      "id": "node:16",
+      "name": "Cube.6982",
+      "position": [
+        -138.98809814453125,
+        1569.62109375,
+        1473.2774658203125
+      ]
+    }
+  ],
+  "payload": {
+    "cart_origin": {
+      "position": [
+        -77.78800201416016,
+        1618.9339599609375,
+        1378.43994140625
+      ],
+      "yaw": 0.0
+    },
+    "cart_size": [
+      15.0,
+      30.0,
+      10.0
+    ],
+    "facing_mode": "fixed",
+    "interaction_box": {
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        20.0,
+        35.0,
+        15.0
+      ]
+    },
+    "route": [
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_1",
+        "order": 0,
+        "position": [
+          -77.78800201416016,
+          1618.934326171875,
+          1378.43994140625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_2",
+        "order": 1,
+        "position": [
+          -76.78800201416016,
+          1521.5789794921875,
+          1396.236328125
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": true,
+        "id": "route_3",
+        "order": 2,
+        "position": [
+          -84.28700256347656,
+          929.97998046875,
+          1459.0
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      }
+    ]
+  }
+}

@@ -31,6 +31,7 @@ This section is the handoff source of truth for a fresh agent. It describes what
 - The cart, route/checkpoints, overtime, healing, HUD, and NPC cart objective are server-authoritative.
 - The cart renders the authored GLB and uses a separate gameplay collision box.
 - The client HUD shows intermission, countdown/GO, red/blue team labels, timer, cart progress/status, and overtime.
+- `presentation.friendly_healthbars` controls teammate healthbars in the shared gamemode masterlist. Payload sets it to `true`; set it to `false` to hide teammate bars without changing enemy bars.
 - Remote/AI damage presentation was expanded to show damage numbers and hit effects for hits the local client did not predict.
 - A map-editor outliner lists authored entities, blocks, route points, cart origin, and all mesh-bearing GLB nodes from the loaded map.
 - Last verified build: `3212` (debug). Runtime NPC/spawn proof was captured on `3197`; build success is not gameplay acceptance.
@@ -75,7 +76,10 @@ Map/mode data:
 - A living Team A actor whose capsule intersects the transformed interaction box contributes to push speed.
 - A living Team B actor in the box blocks forward movement.
 - Standing on the cart top is supported and carried by the cart delta.
-- Cart facing/yaw is hot-reloaded from map JSON each active Payload tick.
+- Cart origin, size, facing/yaw, and interaction-box size/offset/rotation hot-reload
+  from map JSON during every Payload phase. A size change rebuilds the server
+  collision body and reliably respawns its client mirror so the GLB visual and
+  physical box use the same new dimensions. Route point edits apply next round.
 
 ### 0.4 Current route and checkpoint behavior
 

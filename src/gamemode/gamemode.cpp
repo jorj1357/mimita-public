@@ -635,6 +635,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
+            readFlag("friendly_healthbars", next.presentation.hasFriendlyHealthbars, next.presentation.friendlyHealthbars);
             readFlag("player_outlines", next.presentation.hasPlayerOutlines, next.presentation.playerOutlines);
             readFlag("friendly_outlines", next.presentation.hasFriendlyOutlines, next.presentation.friendlyOutlines);
             readFlag("player_wireframes", next.presentation.hasPlayerWireframes, next.presentation.playerWireframes);

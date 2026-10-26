@@ -13,8 +13,10 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <functional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -27,7 +29,7 @@ public:
     static NotificationSystem& instance();
 
     enum class ActionType { None, OpenUrl, Callback };
-    enum class Accent { Default, Critical, Important, HostCommand };
+    enum class Accent { Default, Critical, Important, HostCommand, DevTimer };
 
     struct Action {
         ActionType type = ActionType::None;
@@ -61,9 +63,11 @@ public:
     void loadConfig();
     void loadGuiConfig();
     void loadTipsConfig();
+    void loadDevTimerTipsConfig();
     void pollReload();
     void advanceTicks(); // step the 60 Hz UI tick clock
     void updateTips();   // fire a periodic tip when the scheduled tick arrives
+    void updateDevTimerTips();
     void render(bool inGameplay);
 
     // API
@@ -80,6 +84,8 @@ public:
                        uint64_t durationTicks = 0);
     void pushBuildNotice();
     void pushTip(bool force = false);
+    bool devTimerTipsEnabled() const { return mDevTimerTipsEnabled; }
+    bool setDevTimerTipsEnabled(bool on);
     bool activateLatestJoinAction();
     void clear() { mNotifications.clear(); }
 
@@ -130,9 +136,11 @@ private:
                      bool mouseUnlocked, float cursorX, float cursorY);
 
     void saveConfig();
-    void pushWithAccent(const std::string& title, const std::string& message,
-                        uint64_t durationTicks, const Action& action, Accent accent);
+    bool pushWithAccent(const std::string& title, const std::string& message,
+                        uint64_t durationTicks, const Action& action, Accent accent,
+                        bool instantText = false);
     void saveTipsConfig();
+    bool saveDevTimerTipsConfig();
     void pruneExpired();
     void recordHistory(const Notification& n);
     void scheduleNextTip();
@@ -147,6 +155,22 @@ private:
     std::filesystem::file_time_type mGuiConfigLastWrite;
     std::string mTipsConfigPath = "config/tipsconfig.json";
     std::filesystem::file_time_type mTipsConfigLastWrite;
+    std::string mDevTimerTipsConfigPath = "config/devtimertips.json";
+    std::filesystem::file_time_type mDevTimerTipsConfigLastWrite;
+    std::chrono::steady_clock::time_point mSessionStart = std::chrono::steady_clock::now();
+    std::mt19937 mDevTimerRng{std::random_device{}()};
+    bool mDevTimerTipsEnabled = false;
+    uint64_t mLastDevTimerSecond = 0;
+    unsigned mDevTimerLoggedTips = 0;
+    uint64_t mDevTimerDurationTicks = 60;
+    std::string mDevTimerTitle;
+    std::string mDevTimerTextFormat;
+    std::string mDevTimerMode = "random";
+    std::string mDevTimerRepeatMessage;
+    std::vector<std::string> mDevTimerMessages;
+    int mLastDevTimerMessage = -1;
+    std::vector<float> mDevTimerTitleColor{1.0f, 1.0f, 1.0f};
+    std::vector<float> mDevTimerTextColor{1.0f, 1.0f, 1.0f};
 
     int mMaxCount = 3;
     uint64_t mDefaultDurationTicks = 300;

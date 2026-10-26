@@ -43,6 +43,34 @@
   and player-vs-NPC deaths, including victim life identity, resolved mode and
   global ragdoll settings, request result, and client presentation. Determine
   the first stage that differs before assuming the setting is ignored.
+- **NPCs need a more expressive shared animation set:** The player wants to
+  experiment with authored, reusable animations for NPCs across avatar types:
+  walking/running, crouching, jumping, airborne/falling/hovering, landing,
+  aiming in/out, and different levels of hurt reaction. Explore choosing and
+  blending these from movement/combat state while keeping AimBody and whole-body
+  pitch/yaw aiming coherent. Assess how animation poses relate to physical
+  parts and hitboxes so poses remain readable and predictable without making
+  hit registration misleading. The existing animation spec already calls for
+  one shared runtime and reusable clips for players and NPCs; first determine
+  whether the current state machine and profiles can express this experiment.
+  This is a design/playtest request, not a confirmed animation defect or a
+  request to create a separate NPC animation path.
+- **Replay export fidelity and crash investigation:** Reported 2026-10-26,
+  with the replay issues dating back about a week (approximately 2026-10-19;
+  onset is approximate). Export needs to work in fullscreen and windowed modes;
+  show ragdolls; and match gameplay presentation, including sound cut/retrigger
+  behavior and blood decals that stay in their intended world-space orientation
+  instead of facing the replay camera. The player reports replay blood currently
+  appears screen-facing. A crash report from 2026-10-26 records an uncaught C++
+  exception with no exception detail or symbolized cause. Its recent-activity
+  list includes repeated large `Rendering::ReplayActors::Actor` frame spikes
+  (up to 403.8 ms) before the crash, making replay actor rendering a lead to
+  investigate, not a confirmed cause. [Crash report](../evidence/crashes/crash_20261026_212548.txt).
+  Compare the same capture in fullscreen and windowed exports; check ragdoll
+  transforms, blood orientation/placement, and sound at replay start, cuts, and
+  retriggers against the source gameplay. Preserve the game build, display mode,
+  replay/capture, output video, and matching journal with each reproduction.
+  Replay fidelity and the crash cause remain unverified.
 - **Repeated position corrections at high speed above map geometry:** The
   player reports that moving far from map geometry at about 250 m/s causes
   repeated snapping each tick to a position above the general map area. The
@@ -567,6 +595,14 @@ human-observed report; the stall duration, first expensive operation, and
 whether the three actions share a cause have not been measured or traced.
 Profile each action separately before choosing a fix.
 
+**Undo visibility issue:** The player reports that pressing Ctrl+Z disables
+entity visibility while editing. Undo should reverse an authored-data edit
+without unexpectedly hiding entity markers. Reproduce with
+`entity_visibility on`, make an undoable map-editor change, and press Ctrl+Z;
+record whether marker visibility changes, which undo/input handler runs, and
+whether the visibility setting is restored by redo, editor exit, or reload.
+The cause and whether this is a reproducible behavior regression are unknown.
+
 **Cart placement question:** The player is confused about where the cart is and
 why it does not automatically move to the start checkpoint. In the current
 runtime, `payloadRuntimeReset` starts `distanceTravelled` at zero, and the
@@ -582,6 +618,53 @@ whether initialization should use the first route point; preserve intentional
 offsets only if the specification says they are supported and visible to the
 author. No runtime change or desired automatic-placement rule is decided by
 this intake.
+
+**Payload authoring should update the active match live:** The player expects
+that adding or correcting the cart origin and route in the map editor takes
+effect in the current Payload session, without restarting the match. In the
+reported `payloadsmall1` session, the server started before the map JSON had a
+Payload section, logged `payload.config-invalid`, and did not create a cart;
+later editor saves/reloads did not produce a `payload.cart-spawned` event. The
+map JSON now contains a cart origin and route points, but the already-running
+match remained without a visible cart. Trace the map-config poll through the
+server's Payload runtime and physical-entity lifecycle. Acceptance: after a
+valid cart origin and at least two enabled route points are saved while a
+Payload match is active, the server creates or updates the cart and clients
+see it at the authored start without restarting the match. Define separately
+how live route edits affect cart progress; do not silently reset or teleport
+the cart without an explicit rule. This is runtime evidence from
+`logs/2026-10-26/20261026_223138/events.jsonl`, not a claim of human visual
+acceptance.
+
+**Cannot grab and ride the Payload cart while ragdolled:** The player reports
+they cannot grab onto the cart and wants to ragdoll, grab it, and be carried
+along while it moves. The existing ragdoll requirements already say that
+moving physical objects can be grabbed (RAG-027) and grabbed points on moving
+entities move with those entities (RAG-028), in
+[`ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md). Once the cart
+is visible, reproduce the grab while ragdolled and trace target eligibility,
+grab acceptance, hand-to-entity attachment, cart movement, and actor carry to
+find the first missing step. Keep this separate from the reported missing-cart
+startup/live-update issue; an invisible cart cannot establish a grab failure.
+This is user-reported and not yet reproduced.
+
+**Requested Payload authoring commands:** The player wants a direct command to
+snap the cart origin to route point 1's position, and a command that assigns a
+selected route point an exact route number without moving the point in the
+world. Their example has ten points whose intended order ends in `..., 8, 10,
+9`; they want to select the point currently last and make it point 9, then
+select the other and make it point 10. The current editor already documents
+`mapeditor cart_origin_to_route_start` (moves the cart origin to the first
+enabled route point) and `mapeditor route_move up|down` (moves selected points
+by one position). Confirm whether the desired origin snap should use route
+array entry 1 even when disabled, or the first enabled route point. For exact
+reordering, define a selected-point command such as `mapeditor route_order
+<number>` that shifts intervening points, keeps their world positions and
+route metadata attached, and renumbers order fields consistently. Validate
+that numbering is one-based in the command while stored order remains
+zero-based if that is the existing schema. This is a command-usability request;
+the currently documented commands do not provide absolute selected-point
+ordering.
 
 Evidence inspected: `src/gamemode/payload-runtime.cpp::payloadRuntimeReset`,
 `payloadRoutePositionAtDistance`, and `payloadRuntimeUpdateTransforms`;
@@ -647,7 +730,7 @@ shards with heavy overlap. The original shape defects were traced to randomized 
 | Rocket Launcher presentation | The rocket needs a more complete explosion animation and presentation. | Desired improvement; exact animation/effect and timing are open. | [`weapons/weapons.md`](weapons/weapons.md), [`visuals/visuals.md`](visuals/visuals.md) |
 | World-hit sound | World-hit sounds should scale with impact force and choose from multiple sounds instead of always using one. The player pointed to `assets/sound/hitworld2.mp3` and said ricochet already has a related precedent. | User-reported desired behavior. Current ricochet behavior and how force should affect loudness, pitch, or sample choice were not verified or specified. | [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md), [`weapons/weapons.md`](weapons/weapons.md), `config/audio-recipes.json` |
 | Sound asset organization | Make sound files easier to find using meaningful folders and short event names, for example `assets/sound/entity/general/death1.wav`, instead of loose, long descriptive filenames. | Organization proposal; confirm naming, variant numbering, and how recipes refer to files before migrating assets. | [`../operations/asset-management/asset-management.md`](../operations/asset-management/asset-management.md), [`../architecture/live-development/hot-audio-contract.md`](../architecture/live-development/hot-audio-contract.md) |
-| Replay export | Replay export reportedly broke after the fullscreen modes were added. | User-reported regression; not reproduced here. | [`replay/replay.md`](replay/replay.md) |
+| Replay export | Export needs to work across fullscreen and windowed modes and preserve gameplay fidelity: ragdolls, sound cuts/retriggers, and world-oriented blood decals should match the source game. Blood is reported to face the replay camera; broader replay issues date back about a week before 2026-10-26. | User-reported; not reproduced here. The linked 2026-10-26 crash report is an uncaught C++ exception with no identified cause; repeated `Rendering::ReplayActors::Actor` frame spikes precede it and are only an investigation lead. Compare a saved source capture and exported replay with build, display mode, journal, and output video recorded. | [`replay/replay.md`](replay/replay.md); [crash report](../evidence/crashes/crash_20261026_212548.txt) |
 | Spy Knife | The equipped Spy Knife model is reportedly missing; attacks appear inconsistent and may show client-side hits without reliably changing authoritative health. The player also wants to know whether Spy Knife uses shared melee action/damage logic or a separate special path. | User-reported; not reproduced. Trace model asset/presentation, attack registration, and authoritative damage separately; compare its implementation path with the shared melee owner before proposing changes. Backstab behavior remains undecided. | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`networking/networking.md`](networking/networking.md) |
 | Duel avatars | Duel needs an avatar limit. | Need a product decision describing which avatars are allowed or how the limit is chosen. | [`gamemodes/duel.md`](gamemodes/duel.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
 | Legacy Duel cleanup | Remove old offline/local Duel gameplay paths. Duel and other gameplay modes must be client/server; there is no supported or maintained offline gameplay implementation. Keep the current networked mode path and remove obsolete local Duel code after tracing its callers. | Requested for future cleanup; exact legacy owners and safe deletion boundary need a repository-wide call-site audit. | [`gamemodes/duel.md`](gamemodes/duel.md), [`gamemodes/gamemodes.md`](gamemodes/gamemodes.md), [`networking/networking.md`](networking/networking.md) |
@@ -1002,10 +1085,10 @@ acceptance rather than bundling it into the respawn bug fix by assumption.
 
 | Rank | Report | Why this priority | Owner |
 |---|---|---|---|
-| 5 | NPC combat needs stronger challenge, rapid legal weapon rotation, and authored movement sequences; three-NPC play reportedly drops frame rate. | Affects core match quality. First separate behavior tuning from measured performance; current selected resource windows do not establish NPC count as the bottleneck. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`performance/performance.md`](performance/performance.md) |
+| 5 | NPC combat needs stronger challenge, rapid legal weapon rotation, authored movement, and more expressive shared animations for locomotion, aiming, airborne states, landing, and hurt reactions. | Affects core match feel and readability. Keep NPCs on the shared actor-animation path; resolve how authored poses compose with AimBody and whole-body aim, and verify animation versus physical hitbox behavior. Separate tuning from measured performance; current selected resource windows do not establish NPC count as the bottleneck. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`animations/animations.md`](animations/animations.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`performance/performance.md`](performance/performance.md) |
 | 6 | Physical melee weapons should support movement-focused modes and NPC combat; SwordSword, Spy Knife, chainsaw, heavy weapons, HAFS, and weapon clashes need owner-level review. | User has proposed per-weapon differences and shared physical blocking/contact. Attack impulse, weapon-clash momentum, HAFS movement restrictions, and mode rules remain open; the SwordSword impulse proposal conflicts with its current behavior contract and needs explicit resolution. | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
 | 7 | Bullet-hole, blood, and world-impact marks appeared as broad overlapping bars/shards rather than their authored images. | **Shard defect fixed and visually accepted in Juggernaut, build 3378 (2026-10-26).** The user confirmed shards disappeared with `decals 0`, then confirmed decals were visible without shards after the shader fix with decals on. First incorrect step: `CosmeticSystem::renderCosmetics()` left `uCosmeticTextureEnabled=1` on the shared shader; `shaders/basic.frag` applied avatar cosmetic UV scaling to later impact PNG quads. The cosmetic renderer now clears that state, and the effect/viewmodel renderers set their own texture state. `hitfx_trace 1` writes correlated `impact_decal.spawn` and `impact_decal.render_submitted` records (texture, scale, dimensions, rotation, UV, alpha, location) to `events.jsonl`; the build 3378 live journal showed loaded textures and equal 2.8-unit bullet-hole and 2.0-unit crack quads. Bullet-hole art/size accuracy beyond the shard defect remains open for visual review; the active config still uses a 7.0 bullet-hole texture scale and high decal caps. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md); owners: `src/avatar/cosmetic-system.cpp::CosmeticSystem::renderCosmetics()`, `src/effects/effect-part-render.cpp::drawTexturedHitParticles()` / `EffectPartSystem::render()` |
-| 8 | Replay export and ragdolls are reported unreliable; export should work headless and show progress every 60 ticks. | Useful creator workflow, but the current report lacks a failing export journal; first isolate recording, serialization, playback, and presentation. | [`replay/replay.md`](replay/replay.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
+| 8 | Replay export, ragdolls, sound timing, and blood presentation need fidelity work across fullscreen and windowed modes; a crash report has replay-actor frame spikes before an unidentified exception. | Valuable creator workflow. The exception report does not prove replay rendering caused the crash; compare capture, serialization, playback, and presentation separately. Existing export goals include headless support and progress every 60 ticks. | [`replay/replay.md`](replay/replay.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md), [crash report](../evidence/crashes/crash_20261026_212548.txt) |
 
 ### Needs planning: architecture, scale, and future capabilities
 
