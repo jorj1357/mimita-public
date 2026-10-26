@@ -74,6 +74,10 @@ void drawTexturedHitParticles(const Camera& camera,
     glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 3);
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    // The complete impact PNG uses its authored 0..1 UV range. Avatar
+    // cosmetic and world texture animation state must not remap it.
+    glUniform1i(glGetUniformLocation(shader, "uCosmeticTextureEnabled"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTexBreatheEnabled"), 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
 
@@ -618,6 +622,9 @@ void EffectPartSystem::render(const Camera& camera) const {
         }
     }
 
+    // The `decals` diagnostic switch must hide already-spawned stamps too.
+    // Keep their lifetime state so turning it back on restores the same scene.
+    if (mDecalsEnabled) {
     for (const SurfaceDecal& decal : mSurfaceDecals) {
         const float dist = glm::length(decal.position - camera.pos);
         const auto& groupCfg = decal.kind == SurfaceDecalKind::Blood
@@ -686,6 +693,7 @@ void EffectPartSystem::render(const Camera& camera) const {
                                {"bitangent", {bitangent.x, bitangent.y, bitangent.z}},
                                {"rotation_radians", decal.rotationRadians},
                                {"texture", texture}, {"texture_scale", texScale},
+                               {"texture_loaded", !texture.empty() && gTextures.getPath(texture) != 0},
                                {"quad_width_world", 2.0f * glm::length(right)},
                                {"quad_height_world", 2.0f * glm::length(up)},
                                {"uv_range", {0.0f, 0.0f, 1.0f, 1.0f}},
@@ -716,6 +724,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             appendTexturedQuad(holeDecalVerts, decal.position, right, up, color);
         else
             appendTexturedQuad(crackDecalVerts, decal.position, right, up, color);
+    }
     }
 
     if (!bloodSprayVerts.empty() && !bloodTexture.empty())

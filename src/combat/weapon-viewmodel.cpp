@@ -545,6 +545,8 @@ void WeaponViewModel::render(const Camera& camera, const Player& player, int equ
     glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &weaponTransform[0][0]);
     glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uCosmeticTextureEnabled"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTexBreatheEnabled"), 0);
     glUniform3f(glGetUniformLocation(shader, "uTint"), mTint.r, mTint.g, mTint.b);
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
         printf("[WEAPON SHADER STATE] entityId=%s weaponId=slot_%d tint=(%.2f,%.2f,%.2f) "

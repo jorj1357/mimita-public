@@ -4,6 +4,7 @@
 #include "config/impact-decals-config.h"
 #include "devtools/terminal.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "entities/player.h"
 #include "camera.h"

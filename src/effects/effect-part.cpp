@@ -94,6 +94,7 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
 #include "config/weapon-tracers-config.h"
 #include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "effects/hit-effects.h"
 #include "effects/muzzle-flash-config.h"
 #include "render/dynamic-light.h"

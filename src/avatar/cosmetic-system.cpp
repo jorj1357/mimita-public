@@ -132,6 +132,19 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     if (!currentShader)
         return;
 
+    // Cosmetics share the main shader with world effects and the viewmodel.
+    // Resolve these once per actor and clear the cosmetic sampling mode below.
+    const GLint modelLoc = glGetUniformLocation(currentShader, "model");
+    const GLint tintLoc = glGetUniformLocation(currentShader, "uTint");
+    const GLint textureLoc = glGetUniformLocation(currentShader, "uTex");
+    const GLint textureEnabledLoc = glGetUniformLocation(currentShader, "uCosmeticTextureEnabled");
+    const GLint offsetLoc = glGetUniformLocation(currentShader, "uCosmeticUvOffset");
+    const GLint scaleLoc = glGetUniformLocation(currentShader, "uCosmeticUvScale");
+    const GLint rotationLoc = glGetUniformLocation(currentShader, "uCosmeticUvRotation");
+    const GLint brightnessLoc = glGetUniformLocation(currentShader, "uCosmeticBrightness");
+    const GLint opacityLoc = glGetUniformLocation(currentShader, "uCosmeticOpacity");
+    const GLint useColorLoc = glGetUniformLocation(currentShader, "uUseColor");
+
     // Find attachment point transforms from player skeleton
     auto findNodeTransform = [&](const std::string& name) -> glm::mat4 {
         for (const auto& part : player.physicalBody.parts)
@@ -188,16 +201,6 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         model = glm::rotate(model, glm::radians(slot.rotation.z), glm::vec3(0, 0, 1));
         model = glm::scale(model, slot.scale);
 
-        GLint modelLoc = glGetUniformLocation(currentShader, "model");
-        GLint tintLoc = glGetUniformLocation(currentShader, "uTint");
-        GLint textureLoc = glGetUniformLocation(currentShader, "uTex");
-        GLint textureEnabledLoc = glGetUniformLocation(currentShader, "uCosmeticTextureEnabled");
-        GLint offsetLoc = glGetUniformLocation(currentShader, "uCosmeticUvOffset");
-        GLint scaleLoc = glGetUniformLocation(currentShader, "uCosmeticUvScale");
-        GLint rotationLoc = glGetUniformLocation(currentShader, "uCosmeticUvRotation");
-        GLint brightnessLoc = glGetUniformLocation(currentShader, "uCosmeticBrightness");
-        GLint opacityLoc = glGetUniformLocation(currentShader, "uCosmeticOpacity");
-        GLint useColorLoc = glGetUniformLocation(currentShader, "uUseColor");
         if (modelLoc >= 0)
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
         if (tintLoc >= 0) {
@@ -268,6 +271,9 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
 
         glBindVertexArray(0);
     }
+
+    if (textureEnabledLoc >= 0)
+        glUniform1i(textureEnabledLoc, 0);
 
     if (blendWas)
         glEnable(GL_BLEND);

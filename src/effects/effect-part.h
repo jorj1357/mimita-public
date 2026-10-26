@@ -8,6 +8,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
