@@ -11,8 +11,9 @@
     },
     "light": {
         "dir": { "x": -0.35, "y": -0.1, "z": -1.0 },
-        // "diffuseStrength": 1.0
-        "diffuseStrength": 0.3
+        "diffuseStrength": 1.0
+        // "diffuseStrength": 0.3
+        // "diffuseStrength": 2.3
     },
     "edge": {
         // "darkness": 0.51,

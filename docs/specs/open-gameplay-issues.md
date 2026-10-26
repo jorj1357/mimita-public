@@ -52,13 +52,30 @@
   geometry. Reproduce while recording client predicted position/velocity,
   server accepted position/velocity, correction reason and magnitude, and
   collision contacts; root cause is unknown.
-- **Dev-loop status stays on an old game mode:** Reported 2026-10-26 09:39 EDT
-  (13:39Z): the player was playing TDM, but the dev-loop still showed the
-  `duel_presentation` launch mode from a session started about 12 hours earlier.
-  This is a user report; no status/journal snapshot was captured after the
-  reported switch to TDM. Determine whether status reports the launch profile
-  or the server's live mode, and update it on mode changes or label those values
-  separately so old launch mode is not presented as the current game mode.
+- **Dev-loop status shows stale journal or mode instead of the live run:**
+  Reported 2026-10-26 09:39 EDT (13:39Z): while playing TDM, the dev-loop still
+  showed the `duel_presentation` launch mode from a session started about 12
+  hours earlier. In a later inspection, the displayed journal was run
+  `20261026_145155`, whose server heartbeat reported Sandbox, not Juggernaut.
+  The user wants the dev-loop to show the journal and active mode belonging to
+  the current live client/server run, rather than an old journal or launch-mode
+  label. This is a user report plus a verified mismatch in the inspected run;
+  the cause is unknown. Trace status data ownership and refresh/update timing,
+  then show the current journal path and authoritative live server mode
+  distinctly from the launch profile. Validate across a mode switch and a new
+  dev-loop run.
+- **Juggernaut blood spray appears only after restarting the game:** The user
+  reports that blood spray is visible in TDM but absent in Juggernaut even
+  though `presentation.blood`, `blood_enabled`, and the shared blood settings
+  are enabled. They report that restarting the game made blood work; the cause
+  is unknown and restart is not yet established as the fix. Inspect the active
+  run's mode presentation application, effect gates, and hit events before and
+  after restart, then reproduce matched hits in TDM and Juggernaut.
+- **Dev-loop launch latency target:** The user wants `mimita.exe` to launch
+  within 1 ms of pressing `1`; this is an ideal target, not a measured current
+  value or a confirmed achievable guarantee. Measure keypress-to-process-start
+  latency across the dev-loop handoff, identify the longest delay, and reduce
+  it while retaining correct build selection and live journal ownership.
 - **NPC avatars need mode-selected groups and per-NPC respawn identity:** The
   player wants modes to select reusable NPC avatar groups from the gamemode
   masterlist and choose whether NPCs reroll avatars on death or keep one avatar
@@ -987,7 +1004,7 @@ acceptance rather than bundling it into the respawn bug fix by assumption.
 |---|---|---|---|
 | 5 | NPC combat needs stronger challenge, rapid legal weapon rotation, and authored movement sequences; three-NPC play reportedly drops frame rate. | Affects core match quality. First separate behavior tuning from measured performance; current selected resource windows do not establish NPC count as the bottleneck. | [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`performance/performance.md`](performance/performance.md) |
 | 6 | Physical melee weapons should support movement-focused modes and NPC combat; SwordSword, Spy Knife, chainsaw, heavy weapons, HAFS, and weapon clashes need owner-level review. | User has proposed per-weapon differences and shared physical blocking/contact. Attack impulse, weapon-clash momentum, HAFS movement restrictions, and mode rules remain open; the SwordSword impulse proposal conflicts with its current behavior contract and needs explicit resolution. | [`weapons/melee/melee-weapons.md`](weapons/melee/melee-weapons.md), [`gamemodes/supersmashbrosmelee.md`](gamemodes/supersmashbrosmelee.md), [`animations/blender-animation-authoring.md`](animations/blender-animation-authoring.md) |
-| 7 | Bullet-hole visuals still do not look accurate to the intended appearance; bullet-hole rendering remains visually incorrect despite earlier shape work. | Latest user report (2026-10-26); not visually verified in the current session. Reproduce and compare the in-game marks with the intended reference before deciding whether the renderer, decal placement, or source art needs adjustment. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md) |
+| 7 | Bullet-hole, blood, and world-impact marks appear as broad overlapping bars/shards and do not look like their authored images. | Latest screenshot (2026-10-26); source audit narrows but does not prove the live cause. The textured stamp path maps the full PNG to square quads and uses RGBA blending with depth testing, so the old crack-segment UV defect is no longer present in source. However, the already-modified local `config/impact_decals.json` sets bullet-hole `textureScale` to 7.0 (radius 0.2 becomes a 1.4-unit quad half-width), world cracks to 2.0-unit diameter stamps, long lifetimes, and caps of 8192; repeated stamps can therefore cover large areas. The screenshot also shows transient particle/sphere effects that use different camera-facing/solid render paths. The render diagnostic currently omits bullet-hole counts/aspect, source texture identity/alpha, and per-hit correlation, so it cannot distinguish overlapping decals from transient effects. Reproduce with a fresh journal and compare a one-hit scene against textures; inspect the effect counts and first divergent draw path before changing settings or renderer. | [`visuals/blood-bulletholes-viscera.md`](visuals/blood-bulletholes-viscera.md); owners: `src/effects/hit-effects.cpp::HitEffects::onHit()`, `src/effects/effect-part.cpp::spawnBulletImpact()` / `spawnWorldCracks()`, `src/effects/effect-part-render.cpp::drawTexturedHitParticles()` / `EffectPartSystem` render batching |
 | 8 | Replay export and ragdolls are reported unreliable; export should work headless and show progress every 60 ticks. | Useful creator workflow, but the current report lacks a failing export journal; first isolate recording, serialization, playback, and presentation. | [`replay/replay.md`](replay/replay.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
 
 ### Needs planning: architecture, scale, and future capabilities

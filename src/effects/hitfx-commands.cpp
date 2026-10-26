@@ -195,6 +195,15 @@ void registerHitFxCommands()
         [](const std::vector<std::string>& args) {
             bool on = args.empty() ? !gHitFxTraceEnabled : (args[0] != "0");
             gHitFxTraceEnabled = on;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "impact_decal.trace", "impact-decal-trace",
+                on ? "enabled" : "disabled", 0,
+                nlohmann::json{{"enabled", on},
+                               {"rendering_category_enabled",
+                                StructuredLogger::instance().shouldLog(
+                                    StructuredCategory::Rendering, StructuredLevel::Important)}},
+                __FILE__, __LINE__, __FUNCTION__);
             Debug::log(Debug::Category::NpcCombat, "[HITFX TRACE] %s\n", on ? "enabled" : "disabled");
             Terminal::instance().addLog(std::string("[HITFX] trace=") + (on ? "1" : "0"));
         }

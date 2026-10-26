@@ -12,6 +12,7 @@
 #include "effects/hit-effects.h"
 #include "config/impact-decals-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config.h"
 #include "replay/replay.h"
 #include "physics/movement/physics-collision.h"
@@ -352,6 +353,24 @@ void EffectPartSystem::spawnBloodEffect(
         // texture; rotation and uniform size still provide visual variety.
         particle.stretch = 1.0f;
         mBloodParticles.push_back(particle);
+        if (gHitFxTraceEnabled) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "impact_blood_spray.spawn", "blood-spray", "entity_hit_blood_spray", 0,
+                nlohmann::json{{"source_actor", sourceActorId}, {"target_actor", targetActorId},
+                               {"position", {particle.position.x, particle.position.y, particle.position.z}},
+                               {"velocity", {particle.velocity.x, particle.velocity.y, particle.velocity.z}},
+                               {"texture", bloodCfg.texture},
+                               {"half_width_world", particle.size},
+                               {"half_height_world", particle.size * particle.stretch},
+                               {"stretch", particle.stretch},
+                               {"stretch_mode", "camera_facing_billboard"},
+                               {"rotation_radians", particle.rotation},
+                               {"alpha", particle.alpha},
+                               {"lifetime_seconds", particle.lifetime},
+                               {"force", force}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     for (int i = 0; i < debrisCount; ++i) {
@@ -601,6 +620,7 @@ void EffectPartSystem::processDeferredBloodDecals()
         {
             const float ra = (float)(rand() % 6284) / 1000.0f;
             decal.axis = glm::vec3(std::cos(ra), std::sin(ra), 0.1234f);
+            decal.rotationRadians = ra;
         }
         const float jr = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
         const float jg = 1.0f + bloodCfg.colorVariation * ((float)(rand() % 2001) / 1000.0f - 1.0f);
@@ -621,7 +641,8 @@ void EffectPartSystem::processDeferredBloodDecals()
         decal.colorEnd = bloodCfg.colorOverLifetime.endColor;
         decal.darkenStartSeconds = bloodCfg.colorOverLifetime.darkenStartSeconds;
         decal.darkenEndSeconds = bloodCfg.colorOverLifetime.darkenEndSeconds;
-        pushSurfaceDecal(decal, bloodCfg.maxCount);
+        pushSurfaceDecal(decal, bloodCfg.maxCount, "entity_hit_blood_surface",
+                         req.sourceActorId, req.targetActorId);
 
         // Record replay event
         ReplayEffectEvent decalEvent;

@@ -89,6 +89,8 @@ enum class SurfaceDecalKind { Blood, BulletHole, Crack };
 
 struct SurfaceDecal
 {
+    uint64_t traceId = 0;
+    mutable bool firstDrawTraced = false;
     glm::vec3 position{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     glm::vec3 axis{0.0f, 0.0f, 1.0f};
@@ -101,6 +103,7 @@ struct SurfaceDecal
     float fadeTime = 5.0f;
     float alpha = 1.0f;
     float baseAlpha = 1.0f;
+    float rotationRadians = 0.0f;
     glm::vec3 colorStart{0.75f, 0.01f, 0.02f};
     glm::vec3 colorEnd{0.18f, 0.0f, 0.0f};
     float darkenStartSeconds = 1.0f;
@@ -194,7 +197,10 @@ private:
     void updateSurfaceDecals(float dt);
     void updatePendingBloodDecals(float dt);
     void processDeferredBloodDecals();
-    void pushSurfaceDecal(const SurfaceDecal& decal, int maxCount);
+    void pushSurfaceDecal(const SurfaceDecal& decal, int maxCount,
+                          const char* reason,
+                          const std::string& sourceActorId = {},
+                          const std::string& targetActorId = {});
     void spawnBloodSurfaceDecals(const glm::vec3& hitPoint,
                                  const glm::vec3& forward,
                                  const glm::vec3& tangent,

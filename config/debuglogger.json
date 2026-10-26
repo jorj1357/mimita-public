@@ -53,7 +53,7 @@
     "chat": { "level": "off", "file_output": false },
     "vip": { "level": "off", "file_output": false },
     "rendering": {
-      "level": "off",
+      "level": "important",
       "file_output": false
     },
     "glb_models": {

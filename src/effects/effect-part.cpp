@@ -332,6 +332,7 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 no
     {
         const float ra = (float)(rand() % 6284) / 1000.0f;
         decal.axis = glm::vec3(std::cos(ra), std::sin(ra), 0.1234f);
+        decal.rotationRadians = ra;
     }
     decal.color = b.color;
     decal.kind = SurfaceDecalKind::BulletHole;
@@ -341,7 +342,7 @@ EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 no
     decal.fadeTime = b.fadeTime * std::clamp(lifetimeScale, 0.0f, 4.0f);
     decal.alpha = b.alpha * std::clamp(alphaScale, 0.0f, 1.0f);
     decal.baseAlpha = decal.alpha;
-    pushSurfaceDecal(decal, b.maxCount);
+    pushSurfaceDecal(decal, b.maxCount, "world_hit_bullet_hole");
     return nullptr;
 }
 
@@ -376,6 +377,7 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
     decal.position = position + n * 0.005f;
     decal.normal = n;
     decal.axis = axis;
+    decal.rotationRadians = rotation;
     decal.color = c.color;
     decal.kind = SurfaceDecalKind::Crack;
     decal.radius = std::max(0.01f, c.length * 0.5f) * std::clamp(sizeScale, 0.0f, 4.0f);
@@ -384,19 +386,50 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
     decal.fadeTime = c.fadeTime * std::clamp(lifetimeScale, 0.0f, 4.0f);
     decal.alpha = c.alpha * std::clamp(alphaScale, 0.0f, 1.0f);
     decal.baseAlpha = decal.alpha;
-    pushSurfaceDecal(decal, c.maxCount);
+    pushSurfaceDecal(decal, c.maxCount, "world_hit_crack");
 }
 
-void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount) {
+void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount,
+                                        const char* reason,
+                                        const std::string& sourceActorId,
+                                        const std::string& targetActorId) {
     if (!mDecalsEnabled) return;
     if (maxCount <= 0)
         maxCount = mDecalCap;
+    SurfaceDecal stored = decal;
+    stored.traceId = static_cast<uint64_t>(mDecalWriteIdx) + 1;
+    stored.firstDrawTraced = false;
     if ((int)mSurfaceDecals.size() < maxCount) {
-        mSurfaceDecals.push_back(decal);
+        mSurfaceDecals.push_back(stored);
     } else {
-        mSurfaceDecals[mDecalWriteIdx % maxCount] = decal;
+        mSurfaceDecals[mDecalWriteIdx % maxCount] = stored;
     }
     mDecalWriteIdx++;
+    if (gHitFxTraceEnabled) {
+        const auto& cfg = ImpactDecalsConfig::instance().data();
+        const auto& group = stored.kind == SurfaceDecalKind::Blood ? cfg.blood
+            : (stored.kind == SurfaceDecalKind::BulletHole ? cfg.bulletHoles : cfg.worldCracks);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "impact_decal.spawn", "decal-" + std::to_string(stored.traceId), reason, 0,
+            nlohmann::json{{"decal_id", stored.traceId},
+                           {"kind", stored.kind == SurfaceDecalKind::Blood ? "blood" :
+                               (stored.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" : "world_crack")},
+                           {"source_actor", sourceActorId}, {"target_actor", targetActorId},
+                           {"position", {stored.position.x, stored.position.y, stored.position.z}},
+                           {"normal", {stored.normal.x, stored.normal.y, stored.normal.z}},
+                           {"axis", {stored.axis.x, stored.axis.y, stored.axis.z}},
+                           {"rotation_radians", stored.rotationRadians},
+                           {"radius_world", stored.radius}, {"texture", group.texture},
+                           {"texture_scale", group.textureScale},
+                           {"quad_width_world", 2.0f * stored.radius * group.textureScale},
+                           {"quad_height_world", 2.0f * stored.radius * group.textureScale},
+                           {"stretch_mode", "uniform_surface_quad"},
+                           {"base_alpha", stored.baseAlpha},
+                           {"lifetime_seconds", stored.lifetime},
+                           {"active_decals", mSurfaceDecals.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position, glm::vec3 direction, const std::string& victim)

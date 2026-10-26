@@ -669,6 +669,34 @@ void EffectPartSystem::render(const Camera& camera) const {
         const float half = std::max(0.001f, decal.radius * texScale);
         const glm::vec3 right = tangent * half;
         const glm::vec3 up = bitangent * half;
+        if (gHitFxTraceEnabled && !decal.firstDrawTraced &&
+            StructuredLogger::instance().shouldLog(
+                StructuredCategory::Rendering, StructuredLevel::Important)) {
+            decal.firstDrawTraced = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "impact_decal.render_submitted",
+                "decal-" + std::to_string(decal.traceId), "first_visible_quad", 0,
+                nlohmann::json{{"decal_id", decal.traceId},
+                               {"kind", decal.kind == SurfaceDecalKind::Blood ? "blood" :
+                                   (decal.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" : "world_crack")},
+                               {"position", {decal.position.x, decal.position.y, decal.position.z}},
+                               {"normal", {n.x, n.y, n.z}},
+                               {"tangent", {tangent.x, tangent.y, tangent.z}},
+                               {"bitangent", {bitangent.x, bitangent.y, bitangent.z}},
+                               {"rotation_radians", decal.rotationRadians},
+                               {"texture", texture}, {"texture_scale", texScale},
+                               {"quad_width_world", 2.0f * glm::length(right)},
+                               {"quad_height_world", 2.0f * glm::length(up)},
+                               {"uv_range", {0.0f, 0.0f, 1.0f, 1.0f}},
+                               {"stretch_mode", "uniform_surface_quad"},
+                               {"base_alpha", decal.baseAlpha},
+                               {"render_alpha", alpha},
+                               {"color", {color.x, color.y, color.z}},
+                               {"camera_distance_world", dist},
+                               {"age_seconds", decal.age}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         if (decal.kind == SurfaceDecalKind::Crack) {
             ++worldCrackStampVisible;
             const float aspect = glm::length(right) /

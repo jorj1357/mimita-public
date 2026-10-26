@@ -301,8 +301,8 @@
     },
 
     "entityImpact": {
-        // "enabled": false,
-        "enabled": true,
+        "enabled": false,
+        // "enabled": true,
         "color": [0.9, 0.02, 0.02],
         "lifetime": 0.05,
         "startRadius": 2.0,
@@ -400,6 +400,7 @@
         "enabled": true,
         // "enabled": false,
         "duration": 0.5,
-        "size": 20.0
+        // "size": 20.0
+        "size": 10.0
     }
 }
