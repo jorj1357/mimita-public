@@ -2,8 +2,8 @@
   "schema_version": 1,
   "readme": [
     "This file is the single contributor guide and validation contract for config/gamemodes/*.json.",
-    "Each mode file contains every setting listed under settings, in the same order.",
-    "required=true means every mode file must contain the setting. required=false means the loader uses the documented default when the key is absent.",
+    "Every mode file must contain every setting below, in the same order. The runtime rejects a mode that is missing any field.",
+    "required=true is retained for documentation, but complete mode files are required as a whole: the loader and offline checker reject missing fields.",
     "null means inherit the shared config/playervisuals.json value (used by presentation layers and trails).",
     "Optional policy blocks (payload, npc_targeting, npc_travel, avatar) contain enabled:false when the mode does not use them; the loader then ignores the block and preserves its previous behavior.",
     "Nested object schemas use fields. Arrays use item. Objects whose keys are arbitrary use additional.",

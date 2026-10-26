@@ -154,8 +154,9 @@ void validateSchema(const json& value, const json& schema,
         if (schema.contains("fields") && schema["fields"].is_object()) {
             const json& fields = schema["fields"];
             for (auto it = fields.begin(); it != fields.end(); ++it) {
-                if (it.value().value("required", false) && !value.contains(it.key()))
-                    errors.push_back(joinPath(path, it.key()) + ": required setting is missing");
+                if (!value.contains(it.key()))
+                    errors.push_back(joinPath(path, it.key()) +
+                        ": missing setting (all masterlist fields are required)");
             }
             for (auto it = value.begin(); it != value.end(); ++it) {
                 if (!fields.contains(it.key())) {
@@ -240,9 +241,12 @@ bool GamemodeRegistry::validateFileJson(const std::string& path,
     }
 
     const json& settings = mMasterlist["settings"];
+    // Every mode file is a complete canonical document. Missing any
+    // masterlist field is rejected at load/reload, so the runtime can never
+    // silently fall back to a default that the contributor did not choose.
     for (auto it = settings.begin(); it != settings.end(); ++it) {
-        if (it.value().value("required", false) && !root.contains(it.key()))
-            errors.push_back(it.key() + ": required setting is missing");
+        if (!root.contains(it.key()))
+            errors.push_back(it.key() + ": missing setting (all masterlist fields are required)");
     }
     for (auto it = root.begin(); it != root.end(); ++it) {
         if (!settings.contains(it.key())) {

@@ -31,8 +31,8 @@
       "id": "red",
       "display_name": "RED",
       "capacity": 1,
-      "role": "elite_fighter",
-      "npc_role": "elite_npc",
+      "role": "duel_monster_test_red",
+      "npc_role": "duel_monster_test_red_npc",
       "spawn_group": "",
       "spawn_tag_contains": "",
       "spawn_tag_excludes": "",
@@ -47,8 +47,8 @@
       "id": "blue",
       "display_name": "BLUE",
       "capacity": 1,
-      "role": "elite_fighter",
-      "npc_role": "elite_npc",
+      "role": "duel_monster_test_blue",
+      "npc_role": "duel_monster_test_blue_npc",
       "spawn_group": "",
       "spawn_tag_contains": "",
       "spawn_tag_excludes": "",
@@ -128,7 +128,11 @@
       0
     ],
     "friendly_wireframe_color": null,
-    "enemy_wireframe_color": null,
+    "enemy_wireframe_color": [
+      255.0,
+      1.0,
+      1.0
+    ],
     "enemy_trail": {
       "enabled": null,
       "minSpeed": null,

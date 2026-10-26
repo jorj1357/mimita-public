@@ -47,6 +47,122 @@ Invalid JSON must not partially replace a working configuration. Match-critical
 values should be staged and applied at a safe boundary instead of changing
 halfway through a tick.
 
+## Gamemode masterlist and canonical mode files (2026-10-25)
+
+`config/gamemodes/masterlist/gamemode-masterlist.json` is the single contract
+for every file in `config/gamemodes/*.json`. It defines the supported keys, the
+canonical field order, types, ranges, enums, nullable fields, and defaults.
+
+### Completeness and ordering
+
+Every gamemode file is a complete canonical document:
+
+- It contains every top-level and nested field listed under `settings` in the
+  masterlist, in the masterlist's field order.
+- Optional feature blocks are still present. They use an explicit
+  `enabled: false`, so the file is structurally complete without changing
+  runtime behavior.
+- `null` is the explicit “inherit the shared value” marker for presentation
+  and trail fields. `null` is accepted only where the masterlist marks the
+  field `nullable`.
+- Per-mode values are preserved. Synchronization adds missing fields and
+  reorders keys; it does not substitute generic values for existing values.
+
+`devscripts/gamemode_json_sync.py` owns the canonicalization rule:
+
+```text
+python devscripts/gamemode_json_sync.py --check
+```
+
+`--check` reports missing fields, unknown fields, and field-order mismatches
+without writing. It is the completeness/order gate for contributors and for
+`config_selftest.py`.
+
+```text
+python devscripts/gamemode_json_sync.py --write
+```
+
+`--write` is the explicit one-time or intentional migration. It reads each
+mode, preserves existing values, fills missing fields from the masterlist,
+writes `null` where the contract means inherit, and emits a top comment pointing
+at the masterlist. Ordinary loading and ordinary `--check` never rewrite a
+mode file.
+
+### Runtime validation
+
+The runtime loader in `src/gamemode/gamemode.cpp` validates every mode before
+installing it:
+
+- Missing any masterlist field is an error. Required-field checks are retained
+  for documentation, but the complete-file rule is enforced for all fields.
+- Unknown top-level or nested fields are errors.
+- Wrong JSON types, out-of-range numbers, and values outside an `enum` are
+  errors.
+- `null` is accepted only for fields the masterlist marks `nullable`.
+- A mode’s declared `id` must match its filename stem.
+- Duplicate mode ids are rejected during directory loading.
+- A malformed file discovered during initial loading does not register a default
+  or partially initialized mode.
+- During hot reload, an invalid replacement is rejected and the last known-good
+  mode stays active.
+
+Validation errors are written to the current run’s `events.jsonl` as
+`config.gamemode.invalid`, with the file path and exact setting path. The same
+error is shown through the existing notification path as an in-game
+`CONFIG ERROR` tip, rate-limited so a repeated invalid file cannot flood the
+player.
+
+`python devscripts/config_selftest.py` runs the same masterlist/schema checks
+offline. Its gamemode section also runs the canonical `--check`, so a mode that
+is missing a field, has an unknown field, or is out of order is reported before
+it reaches a live match.
+
+### Behavior-preserving defaults
+
+The masterlist distinguishes three cases:
+
+- A concrete default is written when the runtime loader applies that value
+  regardless of whether the key was present.
+- `null` is written for a presentation/trail override that should inherit
+  `config/playervisuals.json` or another shared owner.
+- `enabled: false` is written for an optional policy block that the mode does
+  not use.
+
+This is why adding every field to every mode does not silently enable payload
+rules, NPC targeting, avatar policy, or presentation overrides. For example,
+`payload.enabled: false` means the loader leaves `GamemodePayload.configured`
+false, exactly like an omitted block.
+
+### What still requires code changes
+
+Completeness and validation guarantee structure, types, ranges, and order. They
+do not make an unread field take effect:
+
+1. Add a setting to the masterlist first, including its type, range, default,
+   nullability, and description.
+2. Make the owning loader consume it. A field that is only listed in the
+   masterlist but ignored by the loader is a contract violation.
+3. Add it to the runtime validation path and the offline validator through the
+   same masterlist.
+4. Run `python devscripts/gamemode_json_sync.py --write` to update every mode,
+   then `--check`.
+5. Run `python devscripts/config_selftest.py`, the focused gamemode selftest, and
+   a live server/client scenario when the value affects gameplay or
+   presentation.
+
+### Related owners
+
+- Masterlist and validator: `config/gamemodes/masterlist/gamemode-masterlist.json`,
+  `src/gamemode/gamemode.cpp`, `src/gamemode/gamemode.h`.
+- Offline canonicalizer: `devscripts/gamemode_json_sync.py` and
+  `devscripts/config_selftest.py`.
+- Runtime presentation application: `src/network/community-match-client.cpp`.
+- Shared presentation values: `config/playervisuals.json`, `config/hitfx.json`,
+  `src/config/player-visuals-config.cpp`.
+- Runtime diagnostics: `config.gamemode.invalid`,
+  `player_visuals.config.rejected`, `player_visuals.outline`, and
+  `player_visuals.trail` in the current `events.jsonl`.
+
 ## Configuration families
 
 These are the hot-reload families that are already heavily used or should be

@@ -527,6 +527,18 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
         }
     }
+    // A role/preset without its own weapon set inherits the active mode's
+    // authoritative set. Apply the same inventory to NPCs that player spawn
+    // already resolves from communityWeaponSetId; filtering an NPC's generic
+    // default inventory can otherwise leave it with only a subset of the set.
+    if (out.weaponSetId <= 0 && out.weapons.empty() && d.enabled &&
+        d.communityWeaponSetId > 0) {
+        if (const CommunityWeaponSet* set =
+                CommunityServerConfig::instance().weaponSetById(d.communityWeaponSetId)) {
+            out.weaponSetId = set->id;
+            out.weapons = set->weapons;
+        }
+    }
     return out;
 }
 
@@ -3667,6 +3679,8 @@ void assignMatchParticipants(ServerGamemodeState& d,
                     desc.behaviorProfileId = resolveNpcBehaviorProfileId(
                         gm, def->behaviorProfile);
             }
+            const ActorSpawnProfile resolvedProfile =
+                serverResolveActorSpawnProfile(id);
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.roster-profile-resolved", std::to_string(id),
@@ -3680,6 +3694,10 @@ void assignMatchParticipants(ServerGamemodeState& d,
                     {"mode_preset", gm.actorPresetId},
                     {"movement_preset", desc.movementProfileId},
                     {"behavior_profile", desc.behaviorProfileId},
+                    {"weapon_set_id", resolvedProfile.weaponSetId},
+                    {"weapon_count", resolvedProfile.weapons.size()},
+                    {"weapons", resolvedProfile.weapons},
+                    {"starting_weapon", resolvedProfile.startingWeapon},
                     {"source", def ? "explicit_team_role" : "missing_role"}},
                 __FILE__, __LINE__, __FUNCTION__);
         }

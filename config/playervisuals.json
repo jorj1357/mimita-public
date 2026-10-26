@@ -15,16 +15,16 @@
   },
   "enemy": {
     "contrast": { "enabled": false, "brightness": 1.15, "tint": [255, 170, 90], "tintStrength": 0.1 },
-    "trail": { "enabled": true, "minSpeed": 0.01, "sampleIntervalSeconds": 0.1, "lifetimeSeconds": 1.4, "maxSamples": 128, "width": 0.55, "alpha": 0.9, "color": [255, 50, 45] },
+    "trail": { "enabled": false, "minSpeed": 0.01, "sampleIntervalSeconds": 0.1, "lifetimeSeconds": 0.5, "maxSamples": 128, "width": 1.55, "alpha": 0.9, "color": [255, 50, 45] },
     "pointLight": { "enabled": false, "intensity": 2.0, "radius": 12.0, "heightOffset": 1.0, "color": [255, 110, 45] },
-    "outline": { "enabled": true, "thickness": 2.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true },
+    "outline": { "enabled": true, "thickness": 25.0, "alpha": 1.0, "color": [255, 255, 255], "visibleThroughWalls": false, "disappearOnDeath": true },
     "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05 },
     "wireframe": { "enabled": false, "alpha": 0.9, "color": [255, 255, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true }
   },
   "teammate": {
     "pointLight": { "enabled": true, "intensity": 2.0, "radius": 12.0, "heightOffset": -91.0, "color": [255, 110, 45] },
     "contrast": { "enabled": false, "brightness": 0.0, "tint": [255, 255, 255], "tintStrength": 0.0 },
-    "trail": { "enabled": false, "minSpeed": 3335.0, "sampleIntervalSeconds": 0.035, "lifetimeSeconds": 0.22, "maxSamples": 12, "width": 3.0, "alpha": 0.65, "color": [80, 200, 255] },
+    "trail": { "enabled": false, "minSpeed": 0.01, "sampleIntervalSeconds": 0.035, "lifetimeSeconds": 0.22, "maxSamples": 12, "width": 3.0, "alpha": 0.65, "color": [80, 200, 255] },
     "outline": { "enabled": false, "thickness": 1.0, "alpha": 0.5, "color": [0, 255, 0], "visibleThroughWalls": false, "disappearOnDeath": true },
     "capsule": { "enabled": false, "geometrySource": "collision", "alpha": 0.15, "color": [0, 0, 0], "frontFaceCull": true, "backFaceCull": false, "depthTest": true, "depthWrite": false, "visibleThroughWalls": false, "scale": 1.05 },
     "wireframe": { "enabled": false, "alpha": 0.9, "color": [100, 200, 255], "lineWidth": 1.0, "visibleThroughWalls": false, "disappearOnDeath": true }

@@ -4,7 +4,7 @@
 - Timestamp: 2026-10-25T18:40:28Z.
 - Branch: `main`.
 - HEAD observed: `836330ef`.
-- Latest verified build: `3352`.
+- Latest verified build: `3355`.
 - Runtime verification build: `3349`.
 - Skills read: `docs/skills/spec-behavior-review-v1.md`,
   `docs/skills/logging-checker-v1.md`.
@@ -165,3 +165,24 @@ preserved and not claimed as this session's work.
   only the modes where visibility is desired.
 - Confirm whether SpyKnife/force-punch should eventually participate in the
   rapid weapon cycle once the shared NPC melee action path is wired.
+
+## Follow-up: enforced completeness and JSON contract documentation
+
+- `docs/architecture/json-configuration/json-configuration.md`: added the
+  “Gamemode masterlist and canonical mode files” contract. It documents the
+  complete-file/order rule, `null` inherit semantics, `enabled:false` optional
+  blocks, `--check`/`--write`, runtime validation, last-known-good reload,
+  diagnostics/tips, behavior-preserving defaults, how to add a setting, and
+  which owners are involved.
+- `src/gamemode/gamemode.cpp`: missing nested fields are now rejected, not only
+  missing top-level fields. Every masterlist field is required for a complete
+  mode file, so a mode can no longer load with a silently absent optional field.
+- `devscripts/config_selftest.py`: the offline schema check also requires every
+  nested masterlist field.
+- Build `3355`: SUCCESS.
+- Tampered-file proof: a temporary copy of `tdm.json` with
+  `presentation.enemy_outline_alpha` removed produced
+  `tdm.json -> presentation.enemy_outline_alpha: missing setting
+  (all masterlist fields are required)`, `loaded=0`, exit 1.
+- Real mode files: `--gamemode-config-validate` still reports
+  `masterlist=1 loaded=16 errors=0`.

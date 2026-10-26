@@ -269,8 +269,8 @@ def _validate_schema(value, schema, path, errors):
         fields = schema.get("fields")
         if isinstance(fields, dict):
             for key, field_schema in fields.items():
-                if field_schema.get("required") and key not in value:
-                    errors.append(f"{path}.{key}: required setting is missing")
+                if key not in value:
+                    errors.append(f"{path}.{key}: missing setting (all masterlist fields are required)")
             for key, item in value.items():
                 if key not in fields:
                     errors.append(f"{path}.{key}: unknown setting")
@@ -298,8 +298,8 @@ def validate_gamemode_configs(errors):
             continue
         count += 1
         for key, schema in settings.items():
-            if schema.get("required") and key not in root:
-                errors.append(f"{source}: {key}: required setting is missing")
+            if key not in root:
+                errors.append(f"{source}: {key}: missing setting (all masterlist fields are required)")
         for key, value in root.items():
             if key not in settings:
                 errors.append(f"{source}: {key}: unknown setting")

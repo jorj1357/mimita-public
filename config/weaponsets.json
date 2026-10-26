@@ -77,6 +77,20 @@
       ]
     },
     {
+      "id": 29,
+      "key": "tdm",
+      "name": "Team Deathmatch",
+      "description": "Team Deathmatch loadout: Revolver (1), Shotgun (2), Swordsword (3), Rocket Launcher (4), Large Machine Gun (5).",
+      "weapons": [
+        "revolver",
+        "shotgun",
+        "swordsword",
+        "rocket_launcher",
+        "large_machine_gun",
+        "nothing"
+      ]
+    },
+    {
       "id": 7,
       "key": "juggernaut",
       "name": "Juggernaut (role)",

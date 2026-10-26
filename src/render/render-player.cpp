@@ -146,8 +146,11 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
         const glm::vec3 segment = end - start;
         if (glm::dot(segment, segment) <= 0.000001f) continue;
         const glm::vec3 direction = glm::normalize(segment);
-        glm::vec3 side = glm::cross(direction, cam.front);
-        if (glm::dot(side, side) <= 0.000001f) side = glm::cross(direction, cam.up);
+        // Keep the ribbon's front face toward the camera. The previous order
+        // faced away from the camera, so inherited back-face culling could make
+        // trails disappear as the view angle changed.
+        glm::vec3 side = glm::cross(cam.front, direction);
+        if (glm::dot(side, side) <= 0.000001f) side = glm::cross(cam.up, direction);
         if (glm::dot(side, side) <= 0.000001f) side = cam.right;
         side = glm::normalize(side) * halfWidth;
         const glm::vec3 startLeft = start - side;
@@ -161,7 +164,7 @@ void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityI
         gTrailBatch.push_back({endRight, color});
         gTrailBatch.push_back({endLeft, color});
     }
-    emitTrailState("drawn", speed, history.points.size());
+    emitTrailState("batched", speed, history.points.size());
 
     static auto lastPrune = Clock::now();
     if (now - lastPrune >= std::chrono::seconds(1)) {
@@ -213,7 +216,7 @@ void logPlayerRenderState(const Player& player, uint32_t entityId, bool isLocal,
         lastStateByActor.erase(lastStateByActor.begin());
     lastStateByActor[key] = state;
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::Rendering, StructuredLevel::Important,
+        StructuredCategory::General, StructuredLevel::Important,
         "client.actor.render_state", std::to_string(entityId),
         "player render gate or avatar readiness changed",
         static_cast<uint32_t>(player.movementSimulationTick), fields,
@@ -437,7 +440,7 @@ void renderPlayerInternal(
                 validBatches += (uint32_t)mesh.batches.size();
             }
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::Rendering, StructuredLevel::Important,
+                StructuredCategory::General, StructuredLevel::Important,
                 "client.actor.draw-submission", std::to_string(networkEntityId),
                 "remote actor body submission", 0,
                 {{"actor_id", networkEntityId},
@@ -653,6 +656,7 @@ void drawPlayerTrailBatch(const Camera& cam)
     GLint oldBlendSrcRgb = GL_ONE, oldBlendDstRgb = GL_ZERO;
     GLint oldBlendSrcAlpha = GL_ONE, oldBlendDstAlpha = GL_ZERO;
     GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST), blendWas = glIsEnabled(GL_BLEND);
+    GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
     GLboolean depthWriteWas = GL_TRUE;
     glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldBuffer);
@@ -674,6 +678,7 @@ void drawPlayerTrailBatch(const Camera& cam)
     glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 2);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);
     glBindVertexArray(vao);
@@ -687,6 +692,20 @@ void drawPlayerTrailBatch(const Camera& cam)
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTrailBatch.size());
+    static auto lastTrailBatchEvent = std::chrono::steady_clock::time_point{};
+    const auto trailBatchNow = std::chrono::steady_clock::now();
+    if (lastTrailBatchEvent == std::chrono::steady_clock::time_point{} ||
+        trailBatchNow - lastTrailBatchEvent >= std::chrono::seconds(1)) {
+        lastTrailBatchEvent = trailBatchNow;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "player_visuals.trail.batch", "player_trails",
+            "camera-facing trail vertices submitted with culling disabled", 0,
+            nlohmann::json{{"vertex_count", gTrailBatch.size()},
+                           {"draw_submitted", true},
+                           {"face_culling", false}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     glBindVertexArray((GLuint)oldVao);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)oldBuffer);
     if (useColorLoc >= 0) glUniform1i(useColorLoc, oldUseColor);
@@ -695,6 +714,7 @@ void drawPlayerTrailBatch(const Camera& cam)
     glDepthMask(depthWriteWas);
     if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (cullWas) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
     glUseProgram((GLuint)oldProgram);
 }
 

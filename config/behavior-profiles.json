@@ -63,7 +63,8 @@
       "id": "balanced",
       "aim_error_deg": 5.0,
       // Seconds to wait before reacting to a newly seen target.
-      "reaction_delay": 0.15,
+      // "reaction_delay": 0.15,
+      "reaction_delay": 0.95,
       // Shooting speed multiplier: 1.0 = normal, 2.0 = twice as fast.
       "fire_cadence_multiplier": 1.0,
       // Attack willingness: 0.0 = passive, 1.0 = very aggressive.

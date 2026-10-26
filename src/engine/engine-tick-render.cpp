@@ -597,22 +597,20 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
               weapons.render(camera, player); }
         if (mpContext.active) {
             MIMITA_PERF_SCOPE("Rendering::Actors::NetworkEntities");
+            const auto& communityMatch =
+                MimitaNet::CommunityMatchClient::instance();
             int localOutlineTeam = player.matchTeam;
-            if (MimitaNet::CommunityMatchClient::instance().active()) {
-                const uint8_t replicatedTeam =
-                    MimitaNet::CommunityMatchClient::instance().localTeam(mpContext.localPlayerId);
-                localOutlineTeam = replicatedTeam == 0xFF
-                    ? -1 : static_cast<int>(replicatedTeam);
-            }
+            const uint8_t replicatedLocalTeam =
+                communityMatch.localTeam(mpContext.localPlayerId);
+            if (replicatedLocalTeam != 0xFF)
+                localOutlineTeam = static_cast<int>(replicatedLocalTeam);
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
                 int remoteTeam = kv.second.matchTeam;
-                if (MimitaNet::CommunityMatchClient::instance().active()) {
-                    const uint8_t replicatedTeam =
-                        MimitaNet::CommunityMatchClient::instance().teamForActor(kv.first);
-                    remoteTeam = replicatedTeam == 0xFF
-                        ? -1 : static_cast<int>(replicatedTeam);
-                }
+                const uint8_t replicatedTeam =
+                    communityMatch.teamForActor(kv.first);
+                if (replicatedTeam != 0xFF)
+                    remoteTeam = static_cast<int>(replicatedTeam);
                 try {
                     renderNetworkPlayer(kv.second, camera, kv.first, false,
                                         localOutlineTeam, remoteTeam);
@@ -634,12 +632,10 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             for (auto& kv : mpContext.remoteNpcs) {
                 Perf::state().renderPerf.actorRemoteNpcs++;
                 int remoteTeam = kv.second.matchTeam;
-                if (MimitaNet::CommunityMatchClient::instance().active()) {
-                    const uint8_t replicatedTeam =
-                        MimitaNet::CommunityMatchClient::instance().teamForActor(kv.first);
-                    if (replicatedTeam != 0xFF)
-                        remoteTeam = static_cast<int>(replicatedTeam);
-                }
+                const uint8_t replicatedTeam =
+                    communityMatch.teamForActor(kv.first);
+                if (replicatedTeam != 0xFF)
+                    remoteTeam = static_cast<int>(replicatedTeam);
                 try {
                     renderNetworkPlayer(kv.second, camera, kv.first, false,
                                         localOutlineTeam, remoteTeam);
