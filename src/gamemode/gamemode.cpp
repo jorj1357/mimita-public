@@ -244,8 +244,11 @@ bool GamemodeRegistry::validateFileJson(const std::string& path,
     // masterlist field is rejected at load/reload, so the runtime can never
     // silently fall back to a default that the contributor did not choose.
     for (auto it = settings.begin(); it != settings.end(); ++it) {
-        if (!root.contains(it.key()))
-            errors.push_back(it.key() + ": missing setting (all masterlist fields are required)");
+        const bool optional = it.value().is_object() &&
+            it.value().contains("required") && it.value()["required"].is_boolean() &&
+            !it.value()["required"].get<bool>();
+        if (!root.contains(it.key()) && !optional)
+            errors.push_back(it.key() + ": missing setting");
     }
     for (auto it = root.begin(); it != root.end(); ++it) {
         if (!settings.contains(it.key())) {
@@ -762,6 +765,12 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         if (root.contains("ragdoll_enabled") && root["ragdoll_enabled"].is_boolean()) {
             next.ragdollExplicit = true;
             next.ragdollEnabled = root["ragdoll_enabled"].get<bool>();
+        }
+        if (root.contains("death_presentation") && root["death_presentation"].is_string()) {
+            const std::string value = root["death_presentation"].get<std::string>();
+            if (value == "auto" || value == "animation" || value == "ragdoll" ||
+                value == "disappear")
+                next.deathPresentation = value;
         }
         if (root.contains("blood_enabled") && root["blood_enabled"].is_boolean()) {
             next.bloodExplicit = true;

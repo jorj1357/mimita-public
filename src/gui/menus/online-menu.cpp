@@ -371,7 +371,7 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         if (b.get("server.mode").empty())
             b.set("server.mode", "Sandbox");
         if (b.get("server.weapon_set").empty())
-            b.set("server.weapon_set", "Set 1: Stable weapons");
+            b.set("server.weapon_set", "Auto (mode set)");
         if (b.get("server.weapon_set_description").empty())
             b.set("server.weapon_set_description", communityConfig.weaponSetDescription(1));
         if (b.get("server.auto_map_rotation").empty())

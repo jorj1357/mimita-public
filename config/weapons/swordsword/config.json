@@ -92,7 +92,7 @@
     "contactMaxVolume": 1.0,
     "contactMinPitch": 0.5,
     "contactMaxPitch": 1.4,
-    "damageTickInterval": 0.001,
+    "damageTickInterval": 0.01,
     "npcGuardTicks": 60.0
   },
   "cut_energy_scale": null,

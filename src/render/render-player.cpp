@@ -260,7 +260,8 @@ void renderPlayerInternal(
     av.finalizeAtlasIfReady(p);
     const char* renderGate = !gRenderer ? "renderer_unavailable"
         : (player.dead && isLocal ? "local_player_dead"
-        : (player.dead && !player.deathAnim.active && !player.ragdollModeActive
+        : (player.dead && !player.deathAnim.active && !player.ragdollModeActive &&
+           !player.authoredDeathActive
             ? "dead_without_death_presentation" : "passed"));
     logPlayerRenderState(player, networkEntityId, isLocal, renderGate);
 
@@ -300,7 +301,8 @@ void renderPlayerInternal(
     }
     // Dead bodies without a scripted fall-over are hidden, except ragdoll
     // corpses which render their physically simulated pose.
-    if (player.dead && !player.deathAnim.active && !player.ragdollModeActive) {
+    if (player.dead && !player.deathAnim.active && !player.ragdollModeActive &&
+        !player.authoredDeathActive) {
         logRagdollRenderStage(
             player, 4u, "ragdoll.render.skipped", "dead-player render gate",
             {{"actor_id", player.username}, {"gate", "dead_without_ragdoll"},

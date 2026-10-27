@@ -181,6 +181,15 @@ AnimClip parseAnimClipJson(const nlohmann::json& j)
     clip.durationTicks = j.value("durationTicks", 60);
     clip.loop = j.value("loop", true);
     clip.aimLayer = j.value("aimLayer", true);
+    if (j.contains("rootTranslationMode")) {
+        if (j["rootTranslationMode"].is_number_integer())
+            clip.rootTranslationMode = j["rootTranslationMode"].get<int>();
+        else if (j["rootTranslationMode"].is_string()) {
+            const std::string mode = j["rootTranslationMode"].get<std::string>();
+            clip.rootTranslationMode = mode == "authored" || mode == "keep" ? 1
+                : mode == "zero" ? 2 : -1;
+        }
+    }
     clip.speedScaleFromVelocity = j.value("speedScaleFromVelocity", true);
     clip.speedBased = j.value("speedBased", true);
     clip.inputTriggered = j.value("inputTriggered", false);

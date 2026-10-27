@@ -11,11 +11,13 @@
 #include "config.h"
 #include "entities/aimbody-config.h"
 #include "entities/player-avatar-animations.h"
+#include "gamemode/gamemode.h"
 #include "physics/config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "network/net_common.h"
 #include "network/community-match-client.h"
+#include "perf/perf-spike.h"
 using namespace MimitaNet;
 
 struct AnimOverlayResult {
@@ -223,6 +225,7 @@ static void applyAxisLocks(ProceduralPose& pose, const std::string& partName)
 
 void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, const glm::vec3& camPos, bool movementPressed)
 {
+    MIMITA_PERF_SCOPE("PlayerAnimation");
     updatePlayerProceduralHotReload(dt);
     AimBodyConfig::instance().pollReload();
 
@@ -453,23 +456,92 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     bool nowMoving = locoInputTriggered ? movementPressed : (move01 >= 0.01f);
     previousMove01 = move01;
 
-    // Landing outranks locomotion and holds the whole authored one-shot. Keep
-    // the short legacy fallback only when this profile has no landing clip.
+    // Landing is a low-priority pose: it plays only while standing still and
+    // never blocks walking/running. Moving clears it immediately.
     const AnimClip* landingClip = sm ? findClip(sm->land) : nullptr;
     const float landingDuration = landingClip
         ? (float)std::max(1, landingClip->durationTicks) / 60.0f
         : 0.12f;
-    if (ground.didLand) {
+    if (nowMoving) {
+        landAnimTimer = 0.0f;
+    } else if (ground.didLand) {
         landAnimTimer = landingDuration;
     } else {
         landAnimTimer = std::max(0.0f, landAnimTimer - dt);
     }
 
-    // Hit reaction: a brief, interruptible authored `hurt` pose on a percent
-    // increase (presentation only — Melee has no hitstun).
+    // Authored action triggers. Timers hold the one-shot pose for its clip
+    // duration; the procedural overlays are suppressed while an authored clip
+    // owns the state (see below).
+    auto clipDurationSeconds = [&](const std::string& clipName) -> float {
+        const AnimClip* c = findClip(clipName);
+        return c ? (float)std::max(1, c->durationTicks) / 60.0f : 0.0f;
+    };
+    const std::string dashClipName = sm ? sm->dash : std::string();
+    const std::string downDashClipName = sm ? sm->downDash : std::string();
+    if (dash.didDash && !dashClipName.empty())
+        dashAnimTimer = clipDurationSeconds(dashClipName);
+    else
+        dashAnimTimer = std::max(0.0f, dashAnimTimer - dt);
+    if (dash.didDownDash && !downDashClipName.empty())
+        downDashAnimTimer = clipDurationSeconds(downDashClipName);
+    else
+        downDashAnimTimer = std::max(0.0f, downDashAnimTimer - dt);
+    knockbackAnimTimer = std::max(0.0f, knockbackAnimTimer - dt);
+
+    if (crouching != animPrevCrouching) {
+        const std::string crouchClip = sm
+            ? (crouching ? sm->crouchIn : sm->crouchOut) : std::string();
+        crouchAnimTimer = crouchClip.empty() ? 0.0f : clipDurationSeconds(crouchClip);
+        crouchAnimInto = crouching;
+        animPrevCrouching = crouching;
+    } else {
+        crouchAnimTimer = std::max(0.0f, crouchAnimTimer - dt);
+    }
+
+    // Tool equip clip (owned by the weapon animation profile).
+    const WeaponRuntime* preRuntime = nullptr;
+    auto preRuntimeIt = weaponRuntimes.find(equippedWeaponId);
+    if (preRuntimeIt != weaponRuntimes.end())
+        preRuntime = &preRuntimeIt->second;
+    if (preRuntime) {
+        auto equipIt = preRuntime->customFloats.find("equipTimer");
+        if (equipIt != preRuntime->customFloats.end() && equipIt->second > 0.0f)
+            equipAnimTimer = std::max(equipAnimTimer, 0.05f);
+    }
+    equipAnimTimer = std::max(0.0f, equipAnimTimer - dt);
+
+    // Hit reaction: percent damage (Melee), local takeDamage, and replicated
+    // health drops all feed the configured hurt tier. The health path makes
+    // remote players and NPC replicas animate hurt without a local damage call.
+    if (animPrevHp >= 0 && currentHp < animPrevHp) {
+        const int damage = animPrevHp - currentHp;
+        const AnimationRuntimeSettings& hs = animationRuntimeSettings();
+        int tier = 3;
+        if (hs.hurtTierMode == 1) {
+            const float pct = 100.0f * (float)damage / (float)std::max(1, maxHp);
+            tier = pct <= hs.hurtPercentSmallMax ? 1
+                 : pct <= hs.hurtPercentNormalMax ? 2 : 3;
+        } else {
+            tier = damage <= hs.hurtFixedSmallMax ? 1
+                 : damage <= hs.hurtFixedNormalMax ? 2 : 3;
+        }
+        pendingHurtTier = std::max(pendingHurtTier, tier);
+    }
+    animPrevHp = currentHp;
     if (percent > animPrevPercent + 0.5f)
-        hurtTimer = 0.20f;
+        pendingHurtTier = std::max(pendingHurtTier, 2);
     animPrevPercent = percent;
+    std::string activeHurtClip;
+    if (sm && pendingHurtTier > 0) {
+        if (pendingHurtTier == 1) activeHurtClip = sm->hurtSmall;
+        else if (pendingHurtTier == 2) activeHurtClip = sm->hurtNormal;
+        else activeHurtClip = sm->hurtLarge;
+        if (activeHurtClip.empty()) activeHurtClip = sm->hurt;
+        if (!activeHurtClip.empty() && findClip(activeHurtClip))
+            hurtTimer = clipDurationSeconds(activeHurtClip);
+        pendingHurtTier = 0;
+    }
     hurtTimer = std::max(0.0f, hurtTimer - dt);
 
     // Respawn: play the `respawn` clip briefly on a dead->alive transition
@@ -478,40 +550,94 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         respawnAnimTimer = 0.30f;
     else
         respawnAnimTimer = std::max(0.0f, respawnAnimTimer - dt);
+    const bool justDied = dead && !animPrevDead;
     animPrevDead = dead;
+
+    const AnimationRuntimeSettings& animSettings = animationRuntimeSettings();
+    const std::string deathClipName = sm
+        ? (!sm->deathSmall.empty() ? sm->deathSmall : sm->death)
+        : std::string();
+    std::string deathPresentation = animSettings.deathPresentation;
+    if (CommunityMatchClient::instance().active()) {
+        const Gamemode& modeConfig =
+            GamemodeRegistry::instance().get(CommunityMatchClient::instance().mode());
+        if (!modeConfig.deathPresentation.empty())
+            deathPresentation = modeConfig.deathPresentation;
+    }
+    if (deathPresentation == "auto")
+        deathPresentation = "animation";
+    const bool deathClipAllowed = deathPresentation != "disappear" &&
+        deathPresentation != "ragdoll";
+    if (justDied) {
+        authoredDeathTimer = deathClipAllowed && !deathClipName.empty() &&
+            findClip(deathClipName) ? clipDurationSeconds(deathClipName) : 0.0f;
+    } else if (!dead) {
+        authoredDeathTimer = 0.0f;
+    } else if (authoredDeathTimer > 0.0f) {
+        authoredDeathTimer = std::max(0.0f, authoredDeathTimer - dt);
+    }
+    authoredDeathActive = dead && !ragdollModeActive && deathClipAllowed &&
+        authoredDeathTimer > 0.0f && !deathClipName.empty() && findClip(deathClipName);
 
     std::string activeAnim = currentAnimName;
     if (!lockedClip.empty()) {
         activeAnim = lockedClip;
     } else if (sm) {
-        // Choose the authored state clip from the actor profile.
-        // Missing optional states fall back within the same profile.
-        // Raw collision contact can flicker for a tick while the actor remains
-        // within the grounded grace window. Use the stable state for Melee's
-        // grounded/airborne pose choice so crouch does not flash into fall.
+        MIMITA_PERF_SCOPE("AnimStateSelect");
+        // Candidate scoring makes the JSON priorities authoritative. Ties keep
+        // the earlier candidate, so set order still acts as a stable fallback.
+        struct StateCandidate {
+            std::string state;
+            std::string clip;
+            int priority = 0;
+        };
+        StateCandidate candidates[24];
+        int candidateCount = 0;
+        auto addCandidate = [&](const char* state, const std::string& clip,
+                                bool eligible) {
+            if (!eligible || clip.empty() || candidateCount >= 24) return;
+            const AnimClip* c = findClip(clip);
+            if (!c) return;
+            candidates[candidateCount++] = {state, clip,
+                animationStatePriority(state) + c->priority};
+        };
+
         const bool airborne = !ground.stableOnGround;
         const bool rising = vel.z > 1.0f;
         const bool fast = speed > 12.0f;
-        if (dead && !sm->death.empty())
-            activeAnim = sm->death;
-        else if (respawnAnimTimer > 0.0f && !sm->respawn.empty())
-            activeAnim = sm->respawn;
-        else if (hurtTimer > 0.0f && !sm->hurt.empty())
-            activeAnim = sm->hurt;
-        // Landing holds over automatic movement states until its one-shot ends.
-        // Terminal states, hit reaction, and explicit locked actions still win.
-        else if (landAnimTimer > 0.0f && !sm->land.empty())
-            activeAnim = sm->land;
-        else if (airborne && rising && !sm->jump.empty())
-            activeAnim = sm->jump;
-        else if (airborne && !sm->fall.empty())
-            activeAnim = sm->fall;
-        else if (crouching && !sm->crouch.empty())
-            activeAnim = sm->crouch;
-        else if (nowMoving)
-            activeAnim = (fast && !sm->run.empty()) ? sm->run : locomotionClip();
-        else
-            activeAnim = defaultClip();
+        addCandidate("death", deathClipName, authoredDeathActive);
+        addCandidate("respawn", sm->respawn, respawnAnimTimer > 0.0f);
+        addCandidate("hurt", activeHurtClip, hurtTimer > 0.0f);
+        addCandidate("freeze", sm->freeze, freeze.freezeActive || freeze.didFreeze);
+        addCandidate("downDash", sm->downDash, downDashAnimTimer > 0.0f);
+        addCandidate("dash", sm->dash, dashAnimTimer > 0.0f);
+        addCandidate("knockback", sm->knockback, knockbackAnimTimer > 0.0f);
+        addCandidate("crouch", crouchAnimInto ? sm->crouchIn : sm->crouchOut,
+                     crouchAnimTimer > 0.0f);
+        addCandidate("land", sm->land, landAnimTimer > 0.0f && !nowMoving);
+        addCandidate("jump", sm->jump, airborne && rising);
+        addCandidate("fall", sm->fall, airborne);
+        addCandidate("crouch", sm->crouch, crouching && crouchAnimTimer <= 0.0f);
+        if (nowMoving) {
+            addCandidate(fast ? "run" : "walk",
+                         fast && !sm->run.empty() ? sm->run : locomotionClip(), true);
+        }
+        addCandidate("idle", defaultClip(), !nowMoving);
+        if (equipAnimTimer > 0.0f) {
+            const std::string equipClip = weaponAnimationSet && weaponAnimationSet->valid
+                ? weaponAnimationSet->states.equip : sm->equip;
+            addCandidate("attack", equipClip, !equipClip.empty());
+        }
+
+        int bestPriority = -1;
+        std::string bestClip;
+        for (int i = 0; i < candidateCount; ++i) {
+            if (candidates[i].priority > bestPriority) {
+                bestPriority = candidates[i].priority;
+                bestClip = candidates[i].clip;
+            }
+        }
+        activeAnim = bestClip.empty() ? defaultClip() : bestClip;
     } else if (nowMoving) {
         activeAnim = locomotionClip();
     } else if (currentAnimName != defaultClip()) {
@@ -677,6 +803,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    const bool authoredDashPose = sm &&
+        ((!sm->dash.empty() && activeAnim == sm->dash) ||
+         (!sm->downDash.empty() && activeAnim == sm->downDash) ||
+         (!sm->knockback.empty() && activeAnim == sm->knockback));
+    if (authoredDashPose) dashWeight = 0.0f;
+
     // === FREEZE POSE TIMER ===
     bool wasFreezeActive = freezePoseActive;
     freezePoseActive = freeze.freezeActive;
@@ -709,6 +841,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             }
         }
     }
+    if (sm && !sm->freeze.empty() && activeAnim == sm->freeze)
+        freezeWeight = 0.0f;
 
     // === COMPUTE JSON KEYFRAME ANIMATION ===
     const AnimClip* activeClip = findClip(activeAnim);
@@ -900,7 +1034,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         {
             auto ovIt = animOverlay.find(part.name);
             if (ovIt != animOverlay.end()) {
-                target.translation = ovIt->second.translation;
+                const int rootMode = activeClip && activeClip->rootTranslationMode >= 0
+                    ? activeClip->rootTranslationMode : animSettings.rootTranslationMode;
+                target.translation = rootMode == 2
+                    ? glm::vec3(0.0f) : ovIt->second.translation;
                 target.rotationEuler = ovIt->second.rotation;
                 target.scale = ovIt->second.scale;
             }

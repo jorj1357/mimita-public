@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "rootTranslationMode": 1,
+  "renderPoseInterpolation": true,
+  "deathPresentation": "auto",
+  "hurtTierMode": 1,
+  "hurtPercent": {
+    "smallMax": 15,
+    "normalMax": 30
+  },
+  "hurtFixed": {
+    "smallMax": 10,
+    "normalMax": 50
+  },
+  "statePriorities": {
+    "idle": 0,
+    "land": 5,
+    "walk": 10,
+    "run": 10,
+    "jump": 20,
+    "fall": 20,
+    "crouch": 30,
+    "hurt": 60,
+    "dash": 70,
+    "downDash": 72,
+    "freeze": 74,
+    "attack": 80,
+    "death": 100
+  }
+}

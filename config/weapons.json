@@ -1,4 +1,4 @@
 {
   "comment 7 20 2026": "this is the .json file at C:/important/mimita-priv-v8/config/weapons.json defining behavior for all weapons in mimita",
-  "migration": "Weapon definitions are in config/weapons/<id>/config.json."
+  "migration 2026 10 27 1505 ": "Weapon definitions are in config/weapons/<id>/config.json."
 }

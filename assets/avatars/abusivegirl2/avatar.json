@@ -335,6 +335,7 @@
   "animation_profile": {
     "version": 2,
     "poseComposition": "layered",
+    "set": "general_set_1",
     "include": [
       "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_003.json",
       "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk.json",

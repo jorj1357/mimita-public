@@ -9,6 +9,7 @@
   ],
   "clips": {},
   "states": {
-    "default": "mimita_sizing_6_idle_006"
+    "default": "mimita_sizing_6_idle_006",
+    "equip": "mimita_sizing_6_equip_006"
   }
 }

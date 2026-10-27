@@ -129,6 +129,7 @@ void clearPendingBombTagConfig() { gPendingBombTagConfig = BombTagConfigResult{}
 static bool gServerRunning = false;
 static MimitaNet::ListenServerState gListenServer;
 static MimitaNet::ServerLaunchSettings gServerLaunchSettings;
+static bool gServerWeaponSetAuto = true;
 static char gServerAddress[64] = "127.0.0.1:1357";
 static MultiplayerConnectInfo gPendingConnect{};
 static SandboxMapSelection gPendingSandboxMap{};
@@ -209,6 +210,7 @@ static void readServerSettingsFromBindings()
     if (selectedMode && selectedMode->maxPlayers > 0)
         gServerLaunchSettings.maxPlayers = std::min<uint32_t>(
             gServerLaunchSettings.maxPlayers, (uint32_t)selectedMode->maxPlayers);
+    gServerWeaponSetAuto = weaponSet.rfind("Auto", 0) == 0 || weaponSet.empty();
     gServerLaunchSettings.weaponSetId = weaponSet.rfind("Set ", 0) == 0
         ? std::max(1, std::atoi(weaponSet.c_str() + 4)) : 1;
     gServerLaunchSettings.autoMapRotation =
@@ -324,7 +326,8 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
         + " --host-player \"" + settings.hostPlayerName + "\""
         + " --max-players " + std::to_string(settings.maxPlayers)
         + " --mode \"" + settings.gameMode + "\""
-        + " --weapon-set " + std::to_string(settings.weaponSetId)
+        + (gServerWeaponSetAuto ? std::string() :
+           " --weapon-set " + std::to_string(settings.weaponSetId))
         + (settings.autoMapRotation ? "" : " --no-map-rotation")
         + " --map-rotation-minutes " + std::to_string(settings.mapRotationMinutes)
         + (settings.discordNotification ? "" : " --no-discord-notification")

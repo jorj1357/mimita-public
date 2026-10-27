@@ -22,7 +22,8 @@
     "distanceExponent": 1.0
   },
   "cameraSway": {
-    "enabled": true,
+    // "enabled": true,
+    "enabled": false,
     "amount": 2.0,
     "landingThreshold": 0.25,
     "landingPitchImpulse": -10.1,
@@ -35,7 +36,9 @@
   "thirdPerson": {
     "offset": {
       "x": 2.5,
+      // "x": -10.5,
       // "x": 0.25,
+      // "y": -4.0,
       "y": -4.0,
       "z": 2.0
     },

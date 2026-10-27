@@ -69,7 +69,18 @@ void parseStateMap(const nlohmann::json& root, AvatarStateMap& states)
     states.fall = s.value("fall", states.fall);
     states.land = s.value("land", states.land);
     states.crouch = s.value("crouch", states.crouch);
+    states.crouchIn = s.value("crouchIn", states.crouchIn);
+    states.crouchOut = s.value("crouchOut", states.crouchOut);
+    states.dash = s.value("dash", states.dash);
+    states.downDash = s.value("downDash", states.downDash);
+    states.freeze = s.value("freeze", states.freeze);
+    states.knockback = s.value("knockback", states.knockback);
     states.respawn = s.value("respawn", states.respawn);
+    states.equip = s.value("equip", states.equip);
+    states.hurtSmall = s.value("hurtSmall", states.hurtSmall);
+    states.hurtNormal = s.value("hurtNormal", states.hurtNormal);
+    states.hurtLarge = s.value("hurtLarge", states.hurtLarge);
+    states.deathSmall = s.value("deathSmall", states.deathSmall);
 }
 
 void mergeClips(const nlohmann::json& root,
@@ -126,7 +137,104 @@ void loadIncludes(const nlohmann::json& root, AvatarAnimationSet& set,
     }
 }
 
+AnimationRuntimeSettings gAnimationSettings;
+std::uint64_t gAnimationSettingsWrite = 0;
+std::uint64_t gAnimationSettingsPollMs = 0;
+bool gAnimationSettingsLoaded = false;
+float gAnimationRenderAlpha = 1.0f;
+
+void installDefaultPriorities(AnimationRuntimeSettings& s)
+{
+    s.statePriorities = {
+        {"idle", 0}, {"land", 5}, {"walk", 10}, {"run", 10}, {"jump", 20},
+        {"fall", 20}, {"crouch", 30}, {"hurt", 60}, {"dash", 70},
+        {"downDash", 72}, {"freeze", 74}, {"attack", 80}, {"death", 100}
+    };
+}
+
 } // namespace
+
+void pollAnimationRuntimeSettings()
+{
+    const std::uint64_t now = (std::uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (gAnimationSettingsLoaded && now - gAnimationSettingsPollMs < 100)
+        return;
+    gAnimationSettingsPollMs = now;
+
+    const std::string path = resolveAssetPath("config/animations/settings.json");
+    const std::uint64_t write = fileWriteStamp(path);
+    if (gAnimationSettingsLoaded && write == gAnimationSettingsWrite)
+        return;
+
+    AnimationRuntimeSettings next;
+    installDefaultPriorities(next);
+    nlohmann::json root;
+    bool loaded = false;
+    if (readJsonFile(path, root) && root.is_object()) {
+        next.rootTranslationMode = root.value("rootTranslationMode", next.rootTranslationMode);
+        next.renderPoseInterpolation = root.value("renderPoseInterpolation", next.renderPoseInterpolation);
+        next.deathPresentation = root.value("deathPresentation", next.deathPresentation);
+        next.hurtTierMode = root.value("hurtTierMode", next.hurtTierMode);
+        if (root.contains("hurtPercent") && root["hurtPercent"].is_object()) {
+            next.hurtPercentSmallMax = root["hurtPercent"].value("smallMax", next.hurtPercentSmallMax);
+            next.hurtPercentNormalMax = root["hurtPercent"].value("normalMax", next.hurtPercentNormalMax);
+        }
+        if (root.contains("hurtFixed") && root["hurtFixed"].is_object()) {
+            next.hurtFixedSmallMax = root["hurtFixed"].value("smallMax", next.hurtFixedSmallMax);
+            next.hurtFixedNormalMax = root["hurtFixed"].value("normalMax", next.hurtFixedNormalMax);
+        }
+        if (root.contains("statePriorities") && root["statePriorities"].is_object()) {
+            for (auto it = root["statePriorities"].begin(); it != root["statePriorities"].end(); ++it)
+                if (it.value().is_number_integer())
+                    next.statePriorities[it.key()] = it.value().get<int>();
+        }
+        loaded = true;
+    }
+    if (next.rootTranslationMode != 1 && next.rootTranslationMode != 2)
+        next.rootTranslationMode = 1;
+    if (next.hurtTierMode != 1 && next.hurtTierMode != 2)
+        next.hurtTierMode = 1;
+    gAnimationSettings = std::move(next);
+    gAnimationSettingsWrite = write;
+    gAnimationSettingsLoaded = true;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Avatar, StructuredLevel::Important,
+        "anim.settings.loaded", "config/animations/settings.json",
+        loaded ? "animation runtime settings loaded" : "animation runtime settings missing; defaults used",
+        0,
+        nlohmann::json{{"root_translation_mode", gAnimationSettings.rootTranslationMode},
+                       {"render_pose_interpolation", gAnimationSettings.renderPoseInterpolation},
+                       {"death_presentation", gAnimationSettings.deathPresentation},
+                       {"hurt_tier_mode", gAnimationSettings.hurtTierMode},
+                       {"state_priorities", gAnimationSettings.statePriorities}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+const AnimationRuntimeSettings& animationRuntimeSettings()
+{
+    pollAnimationRuntimeSettings();
+    return gAnimationSettings;
+}
+
+int animationStatePriority(const std::string& state)
+{
+    const auto& priorities = animationRuntimeSettings().statePriorities;
+    const auto it = priorities.find(state);
+    if (it != priorities.end()) return it->second;
+    return 0;
+}
+
+float animationRenderAlpha()
+{
+    return gAnimationRenderAlpha;
+}
+
+void setAnimationRenderAlpha(float alpha)
+{
+    gAnimationRenderAlpha = std::clamp(alpha, 0.0f, 1.0f);
+}
 
 void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& rig)
 {
@@ -221,6 +329,24 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
             animRoot = avatarRoot["animation_profile"];
         else if (!readJsonFile(animPath, animRoot))
             throw std::runtime_error("file missing or invalid JSON");
+
+        // An ordered set supplies shared clips/states before the avatar's own
+        // includes and inline overrides, so sets stay reusable and editable.
+        if (animRoot.contains("set") && animRoot["set"].is_string()) {
+            const std::string setId = animRoot["set"].get<std::string>();
+            const std::string setPath = resolveAssetPath(
+                "config/animations/masterlist/animation-sets.json");
+            next.dependencyWrites[setPath] = fileWriteStamp(setPath);
+            nlohmann::json setsRoot;
+            if (!readJsonFile(setPath, setsRoot) || !setsRoot.contains("sets") ||
+                !setsRoot["sets"].is_object() || !setsRoot["sets"].contains(setId)) {
+                throw std::runtime_error("animation set missing or invalid: " + setId);
+            }
+            const auto& setRoot = setsRoot["sets"][setId];
+            loadIncludes(setRoot, next.set, next.dependencyWrites);
+            mergeClips(setRoot, next.set);
+            parseStateMap(setRoot, next.set.states);
+        }
 
         loadIncludes(animRoot, next.set, next.dependencyWrites);
         mergeClips(animRoot, next.set);

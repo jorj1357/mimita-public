@@ -209,6 +209,8 @@ assets/avatars/<avatar>/
 config/animations/
     library/<clip>.json  # shared, reusable clip files (any actor may include)
     <category>/<...>.json# optional shared overlays (weapon/reload/...)
+    masterlist/animation-sets.json # ordered reusable clip/state sets
+    settings.json        # priorities, hurt tiers, root translation, interpolation
 config/animations.json   # legacy global profile; remains the default fallback
 ```
 
@@ -221,6 +223,33 @@ Rules:
 - Shared clip files contain one or more named clips and never reference an
   avatar. They are the generalized library for "any avatar".
 - Exactly one animation format version number at the top of every file.
+
+### Ordered sets, priorities, and runtime settings
+
+`config/animations/masterlist/animation-sets.json` defines named reusable
+sets. A set may include clips or directories and may provide a `states` map.
+An avatar profile selects one with `"set": "<set-id>"`; the set is merged before
+the avatar's own `include` and inline `states`, so avatar values still win.
+`general_set_1` is the ordered set of every imported `mimita_sizing_6` clip.
+
+`config/animations/settings.json` is hot-reloaded and owns runtime policy:
+
+- `statePriorities`: integer priority per state. Higher wins. Defaults keep
+  landing below locomotion, hurt above locomotion/landing, and death highest.
+- `hurtTierMode`: `1` uses percent of max HP at hit time, `2` uses fixed damage.
+- `hurtPercent` / `hurtFixed`: small/normal thresholds. The next tier is large.
+- `rootTranslationMode`: `1` keeps authored part translation; `2` zeroes it.
+  A clip may override this with its own `rootTranslationMode`.
+- `renderPoseInterpolation`: when true, presentation blends between the last two
+  fixed-tick poses. Gameplay, collision, and hitboxes still use the fixed pose.
+- `deathPresentation`: `auto`, `animation`, `ragdoll`, or `disappear`. A mode may
+  set `death_presentation`; `auto` uses the authored small-death clip when
+  ragdoll is not presenting the death.
+
+New state keys are supported by `AvatarStateMap`: `dash`, `downDash`, `freeze`,
+`knockback`, `crouchIn`, `crouchOut`, `equip`, `hurtSmall`, `hurtNormal`,
+`hurtLarge`, `deathSmall`, and `death`. Missing states fall back to the old
+behavior.
 
 ### Melee action clip availability
 
@@ -856,6 +885,8 @@ hitbox attachments still need human runtime verification.
 ## Runtime contract
 
 - Evaluate once per fixed simulation tick (60 Hz), never per render frame.
+  `renderPoseInterpolation` may blend the last two fixed poses for presentation
+  only; it must not change collision, damage, hitboxes, or fixed-tick selection.
 - No per-tick heap allocation in the hot path: pre-size part arrays when the
   rig loads; interpolation works in place over a cached scratch buffer.
 - Setting a part writes `perfectPoseSkeleton.nodes[part.nodeIndex].localTransform`
@@ -975,6 +1006,9 @@ logging configuration.
   top; when present it wins for the six physical parts.
 - Animation is deterministic given (clip, tick, speed, state flags), so client
   and server agree without extra packets.
+- Replay actors with an avatar animation set use the same shared state machine as
+  live actors. Legacy recordings without a set retain their recorded body-part
+  poses.
 - If an avatar's animation set is unavailable on a client, it falls back to the
   global profile; the model still loads.
 

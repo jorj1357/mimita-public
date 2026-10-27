@@ -20,6 +20,7 @@
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "avatar/avatar.h"
 #include "avatar/cosmetic-system.h"
 #include "world/world.h"
@@ -267,11 +268,36 @@ static void renderReplayActors(
         actor->equippedWeaponId = actorState.weaponName;
         {
             MIMITA_PERF_SCOPE("Rendering::ReplayActors::ApplyPose");
-            actor->applyReplayPose(
-                actorState.position,
-                actorState.rotation.z,
-                actorState.bodyParts.data(),
-                actorState.bodyPartCount);
+            const AvatarAnimationSet* replayAnimSet = actor->avatarName().empty()
+                ? nullptr : AvatarAnimationRegistry::instance().getAnimationSet(
+                    actor->avatarName(), (std::uint32_t)replayFrame.tick);
+            const WeaponDefinition* replayWeapon =
+                WeaponRegistry::instance().get(actorState.weaponName);
+            actor->hasValidWeapon = replayWeapon != nullptr;
+            actor->equippedSlot = replayWeapon ? replayWeapon->slot : 0;
+            actor->pos = actorState.position;
+            actor->yaw = actorState.rotation.z;
+            actor->vel = actorState.velocity;
+            actor->dead = actorState.dead;
+            actor->ground.onGround = actorState.grounded;
+            actor->ground.stableOnGround = actorState.grounded;
+            actor->movementSimulationTick = (std::uint32_t)replayFrame.tick;
+            if (replayAnimSet && replayAnimSet->valid) {
+                // Replay uses the same avatar clip state machine as live actors.
+                const glm::vec3 replayAim(std::cos(glm::radians(actorState.rotation.z)),
+                                          std::sin(glm::radians(actorState.rotation.z)), 0.0f);
+                actor->updateProceduralAnimation(
+                    dt, replayAim, actorState.position,
+                    glm::length(glm::vec2(actorState.velocity.x, actorState.velocity.y)) > 0.1f);
+            } else {
+                // Legacy recordings without an avatar animation set keep the
+                // explicitly recorded body-part pose.
+                actor->applyReplayPose(
+                    actorState.position,
+                    actorState.rotation.z,
+                    actorState.bodyParts.data(),
+                    actorState.bodyPartCount);
+            }
         }
 
         const bool hideFirstPersonActor =

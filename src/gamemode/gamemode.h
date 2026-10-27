@@ -301,6 +301,9 @@ struct Gamemode {
     bool hideHealthbars = false;
     bool ragdollEnabled = false;
     bool ragdollExplicit = false;
+    // auto follows ragdoll_enabled; animation uses the authored small-death
+    // clip; disappear hides the body immediately.
+    std::string deathPresentation = "auto";
     bool bloodEnabled = false;
     bool bloodExplicit = false;
     // ── Match role counts (optional) ────────────────────────────────

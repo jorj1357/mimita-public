@@ -164,13 +164,20 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
             const ActorSpawnProfile profile = serverResolveActorSpawnProfile(owner->first);
             if (profile.hasRole && !isAvatarAllowedByPolicy(
                     name, profile.allowedAvatars, profile.deniedAvatars)) {
+                std::string fallback = profile.avatarName;
+                if (fallback.empty() || !isAvatarAllowedByPolicy(
+                        fallback, profile.allowedAvatars, profile.deniedAvatars)) {
+                    fallback = profile.allowedAvatars.empty()
+                        ? std::string() : profile.allowedAvatars.front();
+                }
+                owner->second.avatarName = fallback;
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Avatar, StructuredLevel::Important,
                     "griever.avatar.policy_rejected", name,
                     "server rejected avatar outside the active mode policy",
                     (uint32_t)owner->second.spawnGeneration,
                     {{"avatar", name}, {"player_id", owner->first},
-                     {"role", profile.roleId}, {"fallback", profile.avatarName}},
+                     {"role", profile.roleId}, {"fallback", fallback}},
                     __FILE__, __LINE__, __FUNCTION__);
                 owner->second.avatarManifestChunks.erase(key);
                 return;

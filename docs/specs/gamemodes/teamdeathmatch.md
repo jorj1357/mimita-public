@@ -25,7 +25,9 @@ Status: current first-version behavior
 - Players and NPCs share the mode's weapon set. The current TDM set is
   revolver, shotgun, rocket launcher, swordsword, chainsaw, mace, and
   deathball. Role entries must not override the mode set with a different
-  loadout.
+  loadout. The mode set applies automatically even when the launch UI still
+  shows its default set; only an explicit host override or live command may
+  replace it.
 - RED and BLUE use separate `red_spawn` and `blue_spawn` groups for initial
   placement, round reset, and every respawn. Authored team points must carry
   the matching group tag. If those groups are unavailable, the runtime uses
@@ -34,10 +36,14 @@ Status: current first-version behavior
 - TDM keeps health bars visible and requests green teammate and red enemy
   player mesh wireframes through its JSON presentation settings. Death
   ragdolls are enabled for TDM.
-- TDM selects NPC avatars from the masterlist's `competitive_no_headless`
-  group. Each NPC keeps its own selected avatar across deaths and respawns.
-  A different mode may choose another named group and `reroll_each_spawn`
-  through its `npc_avatar` block; the shared spawn owner applies both choices.
+- TDM selects player and NPC avatars from the masterlist's
+  `competitive_no_headless` group. The allow list is authoritative; deny
+  patterns only subtract from it. A rejected avatar is replaced with a permitted
+  fallback at spawn and by the client presentation policy, so a monster or
+  headless avatar cannot persist in TDM. Each NPC keeps its own selected avatar
+  across deaths and respawns. A different mode may choose another named group
+  and `reroll_each_spawn` through its `npc_avatar` block; the shared spawn owner
+  applies both choices.
 
 Death ragdolls are shown by default through the global ragdoll-death setting.
 A gamemode may explicitly set `ragdoll_enabled: false` to suppress them; TDM

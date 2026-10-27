@@ -14,8 +14,32 @@
 #include "replay/replay-scene.h"
 #include "world/texture-store.h"
 #include "avatar/avatar.h"
+#include "entities/player-avatar-animations.h"
+
+#include <glm/gtx/matrix_decompose.hpp>
 
 extern TextureStore gTextures;
+
+static glm::mat4 renderPartTransform(const PhysicalBodyPart& part)
+{
+    const AnimationRuntimeSettings& settings = animationRuntimeSettings();
+    const float alpha = animationRenderAlpha();
+    if (!settings.renderPoseInterpolation || alpha >= 0.999f ||
+        !part.hasPreviousWorldTransform)
+        return part.worldTransform;
+
+    glm::vec3 p0(0.0f), p1(0.0f), s0(1.0f), s1(1.0f), skew0(0.0f), skew1(0.0f);
+    glm::quat q0(1.0f, 0.0f, 0.0f, 0.0f), q1(1.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec4 perspective0(0.0f), perspective1(0.0f);
+    glm::decompose(part.previousWorldTransform, p0, q0, s0, skew0, perspective0);
+    glm::decompose(part.worldTransform, p1, q1, s1, skew1, perspective1);
+    const glm::vec3 position = glm::mix(p0, p1, alpha);
+    const glm::quat rotation = glm::slerp(q0, q1, alpha);
+    const glm::vec3 scale = glm::mix(s0, s1, alpha);
+    return glm::translate(glm::mat4(1.0f), position) *
+           glm::mat4_cast(rotation) *
+           glm::scale(glm::mat4(1.0f), scale);
+}
 
 extern GLuint capsuleVAO;
 extern int capsuleVertCount;
@@ -299,7 +323,7 @@ void Player::renderCurrentPose(unsigned int shader,
 
             uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
-            const glm::mat4& model = part.worldTransform;
+            const glm::mat4 model = renderPartTransform(part);
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
 
             // Per-part color tint from outfit.json
@@ -388,7 +412,7 @@ void Player::renderCurrentPose(unsigned int shader,
 
             uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderUploadKey());
 
-            const glm::mat4& model = part.worldTransform;
+            const glm::mat4 model = renderPartTransform(part);
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
             glUniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
                         outlinePass ? outlineColor.g : 1.0f,
@@ -554,7 +578,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
 
             uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
-            const glm::mat4& model = part.worldTransform;
+            const glm::mat4 model = renderPartTransform(part);
             glm::mat4 mvp = lightViewProj * model;
             if (loc >= 0)
                 glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);

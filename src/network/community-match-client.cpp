@@ -377,6 +377,32 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     // completion; it stores and renders exactly what the server sent.
     mProcedural = packet.procedural;
     const Gamemode& modeConfig = GamemodeRegistry::instance().get(mMode);
+    // The mode's avatar policy applies to the local player too, even when the
+    // mode uses gameplay roles without a presentation actor preset.
+    if (modeConfig.avatar.configured) {
+        if (modeConfig.avatar.forced && !modeConfig.avatar.name.empty()) {
+            GetPlayerSettings().avatarName = modeConfig.avatar.name;
+        } else if (!modeConfig.avatar.allowed.empty() || !modeConfig.avatar.denied.empty()) {
+            const std::string current = GetPlayerSettings().avatarName;
+            if (!isAvatarAllowedByPolicy(current, modeConfig.avatar.allowed, modeConfig.avatar.denied)) {
+                std::string fallback = modeConfig.avatar.name;
+                if (fallback.empty() || !isAvatarAllowedByPolicy(
+                        fallback, modeConfig.avatar.allowed, modeConfig.avatar.denied)) {
+                    fallback = modeConfig.avatar.allowed.empty()
+                        ? std::string() : modeConfig.avatar.allowed.front();
+                }
+                GetPlayerSettings().avatarName = fallback;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "client.avatar.policy_fallback", current,
+                    "local avatar replaced by the active mode allow-list",
+                    packet.serverTick,
+                    nlohmann::json{{"mode", mMode}, {"rejected", current},
+                                   {"selected", fallback}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+    }
     std::string replicatedPresetId = packet.actorPresetId;
     if (replicatedPresetId.empty()) replicatedPresetId = modeConfig.actorPresetId;
     const MatchRoleDefinition* actorPreset =

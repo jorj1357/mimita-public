@@ -984,6 +984,12 @@
       "default": null,
       "nullable": true
     },
+    "death_presentation": {
+      "type": "string",
+      "enum": ["auto", "animation", "ragdoll", "disappear"],
+      "required": false,
+      "default": "auto"
+    },
     "blood_enabled": {
       "type": "boolean",
       "required": false,
@@ -1389,8 +1395,6 @@
         "jason"
       ],
       "denied": [
-        "*monster*",
-        "*",
         "headless",
         "headlessgirl",
         "headlessgirl2",
@@ -1401,10 +1405,7 @@
         "abusivegirlheadless2",
         "abusivegirlheadless3",
         "abusivegirlheadless4",
-        "jasonheadless",
-        "juggernaut*",
-        "*big*",
-        "*girl*"
+        "jasonheadless"
       ]
     }
   }

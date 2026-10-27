@@ -648,7 +648,10 @@ int runServer(const LaunchOptions& options)
                                 options.mapRotationMinutes,
                                 options.weaponSetId);
         serverCommunitySetMode(options.gameMode);
-        serverCommunitySetWeaponSet(options.weaponSetId);
+        // Sandbox keeps the host-selected set. Team/mode-owned modes apply the
+        // mode's weapon_set_id; a live host command can still override it.
+        if (options.gameMode == "sandbox")
+            serverCommunitySetWeaponSet(options.weaponSetId);
         if (options.gameMode != "sandbox")
             serverCommunityStartMatch(false);
     }

@@ -1,7 +1,6 @@
 {
   "duration_ticks": 120,
-  // "enabled": true,
-  "enabled": false,
+  "enabled": true,
   "messages": [
     "2026 10 26 NOTHING IS IMPOSSIBLLBLELELEEEE ",
     "2026 10 26 ITS DOABLE ITS  DOABLE ",
@@ -20,6 +19,7 @@
   ],
   "mode": "repeat",
   "repeat_message": "TODO 2026 10 26: payload cart path",
+  "repeat_message": "TODO 2026 10 27: animaitons smooth, perofrm smooth, npcs use anims, melee feedback better",
   "text_format": "{seconds}s — {message}",
   "title": "TIME PLAYED"
 }

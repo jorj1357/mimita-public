@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "description": "Ordered reusable animation sets. An avatar profile selects one with \"set\". Inline clips/states still override the set.",
+  "sets": {
+    "general_set_1": {
+      "order": 10,
+      "description": "All imported mimita_sizing_6 clips in one ordered set.",
+      "include": [
+        "config/animations/library/imported/mimita_sizing_6/"
+      ],
+      "states": {
+        "default": "mimita_sizing_6_idle_003",
+        "locomotion": {
+          "walk": "mimita_sizing_6_walk",
+          "fly": "mimita_sizing_6_walk",
+          "crawl": "mimita_sizing_6_walk",
+          "swim": "mimita_sizing_6_walk"
+        },
+        "run": "mimita_sizing_6_sprint_001",
+        "jump": "mimita_sizing_6_jump_002",
+        "fall": "mimita_sizing_6_falling_001",
+        "land": "mimita_sizing_6_landing_001",
+        "dash": "mimita_sizing_6_dash",
+        "downDash": "mimita_sizing_6_downdash_001",
+        "freeze": "mimita_sizing_6_freeze_001",
+        "knockback": "mimita_sizing_6_knockedback_001",
+        "crouch": "mimita_sizing_6_crouched",
+        "crouchIn": "mimita_sizing_6_crouching",
+        "hurtSmall": "mimita_sizing_6_hurt_small_001",
+        "hurtNormal": "mimita_sizing_6_hurt_normal_001",
+        "hurtLarge": "mimita_sizing_6_hurt_large_001",
+        "deathSmall": "mimita_sizing_6_smalldeath_001",
+        "death": "mimita_sizing_6_dead",
+        "respawn": "mimita_sizing_6_idle_003"
+      }
+    }
+  }
+}

@@ -586,6 +586,27 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.health = maxHp;
     if (!profile.avatarName.empty())
         player.avatarName = profile.avatarName;
+    // The active mode's allow-list is authoritative for players as well as
+    // NPCs. Never let a rejected/manual avatar survive a spawn.
+    if (profile.hasRole && !player.avatarName.empty() &&
+        !isAvatarAllowedByPolicy(player.avatarName, profile.allowedAvatars, profile.deniedAvatars)) {
+        std::string fallback = profile.avatarName;
+        if (fallback.empty() || !isAvatarAllowedByPolicy(
+                fallback, profile.allowedAvatars, profile.deniedAvatars)) {
+            fallback = profile.allowedAvatars.empty() ? std::string() : profile.allowedAvatars.front();
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "player.avatar.policy_fallback", player.avatarName,
+            "spawn replaced avatar outside the active mode policy",
+            (uint32_t)player.spawnGeneration,
+            nlohmann::json{{"player_id", player.id},
+                           {"rejected", player.avatarName},
+                           {"selected", fallback},
+                           {"role", profile.roleId}},
+            __FILE__, __LINE__, __FUNCTION__);
+        player.avatarName = fallback;
+    }
     // Per-avatar movement capability (roll/fly/crawl) from the avatar rig.
     if (!player.avatarName.empty()) {
         const AvatarRig* rig =
@@ -619,6 +640,16 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
             player.weaponSetId = 0;
         player.ownedWeaponIds.clear();
         getInitialInventory(player.ownedWeaponIds, player.weaponSetId);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "actor.loadout.resolved", std::to_string(player.id),
+            isInitialSpawn ? "initial spawn loadout resolved" : "respawn loadout resolved",
+            (uint32_t)player.spawnGeneration,
+            nlohmann::json{{"actor", player.id}, {"kind", "player"},
+                           {"weapon_set_id", player.weaponSetId},
+                           {"weapon_count", player.ownedWeaponIds.size()},
+                           {"weapons", player.ownedWeaponIds}},
+            __FILE__, __LINE__, __FUNCTION__);
         // A declared disaster owns the per-actor loadout for this life. The
         // assignment is deterministic from the replicated round seed, so this
         // is a data lookup, not a mode-name branch.

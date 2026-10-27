@@ -1,5 +1,6 @@
 #include "engine/engine-tick-replay.h"
 #include "engine/engine.h"
+#include "entities/player-avatar-animations.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
 #include "gui/hud/chat-window.h"
@@ -1018,6 +1019,11 @@ void engineTickReplay(Engine& engine, float dt)
         simTicksRun++;
     }
     } // Perf::ScopedTimer Simulation
+
+    // Presentation-only interpolation between the last two fixed animation
+    // samples. Gameplay (collision, damage, hitboxes) still uses the fixed-tick
+    // authoritative transform.
+    setAnimationRenderAlpha((float)(simAccumulator / SIM_DT));
 
     // Config polling — once per rendered frame, not per simulation tick.
     // These do filesystem stat() calls; running them inside the catch-up loop

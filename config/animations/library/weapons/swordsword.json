@@ -1442,6 +1442,7 @@
     }
   },
   "states": {
-    "default": "mimita_sizing_6_idle_005"
+    "default": "mimita_sizing_6_idle_005",
+    "equip": "mimita_sizing_6_equip_005"
   }
 }

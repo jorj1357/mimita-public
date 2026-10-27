@@ -22,6 +22,26 @@
 // avatar loader, the per-instance parser, and the animation registry.
 void parseAvatarRigJson(const nlohmann::json& root, AvatarRig& out);
 
+// Runtime animation settings, hot-reloaded from config/animations/settings.json.
+struct AnimationRuntimeSettings {
+    int rootTranslationMode = 1;
+    bool renderPoseInterpolation = true;
+    std::string deathPresentation = "auto";
+    int hurtTierMode = 1;
+    float hurtPercentSmallMax = 15.0f;
+    float hurtPercentNormalMax = 30.0f;
+    int hurtFixedSmallMax = 10;
+    int hurtFixedNormalMax = 50;
+    std::unordered_map<std::string, int> statePriorities;
+};
+
+const AnimationRuntimeSettings& animationRuntimeSettings();
+void pollAnimationRuntimeSettings();
+int animationStatePriority(const std::string& state);
+// Presentation-only interpolation factor between the last two fixed poses.
+float animationRenderAlpha();
+void setAnimationRenderAlpha(float alpha);
+
 class AvatarAnimationRegistry {
 public:
     static AvatarAnimationRegistry& instance();

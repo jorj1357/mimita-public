@@ -1244,22 +1244,22 @@
         "slash_one": {
           "useWeaponPose": true,
           "leftArm": {"translation": [0.04, 0.0, 0.0], "rotation": [0.0, 20.0, 40.0]},
-          "rightArm": {"translation": [-0.02, 0.0, 0.0], "rotation": [100.0, -40.0, 90.0]}
+          "rightArm": {"translation": [-0.02, 0.0, 0.0], "rotation": [10.0, 0.0, 0.0]}
         },
         "slash_two": {
           "useWeaponPose": true,
           "leftArm": {"translation": [0.0, 0.0, 0.0], "rotation": [92.0, -18.0, -40.0]},
-          "rightArm": {"translation": [-0.03, 0.0, 0.0], "rotation": [85.0, 16.0, 38.0]}
+          "rightArm": {"translation": [-0.03, 0.0, 0.0], "rotation": [100.0, -40.0, 90.0]}
         },
         "right_attack": {
           "useWeaponPose": true,
           "leftArm": {"translation": [0.04, 0.0, 0.0], "rotation": [64.0, 24.0, -46.0]},
-          "rightArm": {"translation": [-0.04, 0.0, 0.0], "rotation": [66.0, -24.0, 46.0]}
+          "rightArm": {"translation": [-0.04, 0.0, 0.0], "rotation": [100.0, -40.0, 90.0]}
         },
         "defensive": {
           "useWeaponPose": true,
           "leftArm": {"translation": [0.08, 0.0, 0.0], "rotation": [70.0, 22.0, -26.0]},
-          "rightArm": {"translation": [-0.1, 0.0, 0.0], "rotation": [70.0, -22.0, 26.0]}
+          "rightArm": {"translation": [-0.1, 0.0, 0.0], "rotation": [100.0, -40.0, 90.0]}
         },
         "shooting": {
           "useWeaponPose": true,

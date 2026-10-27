@@ -175,7 +175,11 @@ and stuff
 2026 10 15 2002 jorj explain
 heres all the mosnters for v1
 
-boomer:
+2026 10 27 1447 jorj
+anims: idle, walk, attack, hurt
+sometimes new attacks
+
+### boomer:
 - anims
 1. idle
 2026 10 25 1052
@@ -183,27 +187,28 @@ boomer:
 2026 10 25 1053
 3. attack spit
 2026 10 25 1111
-3.1. attack arm
+3. attack arm
 2026 10 25 1108
-
-
 4. hurt
 2026 10 25 1116
+
+
 - attack
 1. spits acid at u, area denial and gross, poison dmg
 2. slashes at u withclaws? or idk, spyknie damage, touch = dmg 
 
-stabber: 
+### stabber: 
 - anims
 1. idle
-2026 10 25 1123
+2026 10 25 1123 done
 2. walk
+2026 010 27 1450 done  dont mark if done antmroe bro 
 3. attack
 4. hurt
 - attack
 1. stabs u , spyknife touch = damage logic , scale with force
 
-crawler: 
+### crawler: 
 - anims
 1. idle
 2. walk
@@ -212,7 +217,7 @@ crawler:
 - attack
 1. touches u or bites u , spyknife touch = damage logic , scale with force
 
-mutant wasp: 
+### mutant wasp: 
 - anims
 1. idle
 2. walk
@@ -221,7 +226,7 @@ mutant wasp:
 - attack
 1. stings u  , spyknife touch = damage logic , scale with force
 
-griever
+### griever
 - anims
 1. idle
 2. walk
@@ -230,7 +235,7 @@ griever
 - attack
 1. puncutres u  , spyknife touch = damage logic , scale with force
 
-brute
+### brute
 - anims
 1. idle
 2. walk
@@ -240,7 +245,7 @@ brute
 1. SPECIAL WITH ANIM: ground slam, like 5-10 dmg and knocks u into the air
 2. punch/slash?   , spyknife touch = damage logic , scale with force
 
-normal zombie 
+### normal zombie 
 - anims
 1. idle
 2. walk
@@ -249,7 +254,7 @@ normal zombie
 - attack
 1. claws at u , spyknife touch = damage logic , scale with force
 
-chainsaw boss
+### chainsaw boss
 - anims
 1. idle
 2. walk
@@ -259,7 +264,7 @@ chainsaw boss
 1. swings chainsaw at u , spyknife touch = damage logic , scale with force
 2. dashes forward, reuse cahrger logic? special anim: touched while charging = damage and knockback, if touching chainsaw then damaegd there too
 
-charger 
+### charger 
 - anims
 1. idle
 2. walk

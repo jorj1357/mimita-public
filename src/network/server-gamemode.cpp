@@ -541,11 +541,17 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
         }
     }
-    // A role/preset without its own weapon set inherits the active mode's
-    // authoritative set. Apply the same inventory to NPCs that player spawn
-    // already resolves from communityWeaponSetId; filtering an NPC's generic
-    // default inventory can otherwise leave it with only a subset of the set.
-    if (out.weaponSetId <= 0 && out.weapons.empty() && d.enabled &&
+    // Team modes own the shared player/NPC loadout. A role or actor preset may
+    // not replace it with a different set; only an explicit host override does.
+    if (d.enabled && gm.id == "tdm" && (gm.weaponSetId > 0 || d.communityWeaponSetExplicit)) {
+        const int effectiveSet = d.communityWeaponSetExplicit
+            ? d.communityWeaponSetId : gm.weaponSetId;
+        if (const CommunityWeaponSet* set =
+                CommunityServerConfig::instance().weaponSetById(effectiveSet)) {
+            out.weaponSetId = set->id;
+            out.weapons = set->weapons;
+        }
+    } else if (out.weaponSetId <= 0 && out.weapons.empty() && d.enabled &&
         d.communityWeaponSetId > 0) {
         if (const CommunityWeaponSet* set =
                 CommunityServerConfig::instance().weaponSetById(d.communityWeaponSetId)) {
@@ -786,7 +792,10 @@ void serverCommunityMapStart(const std::vector<std::string>& mapPool,
     // DuelStatePacket to CommunityMatchClient, not DuelQueue.
     state.matchMode = "sandbox";
     state.communityWeaponSetId = std::max(1, weaponSetId);
-    state.communityWeaponSetExplicit = true;
+    // This is only the launch fallback. A team mode with a configured
+    // weapon_set_id owns the set; the explicit flag is reserved for a real host
+    // override (GUI choice or terminal command).
+    state.communityWeaponSetExplicit = false;
     state.autoMapRotation = rules.autoMapRotation;
     state.mapRotationMinutes = rules.mapRotationMinutes;
     state.nextMapRotationMs = nowMs() + (uint64_t)state.mapRotationMinutes * 60000ull;

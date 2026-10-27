@@ -207,7 +207,7 @@ std::string CommunityServerConfig::modeItems() const
 
 std::string CommunityServerConfig::weaponSetItems() const
 {
-    std::string out;
+    std::string out = "Auto (mode set)";
     for (const auto& set : weaponSets_) {
         if (set.roleOnly) continue;  // role loadout sets are not host-selectable
         if (!out.empty()) out += ',';

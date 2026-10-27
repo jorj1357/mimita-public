@@ -8,11 +8,33 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "config" / "animations" / "library"
 MASTER = ROOT / "config" / "animations" / "masterlist" / "animation-masterlist.json"
+SETS = ROOT / "config" / "animations" / "masterlist" / "animation-sets.json"
+SETTINGS = ROOT / "config" / "animations" / "settings.json"
 IMPORTS = ROOT / "config" / "animations" / "imports"
 
 
 def read(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_include_clips(include, errors, owner):
+    target = ROOT / include
+    if include.endswith("/") and target.is_dir():
+        clips = set()
+        for path in sorted(target.glob("*.json")):
+            clips.update(read(path).get("clips", {}))
+        return clips
+    if not target.is_file():
+        errors.append(f"{owner}: missing include {include}")
+        return set()
+    return set(read(target).get("clips", {}))
+
+
+def state_clip_ids(states):
+    selected = [value for key, value in states.items()
+                if key != "locomotion" and isinstance(value, str)]
+    selected += list(states.get("locomotion", {}).values())
+    return selected
 
 
 def main():
@@ -55,24 +77,46 @@ def main():
                 except (KeyError, TypeError, ValueError):
                     errors.append(f"{path}: {clip_id} has invalid Melee markers")
 
+    sets = read(SETS).get("sets", {}) if SETS.is_file() else {}
+    for set_id, set_doc in sets.items():
+        available = set(set_doc.get("clips", {}))
+        for include in set_doc.get("include", []):
+            available.update(load_include_clips(include, errors, f"set {set_id}"))
+        for clip_id in state_clip_ids(set_doc.get("states", {})):
+            if clip_id and clip_id not in available:
+                errors.append(f"set {set_id}: state references missing clip {clip_id}")
+
     for path in sorted((ROOT / "assets" / "avatars").glob("*/avatar.json")):
         profile = read(path).get("animation_profile")
         if not isinstance(profile, dict):
             continue
         profile_count += 1
         available = set(profile.get("clips", {}))
-        for include in profile.get("include", []):
-            target = ROOT / include
-            if not target.is_file():
-                errors.append(f"{path}: missing include {include}")
+        set_id = profile.get("set")
+        if set_id:
+            if set_id not in sets:
+                errors.append(f"{path}: missing animation set {set_id}")
             else:
-                available.update(read(target).get("clips", {}))
-        states = profile.get("states", {})
-        selected = [value for key, value in states.items() if key != "locomotion" and isinstance(value, str)]
-        selected += list(states.get("locomotion", {}).values())
-        for clip_id in selected:
+                set_doc = sets[set_id]
+                available.update(set_doc.get("clips", {}))
+                for include in set_doc.get("include", []):
+                    available.update(load_include_clips(include, errors, f"set {set_id}"))
+        for include in profile.get("include", []):
+            available.update(load_include_clips(include, errors, str(path)))
+        for clip_id in state_clip_ids(profile.get("states", {})):
             if clip_id and clip_id not in available:
                 errors.append(f"{path}: state references missing clip {clip_id}")
+
+    if SETTINGS.is_file():
+        settings = read(SETTINGS)
+        if settings.get("rootTranslationMode") not in (1, 2):
+            errors.append(f"{SETTINGS}: rootTranslationMode must be 1 or 2")
+        if not isinstance(settings.get("renderPoseInterpolation", True), bool):
+            errors.append(f"{SETTINGS}: renderPoseInterpolation must be boolean")
+        priorities = settings.get("statePriorities", {})
+        if not isinstance(priorities, dict) or not all(
+                isinstance(v, int) and not isinstance(v, bool) for v in priorities.values()):
+            errors.append(f"{SETTINGS}: statePriorities must be integer values")
 
     for path in sorted((ROOT / "config" / "weapons").glob("*/config.json")):
         definition = read(path)

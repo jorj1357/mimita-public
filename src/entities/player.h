@@ -148,6 +148,7 @@ struct PhysicalBodyPart {
     SpringState rotationSpring;
     glm::mat4 worldTransform{1.0f};
     glm::mat4 previousWorldTransform{1.0f};
+    bool hasPreviousWorldTransform = false;
 };
 
 struct PhysicalBody {
@@ -215,6 +216,9 @@ struct AnimClip {
     bool loop = true;
     // AimBody offsets are layered over the authored pose unless a clip opts out.
     bool aimLayer = true;
+    // -1 inherits config/animations/settings.json; 1 keeps authored translation;
+    // 2 zeroes it while preserving rotation and scale.
+    int rootTranslationMode = -1;
     bool speedScaleFromVelocity = true;
     bool speedBased = true;         // false = fixed tick rate, not velocity-scaled
     bool inputTriggered = false;    // true = state change on input, not velocity
@@ -245,10 +249,21 @@ struct AvatarStateMap {
     std::string fall;     // airborne and falling
     std::string land;     // brief landing pose
     std::string crouch;   // grounded crouch
+    std::string crouchIn; // transition into crouch
+    std::string crouchOut;// transition out of crouch
+    std::string dash;     // authored dash pose
+    std::string downDash; // authored down-dash pose
+    std::string freeze;   // authored freeze pose
+    std::string knockback;// authored knockback pose
     std::string respawn;  // brief spawn pose
     std::string attack;   // empty = off
-    std::string hurt;     // empty = off
-    std::string death;    // empty = off
+    std::string equip;    // tool equip clip
+    std::string hurt;     // generic hurt fallback
+    std::string hurtSmall;
+    std::string hurtNormal;
+    std::string hurtLarge;
+    std::string death;    // generic death fallback
+    std::string deathSmall;
 };
 
 struct AvatarAnimationSet {
@@ -545,9 +560,22 @@ public:
     bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
     // Animation state inputs for optional per-state clips (crouch/jump/fall/land).
     bool crouching = false;
+    bool animPrevCrouching = false;
     float landAnimTimer = 0.0f;
     float respawnAnimTimer = 0.0f;
+    float dashAnimTimer = 0.0f;
+    float downDashAnimTimer = 0.0f;
+    float knockbackAnimTimer = 0.0f;
+    float crouchAnimTimer = 0.0f;
+    float equipAnimTimer = 0.0f;
+    bool crouchAnimInto = false;
+    // Pending hurt presentation selected from actual damage. 0 none, 1 small,
+    // 2 normal, 3 large. Consumed by the animation state machine.
+    int pendingHurtTier = 0;
+    float authoredDeathTimer = 0.0f;
+    bool authoredDeathActive = false;
     float animPrevPercent = 0.0f;
+    int animPrevHp = -1;
     bool animPrevDead = false;
     // Set when a reliable kill event already presented the death (anim + red
     // ellipsoid) for this life, so the snapshot health transition does not
@@ -652,6 +680,7 @@ public:
     MovementCapsule movementCapsule;
     PerfectPoseSkeleton perfectPoseSkeleton;
     PhysicalBody physicalBody;
+    std::uint32_t lastWorldTransformCaptureTick = 0xFFFFFFFFu;
     glm::vec3 previousProceduralVelocity{0.0f};
     float proceduralTime = 0.0f;
     float previousMove01 = 0.0f;

@@ -26,6 +26,7 @@
 #include "debug/debug-log.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "entities/player-avatar-animations.h"
 #include "physics/config.h"
 
 extern Player* gpPlayer;
@@ -216,11 +217,18 @@ void Player::updateModelWorldTransforms()
 {
     syncLegacyStateToLayers();
 
-    // Save previous transforms for limb sweep collision
-    for (PhysicalBodyPart& part : physicalBody.parts)
-        part.previousWorldTransform = part.worldTransform;
-    for (PhysicalBodyPart& part : physicalBody.extraParts)
-        part.previousWorldTransform = part.worldTransform;
+    // Save previous transforms for limb sweep collision and render-time pose
+    // interpolation. Capture once per fixed tick so repeated render calls do not
+    // overwrite the previous authoritative pose.
+    const bool capturePrevious =
+        lastWorldTransformCaptureTick != movementSimulationTick;
+    if (capturePrevious) {
+        for (PhysicalBodyPart& part : physicalBody.parts)
+            part.previousWorldTransform = part.worldTransform;
+        for (PhysicalBodyPart& part : physicalBody.extraParts)
+            part.previousWorldTransform = part.worldTransform;
+        lastWorldTransformCaptureTick = movementSimulationTick;
+    }
 
     glm::mat4 rootWorld = transformMatrix(movementCapsule.position, movementCapsule.rotation);
     if (avatarRootOffsetZ != 0.0f)
@@ -264,11 +272,19 @@ void Player::updateModelWorldTransforms()
     {
         if (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size())
             part.worldTransform = perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
+        if (!part.hasPreviousWorldTransform) {
+            part.previousWorldTransform = part.worldTransform;
+            part.hasPreviousWorldTransform = true;
+        }
     }
     for (PhysicalBodyPart& part : physicalBody.extraParts)
     {
         if (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size())
             part.worldTransform = perfectPoseSkeleton.nodes[part.nodeIndex].worldTransform;
+        if (!part.hasPreviousWorldTransform) {
+            part.previousWorldTransform = part.worldTransform;
+            part.hasPreviousWorldTransform = true;
+        }
     }
 }
 
@@ -419,6 +435,21 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
 
     printf("[APPLY DAMAGE] hpAfter=%d actualDamage=%d\n", currentHp, actualDamage);
 
+    {
+        const AnimationRuntimeSettings& anim = animationRuntimeSettings();
+        int tier = 3;
+        if (anim.hurtTierMode == 1) {
+            const float pct = 100.0f * (float)actualDamage /
+                (float)std::max(1, maxHp);
+            tier = pct <= anim.hurtPercentSmallMax ? 1
+                 : pct <= anim.hurtPercentNormalMax ? 2 : 3;
+        } else {
+            tier = actualDamage <= anim.hurtFixedSmallMax ? 1
+                 : actualDamage <= anim.hurtFixedNormalMax ? 2 : 3;
+        }
+        pendingHurtTier = std::max(pendingHurtTier, tier);
+    }
+
     applyHitFlinch(actualDamage, damageOrigin, glm::normalize(
         glm::length(knockbackDir) > 0.001f ? knockbackDir : glm::vec3(0.0f, 0.0f, 1.0f)));
     if (this == gpPlayer)
@@ -438,6 +469,8 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
     if (knockbackForce > 0.0f && glm::length(knockbackDir) > 0.001f) {
         externalImpulse += glm::normalize(knockbackDir) * knockbackForce;
         externalImpulse.z += knockbackForce * 0.2f; // Slight upward knockback
+        if (knockbackForce >= 10.0f)
+            knockbackAnimTimer = std::max(knockbackAnimTimer, 0.35f);
     }
     
     // Spawn blood effect at player position

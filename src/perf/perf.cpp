@@ -5,6 +5,7 @@
 #include "debug/structured-log.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -1012,6 +1013,9 @@ void Perf::endFrame(float currentFrameMs)
             double sumNet = 0.0, maxNet = 0.0;
             double sumDestroy = 0.0, maxDestroy = 0.0;
             int maxNpcs = 0, maxEffects = 0, maxDrawCalls = 0;
+            std::array<float, 300> frameSamples{};
+            uint32_t sampleCount = 0;
+            uint32_t overBudget = 0;
         };
         static Window w;
         const uint64_t nowValueUs = nowUs();
@@ -1021,6 +1025,10 @@ void Perf::endFrame(float currentFrameMs)
         w.frames++;
         w.sumFrame += currentMs;
         w.maxFrame = std::max(w.maxFrame, (double)currentMs);
+        if (w.sampleCount < w.frameSamples.size())
+            w.frameSamples[w.sampleCount++] = currentMs;
+        const double targetMs = 1000.0 / (double)std::max(1, gPerfBudget.targetFps);
+        if (currentMs > targetMs) ++w.overBudget;
         w.sumPhysics += s.current.physics;
         w.maxPhysics = std::max(w.maxPhysics, s.current.physics);
         w.sumEntity += s.current.entityPhysics;
@@ -1049,6 +1057,20 @@ void Perf::endFrame(float currentFrameMs)
             fields["avg_fps"] = frames / secs;
             fields["avg_frame_ms"] = w.sumFrame / frames;
             fields["max_frame_ms"] = w.maxFrame;
+            if (w.sampleCount > 0) {
+                std::array<float, 300> sorted = w.frameSamples;
+                std::sort(sorted.begin(), sorted.begin() + w.sampleCount);
+                auto pct = [&](double p) {
+                    const size_t idx = std::min<size_t>(
+                        w.sampleCount - 1,
+                        (size_t)(p * (double)(w.sampleCount - 1)));
+                    return sorted[idx];
+                };
+                fields["p50_frame_ms"] = pct(0.50);
+                fields["p95_frame_ms"] = pct(0.95);
+                fields["p99_frame_ms"] = pct(0.99);
+            }
+            fields["frames_over_budget"] = w.overBudget;
             fields["avg_physics_ms"] = w.sumPhysics / frames;
             fields["max_physics_ms"] = w.maxPhysics;
             fields["avg_entity_physics_ms"] = w.sumEntity / frames;

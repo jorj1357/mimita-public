@@ -31,6 +31,21 @@
     "version": "2",
     "poseComposition": "layered or authored_only",
     "include": "repository-relative shared clip paths",
-    "states": "default, locomotion, run, jump, fall, land, crouch, respawn, attack, hurt, death"
+    "set": "optional ordered set id from animation-sets.json",
+    "states": "default, locomotion, run, jump, fall, land, dash, downDash, freeze, knockback, crouch, crouchIn, crouchOut, respawn, attack, equip, hurt, hurtSmall, hurtNormal, hurtLarge, death, deathSmall"
+  },
+  "animation_set_fields": {
+    "order": "integer ordering hint for editors and diagnostics",
+    "include": "repository-relative clips or directories merged before the avatar profile",
+    "states": "state map supplied by the set; inline avatar states override it"
+  },
+  "runtime_settings_fields": {
+    "rootTranslationMode": "1 keeps authored part translation, 2 zeroes it",
+    "renderPoseInterpolation": "presentation-only blending between fixed-tick poses",
+    "deathPresentation": "auto, animation, ragdoll, or disappear",
+    "hurtTierMode": "1 uses percent of max HP, 2 uses fixed damage",
+    "hurtPercent": "smallMax and normalMax percentages for mode 1",
+    "hurtFixed": "smallMax and normalMax damage values for mode 2",
+    "statePriorities": "state name to integer priority; higher wins"
   }
 }

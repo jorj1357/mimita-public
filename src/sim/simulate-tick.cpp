@@ -234,12 +234,13 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             }
         }
     }
-    else if (sim.player->usesMeleeAuthoredPose()) {
-        // Dead Melee actor: movement/collision stay off (existing death path owns
-        // the corpse presentation), but keep the authored pose pipeline running
-        // so the profile's death/respawn state clips present on the body.
-        sim.player->updateProceduralAnimation(TICK_DT, THE_CAMERA.front,
-                                              THE_CAMERA.pos, false);
+    else {
+        // Dead actor: movement/collision stay off. Keep the shared animation
+        // path running so a non-ragdoll mode can present its authored death
+        // clip; ragdoll death presentation remains owned by the ragdoll system.
+        if (!ragdoll.isActive())
+            sim.player->updateProceduralAnimation(TICK_DT, THE_CAMERA.front,
+                                                  THE_CAMERA.pos, false);
     }
 
     {
