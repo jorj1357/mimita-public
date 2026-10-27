@@ -1,6 +1,7 @@
 #include "player-animation-config.h"
 
 #include "animation-rotation.h"
+#include "debug/structured-log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -290,7 +291,19 @@ void loadAnimationConfig(PlayerProceduralConfig& loaded)
         parseSway(root, loaded);
         parseLayers(root, loaded);
         parseWeaponPoses(root, loaded);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "anim.weapon_poses.loaded", ANIMATIONS_CONFIG_PATH,
+            "weapon pose JSON loaded", 0,
+            {{"path", ANIMATIONS_CONFIG_PATH},
+             {"pose_count", loaded.weaponPoses.size()}});
     } catch (const std::exception& e) {
         printf("[HOT RELOAD] animation config reload failed: %s\n", e.what());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Errors,
+            "anim.weapon_poses.reload_rejected", ANIMATIONS_CONFIG_PATH,
+            "animation JSON rejected; previous valid pose set retained", 0,
+            {{"path", ANIMATIONS_CONFIG_PATH}, {"reason", e.what()}});
+        throw;
     }
 }

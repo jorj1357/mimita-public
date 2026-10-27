@@ -252,6 +252,7 @@ void endAction(Player& player)
 {
     g_state.active = false;
     g_state.actionId.clear();
+    player.weaponPoseActionState.clear();
     player.clearOneShot();
     player.proceduralMeleePoseActive = false;
 }
@@ -548,6 +549,15 @@ void clientTick(Player& player,
     }
     g_state.currentPhaseIndex = phaseIndex;
     g_state.currentPhaseTick = phaseTick;
+
+    if (moveSet->definitionId == "swordsword" ||
+        moveSet->definitionId == "chainsaw") {
+        player.weaponPoseActionState = action->id;
+    } else if (moveSet->definitionId == "mace") {
+        player.weaponPoseActionState = action->id + "_" + phaseName;
+    } else {
+        player.weaponPoseActionState.clear();
+    }
 
     if (!action->animationClipId.empty()) {
         player.playOneShotAtTick(action->animationClipId, elapsed);

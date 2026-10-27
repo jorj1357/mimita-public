@@ -653,9 +653,12 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
             return wdef.customParams.count(key) ? wdef.customParams.at(key) : fallback;
         };
         ProjectileVisualConfig cfg;
+        cfg.sphere = cp("projectileVisualSphere", 0.0f) > 0.0f;
         cfg.texturePath = isRocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
         cfg.length = cp("projectileVisualLength", isRocket ? 1.5f : 1.8f);
-        cfg.radius = cp("projectileVisualRadius", isRocket ? 0.18f : 0.28f);
+        cfg.radius = wdef.id == "deathball" && wdef.projectileRadius > 0.0f
+            ? wdef.projectileRadius
+            : cp("projectileVisualRadius", isRocket ? 0.18f : 0.28f);
         cfg.scale = glm::vec3(cp("projectileVisualScaleX", 1.0f), cp("projectileVisualScaleY", 1.0f), cp("projectileVisualScaleZ", 1.0f));
         cfg.rotationOffsetDegrees = glm::vec3(cp("projectileVisualRotationOffsetX", 0.0f), cp("projectileVisualRotationOffsetY", 0.0f), cp("projectileVisualRotationOffsetZ", 0.0f));
         cfg.textureTiling = glm::vec2(cp("projectileVisualTextureTilingU", 1.0f), cp("projectileVisualTextureTilingV", 1.0f));

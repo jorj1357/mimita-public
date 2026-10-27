@@ -779,6 +779,20 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
     projectile.predicted = localOwner && preserveSim;
     projectile.exploded = false;
     configureNetworkProjectile(projectile, projectileDefinition(event->weaponDefNetworkId, event->weapon));
+    const std::string* projectileWeaponId =
+        weaponIdForDefNetworkId(event->weaponDefNetworkId);
+    if (projectileWeaponId && *projectileWeaponId == "deathball") {
+        const ProjectileVisualConfig visual = projectileVisualConfigForWeapon("deathball");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "deathball.client_spawn", std::to_string(projectile.projectileId),
+            "deathball projectile radius received and visual radius resolved", event->spawnTick,
+            {{"projectile", projectile.projectileId},
+             {"radius_m", projectile.radius},
+             {"visual_radius_m", visual.radius},
+             {"owner", projectile.ownerPlayerId},
+             {"predicted", projectile.predicted}});
+    }
     if (projectile.predicted)
         ctx.predictedProjectileIds.insert(event->projectileId);
 

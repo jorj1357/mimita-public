@@ -1314,6 +1314,17 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     spawn.header.tick = tick;
     fillProjectilePose(spawn, projectile);
     projectiles[projectile.id] = projectile;
+    if (const std::string* weaponId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+        weaponId && *weaponId == "deathball") {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "deathball.spawn", std::to_string(projectile.id),
+            "deathball spawned with configured projectile radius", tick,
+            {{"projectile", projectile.id}, {"weapon", *weaponId},
+             {"radius_m", projectile.radius},
+             {"visual_radius_m", cfg.radius},
+             {"lifetime_s", projectile.lifetime}});
+    }
     // Broadcast the spawn to everyone EXCEPT the shooter — the shooter's client
     // already has its own instant predicted projectile and adopting a server copy
     // back is what caused the "two rockets" duplicate on badconn.
@@ -2005,6 +2016,8 @@ void tickServerProjectiles(SOCKET sock,
                                  {"target_type", (int)victimRef.kind},
                                  {"damage", damage},
                                  {"distance_fraction", t},
+                                 {"radius_m", radius},
+                                 {"distance_m", dist},
                                  {"knockback", {impulse.x, impulse.y, impulse.z}},
                                  {"health_before", result.healthBefore},
                                  {"health_after", result.healthAfter},

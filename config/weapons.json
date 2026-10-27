@@ -333,8 +333,8 @@
     "viewmodel": {
       "enabled": true,
       "position": [
-        -9.0,
-        0.2,
+        0.0,
+        0.0,
         0
       ],
       "rotation_degrees": [
@@ -343,9 +343,9 @@
         0.0
       ],
       "scale": [
-        0.6,
-        0.3,
-        0.3
+        1.0,
+        1.0,
+        1.0
       ]
     },
     "damage": 35.0,
@@ -400,7 +400,7 @@
       "contactMaxVolume": 1.0,
       "contactMinPitch": 0.5,
       "contactMaxPitch": 1.4,
-      "damageTickInterval": 0.0,
+      "damageTickInterval": 0.001,
       "npcGuardTicks": 60.0
     },
     "components": {
@@ -1748,13 +1748,13 @@
     },
     "viewmodel": {
       "enabled": true,
-      "position": [-9.0, -3.0, 0.5],
-      "rotation_degrees": [0.0, 0.0, 0.0],
+      "position": [0.3, -0.5, 0.4],
+      "rotation_degrees": [0.0, 0.0, -90.0],
       "attachment": {
         "position": [0.25, -0.05, -0.25],
         "rotation_degrees": [90.0, 10.0, -25.0]
       },
-      "scale": [1.0, 1.0, 1.0]
+      "scale": [1.0, 2.0, 1.0]
     },
     "damage": 15.0,
     "headshot_multiplier": 1.0,
@@ -1781,23 +1781,23 @@
       "equip": "weapon/chainsaw/chainsawequip"
     },
     "custom_params": {
-      "bladeLength": 4.0,
-      "bladeRadius": 0.22,
+      "bladeLength": 8.0,
+      "bladeRadius": 0.62,
       "contactBladeRadius": 0.16,
       "contactMinDamage": 5.0,
       "contactMaxDamage": 15.0,
       "contactMinKnockback": 5.0,
       "contactMaxKnockback": 40.0,
       "contactMaxForceSpeed": 22.0,
-      "damageTickInterval": 0.05,
+      "damageTickInterval": 0.001,
       "revDamageMultiplier": 2.0,
       "revDecayTicks": 60.0,
       "revReachMultiplier": 1.25,
       "revPitchMultiplier": 1.2,
       "revVolumeMultiplier": 1.2,
       "revColorFullR": 1.0,
-      "revColorFullG": 0.05,
-      "revColorFullB": 0.05,
+      "revColorFullG": 0.0,
+      "revColorFullB": 0.0,
       "revColorBaseR": 0.15,
       "revColorBaseG": 0.02,
       "revColorBaseB": 0.02,
@@ -1839,8 +1839,8 @@
     },
     "viewmodel": {
       "enabled": true,
-      "position": [-9.0, -3.0, 0.5],
-      "rotation_degrees": [0.0, 0.0, 0.0],
+      "position": [2.0, 0.0, -1.7],
+      "rotation_degrees": [-10.0, 70.0, 0.0],
       "attachment": {
         "position": [0.25, -0.05, -0.25],
         "rotation_degrees": [90.0, 10.0, -25.0]
@@ -1875,15 +1875,15 @@
       "retrigger": true
     },
     "custom_params": {
-      "bladeLength": 5.0,
-      "bladeRadius": 0.42,
+      "bladeLength": 10.0,
+      "bladeRadius": 1.42,
       "contactBladeRadius": 0.35,
       "contactMinDamage": 1.0,
       "contactMaxDamage": 5.0,
       "contactMinKnockback": 5.0,
       "contactMaxKnockback": 25.0,
       "contactMaxForceSpeed": 22.0,
-      "damageTickInterval": 0.05,
+      "damageTickInterval": 0.001,
       "npcGuardTicks": 60.0
     },
     "components": {
@@ -1939,7 +1939,7 @@
     "spread": 0.0,
     "recoil": 10.0,
     "projectile_speed": 9.0,
-    "projectile_radius": 0.7,
+    "projectile_radius": 5.0,
     "projectile_lifetime": 10.0,
     "fire_mode": "semi_auto",
     "behavior_type": "rocket_launcher",
@@ -1955,7 +1955,7 @@
     },
     "custom_params": {
       "rocketSpeed": 9.0,
-      "rocketRadius": 0.7,
+      "rocketRadius": 5.0,
       "splashRadius": 0.0,
       "splashExponent": 2.0,
       "rocketDirectDamage": 0.0,
@@ -1984,7 +1984,7 @@
       "deathballKnockbackPerDamage": 0.1,
       "reloadOneAtATime": 1.0,
       "projectileVisualSphere": 1.0,
-      "projectileVisualRadius": 0.7,
+      "projectileVisualRadius": 5.0,
       "projectileFillAlpha": 1.0,
       "projectileOutlineEnabled": 1.0,
       "projectileOutlineColorR": 0.0,

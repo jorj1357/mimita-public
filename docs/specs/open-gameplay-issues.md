@@ -1247,3 +1247,58 @@ spawn selection, and SSBM rules) into acceptance scenarios first. Implementation
 should then run those scenarios on the dev-loop executable and inspect live
 runtime evidence; a document change or successful build alone does not prove a
 fix.
+## New intake — 2026-10-27
+
+- **Melee attacks should work while airborne:** The player wants every melee
+  weapon to be attackable in the air. This is a desired behavior request, not
+  a reproduced failure. Review the shared melee action rules and per-weapon
+  exceptions, then verify input acceptance, server authority, and animation
+  timing for attacks started and continued while airborne. Keep fixed-tick
+  movement and damage behavior consistent across player, NPC, and networked
+  actors; exact action restrictions, if any, remain open.
+- **Melee contact needs visible feedback, with more complete weapon
+  presentation:** The player reports that melee contact has no visible effect
+  and asks for more expressive visuals, animations, and sounds. Define readable
+  contact feedback for hit, block, and miss outcomes and check it against the
+  existing shared contact and confirmation presentation. Treat the reported
+  absence as unverified until reproduced; avoid confusing predicted contact
+  with confirmed damage. The Chainsaw should also have a brighter tint and a
+  broader, more distinctive sound set; general melee sound and animation
+  coverage should be reviewed across weapons rather than assuming one recipe
+  fits all.
+- **Blender-authored animation should compose with procedural camera aiming:**
+  The player wants to author animations in Blender and have them continue
+  playing while the arms, head, and other relevant parts follow camera look
+  direction up and down. The existing Blender exporter and shared runtime
+  provide a starting point, but the current animation spec orders procedural
+  and authored pose layers without yet defining this requested aim composition
+  for every rig. Define the layer order, affected parts, pitch limits, and
+  first-person/remote/NPC consistency before implementation; verify that aim
+  adjustment does not alter hitboxes or make melee contact misleading.
+- **Expand the reusable animation catalog for actors and weapons:** The player
+  wants a master list of reusable animation states and sets that can keep
+  growing: idle, walking, running, jumping, falling, crouching, crawling, light
+  and heavy hurt reactions, dying, and weapon-specific idle, walking, attack,
+  and blocking poses. This overlaps the existing shared animation state
+  machine and clip library, so extend their catalog/coverage rather than
+  creating a parallel tracker. Review state names, transition/blend rules,
+  per-weapon action poses, general versus weapon-specific blocking, and JSON
+  ownership for player, NPC, remote, and first-person presentation.
+- **Explore camera-influenced ragdoll arm poses:** The player wants ragdoll
+  arms to respond somehow to camera control. This is an early design request:
+  define how camera-driven arm control can coexist with physical ragdoll motion,
+  authority, and other observers before selecting behavior or implementation.
+- **Melee attack cadence must not be throttled by hidden limits:** The player
+  states: “there should be no hidden cooldowns or limits”; all melee weapons
+  should allow “1 attack per tick over and over and over,” with no added
+  artificial limit. The shared melee specification already states there is no
+  generic melee hit cooldown and permits contact damage once per victim,
+  weapon, and 60 Hz simulation tick. However, the current HAFS and Chainsaw
+  entries in `config/weapons.json` contain `"damageTickInterval": 0.05`, which
+  is a user-identified concern and needs its runtime meaning traced; do not
+  assume it is harmless configuration or silently treat it as an intended
+  attack throttle. Reconcile attack requests, contact damage sampling, and
+  network batching with the one-attack-per-tick requirement, then remove or
+  redefine any field that imposes an unintended interval. Strengthen the
+  architecture/weapon documentation with an explicit owner and invariant so
+  future weapon fields cannot reintroduce hidden melee cadence limits.

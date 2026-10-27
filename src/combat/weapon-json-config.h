@@ -5,7 +5,7 @@
 namespace WeaponData {
 
 void loadWeaponJsonConfig();
-void registerWeaponFromJson(WeaponDefinition def);
+void registerWeaponFromJson(WeaponDefinition def, bool builtin = true);
 // Registers any JSON-only weapon/moveset definition whose id has no builtin
 // constructor. Called by registerBuiltinWeapons() after the builtin list.
 void registerWeaponsFromJsonRoot();

@@ -47,7 +47,9 @@ ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weapon
         projectileParam(def, "projectileVisualFillB", 1.0f)};
     cfg.texturePath = rocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
     cfg.length = projectileParam(def, "projectileVisualLength", rocket ? 1.5f : 1.8f);
-    cfg.radius = projectileParam(def, "projectileVisualRadius", rocket ? 0.18f : 0.28f);
+    cfg.radius = def && def->id == "deathball" && def->projectileRadius > 0.0f
+        ? def->projectileRadius
+        : projectileParam(def, "projectileVisualRadius", rocket ? 0.18f : 0.28f);
     cfg.scale = {
         projectileParam(def, "projectileVisualScaleX", 1.0f),
         projectileParam(def, "projectileVisualScaleY", 1.0f),

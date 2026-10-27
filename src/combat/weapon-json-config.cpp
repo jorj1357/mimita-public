@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -67,6 +68,7 @@ json gWeaponConfigRoot = json::object();
 std::filesystem::file_time_type gWeaponConfigLastWrite{};
 std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
 bool gWeaponConfigHasWriteTime = false;
+std::unordered_set<std::string> gBuiltinWeaponIds;
 using AnimationFileState = std::pair<std::string, std::filesystem::file_time_type>;
 std::vector<AnimationFileState> gAnimationLibraryFiles;
 bool gAnimationLibraryStateInitialized = false;
@@ -450,12 +452,14 @@ void loadWeaponJsonConfig()
     }
 }
 
-void registerWeaponFromJson(WeaponDefinition def)
+void registerWeaponFromJson(WeaponDefinition def, bool builtin)
 {
     if (gWeaponConfigRoot.contains(def.id))
         applyWeaponJson(def, gWeaponConfigRoot[def.id]);
     else
         applyWeaponExecutionType(def);
+    if (builtin)
+        gBuiltinWeaponIds.insert(def.id);
     WeaponRegistry::instance().registerWeapon(def);
     // Assign a stable network ID for the generic AttackRequest pipeline
     MimitaNet::registerWeaponDefNetworkId(def.id);
@@ -476,25 +480,21 @@ void registerWeaponsFromJsonRoot()
         if (id.empty())
             continue;
 
-        if (WeaponRegistry::instance().has(id)) {
-            // Builtin constructors own their base WeaponDefinition, but the
-            // JSON Melee component is still the live source of move behavior.
-            // Republish it on every config reload so existing data-only
-            // definitions (such as Captain Falcon's move set) can be edited
-            // without restarting the game.
-            WeaponData::MeleeMoveSet moveSet;
-            if (WeaponData::parseMeleeMoveSet(id, it.value(), moveSet))
-                WeaponData::MeleeMoveSetRegistry::instance().set(std::move(moveSet));
-            continue;
-        }
-
         WeaponDefinition def;
         def.id = id;
         def.displayName = id;
         def.behaviorType = WeaponBehaviorType::Melee;
         def.executionType = WeaponExecutionType::PhysicalContact;
         def.hitscan = false;
-        registerWeaponFromJson(def);
+        const bool isBuiltin = gBuiltinWeaponIds.find(id) != gBuiltinWeaponIds.end();
+        if (!WeaponRegistry::instance().has(id) || !isBuiltin)
+            registerWeaponFromJson(std::move(def), false);
+
+        // Builtins keep their constructor-owned base definition, but both
+        // builtins and JSON-only definitions publish the current Melee data.
+        WeaponData::MeleeMoveSet moveSet;
+        if (WeaponData::parseMeleeMoveSet(id, it.value(), moveSet))
+            WeaponData::MeleeMoveSetRegistry::instance().set(std::move(moveSet));
     }
 }
 

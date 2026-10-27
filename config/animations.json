@@ -1171,6 +1171,46 @@
         }
       }
     },
+    "chainsaw": {
+      "active_pose": "idle",
+      "poses": {
+        "idle": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, -20.0, 50.0]},
+          "rightArm": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, 20.0, 40.0]}
+        },
+        "rev": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.6, 0.0, 0.0], "rotation": [0.0, -20.0, 70.0]},
+          "rightArm": {"translation": [1.08, 0.0, 0.0], "rotation": [0.0, 20.0, 60.0]}
+        }
+      }
+    },
+    "mace": {
+      "active_pose": "idle",
+      "poses": {
+        "idle": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, 20.0, 40.0]},
+          "rightArm": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, 20.0, 60.0]}
+        },
+        "mace_swing_windup": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.02, 0.0, 0.04], "rotation": [0.0, 20.0, 40.0]},
+          "rightArm": {"translation": [-0.02, 0.6, 0.04], "rotation": [0.0, 50.0, 140.0]}
+        },
+        "mace_swing_active": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.0, 0.0, 0.0], "rotation": [0.0, 20.0, 40.0]},
+          "rightArm": {"translation": [1.5, 0.0, 0.5], "rotation": [0.0, -20.0, -30.0]}
+        },
+        "mace_swing_recovery": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.0, 0.0, -0.02], "rotation": [0.0, 20.0, 40.0]},
+          "rightArm": {"translation": [1.0, 0.0, -0.02], "rotation": [0.0, -15.0, -20.0]}
+        }
+      }
+    },
     "swordsword": {
       "active_pose": "idle",
       "poses": {
@@ -1200,6 +1240,26 @@
               40.0
             ]
           }
+        },
+        "slash_one": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.04, 0.0, 0.0], "rotation": [72.0, -12.0, -30.0]},
+          "rightArm": {"translation": [-0.02, 0.0, 0.0], "rotation": [78.0, 8.0, 28.0]}
+        },
+        "slash_two": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.0, 0.0, 0.0], "rotation": [92.0, -18.0, -40.0]},
+          "rightArm": {"translation": [-0.03, 0.0, 0.0], "rotation": [85.0, 16.0, 38.0]}
+        },
+        "right_attack": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.04, 0.0, 0.0], "rotation": [64.0, 24.0, -46.0]},
+          "rightArm": {"translation": [-0.04, 0.0, 0.0], "rotation": [66.0, -24.0, 46.0]}
+        },
+        "defensive": {
+          "useWeaponPose": true,
+          "leftArm": {"translation": [0.08, 0.0, 0.0], "rotation": [70.0, 22.0, -26.0]},
+          "rightArm": {"translation": [-0.1, 0.0, 0.0], "rotation": [70.0, -22.0, 26.0]}
         },
         "shooting": {
           "useWeaponPose": true,

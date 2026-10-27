@@ -1731,6 +1731,18 @@ void updateRenderedReplica(
             const auto& action = set->actions[render.weaponActionIndex];
             const int elapsed = render.serverTick >= render.weaponActionStartTick
                 ? (int)(render.serverTick - render.weaponActionStartTick) : 0;
+            if (player.equippedWeaponId == "swordsword" ||
+                player.equippedWeaponId == "chainsaw") {
+                player.weaponPoseActionState = action.id;
+            } else if (player.equippedWeaponId == "mace") {
+                const int clampedElapsed = std::max(0, std::min(elapsed, action.totalTicks() - 1));
+                const char* posePhase = clampedElapsed >= action.windup.ticks + action.active.ticks
+                    ? "recovery"
+                    : clampedElapsed >= action.windup.ticks ? "active" : "windup";
+                player.weaponPoseActionState = action.id + "_" + posePhase;
+            } else {
+                player.weaponPoseActionState.clear();
+            }
             const bool newAction = !player.networkMeleeAudioInitialized ||
                 player.networkMeleeAudioStartTick != render.weaponActionStartTick ||
                 player.networkMeleeAudioActionIndex != render.weaponActionIndex;
@@ -1738,6 +1750,7 @@ void updateRenderedReplica(
                 player.networkMeleeAudioInitialized = true;
                 player.networkMeleeAudioStartTick = render.weaponActionStartTick;
                 player.networkMeleeAudioActionIndex = render.weaponActionIndex;
+                player.networkMeleeAudioDefinitionId = player.equippedWeaponId;
                 player.networkMeleeAudioLastElapsed = 0xffffffffu;
                 if (!action.onStartSound.empty())
                     playWorldSound(action.onStartSound, player.pos + action.onStartOffset,
@@ -1800,9 +1813,27 @@ void updateRenderedReplica(
                 }
             }
         } else if (set->animationOnly) {
+            player.weaponPoseActionState.clear();
             player.clearOneShot();
             player.proceduralMeleePoseActive = false;
         }
+    } else {
+        player.weaponPoseActionState.clear();
+    }
+
+    if (remotePresentationAlive && player.equippedWeaponId == "chainsaw" &&
+        player.networkMeleeAudioInitialized &&
+        player.networkMeleeAudioDefinitionId == "chainsaw") {
+        const WeaponDefinition* chainsawDef = WeaponRegistry::instance().get("chainsaw");
+        const float decayTicks = chainsawDef && chainsawDef->customParams.count("revDecayTicks")
+            ? std::max(1.0f, chainsawDef->customParams.at("revDecayTicks")) : 60.0f;
+        const float maxRev = chainsawDef && chainsawDef->customParams.count("revDamageMultiplier")
+            ? std::max(1.0f, chainsawDef->customParams.at("revDamageMultiplier")) : 2.0f;
+        const uint32_t elapsed = render.serverTick >= player.networkMeleeAudioStartTick
+            ? render.serverTick - player.networkMeleeAudioStartTick : 0;
+        const float t = glm::clamp((float)elapsed / decayTicks, 0.0f, 1.0f);
+        player.weaponRuntimes["chainsaw"].customFloats["chainsawRevMultiplier"] =
+            1.0f + (maxRev - 1.0f) * (1.0f - t);
     }
 
     // ── Freeze state ─────────────────────────────────────────────────

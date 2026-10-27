@@ -528,6 +528,7 @@ public:
     uint16_t networkLastFreezeSerial = 0;
     uint16_t networkLastEquipSerial = 0;
     uint32_t networkMeleeAudioStartTick = 0;
+    std::string networkMeleeAudioDefinitionId;
     uint32_t networkMeleeAudioLastElapsed = 0;
     uint8_t networkMeleeAudioActionIndex = 255;
     bool networkMeleeAudioInitialized = false;
@@ -650,6 +651,10 @@ public:
     float previousMove01 = 0.0f;
     float animStateTime = 0.0f;
     std::string currentAnimName = "idle";
+    // Weapon-specific action pose selected by the shared action snapshot.
+    // The matching rotation is authored in config/animations.json.
+    std::string weaponPoseActionState;
+    std::string lastLoggedWeaponPoseKey;
     // Per-avatar animation set resolved from the avatar name (may be null ->
     // global config fallback). Owned by AvatarAnimationRegistry.
     const AvatarAnimationSet* animationSet = nullptr;
@@ -704,6 +709,7 @@ public:
         lockedClipPhaseTicks = 0;
         lockedClipSampleTick = -1;
         proceduralMeleePoseActive = false;
+        weaponPoseActionState.clear();
     }
 
     // -------- Construction --------

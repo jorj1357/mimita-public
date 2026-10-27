@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "animation-rotation.h"
+#include "debug/structured-log.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
 #include "config.h"
@@ -782,16 +783,29 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         poseLookupId = stateKey;
         return true;
     };
-    if (weaponEquipped && currentWeaponRuntime) {
-        auto equipIt = currentWeaponRuntime->customFloats.find("equipTimer");
-        const bool equipping = equipIt != currentWeaponRuntime->customFloats.end() && equipIt->second > 0.0f;
-        if (equipping) {
+    if (weaponEquipped) {
+        bool equipping = false;
+        if (currentWeaponRuntime) {
+            auto equipIt = currentWeaponRuntime->customFloats.find("equipTimer");
+            equipping = equipIt != currentWeaponRuntime->customFloats.end() && equipIt->second > 0.0f;
+        }
+        std::string actionPoseState = weaponPoseActionState;
+        if (actionPoseState.empty() && weaponId == "chainsaw" && currentWeaponRuntime) {
+            const auto revIt = currentWeaponRuntime->customFloats.find("chainsawRevMultiplier");
+            if (revIt != currentWeaponRuntime->customFloats.end() && revIt->second > 1.001f)
+                actionPoseState = "rev";
+        }
+        const bool hasActionPose = !actionPoseState.empty() &&
+            tryWeaponPoseState(actionPoseState.c_str());
+        if (hasActionPose) {
+            // The active melee action selects its own weapon-specific pose.
+        } else if (equipping) {
             if (!tryWeaponPoseState("equipping"))
                 tryWeaponPoseState("equip");
-        } else if (isReloading) {
+        } else if (currentWeaponRuntime && isReloading) {
             if (!tryWeaponPoseState("reloading"))
                 tryWeaponPoseState("reload");
-        } else {
+        } else if (currentWeaponRuntime) {
             if (currentWeaponRuntime->shootEffectTimer > 0.0f) {
                 auto poseIt = currentWeaponRuntime->customFloats.find("weaponPoseState");
                 if (poseIt != currentWeaponRuntime->customFloats.end()) {
@@ -812,6 +826,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             } else if (!tryWeaponPoseState("idle")) {
                 tryWeaponPoseState("equipped");
             }
+        } else {
+            if (!tryWeaponPoseState("idle"))
+                tryWeaponPoseState("equipped");
         }
     }
 
@@ -825,6 +842,19 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             Debug::log(Debug::Category::Animation,
                 "[ANIM] selected weapon pose poseLookupId=%s weaponId=%s\n",
                 poseLookupId.c_str(), weaponId.c_str());
+        }
+    }
+
+    const std::string selectedWeaponPose = hasWeaponPose ? poseLookupId : std::string();
+    if (selectedWeaponPose != lastLoggedWeaponPoseKey) {
+        lastLoggedWeaponPoseKey = selectedWeaponPose;
+        if (hasWeaponPose) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "weapon.pose.selected", username,
+                "configured weapon pose selected for actor presentation", 0,
+                {{"actor", username}, {"weapon", weaponId},
+                 {"pose", selectedWeaponPose}});
         }
     }
 
@@ -847,16 +877,19 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         // Melee exclusive authored-pose policy suppresses every non-authored
         // pose source (weapon/reload, freeze, dash, axis locks, idle sway).
-        if (!meleeExclusivePose) {
         if (hasWeaponPose && weaponPoseCfg) {
-            if (part.name == "leftArm") {
+            if ((!meleeExclusivePose || !weaponPoseActionState.empty()) &&
+                part.name == "leftArm") {
                 target.rotationEuler = weaponPoseCfg->leftArm.rotation;
                 target.translation += weaponPoseCfg->leftArm.translation;
-            } else if (part.name == "rightArm") {
+            } else if ((!meleeExclusivePose || !weaponPoseActionState.empty()) &&
+                       part.name == "rightArm") {
                 target.rotationEuler = weaponPoseCfg->rightArm.rotation;
                 target.translation += weaponPoseCfg->rightArm.translation;
             }
         }
+
+        if (!meleeExclusivePose) {
 
         if (isReloading && (part.name == "leftArm" || part.name == "rightArm")) {
             target.rotationEuler += gPlayerProcedural.layers.reloadOverlay.rotation;
@@ -938,7 +971,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         }
 
-        if (proceduralMeleePoseActive) {
+        const bool configuredMeleeActionPose = hasWeaponPose &&
+            !weaponPoseActionState.empty();
+        if (proceduralMeleePoseActive && !configuredMeleeActionPose) {
             if (part.name == "rightArm") {
                 target.rotationEuler = proceduralMeleeRightArmRotation;
                 target.translation += proceduralMeleeRightArmTranslation;
