@@ -183,3 +183,67 @@
 # Related feature record
 
 - Feature path: `docs/features/vehicles/vehicles.md`
+
+---
+
+# Follow-up implementation (same session)
+
+- Final build: dev-loop build **3470**, `Status: SUCCESS`.
+- Runtime journal: `logs/2026-10-27/20261027_072146/events.jsonl`.
+- Scenario: `devscripts/scenarios/vehicle_drive_v1.json` passed (request
+  `f8bb8a65`) with 25 `vehicle.tick.summary` samples and a 4.4 m origin move.
+
+## Additional changes
+
+- New general `InteractionSystem` and `interaction_list` /
+  `interaction_activate` commands. Large world-anchored `Press F to ...`
+  billboard using `DebugVis::projectToScreen` + `uiDrawText`/`uiDrawRect`.
+  Seats register targets; a valid target wins over revive; the seated exit
+  target is sticky; prompt shown/hidden is logged on change with a debounce.
+- Car template is 5 m x 3 m x 1 m with 0.3 m smooth cylinder wheels, body
+  texture `240sx.png`, wheel texture `dark1.png`, and hot-reloadable per-wheel
+  `spinAxis`/`steerAxis`.
+- New shared `src/render/procedural-cylinder.*`; `src/vehicles/vehicle-render.*`
+  draws the wheels from runtime state.
+- Void death: `VehicleSystem::checkVoidDeath` despawns a car below killZ,
+  unseats and kills an occupant through the existing void-death path, and logs
+  `vehicle.void`. Seat reassertion is skipped when dead/void/gone.
+- New `src/physics/runtime-objects.*` and `runtime_clear`/`runtime_status`.
+  Cleanup is called on listen-server start/stop, map change, main menu, network
+  shutdown, and client map switch. Vehicles/constraints are never persisted.
+- `PhysicalEntitySystem` now has an id→index lookup; `clear()` releases
+  generated meshes.
+- Seated player skips actor-vs-occupied-vehicle contacts and player pushes via
+  `Player::seatedVehicleId`.
+- One broadphase gather per vehicle per fixed tick covers all wheel rays.
+- `vehicle.tick.summary` and `vehicle.performance` telemetry include origin,
+  spawn origin, distance, velocity, angular velocity, mass, weight, and full
+  per-wheel center/axes/spin/load/slip data.
+- Tick-bound `vehicle-audio` pulse scheduler: 0.8 s at low RPM to 0.02 s at high
+  RPM, floor one 60 Hz tick, owner/retrigger, stopped on engine off/despawn/void.
+- Constraint debug renderer `constraint-debug` is gated by `entity_visibility`
+  and draws anchors, axes, slider limits, and labels.
+- `vehicle_tune`, `vehicle_teleport`, and scripted input override.
+- Scenario runner now supports `event_field_at_least` / `event_field_at_most`.
+
+## Additional validation
+
+- `interaction.activated` observed manually with label `enter driver seat` and
+  a subsequent `vehicle.state` showing `localDriver=true`.
+- `vehicle.tick.summary` observed wheel centers, spin axes (~lateral Y rotated
+  by yaw), grounded flags, mass 1400, weight 98000, and origin distance.
+- `vehicle.performance` observed `updateMs` ~0.008 ms for one vehicle and one
+  physical entity.
+- `vehicle.void` observed for an unoccupied car spawned below killZ; the car was
+  despawned.
+- Scenario passed after fixing one-shot input edges for local scripted control.
+
+## Remaining human review
+
+- Visual review of the 5 x 3 x 1 body, wheel cylinders, and the big interaction
+  billboard.
+- Audio review of the RPM pulse cadence.
+- Occupied void-death visual respawn flow.
+- Multiplayer/server-authoritative driving, map-editor authoring, destruction,
+  and ragdoll-vs-chassis collision remain unimplemented.
+

@@ -36,6 +36,7 @@
 #include "config/networking-config.h"
 #include "config/movement-config.h"
 #include "config/spawn-velocity-config.h"
+#include "physics/runtime-objects.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
@@ -1316,6 +1317,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.publicIp = publicIp;
     state.hostSessionId = hostSessionId;
     state.active = true;
+    clearRuntimeObjects("listen-server-start");
     state.port = port;
     state.players.clear();
     state.npcs.clear();
@@ -1446,6 +1448,11 @@ void stopListenServer(ListenServerState& state)
 
     if (state.serverThread.joinable())
         state.serverThread.join();
+
+    // Runtime-only physical objects are process state, not map data. Stopping
+    // the server must not leave vehicles, constraints, grenades, or corpses
+    // behind for the next session.
+    clearRuntimeObjects("listen-server-stop");
 
     shutdownIceCoordinatorPoller();
 

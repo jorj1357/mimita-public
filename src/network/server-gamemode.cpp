@@ -2416,6 +2416,7 @@ bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
 void commitGamemodeMap(ServerGamemodeState& d, HeadlessWorld& world, World& npcWorld,
                    HeadlessWorld& tmp, const std::string& mapId)
 {
+    payloadRemoveCart(d);
     clearHeadlessWorld(world);
     world = std::move(tmp);
     buildNpcWorldCollision(npcWorld, world);

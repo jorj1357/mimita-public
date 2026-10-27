@@ -262,9 +262,10 @@ void registerVehicleCommands()
                     spawnGroundZ = groundZ;
                     position.x = target.x;
                     position.y = target.y;
-                    // Ride height: chassis origin to wheel bottom is
-                    // restLength + radius + |hub.z|.
-                    position.z = groundZ + 0.95f;
+                    // Ride height for the 5x3x1 template: hub offset
+                    // (0.3) + rest length (0.2) + radius (0.3) minus a small
+                    // static spring compression.
+                    position.z = groundZ + 0.72f;
                 }
                 yaw = std::atan2(forward.y, forward.x);
             }
@@ -385,14 +386,6 @@ void registerVehicleCommands()
             Terminal::instance().addLog(
                 "[VEHICLE] entered id=" + std::to_string(id) +
                 " seat=" + std::to_string(seat));
-            nlohmann::json fields;
-            fields["vehicleId"] = id;
-            fields["seat"] = seat;
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Physics, StructuredLevel::Important,
-                "vehicle.entered", std::to_string(id),
-                "local actor entered vehicle seat", 0, fields,
-                __FILE__, __LINE__, __func__);
         }
     });
 
@@ -408,11 +401,6 @@ void registerVehicleCommands()
             }
             VehicleSystem::instance().exitLocalDriver();
             Terminal::instance().addLog("[VEHICLE] exited");
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Physics, StructuredLevel::Important,
-                "vehicle.exited", "vehicle-exit",
-                "local actor left vehicle seat", 0,
-                nlohmann::json::object(), __FILE__, __LINE__, __func__);
         }
     });
 
@@ -445,6 +433,12 @@ void registerVehicleCommands()
             input.steer = steer;
             input.clutch = clutch;
             input.handbrake = handbrake;
+            if (!VehicleSystem::instance().find(id))
+            {
+                Terminal::instance().addLog(
+                    "[VEHICLE] input rejected: id not found");
+                return;
+            }
             VehicleSystem::instance().setInput(id, input);
             Terminal::instance().addLog("[VEHICLE] input queued for id=" +
                                         std::to_string(id));
@@ -489,6 +483,109 @@ void registerVehicleCommands()
             VehicleSystem::instance().setInput(id, input);
             Terminal::instance().addLog("[VEHICLE] pressed " + args[1] +
                                         " for id=" + std::to_string(id));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "vehicle_tune",
+        "Tune one vehicle live (mass, spring, damper, grip, torque, drag)",
+        "vehicle_tune <id> <mass|spring|damper|grip|torque|drag> <value>",
+        [](const std::vector<std::string>& args) {
+            uint32_t id = 0;
+            float value = 0.0f;
+            if (args.size() < 3 || !parseUint(args[0], id) ||
+                !parseFloat(args[2], value))
+            {
+                Terminal::instance().addLog(
+                    "[VEHICLE] usage: vehicle_tune <id> "
+                    "<mass|spring|damper|grip|torque|drag> <value>");
+                return;
+            }
+            VehicleState* state = VehicleSystem::instance().find(id);
+            if (!state)
+            {
+                Terminal::instance().addLog("[VEHICLE] id not found");
+                return;
+            }
+            const std::string& field = args[1];
+            if (field == "mass")
+            {
+                PhysicalEntity* entity =
+                    PhysicalEntitySystem::instance().find(state->entityId);
+                if (!entity)
+                {
+                    Terminal::instance().addLog("[VEHICLE] entity missing");
+                    return;
+                }
+                entity->mass = std::max(value, 1.0f);
+                refreshEntityMassProperties(*entity);
+            }
+            else if (field == "spring")
+                state->springScale = std::max(value, 0.01f);
+            else if (field == "damper")
+                state->damperScale = std::max(value, 0.01f);
+            else if (field == "grip")
+                state->gripScale = std::max(value, 0.01f);
+            else if (field == "torque")
+                state->torqueScale = std::max(value, 0.0f);
+            else if (field == "drag")
+                state->dragScale = std::max(value, 0.0f);
+            else
+            {
+                Terminal::instance().addLog(
+                    "[VEHICLE] unknown field; use "
+                    "mass|spring|damper|grip|torque|drag");
+                return;
+            }
+
+            nlohmann::json fields;
+            fields["vehicleId"] = id;
+            fields["field"] = field;
+            fields["value"] = value;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.tuned", std::to_string(id),
+                "live vehicle tuning applied", 0, fields, __FILE__, __LINE__,
+                __func__);
+            Terminal::instance().addLog("[VEHICLE] tuned " + field +
+                                        " for id=" + std::to_string(id));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "vehicle_teleport",
+        "Teleport a vehicle to a world position",
+        "vehicle_teleport <id> <x> <y> <z> [yaw]",
+        [](const std::vector<std::string>& args) {
+            uint32_t id = 0;
+            glm::vec3 position(0.0f);
+            float yaw = 0.0f;
+            if (args.size() < 4 || !parseUint(args[0], id) ||
+                !parseFloat(args[1], position.x) ||
+                !parseFloat(args[2], position.y) ||
+                !parseFloat(args[3], position.z))
+            {
+                Terminal::instance().addLog(
+                    "[VEHICLE] usage: vehicle_teleport <id> <x> <y> <z> "
+                    "[yaw]");
+                return;
+            }
+            if (args.size() >= 5)
+                parseFloat(args[4], yaw);
+            VehicleState* state = VehicleSystem::instance().find(id);
+            if (!state)
+            {
+                Terminal::instance().addLog("[VEHICLE] id not found");
+                return;
+            }
+            const glm::mat4 transform =
+                glm::translate(glm::mat4(1.0f), position) *
+                glm::mat4_cast(
+                    glm::angleAxis(yaw, glm::vec3(0.0f, 0.0f, 1.0f)));
+            PhysicalEntitySystem::instance().moveKinematic(
+                state->entityId, transform, 0.0f);
+            Terminal::instance().addLog("[VEHICLE] teleported id=" +
+                                        std::to_string(id));
         }
     });
 

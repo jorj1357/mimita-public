@@ -49,32 +49,51 @@ Implemented foundation:
   bump stop, and tire slip model; engine torque curve, turbo, manual/automatic
   gearbox, clutch, brakes, handbrake, engine reaction torque, drag.
 - Console commands for spawn, list, despawn, enter/exit, input injection,
-  one-shot control edges, and reload.
-- F seat interaction targeting, seat-origin lock, seated aim-body update, camera
-  follow, and vehicle HUD.
-- Structured `vehicle.*` and `constraint.*` events in `events.jsonl`.
+  one-shot control edges, telemetry, live tuning, teleport, and reload.
+- General `InteractionSystem` with a large camera-facing world-anchored
+  `Press F to ...` prompt. Vehicle seats register targets; a valid target wins
+  over revive and the seated exit prompt is sticky.
+- 5 m x 3 m x 1 m block body, 0.3 m smooth textured cylinder wheels, per-wheel
+  JSON spin/steer axes, body and wheel textures.
+- Vehicle void death: car despawns, occupant dies through the normal void path,
+  and the seat origin is no longer reasserted after death.
+- Runtime-only object cleanup on server start/stop, map change, menu, network
+  shutdown, and client map switch. No vehicle/constraint persistence.
+- `runtime_clear`, `runtime_status`, `vehicle_teleport`, `vehicle_tune`,
+  `interaction_list`, and `interaction_activate` commands.
+- Tick-bound RPM engine pulse scheduler with per-vehicle audio owner and stop on
+  despawn/void/cleanup.
+- Origin and per-part telemetry (`vehicle.tick.summary`, `vehicle.performance`)
+  including mass, weight, origin distance, wheel centers, axes, spin, load, and
+  slip.
+- Constraint/attachment debug visuals gated by `entity_visibility`.
+- Scenario `devscripts/scenarios/vehicle_drive_v1.json` covers spawn, enter,
+  engine, drive, steer, shift, reverse, exit, and void destruction; it passed in
+  the runtime journal.
+- Structured `vehicle.*`, `constraint.*`, `interaction.*`, and
+  `runtime.objects.cleared` events in `events.jsonl`.
 
 Not implemented yet:
 
 - Server-authoritative vehicle networking and driver input replication.
 - Map editor vehicle placement and constraint persistence to
   `config/maps/<mapId>.json`.
-- Rendering the wheel cylinders or a vehicle model (chassis draws through the
-  existing physical-entity box renderer).
 - Destruction hooks and detachable wheels.
 - Ragdoll-versus-chassis collision (ragdoll currently collides with world
   geometry only, so a ragdolled occupant can fall through the car).
 - Full driving-feel acceptance on a known clean flat surface. Runtime state
-  proves the car spawns, grounds, loads suspension, starts, and produces engine
-  torque; it does not yet prove a polished lap.
+  proves the car spawns, grounds, loads suspension, starts, moves, and reaches a
+  void death; it does not yet prove a polished lap.
 
 ## Current status, from working best to not working at all
 
 - Implemented and building: constraint primitive, hinge demo, vehicle template
-  load, spawn, suspension/tire/drivetrain math, console surface, seat/camera/HUD.
+  load, spawn, suspension/tire/drivetrain math, console surface, general
+  interaction popup, seat/camera/HUD, visible wheels, void death, runtime
+  cleanup, telemetry, tuning, audio, and scenario.
 - Implemented but unverified for feel: clutch kick, weight transfer, tire
-  saturation, automatic shifting.
-- Not implemented: networking, map-editor authoring, destruction, wheel render.
+  saturation, automatic shifting, wheel/popup visual quality.
+- Not implemented: server networking, map-editor authoring, destruction.
 - Known issue: ragdoll occupants do not collide with the chassis.
 
 ## Decisions
@@ -125,6 +144,15 @@ Not implemented yet:
 - `src/vehicles/vehicle-commands.{h,cpp}`
 - `src/vehicles/vehicle-seat.{h,cpp}`
 - `src/vehicles/vehicle-hud.{h,cpp}`
+- `src/vehicles/vehicle-render.{h,cpp}`
+- `src/vehicles/vehicle-audio.{h,cpp}`
+- `src/interaction/interaction-system.{h,cpp}`
+- `src/interaction/interaction-commands.{h,cpp}`
+- `src/render/procedural-cylinder.{h,cpp}`
+- `src/physics/runtime-objects.{h,cpp}`
+- `src/physics/runtime-objects-commands.{h,cpp}`
+- `src/physics/constraints/constraint-debug.{h,cpp}`
+- `devscripts/scenarios/vehicle_drive_v1.json`
 - `src/physics/physical-entity.{h,cpp}` (fixed-tick callback, shared body
   queries)
 - `src/input/input-commands.{h,cpp}` (raw key query)
@@ -146,11 +174,19 @@ Not implemented yet:
   - `vehicle_input 1 1 0 0 1 0`
   - `vehicle_press 1 engine`
   - `vehicle_input 1 1 0 0 0 0`
+  - `vehicle_teleport 1 <x> <y> <z>`
+  - `vehicle_tune 1 grip 1.5`
+  - `interaction_list`
+  - `interaction_activate`
+  - `runtime_clear`
+  - `runtime_status`
   - `constraint_demo hinge`
   - `constraint_list`
-- Logs: `logs/2026-10-27/20261027_045816/events.jsonl` and
-  `logs/2026-10-27/20261027_051322/events.jsonl`
-- Build: dev-loop build 3444, `Status: SUCCESS`.
+  - `python devscripts/dev-loop.py --scenario-file devscripts/scenarios/vehicle_drive_v1.json`
+- Logs: `logs/2026-10-27/20261027_072146/events.jsonl`
+- Build: dev-loop build 3470, `Status: SUCCESS`.
+- Scenario: `vehicle_drive_v1` passed (request `f8bb8a65`) with 25 sampled
+  vehicle summaries and a 4.4 m origin move.
 - Human playtest: not performed.
 
 ## Acceptance criteria
@@ -162,10 +198,21 @@ Not implemented yet:
   raises RPM/torque and moves the car. (observed; feel not accepted)
 - `constraint_demo hinge` reports `constraint.created`. (pass)
 - `constraint_list` shows the created constraint. (pass)
-- F enters/exits the aimed seat, F does not revive while a seat is targeted.
-  (implementation present; human review required)
-- HUD shows engine/mode/gear/RPM/speed while seated. (implementation present;
-  human visual review required)
+- General interaction prompt shows a large `Press F to ...` billboard anchored
+  to the object origin; F target wins over revive. (manual
+  `interaction.activated` event observed; visual review required)
+- Vehicle seat enter/exit logs `vehicle.entered`/`vehicle.exited`. (pass)
+- Vehicle origin moves from A to B and per-wheel axes/loads/spin are logged in
+  `vehicle.tick.summary`. (pass)
+- Void vehicle emits `vehicle.void`, is despawned, and no longer reasserts the
+  seat. (unoccupied pass; occupied path implemented and needs human review)
+- Runtime cleanup removes vehicles/constraints/persistent objects/corpses/
+  physical entities on lifecycle boundaries. (implemented; lifecycle review
+  required)
+- Wheel cylinders, body texture, and big popup are visible. (implementation
+  present; human visual review required)
+- Tick-bound engine pulse follows RPM. (implementation and logs present; audio
+  review required)
 - Server-authoritative multiplayer driving. (not implemented)
 - Map editor vehicle placement/constraint persistence. (not implemented)
 - Destruction and detachable wheels. (not implemented)

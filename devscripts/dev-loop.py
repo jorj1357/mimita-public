@@ -3489,6 +3489,23 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
                         if r.get("event") == name and _field_path(r, field) == want)
             ok = count >= minimum
             actual = {"count": count, "minimum": minimum, "field": field, "equals": want}
+        elif a_type in ("event_field_at_least", "event_field_at_most"):
+            name = str(assertion.get("event", ""))
+            field = str(assertion.get("field", ""))
+            want = float(assertion.get("value", 0.0))
+            seen = []
+            for record in records:
+                if record.get("event") != name:
+                    continue
+                value = _field_path(record, field)
+                if isinstance(value, (int, float)):
+                    seen.append(float(value))
+            if a_type == "event_field_at_least":
+                ok = any(value >= want for value in seen)
+            else:
+                ok = any(value <= want for value in seen)
+            actual = {"values": seen[-5:], "value": want,
+                      "samples": len(seen)}
         else:
             ok = False
             actual = {"error": f"unknown assertion type '{a_type}'"}

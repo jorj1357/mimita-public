@@ -33,6 +33,7 @@
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "physics/runtime-objects.h"
 #include "physics/config.h"
 #include "physics/movement/physics-collision.h"
 #include "replay/replay.h"
@@ -646,6 +647,7 @@ void engineTickNet(Engine& engine, float dt)
                            oldMap.c_str(), requiredPath.c_str(), mpContext.mapLoadAttempts);
                     player.reset();
                     RagdollModeSystem::instance().clearCorpses();  // old map positions invalid
+                    clearRuntimeObjects("client-map-switch");
                 }
                 else
                 {

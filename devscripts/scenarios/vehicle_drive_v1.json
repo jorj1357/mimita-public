@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "vehicle_drive_v1",
+  "description": "Spawn a car, use the general interaction action to enter, drive forward/steer/shift/reverse, turn the engine off, exit, and prove a void car is destroyed.",
+  "launch": {
+    "launch_mode": "6",
+    "map": "dust2cyberiav4"
+  },
+  "setup": [
+    {"id": "clear", "command": "runtime_clear", "args": [], "delay_ms_after": 400},
+    {"id": "reload", "command": "vehicle_reload", "args": [], "delay_ms_after": 400},
+    {"id": "teleport_safe", "command": "teleport", "args": ["-704", "-14", "2350"], "delay_ms_after": 600},
+    {"id": "spawn", "command": "vehicle_spawn", "args": ["car_sedan", "-704", "-14", "2350.2", "0"], "delay_ms_after": 250},
+    {"id": "state_spawn", "command": "vehicle_list", "args": [], "delay_ms_after": 250},
+    {"id": "enter", "command": "vehicle_enter", "args": ["1", "0"], "delay_ms_after": 500},
+    {"id": "state_seated", "command": "vehicle_list", "args": [], "delay_ms_after": 300}
+  ],
+  "steps": [
+    {"id": "clutch_in", "command": "vehicle_input", "args": ["1", "0", "0", "0", "1", "0"], "delay_ms_after": 200},
+    {"id": "engine_on", "command": "vehicle_press", "args": ["1", "engine"], "delay_ms_after": 400},
+    {"id": "drive", "command": "vehicle_input", "args": ["1", "1", "0", "0", "0", "0"], "delay_ms_after": 3000},
+    {"id": "state_forward", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "steer", "command": "vehicle_input", "args": ["1", "1", "0", "1", "0", "0"], "delay_ms_after": 1500},
+    {"id": "state_turn", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "brake", "command": "vehicle_input", "args": ["1", "0", "1", "0", "0", "0"], "delay_ms_after": 1200},
+    {"id": "clutch_shift", "command": "vehicle_input", "args": ["1", "0", "0", "0", "1", "0"], "delay_ms_after": 300},
+    {"id": "shift_up", "command": "vehicle_press", "args": ["1", "shiftup"], "delay_ms_after": 500},
+    {"id": "shift_drive", "command": "vehicle_input", "args": ["1", "1", "0", "0", "0", "0"], "delay_ms_after": 1500},
+    {"id": "state_shifted", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "stop", "command": "vehicle_input", "args": ["1", "0", "1", "0", "0", "0"], "delay_ms_after": 1200},
+    {"id": "clutch_reverse", "command": "vehicle_input", "args": ["1", "0", "0", "0", "1", "0"], "delay_ms_after": 300},
+    {"id": "down1", "command": "vehicle_press", "args": ["1", "shiftdown"], "delay_ms_after": 350},
+    {"id": "down2", "command": "vehicle_press", "args": ["1", "shiftdown"], "delay_ms_after": 350},
+    {"id": "down3", "command": "vehicle_press", "args": ["1", "shiftdown"], "delay_ms_after": 350},
+    {"id": "reverse", "command": "vehicle_input", "args": ["1", "1", "0", "0", "0", "0"], "delay_ms_after": 1500},
+    {"id": "state_reverse", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "engine_off", "command": "vehicle_press", "args": ["1", "engine"], "delay_ms_after": 500},
+    {"id": "state_off", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "exit", "command": "vehicle_exit", "args": [], "delay_ms_after": 500},
+    {"id": "state_exit", "command": "vehicle_list", "args": [], "delay_ms_after": 300},
+    {"id": "void_spawn", "command": "vehicle_spawn", "args": ["car_sedan", "0", "0", "-1000", "0"], "delay_ms_after": 1500},
+    {"id": "void_occupied_spawn", "command": "vehicle_spawn", "args": ["car_sedan", "-704", "-14", "2350.2", "0"], "delay_ms_after": 600},
+    {"id": "void_occupied_enter", "command": "vehicle_enter", "args": ["3", "0"], "delay_ms_after": 500},
+    {"id": "void_occupied_teleport", "command": "vehicle_teleport", "args": ["3", "0", "0", "-1000"], "delay_ms_after": 1500}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "vehicle.spawned"},
+    {"type": "event_present", "event": "vehicle.entered"},
+    {"type": "event_present", "event": "vehicle.exited"},
+    {"type": "event_present", "event": "vehicle.void"},
+    {"type": "event_field_equals", "event": "vehicle.void", "field": "driver", "equals": true},
+    {"type": "event_count_at_least", "event": "vehicle.exited", "minimum": 2},
+    {"type": "event_field_equals", "event": "vehicle.tick.summary", "field": "localDriver", "equals": true},
+    {"type": "event_field_at_least", "event": "vehicle.tick.summary", "field": "distanceFromSpawn", "value": 1.0},
+    {"type": "event_field_at_least", "event": "vehicle.tick.summary", "field": "massKg", "value": 1000.0},
+    {"type": "event_field_equals", "event": "vehicle.tick.summary", "field": "engineOn", "equals": true},
+    {"type": "event_count_at_least", "event": "vehicle.tick.summary", "minimum": 3}
+  ],
+  "timeout_seconds": 240
+}

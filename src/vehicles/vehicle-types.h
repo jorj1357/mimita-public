@@ -18,6 +18,10 @@ struct VehicleWheelSpec {
     float radius = 0.34f;
     float width = 0.22f;
     glm::vec3 suspensionAxis{0.0f, 0.0f, -1.0f};
+    // Visual/log axes. Physics rolling is still forward-roll; these let the
+    // renderer and logs be tested on every axis live.
+    glm::vec3 spinAxis{0.0f, 1.0f, 0.0f};
+    glm::vec3 steerAxis{0.0f, 0.0f, 1.0f};
     float restLength = 0.32f;
     float travel = 0.20f;
     float springRate = 42000.0f;
@@ -88,6 +92,12 @@ struct VehicleSpec {
     glm::vec3 halfExtents{2.2f, 0.9f, 0.6f};
     float drag = 0.32f;
     float downforce = 0.0f;
+    float interactionRadius = 3.0f;
+    std::string bodyTexture = "assets/textureshq/240sx.png";
+    std::string wheelTexture = "assets/textureshq/dark1.png";
+    std::string engineSound =
+        "assets/sound/weapon/chainsaw/chainsawidle.wav";
+    int wheelSegments = 32;
     std::vector<VehicleWheelSpec> wheels;
     VehicleTireSpec tire;
     VehicleEngineSpec engine;
@@ -119,6 +129,10 @@ struct VehicleWheelState {
     float suspensionLength = 0.0f;
     glm::vec3 contactPoint{0.0f};
     glm::vec3 contactNormal{0.0f, 0.0f, 1.0f};
+    glm::vec3 worldCenter{0.0f};
+    glm::vec3 spinAxisWorld{0.0f, 1.0f, 0.0f};
+    glm::vec3 steerAxisWorld{0.0f, 0.0f, 1.0f};
+    glm::vec3 worldVelocity{0.0f};
 };
 
 // Vehicle input is deliberately a plain value so the same struct can come from
@@ -155,6 +169,13 @@ struct VehicleState {
     float handbrake = 0.0f;
     float speed = 0.0f;
 
+    // Live tuning scales applied on top of the template.
+    float springScale = 1.0f;
+    float damperScale = 1.0f;
+    float gripScale = 1.0f;
+    float torqueScale = 1.0f;
+    float dragScale = 1.0f;
+
     // Edge latches consumed by the drivetrain on this fixed tick.
     bool flagsShiftUp = false;
     bool flagsShiftDown = false;
@@ -162,6 +183,24 @@ struct VehicleState {
     int driverActorId = 0;
     int driverSeat = -1;
     bool localDriver = false;
+    bool inputOverride = false;
+    uint32_t interactionTargetId = 0;
+
+    // Stable origin and per-tick motion telemetry. The future server uses the
+    // same origin to offset attachments and spawned parts.
+    glm::vec3 spawnOrigin{0.0f};
+    glm::vec3 origin{0.0f};
+    glm::vec3 originVelocity{0.0f};
+    glm::vec3 originAngularVelocity{0.0f};
+    glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
+    float distanceFromSpawn = 0.0f;
+    float massKg = 0.0f;
+    float weightN = 0.0f;
+    uint64_t lastSummaryTick = 0;
+    uint64_t nextEnginePulseTick = 0;
+    uint64_t lastAudioLogTick = 0;
+    bool audioEngineWasOn = false;
+    int enginePulsesSinceLog = 0;
 
     // Input used when no local driver is attached (terminal, NPC, network).
     VehicleInput pendingInput;

@@ -110,6 +110,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // a false swept contact across the old pose.
     sim.player->actorCollisionPreviousPos = sim.player->pos;
     sim.player->hasActorCollisionPreviousPos = true;
+    sim.player->seatedVehicleId =
+        VehicleSystem::instance().localVehicleEntityId();
 
     // One lifecycle reset path: any new authoritative life (spawn, respawn,
     // instant respawn, teleport, duel, map change, reconnect, or transform-epoch
@@ -179,7 +181,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             ragdollInput.extendLeftMouse = tickFrame.extendLeftMouse;
             ragdollInput.extendRightMouse = tickFrame.extendRightMouse;
             ragdoll.update(TICK_DT, *sim.world, *sim.player, ragdollInput, THE_CAMERA);
-        } else if (VehicleSystem::instance().hasLocalDriver()) {
+        } else if (VehicleSystem::instance().hasLocalDriver() &&
+                   !sim.player->dead && !sim.player->voidDeathTriggered) {
             // Seated actor: the seat owns the player origin and locomotion is
             // suppressed. The physical aim body still runs so weapons can fire.
             glm::vec3 seatPosition(0.0f);
@@ -448,6 +451,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         RagdollModeSystem::instance().updateCorpses(TICK_DT, *sim.world);
     }
 
+    VehicleSystem::instance().checkVoidDeath(
+        *sim.player, getVoidDeathConfig().killZ);
+
     checkVoidDeath(*sim.player, sim.player->username, "player");
     for (Npc& npc : sim.npcSystem->all())
         checkVoidDeath(npc.body, "npc_" + std::to_string(npc.id), "npc");
@@ -456,7 +462,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // after actor/entity contact passes so a capsule push cannot eject the
     // driver from the chassis before the next tick.
     if (VehicleSystem::instance().hasLocalDriver() &&
-        !sim.player->ragdollModeActive)
+        !sim.player->ragdollModeActive &&
+        !sim.player->dead && !sim.player->voidDeathTriggered)
     {
         glm::vec3 seatPosition(0.0f);
         glm::vec3 seatForward(0.0f, 1.0f, 0.0f);

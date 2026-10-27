@@ -16,6 +16,8 @@
 #include "vehicles/vehicle-types.h"
 
 struct World;
+class Player;
+class Camera;
 
 // Cached broadphase ray query shared by vehicle wheel contact and authoring
 // placement. Tests chunk triangles and large world triangles.
@@ -43,8 +45,15 @@ public:
     void setInput(uint32_t vehicleId, const VehicleInput& input);
     bool enterLocalDriver(uint32_t vehicleId, int seat);
     void exitLocalDriver();
+    // Interaction callback used by the general interaction target.
+    bool activateVehicleInteraction(uint32_t vehicleId, const Camera* camera);
     bool hasLocalDriver() const { return mLocalVehicleId != 0; }
     uint32_t localVehicleId() const { return mLocalVehicleId; }
+    uint32_t localVehicleEntityId() const;
+
+    // Despawns every vehicle below killZ. A locally driven occupant is unseated,
+    // placed at the void position, and killed through the normal void-death path.
+    void checkVoidDeath(Player& player, float killZ);
 
     // World-space seat pose for the locally controlled vehicle. Returns false
     // when there is no local driver or the vehicle entity is gone.
@@ -61,7 +70,8 @@ private:
     VehicleInput readLocalInput(const VehicleState& state);
     void updateDrivetrain(VehicleState& state, const VehicleSpec& spec, float dt);
     void updateWheel(VehicleState& state, const VehicleSpec& spec,
-                     int wheelIndex, float dt, const World& world);
+                     int wheelIndex, float dt, const World& world,
+                     const std::vector<int>& candidates);
     void updateChassisAero(VehicleState& state, const VehicleSpec& spec,
                            float dt);
 

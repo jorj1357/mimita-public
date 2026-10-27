@@ -16,7 +16,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdio>
 #include "camera.h"
-#include "vehicles/vehicle-seat.h"
+#include "interaction/interaction-system.h"
 #include "vehicles/vehicle-system.h"
 
 static bool gInputInitialized = false;
@@ -208,7 +208,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.freezePressed = cmd.getState("freeze").pressed;
     in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
     const bool vehicleInteraction =
-        vehicleHandleInteractionKey(win, cam);
+        InteractionSystem::instance().handleKey(win, cam);
     in.reviveHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS &&
                     !vehicleInteraction &&
                     !VehicleSystem::instance().hasLocalDriver();
@@ -250,9 +250,9 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
 
     InputFrame frame;
 
-    // F enters/exits a vehicle seat before movement is consumed. A valid seat
-    // wins over revive (revive is not part of the local InputFrame path).
-    vehicleHandleInteractionKey(win, cam);
+    // F enters/exits a target before movement is consumed. A valid target wins
+    // over revive (revive is not part of the local InputFrame path).
+    InteractionSystem::instance().handleKey(win, cam);
 
     // 6 6 2026 normalize again 
     glm::vec2 move(frame.moveX, frame.moveY);

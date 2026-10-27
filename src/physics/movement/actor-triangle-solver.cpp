@@ -664,7 +664,8 @@ bool solveActorTriangleCollision(
         if (hasEntities)
         {
             std::vector<EntityActorContact> entityHits =
-                collectActorEntityContacts(s_meshes, *entities, refPoint);
+                collectActorEntityContacts(s_meshes, *entities, refPoint,
+                                           player.seatedVehicleId);
             for (EntityActorContact& eh : entityHits)
                 s_contacts.push_back(eh.contact);
         }

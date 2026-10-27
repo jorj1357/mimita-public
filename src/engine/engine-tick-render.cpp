@@ -45,6 +45,7 @@
 #include "render/dynamic-light.h"
 #include "map/map_loader.h"
 #include "physics/physical-entity.h"
+#include "vehicles/vehicle-render.h"
 #include "procedural/procedural-world-client.h"
 
 #include "pobjects/persistent-physics.h"
@@ -875,6 +876,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
       renderObjectivePulse(camera); }
     { MIMITA_PERF_SCOPE("Rendering::Debug::Visuals");
     drawPhysicalEntities(camera);
+    { MIMITA_PERF_SCOPE("Rendering::VehicleWheels");
+      drawVehicleWheels(camera); }
     const auto& match = MimitaNet::CommunityMatchClient::instance();
     ZombieTowerEffects& fx = ZombieTowerEffects::instance();
     const bool ztMode = match.active() && match.mode() == "zombie_tower";

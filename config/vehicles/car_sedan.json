@@ -1,23 +1,31 @@
 {
-  // Neutral four-wheel sedan. Values are gameplay-tuned (sim-lite), not a
-  // manufacturer sheet. Length is X, width is Y, up is Z.
+  // Neutral four-wheel sedan. Length is X, width is Y, up is Z.
+  // This slice deliberately uses a 5 x 3 x 1 m block body so the physics and
+  // visual axes are easy to inspect.
   "id": "car_sedan",
   "massKg": 1400,
   "density": 120,
-  "centerOfMass": [0.0, 0.0, -0.15],
-  "length": 4.4,
-  "width": 1.8,
-  "height": 0.7,
+  "centerOfMass": [0.0, 0.0, -0.10],
+  "length": 5.0,
+  "width": 3.0,
+  "height": 1.0,
   "drag": 0.32,
   "downforce": 0.0,
+  "interactionRadius": 3.0,
+  "bodyTexture": "assets/textureshq/240sx.png",
+  "wheelTexture": "assets/textureshq/dark1.png",
+  "engineSound": "assets/sound/weapon/chainsaw/chainsawidle.wav",
+  "wheelSegments": 32,
   "wheels": [
     {
-      "hub": [1.35, 0.75, -0.25],
-      "radius": 0.34,
-      "width": 0.22,
+      "hub": [1.5, 1.2, -0.3],
+      "radius": 0.3,
+      "width": 0.25,
       "suspensionAxis": [0, 0, -1],
-      "restLength": 0.40,
-      "travel": 0.30,
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.2,
+      "travel": 0.15,
       "springRate": 180000,
       "damperRate": 18000,
       "antiRoll": 40000,
@@ -27,12 +35,14 @@
       "brake": true
     },
     {
-      "hub": [1.35, -0.75, -0.25],
-      "radius": 0.34,
-      "width": 0.22,
+      "hub": [1.5, -1.2, -0.3],
+      "radius": 0.3,
+      "width": 0.25,
       "suspensionAxis": [0, 0, -1],
-      "restLength": 0.40,
-      "travel": 0.30,
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.2,
+      "travel": 0.15,
       "springRate": 180000,
       "damperRate": 18000,
       "antiRoll": 40000,
@@ -42,12 +52,14 @@
       "brake": true
     },
     {
-      "hub": [-1.35, 0.75, -0.25],
-      "radius": 0.34,
-      "width": 0.22,
+      "hub": [-1.5, 1.2, -0.3],
+      "radius": 0.3,
+      "width": 0.25,
       "suspensionAxis": [0, 0, -1],
-      "restLength": 0.40,
-      "travel": 0.30,
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.2,
+      "travel": 0.15,
       "springRate": 180000,
       "damperRate": 18000,
       "antiRoll": 40000,
@@ -57,12 +69,14 @@
       "brake": true
     },
     {
-      "hub": [-1.35, -0.75, -0.25],
-      "radius": 0.34,
-      "width": 0.22,
+      "hub": [-1.5, -1.2, -0.3],
+      "radius": 0.3,
+      "width": 0.25,
       "suspensionAxis": [0, 0, -1],
-      "restLength": 0.40,
-      "travel": 0.30,
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.2,
+      "travel": 0.15,
       "springRate": 180000,
       "damperRate": 18000,
       "antiRoll": 40000,
@@ -99,7 +113,7 @@
   "steering": { "maxAngleDeg": 32, "speedFalloff": 0.55, "returnRate": 3.5 },
   "brakes": { "maxTorque": 5200, "handbrakeTorque": 3000 },
   "seats": [
-    { "name": "driver", "anchor": [-0.38, 0.25, 0.10], "pose": "sit" },
-    { "name": "passenger", "anchor": [0.38, 0.25, 0.10], "pose": "sit" }
+    { "name": "driver", "anchor": [-0.4, -0.7, 0.0], "pose": "sit" },
+    { "name": "passenger", "anchor": [-0.4, 0.7, 0.0], "pose": "sit" }
   ]
 }

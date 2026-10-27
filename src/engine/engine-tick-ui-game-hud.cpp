@@ -67,6 +67,7 @@
 #include "network/server.h"
 #include "debug/debug-visuals.h"
 #include "vip/vip-name-render.h"
+#include "interaction/interaction-system.h"
 #include "vehicles/vehicle-hud.h"
 
 extern DuelManager gDuelManager;
@@ -639,4 +640,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     { MIMITA_PERF_SCOPE("HUD::Vehicle"); drawVehicleHud(); }
+    { MIMITA_PERF_SCOPE("HUD::Interaction");
+      InteractionSystem::instance().draw(camera); }
 }

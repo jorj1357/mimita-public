@@ -423,6 +423,8 @@ void registerAgentCommands()
 #include "physics/constraints/constraint-commands.h"
 #include "vehicles/vehicle-commands.h"
 #include "vehicles/vehicle-system.h"
+#include "interaction/interaction-commands.h"
+#include "physics/runtime-objects-commands.h"
 #include "terminal/procedural-world-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
@@ -709,6 +711,8 @@ void gameInitSubsystems(Engine& engine)
     registerObjectCommands();
     registerConstraintCommands();
     registerVehicleCommands();
+    registerInteractionCommands();
+    registerRuntimeObjectCommands();
     VehicleSystem::instance().loadConfig("config/vehicles");
     VehicleSystem::instance().registerFixedTick();
     registerProceduralWorldCommands();

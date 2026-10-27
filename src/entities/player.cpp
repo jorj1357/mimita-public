@@ -79,6 +79,7 @@ void Player::reset()
     ground.onGround = false;
     currentHp = maxHp;
     dead = false;
+    seatedVehicleId = 0;
     proceduralFrozen = false;
     respawnTimer = 0.0f;
     spawnFlashTimer = 0.0f;

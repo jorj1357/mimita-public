@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -191,6 +192,7 @@ private:
     PhysicalEntitySystem() = default;
 
     std::vector<PhysicalEntity> mEntities;
+    std::unordered_map<uint32_t, size_t> mEntityIndex;
     std::vector<FixedTickCallback> mFixedTickCallbacks;
     uint32_t mNextId = 1;
     double mFixedAccumulator = 0.0;
@@ -258,7 +260,8 @@ struct EntityActorContact {
 std::vector<EntityActorContact> collectActorEntityContacts(
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<PhysicalEntity>& entities,
-    const glm::vec3& actorPos);
+    const glm::vec3& actorPos,
+    uint32_t ignoreEntityId = 0);
 
 // Draws every entity as a filled box (and wireframe outline) so a spawned crate
 // is visible while testing. Goes through the always-rendered production triangle

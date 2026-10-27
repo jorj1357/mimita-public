@@ -24,6 +24,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "physics/runtime-objects.h"
 #include "notifications/notifications.h"
 
 #include <algorithm>
@@ -567,6 +568,7 @@ void mpShutdown(MultiplayerContext& ctx)
     }
 
     teardownPreviousSession(ctx, DisconnectPolicy::Leave);
+    clearRuntimeObjects("network-shutdown");
     netShutdown();
     printf("[NET DISCONNECT] shutdown complete\n");
 }

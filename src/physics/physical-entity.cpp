@@ -264,8 +264,12 @@ PhysicalEntitySystem& PhysicalEntitySystem::instance()
 void PhysicalEntitySystem::clear()
 {
     for (PhysicalEntity& e : mEntities)
+    {
         MimitaImpact::DestructibleGeometrySystem::instance().release(e.destructible);
+        releaseGeneratedEntityMesh(e.id);
+    }
     mEntities.clear();
+    mEntityIndex.clear();
     mNextId = 1;
     mFixedAccumulator = 0.0;
     mSimulationTick = 0;
@@ -300,6 +304,7 @@ uint32_t PhysicalEntitySystem::add(
     recordCrashBreadcrumb("entity-add", "id=%u tris=%zu",
                           e.id, e.localTriangles.size());
     mEntities.push_back(std::move(e));
+    mEntityIndex[mEntities.back().id] = mEntities.size() - 1;
     return mEntities.back().id;
 }
 
@@ -342,10 +347,10 @@ PhysicalEntity* PhysicalEntitySystem::moveKinematic(uint32_t id,
 
 PhysicalEntity* PhysicalEntitySystem::find(uint32_t id)
 {
-    for (PhysicalEntity& e : mEntities)
-        if (e.id == id)
-            return &e;
-    return nullptr;
+    auto it = mEntityIndex.find(id);
+    if (it == mEntityIndex.end() || it->second >= mEntities.size())
+        return nullptr;
+    return &mEntities[it->second];
 }
 
 PhysicalEntity* PhysicalEntitySystem::findByNetworkId(uint32_t networkId)
@@ -394,6 +399,10 @@ bool PhysicalEntitySystem::remove(uint32_t id)
             MimitaImpact::DestructibleGeometrySystem::instance().release(it->destructible);
             releaseGeneratedEntityMesh(id);
             mEntities.erase(it);
+            mEntityIndex.clear();
+            mEntityIndex.reserve(mEntities.size());
+            for (size_t i = 0; i < mEntities.size(); ++i)
+                mEntityIndex[mEntities[i].id] = i;
             return true;
         }
     }
@@ -678,7 +687,7 @@ float PhysicalEntitySystem::renderAlpha() const
 
 void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
 {
-    if (dt <= 0.0f)
+    if (dt <= 0.0f || player.seatedVehicleId != 0)
         return;
     const glm::vec3 playerMin = player.pos + glm::vec3(-PLAYER_RADIUS, -PLAYER_RADIUS, 0.0f);
     const glm::vec3 playerMax = player.pos + glm::vec3(PLAYER_RADIUS, PLAYER_RADIUS, PLAYER_HEIGHT);
@@ -730,6 +739,10 @@ void PhysicalEntitySystem::applyPlayerContactPush(
     uint32_t entityId, const Player& player, const glm::vec3& point,
     const glm::vec3& contactNormal)
 {
+    if (player.seatedVehicleId != 0 &&
+        (entityId == player.seatedVehicleId ||
+         entityId == player.collision.supportEntityId))
+        return;
     PhysicalEntity* e = find(entityId);
     if (!e || e->serverDriven || e->motion != PhysicalEntityMotion::Dynamic ||
         e->mass <= 0.0f || e->lastPlayerPushTick == mSimulationTick)
@@ -1187,7 +1200,8 @@ EntitySurfaceCacheView cachedEntitySurface(const PhysicalEntity& entity)
 std::vector<EntityActorContact> collectActorEntityContacts(
     const std::vector<ActorCollisionMesh>& meshes,
     const std::vector<PhysicalEntity>& entities,
-    const glm::vec3& actorPos)
+    const glm::vec3& actorPos,
+    uint32_t ignoreEntityId)
 {
     std::vector<EntityActorContact> out;
     if (meshes.empty() || entities.empty())
@@ -1206,6 +1220,8 @@ std::vector<EntityActorContact> collectActorEntityContacts(
 
     for (const PhysicalEntity& e : entities)
     {
+        if (ignoreEntityId != 0 && e.id == ignoreEntityId)
+            continue;
         if (!e.collidesWithActors || e.localTriangles.empty())
             continue;
         if (!aabbOverlapsPadded(actorBox, entityWorldAABB(e), kPad))

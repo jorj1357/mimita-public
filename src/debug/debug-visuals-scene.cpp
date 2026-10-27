@@ -17,6 +17,7 @@
 #include "config.h"
 #include "config/movement-config.h"
 #include "gamemode/map-config.h"
+#include "physics/constraints/constraint-debug.h"
 
 extern Renderer* gRenderer;
 
@@ -424,6 +425,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 
         glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
     }
+    drawConstraintDebug(camera);
     flushDebugTris(camera);
     flushDebugLines(camera);
     drawDebugLabels(camera);

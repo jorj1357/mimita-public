@@ -29,6 +29,7 @@
 #include "world/world.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "physics/runtime-objects.h"
 #include "camera.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/online-menu.h"
@@ -190,6 +191,9 @@ void forceMainMenu()
     // 4. Destroy NPCs
     THE_NPC_SYSTEM.destroyAll();
     logPhase("NPC Cleanup");
+
+    // Runtime-only physical objects belong to the session, not the menu.
+    clearRuntimeObjects("main-menu");
 
     // 5. Disconnect multiplayer
     if (MP_CONTEXT.active) {

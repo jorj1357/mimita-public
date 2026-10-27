@@ -1016,7 +1016,8 @@ void engineTickCamera(Engine& engine, float dt)
             camera.pos = RagdollModeSystem::instance().computeCameraPosition(dt);
         }
     } else if (VehicleSystem::instance().hasLocalDriver() &&
-               !player.ragdollModeActive) {
+               !player.ragdollModeActive && !player.dead &&
+               !player.voidDeathTriggered) {
         glm::vec3 seatPosition(0.0f);
         glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
         if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward)) {

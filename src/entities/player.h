@@ -536,6 +536,10 @@ public:
     int revolverCylinder = 6;
     int revolverReserve = 1337;
     bool dead = false;
+    // Occupied vehicle entity id (0 = not seated). Actor-vs-vehicle contacts and
+    // player pushes are skipped for this entity so the seated player cannot
+    // fight the chassis or eject themselves.
+    uint32_t seatedVehicleId = 0;
     bool netPredictedDead = false;  // local client prediction; server confirm clears/rolls back
     // Animation state inputs for optional per-state clips (crouch/jump/fall/land).
     bool crouching = false;

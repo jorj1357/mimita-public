@@ -190,23 +190,27 @@ Templates live in `config/vehicles/*.json` and are hot reloadable.
   "id": "car_sedan",
   "massKg": 1400,
   "density": 120,
-  "centerOfMass": [0.0, 0.0, -0.15],
-  "length": 4.4,
-  "width": 1.8,
-  "height": 1.2,
+  "centerOfMass": [0.0, 0.0, -0.10],
+  "length": 5.0,
+  "width": 3.0,
+  "height": 1.0,
   "drag": 0.32,
   "downforce": 0.0,
+  "bodyTexture": "assets/textureshq/240sx.png",
+  "wheelTexture": "assets/textureshq/dark1.png",
   "wheels": [
     {
-      "hub": [0.85, 1.45, -0.45],
-      "radius": 0.34,
-      "width": 0.22,
+      "hub": [1.5, 1.2, -0.3],
+      "radius": 0.3,
+      "width": 0.25,
       "suspensionAxis": [0, 0, -1],
-      "restLength": 0.32,
-      "travel": 0.20,
-      "springRate": 42000,
-      "damperRate": 4200,
-      "antiRoll": 9000,
+      "spinAxis": [0, 1, 0],
+      "steerAxis": [0, 0, 1],
+      "restLength": 0.2,
+      "travel": 0.15,
+      "springRate": 180000,
+      "damperRate": 18000,
+      "antiRoll": 40000,
       "unsprungMass": 38,
       "steer": true,
       "drive": false,
@@ -216,7 +220,7 @@ Templates live in `config/vehicles/*.json` and are hot reloadable.
   "tire": {
     "mu": 1.35,
     "loadSensitivity": 0.00018,
-    "nominalLoad": 4200,
+    "nominalLoad": 24500,
     "peakSlipRatio": 0.12,
     "peakSlipAngle": 0.12,
     "frictionCircle": true,
@@ -543,3 +547,130 @@ These are noted, not edited here:
   expansion.
 - `docs/architecture/code-ownership/code-ownership.md:3`, `:259` ask for
   file-placement and function-generalization guidance.
+
+---
+
+## 21. General interaction prompt (2026-10-27)
+
+Interaction is a general world-anchored capability, not a car-only path.
+
+- Every interactable registers one target with a stable id, owner key, label,
+  prompt origin, interaction origin, radius, priority, enabled flag, and action.
+- The prompt origin comes from the object itself (for a vehicle, the chassis
+  origin plus a readable roof offset). It is not a hardcoded screen position.
+- The interaction origin is range-checked around the player. Every radius is
+  clamped to at least **1 m**; a car template defaults to **3 m**.
+- The prompt is a camera-facing screen-space billboard projected from the
+  object origin. It is deliberately large: key cap, dark background, bright
+  border, and a minimum on-screen font scale.
+- Text is general: `Press F to <label>`. Vehicle labels are
+  `enter driver seat`, `enter passenger seat`, and `exit vehicle`.
+- A valid target consumes F and wins over revive. If no target is selected,
+  revive keeps the old behavior.
+- While seated the occupant's target is sticky so the exit prompt cannot
+  flicker as the car moves.
+- Prompt shown/hidden is logged on target change, not per frame.
+
+## 22. Car dimensions and visible wheels (2026-10-27)
+
+The current first template is a deliberately simple block:
+
+- length **5 m** (X), width **3 m** (Y), height **1 m** (Z);
+- wheel radius **0.3 m**, width 0.25 m;
+- wheel hub positions `x ±1.5`, `y ±1.2`, `z -0.3`;
+- body texture `assets/textureshq/240sx.png`;
+- wheel texture `assets/textureshq/dark1.png`.
+
+Wheels are drawn as smooth textured cylinders (32 segments by default), not
+authored Blender triangles. Visual spin and steering axes are per-wheel JSON
+fields (`spinAxis`, `steerAxis`) and are hot reloadable so all axes can be
+tested live. Physics rolling remains correct independently of the visual axis
+choice. The wheel model is chassis orientation × steer × axle alignment × spin.
+
+Every wheel reports its world center, spin axis, steer axis, spin velocity,
+steering angle, suspension length, compression, load, slip, and world velocity.
+
+## 23. Void death and runtime lifecycle (2026-10-27)
+
+- A vehicle below the configured void kill plane is destroyed.
+- If occupied, the occupant is unseated, placed at the seat's void position, and
+  killed through the normal void-death path. Respawn then proceeds normally.
+- If empty, the vehicle is simply destroyed.
+- The seat origin must not be re-asserted after death, void death, or vehicle
+  removal. This is the fix for the stuck-at-ground/respawn loop.
+- `vehicle.void` is logged with vehicle id, entity id, z, killZ, and driver flag.
+
+Runtime-only objects are process state, not map data:
+
+- `clearRuntimeObjects(reason)` clears vehicles, constraints, persistent
+  physics, corpses, and physical entities in dependency-safe order.
+- It is called on listen-server start/stop, map change, return to menu, network
+  shutdown, and client map switch.
+- Generated entity meshes are released during the physical-entity clear.
+- Vehicles and constraints are never serialized into `config/maps/*.json`.
+- `runtime.objects.cleared` records counts and reason.
+
+## 24. Vehicle telemetry and logging (2026-10-27)
+
+Each fixed tick records:
+
+- chassis origin, spawn origin, distance from spawn, linear/angular velocity,
+  and orientation;
+- mass, weight, density, and gravity scale;
+- engine, mode, PRNDL gear, RPM, torque, boost, throttle/brake/steer/clutch/
+  handbrake;
+- per-wheel world center, spin/steer axes, spin velocity, steering angle,
+  suspension length, compression, load, slip ratio/angle, grounded flag, and
+  world velocity.
+
+`vehicle.tick.summary` is emitted at most once per second per vehicle.
+`vehicle.performance` records vehicle count, awake count, update milliseconds,
+and physical-entity count. Spawn, enter, exit, tune, void, and audio transitions
+are Important events. JSON construction is gated so a high-frequency summary
+cannot allocate unbounded work.
+
+## 25. RPM engine sound (2026-10-27)
+
+- The engine sound is scheduled in the fixed 60 Hz vehicle tick, never the render
+  frame.
+- The period lerps from **0.8 s** at 800 RPM to **0.02 s** at 8900 RPM, clamped
+  to at least one fixed tick.
+- The sample plays from `startSeconds=0` to `endSeconds=period`, then retriggers
+  with an owner key per vehicle.
+- Stopping the engine, despawning, void death, and runtime cleanup stop the
+  owner.
+- The sound path is template data; the first slice uses a placeholder existing
+  WAV until a dedicated engine asset exists.
+
+## 26. Vehicle performance rules (2026-10-27)
+
+- One broadphase gather per vehicle per fixed tick covers all wheel rays.
+- Entity lookup is an id→index map, not a linear scan.
+- The seated player skips actor-vs-occupied-vehicle contacts and player pushes.
+- Wheel/force work is skipped immediately for a doomed or removed vehicle.
+- Vehicles sleep/park when there is no engine or motion input.
+- `Vehicle::Update`, `Vehicle::Wheel`, `Vehicle::Render`, and `Constraint::Solve`
+  have profiler scopes; `vehicle.performance` makes the cost observable.
+- Do not trade correctness for a frame-rate-dependent system.
+
+## 27. Scenario and tuning (2026-10-27)
+
+- `devscripts/scenarios/vehicle_drive_v1.json` proves spawn, enter, engine
+  toggle, forward/turn, gear change, reverse, engine off, exit, unoccupied void
+  destruction, occupied void death, and origin movement from A to B.
+- The scenario runner supports numeric `event_field_at_least` /
+  `event_field_at_most` assertions in addition to exact-field and count checks.
+- `vehicle_input` sets a scripted override so a seated local driver can be
+  driven by a scenario while still exercising the seat path.
+- `vehicle_tune <id> <mass|spring|damper|grip|torque|drag> <value>` changes live
+  per-instance behavior. Template JSON remains the persistent source.
+- `vehicle_teleport` and `runtime_clear` exist for scenarios and diagnostics.
+
+## 28. Constraint/attachment debug visibility (2026-10-27)
+
+- Constraint and attachment anchors, hinge axes, slider travel/limits, spring
+  rest marks, and labels are drawn only when `entity_visibility` is on.
+- There is no separate constraint visibility toggle; the existing authoring gate
+  is the single owner.
+- The debug renderer is read-only and does not change solver behavior.
+

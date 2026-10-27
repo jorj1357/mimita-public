@@ -82,6 +82,14 @@ VehicleWheelSpec parseWheel(const json& wheel)
     if (glm::dot(spec.suspensionAxis, spec.suspensionAxis) < 1e-6f)
         spec.suspensionAxis = glm::vec3(0.0f, 0.0f, -1.0f);
     spec.suspensionAxis = glm::normalize(spec.suspensionAxis);
+    spec.spinAxis = readVec3(wheel, "spinAxis", spec.spinAxis);
+    if (glm::dot(spec.spinAxis, spec.spinAxis) < 1e-6f)
+        spec.spinAxis = glm::vec3(0.0f, 1.0f, 0.0f);
+    spec.spinAxis = glm::normalize(spec.spinAxis);
+    spec.steerAxis = readVec3(wheel, "steerAxis", spec.steerAxis);
+    if (glm::dot(spec.steerAxis, spec.steerAxis) < 1e-6f)
+        spec.steerAxis = glm::vec3(0.0f, 0.0f, 1.0f);
+    spec.steerAxis = glm::normalize(spec.steerAxis);
     spec.restLength =
         readFloat(wheel, "restLength", spec.restLength, 0.0f, 3.0f);
     spec.travel = readFloat(wheel, "travel", spec.travel, 0.0f, 2.0f);
@@ -220,6 +228,14 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
     spec.halfExtents = glm::vec3(length, width, height) * 0.5f;
     spec.drag = readFloat(root, "drag", spec.drag, 0.0f, 10.0f);
     spec.downforce = readFloat(root, "downforce", spec.downforce, 0.0f, 10.0f);
+    spec.interactionRadius = readFloat(root, "interactionRadius",
+                                       spec.interactionRadius, 1.0f, 12.0f);
+    spec.bodyTexture = readString(root, "bodyTexture", spec.bodyTexture);
+    spec.wheelTexture = readString(root, "wheelTexture", spec.wheelTexture);
+    spec.engineSound = readString(root, "engineSound", spec.engineSound);
+    spec.wheelSegments = static_cast<int>(
+        readFloat(root, "wheelSegments", (float)spec.wheelSegments, 8.0f,
+                  64.0f));
 
     if (root.contains("wheels") && root["wheels"].is_array())
     {
