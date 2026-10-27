@@ -41,6 +41,7 @@ namespace MimitaNet {
 namespace {
 
 ServerProjectilePerfStats gProjectilePerf;
+static std::unordered_map<uint32_t, uint32_t> sLastDeathballWallLogTick;
 
 // ── ProjectileConfig and helpers (anonymous, file-local) ─────────────
 
@@ -263,7 +264,7 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
     { printf("[PROJECTILE CONFIG] weapon=%s INVALID restitution=%.2f\n", networkWeaponTypeName(weapon), cfg.restitution); valid = false; }
     if (!std::isfinite(cfg.friction))
     { printf("[PROJECTILE CONFIG] weapon=%s INVALID friction=%.2f\n", networkWeaponTypeName(weapon), cfg.friction); valid = false; }
-    if (!std::isfinite(cfg.splashRadius) || cfg.splashRadius <= 0.0f)
+    if (!std::isfinite(cfg.splashRadius) || cfg.splashRadius < 0.0f)
     { printf("[PROJECTILE CONFIG] weapon=%s INVALID splashRadius=%.2f\n", networkWeaponTypeName(weapon), cfg.splashRadius); valid = false; }
 
     if (!valid)
@@ -607,6 +608,16 @@ ProjectilePhysicsConfig makePhysicsConfig(const ServerProjectile& projectile)
     config.maxBounceCount = projectile.maxBounceCount;
     config.minBounceSpeed = projectile.minBounceSpeed;
     config.bounceEnabled = projectile.maxBounceCount > 0;
+    if (const std::string* id = weaponIdForDefNetworkId(projectile.weaponDefNetworkId)) {
+        if (const WeaponDefinition* def = WeaponRegistry::instance().get(*id)) {
+            const auto cp = [def](const char* key, float fallback) {
+                auto it = def->customParams.find(key);
+                return it != def->customParams.end() ? it->second : fallback;
+            };
+            config.passThroughWorld = cp("passThroughWorld", 0.0f) > 0.0f;
+            config.passThroughActors = cp("passThroughActors", 0.0f) > 0.0f;
+        }
+    }
     return config;
 }
 
@@ -1876,6 +1887,132 @@ void tickServerProjectiles(SOCKET sock,
                 applyPhysicsState(projectile, state);
                 projectile.distanceTraveled += step.travelDistance;
                 projectile.simulationTick = stepTick;
+
+                const WeaponDefinition* stepDef = nullptr;
+                if (const std::string* stepId =
+                        weaponIdForDefNetworkId(projectile.weaponDefNetworkId))
+                    stepDef = WeaponRegistry::instance().get(*stepId);
+                const auto stepParam = [stepDef](const char* key, float fallback) {
+                    if (!stepDef) return fallback;
+                    auto it = stepDef->customParams.find(key);
+                    return it != stepDef->customParams.end() ? it->second : fallback;
+                };
+
+                if (step.type == ProjectileCollisionType::WorldPassThrough) {
+                    const float wallDecay = std::max(1.0f,
+                        stepParam("wallDecayMultiplier", 3.0f));
+                    projectile.age += tickDt * (wallDecay - 1.0f);
+                    uint32_t& lastLog = sLastDeathballWallLogTick[projectile.id];
+                    if (lastLog == 0 || stepTick >= lastLog + 30) {
+                        lastLog = stepTick;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Weapons, StructuredLevel::Important,
+                            "deathball.wall-pass", std::to_string(projectile.id),
+                            "projectile passed through world geometry and lost extra lifetime",
+                            stepTick,
+                            {{"projectile", projectile.id},
+                             {"weapon", stepDef ? stepDef->id : ""},
+                             {"wall_decay_multiplier", wallDecay},
+                             {"age", projectile.age},
+                             {"lifetime", projectile.lifetime},
+                             {"hit", {step.hitPosition.x, step.hitPosition.y, step.hitPosition.z}}});
+                    }
+                } else if (step.type == ProjectileCollisionType::PlayerPassThrough &&
+                           stepDef && stepDef->id == "deathball") {
+                    const uint32_t targetId = step.hitPlayerId;
+                    ServerActorRef attackerRef{};
+                    ServerActorRef victimRef{};
+                    glm::vec3 victimPos{0.0f};
+                    bool found = false;
+                    const bool ownerIsPlayer = projectile.ownerPlayerId != 0;
+                    const uint32_t ownerId = ownerIsPlayer
+                        ? projectile.ownerPlayerId : projectile.ownerNpcId;
+                    if (ownerIsPlayer) {
+                        auto it = players.find(ownerId);
+                        if (it != players.end()) {
+                            attackerRef = {ownerId, ServerActorKind::Player, &it->second, nullptr};
+                        }
+                    } else {
+                        auto it = npcs.find(ownerId);
+                        if (it != npcs.end()) {
+                            attackerRef = {ownerId, ServerActorKind::Npc, nullptr, &it->second};
+                        }
+                    }
+                    auto playerTarget = players.find(targetId);
+                    if (playerTarget != players.end() && !playerTarget->second.dead) {
+                        victimRef = {targetId, ServerActorKind::Player, &playerTarget->second, nullptr};
+                        victimPos = playerTarget->second.pos;
+                        found = true;
+                    } else {
+                        auto npcTarget = npcs.find(targetId);
+                        if (npcTarget != npcs.end() && npcTarget->second.health > 0) {
+                            victimRef = {targetId, ServerActorKind::Npc, nullptr, &npcTarget->second};
+                            victimPos = npcTarget->second.pos;
+                            found = true;
+                        }
+                    }
+                    if (found && attackerRef.id != 0) {
+                        const glm::vec3 center = projectile.position;
+                        const glm::vec3 targetCenter = victimPos + glm::vec3(0.0f, 0.0f, 0.9f);
+                        const float radius = std::max(0.01f, projectile.radius);
+                        const float dist = glm::length(targetCenter - center);
+                        const float t = glm::clamp(dist / radius, 0.0f, 1.0f);
+                        const int damage = std::max(1, (int)std::lround(glm::mix(
+                            stepParam("deathballDamageCenter", 10.0f),
+                            stepParam("deathballDamageEdge", 1.0f), t)));
+                        glm::vec3 push = targetCenter - victimPos;
+                        if (glm::length(push) < 0.001f) push = step.hitNormal;
+                        push = glm::normalize(push);
+                        const glm::vec3 impulse = push * (float)damage *
+                            std::max(0.0f, stepParam("deathballKnockbackPerDamage", 0.1f));
+                        ServerActorDamageRequest request;
+                        request.attacker = attackerRef;
+                        request.victim = victimRef;
+                        request.damage = damage;
+                        request.knockback = impulse;
+                        request.source = ServerDamageSource::RocketExplosion;
+                        request.weaponId = stepDef->id;
+                        request.weaponDisplayName = stepDef->displayName;
+                        request.serverTick = stepTick;
+                        const auto result = applyActorDamage(players, npcs, request);
+                        if (result.applied) {
+                            if (victimRef.kind == ServerActorKind::Player && victimRef.player) {
+                                queueServerDamageConfirmedEvent(sock, players, stepTick,
+                                    totalPacketsOut,
+                                    attackerRef.kind == ServerActorKind::Player ? attackerRef.id : 0,
+                                    *victimRef.player, damage, result, center,
+                                    step.hitNormal, impulse, ServerDamageSource::RocketExplosion,
+                                    networkWeaponTypeForDefinition(*stepDef),
+                                    projectile.id, projectile.id,
+                                    attackerRef.kind == ServerActorKind::Npc ? attackerRef.id : 0,
+                                    stepDef->id, 0.0f);
+                            } else if (victimRef.kind == ServerActorKind::Npc && victimRef.npc) {
+                                broadcastNpcDamageEvent(sock, players, stepTick, totalPacketsOut,
+                                    attackerRef.id, *victimRef.npc, damage, result.killed,
+                                    projectile.position, center, push, step.hitNormal,
+                                    networkWeaponTypeForDefinition(*stepDef),
+                                    (uint8_t)attackerRef.kind, 0.0f);
+                            }
+                        }
+                        if (result.applied && (result.killed || stepTick % 10 == 0)) {
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Weapons, StructuredLevel::Important,
+                                "deathball.contact", std::to_string(projectile.id),
+                                "deathball tick damage applied", stepTick,
+                                {{"projectile", projectile.id},
+                                 {"attacker", attackerRef.id},
+                                 {"target", victimRef.id},
+                                 {"target_type", (int)victimRef.kind},
+                                 {"damage", damage},
+                                 {"distance_fraction", t},
+                                 {"knockback", {impulse.x, impulse.y, impulse.z}},
+                                 {"health_before", result.healthBefore},
+                                 {"health_after", result.healthAfter},
+                                 {"killed", result.killed}});
+                        }
+                    }
+                }
+
                 if (state.sleeping || state.bounceCount > previousBounceCount ||
                     step.type == ProjectileCollisionType::WorldBounce ||
                     step.type == ProjectileCollisionType::WorldImpact ||
@@ -1884,7 +2021,9 @@ void tickServerProjectiles(SOCKET sock,
                     projectile.worldTouched = true;
                 }
 
-                if (step.type != ProjectileCollisionType::None)
+                if (step.type != ProjectileCollisionType::None &&
+                    step.type != ProjectileCollisionType::WorldPassThrough &&
+                    step.type != ProjectileCollisionType::PlayerPassThrough)
                 {
                 auto& _lg = ::StructuredLogger::instance();
                 if (_lg.shouldLog(::StructuredCategory::GrenadeLauncher, ::StructuredLevel::Important)) {
@@ -1909,11 +2048,14 @@ void tickServerProjectiles(SOCKET sock,
                 }
                 }
 
-                if (step.type == ProjectileCollisionType::LifetimeExpired && projectile.explodeOnLifetime)
+                if (step.type == ProjectileCollisionType::LifetimeExpired)
                 {
-                    explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                      glm::vec3(0.0f, 0.0f, 1.0f),
-                                      "lifetime", 0, tick, stepTick, totalPacketsOut);
+                    if (projectile.explodeOnLifetime)
+                        explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
+                                          glm::vec3(0.0f, 0.0f, 1.0f),
+                                          "lifetime", 0, tick, stepTick, totalPacketsOut);
+                    else
+                        projectile.exploded = true;
                 }
                 else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
                 {
@@ -1974,10 +2116,13 @@ void tickServerProjectiles(SOCKET sock,
             projectile.simulationTick = tick;
             if (projectile.age >= projectile.lifetime)
             {
-                explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                  glm::vec3(0.0f, 0.0f, 1.0f),
-                                  "lifetime", 0, tick, tick,
-                                  totalPacketsOut);
+                if (projectile.explodeOnLifetime)
+                    explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
+                                      glm::vec3(0.0f, 0.0f, 1.0f),
+                                      "lifetime", 0, tick, tick,
+                                      totalPacketsOut);
+                else
+                    projectile.exploded = true;
             }
         }
 
@@ -2115,3 +2260,4 @@ void cancelDeadNpcProjectiles(
 }
 
 } // namespace MimitaNet
+

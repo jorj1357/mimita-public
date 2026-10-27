@@ -275,6 +275,35 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         mEmptyFlashTimer = 0.0f;
     }
 
+    if (def && def->id == "chainsaw") {
+        auto rtIt = player.weaponRuntimes.find(def->id);
+        if (rtIt != player.weaponRuntimes.end()) {
+            auto revIt = rtIt->second.customFloats.find("chainsawRevMultiplier");
+            if (revIt != rtIt->second.customFloats.end()) {
+                const float maxRev = std::max(1.0f,
+                    def->customParams.count("revDamageMultiplier")
+                        ? def->customParams.at("revDamageMultiplier") : 2.0f);
+                const float t = glm::clamp((revIt->second - 1.0f) /
+                    std::max(0.001f, maxRev - 1.0f), 0.0f, 1.0f);
+                const glm::vec3 base(
+                    def->customParams.count("revColorBaseR")
+                        ? def->customParams.at("revColorBaseR") : 0.15f,
+                    def->customParams.count("revColorBaseG")
+                        ? def->customParams.at("revColorBaseG") : 0.02f,
+                    def->customParams.count("revColorBaseB")
+                        ? def->customParams.at("revColorBaseB") : 0.02f);
+                const glm::vec3 full(
+                    def->customParams.count("revColorFullR")
+                        ? def->customParams.at("revColorFullR") : 1.0f,
+                    def->customParams.count("revColorFullG")
+                        ? def->customParams.at("revColorFullG") : 0.05f,
+                    def->customParams.count("revColorFullB")
+                        ? def->customParams.at("revColorFullB") : 0.05f);
+                mTint = glm::mix(base, full, t);
+            }
+        }
+    }
+
     // Weapon collision capsule (grip→tip→radius). Computed from model bounds below.
 
     if (world)

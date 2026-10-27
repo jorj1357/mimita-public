@@ -420,6 +420,9 @@ void registerAgentCommands()
 #include "terminal/npc-commands.h"
 #include "terminal/crate-commands.h"
 #include "terminal/object-commands.h"
+#include "physics/constraints/constraint-commands.h"
+#include "vehicles/vehicle-commands.h"
+#include "vehicles/vehicle-system.h"
 #include "terminal/procedural-world-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
@@ -704,6 +707,10 @@ void gameInitSubsystems(Engine& engine)
     registerMapEntityCommands();
     registerCrateCommands();
     registerObjectCommands();
+    registerConstraintCommands();
+    registerVehicleCommands();
+    VehicleSystem::instance().loadConfig("config/vehicles");
+    VehicleSystem::instance().registerFixedTick();
     registerProceduralWorldCommands();
     registerTransformDebugCommands();
 

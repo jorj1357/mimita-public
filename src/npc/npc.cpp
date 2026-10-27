@@ -1363,12 +1363,16 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 case WeaponBehaviorType::Godball:
                     return true;
                 case WeaponBehaviorType::Melee:
+                case WeaponBehaviorType::Swordsword:
                     return npc.behavior.weaponCycleIncludeMelee;
                 default:
                     return false;
             }
         };
         auto ammoReady = [&](const std::string& wid) {
+            const WeaponDefinition* def = defFor(wid);
+            if (def && def->behaviorType == WeaponBehaviorType::Swordsword)
+                return true; // continuous-contact melee has no magazine gate
             auto it = npc.body.weaponRuntimes.find(wid);
             return it != npc.body.weaponRuntimes.end() && it->second.currentAmmo > 0;
         };
@@ -1391,6 +1395,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             npc.cycleWeapon = wid;
             npc.cycleVisitShotsTotal = shots;
             npc.cycleVisitShotsRemaining = shots;
+            npc.cycleVisitMeleeTimer = 0.6f;
             npc.cycleVisitComplete = false;
             ++npc.cycleVisitSerial;
         };
@@ -1421,6 +1426,19 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 order.push_back(wid);
 
         const WeaponDefinition* curDef = defFor(npc.body.equippedWeaponId);
+        // Continuous-contact melee never emits a hitscan `fired` result, so
+        // consume its visit on a short fixed-time cadence while it is held.
+        if (curDef && curDef->behaviorType == WeaponBehaviorType::Swordsword &&
+            npc.cycleWeapon == npc.body.equippedWeaponId &&
+            npc.cycleVisitShotsRemaining > 0) {
+            npc.cycleVisitMeleeTimer -= safeDt;
+            if (npc.cycleVisitMeleeTimer <= 0.0f) {
+                npc.cycleVisitMeleeTimer = 0.6f;
+                --npc.cycleVisitShotsRemaining;
+            }
+        } else {
+            npc.cycleVisitMeleeTimer = 0.6f;
+        }
         const bool currentUsable = curDef && isAttackCapable(*curDef) &&
             ammoReady(npc.body.equippedWeaponId) &&
             npc.cycleVisitShotsRemaining > 0;

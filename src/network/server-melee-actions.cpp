@@ -838,7 +838,13 @@ void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>
             npc.meleeActionId.clear();
         }
         if (!npc.meleeActionActive && nearest <= range && tick >= npc.meleeNextAttackTick && !set->actions.empty()) {
-            const auto& selected = set->actions[(npc.entityId + tick / 30u) % set->actions.size()];
+            std::vector<const WeaponData::MeleeAction*> selectable;
+            for (const auto& candidate : set->actions)
+                if (candidate.npcSelectable && !candidate.blocksMelee)
+                    selectable.push_back(&candidate);
+            if (selectable.empty())
+                continue;
+            const auto& selected = *selectable[(npc.entityId + tick / 30u) % selectable.size()];
             npc.meleeActionActive = true;
             npc.meleeActionId = selected.id;
             npc.meleeActionStartTick = tick;
@@ -930,10 +936,13 @@ void tickServerMeleeActions(SOCKET sock,
         }
         attacker.meleePhaseTick = phaseTick;
 
-        // Per-action impulses fire on their authored phase/tick.
-        if (animationOnly) continue;
+        // Per-action impulses fire on their authored phase/tick for both
+        // authored and procedural actions. Animation-only weapons still skip
+        // percent damage and authored hitboxes.
         applyActionImpulses(attacker, *action, phase, phaseTick, tick);
 
+        if (animationOnly)
+            continue;
         if (std::string(phase) != "active")
             continue;
 

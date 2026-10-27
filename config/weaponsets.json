@@ -53,6 +53,9 @@
         "fire",
         "darkbang",
         "bomb",
+        "chainsaw",
+        "mace",
+        "deathball",
         "*"
       ]
     },
@@ -80,13 +83,15 @@
       "id": 29,
       "key": "tdm",
       "name": "Team Deathmatch",
-      "description": "Team Deathmatch loadout: Revolver (1), Shotgun (2), Swordsword (3), Rocket Launcher (4), Large Machine Gun (5).",
+      "description": "Team Deathmatch loadout: Revolver (1), Shotgun (2), Rocket Launcher (3), Swordsword (4), Chainsaw (5), Mace (6), Deathball (7).",
       "weapons": [
         "revolver",
         "shotgun",
-        "swordsword",
         "rocket_launcher",
-        "large_machine_gun",
+        "swordsword",
+        "chainsaw",
+        "mace",
+        "deathball",
         "nothing"
       ]
     },

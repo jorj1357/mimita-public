@@ -1,0 +1,105 @@
+{
+  // Neutral four-wheel sedan. Values are gameplay-tuned (sim-lite), not a
+  // manufacturer sheet. Length is X, width is Y, up is Z.
+  "id": "car_sedan",
+  "massKg": 1400,
+  "density": 120,
+  "centerOfMass": [0.0, 0.0, -0.15],
+  "length": 4.4,
+  "width": 1.8,
+  "height": 0.7,
+  "drag": 0.32,
+  "downforce": 0.0,
+  "wheels": [
+    {
+      "hub": [1.35, 0.75, -0.25],
+      "radius": 0.34,
+      "width": 0.22,
+      "suspensionAxis": [0, 0, -1],
+      "restLength": 0.40,
+      "travel": 0.30,
+      "springRate": 180000,
+      "damperRate": 18000,
+      "antiRoll": 40000,
+      "unsprungMass": 38,
+      "steer": true,
+      "drive": false,
+      "brake": true
+    },
+    {
+      "hub": [1.35, -0.75, -0.25],
+      "radius": 0.34,
+      "width": 0.22,
+      "suspensionAxis": [0, 0, -1],
+      "restLength": 0.40,
+      "travel": 0.30,
+      "springRate": 180000,
+      "damperRate": 18000,
+      "antiRoll": 40000,
+      "unsprungMass": 38,
+      "steer": true,
+      "drive": false,
+      "brake": true
+    },
+    {
+      "hub": [-1.35, 0.75, -0.25],
+      "radius": 0.34,
+      "width": 0.22,
+      "suspensionAxis": [0, 0, -1],
+      "restLength": 0.40,
+      "travel": 0.30,
+      "springRate": 180000,
+      "damperRate": 18000,
+      "antiRoll": 40000,
+      "unsprungMass": 38,
+      "steer": false,
+      "drive": true,
+      "brake": true
+    },
+    {
+      "hub": [-1.35, -0.75, -0.25],
+      "radius": 0.34,
+      "width": 0.22,
+      "suspensionAxis": [0, 0, -1],
+      "restLength": 0.40,
+      "travel": 0.30,
+      "springRate": 180000,
+      "damperRate": 18000,
+      "antiRoll": 40000,
+      "unsprungMass": 38,
+      "steer": false,
+      "drive": true,
+      "brake": true
+    }
+  ],
+  "tire": {
+    "mu": 1.35,
+    "loadSensitivity": 0.00018,
+    "nominalLoad": 24500,
+    "peakSlipRatio": 0.12,
+    "peakSlipAngle": 0.12,
+    "frictionCircle": true,
+    "lowSpeed": 0.6
+  },
+  "engine": {
+    "inertia": 0.22,
+    "idleRpm": 850,
+    "redlineRpm": 6800,
+    "frictionTorque": 18,
+    "torqueCurve": [[800, 120], [2500, 240], [4500, 300], [6500, 260]],
+    "turbo": { "maxBoost": 0.35, "spoolRate": 2.4, "lag": 0.18 }
+  },
+  "gearbox": {
+    "ratios": [-3.4, 0.0, 3.6, 2.1, 1.45, 1.05, 0.82, 0.68],
+    "finalDrive": 3.7,
+    "shiftTime": 0.18,
+    "clutchCapacity": 420
+  },
+  "differential": { "type": "lsd", "frontRearSplit": 0.0 },
+  "steering": { "maxAngleDeg": 32, "speedFalloff": 0.55, "returnRate": 3.5 },
+  "brakes": { "maxTorque": 5200, "handbrakeTorque": 3000 },
+  "seats": [
+    { "name": "driver", "anchor": [-0.38, 0.25, 0.10], "pose": "sit" },
+    { "name": "passenger", "anchor": [0.38, 0.25, 0.10], "pose": "sit" }
+  ]
+}

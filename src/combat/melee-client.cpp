@@ -38,6 +38,7 @@ using WeaponData::MeleeMoveSet;
 // Test/dev forced action (agent.* commands) and limb-pose tracking for logging.
 std::string g_forceActionId;
 bool g_debugCrouch = false;
+uint32_t g_lastChainsawRevTick = 0;
 std::unordered_map<std::string, glm::vec3> g_lastPartPos;
 std::unordered_map<std::string, glm::vec3> g_lastPartTip;
 std::string g_lastPhaseKey;
@@ -199,6 +200,8 @@ void startAction(Player& player,
     g_state.actionSnapshot = action;
     g_state.startSimTick = simTick;
     g_state.forward = horizontalForward(cameraFront);
+    if (def.id == "chainsaw")
+        g_lastChainsawRevTick = simTick;
     g_state.lastAdvanceSimTick = simTick;
     g_state.hasLastAdvance = true;
     g_state.lastImpulsePhaseTick = -1;
@@ -250,6 +253,7 @@ void endAction(Player& player)
     g_state.active = false;
     g_state.actionId.clear();
     player.clearOneShot();
+    player.proceduralMeleePoseActive = false;
 }
 
 } // namespace
@@ -270,6 +274,7 @@ void reset()
     g_shieldHeld = false;
     g_debugShield = false;
     g_forceActionId.clear();
+    g_lastChainsawRevTick = 0;
     g_pendingInput = ClientInput{};
     g_primaryHeld = g_secondaryHeld = false;
     g_lastPartPos.clear();
@@ -369,6 +374,26 @@ void clientTick(Player& player,
     // Publish crouch intent so the animation state machine can select the
     // authored `crouch` state clip on the grounded fighter.
     player.crouching = input.crouchHeld || g_debugCrouch;
+
+    if (const WeaponDefinition* equipped = weapons.getCurrentDef(player)) {
+        if (equipped->id == "chainsaw") {
+            float rev = 1.0f;
+            const float decayTicks = std::max(1.0f,
+                equipped->customParams.count("revDecayTicks")
+                    ? equipped->customParams.at("revDecayTicks") : 60.0f);
+            const float maxRev = std::max(1.0f,
+                equipped->customParams.count("revDamageMultiplier")
+                    ? equipped->customParams.at("revDamageMultiplier") : 2.0f);
+            if (g_lastChainsawRevTick != 0 && simTick >= g_lastChainsawRevTick) {
+                const float t = std::clamp(
+                    (float)(simTick - g_lastChainsawRevTick) / decayTicks, 0.0f, 1.0f);
+                rev = 1.0f + (maxRev - 1.0f) * (1.0f - t);
+            }
+            auto rtIt = player.weaponRuntimes.find(equipped->id);
+            if (rtIt != player.weaponRuntimes.end())
+                rtIt->second.customFloats["chainsawRevMultiplier"] = rev;
+        }
+    }
 
     const MeleeActorState state = player.ground.stableOnGround
         ? MeleeActorState::Grounded : MeleeActorState::Airborne;
@@ -524,10 +549,24 @@ void clientTick(Player& player,
     g_state.currentPhaseIndex = phaseIndex;
     g_state.currentPhaseTick = phaseTick;
 
-    if (!action->animationClipId.empty())
+    if (!action->animationClipId.empty()) {
         player.playOneShotAtTick(action->animationClipId, elapsed);
-    else if (!clip.empty())
+        player.proceduralMeleePoseActive = false;
+    } else if (!clip.empty()) {
         player.playOneShotPhase(clip, phaseTick, phaseTicks);
+        player.proceduralMeleePoseActive = false;
+    } else {
+        WeaponData::MeleeProceduralPose pose;
+        if (WeaponData::resolveMeleeProceduralPose(*action, phaseName,
+                phaseTick, phaseTicks, pose)) {
+            player.proceduralMeleeRightArmRotation = pose.rightArmRotation;
+            player.proceduralMeleeRightArmTranslation = pose.rightArmTranslation;
+            player.proceduralMeleeTorsoRotation = pose.torsoRotation;
+            player.proceduralMeleePoseActive = true;
+        } else {
+            player.proceduralMeleePoseActive = false;
+        }
+    }
 
     // Log each phase transition with the limb pose so animation motion and the
     // attached hitbox path are verifiable in events.jsonl.
@@ -560,7 +599,7 @@ void clientTick(Player& player,
 
     // Phase impulses: fire each authored event once, when its phase-local tick
     // is reached or passed.
-    if (!moveSet->animationOnly) for (const WeaponData::MeleeImpulse& imp : action->impulses) {
+    for (const WeaponData::MeleeImpulse& imp : action->impulses) {
         if (imp.phase != phaseName)
             continue;
         if (imp.tick > phaseTick)

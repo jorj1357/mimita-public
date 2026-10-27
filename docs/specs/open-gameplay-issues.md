@@ -263,12 +263,12 @@
   proposal from the existing Smash Bros-inspired arena mode. Weapon concepts
   and open decisions:
   - `swordsword`: intended as a strong basic sword, but the player reports it
-    is not functional yet. They propose that a click/attack might add an
-    impulse in the attack direction, with damage still to tune. This conflicts
-    with the current [`SwordSword behavior contract`](weapons/melee/swordsword.md),
-    which says attack input does not add forward velocity or an impulse to the
-    wielder. Keep this as a proposed spec change until the user settles that
-    behavior; do not silently treat it as already decided.
+    is not functional yet. 2026-10-27 decision: a single left-click slash adds
+    a 3 m/s aim-direction impulse; the double-left heavy slash adds no impulse
+    and deals 2x damage. Right-click is a sweep, and double-right holds a
+    front-arc block that requires the sword to physically meet the incoming
+    melee contact. The authoritative contract is now
+    [`SwordSword behavior contract`](weapons/melee/swordsword.md).
   - `spyknife`: the model is reportedly missing and damage is inconsistent.
     Trace the model path and full authoritative damage path against the shared
     physical-contact contract in

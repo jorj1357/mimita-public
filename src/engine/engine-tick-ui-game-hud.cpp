@@ -67,6 +67,7 @@
 #include "network/server.h"
 #include "debug/debug-visuals.h"
 #include "vip/vip-name-render.h"
+#include "vehicles/vehicle-hud.h"
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
@@ -196,6 +197,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             const GuiElement* dryFireEl = hudLayout.get("dryFireIndicator");
             bool dryFireEnabled = dryFireEl && dryFireEl->visible;
             std::string modeId = communityMatch.mode();
+            if (modeId.empty()) modeId = activeGameMode;
             if (modeId == "bomb_tag") modeId = "bombtag";
             else if (modeId == "team_deathmatch") modeId = "tdm";
             else if (modeId == "free_for_all") modeId = "ffa";
@@ -635,4 +637,6 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         Debug::warn(Debug::Category::Chat,
                     "[CHAT TRACE 3 PROBLEM] gpChatHistory is NULL; renderChatWindow was skipped\n");
     }
+
+    { MIMITA_PERF_SCOPE("HUD::Vehicle"); drawVehicleHud(); }
 }

@@ -28,6 +28,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdarg>
+#include <cstdlib>
 #include <chrono>
 
 #include <glm/gtc/quaternion.hpp>
@@ -235,6 +236,16 @@ ProjectilePhysicsConfig makePhysicsConfig(const NetworkProjectile& projectile)
     config.maxBounceCount = projectile.maxBounceCount;
     config.minBounceSpeed = projectile.minBounceSpeed;
     config.bounceEnabled = projectile.maxBounceCount > 0;
+    if (const std::string* id = weaponIdForDefNetworkId(projectile.weaponDefNetworkId)) {
+        if (const WeaponDefinition* def = WeaponRegistry::instance().get(*id)) {
+            const auto cp = [def](const char* key, float fallback) {
+                auto it = def->customParams.find(key);
+                return it != def->customParams.end() ? it->second : fallback;
+            };
+            config.passThroughWorld = cp("passThroughWorld", 0.0f) > 0.0f;
+            config.passThroughActors = cp("passThroughActors", 0.0f) > 0.0f;
+        }
+    }
     return config;
 }
 
@@ -1768,6 +1779,32 @@ void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const Projec
 
 void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPacket* event)
 {
+    // Weapon-vs-weapon clash presentation. attackType 3 carries no target and
+    // no damage; it only asks clients to play the metal spark feedback.
+    if (event->attackType == 3) {
+        const glm::vec3 hit{event->hitX, event->hitY, event->hitZ};
+        const glm::vec3 knock{event->knockX, event->knockY, event->knockZ};
+        const float force01 = glm::clamp(glm::length(knock) / 60.0f, 0.0f, 1.0f);
+        for (int i = 0; i < 15; ++i) {
+            glm::vec3 dir(
+                ((float)rand() / (float)RAND_MAX - 0.5f),
+                ((float)rand() / (float)RAND_MAX - 0.5f),
+                ((float)rand() / (float)RAND_MAX - 0.5f));
+            if (glm::length(dir) < 0.001f) dir = glm::vec3(0.0f, 0.0f, 1.0f);
+            dir = glm::normalize(dir);
+            EffectPartSystem::instance().spawnBodyContactSpark(
+                hit, hit, dir * (6.0f + force01 * 14.0f), 0.06f);
+        }
+        static const char* kMetalSounds[] = {
+            "weapon/general/metalricochet",
+            "weapon/general/metalricochet2",
+            "weapon/general/metalricochet3"
+        };
+        playWorldSound(kMetalSounds[rand() % 3], hit,
+            0.45f + force01 * 0.85f, 1.25f - force01 * 0.55f, 45.0f);
+        return;
+    }
+
     // Animation-only event (targetPlayerId=0): create sword state but skip VFX
     if (event->targetPlayerId != 0)
     {
@@ -2081,6 +2118,17 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
                     projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
+
+            if (step.type == ProjectileCollisionType::WorldPassThrough) {
+                const WeaponDefinition* def = projectileDefinition(
+                    projectile.weaponDefNetworkId, projectile.weaponType);
+                if (def) {
+                    const auto it = def->customParams.find("wallDecayMultiplier");
+                    const float wallDecay = it != def->customParams.end()
+                        ? std::max(1.0f, it->second) : 3.0f;
+                    projectile.age += dt * (wallDecay - 1.0f);
+                }
+            }
 
             if (!std::isfinite(projectile.position.x) ||
                 !std::isfinite(projectile.position.y) ||
@@ -2451,6 +2499,27 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         if (projectile.exploded)
             continue;
         ProjectileVisualConfig cfg = projectileVisualConfig(projectile);
+        const WeaponDefinition* fadeDef =
+            projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+        if (fadeDef && cp(fadeDef, "projectileFadeEnabled", 0.0f) > 0.0f &&
+            projectile.lifetime > 0.001f) {
+            const float t = std::clamp(projectile.age / projectile.lifetime, 0.0f, 1.0f);
+            const glm::vec3 start(
+                cp(fadeDef, "projectileFadeStartR", 0.0f),
+                cp(fadeDef, "projectileFadeStartG", 1.0f),
+                cp(fadeDef, "projectileFadeStartB", 1.0f));
+            const glm::vec3 end(
+                cp(fadeDef, "projectileFadeEndR", 0.039f),
+                cp(fadeDef, "projectileFadeEndG", 0.039f),
+                cp(fadeDef, "projectileFadeEndB", 0.0f));
+            cfg.fillColor = glm::mix(start, end, t);
+            cfg.fillAlpha = glm::mix(
+                cp(fadeDef, "projectileFadeStartA", 1.0f),
+                cp(fadeDef, "projectileFadeEndA", 0.0f), t);
+            cfg.glowColor = cfg.fillColor;
+            cfg.glowAlpha = cfg.fillAlpha * 0.35f;
+            cfg.outlineColor = cfg.fillColor;
+        }
 
         // Rifle projectiles are intentionally rendered as a bright sphere from
         // the weapon definition.  This remains visible even when the texture

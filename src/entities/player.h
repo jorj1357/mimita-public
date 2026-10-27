@@ -678,6 +678,13 @@ public:
     int lockedClipPhaseTicks = 0;
     // Exact clip-local tick driven by the fixed-tick action owner; -1 is time-driven.
     int lockedClipSampleTick = -1;
+    // Placeholder procedural melee pose. Used only while a Melee action has
+    // procedural pose data and no authored clip, so the right arm and attached
+    // weapon move through windup/active/recovery without a clip asset.
+    bool proceduralMeleePoseActive = false;
+    glm::vec3 proceduralMeleeRightArmRotation{60.0f, 5.0f, 40.0f};
+    glm::vec3 proceduralMeleeRightArmTranslation{0.0f};
+    glm::vec3 proceduralMeleeTorsoRotation{0.0f};
     float hurtTimer = 0.0f;
     std::string mResolvedAnimAvatar;  // avatar name whose set is currently bound
 
@@ -696,6 +703,7 @@ public:
         lockedClipPhaseTick = 0;
         lockedClipPhaseTicks = 0;
         lockedClipSampleTick = -1;
+        proceduralMeleePoseActive = false;
     }
 
     // -------- Construction --------

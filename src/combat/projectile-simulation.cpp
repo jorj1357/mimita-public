@@ -544,6 +544,18 @@ ProjectileStepResult simulateProjectileTick(
                 if (earliestCapsuleIdx >= 0)
                 {
                     const SweptPlayerCapsule& cap = capsuleCandidates[earliestCapsuleIdx];
+                    if (config.passThroughActors)
+                    {
+                        state.position = proposedPos;
+                        result.travelDistance += glm::length(step) * (1.0f - earliestT);
+                        result.type = ProjectileCollisionType::PlayerPassThrough;
+                        result.hitPosition = earliestHitPos;
+                        result.hitNormal = earliestNormal;
+                        result.impactSpeed = earliestImpactSpeed;
+                        result.hitPlayerId = cap.playerId;
+                        result.hitPlayerSpawnGeneration = cap.spawnGeneration;
+                        return result;
+                    }
                     result.type = ProjectileCollisionType::PlayerImpact;
                     result.hitPosition = earliestHitPos;
                     result.hitNormal = earliestNormal;
@@ -575,7 +587,17 @@ ProjectileStepResult simulateProjectileTick(
                     bool shouldBounce = config.bounceEnabled && intoSpeed > 0.0f &&
                         state.bounceCount < config.maxBounceCount;
 
-                    if (shouldBounce)
+                    if (config.passThroughWorld)
+                    {
+                        state.position = proposedPos;
+                        result.travelDistance += glm::length(step) * (1.0f - earliestT);
+                        result.type = ProjectileCollisionType::WorldPassThrough;
+                        result.hitPosition = earliestHitPos;
+                        result.hitNormal = earliestNormal;
+                        result.impactSpeed = intoSpeed;
+                        remainingFraction = 0.0f;
+                    }
+                    else if (shouldBounce)
                     {
                         applyBounce(state.velocity, state.angularVelocity,
                                     earliestNormal, config.restitution, config.friction,

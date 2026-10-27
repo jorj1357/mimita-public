@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "include": [
+    "config/animations/library/melee/captainfalcon/punch_a.json"
+  ],
+  "clips": {}
+}

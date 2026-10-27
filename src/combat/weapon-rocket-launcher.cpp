@@ -25,6 +25,7 @@
 #include "audio/audio.h"
 #include "camera.h"
 #include "combat/explosion-fx.h"
+#include "combat/death-system.h"
 #include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
 #include "entities/player.h"
@@ -187,6 +188,62 @@ static void doExplosion(
     }
 }
 
+static void applyDeathballLocalDamage(
+    const WeaponDefinition& def,
+    Player& owner,
+    Npc& npc,
+    const glm::vec3& ballCenter,
+    bool presentationOnly)
+{
+    if (presentationOnly || npc.body.currentHp <= 0)
+        return;
+    const float radius = std::max(0.01f, cp(def, "projectile_radius", 0.7f));
+    const glm::vec3 targetOrigin = npc.body.pos;
+    const float dist = glm::length(targetOrigin - ballCenter);
+    const float t = std::clamp(dist / radius, 0.0f, 1.0f);
+    const int damage = std::max(1, (int)std::lround(glm::mix(
+        cp(def, "deathballDamageCenter", 10.0f),
+        cp(def, "deathballDamageEdge", 1.0f), t)));
+    glm::vec3 push = targetOrigin - ballCenter;
+    if (glm::length(push) < 0.001f)
+        push = glm::vec3(0.0f, 0.0f, 1.0f);
+    push = glm::normalize(push);
+    const float kb = damage * std::max(0.0f,
+        cp(def, "deathballKnockbackPerDamage", 0.1f));
+    npc.body.takeDamage(damage, push, kb);
+    if (npc.body.currentHp <= 0) {
+        DeathSystem::instance().kill(npc.body, "npc_" + std::to_string(npc.id),
+            "npc", owner.username, push, kb);
+    }
+}
+
+static void applyDeathballLocalDamage(
+    const WeaponDefinition& def,
+    Player& owner,
+    Player& victim,
+    const glm::vec3& ballCenter,
+    bool presentationOnly)
+{
+    if (presentationOnly || victim.dead || victim.currentHp <= 0)
+        return;
+    const float radius = std::max(0.01f, cp(def, "projectile_radius", 0.7f));
+    const glm::vec3 targetOrigin = victim.pos;
+    const float dist = glm::length(targetOrigin - ballCenter);
+    const float t = std::clamp(dist / radius, 0.0f, 1.0f);
+    const int damage = std::max(1, (int)std::lround(glm::mix(
+        cp(def, "deathballDamageCenter", 10.0f),
+        cp(def, "deathballDamageEdge", 1.0f), t)));
+    glm::vec3 push = targetOrigin - ballCenter;
+    if (glm::length(push) < 0.001f)
+        push = glm::vec3(0.0f, 0.0f, 1.0f);
+    push = glm::normalize(push);
+    const float kb = damage * std::max(0.0f,
+        cp(def, "deathballKnockbackPerDamage", 0.1f));
+    victim.takeDamage(damage, push, kb, ballCenter);
+    victim.lastDamagedBy = owner.username;
+    victim.killedByWeapon = def.displayName.empty() ? def.id : def.displayName;
+}
+
 void fire(
     RocketLauncherState& state,
     const WeaponDefinition& def,
@@ -217,6 +274,7 @@ void fire(
     rocket.velocity = dir * rocketSpeed;
     rocket.orientation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     rocket.lifetime = def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
+    rocket.maxLifetime = rocket.lifetime;
     rocket.distanceTraveled = 0.0f;
     rocket.exploded = false;
     rocket.ownerId = (uint32_t)(uintptr_t)(&owner);
@@ -345,10 +403,18 @@ void update(
                     }
                 }
                 if (hitWorld) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, worldHitPos, 0, false, victimPlayer, presentationOnly);
-                    rocket.exploded = true;
-                    it = state.activeRockets.erase(it);
-                    continue;
+                    const bool passThrough = cp(def, "passThroughWorld", 0.0f) > 0.0f;
+                    if (passThrough) {
+                        const float wallDecay = std::max(1.0f,
+                            cp(def, "wallDecayMultiplier", 3.0f));
+                        rocket.lifetime -= dt * (wallDecay - 1.0f);
+                    } else {
+                        doExplosion(state, def, runtime, owner, npcs, camera,
+                            worldHitPos, 0, false, victimPlayer, presentationOnly);
+                        rocket.exploded = true;
+                        it = state.activeRockets.erase(it);
+                        continue;
+                    }
                 }
             }
         }
@@ -392,10 +458,20 @@ void update(
                     if (hitNpc) break;
                 }
                 if (hitNpc) {
-                    doExplosion(state, def, runtime, owner, npcs, camera, checkPos, hitNpcId, true, victimPlayer, presentationOnly);
-                    rocket.exploded = true;
-                    it = state.activeRockets.erase(it);
-                    continue;
+                    const bool passThrough = cp(def, "passThroughActors", 0.0f) > 0.0f;
+                    if (passThrough) {
+                        for (Npc& npc : npcs.all()) {
+                            if (npc.id != hitNpcId) continue;
+                            applyDeathballLocalDamage(def, owner, npc, checkPos, presentationOnly);
+                            break;
+                        }
+                    } else {
+                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos,
+                            hitNpcId, true, victimPlayer, presentationOnly);
+                        rocket.exploded = true;
+                        it = state.activeRockets.erase(it);
+                        continue;
+                    }
                 }
                 // ── Victim player collision (NPC-fired rockets) ──
                 if (victimPlayer && victimPlayer->currentHp > 0 && !victimPlayer->dead) {
@@ -409,10 +485,17 @@ void update(
                     glm::vec3 vclosest = glm::clamp(checkPos, vmn, vmx);
                     float vdist = glm::length(checkPos - vclosest);
                     if (vdist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
-                        doExplosion(state, def, runtime, owner, npcs, camera, checkPos, 0, false, victimPlayer, presentationOnly);
-                        rocket.exploded = true;
-                        it = state.activeRockets.erase(it);
-                        continue;
+                        const bool passThrough = cp(def, "passThroughActors", 0.0f) > 0.0f;
+                        if (passThrough) {
+                            applyDeathballLocalDamage(def, owner, *victimPlayer,
+                                checkPos, presentationOnly);
+                        } else {
+                            doExplosion(state, def, runtime, owner, npcs, camera, checkPos,
+                                0, false, victimPlayer, presentationOnly);
+                            rocket.exploded = true;
+                            it = state.activeRockets.erase(it);
+                            continue;
+                        }
                     }
                 }
             }
@@ -525,10 +608,32 @@ void clear(RocketLauncherState& state) {
 
 void render(const RocketLauncherState& state, const Camera& camera, const WeaponDefinition& def)
 {
-    const ProjectileVisualConfig cfg = projectileVisualConfigForWeapon(def.id);
+    const ProjectileVisualConfig baseCfg = projectileVisualConfigForWeapon(def.id);
     for (const RocketLauncherState::Rocket& rocket : state.activeRockets) {
-        if (!rocket.exploded)
-            renderProjectile(camera, rocket.position, rocket.orientation, cfg);
+        if (rocket.exploded)
+            continue;
+        ProjectileVisualConfig cfg = baseCfg;
+        if (cp(def, "projectileFadeEnabled", 0.0f) > 0.0f &&
+            rocket.maxLifetime > 0.001f) {
+            const float t = glm::clamp(1.0f - rocket.lifetime / rocket.maxLifetime,
+                                       0.0f, 1.0f);
+            const glm::vec3 start(
+                cp(def, "projectileFadeStartR", 0.0f),
+                cp(def, "projectileFadeStartG", 1.0f),
+                cp(def, "projectileFadeStartB", 1.0f));
+            const glm::vec3 end(
+                cp(def, "projectileFadeEndR", 0.039f),
+                cp(def, "projectileFadeEndG", 0.039f),
+                cp(def, "projectileFadeEndB", 0.0f));
+            cfg.fillColor = glm::mix(start, end, t);
+            cfg.fillAlpha = glm::mix(
+                cp(def, "projectileFadeStartA", 1.0f),
+                cp(def, "projectileFadeEndA", 0.0f), t);
+            cfg.glowColor = cfg.fillColor;
+            cfg.glowAlpha = cfg.fillAlpha * 0.35f;
+            cfg.outlineColor = cfg.fillColor;
+        }
+        renderProjectile(camera, rocket.position, rocket.orientation, cfg);
     }
 }
 

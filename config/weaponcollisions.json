@@ -98,6 +98,32 @@
     ]
   },
 
+  "chainsaw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "player_bounce": 0.99,
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "blade", "center": [0.65, 0.0, 0.0],
+        "half_size": [1.05, 0.12, 0.18], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "mace": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "player_bounce": 0.99,
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "head", "center": [0.9, 0.0, 0.0],
+        "half_size": [0.55, 0.55, 0.55], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
   "spyknife": {
     "enabled": true,
     // "visible": true,

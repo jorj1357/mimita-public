@@ -37,6 +37,7 @@
 #include "network/multiplayer-context.h"
 #include "network/community-match-client.h"
 #include "terminal/terminal-state.h"
+#include "vehicles/vehicle-system.h"
 
 #include <cmath>
 #include <algorithm>
@@ -178,6 +179,32 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             ragdollInput.extendLeftMouse = tickFrame.extendLeftMouse;
             ragdollInput.extendRightMouse = tickFrame.extendRightMouse;
             ragdoll.update(TICK_DT, *sim.world, *sim.player, ragdollInput, THE_CAMERA);
+        } else if (VehicleSystem::instance().hasLocalDriver()) {
+            // Seated actor: the seat owns the player origin and locomotion is
+            // suppressed. The physical aim body still runs so weapons can fire.
+            glm::vec3 seatPosition(0.0f);
+            glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
+            if (VehicleSystem::instance().localSeatWorld(seatPosition,
+                                                         seatForward))
+            {
+                sim.player->pos = seatPosition;
+                sim.player->vel = glm::vec3(0.0f);
+                sim.player->externalImpulse = glm::vec3(0.0f);
+                sim.player->inputWishMove = glm::vec2(0.0f);
+            }
+            InputState seatedInput = inputStateFromFrame(tickFrame);
+            if (AimBodyConfig::instance().bodyPhysicsMode() &&
+                !sim.player->usesMeleeAuthoredPose()) {
+                MIMITA_PERF_SCOPE("SeatedAimBodyUpdate");
+                if (!ragdoll.aimActive())
+                    ragdoll.activateAim(*sim.player);
+                ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
+                                  seatedInput.camForward,
+                                  THE_CAMERA.pos,
+                                  frame.extendRightMouse);
+            } else if (ragdoll.aimActive()) {
+                ragdoll.deactivateAim(*sim.player);
+            }
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
             InputState normalInput = inputStateFromFrame(tickFrame);
@@ -424,6 +451,23 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     checkVoidDeath(*sim.player, sim.player->username, "player");
     for (Npc& npc : sim.npcSystem->all())
         checkVoidDeath(npc.body, "npc_" + std::to_string(npc.id), "npc");
+
+    // The seat owns the authoritative local origin while seated. Re-assert it
+    // after actor/entity contact passes so a capsule push cannot eject the
+    // driver from the chassis before the next tick.
+    if (VehicleSystem::instance().hasLocalDriver() &&
+        !sim.player->ragdollModeActive)
+    {
+        glm::vec3 seatPosition(0.0f);
+        glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
+        if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward))
+        {
+            sim.player->pos = seatPosition;
+            sim.player->vel = glm::vec3(0.0f);
+            sim.player->externalImpulse = glm::vec3(0.0f);
+            sim.player->inputWishMove = glm::vec2(0.0f);
+        }
+    }
 
     sim.tick++;
 }

@@ -295,9 +295,7 @@
         "--mode",
         "team_deathmatch",
         "--gamemode",
-        "tdm",
-        "--weapon-set",
-        "1"
+        "tdm"
       ],
       "client_args": [],
       "map": "atdm"

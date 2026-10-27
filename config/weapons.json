@@ -328,7 +328,7 @@
     "display_name": "Swordsword",
     "slot": 4,
     "model": {
-      "path": "assets/objects/weapons/mimita-hafs-v1.glb"
+      "path": "assets/objects/weapons/mimita-swordsword-v2.glb"
     },
     "viewmodel": {
       "enabled": true,
@@ -366,11 +366,13 @@
     "pose_id": "swordsword",
     "animation_profile": "config/animations/library/weapons/swordsword.json",
     "sound": {
-      "shoot": "",
+      "shoot": "weapon/hafs/hafsswing",
       "reload": "",
-      "hit": "swordswordhit1",
+      "hit": "weapon/hafs/hafsknockback",
       "dry_fire": "",
-      "equip": ""
+      "equip": "weapon/hafs/hafsequip",
+      "alt_fire": "weapon/hafs/hafslunge",
+      "world_hit": "weapon/hafs/hafsWorldHit"
     },
     "custom_params": {
       "range": 16.0,
@@ -411,11 +413,14 @@
             "double_click_action": "slash_two",
             "animation_clip_id": "punch_a",
             "hitboxes": [],
-            "impulses": []
+            "impulses": [
+              {"phase": "active", "tick": 0, "forward": 3.0, "right": 0.0, "up": 0.0}
+            ]
           },
           "slash_two": {
             "input": {"button": "primary", "tap_count": 2},
             "animation_clip_id": "uppunch_a",
+            "contact_damage_multiplier": 2.0,
             "hitboxes": [],
             "impulses": []
           },
@@ -423,7 +428,17 @@
             "input": {"button": "secondary", "tap_count": 1},
             "double_click_window_ticks": 5,
             "double_click_action": "defensive",
-            "animation_clip_id": "downpunch_a",
+            "phases": {
+              "windup": {"ticks": 5, "clip_id": ""},
+              "active": {"ticks": 8, "clip_id": ""},
+              "recovery": {"ticks": 11, "clip_id": ""}
+            },
+            "procedural_pose": {
+              "base": {"right_arm": [60.0, 5.0, 40.0], "torso": [0.0, 0.0, 0.0]},
+              "windup": {"right_arm": [70.0, -40.0, 115.0], "torso": [0.0, 0.0, -20.0]},
+              "active": {"right_arm": [55.0, 45.0, -70.0], "torso": [0.0, 0.0, 25.0]},
+              "recovery": {"right_arm": [60.0, 5.0, 40.0], "torso": [0.0, 0.0, 0.0]}
+            },
             "hitboxes": [],
             "impulses": []
           },
@@ -431,6 +446,8 @@
             "input": {"button": "secondary", "tap_count": 2},
             "hold_while_button": true,
             "animation_clip_id": "swordsword_defensive",
+            "blocks_melee": true,
+            "block_arc_degrees": 180.0,
             "hitboxes": [],
             "impulses": []
           }
@@ -1720,6 +1737,280 @@
     "damage": 0.0, "fire_delay": 0.0, "reload_time": 0.0,
     "magazine_size": 0, "reserve_ammo": 0, "behavior_type": "none",
     "hitscan": false
+  },
+
+  "chainsaw": {
+    "id": "chainsaw",
+    "display_name": "Chainsaw",
+    "slot": 25,
+    "model": {
+      "path": "assets/objects/weapons/mimita-chainsaw-v1.glb"
+    },
+    "viewmodel": {
+      "enabled": true,
+      "position": [-9.0, -3.0, 0.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [0.25, -0.05, -0.25],
+        "rotation_degrees": [90.0, 10.0, -25.0]
+      },
+      "scale": [1.0, 1.0, 1.0]
+    },
+    "damage": 15.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 0.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "swordsword",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "pose_id": "chainsaw",
+    "animation_profile": "config/animations/library/weapons/chainsaw.json",
+    "sound": {
+      "shoot": "weapon/chainsaw/chainsawidle",
+      "reload": "",
+      "hit": "weapon/chainsaw/chainsawhit1",
+      "dry_fire": "",
+      "equip": "weapon/chainsaw/chainsawequip"
+    },
+    "custom_params": {
+      "bladeLength": 4.0,
+      "bladeRadius": 0.22,
+      "contactBladeRadius": 0.16,
+      "contactMinDamage": 5.0,
+      "contactMaxDamage": 15.0,
+      "contactMinKnockback": 5.0,
+      "contactMaxKnockback": 40.0,
+      "contactMaxForceSpeed": 22.0,
+      "damageTickInterval": 0.05,
+      "revDamageMultiplier": 2.0,
+      "revDecayTicks": 60.0,
+      "revReachMultiplier": 1.25,
+      "revPitchMultiplier": 1.2,
+      "revVolumeMultiplier": 1.2,
+      "revColorFullR": 1.0,
+      "revColorFullG": 0.05,
+      "revColorFullB": 0.05,
+      "revColorBaseR": 0.15,
+      "revColorBaseG": 0.02,
+      "revColorBaseB": 0.02,
+      "npcGuardTicks": 60.0
+    },
+    "components": {
+      "melee": {
+        "animation_only": true,
+        "actions": {
+          "rev": {
+            "input": {"button": "primary", "tap_count": 1},
+            "phases": {
+              "windup": {"ticks": 1, "clip_id": ""},
+              "active": {"ticks": 1, "clip_id": ""},
+              "recovery": {"ticks": 1, "clip_id": ""}
+            },
+            "procedural_pose": {
+              "windup": {"right_arm": [45.0, 9.0, 78.0], "torso": [0.0, 0.0, 0.0]},
+              "active":   {"right_arm": [42.0, 4.0, 88.0], "torso": [0.0, 0.0, 2.0]},
+              "recovery": {"right_arm": [45.0, 9.0, 78.0], "torso": [0.0, 0.0, 0.0]}
+            },
+            "hitboxes": [],
+            "impulses": [],
+            "audio": {
+              "on_start": {"sound_id": "weapon/chainsaw/chainsawidle", "pitch": 1.2, "volume": 1.2}
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "mace": {
+    "id": "mace",
+    "display_name": "Mace",
+    "slot": 26,
+    "model": {
+      "path": "assets/objects/weapons/mimita-mace-v1.glb"
+    },
+    "viewmodel": {
+      "enabled": true,
+      "position": [-9.0, -3.0, 0.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "attachment": {
+        "position": [0.25, -0.05, -0.25],
+        "rotation_degrees": [90.0, 10.0, -25.0]
+      },
+      "scale": [1.5, 1.5, 1.5]
+    },
+    "damage": 5.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.0,
+    "reload_time": 0.0,
+    "magazine_size": 0,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 0.0,
+    "projectile_speed": 0.0,
+    "projectile_radius": 0.0,
+    "projectile_lifetime": 0.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "swordsword",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "pose_id": "mace",
+    "animation_profile": "config/animations/library/weapons/mace.json",
+    "sound": {
+      "shoot": "weapon/hafs/hafsswing",
+      "reload": "",
+      "hit": "weapon/hafs/hafsknockback",
+      "dry_fire": "",
+      "equip": "weapon/hafs/hafsequip",
+      "pitch": 0.6,
+      "volume": 1.5,
+      "retrigger": true
+    },
+    "custom_params": {
+      "bladeLength": 5.0,
+      "bladeRadius": 0.42,
+      "contactBladeRadius": 0.35,
+      "contactMinDamage": 1.0,
+      "contactMaxDamage": 5.0,
+      "contactMinKnockback": 5.0,
+      "contactMaxKnockback": 25.0,
+      "contactMaxForceSpeed": 22.0,
+      "damageTickInterval": 0.05,
+      "npcGuardTicks": 60.0
+    },
+    "components": {
+      "melee": {
+        "animation_only": true,
+        "actions": {
+          "mace_swing": {
+            "input": {"button": "primary", "tap_count": 1},
+            "phases": {
+              "windup": {"ticks": 60, "clip_id": ""},
+              "active": {"ticks": 30, "clip_id": ""},
+              "recovery": {"ticks": 90, "clip_id": ""}
+            },
+            "contact_min_damage": 25.0,
+            "contact_max_damage": 125.0,
+            "contact_min_knockback": 30.0,
+            "contact_max_knockback": 125.0,
+            "procedural_pose": {
+              "windup": {"right_arm": [150.0, 10.0, 35.0], "torso": [0.0, 0.0, -18.0]},
+              "active": {"right_arm": [20.0, 0.0, 95.0], "torso": [0.0, 0.0, 12.0]},
+              "recovery": {"right_arm": [60.0, 5.0, 40.0], "torso": [0.0, 0.0, 0.0]}
+            },
+            "hitboxes": [],
+            "impulses": [],
+            "audio": {
+              "on_start": {"sound_id": "weapon/hafs/hafsswing", "pitch": 0.6, "volume": 1.5}
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "deathball": {
+    "id": "deathball",
+    "display_name": "Deathball",
+    "slot": 27,
+    "model": {
+      "path": "assets/objects/weapons/mimita-deathball-v.glb"
+    },
+    "viewmodel": {
+      "enabled": true,
+      "position": [0.0, -0.2, 0.8],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": [0.8, 0.8, 0.8]
+    },
+    "damage": 0.0,
+    "headshot_multiplier": 1.0,
+    "fire_delay": 0.5,
+    "reload_time": 1.0,
+    "magazine_size": 1,
+    "pellet_count": 1,
+    "spread": 0.0,
+    "recoil": 10.0,
+    "projectile_speed": 9.0,
+    "projectile_radius": 0.7,
+    "projectile_lifetime": 10.0,
+    "fire_mode": "semi_auto",
+    "behavior_type": "rocket_launcher",
+    "hitscan": false,
+    "uses_physics_projectile": false,
+    "pose_id": "rocket_launcher",
+    "sound": {
+      "shoot": "weapon/raygun/raygunshoot",
+      "reload": "weapon/raygun/raygunreload",
+      "hit": "",
+      "dry_fire": "ui/click",
+      "equip": "weapon/raygun/raygunequip"
+    },
+    "custom_params": {
+      "rocketSpeed": 9.0,
+      "rocketRadius": 0.7,
+      "splashRadius": 0.0,
+      "splashExponent": 2.0,
+      "rocketDirectDamage": 0.0,
+      "knockbackStrength": 0.0,
+      "selfKnockbackMultiplier": 0.0,
+      "selfDamageMultiplier": 0.0,
+      "knockbackHorizontalMultiplier": 0.0,
+      "knockbackVerticalMultiplier": 0.0,
+      "reserveAmmo": 9999.0,
+      "gravity": 0.0,
+      "drag": 0.0,
+      "angularDrag": 0.0,
+      "maxBounceCount": 0.0,
+      "upBias": 0.0,
+      "bounceRestitution": 0.0,
+      "bounceFriction": 0.0,
+      "minBounceSpeed": 0.0,
+      "explodeOnPlayerImpact": 0.0,
+      "explodeOnWorldImpact": 0.0,
+      "explodeOnLifetime": 0.0,
+      "passThroughWorld": 1.0,
+      "passThroughActors": 1.0,
+      "wallDecayMultiplier": 3.0,
+      "deathballDamageEdge": 1.0,
+      "deathballDamageCenter": 10.0,
+      "deathballKnockbackPerDamage": 0.1,
+      "reloadOneAtATime": 1.0,
+      "projectileVisualSphere": 1.0,
+      "projectileVisualRadius": 0.7,
+      "projectileFillAlpha": 1.0,
+      "projectileOutlineEnabled": 1.0,
+      "projectileOutlineColorR": 0.0,
+      "projectileOutlineColorG": 1.0,
+      "projectileOutlineColorB": 1.0,
+      "projectileOutlineAlpha": 0.8,
+      "projectileOutlineScale": 1.15,
+      "projectileGlowEnabled": 1.0,
+      "projectileGlowColorR": 0.0,
+      "projectileGlowColorG": 1.0,
+      "projectileGlowColorB": 1.0,
+      "projectileGlowAlpha": 0.35,
+      "projectileGlowRadiusMultiplier": 4.0,
+      "projectileFadeEnabled": 1.0,
+      "projectileFadeStartR": 0.0,
+      "projectileFadeStartG": 1.0,
+      "projectileFadeStartB": 1.0,
+      "projectileFadeStartA": 1.0,
+      "projectileFadeEndR": 0.039,
+      "projectileFadeEndG": 0.039,
+      "projectileFadeEndB": 0.0,
+      "projectileFadeEndA": 0.0,
+      "projectileFillR": 0.0,
+      "projectileFillG": 1.0,
+      "projectileFillB": 1.0
+    }
   },
 
   "captain_falcon_moveset": {

@@ -938,6 +938,15 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
         }
 
+        if (proceduralMeleePoseActive) {
+            if (part.name == "rightArm") {
+                target.rotationEuler = proceduralMeleeRightArmRotation;
+                target.translation += proceduralMeleeRightArmTranslation;
+            } else if (part.name == "torso") {
+                target.rotationEuler = proceduralMeleeTorsoRotation;
+            }
+        }
+
         // Store the clean perfect pose (exact JSON target, no smoothing)
         part.perfectPose = target;
 

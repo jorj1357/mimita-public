@@ -4,6 +4,7 @@
 #include "network/server.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
+#include "network/packets.h"
 #include "combat/weapon-attachment.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
@@ -11,6 +12,7 @@
 #include "entities/player-avatar-animations.h"
 #include "entities/player.h"
 #include "debug/structured-log.h"
+#include "physics/movement/movement-step.h"
 #include "utils/path_utils.h"
 #include <algorithm>
 #include <cmath>
@@ -44,6 +46,7 @@ struct ActorContactRuntime {
     WeaponExecution::PlayerTarget target;
     glm::vec3 minimum{0}, maximum{0};
     std::unordered_map<uint64_t, Episode> episodes;
+    std::unordered_map<uint64_t, uint32_t> lastClashTick;
 };
 struct ActorView {
     uint64_t key = 0;
@@ -59,6 +62,128 @@ struct ActorView {
 };
 thread_local std::unordered_map<uint64_t, ActorContactRuntime> runtimes;
 thread_local std::vector<ActorView> actors;
+
+static const WeaponData::MeleeAction* currentAction(
+    const ActorView& actor, uint32_t tick, const char** phase,
+    int* phaseTick, int* phaseTicks)
+{
+    if (!actor.actionActive || !actor.weapon)
+        return nullptr;
+    const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(actor.weapon->id);
+    const WeaponData::MeleeAction* action = set ? set->find(actor.actionId) : nullptr;
+    if (!action)
+        return nullptr;
+    const int elapsed = std::max(0, (int)(tick - actor.actionStart));
+    const int windup = action->windup.ticks;
+    const int active = action->active.ticks;
+    const char* p = "windup";
+    int pt = elapsed;
+    int pts = windup;
+    if (elapsed >= windup + active) {
+        p = "recovery";
+        pt = elapsed - windup - active;
+        pts = action->recovery.ticks;
+    } else if (elapsed >= windup) {
+        p = "active";
+        pt = elapsed - windup;
+        pts = active;
+    }
+    if (phase) *phase = p;
+    if (phaseTick) *phaseTick = pt;
+    if (phaseTicks) *phaseTicks = pts;
+    return action;
+}
+
+static float pointSegmentDistance(const glm::vec3& p, const glm::vec3& a,
+                                  const glm::vec3& b)
+{
+    const glm::vec3 ab = b - a;
+    const float denom = glm::dot(ab, ab);
+    if (denom < 0.00001f)
+        return glm::length(p - a);
+    const float t = glm::clamp(glm::dot(p - a, ab) / denom, 0.0f, 1.0f);
+    return glm::length(p - (a + ab * t));
+}
+
+static float segmentSegmentDistance(const glm::vec3& a0, const glm::vec3& a1,
+                                    const glm::vec3& b0, const glm::vec3& b1)
+{
+    // Closest-point approximation adequate for the blade-vs-blade block test.
+    float best = std::min(
+        std::min(pointSegmentDistance(a0, b0, b1), pointSegmentDistance(a1, b0, b1)),
+        std::min(pointSegmentDistance(b0, a0, a1), pointSegmentDistance(b1, a0, a1)));
+    const int steps = 8;
+    for (int i = 0; i <= steps; ++i) {
+        const glm::vec3 p = glm::mix(a0, a1, (float)i / (float)steps);
+        best = std::min(best, pointSegmentDistance(p, b0, b1));
+    }
+    return best;
+}
+
+static bool blocksMeleeContact(const ActorView& target, uint32_t tick,
+                               const WeaponExecution::PhysicalContactShape& attackerShape,
+                               const WeaponExecution::PhysicalContactHit& hit)
+{
+    const char* phase = nullptr;
+    const WeaponData::MeleeAction* action =
+        currentAction(target, tick, &phase, nullptr, nullptr);
+    if (!action || !action->blocksMelee)
+        return false;
+
+    glm::vec3 forward = target.aim;
+    if (!std::isfinite(forward.x) || !std::isfinite(forward.y) ||
+        !std::isfinite(forward.z) || glm::length(forward) < 0.001f) {
+        forward = glm::vec3(std::cos(target.yaw), std::sin(target.yaw), 0.0f);
+    }
+    forward = glm::normalize(forward);
+    glm::vec3 toHit = hit.hitPosition - target.position;
+    if (glm::length(toHit) > 0.001f) {
+        const float dot = glm::clamp(glm::dot(forward, glm::normalize(toHit)),
+                                     -1.0f, 1.0f);
+        const float halfArc = glm::radians(std::max(0.0f, action->blockArcDegrees)) * 0.5f;
+        if (dot < std::cos(halfArc))
+            return false;
+    }
+
+    // The blade has to physically meet the incoming contact. The target shape
+    // is the current/previous animated weapon capsule in its runtime.
+    const auto& targetShape = target.runtime->shape;
+    if (!target.runtime->previousValid)
+        return false;
+    const float distance = segmentSegmentDistance(
+        attackerShape.currentA, attackerShape.currentB,
+        targetShape.currentA, targetShape.currentB);
+    return distance <= attackerShape.radius + targetShape.radius + 0.12f;
+}
+
+static void broadcastWeaponClash(
+    SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
+    const ServerActorRef& attacker, const glm::vec3& hit, const glm::vec3& normal,
+    float force, uint64_t& packets)
+{
+    MeleeHitEventPacket event{};
+    event.header.type = PACKET_MELEE_HIT_EVENT;
+    event.header.playerId = attacker.id;
+    event.attackerPlayerId = attacker.id;
+    event.targetPlayerId = 0;
+    event.attackType = 3;
+    event.damage = 0;
+    event.hitX = hit.x; event.hitY = hit.y; event.hitZ = hit.z;
+    event.normalX = normal.x; event.normalY = normal.y; event.normalZ = normal.z;
+    event.knockX = normal.x * force; event.knockY = normal.y * force;
+    event.knockZ = normal.z * force;
+    event.weapon = NETWORK_WEAPON_SWORDSWORD;
+    for (auto& entry : players) {
+        ServerPlayer& p = entry.second;
+        if (p.transport) {
+            p.transport->send(&event, sizeof(event));
+        } else {
+            sendto(sock, (const char*)&event, sizeof(event), 0,
+                   (sockaddr*)&p.addr, sizeof(p.addr));
+        }
+        ++packets;
+    }
+}
 
 bool preparePose(ActorView& actor, const std::string& avatar, uint32_t tick)
 {
@@ -106,9 +231,39 @@ bool preparePose(ActorView& actor, const std::string& avatar, uint32_t tick)
     pose.movementSimulationTick = tick;
     const auto* set = actor.weapon ? WeaponData::MeleeMoveSetRegistry::instance().get(actor.weapon->id) : nullptr;
     const auto* action = set && actor.actionActive ? set->find(actor.actionId) : nullptr;
-    if (action && !action->animationClipId.empty()) pose.playOneShotAtTick(action->animationClipId,
-        std::min((int)(tick - actor.actionStart), std::max(0, action->totalTicks() - 1)));
-    else pose.clearOneShot();
+    pose.proceduralMeleePoseActive = false;
+    if (action && !action->animationClipId.empty()) {
+        pose.playOneShotAtTick(action->animationClipId,
+            std::min((int)(tick - actor.actionStart), std::max(0, action->totalTicks() - 1)));
+    } else {
+        pose.clearOneShot();
+        if (action && action->hasProceduralPose) {
+            const int elapsed = std::max(0, std::min((int)(tick - actor.actionStart),
+                std::max(0, action->totalTicks() - 1)));
+            const int windup = action->windup.ticks;
+            const int active = action->active.ticks;
+            const char* phase = "windup";
+            int phaseTick = elapsed;
+            int phaseTicks = windup;
+            if (elapsed >= windup + active) {
+                phase = "recovery";
+                phaseTick = elapsed - windup - active;
+                phaseTicks = action->recovery.ticks;
+            } else if (elapsed >= windup) {
+                phase = "active";
+                phaseTick = elapsed - windup;
+                phaseTicks = active;
+            }
+            WeaponData::MeleeProceduralPose procedural;
+            if (WeaponData::resolveMeleeProceduralPose(*action, phase,
+                    phaseTick, phaseTicks, procedural)) {
+                pose.proceduralMeleeRightArmRotation = procedural.rightArmRotation;
+                pose.proceduralMeleeRightArmTranslation = procedural.rightArmTranslation;
+                pose.proceduralMeleeTorsoRotation = procedural.torsoRotation;
+                pose.proceduralMeleePoseActive = true;
+            }
+        }
+    }
     pose.updateProceduralAnimation(SERVER_DT, actor.aim, actor.position, glm::length(actor.velocity) > 0.1f);
 
     auto& target = runtime.target;
@@ -327,14 +482,74 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                         glm::mix(shape.previousA, shape.previousB, along)) / SERVER_DT - target.velocity;
                     const float speed = glm::length(velocity);
                     const float directness = speed > 0.00001f ? std::abs(glm::dot(velocity / speed, hit.normal)) : 0;
+                    const char* actionPhase = nullptr;
+                    int actionPhaseTick = 0, actionPhaseTicks = 0;
+                    const WeaponData::MeleeAction* contactAction = currentAction(
+                        attacker, tick, &actionPhase, &actionPhaseTick, &actionPhaseTicks);
+                    const bool actionActive = contactAction && actionPhase &&
+                        std::string(actionPhase) == "active";
                     const float force = glm::clamp(speed / std::max(0.001f,
-                        WeaponExecution::paramOr(*def, "contactMaxForceSpeed", 22)), 0.0f, 1.0f) * directness;
-                    const float minDamage = WeaponExecution::paramOr(*def, "contactMinDamage", 1);
-                    const float maxDamage = WeaponExecution::paramOr(*def, "contactMaxDamage", def->damage);
+                        contactAction && contactAction->contactMaxForceSpeed >= 0.0f
+                            ? contactAction->contactMaxForceSpeed
+                            : WeaponExecution::paramOr(*def, "contactMaxForceSpeed", 22)),
+                        0.0f, 1.0f) * directness;
+                    float minDamage = WeaponExecution::paramOr(*def, "contactMinDamage", 1);
+                    float maxDamage = WeaponExecution::paramOr(*def, "contactMaxDamage", def->damage);
+                    float minKnockback = WeaponExecution::paramOr(*def, "contactMinKnockback", 0.5f);
+                    float maxKnockback = WeaponExecution::paramOr(*def, "contactMaxKnockback", 40);
+                    if (actionActive && contactAction) {
+                        if (contactAction->contactMinDamage >= 0.0f)
+                            minDamage = contactAction->contactMinDamage;
+                        if (contactAction->contactMaxDamage >= 0.0f)
+                            maxDamage = contactAction->contactMaxDamage;
+                        if (contactAction->contactMinKnockback >= 0.0f)
+                            minKnockback = contactAction->contactMinKnockback;
+                        if (contactAction->contactMaxKnockback >= 0.0f)
+                            maxKnockback = contactAction->contactMaxKnockback;
+                    }
+                    float actionMultiplier = 1.0f;
+                    if (actionActive && contactAction)
+                        actionMultiplier = std::max(0.0f, contactAction->contactDamageMultiplier);
+                    float revMultiplier = 1.0f;
+                    {
+                        const float revMax = WeaponExecution::paramOr(*def, "revDamageMultiplier", 1.0f);
+                        const float revDecay = WeaponExecution::paramOr(*def, "revDecayTicks", 0.0f);
+                        if (revMax > 1.0f && revDecay > 0.0f && attacker.actionStart != 0) {
+                            const float t = glm::clamp(
+                                (float)(tick - attacker.actionStart) / revDecay, 0.0f, 1.0f);
+                            revMultiplier = 1.0f + (revMax - 1.0f) * (1.0f - t);
+                        }
+                    }
+                    minDamage *= actionMultiplier * revMultiplier;
+                    maxDamage *= actionMultiplier * revMultiplier;
                     const int damage = std::max(1, (int)std::lround(glm::mix(minDamage, maxDamage, force)));
                     const glm::vec3 impulse = hit.normal * glm::mix(
-                        WeaponExecution::paramOr(*def, "contactMinKnockback", 0.5f),
-                        WeaponExecution::paramOr(*def, "contactMaxKnockback", 40), force);
+                        minKnockback, maxKnockback, force);
+
+                    if (blocksMeleeContact(target, tick, relative, hit)) {
+                        const float blockForce = std::max(1.5f, force * 12.0f);
+                        const glm::vec3 blockImpulse = -hit.normal * blockForce;
+                        if (attacker.ref.player) {
+                            attacker.ref.player->vel += blockImpulse;
+                            recordServerMovementExternalImpulse(*attacker.ref.player, blockImpulse);
+                        } else if (attacker.ref.npc) {
+                            attacker.ref.npc->knockbackImpulse += blockImpulse;
+                        }
+                        broadcastWeaponClash(sock, players, attacker.ref, hit.hitPosition,
+                            hit.normal, blockForce, packets);
+                        StructuredLogger::instance().writeEvent(StructuredCategory::Weapons,
+                            StructuredLevel::Important, "weapon.block", std::to_string(attacker.ref.id),
+                            "front-arc melee block stopped contact", tick,
+                            {{"attacker", attacker.ref.id}, {"target", target.ref.id},
+                             {"weapon", def->id}, {"target_weapon", target.weapon ? target.weapon->id : ""},
+                             {"force", force}});
+                        if (episodeIt != state.episodes.end()) {
+                            confirm(sock, players, attacker, target, episodeIt->second, tick, packets);
+                            state.episodes.erase(episodeIt);
+                        }
+                        continue;
+                    }
+
                     ServerActorDamageRequest request;
                     request.attacker = attacker.ref; request.victim = target.ref;
                     request.damage = damage; request.knockback = impulse;
@@ -364,6 +579,65 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                                  {"blade_tip", {shape.currentB.x,shape.currentB.y,shape.currentB.z}},
                                  {"action", attacker.actionId}, {"attack_required", false}});
                         }
+                    }
+                }
+            }
+            // Weapon-vs-weapon contact. This is separate from actor-body
+            // contact: two blades can meet without either body being touched.
+            if (target.weapon && target.runtime->previousValid &&
+                !target.weapon->animationProfile.empty()) {
+                const float weaponDistance = segmentSegmentDistance(
+                    shape.currentA, shape.currentB,
+                    target.runtime->shape.currentA, target.runtime->shape.currentB);
+                if (weaponDistance <= shape.radius + target.runtime->shape.radius + 0.12f) {
+                    uint32_t& lastClash = state.lastClashTick[target.key];
+                    if (lastClash == 0 || tick - lastClash >= 6) {
+                        lastClash = tick;
+                        const glm::vec3 attackerBladeVelocity =
+                            (shape.currentB - shape.previousB) / SERVER_DT;
+                        const glm::vec3 targetBladeVelocity =
+                            (target.runtime->shape.currentB -
+                             target.runtime->shape.previousB) / SERVER_DT;
+                        const float relativeSpeed = glm::length(
+                            attackerBladeVelocity - targetBladeVelocity);
+                        glm::vec3 normal = target.position - attacker.position;
+                        if (glm::length(normal) < 0.001f)
+                            normal = glm::vec3(0.0f, 0.0f, 1.0f);
+                        normal = glm::normalize(normal);
+                        const float force = glm::clamp(relativeSpeed / 25.0f, 0.0f, 1.0f);
+                        const float strength = 8.0f + force * 55.0f;
+                        const glm::vec3 attackerImpulse = -normal * strength;
+                        const glm::vec3 targetImpulse = normal * strength;
+                        if (attacker.ref.player) {
+                            attacker.ref.player->vel += attackerImpulse;
+                            recordServerMovementExternalImpulse(*attacker.ref.player, attackerImpulse);
+                        } else if (attacker.ref.npc) {
+                            attacker.ref.npc->knockbackImpulse += attackerImpulse;
+                        }
+                        if (target.ref.player) {
+                            target.ref.player->vel += targetImpulse;
+                            recordServerMovementExternalImpulse(*target.ref.player, targetImpulse);
+                        } else if (target.ref.npc) {
+                            target.ref.npc->knockbackImpulse += targetImpulse;
+                        }
+                        const glm::vec3 contactPoint = glm::mix(shape.currentB,
+                            target.runtime->shape.currentB, 0.5f);
+                        broadcastWeaponClash(sock, players, attacker.ref, contactPoint,
+                            normal, strength, packets);
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Weapons, StructuredLevel::Important,
+                            "weapon.clash", std::to_string(attacker.ref.id),
+                            "melee weapon contact applied opposing impulses", tick,
+                            {{"attacker", attacker.ref.id},
+                             {"attacker_type", (int)attacker.ref.kind},
+                             {"target", target.ref.id},
+                             {"target_type", (int)target.ref.kind},
+                             {"attacker_weapon", def->id},
+                             {"target_weapon", target.weapon->id},
+                             {"relative_speed", relativeSpeed},
+                             {"force", force},
+                             {"impulse", strength},
+                             {"contact", {contactPoint.x, contactPoint.y, contactPoint.z}}});
                     }
                 }
             }

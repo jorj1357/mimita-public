@@ -144,7 +144,8 @@ struct GamemodePresentation {
     bool hasWorldImpactDecals = false;   bool worldImpactDecals = true;
     bool hasWorldHitEffects = false;     bool worldHitEffects = true;
     bool hasHitMarkers = false;          bool hitMarkers = true;
-    bool hasDryFireIndicator = false;    bool dryFireIndicator = true;
+    bool hasDryFireIndicator = false;
+    bool dryFireIndicator = true;
     bool hasHitSounds = false;           bool hitSounds = true;
     bool hasHitFlinch = false;            bool hitFlinch = true;
     bool hasBlood = false;               bool blood = true;

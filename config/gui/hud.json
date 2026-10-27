@@ -139,7 +139,7 @@
       "y": -10,
       "fontSize": 0.5,
       "textColor": [1.0, 0.15, 0.15, 1.0],
-      "fadeTicks": 30
+      "fadeTicks": 5
     },
     "reloadText": {
       "type": "text",

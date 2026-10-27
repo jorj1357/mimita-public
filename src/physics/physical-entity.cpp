@@ -8,6 +8,7 @@
 */
 
 #include "physics/physical-entity.h"
+#include "physics/constraints/constraint-system.h"
 
 #include <algorithm>
 #include <chrono>
@@ -224,6 +225,36 @@ void applyPhysicalEntityImpulse(PhysicalEntity& e, const glm::vec3& impulse,
     applyImpulseAtPoint(e, impulse, worldPoint, true);
 }
 
+glm::vec3 physicalEntityCenterOfMassWorld(const PhysicalEntity& e)
+{
+    return glm::vec3(e.transform[3]) + e.orientation * e.centerOfMass;
+}
+
+glm::vec3 physicalEntityPointVelocity(const PhysicalEntity& e,
+                                      const glm::vec3& worldPoint)
+{
+    const glm::vec3 center = physicalEntityCenterOfMassWorld(e);
+    return e.velocity + glm::cross(e.angularVelocity, worldPoint - center);
+}
+
+glm::vec3 physicalEntityInverseInertiaWorld(const PhysicalEntity& e,
+                                            const glm::vec3& vector)
+{
+    return inverseInertiaWorld(e, vector);
+}
+
+void applyPhysicalEntityAngularImpulse(PhysicalEntity& e,
+                                       const glm::vec3& angularImpulse)
+{
+    if (e.motion != PhysicalEntityMotion::Dynamic || e.mass <= 0.0f)
+        return;
+    e.angularVelocity += inverseInertiaWorld(e, angularImpulse);
+    e.sleeping = false;
+    e.sleepTicks = 0;
+    e.sleepAnchorValid = false;
+    e.lastInteractionTick = PhysicalEntitySystem::instance().simulationTick();
+}
+
 PhysicalEntitySystem& PhysicalEntitySystem::instance()
 {
     static PhysicalEntitySystem system;
@@ -276,6 +307,16 @@ void PhysicalEntitySystem::beginTick()
 {
     for (PhysicalEntity& e : mEntities)
         e.previousTransform = e.transform;
+}
+
+void PhysicalEntitySystem::addFixedTickCallback(FixedTickCallback callback)
+{
+    if (!callback)
+        return;
+    for (FixedTickCallback existing : mFixedTickCallbacks)
+        if (existing == callback)
+            return;
+    mFixedTickCallbacks.push_back(callback);
 }
 
 PhysicalEntity* PhysicalEntitySystem::moveKinematic(uint32_t id,
@@ -373,6 +414,9 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
     {
         mFixedAccumulator -= kFixedDt;
         ++mSimulationTick;
+        for (FixedTickCallback callback : mFixedTickCallbacks)
+            if (callback)
+                callback((float)kFixedDt, world);
         for (PhysicalEntity& e : mEntities)
         {
             if (e.serverDriven ||
@@ -555,6 +599,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
             updateSettling(e, objectPhysics, maxPenetration);
         }
         resolveEntityContacts(mEntities);
+        ConstraintSystem::instance().solve((float)kFixedDt);
     }
     if (steps >= kMaxSteps && mFixedAccumulator >= kFixedDt)
         mFixedAccumulator = 0.0;

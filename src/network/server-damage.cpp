@@ -518,7 +518,8 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
                 target.lastNpcDamageTick, tick, tick - target.lastNpcDamageTick);
         }
 
-        const char* weaponId = networkWeaponTypeName(weapon);
+        std::string weaponId = weaponDefId.empty()
+            ? std::string(networkWeaponTypeName(weapon)) : weaponDefId;
         std::string weaponDisplayName = weaponId;
         if (const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId))
             weaponDisplayName = definition->displayName.empty()

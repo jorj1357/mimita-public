@@ -143,6 +143,12 @@ public:
     // and snaps previousTransform to the pre-move pose. Called once per tick.
     void advanceKinematics(float dt, const World& world);
 
+    // One fixed-step hook for systems that apply forces to entities before the
+    // entity integration pass (vehicles, future controllers). The hook is called
+    // once per fixed step, never per render frame.
+    using FixedTickCallback = void (*)(float dt, const World& world);
+    void addFixedTickCallback(FixedTickCallback callback);
+
     // Applies the local player's horizontal contact impulse to Dynamic
     // entities. The actor solver calls this after its authoritative movement
     // step so a push is visible on the next fixed physics tick.
@@ -185,6 +191,7 @@ private:
     PhysicalEntitySystem() = default;
 
     std::vector<PhysicalEntity> mEntities;
+    std::vector<FixedTickCallback> mFixedTickCallbacks;
     uint32_t mNextId = 1;
     double mFixedAccumulator = 0.0;
     uint64_t mSimulationTick = 0;
@@ -202,6 +209,17 @@ void refreshEntityMassProperties(PhysicalEntity& entity);
 // zero-mass entities. Shared by the server impact path and client prediction.
 void applyPhysicalEntityImpulse(PhysicalEntity& entity, const glm::vec3& impulse,
                                 const glm::vec3& worldPoint);
+
+// Shared rigid-body queries used by the generalized constraint solver. They
+// read the same mass, center of mass, orientation, and inverse inertia as the
+// entity integration path; no second inertia source exists.
+glm::vec3 physicalEntityCenterOfMassWorld(const PhysicalEntity& entity);
+glm::vec3 physicalEntityPointVelocity(const PhysicalEntity& entity,
+                                      const glm::vec3& worldPoint);
+glm::vec3 physicalEntityInverseInertiaWorld(const PhysicalEntity& entity,
+                                            const glm::vec3& vector);
+void applyPhysicalEntityAngularImpulse(PhysicalEntity& entity,
+                                       const glm::vec3& angularImpulse);
 
 // Appends the 12 triangles of an axis-aligned box centered at `center` with half
 // extents `half`, in entity-local space, with outward normals.

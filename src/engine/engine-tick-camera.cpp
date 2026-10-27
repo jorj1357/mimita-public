@@ -48,6 +48,7 @@
 #include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-runtime.h"
 #include "ragdoll/ragdoll-mode.h"
+#include "vehicles/vehicle-system.h"
 #include "ragdoll/ragdoll-mode-config.h"
 
 extern DuelManager gDuelManager;
@@ -1014,6 +1015,25 @@ void engineTickCamera(Engine& engine, float dt)
             // First person: camera sits at the head, with smoothing from ragdoll.json.
             camera.pos = RagdollModeSystem::instance().computeCameraPosition(dt);
         }
+    } else if (VehicleSystem::instance().hasLocalDriver() &&
+               !player.ragdollModeActive) {
+        glm::vec3 seatPosition(0.0f);
+        glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
+        if (VehicleSystem::instance().localSeatWorld(seatPosition, seatForward)) {
+            if (!camera.thirdPerson) {
+                camera.fov = CamConfig::instance().data().fov;
+                camera.pos = seatPosition + glm::vec3(0.0f, 0.0f, 0.55f);
+            } else {
+                auto& camCfg = CamConfig::instance().data();
+                camera.fov = camCfg.fov;
+                const glm::vec3 target = VehicleSystem::instance().localVehiclePosition();
+                camera.follow(target, camCfg.offset, camCfg.positionStiffness);
+                camera.smoothCollision(target, world, dt,
+                    camCfg.positionStiffness, camCfg.stiffnessEnabled,
+                    camCfg.collisionEnabled, camCfg.collisionPushEnabled,
+                    camCfg.collisionPushback);
+            }
+        }
     } else if (!camera.thirdPerson) {
         // First-person camera at eye height
         camera.fov = CamConfig::instance().data().fov;
@@ -1251,6 +1271,7 @@ void engineTickCamera(Engine& engine, float dt)
                     rocket.prevPosition = effect.position;
                     rocket.velocity = effect.velocity;
                     rocket.lifetime = std::max(effect.lifetime, 0.1f);
+                    rocket.maxLifetime = rocket.lifetime;
                     rocket.replayEventId = effect.eventId;
                     gReplayRocketState.activeRockets.push_back(rocket);
                     Debug::log(Debug::Category::Replay,

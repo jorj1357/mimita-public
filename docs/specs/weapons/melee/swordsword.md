@@ -29,8 +29,11 @@ playback rules remain in [`animations.md`](../animations/animations.md).
   and actor-contact shape follow the same weapon transform.
 - Clicking selects an animation. It does not create or enable damage: contact
   can damage a target even when no attack button is pressed.
-- An attack input never adds forward velocity or an impulse to the wielder.
-  Normal movement and physical responses to world or actor collisions still
+- A single left-click slash adds an additive forward impulse of 3 m/s to the
+  wielder in the aim direction. Repeating the click adds the impulse again.
+- The double-left heavy slash adds no impulse; it only changes the attack
+  animation and applies a 2x damage multiplier during its active window.
+- Normal movement and physical responses to world or actor collisions still
   apply. Contact knockback is applied to the target.
 
 ## Weapon animations and input
@@ -51,21 +54,22 @@ compatible actor from using Swordsword animations.
 
 | Input | Swordsword animation |
 |---|---|
-| Left click once | Slash animation 1 |
-| Left click twice within the shared double-click window | Slash animation 2 |
-| Right click once | Right-click animation 3 |
-| Right click twice within the shared double-click window | Defensive pose |
+| Left click once | Forward slash + 3 m/s aim-direction impulse |
+| Left click twice within the shared double-click window | Heavy slash, 2x damage while active, no impulse |
+| Right click once | Wide left-to-right sweep |
+| Right click twice within the shared double-click window | Defensive pose, held while RMB remains down |
 
 The shared input/action system owns double-click recognition and its configured
 window; Swordsword does not create a competing timer. A second click selects
 the double-click animation and replaces the corresponding single-click
 animation.
 
-The defensive pose is animation only. It does not block damage, reduce damage,
-parry, or change blade contact. After the second right click, keep the pose
-while right mouse button remains held. When it is released, return to the
-normal equipped Swordsword pose. NPCs enter and leave the same pose state using
-their AI action state rather than keyboard input.
+The defensive pose is a held, front-arc melee block. The sword must physically
+touch the incoming melee contact for the block to succeed. While the pose is
+held, incoming melee contact inside the front arc is blocked, including contact
+from other melee weapons. The pose ends when RMB is released. NPCs enter and
+leave the same pose state using their AI action state rather than keyboard
+input.
 
 Animation assets still need to be authored for the four input outcomes and the
 normal equipped pose. Use the shared animation format and runtime; do not add a
@@ -116,6 +120,14 @@ stronger impacts are louder and lower in pitch; weaker impacts are quieter and
 higher in pitch. Use one consistent force result for damage, knockback, and
 sound so their feedback agrees.
 
+The heavy double-left action multiplies contact damage by 2x only while its
+active window is open.
+
+When two melee weapon contact shapes meet, both attackers receive an opposing
+impulse based on contact force. The contact plays a spark effect and a random
+metal ricochet sound. More force means more knockback and more force
+transferred to both actors.
+
 The exact force curve, damage and knockback bounds, pitch and volume ranges,
 and double-click window are tuning values, not settled numbers in this spec.
 Keep them owned by the weapon/action configuration that already owns the
@@ -146,8 +158,14 @@ The feature is ready for human review only after a real runtime scenario shows:
    blocking behavior.
 5. Players and NPCs holding the weapon use the same weapon-selected animation
    states, and the visible blade motion matches the swept contact shape.
-6. Attack inputs add no impulse to the wielder. Target knockback remains
-   active. Existing model and world-collision configuration need no new entry.
+6. A single left-click adds 3 m/s of additive aim-direction impulse. The
+   double-left heavy slash adds no impulse and deals 2x contact damage during
+   its active window.
+7. Right-click performs a wide sweep and double-right enters a held front-arc
+   block that succeeds only when the sword physically meets the incoming melee
+   contact.
+8. Melee-versus-melee contact pushes both actors apart by contact force, plays a
+   spark effect, and plays a random metal ricochet sound.
 
 A successful build alone does not prove configuration loading, contact, damage,
 animation visibility, or human acceptance. Record source, build, runtime
@@ -155,19 +173,15 @@ journal, and visual/gameplay review evidence separately.
 
 ## Source-review status
 
-Source inspection on 2026-10-20 found these gaps; this is not live-runtime
-proof:
+Source inspection on 2026-10-20 found gaps against an earlier contract. The
+2026-10-27 behavior update replaces those older gaps with the rules above:
 
-- The server's physical Swordsword shape is currently gated by an attack
-  timeline rather than continuously active contact.
-- Local slash and lunge start functions currently add forward velocity to the
-  wielder.
-- NPC Swordsword combat currently has a close-range hitscan branch instead of
-  the shared swept blade-contact path.
-- The Swordsword weapon definition currently points at the HAFS pose set.
+- The continuous animated blade-contact path is the authoritative owner.
+- Single-left impulse and double-left heavy damage are explicit action values.
+- Right-click sweep and double-right held front-arc block are explicit actions.
+- Player and NPC Swordsword use the same action and contact path.
 
-These are implementation gaps relative to the desired behavior above, not
-alternate requirements.
+Live runtime proof is still required before claiming acceptance.
 
 ## Related specifications
 

@@ -52,6 +52,10 @@ struct ProjectilePhysicsConfig
     int maxBounceCount = 0;
     float minBounceSpeed = 0.0f;
     bool bounceEnabled = false;
+    // Ghost-projectile behavior (Deathball): pass through world surfaces and
+    // actors instead of stopping. The caller still owns damage/lifetime decay.
+    bool passThroughWorld = false;
+    bool passThroughActors = false;
 };
 
 struct SweptPlayerCapsule
@@ -76,7 +80,9 @@ enum class ProjectileCollisionType : uint8_t
     None,
     WorldBounce,
     WorldImpact,
+    WorldPassThrough,
     PlayerImpact,
+    PlayerPassThrough,
     EntityImpact,
     LifetimeExpired
 };

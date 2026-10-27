@@ -294,6 +294,12 @@ const InputCommandState& InputCommandSystem::getState(const std::string& actionN
     return it != mActionStates.end() ? it->second : empty;
 }
 
+bool InputCommandSystem::isKeyHeld(int key) const {
+    if (!mWindow || !mKeyboardEnabled || !mFocused)
+        return false;
+    return glfwGetKey(mWindow, key) == GLFW_PRESS;
+}
+
 glm::vec2 InputCommandSystem::getMoveVector() const {
     return {0.0f, 0.0f};
 }

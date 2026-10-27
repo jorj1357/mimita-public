@@ -1755,10 +1755,54 @@ void updateRenderedReplica(
                         sound.volume, sound.pitch, 36.0f);
             }
             player.networkMeleeAudioLastElapsed = (uint32_t)std::max(0, elapsed);
-            if (!action.animationClipId.empty())
+            if (player.equippedWeaponId == "chainsaw") {
+                const WeaponDefinition* chainsawDef =
+                    WeaponRegistry::instance().get("chainsaw");
+                const float decayTicks = chainsawDef && chainsawDef->customParams.count("revDecayTicks")
+                    ? std::max(1.0f, chainsawDef->customParams.at("revDecayTicks")) : 60.0f;
+                const float maxRev = chainsawDef && chainsawDef->customParams.count("revDamageMultiplier")
+                    ? std::max(1.0f, chainsawDef->customParams.at("revDamageMultiplier")) : 2.0f;
+                const float t = glm::clamp((float)elapsed / decayTicks, 0.0f, 1.0f);
+                const float rev = 1.0f + (maxRev - 1.0f) * (1.0f - t);
+                auto& rt = player.weaponRuntimes["chainsaw"];
+                rt.customFloats["chainsawRevMultiplier"] = rev;
+            }
+            if (!action.animationClipId.empty()) {
                 player.playOneShotAtTick(action.animationClipId,
                     std::min(elapsed, std::max(0, action.totalTicks() - 1)));
-        } else if (set->animationOnly) player.clearOneShot();
+                player.proceduralMeleePoseActive = false;
+            } else {
+                const int windup = action.windup.ticks;
+                const int active = action.active.ticks;
+                const int total = action.totalTicks();
+                const int clampedElapsed = std::max(0, std::min(elapsed, total - 1));
+                const char* phase = "windup";
+                int phaseTick = clampedElapsed;
+                int phaseTicks = windup;
+                if (clampedElapsed >= windup + active) {
+                    phase = "recovery";
+                    phaseTick = clampedElapsed - windup - active;
+                    phaseTicks = action.recovery.ticks;
+                } else if (clampedElapsed >= windup) {
+                    phase = "active";
+                    phaseTick = clampedElapsed - windup;
+                    phaseTicks = active;
+                }
+                WeaponData::MeleeProceduralPose pose;
+                if (WeaponData::resolveMeleeProceduralPose(action, phase,
+                        phaseTick, phaseTicks, pose)) {
+                    player.proceduralMeleeRightArmRotation = pose.rightArmRotation;
+                    player.proceduralMeleeRightArmTranslation = pose.rightArmTranslation;
+                    player.proceduralMeleeTorsoRotation = pose.torsoRotation;
+                    player.proceduralMeleePoseActive = true;
+                } else {
+                    player.proceduralMeleePoseActive = false;
+                }
+            }
+        } else if (set->animationOnly) {
+            player.clearOneShot();
+            player.proceduralMeleePoseActive = false;
+        }
     }
 
     // ── Freeze state ─────────────────────────────────────────────────

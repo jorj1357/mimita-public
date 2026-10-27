@@ -58,6 +58,11 @@ public:
     const InputCommandState& getState(InputAction action) const;
     const InputCommandState& getState(const std::string& actionName) const;
 
+    // Raw held-key query for context-specific controls (vehicle clutch,
+    // handbrake, engine/gear toggles) that share physical keys with other
+    // actions but must not steal their bindings.
+    bool isKeyHeld(int key) const;
+
     // Get combined movement vector from commands
     glm::vec2 getMoveVector() const;
     float getMovementHoldDuration() const;

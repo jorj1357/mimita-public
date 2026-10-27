@@ -36,9 +36,11 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_SHOTGUN;
     if (definition.id == "aa12")
         return NETWORK_WEAPON_AA12;
-    if (definition.id == "swordsword")
+    if (definition.id == "swordsword" ||
+        definition.id == "chainsaw" ||
+        definition.id == "mace")
         return NETWORK_WEAPON_SWORDSWORD;
-    if (definition.id == "rocket_launcher")
+    if (definition.id == "rocket_launcher" || definition.id == "deathball")
         return NETWORK_WEAPON_ROCKET_LAUNCHER;
     if (definition.id == "grenade_launcher")
         return NETWORK_WEAPON_GRENADE_LAUNCHER;
@@ -81,6 +83,11 @@ uint8_t networkWeaponTypeForSlot(int slot)
     case 4:
     case 11:
         return NETWORK_WEAPON_SWORDSWORD;
+    case 25:
+    case 26:
+        return NETWORK_WEAPON_SWORDSWORD;
+    case 27:
+        return NETWORK_WEAPON_ROCKET_LAUNCHER;
     default:
         return NETWORK_WEAPON_NONE;
     }

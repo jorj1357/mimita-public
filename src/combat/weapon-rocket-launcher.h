@@ -28,6 +28,7 @@ struct RocketLauncherState {
         glm::vec3 velocity{0.0f};
         glm::quat orientation{1.0f, 0.0f, 0.0f, 0.0f};
         float lifetime = 5.0f;
+        float maxLifetime = 5.0f;
         float distanceTraveled = 0.0f;
         bool exploded = false;
         uint32_t ownerId = 0;

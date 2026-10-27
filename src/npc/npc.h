@@ -154,6 +154,7 @@ public:
     // Weapon visit cycle (elite profiles only). Visits count accepted shots.
     std::string cycleWeapon;
     int cycleVisitShotsRemaining = 0;
+    float cycleVisitMeleeTimer = 0.0f;
     int cycleVisitShotsTotal = 0;
     uint32_t cycleVisitSerial = 0;
     bool cycleVisitComplete = false;

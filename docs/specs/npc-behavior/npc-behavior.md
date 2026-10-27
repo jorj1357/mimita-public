@@ -470,8 +470,10 @@ weapon is holstered, so the authored example works as:
 -> 1 big-shotgun attack -> 12 machine-gun attacks -> repeat when loaded
 ```
 
-Duel and TDM NPCs use the `elite_npc` role and `elite_arsenal` weapon set so
-the cycle can use every attack weapon available in the mode. Payload keeps its
-class-specific role loadouts. Non-attack items are skipped. Melee-class items
-that the shared NPC attack path cannot execute yet are skipped rather than
-wasting a visit; the `npc.weapon-cycle` journal record names the reason.
+TDM NPCs use the same mode weapon set as players. The `elite_fighter` and
+`elite_npc` roles no longer override the set, so both inherit the active TDM
+loadout. The cycle includes the mode's melee weapons, and continuous-contact
+melee weapons count as usable without a magazine. Their visit is consumed when
+the shared server action starts or completes, not by a hitscan `fired` result.
+Payload keeps its class-specific role loadouts. Non-attack items are skipped;
+the `npc.weapon-cycle` journal record names the reason for any skip.

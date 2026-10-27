@@ -109,6 +109,16 @@ struct MeleeAudioEvent {
     glm::vec3 offset{0.0f};            // meters
 };
 
+// A small pose recipe used when an action has no authored clip yet. The
+// rightArm/torso rotations are in the character frame; the weapon follows the
+// arm transform, so the visible blade and its contact shape stay aligned.
+struct MeleeProceduralPose {
+    glm::vec3 rightArmRotation{60.0f, 5.0f, 40.0f};
+    glm::vec3 rightArmTranslation{0.0f};
+    glm::vec3 torsoRotation{0.0f};
+    bool valid = false;
+};
+
 struct MeleeAction {
     std::string id;
     MeleeButton button = MeleeButton::Primary;
@@ -145,6 +155,24 @@ struct MeleeAction {
     float grabRadius = 1.0f;           // meters
     int grabPullTicks = 30;
 
+    // Continuous-contact health damage overrides. Sentinel -1 means inherit
+    // the equipped weapon's level value.
+    float contactMinDamage = -1.0f;
+    float contactMaxDamage = -1.0f;
+    float contactMinKnockback = -1.0f;
+    float contactMaxKnockback = -1.0f;
+    float contactMaxForceSpeed = -1.0f;
+    float contactDamageMultiplier = 1.0f;
+    bool blocksMelee = false;
+    float blockArcDegrees = 180.0f;
+    bool npcSelectable = true;
+
+    MeleeProceduralPose proceduralBase;
+    MeleeProceduralPose proceduralWindup;
+    MeleeProceduralPose proceduralActive;
+    MeleeProceduralPose proceduralRecovery;
+    bool hasProceduralPose = false;
+
     std::vector<MeleeImpulse> impulses;
 
     std::string onStartSound;
@@ -155,6 +183,12 @@ struct MeleeAction {
 
     int totalTicks() const { return windup.ticks + active.ticks + recovery.ticks; }
 };
+
+// Interpolates the placeholder pose recipe for the given action phase.
+// Returns false when the action has no procedural pose data.
+bool resolveMeleeProceduralPose(const MeleeAction& action, const char* phase,
+                                int phaseTick, int phaseTicks,
+                                MeleeProceduralPose& out);
 
 struct MeleeMoveSet {
     std::string definitionId;

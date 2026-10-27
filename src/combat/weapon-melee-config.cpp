@@ -154,6 +154,16 @@ bool jsonVec3(const json& root, const char* key, glm::vec3& out)
     return true;
 }
 
+void parseProceduralPose(const json& j, MeleeProceduralPose& out)
+{
+    if (!j.is_object())
+        return;
+    jsonVec3(j, "right_arm", out.rightArmRotation);
+    jsonVec3(j, "right_arm_translation", out.rightArmTranslation);
+    jsonVec3(j, "torso", out.torsoRotation);
+    out.valid = true;
+}
+
 void parsePhase(const json& j, MeleePhase& out)
 {
     if (!j.is_object())
@@ -338,6 +348,35 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
         if (p.contains("recovery")) parsePhase(p["recovery"], out.recovery);
     }
 
+    if (j.contains("contact_min_damage") && j["contact_min_damage"].is_number())
+        out.contactMinDamage = j["contact_min_damage"].get<float>();
+    if (j.contains("contact_max_damage") && j["contact_max_damage"].is_number())
+        out.contactMaxDamage = j["contact_max_damage"].get<float>();
+    if (j.contains("contact_min_knockback") && j["contact_min_knockback"].is_number())
+        out.contactMinKnockback = j["contact_min_knockback"].get<float>();
+    if (j.contains("contact_max_knockback") && j["contact_max_knockback"].is_number())
+        out.contactMaxKnockback = j["contact_max_knockback"].get<float>();
+    if (j.contains("contact_max_force_speed") && j["contact_max_force_speed"].is_number())
+        out.contactMaxForceSpeed = j["contact_max_force_speed"].get<float>();
+    if (j.contains("contact_damage_multiplier") && j["contact_damage_multiplier"].is_number())
+        out.contactDamageMultiplier = j["contact_damage_multiplier"].get<float>();
+    if (j.contains("blocks_melee") && j["blocks_melee"].is_boolean())
+        out.blocksMelee = j["blocks_melee"].get<bool>();
+    if (j.contains("block_arc_degrees") && j["block_arc_degrees"].is_number())
+        out.blockArcDegrees = j["block_arc_degrees"].get<float>();
+    if (j.contains("npc_selectable") && j["npc_selectable"].is_boolean())
+        out.npcSelectable = j["npc_selectable"].get<bool>();
+
+    if (j.contains("procedural_pose") && j["procedural_pose"].is_object()) {
+        const json& p = j["procedural_pose"];
+        if (p.contains("base")) parseProceduralPose(p["base"], out.proceduralBase);
+        if (p.contains("windup")) parseProceduralPose(p["windup"], out.proceduralWindup);
+        if (p.contains("active")) parseProceduralPose(p["active"], out.proceduralActive);
+        if (p.contains("recovery")) parseProceduralPose(p["recovery"], out.proceduralRecovery);
+        out.hasProceduralPose = out.proceduralBase.valid || out.proceduralWindup.valid ||
+            out.proceduralActive.valid || out.proceduralRecovery.valid;
+    }
+
     if (j.contains("hitboxes") && j["hitboxes"].is_array()) {
         for (const json& h : j["hitboxes"]) {
             MeleeHitbox hb;
@@ -425,6 +464,44 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
 }
 
 } // namespace
+
+bool resolveMeleeProceduralPose(const MeleeAction& action, const char* phase,
+                                int phaseTick, int phaseTicks,
+                                MeleeProceduralPose& out)
+{
+    if (!action.hasProceduralPose)
+        return false;
+
+    const MeleeProceduralPose& base =
+        action.proceduralBase.valid ? action.proceduralBase : action.proceduralWindup;
+    const MeleeProceduralPose& windup =
+        action.proceduralWindup.valid ? action.proceduralWindup : base;
+    const MeleeProceduralPose& active =
+        action.proceduralActive.valid ? action.proceduralActive : windup;
+    const MeleeProceduralPose& recovery =
+        action.proceduralRecovery.valid ? action.proceduralRecovery : base;
+
+    const MeleeProceduralPose* from = &base;
+    const MeleeProceduralPose* to = &windup;
+    const std::string p = phase ? phase : "";
+    if (p == "active") {
+        from = &windup;
+        to = &active;
+    } else if (p == "recovery") {
+        from = &active;
+        to = &recovery;
+    }
+
+    const float denom = (float)std::max(1, phaseTicks);
+    float t = std::clamp((float)std::max(0, phaseTick) / denom, 0.0f, 1.0f);
+    t = t * t * (3.0f - 2.0f * t);
+
+    out.rightArmRotation = glm::mix(from->rightArmRotation, to->rightArmRotation, t);
+    out.rightArmTranslation = glm::mix(from->rightArmTranslation, to->rightArmTranslation, t);
+    out.torsoRotation = glm::mix(from->torsoRotation, to->torsoRotation, t);
+    out.valid = true;
+    return true;
+}
 
 void MeleeMoveSetRegistry::set(MeleeMoveSet moveSet)
 {

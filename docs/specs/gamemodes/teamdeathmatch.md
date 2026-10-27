@@ -22,6 +22,10 @@ Status: current first-version behavior
 - Team capacity, score goal, timer, respawn and heal rules, countdown, GO
   display, intermission, results, spawn settings, maps, and NPC targeting are
   owned by `config/gamemodes/tdm.json`.
+- Players and NPCs share the mode's weapon set. The current TDM set is
+  revolver, shotgun, rocket launcher, swordsword, chainsaw, mace, and
+  deathball. Role entries must not override the mode set with a different
+  loadout.
 - RED and BLUE use separate `red_spawn` and `blue_spawn` groups for initial
   placement, round reset, and every respawn. Authored team points must carry
   the matching group tag. If those groups are unavailable, the runtime uses
