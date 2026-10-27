@@ -409,7 +409,7 @@
         "actions": {
           "slash_one": {
             "input": {"button": "primary", "tap_count": 1},
-            "double_click_window_ticks": 5,
+            "double_click_window_ticks": 30,
             "double_click_action": "slash_two",
             "animation_clip_id": "punch_a",
             "hitboxes": [],

@@ -265,13 +265,41 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         dbg.capsule.enabled = false;
         return;
     }
-    if (!entry->enabled) return;
+    if (!entry->enabled) {
+        // Explicitly zero hitbox (used by `nothing`). Clear any collision state
+        // left by the previous equipped weapon instead of silently keeping it.
+        player.collision.hasWeaponCollisionCapsule = false;
+        player.weaponCollisionCapsule = Capsule{};
+        player.weaponColliderMesh.clear();
+        player.weaponColliderMeshPath.clear();
+        player.weaponCollisionName.clear();
+        dbg = WeaponCollisionRuntimeDebug{};
+        dbg.weaponId = weaponId;
+        dbg.capsuleMode = true;
+        dbg.fromJsonConfig = true;
+        dbg.valid = false;
+        return;
+    }
 
     dbg.weaponId = weaponId;
     dbg.collisionSkin = entry->collisionSkin;
     dbg.bounceMode = entry->bounceMode;
     dbg.playerBounce = entry->playerBounce;
     dbg.visibleFromConfig = entry->visible;
+
+    if (entry->source == "model") {
+        // The model-derived mesh/capsule is the collision shape. Do not replace
+        // it with a generic JSON capsule.
+        dbg.capsuleMode = true;
+        dbg.fromJsonConfig = true;
+        dbg.valid = player.collision.hasWeaponCollisionCapsule ||
+                    !player.weaponColliderMesh.empty();
+        dbg.spheres.clear();
+        dbg.capsules.clear();
+        dbg.boxes.clear();
+        dbg.capsule.enabled = false;
+        return;
+    }
 
     // Build local-to-world rotation matrix from euler degrees
     auto buildRotMat = [](const glm::vec3& rotDeg) -> glm::mat4 {

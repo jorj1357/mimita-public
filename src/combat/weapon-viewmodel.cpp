@@ -328,7 +328,7 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
     float colRadius = collisionRadius;
     if (def) {
         const WeaponCollisionEntry* wcEntry = WeaponCollisionJsonConfig::instance().get(def->id);
-        if (wcEntry && wcEntry->enabled && wcEntry->source != "json") {
+        if (wcEntry && wcEntry->enabled && wcEntry->source == "capsule") {
             const WeaponCollisionCapsuleConfig* override = nullptr;
             if (wcEntry->capsule.enabled) override = &wcEntry->capsule;
             else for (const auto& cc : wcEntry->capsules) if (cc.enabled) { override = &cc; break; }

@@ -200,5 +200,240 @@
       { "enabled": true, "name": "heavy_body", "center": [0.0, 0.0, 0.0],
         "half_size": [1.2, 0.25, 0.25], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
     ]
+  },
+
+  "aa12": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "admin_revolver": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "big_shotgun": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "op_revolver": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "hafs": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "deathball": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "model"
+  },
+
+  "godball": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "ball_proxy", "center": [0.0, 0.0, 0.3],
+        "half_size": [0.3, 0.3, 0.3], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "force_punch": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "fist_proxy", "center": [0.0, 0.0, 0.2],
+        "half_size": [0.18, 0.18, 0.18], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "quick_hit": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "fist_proxy", "center": [0.0, 0.0, 0.2],
+        "half_size": [0.18, 0.18, 0.18], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "frag": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.03,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "grenade_proxy", "center": [0.0, 0.0, 0.15],
+        "half_size": [0.12, 0.12, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "smoke": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.03,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "grenade_proxy", "center": [0.0, 0.0, 0.15],
+        "half_size": [0.12, 0.12, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "fire": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.03,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "grenade_proxy", "center": [0.0, 0.0, 0.15],
+        "half_size": [0.12, 0.12, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "darkbang": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.03,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "grenade_proxy", "center": [0.0, 0.0, 0.15],
+        "half_size": [0.12, 0.12, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "bomb": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.03,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "bomb_proxy", "center": [0.0, 0.0, 0.15],
+        "half_size": [0.12, 0.12, 0.12], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "captain_falcon_moveset": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "hand_proxy", "center": [0.0, 0.0, 0.2],
+        "half_size": [0.18, 0.18, 0.18], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_boomer_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_stabber_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_crawler_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_brute_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "zombie_charger_claw": {
+    "enabled": true,
+    "visible": false,
+    "collision_skin": 0.05,
+    "bounce_mode": "inherit_actor",
+    "source": "boxes",
+    "boxes": [
+      { "enabled": true, "name": "claw_proxy", "center": [0.0, 0.0, 0.6],
+        "half_size": [0.15, 0.15, 0.7], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+    ]
+  },
+
+  "nothing": {
+    "enabled": false,
+    "visible": false,
+    "source": "boxes",
+    "boxes": []
   }
 }

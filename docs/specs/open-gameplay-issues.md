@@ -1,3 +1,30 @@
+## New intake — 2026-10-27
+
+- **Melee input is ignored while airborne:** The player reports that
+  SwordSword and Chainsaw do not work while in the air, and recalls the same
+  problem with SwordSword previously. Clicking in the air produces no slash,
+  heavy slash, sweep, defensive pose, chainsaw rev, or mace swing. Expected
+  behavior is that every melee weapon can be used in the air by default; this
+  must not be a temporary exception. Source finding: `MeleeAction::actorState`
+  defaults to `Grounded` in `src/combat/weapon-melee-config.h`, the SwordSword,
+  Chainsaw, and Mace actions omit `actor_state`, and
+  `MimitaMelee::resolveAction()` filters actions by the airborne state in
+  `src/combat/melee-client.cpp`. The server attack and continuous-contact paths
+  do not reject airborne actions. This entry records the report and source
+  finding; runtime confirmation and human acceptance remain open.
+- **Every weapon needs a deliberate weapon-collision entity shape:** The player
+  wants every weapon/object/entity to have a weapon collision entry. If no
+  authored box exists, the actual model collision should be used. `nothing` is
+  the only weapon allowed to have zero hitbox. Current
+  `config/weaponcollisions.json` has entries for only 12 of the 34 top-level
+  weapon IDs. Missing IDs include `aa12`, `admin_revolver`, `big_shotgun`,
+  `bomb`, `captain_falcon_moveset`, `darkbang`, `deathball`, `fire`,
+  `force_punch`, `frag`, `godball`, `hafs`, `nothing`, `op_revolver`,
+  `quick_hit`, `smoke`, and all six zombie claw weapons. Missing entries fall
+  back to a generic hand capsule in `WeaponCollisionJsonConfig`, so no-model
+  items do not receive a deliberate entity hitbox. This is a configuration and
+  collision-ownership request, not yet a verified runtime defect.
+
 ## New intake — 2026-10-26
 
 - **Dev-loop TDM launch fails before server logger readiness:** Build 3368

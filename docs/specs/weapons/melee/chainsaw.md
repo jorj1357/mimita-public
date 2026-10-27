@@ -21,6 +21,7 @@ not a separate damage system.
   animated weapon transform.
 - A click does not add a dash or self-impulse.
 - There is no generic melee cooldown. The action may restart on every click.
+- The rev action is usable on the ground and in the air by default.
 
 ## Feedback
 

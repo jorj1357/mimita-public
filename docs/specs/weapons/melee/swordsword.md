@@ -62,7 +62,8 @@ compatible actor from using Swordsword animations.
 The shared input/action system owns double-click recognition and its configured
 window; Swordsword does not create a competing timer. A second click selects
 the double-click animation and replaces the corresponding single-click
-animation.
+animation. All Swordsword actions are usable on the ground and in the air by
+default.
 
 The defensive pose is a held, front-arc melee block. The sword must physically
 touch the incoming melee contact for the block to succeed. While the pose is

@@ -21,6 +21,7 @@ path.
 - Damage and knockback scale with contact force: a faster, more direct hit
   deals more damage and transfers more force.
 - A primary click starts the swing. Player and NPC use the same action timing.
+- The swing is usable on the ground and in the air by default.
 - The mace is a large weapon and should read as heavy.
 
 ## Placeholder presentation

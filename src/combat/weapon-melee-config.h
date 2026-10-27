@@ -122,7 +122,9 @@ struct MeleeProceduralPose {
 struct MeleeAction {
     std::string id;
     MeleeButton button = MeleeButton::Primary;
-    MeleeActorState actorState = MeleeActorState::Grounded;
+    // Air-usable is the default for melee actions. A definition that truly
+    // requires a specific stance must opt into Grounded or Airborne explicitly.
+    MeleeActorState actorState = MeleeActorState::Any;
     MeleeModifier modifier = MeleeModifier::None;
     // Same-tick modifier tie-break: higher priority wins.
     int priority = 0;

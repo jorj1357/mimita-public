@@ -26,6 +26,7 @@ using json = nlohmann::json;
 #include "combat/weapon-data.h"
 #include "combat/weapon-config.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-collision-config.h"
 #include "crosshair/crosshair-render.h"
 #include "gui/hud/chat-window.h"
 #include "network/net_mode.h"
@@ -1325,6 +1326,33 @@ void registerWorldXhReloadCommand()
             char buf[80];
             snprintf(buf, sizeof(buf), "[WEAPON COLLISION VISUALS] json_hitboxes=%d", (int)val);
             Terminal::instance().addLog(std::string(buf));
+        }
+    });
+
+    Terminal::instance().registerCommand({
+        "weaponcollisions_check", "Report weapon IDs missing a weaponcollisions.json entry",
+        "weaponcollisions_check",
+        [](const std::vector<std::string>&) {
+            std::vector<std::string> missing;
+            for (const auto& kv : WeaponRegistry::instance().all()) {
+                if (!WeaponCollisionJsonConfig::instance().get(kv.first))
+                    missing.push_back(kv.first);
+            }
+            std::string message = missing.empty()
+                ? "[WEAPON COLLISIONS] all registered weapons have entries"
+                : "[WEAPON COLLISIONS] missing entries:";
+            for (const std::string& id : missing)
+                message += " " + id;
+            Terminal::instance().addLog(message);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "weapon.collisions.check", "weaponcollisions_check",
+                missing.empty() ? "all registered weapons covered"
+                                : "registered weapons missing collision entries",
+                0,
+                nlohmann::json{{"missing_count", missing.size()},
+                               {"missing", missing}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     });
 }
