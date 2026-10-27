@@ -268,6 +268,32 @@ bool HitEffects::loadConfig(const std::string& path)
             if (s.contains("local_axis")) cfg.bodyContactSpark.localAxis = s["local_axis"];
         }
 
+        if (j.contains("meleeContact")) {
+            const json& m = j["meleeContact"];
+            if (m.contains("enabled")) cfg.meleeContact.enabled = m["enabled"];
+            if (m.contains("baseDiameter")) cfg.meleeContact.baseDiameter = m["baseDiameter"];
+            if (m.contains("maxDiameter")) cfg.meleeContact.maxDiameter = m["maxDiameter"];
+            if (m.contains("baseAlpha")) cfg.meleeContact.baseAlpha = m["baseAlpha"];
+            if (m.contains("maxAlpha")) cfg.meleeContact.maxAlpha = m["maxAlpha"];
+            if (m.contains("baseColor")) cfg.meleeContact.baseColor = readVec3Json(m["baseColor"]);
+            if (m.contains("maxColor")) cfg.meleeContact.maxColor = readVec3Json(m["maxColor"]);
+            if (m.contains("whiteSphereTicks")) cfg.meleeContact.whiteSphereTicks = m["whiteSphereTicks"];
+            if (m.contains("sparks") && m["sparks"].is_array()) {
+                cfg.meleeContact.sparks.clear();
+                for (const auto& item : m["sparks"]) {
+                    HitFxConfig::MeleeContactSparkStage stage;
+                    if (item.contains("texturePath")) stage.texturePath = item["texturePath"];
+                    if (item.contains("startTick")) stage.startTick = item["startTick"];
+                    if (item.contains("endTick")) stage.endTick = item["endTick"];
+                    if (item.contains("alpha")) stage.alpha = item["alpha"];
+                    if (item.contains("size")) stage.size = item["size"];
+                    if (item.contains("randomRotationDegrees"))
+                        stage.randomRotationDegrees = item["randomRotationDegrees"];
+                    cfg.meleeContact.sparks.push_back(std::move(stage));
+                }
+            }
+        }
+
         if (j.contains("hitmarkerVisual")) {
             const json& s = j["hitmarkerVisual"];
             if (s.contains("enabled")) cfg.hitmarkerVisual.enabled = s["enabled"];

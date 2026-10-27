@@ -331,6 +331,30 @@ struct HitFxConfig {
         std::string localAxis = "+Z";
     } bodyContactSpark;
 
+    struct MeleeContactSparkStage {
+        std::string texturePath;
+        int startTick = 2;
+        int endTick = 6;
+        float alpha = 1.0f;
+        float size = 0.5f;
+        float randomRotationDegrees = 180.0f;
+    };
+    struct MeleeContactConfig {
+        bool enabled = true;
+        float baseDiameter = 0.5f;
+        float maxDiameter = 1.0f;
+        float baseAlpha = 0.5f;
+        float maxAlpha = 1.0f;
+        glm::vec3 baseColor{123.0f / 255.0f, 123.0f / 255.0f, 123.0f / 255.0f};
+        glm::vec3 maxColor{1.0f, 1.0f, 1.0f};
+        int whiteSphereTicks = 1;
+        std::vector<MeleeContactSparkStage> sparks = {
+            {"assets/textureshq/sparkv1.png", 2, 6, 1.0f, 0.45f, 180.0f},
+            {"assets/textureshq/sparkv2.png", 7, 13, 0.9f, 0.6f, 180.0f},
+            {"assets/textureshq/sparkv3.png", 14, 20, 0.8f, 0.8f, 180.0f}
+        };
+    } meleeContact;
+
     struct HitmarkerVisualConfig {
         bool enabled = true;
         float duration = 0.5f;
@@ -410,6 +434,8 @@ struct HitBurstSnapshot {
 namespace HitEffects {
 
 void onHit(const HitEvent& event);
+void spawnMeleeContact(const glm::vec3& position, const glm::vec3& direction,
+                       float force01, float randomSeed = 0.0f);
 
 // legacy -- still called internally by onHit, but weapons should use onHit
 void spawnHitEffects(glm::vec3 hitPoint, const glm::vec3& hitDirection,

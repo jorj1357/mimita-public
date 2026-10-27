@@ -10,7 +10,6 @@
 namespace {
 
 const char* kBackupPaths[] = {
-    "config/camconfig.json",
     "config/ragdolldeath.json"
 };
 
@@ -43,9 +42,9 @@ void logBackupScope(const char* operation)
         "settings.backup.scope", "settings-backup", operation, 0,
         nlohmann::json{
             {"operation", operation},
-            {"managed_paths", {"config/camconfig.json", "config/ragdolldeath.json"}},
-            {"excluded_paths", {"config/impact_decals.json"}},
-            {"reason", "gamemode_runtime_visual_overrides"}
+            {"managed_paths", {"config/ragdolldeath.json"}},
+            {"excluded_paths", {"config/camconfig.json", "config/impact_decals.json"}},
+            {"reason", "gamemode_runtime_visual_overrides; camconfig is in-memory only"}
         }, __FILE__, __LINE__, __FUNCTION__);
 }
 
@@ -67,6 +66,14 @@ SettingsBackup& SettingsBackup::instance()
 void SettingsBackup::saveBackups()
 {
     if (mActive) return; // already backed up
+
+    // Older builds stored a camconfig.json backup here and could restore it
+    // over later user edits. camconfig is now memory-only, so remove any stale
+    // legacy backup instead of applying it.
+    {
+        std::error_code ec;
+        std::filesystem::remove("config/camconfig.json.bak", ec);
+    }
 
     logBackupScope("save_begin");
 

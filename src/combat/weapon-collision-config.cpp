@@ -281,6 +281,20 @@ void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
         return;
     }
 
+    if (!entry->collidesWithWorld) {
+        player.collision.hasWeaponCollisionCapsule = false;
+        player.weaponCollisionCapsule = Capsule{};
+        player.weaponColliderMesh.clear();
+        player.weaponColliderMeshPath.clear();
+        player.weaponCollisionName.clear();
+        dbg = WeaponCollisionRuntimeDebug{};
+        dbg.weaponId = weaponId;
+        dbg.visibleFromConfig = entry->visible;
+        dbg.fromJsonConfig = true;
+        dbg.valid = false;
+        return;
+    }
+
     dbg.weaponId = weaponId;
     dbg.collisionSkin = entry->collisionSkin;
     dbg.bounceMode = entry->bounceMode;

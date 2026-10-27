@@ -4,6 +4,7 @@
     "mimita_sizing_6_landing_001": {
       "durationTicks": 60,
       "loop": false,
+      "rootTranslationMode": 2,
       "keyframes": [
         {
           "tick": 0,

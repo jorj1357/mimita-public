@@ -132,6 +132,9 @@ struct MeleeAction {
     // `doubleClickAction` (when non-empty). 30 is the spec default.
     int doubleClickWindowTicks = 30;
     std::string doubleClickAction;
+    // Weapon-wide minimum delay after the action finishes before another
+    // attack can start. Fixed ticks, never frame time.
+    int cooldownTicks = 0;
     int tapCount = 1;
     bool holdWhileButton = false;
 

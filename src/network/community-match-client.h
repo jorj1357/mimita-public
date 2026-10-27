@@ -278,6 +278,8 @@ private:
 
     // ── Gamemode visual overrides ──────────────────────────────────
     float mCameraFov = 0.0f;         // 0 = no override
+    float mModePreviousCameraFov = 0.0f;
+    bool mModeCameraFovCaptured = false;
     bool mForceFirstPerson = false;
     bool mFirstPersonApplied = false;
     bool mPreviousThirdPerson = true;

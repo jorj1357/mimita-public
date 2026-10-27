@@ -360,7 +360,7 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     actors.clear();
     auto configured = [](const std::string& id) {
         const auto* def = WeaponRegistry::instance().get(id);
-        return def && !def->animationProfile.empty() && def->executionType == WeaponExecutionType::PhysicalContact;
+        return def && def->id != "nothing";
     };
     bool needed = false;
     for (const auto& p : players) needed = needed || (!p.second.dead && configured(p.second.equippedWeaponId));
@@ -408,7 +408,8 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
             (attacker.ref.npc && attacker.ref.npc->health <= 0)) continue;
         auto& state = *attacker.runtime;
         const auto* def = attacker.weapon;
-        if (!def || def->animationProfile.empty() || def->executionType != WeaponExecutionType::PhysicalContact) continue;
+        if (!def || def->id == "nothing") continue;
+        const bool damaging = def->executionType == WeaponExecutionType::PhysicalContact;
         WeaponAttachmentPose attachment;
         bool valid = false;
         for (const auto& part : state.pose->physicalBody.parts) if (part.name == "rightArm") {
@@ -522,7 +523,13 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     }
                     minDamage *= actionMultiplier * revMultiplier;
                     maxDamage *= actionMultiplier * revMultiplier;
-                    const int damage = std::max(1, (int)std::lround(glm::mix(minDamage, maxDamage, force)));
+                    if (!damaging) {
+                        minDamage = 0.0f;
+                        maxDamage = 0.0f;
+                    }
+                    const int damage = damaging
+                        ? std::max(1, (int)std::lround(glm::mix(minDamage, maxDamage, force)))
+                        : 0;
                     const glm::vec3 impulse = hit.normal * glm::mix(
                         minKnockback, maxKnockback, force);
 
@@ -550,6 +557,17 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                         continue;
                     }
 
+                    if (!damaging) {
+                        if (target.ref.player) {
+                            target.ref.player->vel += impulse;
+                            recordServerMovementExternalImpulse(*target.ref.player, impulse);
+                        } else if (target.ref.npc) {
+                            target.ref.npc->knockbackImpulse += impulse;
+                        }
+                        if (beginning)
+                            broadcastWeaponClash(sock, players, attacker.ref,
+                                hit.hitPosition, hit.normal, glm::length(impulse), packets);
+                    } else {
                     ServerActorDamageRequest request;
                     request.attacker = attacker.ref; request.victim = target.ref;
                     request.damage = damage; request.knockback = impulse;
@@ -580,12 +598,13 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                                  {"action", attacker.actionId}, {"attack_required", false}});
                         }
                     }
+                    }
                 }
             }
             // Weapon-vs-weapon contact. This is separate from actor-body
             // contact: two blades can meet without either body being touched.
-            if (target.weapon && target.runtime->previousValid &&
-                !target.weapon->animationProfile.empty()) {
+            if (target.weapon && target.weapon->id != "nothing" &&
+                target.runtime->previousValid) {
                 const float weaponDistance = segmentSegmentDistance(
                     shape.currentA, shape.currentB,
                     target.runtime->shape.currentA, target.runtime->shape.currentB);

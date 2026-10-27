@@ -140,10 +140,16 @@ void CommunityMatchClient::reset()
             mModeMovementPrevious, mModeMovementPreviousName);
         mModeMovementPresetApplied = false;
     }
-    // Restore backups if overrides were applied
+    // Restore backups if overrides were applied. Camera FOV is memory-only so
+    // leaving a mode can never rewrite config/camconfig.json.
     if (mOverridesApplied) {
         SettingsBackup::instance().restoreBackups();
         mOverridesApplied = false;
+    }
+    if (mModeCameraFovCaptured) {
+        auto& data = const_cast<CameraConfigData&>(CamConfig::instance().data());
+        data.fov = mModePreviousCameraFov;
+        mModeCameraFovCaptured = false;
     }
 
     mMode.clear();
@@ -849,6 +855,10 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         if (newFov > 0.0f) {
             auto& camCfg = CamConfig::instance();
             auto& data = const_cast<CameraConfigData&>(camCfg.data());
+            if (!mModeCameraFovCaptured) {
+                mModePreviousCameraFov = data.fov;
+                mModeCameraFovCaptured = true;
+            }
             if (data.fov != newFov) {
                 data.fov = newFov;
                 Debug::log(Debug::Category::General,

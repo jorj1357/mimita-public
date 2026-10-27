@@ -1103,6 +1103,10 @@ bool runActorTriangleCollisionStep(
     // Apply the desired pose: previous = safe, world = desired.
     player.pos += totalMove;
     player.updateModelWorldTransforms();
+    // Rebuild the weapon collider after the pose update. Otherwise the box/
+    // triangle path can consume the previous viewmodel transform while the
+    // visible weapon is already at the new pose.
+    recomputeWeaponCapsule(player);
 
     ActorTriangleCollisionResult result;
     const std::vector<PhysicalEntity>& entities =

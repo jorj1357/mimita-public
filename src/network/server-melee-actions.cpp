@@ -719,6 +719,8 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     const WeaponData::MeleeAction* action = moveSet->find(actionId);
     if (!action)
         return false;
+    if (tick < attacker.meleeNextAllowedTick)
+        return false;
 
     attacker.meleeActionActive = true;
     attacker.meleeActionId = action->id;
@@ -728,6 +730,8 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     attacker.meleeActionYaw = attacker.yaw;
     attacker.meleeLastHitboxCenter = glm::vec3(0.0f);
     attacker.meleeHitTargets.clear();
+    attacker.meleeNextAllowedTick = tick + (uint32_t)std::max(
+        action->totalTicks(), action->cooldownTicks);
     if (attacker.meleeActionSerial == 0)
         attacker.meleeActionSerial = 1;
     else

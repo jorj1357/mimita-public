@@ -55,6 +55,8 @@ void recomputeWeaponCapsule(Player& p)
             continue;
         foundArm = true;
         p.weaponCollisionWorld = part.worldTransform * p.weaponLocalToArm;
+        if (p.hasValidWeapon && p.equippedSlot >= 1)
+            p.weaponModelTransform = p.weaponCollisionWorld;
         break;
     }
 

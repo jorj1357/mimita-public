@@ -1799,6 +1799,10 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
         const glm::vec3 hit{event->hitX, event->hitY, event->hitZ};
         const glm::vec3 knock{event->knockX, event->knockY, event->knockZ};
         const float force01 = glm::clamp(glm::length(knock) / 60.0f, 0.0f, 1.0f);
+        const glm::vec3 clashNormal = glm::length(knock) > 0.001f
+            ? glm::normalize(knock) : glm::vec3(0.0f, 0.0f, 1.0f);
+        HitEffects::spawnMeleeContact(hit, clashNormal, force01,
+                                      (float)event->header.tick);
         for (int i = 0; i < 15; ++i) {
             glm::vec3 dir(
                 ((float)rand() / (float)RAND_MAX - 0.5f),

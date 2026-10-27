@@ -6,6 +6,7 @@
 #include "network/server.h"
 #include "entities/player.h"
 #include "npc/npc.h"
+#include "effects/hit-effects.h"
 #include <algorithm>
 
 void tickLocalPhysicalContactWeapons(Player& player, NpcSystem& npcSystem, uint32_t tick)
@@ -90,9 +91,17 @@ void tickLocalPhysicalContactWeapons(Player& player, NpcSystem& npcSystem, uint3
         if (!victim || !attacker || victim->dead) continue;
         victim->takeDamage(contact.request.damage, contact.request.knockback, 0.0f, contact.hit);
         victim->externalImpulse += contact.request.knockback;
-        if (contact.presentImpact)
+        if (contact.presentImpact) {
             if (const auto* def = WeaponRegistry::instance().get(contact.request.weaponId))
                 WeaponAudio::playContactSound(*def, contact.hit, contact.force);
+            const float force01 = glm::clamp(
+                glm::length(contact.request.knockback) / 60.0f, 0.0f, 1.0f);
+            const glm::vec3 dir = glm::length(contact.request.knockback) > 0.001f
+                ? glm::normalize(contact.request.knockback)
+                : glm::vec3(0.0f, 1.0f, 0.0f);
+            HitEffects::spawnMeleeContact(
+                contact.hit, dir, force01, (float)contact.request.serverTick);
+        }
         if (contact.result.killed) DeathSystem::instance().kill(*victim,
             contact.request.victim.kind == ServerActorKind::Npc
                 ? "npc_" + std::to_string(contact.request.victim.id) : victim->username,

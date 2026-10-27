@@ -100,7 +100,8 @@
 
   "chainsaw": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
     "player_bounce": 0.99,
@@ -113,7 +114,8 @@
 
   "mace": {
     "enabled": true,
-    "visible": true,
+    // "visible": true,
+    "visible": false,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
     "player_bounce": 0.99,

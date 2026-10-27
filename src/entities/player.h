@@ -219,6 +219,15 @@ struct AnimClip {
     // -1 inherits config/animations/settings.json; 1 keeps authored translation;
     // 2 zeroes it while preserving rotation and scale.
     int rootTranslationMode = -1;
+    float rootTranslationScale = 1.0f;
+    float speedMultiplier = 1.0f;
+    // -1 means use durationTicks. A positive value is the minimum number of
+    // fixed ticks this clip owns the state before a lower/equal state may win.
+    int lockTicks = -1;
+    // "priority" (default), "must_finish", "lock_ticks", or "instant".
+    std::string overrideMode = "priority";
+    // Optional part whitelist. Empty means every part is owned by the clip.
+    std::vector<std::string> partMask;
     bool speedScaleFromVelocity = true;
     bool speedBased = true;         // false = fixed tick rate, not velocity-scaled
     bool inputTriggered = false;    // true = state change on input, not velocity

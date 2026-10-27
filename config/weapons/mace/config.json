@@ -29,6 +29,7 @@
               "volume": 1.5
             }
           },
+          "cooldown_ticks": 60,
           "animation_clip_id": "mimita_sizing_6_attackslam_002"
         }
       }

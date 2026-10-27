@@ -449,6 +449,7 @@ struct ServerPlayer
     bool meleeActionActive = false;
     std::string meleeActionId;
     uint32_t meleeActionStartTick = 0;
+    uint32_t meleeNextAllowedTick = 0;
     int meleePhaseTick = 0;
     // Captured camera-horizontal-forward at action start (never re-aimed).
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};

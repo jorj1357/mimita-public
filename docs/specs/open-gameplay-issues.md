@@ -24,6 +24,13 @@ swordsword is old, need to make it have config like chainsaw or mace those ar go
 missing blade rdaius and stuff 
 need that stuff to be visible as well 
 
+![alt text](image-6.png)
+
+2026 10 27 1614 idk what the prorblemis but plr otulines are massive
+and not on plauers at all
+thatmigiht be it?
+idki was abt to be like how come it wont update live  but it probablt is and then it just not aligned to the actual actor models 
+
 2026 10 27 1549
 
 weapon collisiosn not good with the new animations , like the chainsaw i have it enabled and visible but i walk into the wall but then i dont get pusehd out of the wall, i juts phase thru it, need to keep weapon collisiosn working

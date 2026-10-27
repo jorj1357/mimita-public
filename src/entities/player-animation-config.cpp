@@ -190,6 +190,14 @@ AnimClip parseAnimClipJson(const nlohmann::json& j)
                 : mode == "zero" ? 2 : -1;
         }
     }
+    clip.rootTranslationScale = j.value("rootTranslationScale", clip.rootTranslationScale);
+    clip.speedMultiplier = j.value("speedMultiplier", clip.speedMultiplier);
+    clip.lockTicks = j.value("lockTicks", clip.lockTicks);
+    clip.overrideMode = j.value("overrideMode", clip.overrideMode);
+    if (j.contains("partMask") && j["partMask"].is_array()) {
+        for (const auto& part : j["partMask"])
+            if (part.is_string()) clip.partMask.push_back(part.get<std::string>());
+    }
     clip.speedScaleFromVelocity = j.value("speedScaleFromVelocity", true);
     clip.speedBased = j.value("speedBased", true);
     clip.inputTriggered = j.value("inputTriggered", false);

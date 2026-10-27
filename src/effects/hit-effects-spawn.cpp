@@ -8,6 +8,8 @@
 
 #include "effects/effect-part.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
+#include <nlohmann/json.hpp>
 #include "replay/replay.h"
 #include "replay/replay.h"
 
@@ -59,6 +61,66 @@ void HitEffects::spawnHitParticles(const HitBurstEffect& b)
         e.affectedByGravity = cfg.gravity > 0.0f;
         e.replayType = "hitfx_particle";
         EffectPartSystem::instance().spawn(e);
+    }
+}
+
+void HitEffects::spawnMeleeContact(const glm::vec3& position, const glm::vec3& direction,
+                                   float force01, float randomSeed)
+{
+    const auto& cfg = gConfig.meleeContact;
+    if (!gConfig.enabled || !cfg.enabled) return;
+
+    static int lastContactFxLogTick = -1000;
+    if (gGlobalTick - lastContactFxLogTick >= 30) {
+        lastContactFxLogTick = gGlobalTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "melee.contact.fx", "melee-contact",
+            "spawned client melee white sphere and spark stages",
+            (uint32_t)gGlobalTick,
+            nlohmann::json{{"force", force01},
+                           {"position", {position.x, position.y, position.z}},
+                           {"sparks", cfg.sparks.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    const float force = glm::clamp(force01, 0.0f, 1.0f);
+    const float diameter = cfg.baseDiameter + (cfg.maxDiameter - cfg.baseDiameter) * force;
+    const float alpha = cfg.baseAlpha + (cfg.maxAlpha - cfg.baseAlpha) * force;
+    const glm::vec3 color = glm::mix(cfg.baseColor, cfg.maxColor, force);
+
+    EffectPart sphere;
+    sphere.position = position;
+    sphere.replayType = "melee_contact_sphere";
+    sphere.color = color;
+    sphere.alpha = alpha;
+    sphere.scale = diameter * 0.5f;
+    sphere.maxLifetime = std::max(1, cfg.whiteSphereTicks) / 60.0f;
+    sphere.lifetime = 0.0f;
+    sphere.billboardText = false;
+    EffectPartSystem::instance().spawn(sphere);
+
+    for (const auto& stage : cfg.sparks) {
+        if (stage.texturePath.empty()) continue;
+        EffectPart spark;
+        spark.position = position;
+        spark.normal = glm::length(direction) > 0.001f
+            ? glm::normalize(direction) : glm::vec3(0.0f, 1.0f, 0.0f);
+        spark.replayType = "hitfx_particle";
+        spark.texturePath = stage.texturePath;
+        spark.color = glm::vec3(1.0f);
+        spark.alpha = stage.alpha;
+        spark.scale = stage.size;
+        spark.endScale = stage.size;
+        spark.billboardText = true;
+        spark.maxLifetime = std::max(1, stage.endTick - stage.startTick) / 60.0f;
+        // Negative lifetime delays the stage until its contact tick.
+        spark.lifetime = -(float)std::max(1, stage.startTick) / 60.0f;
+        const float r = std::sin(randomSeed * 12.9898f + stage.startTick * 78.233f) * 43758.5453f;
+        const float unit = r - std::floor(r);
+        spark.rotation.z = glm::radians(unit * stage.randomRotationDegrees);
+        spark.angularVelocity = glm::vec3(0.0f, 0.0f, 0.0f);
+        EffectPartSystem::instance().spawn(spark);
     }
 }
 

@@ -1037,6 +1037,10 @@ class DevLoop:
         launch_visibility: str | None = None,
     ):
         self.profile = profile
+        try:
+            self.max_mimita_processes = max(1, int(profile.get("max_mimita_processes", 1)))
+        except (TypeError, ValueError):
+            self.max_mimita_processes = 1
         self.launch_mode_id = str(
             launch_mode if launch_mode is not None
             else profile.get("launch_mode", 1)
@@ -2456,16 +2460,14 @@ class DevLoop:
     def launch_latest(self, request_id: str = "") -> bool:
         launch_started = time.monotonic()
         self.last_message = ""
-        if not self.server_health():
-            self.events_path = create_shared_events_path()
-            self.run_id = Path(self.events_path).parent.name
-            self.run_started_utc = utc_now()
-            self.run_metadata = {}
-        elif not self.events_path:
-            self.events_path = str(self.run_metadata.get("events_path") or "") or None
-            if not self.events_path:
-                self.events_path = create_shared_events_path()
-                self.run_id = Path(self.events_path).parent.name
+        self.reap_stray_mimita_processes()
+        # Every launch starts a fresh journal. Reusing a full/capped journal is
+        # what made logger.started disappear and readiness time out while the
+        # replacement server stayed alive.
+        self.events_path = create_shared_events_path()
+        self.run_id = Path(self.events_path).parent.name
+        self.run_started_utc = utc_now()
+        self.run_metadata = {}
         launch_journal_path = self.events_path
         launch_run_id = self.run_id or Path(launch_journal_path).parent.name
         build_id = ""
@@ -3024,6 +3026,73 @@ class DevLoop:
             {"server_pid": server_pid, "room_file": str(room_file_path),
              "timeout_ms": 120000},
             "local gameplay continued but the coordinator room code did not arrive",
+        )
+
+    def _checkout_mimita_processes(self) -> list[dict]:
+        """List mimita.exe processes whose executable is under this checkout."""
+        if os.name != "nt":
+            return []
+        command = (
+            "Get-CimInstance Win32_Process -Filter \"Name='mimita.exe'\" | "
+            "Where-Object { $_.ExecutablePath -and "
+            "($_.ExecutablePath -like '" + str(ROOT).replace("'", "''") + "\\*') } | "
+            "ForEach-Object { [PSCustomObject]@{ pid=[int]$_.ProcessId; "
+            "executable=[string]$_.ExecutablePath; command_line=[string]$_.CommandLine } } | "
+            "ConvertTo-Json -Compress"
+        )
+        try:
+            result = run_hidden(
+                ["powershell", "-NoProfile", "-Command", command],
+                capture_output=True, text=True, timeout=8, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        text = (result.stdout or "").strip()
+        if not text:
+            return []
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(value, dict):
+            value = [value]
+        return [item for item in value if isinstance(item, dict)]
+
+    def reap_stray_mimita_processes(self) -> None:
+        """Enforce the profile's process cap for this checkout.
+
+        With the default cap of 1 the launch is a clean replacement: every
+        previous mimita.exe for this checkout is terminated before the new
+        server/client pair starts. Raising the cap is reserved for explicit
+        multi-client testing.
+        """
+        if self.max_mimita_processes != 1:
+            return
+        processes = self._checkout_mimita_processes()
+        killed = []
+        for item in processes:
+            try:
+                pid = int(item.get("pid", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            if pid <= 0 or pid == os.getpid():
+                continue
+            result = run_hidden(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True, text=True, timeout=8, check=False,
+            )
+            _PROCESS_IDENTITY_CACHE.pop(pid, None)
+            killed.append({
+                "pid": pid,
+                "executable": item.get("executable", ""),
+                "command_line": item.get("command_line", ""),
+                "taskkill_rc": result.returncode,
+            })
+        self.record_runtime_event(
+            "dev-loop.process.audit",
+            {"max_mimita_processes": self.max_mimita_processes,
+             "found": len(processes), "killed": killed},
+            "enforced max mimita.exe process count for this checkout",
         )
 
     def stop_processes(self) -> None:

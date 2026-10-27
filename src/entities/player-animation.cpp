@@ -444,8 +444,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // Time-driven one-shot. Phase-driven clips are held by the action
             // owner and are not auto-cleared by elapsed time.
             lockedClipTime += dt;
-            if (!lockedClipLoop &&
-                lockedClipTime >= (float)lc->durationTicks / 60.0f) {
+            const float speed = std::max(0.01f, lc->speedMultiplier);
+            const float holdSeconds = lc->lockTicks > 0
+                ? (float)lc->lockTicks / 60.0f
+                : (float)std::max(1, lc->durationTicks) / (60.0f * speed);
+            if (!lockedClipLoop && lockedClipTime >= holdSeconds) {
                 lockedClip.clear();
             }
         }
@@ -475,7 +478,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // owns the state (see below).
     auto clipDurationSeconds = [&](const std::string& clipName) -> float {
         const AnimClip* c = findClip(clipName);
-        return c ? (float)std::max(1, c->durationTicks) / 60.0f : 0.0f;
+        if (!c) return 0.0f;
+        if (c->lockTicks > 0) return (float)c->lockTicks / 60.0f;
+        return (float)std::max(1, c->durationTicks) /
+            (60.0f * std::max(0.01f, c->speedMultiplier));
     };
     const std::string dashClipName = sm ? sm->dash : std::string();
     const std::string downDashClipName = sm ? sm->downDash : std::string();
@@ -605,6 +611,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         const bool airborne = !ground.stableOnGround;
         const bool rising = vel.z > 1.0f;
         const bool fast = speed > 12.0f;
+        const std::string airFallback = !sm->fall.empty()
+            ? sm->fall
+            : (!sm->jump.empty() ? sm->jump : locomotionClip());
         addCandidate("death", deathClipName, authoredDeathActive);
         addCandidate("respawn", sm->respawn, respawnAnimTimer > 0.0f);
         addCandidate("hurt", activeHurtClip, hurtTimer > 0.0f);
@@ -616,13 +625,13 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                      crouchAnimTimer > 0.0f);
         addCandidate("land", sm->land, landAnimTimer > 0.0f && !nowMoving);
         addCandidate("jump", sm->jump, airborne && rising);
-        addCandidate("fall", sm->fall, airborne);
+        addCandidate("fall", airFallback, airborne);
         addCandidate("crouch", sm->crouch, crouching && crouchAnimTimer <= 0.0f);
         if (nowMoving) {
             addCandidate(fast ? "run" : "walk",
                          fast && !sm->run.empty() ? sm->run : locomotionClip(), true);
         }
-        addCandidate("idle", defaultClip(), !nowMoving);
+        addCandidate("idle", defaultClip(), !nowMoving && !airborne);
         if (equipAnimTimer > 0.0f) {
             const std::string equipClip = weaponAnimationSet && weaponAnimationSet->valid
                 ? weaponAnimationSet->states.equip : sm->equip;
@@ -886,9 +895,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
     std::unordered_map<std::string, AnimOverlayResult> animOverlay;
     if (activeClip) {
-        float animSpeedScale = 1.0f;
+        float animSpeedScale = std::max(0.01f, activeClip->speedMultiplier);
         if (activeClip->speedBased && activeClip->speedScaleFromVelocity)
-            animSpeedScale = 0.3f + move01 * 1.2f;
+            animSpeedScale *= 0.3f + move01 * 1.2f;
 
         // The global profile scales playback by the walk frequency knobs;
         // per-avatar clips play at their authored rate.
@@ -1032,12 +1041,20 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         ProceduralPose target;
 
         {
+            bool partAllowed = true;
+            if (activeClip && !activeClip->partMask.empty()) {
+                partAllowed = std::find(activeClip->partMask.begin(),
+                                        activeClip->partMask.end(),
+                                        part.name) != activeClip->partMask.end();
+            }
             auto ovIt = animOverlay.find(part.name);
-            if (ovIt != animOverlay.end()) {
+            if (partAllowed && ovIt != animOverlay.end()) {
                 const int rootMode = activeClip && activeClip->rootTranslationMode >= 0
                     ? activeClip->rootTranslationMode : animSettings.rootTranslationMode;
+                const float rootScale = activeClip
+                    ? activeClip->rootTranslationScale : 1.0f;
                 target.translation = rootMode == 2
-                    ? glm::vec3(0.0f) : ovIt->second.translation;
+                    ? glm::vec3(0.0f) : ovIt->second.translation * rootScale;
                 target.rotationEuler = ovIt->second.rotation;
                 target.scale = ovIt->second.scale;
             }

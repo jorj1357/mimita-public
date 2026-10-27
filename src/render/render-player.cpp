@@ -11,6 +11,10 @@
 
 #include "render-player.h"
 #include "entities/player.h"
+
+#include <chrono>
+#include <cmath>
+#include <nlohmann/json.hpp>
 #include "camera.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
@@ -596,7 +600,42 @@ void renderPlayerInternal(
     auto drawWireframe = [&]() {
     if ((visualLayersAllowed || modeForcesTeamWireframe) &&
         (modeForcesTeamWireframe || wireframe->enabled) && wireframe->alpha != 0.0f &&
-        !(player.dead && wireframe->disappearOnDeath)) {
+        !(player.dead && wireframe->disappearOnDeath) &&
+        player.modelLoaded && !player.avatarName().empty()) {
+        // Reject a stale/exploded pose rather than drawing a giant floating
+        // outline. Normal avatars, including very large monsters, stay well
+        // inside this bound; a failed avatar transition can produce part
+        // transforms hundreds of metres from the actor.
+        const float saneRadius = std::max(64.0f, std::abs(player.sizeScale) * 64.0f);
+        bool boundsSane = true;
+        for (const PhysicalBodyPart& part : player.physicalBody.parts) {
+            const glm::vec3 offset = glm::vec3(part.worldTransform[3]) - player.pos;
+            if (!std::isfinite(offset.x) || !std::isfinite(offset.y) ||
+                !std::isfinite(offset.z) || glm::length(offset) > saneRadius) {
+                boundsSane = false;
+                break;
+            }
+        }
+        if (!boundsSane) {
+            static uint64_t lastWireframeRejectMs = 0;
+            const uint64_t now = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            if (now - lastWireframeRejectMs >= 1000) {
+                lastWireframeRejectMs = now;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "wireframe.bounds_rejected", player.avatarName(),
+                    "outline skipped because the posed part transform is outside the sane actor bounds",
+                    (uint32_t)player.movementSimulationTick,
+                    nlohmann::json{{"avatar", player.avatarName()},
+                                   {"actor", player.username},
+                                   {"radius", saneRadius},
+                                   {"size_scale", player.sizeScale},
+                                   {"model_loaded", player.modelLoaded}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            return;
+        }
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);

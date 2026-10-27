@@ -315,6 +315,8 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
     out.holdWhileButton = j.value("hold_while_button", false);
     if (j.contains("double_click_window_ticks") && j["double_click_window_ticks"].is_number())
         out.doubleClickWindowTicks = std::max(0, j["double_click_window_ticks"].get<int>());
+    if (j.contains("cooldown_ticks") && j["cooldown_ticks"].is_number())
+        out.cooldownTicks = std::max(0, j["cooldown_ticks"].get<int>());
     if (j.contains("double_click_action") && j["double_click_action"].is_string())
         out.doubleClickAction = j["double_click_action"].get<std::string>();
 

@@ -2,6 +2,7 @@
 
 import json
 import math
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -14,7 +15,10 @@ IMPORTS = ROOT / "config" / "animations" / "imports"
 
 
 def read(path):
-    return json.loads(path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    # Weapon configs allow full-line // comments during authoring.
+    text = re.sub(r"(?m)^\s*//.*$", "", text)
+    return json.loads(text)
 
 
 def load_include_clips(include, errors, owner):
@@ -56,6 +60,21 @@ def main():
                 continue
             if not isinstance(clip.get("loop", True), bool) or not isinstance(clip.get("aimLayer", True), bool):
                 errors.append(f"{path}: {clip_id} has invalid loop or aimLayer")
+            speed = clip.get("speedMultiplier", 1.0)
+            if not isinstance(speed, (int, float)) or not math.isfinite(speed) or speed <= 0:
+                errors.append(f"{path}: {clip_id} has invalid speedMultiplier")
+            root_scale = clip.get("rootTranslationScale", 1.0)
+            if not isinstance(root_scale, (int, float)) or not math.isfinite(root_scale):
+                errors.append(f"{path}: {clip_id} has invalid rootTranslationScale")
+            lock_ticks = clip.get("lockTicks", -1)
+            if not isinstance(lock_ticks, int) or isinstance(lock_ticks, bool) or lock_ticks < -1:
+                errors.append(f"{path}: {clip_id} has invalid lockTicks")
+            override = clip.get("overrideMode", "priority")
+            if override not in ("priority", "must_finish", "lock_ticks", "instant"):
+                errors.append(f"{path}: {clip_id} has invalid overrideMode")
+            mask = clip.get("partMask", [])
+            if not isinstance(mask, list) or not all(isinstance(v, str) for v in mask):
+                errors.append(f"{path}: {clip_id} has invalid partMask")
             for keyframe in clip.get("keyframes", []):
                 tick = keyframe.get("tick")
                 if not isinstance(tick, int) or tick < 0 or tick > duration:

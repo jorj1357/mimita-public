@@ -96,7 +96,8 @@ tick 14 thru 20 = spark v3
 
 client sided tick rate as well
 all sparks configurable alpha and configurable random rotation
-prob add to  C:\mimita-v9\config\impact_decals.json this 
+implementation owner: `config/hitfx.json` -> `meleeContact` (transient sparks
+are effects, not decals). One contact effect per client tick is allowed.
 
 
 
@@ -386,6 +387,12 @@ flight integration (steering, altitude sticks, banking) iterates later.
 |---|---|---|---|
 | `durationTicks` | int | 60 | Clip length in fixed ticks. |
 | `loop` | bool | true | Loop continuously, or clamp on the last keyframe. |
+| `speedMultiplier` | float | 1.0 | Multiplies clip playback speed. |
+| `lockTicks` | int | -1 | Minimum fixed ticks this clip owns the state; -1 uses durationTicks. |
+| `overrideMode` | string | priority | `priority`, `must_finish`, `lock_ticks`, or `instant`. |
+| `partMask` | array | [] | Optional part whitelist; empty owns every part. |
+| `rootTranslationMode` | int | -1 | `1` keeps authored translation, `2` zeroes it, `-1` inherits settings. |
+| `rootTranslationScale` | float | 1.0 | Multiplier on authored part translation. |
 | `speedBased` | bool | false | Scale playback by actor speed. |
 | `speedScaleFromVelocity` | bool | true | When `speedBased`, map speed to playback rate. |
 | `inputTriggered` | bool | false | Locomotion presence is input-driven, not speed-driven. |

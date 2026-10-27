@@ -14,7 +14,7 @@
     "cc": "crate_clear",
     "v": "volume 0.1",
     "vx": "volume 0.5",
-    // "vv": "volume 0.0",
+    "vv": "volume 0.0",
     "vvv": "volume 0.01",
     "tpv1": "teleport 0 0 500",
     "tpv2": "teleport 0 0 5000",

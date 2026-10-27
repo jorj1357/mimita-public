@@ -103,6 +103,13 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     const bool meleeContact = defId && (*defId == "swordsword" ||
         *defId == "chainsaw" || *defId == "mace");
     if (meleeContact) {
+        const float force01 = glm::clamp(
+            glm::length(glm::vec3(event.knockX, event.knockY, event.knockZ)) / 60.0f,
+            0.0f, 1.0f);
+        HitEffects::spawnMeleeContact(
+            glm::vec3(event.hitX, event.hitY, event.hitZ),
+            glm::vec3(event.normalX, event.normalY, event.normalZ),
+            force01, (float)event.header.tick);
         static thread_local uint32_t lastClashSoundTick = 0;
         if (event.header.tick == 0 || event.header.tick >= lastClashSoundTick + 6) {
             lastClashSoundTick = event.header.tick;
@@ -111,9 +118,6 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
                 "weapon/general/metalricochet2",
                 "weapon/general/metalricochet3"
             };
-            const float force01 = glm::clamp(
-                glm::length(glm::vec3(event.knockX, event.knockY, event.knockZ)) / 60.0f,
-                0.0f, 1.0f);
             playWorldSound(sounds[rand() % 3],
                 glm::vec3(event.hitX, event.hitY, event.hitZ),
                 0.35f + force01 * 0.75f, 1.25f - force01 * 0.5f, 40.0f);
