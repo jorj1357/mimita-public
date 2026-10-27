@@ -2411,3 +2411,12 @@ with the existing requirements in this document. Capture concrete expected
 versus actual behavior before changing values or sharing behavior. Do not
 rewrite Godball's intentional world pass-through rule as part of generic
 weapon collision work.
+
+## Local primary-action readiness feedback (2026-10-26)
+
+The local weapon attempt reports a distinct readiness rejection for empty
+clip, reload, or weapon-owned cooldown. The shared HUD uses that result for
+the dry-fire crosshair feedback specified in `docs/specs/gui/guiv2.md`.
+Successful actions and wider gameplay/input gates do not report a weapon
+readiness rejection. This is client presentation; it does not alter attack
+requests or server authority.

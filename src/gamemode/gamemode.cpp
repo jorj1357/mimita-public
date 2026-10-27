@@ -629,6 +629,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("world_impact_decals", next.presentation.hasWorldImpactDecals, next.presentation.worldImpactDecals);
             readFlag("world_hit_effects", next.presentation.hasWorldHitEffects, next.presentation.worldHitEffects);
             readFlag("hit_markers", next.presentation.hasHitMarkers, next.presentation.hitMarkers);
+            readFlag("dry_fire_indicator", next.presentation.hasDryFireIndicator,
+                     next.presentation.dryFireIndicator);
             readFlag("hit_sounds", next.presentation.hasHitSounds, next.presentation.hitSounds);
             readFlag("hit_flinch", next.presentation.hasHitFlinch, next.presentation.hitFlinch);
             readFlag("blood", next.presentation.hasBlood, next.presentation.blood);

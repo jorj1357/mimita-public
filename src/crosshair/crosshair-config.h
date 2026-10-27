@@ -10,6 +10,9 @@ struct CrosshairSettings {
     int green = 255;
     int blue = 255;
     int alpha = 255;
+    int dryFireRed = 255;
+    int dryFireGreen = 38;
+    int dryFireBlue = 38;
     float size = 8.0f;
     float thickness = 2.0f;
     float gap = 5.0f;

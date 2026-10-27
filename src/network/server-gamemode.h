@@ -239,6 +239,7 @@ struct ServerGamemodeState
     // The server owns the cart rules; map data supplies the route/box.
     bool payloadMode = false;
     MimitaGamemode::PayloadRuntime payloadRuntime;
+    std::string payloadRuntimeMapId;
     uint32_t payloadCartEntityId = 0;
     int payloadSessionWins[2] = {0, 0};
     std::unordered_map<uint32_t, int> payloadSessionKills;

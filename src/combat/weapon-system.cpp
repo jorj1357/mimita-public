@@ -851,19 +851,26 @@ RevolverShotResult WeaponSystem::fire(
     bool canInterruptReload = (def->behaviorType == WeaponBehaviorType::GrenadeLauncher);
 
     if (!canInterruptReload && (rt->isReloading || rt->fireCooldown > 0.0f)) {
-        return {};
+        RevolverShotResult blocked;
+        blocked.blockedReason = rt->isReloading
+            ? WeaponFireBlockReason::Reloading : WeaponFireBlockReason::Cooldown;
+        return blocked;
     }
 
     // Allow firing during reload if clip has ammo (interrupts reload for rocket/grenade)
     if (canInterruptReload && rt->isReloading && rt->currentAmmo > 0) {
         // Fire loaded projectile, interrupt reload, discard partial progress
     } else if (rt->fireCooldown > 0.0f) {
-        return {};
+        RevolverShotResult blocked;
+        blocked.blockedReason = WeaponFireBlockReason::Cooldown;
+        return blocked;
     }
 
     if (rt->currentAmmo <= 0) {
         WeaponAudio::playDryFireSound(*def);
         RevolverShotResult dryResult;
+        dryResult.blockedReason = rt->isReloading
+            ? WeaponFireBlockReason::Reloading : WeaponFireBlockReason::EmptyClip;
         if (!rt->isReloading && rt->reserveAmmo > 0) {
             reload(player);
             dryResult.autoReloadTriggered = true;
@@ -928,8 +935,14 @@ RevolverShotResult WeaponSystem::fireGenericProjectile(
 {
     const WeaponDefinition* def = getCurrentDef(player);
     WeaponRuntime* rt = getCurrentRuntime(player);
-    if (!def || !rt || rt->isReloading || rt->fireCooldown > 0.0f || rt->currentAmmo <= 0)
-        return {};
+    if (!def || !rt) return {};
+    if (rt->isReloading || rt->fireCooldown > 0.0f || rt->currentAmmo <= 0) {
+        RevolverShotResult blocked;
+        blocked.blockedReason = rt->isReloading ? WeaponFireBlockReason::Reloading
+            : rt->fireCooldown > 0.0f ? WeaponFireBlockReason::Cooldown
+            : WeaponFireBlockReason::EmptyClip;
+        return blocked;
+    }
 
     rt->currentAmmo--;
     rt->fireCooldown = def->fireDelay;
@@ -1109,6 +1122,7 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
 
     if (rt->fireCooldown > 0.0f) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+        result.blockedReason = WeaponFireBlockReason::Cooldown;
         return result;
     }
 
@@ -1117,6 +1131,8 @@ RevolverShotResult WeaponSystem::fireRocketLauncher(Camera& camera, Player& play
         // Fire loaded projectile, interrupt reload, discard partial progress
     } else if (rt->currentAmmo <= 0) {
         playWorldSound("ui/click", player.pos, 0.4f, 0.75f, 10.0f);
+        result.blockedReason = rt->isReloading
+            ? WeaponFireBlockReason::Reloading : WeaponFireBlockReason::EmptyClip;
         if (!rt->isReloading && rt->reserveAmmo > 0) {
             reload(player);
             result.autoReloadTriggered = true;
@@ -1187,7 +1203,11 @@ RevolverShotResult WeaponSystem::fireSwordsword(
     WeaponRuntime* rt = getCurrentRuntime(player);
     if (!def || !rt) return result;
 
-    if (rt->isReloading || rt->fireCooldown > 0.0f) return result;
+    if (rt->isReloading || rt->fireCooldown > 0.0f) {
+        result.blockedReason = rt->isReloading
+            ? WeaponFireBlockReason::Reloading : WeaponFireBlockReason::Cooldown;
+        return result;
+    }
 
     if (mSwordswordState.state != SwordswordState::AttackState::Idle &&
         mSwordswordState.state != SwordswordState::AttackState::SlashRecover) return result;

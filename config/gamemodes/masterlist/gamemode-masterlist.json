@@ -569,6 +569,13 @@
           "default": null,
           "nullable": true
         },
+        "dry_fire_indicator": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "null inherits the shared HUD visibility; true or false overrides it."
+        },
         "hit_sounds": {
           "type": "boolean",
           "required": false,
@@ -1373,11 +1380,30 @@
     },
     "competitive_no_headless": {
       "allowed": [
-        "*"
+        "abusiveboy",
+        "abusivegirl",
+        "abusivegirl2",
+        "abusivegirl3",
+        "boiledboy",
+        "clown",
+        "jason"
       ],
       "denied": [
         "*monster*",
-        "*headless*",
+        "*",
+        "headless",
+        "headlessgirl",
+        "headlessgirl2",
+        "headlessgirl3",
+        "headlessredux",
+        "headlessredux2",
+        "abusivegirlheadless",
+        "abusivegirlheadless2",
+        "abusivegirlheadless3",
+        "abusivegirlheadless4",
+        "jasonheadless",
+        "juggernaut*",
+        "*big*",
         "*girl*"
       ]
     }

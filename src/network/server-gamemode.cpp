@@ -944,9 +944,33 @@ static void payloadSyncCartFromMap(ServerGamemodeState& d, uint32_t tick)
         return;
 
     MimitaGamemode::PayloadRuntime& runtime = d.payloadRuntime;
+    const bool mapChanged = d.payloadRuntimeMapId != d.mapId;
+    const glm::vec3 oldSize = runtime.cartSize;
+    const glm::vec3 oldPosition = runtime.cartPosition;
+    if (mapChanged) {
+        const Gamemode& mode = GamemodeRegistry::instance().get(d.matchMode);
+        GamemodePayload rules = mode.payload;
+        rules.attackerTeamIndex = resolveTeamIndexFromId(mode, rules.attackerTeam);
+        if (rules.attackerTeamIndex < 0) rules.attackerTeamIndex = 0;
+        rules.defenderTeamIndex = resolveTeamIndexFromId(mode, rules.defenderTeam);
+        if (rules.defenderTeamIndex < 0) rules.defenderTeamIndex = 1;
+        if (!MimitaGamemode::payloadRuntimeInit(runtime, authored, rules)) {
+            payloadRemoveCart(d);
+            d.payloadMode = false;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Errors,
+                "payload.map-reload-invalid", d.mapId,
+                "new map has no usable Payload route; cart disabled", tick,
+                nlohmann::json{{"map", d.mapId},
+                               {"route_points", authored.route.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return;
+        }
+        d.payloadRuntimeMapId = d.mapId;
+    }
     const glm::vec3 size = glm::max(authored.cartSize, glm::vec3(0.1f));
     const bool sizeChanged = runtime.cartSize != size;
-    const bool transformChanged = runtime.cartOrigin != authored.cartOrigin ||
+    const bool transformChanged = mapChanged || runtime.cartOrigin != authored.cartOrigin ||
         runtime.cartYaw != glm::radians(authored.cartYaw) ||
         runtime.cartFixedFacing != authored.cartFixedFacing ||
         runtime.interactionSize != glm::max(authored.interactionSize, glm::vec3(0.1f)) ||
@@ -955,8 +979,6 @@ static void payloadSyncCartFromMap(ServerGamemodeState& d, uint32_t tick)
     if (!sizeChanged && !transformChanged)
         return;
 
-    const glm::vec3 oldSize = runtime.cartSize;
-    const glm::vec3 oldPosition = runtime.cartPosition;
     runtime.cartOrigin = authored.cartOrigin;
     runtime.cartYaw = glm::radians(authored.cartYaw);
     runtime.cartFixedFacing = authored.cartFixedFacing;
@@ -970,7 +992,7 @@ static void payloadSyncCartFromMap(ServerGamemodeState& d, uint32_t tick)
     // The reliable spawn carries box dimensions to clients. Recreating the
     // cart on size changes updates both the server collision mesh and every
     // client's rendered model/collision box without a new packet type.
-    if (sizeChanged)
+    if (sizeChanged || mapChanged)
         d.payloadCartEntityId = payloadSpawnCart(d);
     else if (d.payloadCartEntityId != 0)
         PhysicalEntitySystem::instance().moveKinematic(
@@ -981,11 +1003,14 @@ static void payloadSyncCartFromMap(ServerGamemodeState& d, uint32_t tick)
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "payload.cart-map-reloaded", d.mapId,
-        "live cart geometry and transforms applied", tick,
+        mapChanged ? "new map Payload route and cart applied"
+                   : "live cart geometry and transforms applied", tick,
         nlohmann::json{{"size_changed", sizeChanged},
                        {"old_size", {oldSize.x, oldSize.y, oldSize.z}},
                        {"size", {size.x, size.y, size.z}},
+                       {"map_changed", mapChanged},
                        {"cart_entity", d.payloadCartEntityId},
+                       {"route_points", runtime.routePoints.size()},
                        {"position", {runtime.cartPosition.x, runtime.cartPosition.y,
                                      runtime.cartPosition.z}},
                        {"facing_mode", runtime.cartFixedFacing ? "fixed" : "route"},
@@ -1233,6 +1258,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // ── Payload mode setup ─────────────────────────────────────────
     // Map data owns the cart origin/route/box; mode data owns the rules.
     d.payloadMode = false;
+    d.payloadRuntimeMapId.clear();
     payloadRemoveCart(d);
     d.payloadSessionWins[0] = d.payloadSessionWins[1] = 0;
     d.payloadSessionKills.clear();
@@ -1248,6 +1274,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
         if (MimitaGamemode::payloadRuntimeInit(d.payloadRuntime, mapCfg.payload, rules)) {
             d.payloadMode = true;
+            d.payloadRuntimeMapId = d.mapId;
             d.payloadCartEntityId = payloadSpawnCart(d);
             std::vector<PayloadAuthoringIssue> authoringIssues;
             const bool authoringValid =

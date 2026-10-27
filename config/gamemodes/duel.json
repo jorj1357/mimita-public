@@ -99,6 +99,7 @@
     "world_impact_decals": true,
     "world_hit_effects": true,
     "hit_markers": true,
+    "dry_fire_indicator": null,
     "hit_sounds": null,
     "hit_flinch": null,
     "blood": true,

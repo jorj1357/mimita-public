@@ -26,6 +26,8 @@ using json = nlohmann::json;
 #include "combat/weapon-data.h"
 #include "combat/weapon-config.h"
 #include "combat/weapon-registry.h"
+#include "crosshair/crosshair-render.h"
+#include "gui/hud/chat-window.h"
 #include "network/net_mode.h"
 #include "network/community-server-config.h"
 #include "network/network-weapons.h"
@@ -233,10 +235,22 @@ void registerWeaponCommands()
 
             if (!shot.fired) {
                 const WeaponDefinition* dryDef = weapons.getCurrentDef(player);
+                const char* blockedReason = "none";
+                switch (shot.blockedReason) {
+                case WeaponFireBlockReason::EmptyClip: blockedReason = "empty_clip"; break;
+                case WeaponFireBlockReason::Reloading: blockedReason = "reloading"; break;
+                case WeaponFireBlockReason::Cooldown: blockedReason = "cooldown"; break;
+                case WeaponFireBlockReason::None: break;
+                }
+                if (shot.blockedReason != WeaponFireBlockReason::None && dryDef &&
+                    (!mpContext.active || mpContext.gameplayActive))
+                    triggerDryFireFeedback(gChatUiTickClock.getTick(), blockedReason,
+                                           dryDef->id.c_str());
                 emitLocalAttack("dry_fire_or_no_active_weapon",
                                 {{"weapon", dryDef ? dryDef->id : std::string()},
-                                 {"auto_reload_triggered", shot.autoReloadTriggered}});
-                if (!shot.autoReloadTriggered)
+                                 {"auto_reload_triggered", shot.autoReloadTriggered},
+                                 {"blocked_reason", blockedReason}});
+                if (!shot.autoReloadTriggered && shot.blockedReason == WeaponFireBlockReason::None)
                     Terminal::instance().addLog("[WEAPON] dry fire or no active weapon");
                 return;
             }

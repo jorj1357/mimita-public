@@ -55,10 +55,12 @@
 #include "game/duel.h"
 #include "duel/duel-queue.h"
 #include "game/gamemode-manager.h"
+#include "gamemode/gamemode.h"
 #include "game/game-state.h"
 #include "network/multiplayer-context.h"
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "config/gameplay-config.h"
 #include "npc/npc-combat.h"
@@ -191,7 +193,48 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 DebugVis::projectToScreen(camera, weapons.mPhysicalAimPoint, cx, cy)) {
                 // Crosshair sits on the laser impact instead of screen center.
             }
-            drawCrosshair(cx, cy);
+            const GuiElement* dryFireEl = hudLayout.get("dryFireIndicator");
+            bool dryFireEnabled = dryFireEl && dryFireEl->visible;
+            std::string modeId = communityMatch.mode();
+            if (modeId == "bomb_tag") modeId = "bombtag";
+            else if (modeId == "team_deathmatch") modeId = "tdm";
+            else if (modeId == "free_for_all") modeId = "ffa";
+            if (dryFireEl && !modeId.empty() &&
+                GamemodeRegistry::instance().has(modeId)) {
+                const auto& mode = GamemodeRegistry::instance().get(modeId);
+                if (mode.presentation.hasDryFireIndicator)
+                    dryFireEnabled = mode.presentation.dryFireIndicator;
+            }
+            const float dryFireFade = dryFireEnabled && dryFireEl
+                ? dryFireFeedbackFade(gChatUiTickClock.getTick(), dryFireEl->fadeTicks)
+                : 0.0f;
+            drawCrosshair(cx, cy, 1.0f, dryFireFade > 0.0f);
+            if (dryFireFade > 0.0f && dryFireEl && !dryFireEl->text.empty()) {
+                glm::vec4 color = dryFireEl->getTextColorVec();
+                color.a *= dryFireEl->opacity * dryFireFade;
+                const float scale = dryFireEl->fontSize > 0.0f
+                    ? dryFireEl->fontSize : 0.32f;
+                const float markerX = cx + crosshairRightExtent() + uiScaleX(dryFireEl->x);
+                const float markerY = cy + uiScaleY(dryFireEl->y);
+                uiDrawText(dryFireEl->text.c_str(),
+                           markerX, markerY, scale, color);
+                static bool loggedDryFireDraw = false;
+                static uint64_t lastDryFireDrawTick = 0;
+                const uint64_t uiTick = gChatUiTickClock.getTick();
+                if (!loggedDryFireDraw || uiTick >= lastDryFireDrawTick + 60) {
+                    loggedDryFireDraw = true;
+                    lastDryFireDrawTick = uiTick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Important,
+                        "weapon.dry_fire_hud_drawn", modeId,
+                        "dry-fire marker submitted to gameplay HUD", uiTick,
+                        {{"mode", modeId}, {"text", dryFireEl->text},
+                         {"alpha", color.a}, {"x", markerX}, {"y", markerY},
+                         {"crosshair_x", cx}, {"crosshair_y", cy},
+                         {"crosshair_tinted", true}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
             hitmarkerX = cx;
             hitmarkerY = cy;
         }

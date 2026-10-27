@@ -1275,3 +1275,25 @@ The final desired architecture is:
 
 **One GUI architecture. JSON-defined. Hot reloadable. Resolution-independent. Tick-based. Accessible. Efficient. Composable. No feature-specific hardcoded presentation.**
 
+## Dry-fire crosshair feedback (2026-10-26)
+
+When a local primary weapon action is rejected because its clip is empty, it is
+reloading, or it is on a weapon-owned cooldown, show one typed `!` immediately
+to the right of the rendered crosshair. This includes ammo-free and melee
+weapons when their primary action has such a readiness rejection. Menu, pause,
+match-state, and no-weapon gates do not trigger this feedback.
+
+The text element in `config/gui/hud.json` owns the glyph, font size, color,
+alpha, position gap, and lifetime. Its default alpha goes linearly from 1.0 to
+0.0 over 30 client/UI ticks. Each rejected attempt restarts the same element
+at 1.0, including every held-tick attempt from an automatic weapon. The
+element follows the crosshair's actual screen position, including physical
+aim. The crosshair uses its configured dry-fire RGB color for those same 30
+ticks, then returns to its normal configured RGB and alpha.
+
+`presentation.dry_fire_indicator` in each mode JSON is a nullable visibility
+override: `null` inherits the shared HUD element's `visible` value, while a
+boolean explicitly enables or disables both the glyph and temporary crosshair
+color. Presentation edits hot-reload; a rejected edit keeps the last valid
+configuration.
+

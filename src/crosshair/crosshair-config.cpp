@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
 
@@ -19,36 +18,19 @@ static int64_t modifiedTime(const std::string& path)
         time.time_since_epoch()).count();
 }
 
-static int gOldAlpha = -1;
-
-static void logCrosshairAlphaChange(int newAlpha, const char* reason)
-{
-    if (gOldAlpha == newAlpha) return;
-    namespace fs = std::filesystem;
-    std::error_code ec;
-    fs::create_directories("logs", ec);
-    FILE* f = fopen("logs/crosshair_debug.txt", "a");
-    if (!f) return;
-    if (gOldAlpha == -1)
-        fprintf(f, "=== crosshair_alpha debug log ===\n");
-    fprintf(f, "%d -> %d by: %s\n", gOldAlpha == -1 ? 255 : gOldAlpha, newAlpha, reason);
-    gOldAlpha = newAlpha;
-    fclose(f);
-}
-
 static void clampSettings(CrosshairSettings& d)
 {
-    int oldAlpha = d.alpha;
     d.red = std::clamp(d.red, 0, 255);
     d.green = std::clamp(d.green, 0, 255);
     d.blue = std::clamp(d.blue, 0, 255);
     d.alpha = std::clamp(d.alpha, 0, 255);
+    d.dryFireRed = std::clamp(d.dryFireRed, 0, 255);
+    d.dryFireGreen = std::clamp(d.dryFireGreen, 0, 255);
+    d.dryFireBlue = std::clamp(d.dryFireBlue, 0, 255);
     d.size = std::clamp(d.size, 0.0f, 64.0f);
     d.thickness = std::clamp(d.thickness, 1.0f, 16.0f);
     d.gap = std::clamp(d.gap, 0.0f, 64.0f);
     d.outlineThickness = std::clamp(d.outlineThickness, 0.0f, 8.0f);
-    if (d.alpha != oldAlpha)
-        logCrosshairAlphaChange(d.alpha, "clampSettings");
 }
 
 CrosshairConfig& CrosshairConfig::instance()
@@ -76,6 +58,9 @@ bool CrosshairConfig::load(const std::string& path)
         d.green = j.value("green", d.green);
         d.blue = j.value("blue", d.blue);
         d.alpha = j.value("alpha", d.alpha);
+        d.dryFireRed = j.value("dryFireRed", d.dryFireRed);
+        d.dryFireGreen = j.value("dryFireGreen", d.dryFireGreen);
+        d.dryFireBlue = j.value("dryFireBlue", d.dryFireBlue);
         d.size = j.value("size", d.size);
         d.thickness = j.value("thickness", d.thickness);
         d.gap = j.value("gap", d.gap);
@@ -90,7 +75,6 @@ bool CrosshairConfig::load(const std::string& path)
         clampSettings(d);
         mData = d;
         mLastModified = modifiedTime(path);
-        logCrosshairAlphaChange(d.alpha, "CrosshairConfig::load()");
         return true;
     } catch (...) {
         return false;
@@ -107,6 +91,8 @@ bool CrosshairConfig::save()
         {"enabled", d.enabled},
         {"laserSight", d.laserSight},
         {"red", d.red}, {"green", d.green}, {"blue", d.blue}, {"alpha", d.alpha},
+        {"dryFireRed", d.dryFireRed}, {"dryFireGreen", d.dryFireGreen},
+        {"dryFireBlue", d.dryFireBlue},
         {"size", d.size}, {"thickness", d.thickness}, {"gap", d.gap},
         {"dot", d.dot}, {"outline", d.outline},
         {"outlineThickness", d.outlineThickness}, {"dynamic", d.dynamic},
@@ -118,7 +104,6 @@ bool CrosshairConfig::save()
     file << j.dump(2) << '\n';
     file.close();
     mLastModified = modifiedTime(mPath);
-    logCrosshairAlphaChange(d.alpha, "CrosshairConfig::save()");
     return true;
 }
 
@@ -136,12 +121,10 @@ bool CrosshairConfig::pollReload()
 void CrosshairConfig::reset()
 {
     mData = CrosshairSettings{};
-    logCrosshairAlphaChange(mData.alpha, "CrosshairConfig::reset()");
     save();
 }
 
 CrosshairSettings& CrosshairConfig::edit()
 {
-    logCrosshairAlphaChange(mData.alpha, "CrosshairConfig::edit() accessed");
     return mData;
 }

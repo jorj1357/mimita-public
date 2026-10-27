@@ -274,8 +274,16 @@ enum class AudioEventType {
     HitEntity
 };
 
+enum class WeaponFireBlockReason {
+    None,
+    EmptyClip,
+    Reloading,
+    Cooldown
+};
+
 struct RevolverShotResult {
     bool fired = false;
+    WeaponFireBlockReason blockedReason = WeaponFireBlockReason::None;
     bool hitEntity = false;
     glm::vec3 start{0.0f};
     glm::vec3 end{0.0f};

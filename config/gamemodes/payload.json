@@ -141,6 +141,7 @@
     "world_impact_decals": null,
     "world_hit_effects": null,
     "hit_markers": true,
+    "dry_fire_indicator": null,
     "hit_sounds": true,
     "hit_flinch": true,
     "blood": true,

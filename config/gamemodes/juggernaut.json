@@ -120,6 +120,7 @@
     "world_impact_decals": true,
     "world_hit_effects": true,
     "hit_markers": false,
+    "dry_fire_indicator": null,
     "hit_sounds": false,
     "hit_flinch": false,
     "blood": true,

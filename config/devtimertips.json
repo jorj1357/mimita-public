@@ -1,6 +1,7 @@
 {
   "duration_ticks": 120,
-  "enabled": true,
+  // "enabled": true,
+  "enabled": false,
   "messages": [
     "2026 10 26 NOTHING IS IMPOSSIBLLBLELELEEEE ",
     "2026 10 26 ITS DOABLE ITS  DOABLE ",
