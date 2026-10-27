@@ -113,14 +113,17 @@
 
   "mace": {
     "enabled": true,
-    "visible": false,
+    "visible": true,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
     "player_bounce": 0.99,
     "source": "boxes",
     "boxes": [
-      { "enabled": true, "name": "head", "center": [0.9, 0.0, 0.0],
-        "half_size": [0.55, 0.55, 0.55], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+      { "enabled": true, "name": "mace", "center": [0.0, 0.0, 2.5],
+        "half_size": [1.0, 1.0, 1.0], "scale": [1,1,1], "rotation_degrees": [0,0,0] },
+      { "enabled": true, "name": "handle", "center": [0.0, 0.2, 0.0],
+      "half_size": [0.2, 0.2, 2.6], "scale": [1,1,1], "rotation_degrees": [0,0,0] }
+
     ]
   },
 

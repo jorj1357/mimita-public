@@ -1,3 +1,118 @@
+﻿2026 10 27 1604
+collisiosni think need work
+cuz
+npcs in the dust2cberiav4 map 
+afet niaitons the npcs are getting caught like inside of walls
+so 
+better collisions, make blocks solid i thnk we should jsut do that if that mkes collisions stronger
+but
+also npcs need 
+idk
+
+i would like total accurat eh tboxes, so prob jsut do 2 modes
+for now the mode for npcs i think should be like r
+hmm
+approximated? their weapon pos and their pos like capsules etc 
+and that swhat we check collisions with
+
+plr vs plr i would like real triangle vs triangle but idk 
+matbe if we can do triangle vs triangle then we can skip capusle i love to skip capsule
+
+blade radius and stuff idk i d ont udnerstand it in the ewpaosn configs 
+
+swordsword is old, need to make it have config like chainsaw or mace those ar good new ones 
+missing blade rdaius and stuff 
+need that stuff to be visible as well 
+
+2026 10 27 1549
+
+weapon collisiosn not good with the new animations , like the chainsaw i have it enabled and visible but i walk into the wall but then i dont get pusehd out of the wall, i juts phase thru it, need to keep weapon collisiosn working
+as well as npcs i dontthink are using animaitons either i want to ensure all actors use the animations like how i do, if its a general like normla boy/girl avatar 
+ 
+as well as log like what is goign wrogn  in the dev loop how come it wont just launch and work 
+well now it works idk  2026 10 17 1513 
+
+need to be able to edit the speed or snappiness of some animatiosn, some are intended to be as soon as upress teh key, the anim ahppens
+as well as weapon anims chainsaw i tihnk are not going right, priorities might be off idk 
+
+as well as big wireframe sisues  like idk whats wrong but when u do tests  the monter spawns or avatts have huge avatr wireframes 
+
+weapons , all weapons should be able to colldiew ith actors as well, and do knockabck ,likeu cannot pass the chainsaw or other weapons thru actors, they should collide with the actors at least their capsule, id like their pure triangles to collide with the weapons but capsule is ok 
+
+u are launching the game by doing like create socket and stuff, anda that stuff is working, loko into how the dev loop script works and if that is out of this scope then sa that but if u can make it so dev loop launches tehway that u are doing it bc it doenst haev lag it doenst have issues it just launcehs and thats good 
+
+also: melee contaacts need to have a dynamic light show every single time, and do it like tihs 
+
+tick 1 of contact = white spehre like 0.5m diameter spehre, 0.5 alpha, bigger and more alpha when hitting harder
+
+base = 0.5 diameter, 0.5 alpha, 123,123,123 color
+max force = 1.0 diameter, 1.0 alpha, 255,255,255 color
+
+tick 2 of cotnact = white sphere disappears, replaced with 
+this spark effect png
+"C:\mimita-v9\assets\textureshq\sparkv3.png"
+"C:\mimita-v9\assets\textureshq\sparkv2.png"
+"C:\mimita-v9\assets\textureshq\sparkv1.png"
+
+tick 2 thru 6 = spark v1
+tick 7 thru 13 = spark v2
+tick 14 thru 20 = spark v3
+
+client sided tick rate as well
+all sparks configurable alpha and configurable random rotation
+prob add to  C:\mimita-v9\config\impact_decals.json this 
+
+that is written in  C:\mimita-v9\docs\specs\animations\animations.md
+
+also confirm that proiroities are working? like
+
+like i want to know that  i can edit the json  and make it so  i can make it so 
+damage is hihger priorities than walking or idle or jmping etc
+and then, clips or animations have like 
+modes like 
+some animations must full yplay out like death
+some animatons only need to play for N ticks such as damage, prob make the default 1, like u must be inthat anim for N ticks but the ticks amountis just 1 so its fine 
+
+and some anims are total instnat overridable at all 
+mace does need an attak cooldown like 1.0 sec fo rnow, or 60 client ticks so its not frame based 
+
+idle needs to be totally the last priority bc someitms the atttacks or other things are overwriting it 
+as well as if this is in scope  C:\mimita-v9\config\camconfig.json this keeps getting overwritten idk why 
+ainmiatiosn needt o clear if i dont hav the weapon equipped, like if 
+also not sure whats the deal with melee like i will hit them and it wont do damage, sometimtes it will, idk whats wrong 
+idk if thtey do sweep collisions or there si a hidden delay, all weapons melee weapons by default should be active like all the time , attack 1x per tick that is the default that is for all melee weapons 
+
+still there is perofmance issues 
+launched last successful build 3494
+Journal  : C:\mimita-v9\logs\2026-10-27\20261027_191214\events.jsonl
+View     : build-or-la
+
+in this events jsonl maybe idk 
+and per aniamtion clip need to make the root location thing ,like the falling/landing makes me bounce up a lot so need to ahve that for those aniamitons speicifcally 
+loike unequipping a weapon mid animation needs to return back to idle or next prioritiy in teh anim priorities 
+maybe its bulilding as time goes on or more deaths? idk we need to trace 
+dashing animation needs to happen like instantly like a ssoon as u do the dassh it should play the anim for the torso and legs and stuff , if u have wepaon equipped, else/no weapon means jus do full dash anim
+same for dwn dash and  freeze and all the other animations 
+
+C:\mimita-v9\config\animations.json also we need to make sure that the poses per anim 
+like is it here or not?
+like for the swordsword slash anim, i want to be ableto pose the weapon per part of the pose, like, the slashing of the left mouse button ddown for this weapon i want to rotatet teh weapon so that it is aligned correct in the engine 
+performance issues are a big deal still  it sas im at 280 340 avg fps  and its like  0.3 0.5 cpu ms with 1.5 2.0 ms unaccounted max  but still im feeling  like 
+its feeling like 30 fps its a issue that is liek outside of it that the perf_report isnt catching 
+
+idle when u are in air 
+we should make it so weapon vs weapon contaact at all, like, mace vs revovler, rocket launcher vs swordsword,  shotgun vs shotugn  weaponsn contacts do the melee contact thing every time as well too 
+
+performance issue doesnt ahppen when i just join a sandbox match alone no npc 
+we need to super look into like
+how much mimita processes are running at once i think that is the problem bc i went into tsk manasger and closed lke 3 mimita processes then launcehd a new one with deev loop and hte fps issues stopped i think?
+yeah it totally stops when u close the other mimita processes
+need to make it so  that like they just dont stay open thats not good 
+
+animations: jump over fall, fall over idle, in air over idle, etc, idle need to be the low lowlowest, always an animation happening , right now i will be in the air and just idle frozen not good, i want to be in an animation like as much a possible 
+
+the fps issue happesn mroe and more as i have melee killing ppl killing npcs 
+
 ## New intake — 2026-10-27
 
 - **Make AI build instructions unambiguous and keep the issue tracker easy to

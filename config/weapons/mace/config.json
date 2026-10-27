@@ -36,8 +36,9 @@
   },
   "custom_params": {
     "bladeLength": 10.0,
-    "bladeRadius": 1.42,
-    "contactBladeRadius": 0.35,
+    "bladeRadius": 2.0,
+    "contactBladeRadius": 1.35,
+    // "contactBladeRadius": 0.01,
     "contactMinDamage": 1.0,
     "contactMaxDamage": 5.0,
     "contactMinKnockback": 5.0,

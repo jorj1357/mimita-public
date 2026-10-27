@@ -334,6 +334,13 @@ def main():
     # runtime loader. It is offline-only; runtime never rewrites mode files.
     try:
         import subprocess
+        weapon_sync = subprocess.run(
+            [sys.executable, str(ROOT / "devscripts/weapon_json_sync.py"), "--check"],
+            capture_output=True, text=True)
+        if weapon_sync.returncode != 0:
+            detail = (weapon_sync.stdout or weapon_sync.stderr).strip().splitlines()
+            errors.append("weapon JSON is not canonical: " +
+                          (detail[-1] if detail else "check failed"))
         sync = subprocess.run(
             [sys.executable, str(ROOT / "devscripts/gamemode_json_sync.py"), "--check"],
             capture_output=True, text=True)

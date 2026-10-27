@@ -182,11 +182,27 @@ made hot-reloadable over time.
 | Input and profiles | `config/current-profile.json`, `config/profiles.json`, future input/accessibility files | bindings, sensitivity, remapping, color-blind modes, text scale, contrast |
 | Video and lighting | `config/video-settings.json`, `config/shadows.json`, `config/lighting.json`, `config/postfx.json`, `config/skybox.json` | resolution, quality, shadows, lighting, post-processing, frame limits |
 | Audio | `config/audio/`, `config/notifications.json`, `config/tipsconfig.json` | volumes, routing, subtitles, notification behavior, music |
+
 | Avatars and actors | `assets/avatars/<id>/avatar.json`, `config/animations/library/`, `config/animations/masterlist/animation-masterlist.json`, `config/bodyparts.json`, `config/player-procedural.json`, `config/npc-avatar.json`, `config/npc-difficulty.json`, `config/npcpresets/` | rig, animation state mapping, shared clips, body layout, cosmetics, NPC difficulty, actor presentation, procedural values |
 | Authored animation | `assets/avatars/<avatar>/animations.json`, files included from `config/animations/` | clip keyframes, states, and authored pose data; live presentation tuning |
 | Replay | `config/replay/`, `config/replayexport.json` | recording, playback, export, camera, event and effect capture |
 | Map editor | `config/mapeditor.json` | editor font scales, outliner/search/scrollbar/properties geometry, handle sizes and thickness, block wireframe alpha, focus distance, camera speed, label mode, autosave delay |
 | Debugging and testing | `config/debug/`, `config/debuglogger.json`, `config/hotreload.json`, `config/analytics.json` | debug categories, logging, profiling, reload diagnostics, test switches |
+
+### Weapon definition completeness
+
+`config/weapons/masterlist/weapon-masterlist.json` defines the complete
+top-level field set for every `config/weapons/<id>/config.json`. Every file
+keeps every listed key; an unused optional top-level field is explicitly
+`null`. The masterlist currently treats nested objects such as `components`,
+`sound`, and `viewmodel` as capability-specific objects, so it does not yet
+require every nested key in every weapon.
+
+When adding a new optional top-level field, add its type and nullability to the
+masterlist, then run `py devscripts/weapon_json_sync.py --sync` to insert it
+into each weapon file. Run `py devscripts/weapon_json_sync.py --check` to catch
+missing or unknown fields. `py devscripts/config_selftest.py` runs this
+completeness check too.
 
 The inventory is a starting map, not proof that every file currently has the
 same loader or reload behavior. Check the owning loader before changing one.

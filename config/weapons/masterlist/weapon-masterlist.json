@@ -1,6 +1,7 @@
 {
   "version": 1,
   "description": "Canonical top-level fields for every tool definition. Null means this definition does not use the field.",
+  "sync_contract": "Every config/weapons/<id>/config.json must contain exactly these top-level fields. Keep fields with null when unused. Nested objects have capability-specific contents and are not expanded by this version of the masterlist.",
   "fields": [
     "id",
     "display_name",
