@@ -35,28 +35,14 @@ struct GrenadeLauncherJsonConfig {
 static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
 {
     GrenadeLauncherJsonConfig cfg;
-    std::ifstream file("config/weapons.json");
-    if (!file.is_open())
-    {
-        printf("\n"
-               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-               "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
-               "!!  Cannot open config/weapons.json                          !!\n"
-               "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
-               "!!  Grenades will fly straight and stop in mid-air.          !!\n"
-               "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
-               "\n");
-        return cfg;
-    }
     try {
-        json root;
-        root = json::parse(file, nullptr, true, true);
+        json root = readWeaponDefinitionRoot();
         if (!root.is_object() || !root.contains("grenade_launcher"))
         {
             printf("\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                    "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
-                   "!!  config/weapons.json missing grenade_launcher section     !!\n"
+                   "!!  config/weapons/grenade_launcher/config.json missing grenade_launcher section     !!\n"
                    "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                    "\n");
@@ -81,7 +67,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
             printf("\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                    "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
-                   "!!  config/weapons.json grenade_launcher.custom_params       !!\n"
+                   "!!  config/weapons/grenade_launcher/config.json grenade_launcher.custom_params       !!\n"
                    "!!  section is missing or not an object.                     !!\n"
                    "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
@@ -140,7 +126,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
             printf("\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                    "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
-                   "!!  Some custom_params in config/weapons.json are missing.    !!\n"
+                   "!!  Some custom_params in config/weapons/grenade_launcher/config.json are missing.    !!\n"
                    "!!  Check the MISSING lines above. Using fallback defaults.   !!\n"
                    "!!  Server will have ZERO gravity, drag, bounce for nades.   !!\n"
                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
@@ -155,7 +141,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
         printf("\n"
                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                "!!  GRENADE LAUNCHER CONFIG ERROR                             !!\n"
-               "!!  Failed to parse config/weapons.json: %s\n"
+               "!!  Failed to parse config/weapons/grenade_launcher/config.json: %s\n"
                "!!  Using hardcoded physics fallbacks.\n"
                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
                "\n", e.what());
@@ -163,7 +149,7 @@ static GrenadeLauncherJsonConfig loadGrenadeLauncherJsonConfig()
 
     // ── Hardcoded physics fallbacks ────────────────────────────────────
     // These ensure the grenade always has usable physics (gravity, drag,
-    // bounce) even when config/weapons.json cannot be opened or parsed.
+    // bounce) even when config/weapons/grenade_launcher/config.json cannot be opened or parsed.
     // The JSON override from registerWeaponFromJson() can still override
     // these values later.
     if (!cfg.loaded)
@@ -1040,7 +1026,7 @@ void registerBuiltinWeapons() {
     registerWeaponFromJson(createHeavyShotgunDefinition());
     registerWeaponFromJson(createLargeMachineGunDefinition());
     // Data-only definitions (for example the Captain Falcon Melee move set)
-    // have no C++ constructor; register them straight from config/weapons.json.
+    // have no C++ constructor; register them straight from config/weapons/grenade_launcher/config.json.
     registerWeaponsFromJsonRoot();
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons including frag, smoke, fire, darkbang, and bomb");
 

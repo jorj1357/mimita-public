@@ -180,6 +180,7 @@ AnimClip parseAnimClipJson(const nlohmann::json& j)
     AnimClip clip;
     clip.durationTicks = j.value("durationTicks", 60);
     clip.loop = j.value("loop", true);
+    clip.aimLayer = j.value("aimLayer", true);
     clip.speedScaleFromVelocity = j.value("speedScaleFromVelocity", true);
     clip.speedBased = j.value("speedBased", true);
     clip.inputTriggered = j.value("inputTriggered", false);

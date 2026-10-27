@@ -1,0 +1,183 @@
+{
+  "id": "chainsaw",
+  "display_name": "Chainsaw",
+  "slot": 25,
+  "animation_profile": "config/animations/library/weapons/chainsaw.json",
+  "animations": null,
+  "beam_thickness": null,
+  "beam_world_thickness": null,
+  "behavior_type": "swordsword",
+  "components": {
+    "melee": {
+      "animation_only": true,
+      "actions": {
+        "rev": {
+          "input": {
+            "button": "primary",
+            "tap_count": 1
+          },
+          "phases": {
+            "windup": {
+              "ticks": 1,
+              "clip_id": ""
+            },
+            "active": {
+              "ticks": 1,
+              "clip_id": ""
+            },
+            "recovery": {
+              "ticks": 1,
+              "clip_id": ""
+            }
+          },
+          "procedural_pose": {
+            "windup": {
+              "right_arm": [
+                45.0,
+                9.0,
+                78.0
+              ],
+              "torso": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            },
+            "active": {
+              "right_arm": [
+                42.0,
+                4.0,
+                88.0
+              ],
+              "torso": [
+                0.0,
+                0.0,
+                2.0
+              ]
+            },
+            "recovery": {
+              "right_arm": [
+                45.0,
+                9.0,
+                78.0
+              ],
+              "torso": [
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          },
+          "hitboxes": [],
+          "impulses": [],
+          "audio": {
+            "on_start": {
+              "sound_id": "weapon/chainsaw/chainsawidle",
+              "pitch": 1.2,
+              "volume": 1.2
+            }
+          }
+        }
+      }
+    }
+  },
+  "custom_params": {
+    "bladeLength": 8.0,
+    "bladeRadius": 0.62,
+    "contactBladeRadius": 0.16,
+    "contactMinDamage": 5.0,
+    "contactMaxDamage": 15.0,
+    "contactMinKnockback": 5.0,
+    "contactMaxKnockback": 40.0,
+    "contactMaxForceSpeed": 22.0,
+    "damageTickInterval": 0.001,
+    "revDamageMultiplier": 2.0,
+    "revDecayTicks": 60.0,
+    "revReachMultiplier": 1.25,
+    "revPitchMultiplier": 1.2,
+    "revVolumeMultiplier": 1.2,
+    "revColorFullR": 1.0,
+    "revColorFullG": 0.0,
+    "revColorFullB": 0.0,
+    "revColorBaseR": 0.15,
+    "revColorBaseG": 0.02,
+    "revColorBaseB": 0.02,
+    "npcGuardTicks": 60.0
+  },
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 15.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": null,
+  "fire_delay": 0.0,
+  "fire_mode": "semi_auto",
+  "headshot_multiplier": 1.0,
+  "hitscan": false,
+  "magazine_size": 0,
+  "model": {
+    "path": "assets/objects/weapons/mimita-chainsaw-v1.glb"
+  },
+  "network_mode": null,
+  "pellet_count": 1,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": "chainsaw",
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": 0.0,
+  "projectile_mass": null,
+  "projectile_radius": 0.0,
+  "projectile_shape": null,
+  "projectile_speed": 0.0,
+  "recoil": 0.0,
+  "recoil_definition": null,
+  "reload_time": 0.0,
+  "render": null,
+  "reserve_ammo": null,
+  "self_impulse_multiplier": null,
+  "shooter_knockback": null,
+  "shooter_knockback_vertical": null,
+  "sound": {
+    "shoot": "weapon/chainsaw/chainsawidle",
+    "reload": "",
+    "hit": "weapon/chainsaw/chainsawhit1",
+    "dry_fire": "",
+    "equip": "weapon/chainsaw/chainsawequip"
+  },
+  "spread": 0.0,
+  "square_spread": null,
+  "uses_physics_projectile": false,
+  "victim_knockback": null,
+  "victim_knockback_per_damage": null,
+  "victim_knockback_vertical_fraction": null,
+  "viewmodel": {
+    "enabled": true,
+    "position": [
+      0.3,
+      -0.5,
+      0.4
+    ],
+    "rotation_degrees": [
+      0.0,
+      0.0,
+      -90.0
+    ],
+    "attachment": {
+      "position": [
+        0.25,
+        -0.05,
+        -0.25
+      ],
+      "rotation_degrees": [
+        90.0,
+        10.0,
+        -25.0
+      ]
+    },
+    "scale": [
+      1.0,
+      2.0,
+      1.0
+    ]
+  }
+}

@@ -88,7 +88,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -98,7 +98,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -108,7 +108,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -118,7 +118,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -128,7 +128,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -138,7 +138,7 @@
       "brightness": -4.614443778991699,
       "offset_x": 496,
       "offset_y": 496,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "saturation": -4.247246742248535,
       "scale_x": 9.85385513305664,
       "scale_y": 9.968029975891113,
@@ -192,7 +192,7 @@
     },
     "rightLeg_bottom": "fishnetbottomfoot.png",
     "rightLeg_front": {
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "scale_x": 1.0851894617080688,
       "texture": "fishnetfrontleg.png"
     },
@@ -416,5 +416,36 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-09-02T23:20:30Z"
+  "updated_at": "2026-09-02T23:20:30Z",
+  "animation_profile": {
+    "version": 2,
+    "poseComposition": "layered",
+    "include": [
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_003.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_sprint_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jump_002.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falling_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_landing_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crouched.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_normal_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_dead.json"
+    ],
+    "states": {
+      "default": "mimita_sizing_6_idle_003",
+      "locomotion": {
+        "walk": "mimita_sizing_6_walk",
+        "fly": "mimita_sizing_6_walk",
+        "crawl": "mimita_sizing_6_walk",
+        "swim": "mimita_sizing_6_walk"
+      },
+      "run": "mimita_sizing_6_sprint_001",
+      "jump": "mimita_sizing_6_jump_002",
+      "fall": "mimita_sizing_6_falling_001",
+      "land": "mimita_sizing_6_landing_001",
+      "crouch": "mimita_sizing_6_crouched",
+      "hurt": "mimita_sizing_6_hurt_normal_001",
+      "death": "mimita_sizing_6_dead"
+    }
+  }
 }

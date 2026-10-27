@@ -196,7 +196,6 @@
     "skin": ""
   },
   "updated_at": "2026-10-13T21:00:32Z",
-  "animations": "animations.json",
   "rig": {
     "version": 1,
     "movement": {
@@ -243,6 +242,27 @@
         "role": "leg",
         "physical": true
       }
+    ]
+  },
+  "animation_profile": {
+    "version": 1,
+    "states": {
+      "default": "idle",
+      "locomotion": {
+        "walk": "fly",
+        "fly": "wing_flap",
+        "crawl": "fly",
+        "swim": "fly"
+      },
+      "attack": "attack_1",
+      "hurt": "hurt"
+    },
+    "include": [
+      "config/animations/library/wing_flap.json",
+      "config/animations/library/avatar/monstermutantwasp/idle.json",
+      "config/animations/library/avatar/monstermutantwasp/fly.json",
+      "config/animations/library/avatar/monstermutantwasp/attack_1.json",
+      "config/animations/library/avatar/monstermutantwasp/hurt.json"
     ]
   }
 }

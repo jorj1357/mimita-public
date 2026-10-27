@@ -196,7 +196,6 @@
     "skin": ""
   },
   "updated_at": "2026-10-13T21:05:11Z",
-  "animations": "animations.json",
   "rig": {
     "version": 1,
     "movement": {
@@ -326,6 +325,26 @@
         "role": "helper",
         "physical": false
       }
+    ]
+  },
+  "animation_profile": {
+    "version": 1,
+    "states": {
+      "default": "idle",
+      "locomotion": {
+        "walk": "idle",
+        "fly": "idle",
+        "crawl": "crawl",
+        "swim": "idle"
+      },
+      "attack": "attack_1",
+      "hurt": "hurt"
+    },
+    "include": [
+      "config/animations/library/avatar/monstergriever/idle.json",
+      "config/animations/library/avatar/monstergriever/crawl.json",
+      "config/animations/library/avatar/monstergriever/attack_1.json",
+      "config/animations/library/avatar/monstergriever/hurt.json"
     ]
   }
 }

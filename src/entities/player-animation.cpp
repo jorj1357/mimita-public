@@ -403,7 +403,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (mode == "swim") return sm->swim;
         return sm->walk;
     };
-    auto defaultClip = [&]() -> std::string { return sm ? sm->def : "idle"; };
+    auto defaultClip = [&]() -> std::string {
+        // A held tool may supply the actor's base idle pose. Movement states
+        // still come from the avatar profile and can use the legacy arm overlay.
+        if (weaponAnimationSet && weaponAnimationSet->valid &&
+            weaponAnimationSet->clips.count(weaponAnimationSet->states.def))
+            return weaponAnimationSet->states.def;
+        return sm ? sm->def : "idle";
+    };
 
     // One-shot lock (attack/hurt/death) owns the pose while it plays.
     if (!lockedClip.empty()) {
@@ -476,8 +483,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     std::string activeAnim = currentAnimName;
     if (!lockedClip.empty()) {
         activeAnim = lockedClip;
-    } else if (sm && meleeExclusivePose) {
-        // Exclusive Melee: choose the authored state clip from the actor profile.
+    } else if (sm) {
+        // Choose the authored state clip from the actor profile.
         // Missing optional states fall back within the same profile.
         // Raw collision contact can flicker for a tick while the actor remains
         // within the grounded grace window. Use the stable state for Melee's
@@ -552,6 +559,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             (uint32_t)movementSimulationTick,
             {{"avatar", avatarName()},
              {"from", prevAnim}, {"to", activeAnim},
+             {"aim_layer", [&]() {
+                 const AnimClip* selected = findClip(activeAnim);
+                 return selected && selected->aimLayer;
+             }()},
              {"moving", nowMoving},
              {"movement_mode", rig.movement.mode},
              {"animation_source", !lockedClip.empty() ? "locked_clip" :
@@ -606,8 +617,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     animStateTime += dt;
 
     // Bounded evidence that the Melee exclusive authored-pose policy is active
-    // for this actor: identifies actor, mode, avatar, selected clip, and that
-    // the forbidden pose layers were suppressed.
+    // for this actor: identifies actor, mode, avatar, selected clip, AimBody
+    // selection, and the unrelated pose layers that were suppressed.
     if (meleeExclusivePose) {
         static uint64_t lastMeleeAuthoredLogMs = 0;
         const uint64_t nowAuthored = nowMs();
@@ -622,7 +633,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                  {"avatar", avatarName()},
                  {"clip", activeAnim},
                  {"pose_policy", "authored_only"},
-                 {"suppressed_layers", {"aimbody", "weapon_pose", "reload_overlay",
+                 {"aim_layer", [&]() {
+                     const AnimClip* selected = findClip(activeAnim);
+                     return selected && selected->aimLayer;
+                 }()},
+                 {"suppressed_layers", {"weapon_pose", "reload_overlay",
                                         "freeze_pose", "dash_pose", "idle_sway",
                                         "ragdoll_presentation", "global_fallback"}}},
                 __FILE__, __LINE__, __FUNCTION__);
@@ -845,6 +860,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         }
     }
 
+    // A Blender-authored tool clip already owns the arm base pose. The legacy
+    // weapon pose must not replace its arm channels before AimBody is layered.
+    if (activeClip && weaponAnimationSet &&
+        weaponAnimationSet->clips.count(activeAnim)) {
+        hasWeaponPose = false;
+        weaponPoseCfg = nullptr;
+    }
+
     const std::string selectedWeaponPose = hasWeaponPose ? poseLookupId : std::string();
     if (selectedWeaponPose != lastLoggedWeaponPoseKey) {
         lastLoggedWeaponPoseKey = selectedWeaponPose;
@@ -857,6 +880,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                  {"pose", selectedWeaponPose}});
         }
     }
+
+    // Smooth the actor's look pitch once per simulation tick. Repeating this
+    // inside the part loop makes the response depend on the number of limbs.
+    AimBodyConfig& aimBodyConfig = AimBodyConfig::instance();
+    const float desiredLookPitch = glm::degrees(std::asin(
+        glm::clamp(camForward.z, -1.0f, 1.0f)));
+    if (aimBodyConfig.enabled())
+        aimBodyPitch = aimBodyConfig.smoothValue(aimBodyPitch, desiredLookPitch, dt);
 
     // === PERFECT POSE GENERATION ===
     for (PhysicalBodyPart& part : physicalBody.parts)
@@ -1009,22 +1040,20 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // in the character frame regardless of stance/animation rotation —
             // pitching through the pose euler skews into roll for the
             // weapon-posed arms (~80deg rolls) and looks like tilting sideways.
-            // Melee exclusive authored pose suppresses aimbody entirely.
-            const AimBodyConfig& ab = AimBodyConfig::instance();
-            const LimbAim* limb = ab.limb(part.name);
-            if (!meleeExclusivePose && ab.enabled() && limb &&
+            // The selected clip owns its base pose. AimBody adds look direction
+            // over that pose unless this particular clip opts out. Authored-only
+            // still suppresses the unrelated procedural pose layers above.
+            const LimbAim* limb = aimBodyConfig.limb(part.name);
+            const bool selectedClipAllowsAim = activeClip
+                ? activeClip->aimLayer : !meleeExclusivePose;
+            if (selectedClipAllowsAim && aimBodyConfig.enabled() && limb &&
                 (limb->pitch != 0.0f || limb->yaw != 0.0f || limb->roll != 0.0f)) {
-                const float desiredLookPitch = glm::degrees(std::asin(
-                    glm::clamp(camForward.z, -1.0f, 1.0f)));
-                const float lookPitch = AimBodyConfig::instance().smoothValue(
-                    aimBodyPitch, desiredLookPitch, dt);
-                aimBodyPitch = lookPitch;
                 glm::mat4 q(1.0f);
-                q = glm::rotate(q, glm::radians(lookPitch * limb->pitch), glm::vec3(1, 0, 0));
-                q = glm::rotate(q, glm::radians(lookPitch * limb->yaw),   glm::vec3(0, 1, 0));
-                q = glm::rotate(q, glm::radians(lookPitch * limb->roll),  glm::vec3(0, 0, -1));
+                q = glm::rotate(q, glm::radians(aimBodyPitch * limb->pitch), glm::vec3(1, 0, 0));
+                q = glm::rotate(q, glm::radians(aimBodyPitch * limb->yaw),   glm::vec3(0, 1, 0));
+                q = glm::rotate(q, glm::radians(aimBodyPitch * limb->roll),  glm::vec3(0, 0, -1));
                 restM = restM * q;
-                AimBodyConfig::instance().setApplied(lookPitch);
+                aimBodyConfig.setApplied(aimBodyPitch);
             }
         }
         perfectPoseSkeleton.nodes[part.nodeIndex].localTransform = restM * poseM;

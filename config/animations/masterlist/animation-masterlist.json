@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "clip_format_version": 2,
+  "description": "Field contract for authored animation clips and avatar animation profiles. Clip files under config/animations/library contain the actual poses.",
+  "clip_fields": {
+    "durationTicks": "positive integer; one fixed game tick per authored 60 FPS frame",
+    "loop": "boolean",
+    "aimLayer": "boolean; defaults to true; false keeps the authored pose exact",
+    "speedBased": "boolean",
+    "speedScaleFromVelocity": "boolean",
+    "inputTriggered": "boolean",
+    "tickBasedReturnToIdle": "boolean",
+    "priority": "integer",
+    "blendInTicks": "nonnegative integer",
+    "blendOutTicks": "nonnegative integer",
+    "markers": "array of named integer tick and optional sourceTick boundaries",
+    "keyframes": "array of keyed poses at integer ticks"
+  },
+  "keyframe_fields": {
+    "tick": "integer in [0, durationTicks]",
+    "interp": "linear, smooth, easein, easeout, easeinout, or step",
+    "parts": "object keyed by rig part name"
+  },
+  "part_fields": {
+    "translation": "three finite meter offsets in the normalized rest frame",
+    "rotationEulerDegrees": "three finite Euler XYZ degree offsets; exclusive with quaternion",
+    "rotationQuaternionWxyz": "four finite values in WXYZ order; exclusive with Euler",
+    "scale": "three finite multipliers"
+  },
+  "avatar_profile_fields": {
+    "version": "2",
+    "poseComposition": "layered or authored_only",
+    "include": "repository-relative shared clip paths",
+    "states": "default, locomotion, run, jump, fall, land, crouch, respawn, attack, hurt, death"
+  }
+}

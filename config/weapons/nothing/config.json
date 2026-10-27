@@ -1,0 +1,70 @@
+{
+  "id": "nothing",
+  "display_name": "Nothing",
+  "slot": 18,
+  "animation_profile": null,
+  "animations": null,
+  "beam_thickness": null,
+  "beam_world_thickness": null,
+  "behavior_type": "none",
+  "components": null,
+  "custom_params": null,
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 0.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": null,
+  "fire_delay": 0.0,
+  "fire_mode": "semi",
+  "headshot_multiplier": null,
+  "hitscan": false,
+  "magazine_size": 0,
+  "model": {
+    "path": ""
+  },
+  "network_mode": null,
+  "pellet_count": null,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": null,
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": null,
+  "projectile_mass": null,
+  "projectile_radius": null,
+  "projectile_shape": null,
+  "projectile_speed": null,
+  "recoil": null,
+  "recoil_definition": null,
+  "reload_time": 0.0,
+  "render": null,
+  "reserve_ammo": 0,
+  "self_impulse_multiplier": null,
+  "shooter_knockback": null,
+  "shooter_knockback_vertical": null,
+  "sound": {
+    "shoot": "",
+    "reload": "",
+    "equip": "",
+    "dry_fire": ""
+  },
+  "spread": null,
+  "square_spread": null,
+  "uses_physics_projectile": null,
+  "victim_knockback": null,
+  "victim_knockback_per_damage": null,
+  "victim_knockback_vertical_fraction": null,
+  "viewmodel": {
+    "enabled": false,
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation_degrees": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

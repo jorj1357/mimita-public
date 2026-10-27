@@ -3,7 +3,13 @@
   "include": [
     "config/animations/library/melee/captainfalcon/punch_a.json",
     "config/animations/library/melee/captainfalcon/uppunch_a.json",
-    "config/animations/library/melee/captainfalcon/downpunch_a.json"
+    "config/animations/library/melee/captainfalcon/downpunch_a.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_005.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_005.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack1slash_001.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack2lunge_001.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack3arc_001.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_defend.json"
   ],
   "clips": {
     "swordsword_idle": {
@@ -1434,5 +1440,8 @@
         }
       ]
     }
+  },
+  "states": {
+    "default": "mimita_sizing_6_idle_005"
   }
 }

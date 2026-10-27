@@ -1,0 +1,245 @@
+{
+  "version": 2,
+  "clips": {
+    "walk": {
+      "durationTicks": 60,
+      "loop": true,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "linear",
+          "parts": {
+            "leftLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "leftArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "head": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 30,
+          "interp": "linear",
+          "parts": {
+            "leftLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "leftArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "head": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 59,
+          "interp": "linear",
+          "parts": {
+            "leftLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -30
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "leftArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                25
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "head": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

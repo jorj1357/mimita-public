@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "clips": {
+    "crouch": {
+      "durationTicks": 60,
+      "loop": false,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "leftLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -80
+              ],
+              "translation": [
+                0.7,
+                0,
+                0
+              ]
+            },
+            "rightLeg": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -30
+              ],
+              "translation": [
+                0.5,
+                0.5,
+                0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0.0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -45
+              ]
+            },
+            "leftArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                20
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "rightArm": {
+              "rotationEulerDegrees": [
+                0,
+                0,
+                40
+              ],
+              "translation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "head": {
+              "translation": [
+                0.3,
+                -0.2,
+                0
+              ],
+              "rotationEulerDegrees": [
+                0,
+                0,
+                -20
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

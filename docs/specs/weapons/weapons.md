@@ -350,7 +350,7 @@ Acceptance before calling this architecture complete:
 When all needed component implementations already exist, adding a weapon must
 require only a validated per-weapon JSON file and referenced assets; it must
 not require a C++ edit or rebuild. The canonical path is
-`config/weapons/<weapon-id>/<weapon-id>.json`. The generic loader discovers
+`config/weapons/<weapon-id>/config.json`. The generic loader discovers
 those files, constructs definitions, resolves component IDs, validates
 cross-references, and publishes one registry snapshot by stable ID. Do not
 keep a second editable copy of the same definition in a growing aggregate
@@ -553,6 +553,14 @@ that a new arbitrary ID alone is not yet registered.
 ### Current implementation audit — 2026-10-16
 
 The runtime is mixed, not yet the target architecture above:
+
+As of 2026-10-27, the 34 existing definitions have been split into
+`config/weapons/<id>/config.json`; `config/weapons/masterlist/weapon-masterlist.json`
+defines their common top-level field contract. The runtime overlays these
+files on the legacy aggregate compatibility read. This migration does not by
+itself make every listed capability generic or make a skateboard usable: the
+weapon execution paths and actor inventory remain specialized. New arbitrary
+tool IDs need an end-to-end runtime and network acceptance pass.
 
 - `src/combat/weapon-data.cpp::registerBuiltinWeapons()` first loads
   `config/weapons.json`, then calls one `create...Definition()` function per

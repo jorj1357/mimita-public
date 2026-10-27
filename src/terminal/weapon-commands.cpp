@@ -655,12 +655,12 @@ void registerWeaponCommands()
 
     Terminal::instance().registerCommand({
         "weapon_config_reload",
-        "Reload config/weapons.json",
+        "Reload weapon definitions from config/weapons/",
         "weapon_config_reload",
         [](const std::vector<std::string>&) {
             WeaponConfig::instance().reloadNow();
             WeaponData::registerBuiltinWeapons();
-            Terminal::instance().addLog("[WEAPON CONFIG] Reloaded config/weapons.json");
+            Terminal::instance().addLog("[WEAPON CONFIG] Reloaded weapon definitions");
         },
         std::string(),
         CommandCategory::Weapon

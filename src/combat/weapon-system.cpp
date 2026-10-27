@@ -120,7 +120,7 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
     WeaponModelCache::instance().finalizeWeaponModelsIfReady();
 
     if (WeaponData::reloadBuiltinWeaponsIfChanged())
-        Terminal::instance().addLog("[WEAPON] Reloaded config/weapons.json");
+        Terminal::instance().addLog("[WEAPON] Reloaded weapon definitions");
 
     // Hot reload weapon collision config
     WeaponCollisionJsonConfig::instance().pollHotReload();

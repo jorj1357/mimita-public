@@ -213,6 +213,8 @@ struct AnimKeyframe {
 struct AnimClip {
     int durationTicks = 60;
     bool loop = true;
+    // AimBody offsets are layered over the authored pose unless a clip opts out.
+    bool aimLayer = true;
     bool speedScaleFromVelocity = true;
     bool speedBased = true;         // false = fixed tick rate, not velocity-scaled
     bool inputTriggered = false;    // true = state change on input, not velocity
@@ -251,9 +253,9 @@ struct AvatarStateMap {
 
 struct AvatarAnimationSet {
     bool valid = false;
-    // Opt-in exclusive authored-pose policy (animations.json `poseComposition`).
-    // When true, only this set's sampled clips determine the visible rig pose;
-    // procedural/aimbody/weapon/dash/freeze/ragdoll pose layers are suppressed.
+    // Opt-in authored base-pose policy (avatar.json `animation_profile.poseComposition`).
+    // Other procedural pose layers are suppressed; AimBody remains layered
+    // unless the selected clip sets aimLayer to false.
     bool authoredOnly = false;
     std::unordered_map<std::string, AnimClip> clips;
     AvatarStateMap states;

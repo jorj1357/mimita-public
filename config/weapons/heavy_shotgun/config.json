@@ -1,0 +1,124 @@
+{
+  "id": "heavy_shotgun",
+  "display_name": "Heavy Shotgun",
+  "slot": 24,
+  "animation_profile": null,
+  "animations": null,
+  "beam_thickness": 0.3,
+  "beam_world_thickness": 0.0,
+  "behavior_type": "hitscan",
+  "components": null,
+  "custom_params": {
+    "distanceFalloffStart": 45.0,
+    "minDamageFraction": 0.2,
+    "falloffExponent": 1.5,
+    "limbDamageMultiplier": 0.75,
+    "minAngleFactor": 0.15,
+    "shootPoseTime": 0.18,
+    "equipPoseTime": 0.28
+  },
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 255.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": 3.0,
+  "fire_delay": 0.68,
+  "fire_mode": "semi_auto",
+  "headshot_multiplier": 8.0,
+  "hitscan": true,
+  "magazine_size": 8,
+  "model": {
+    "path": "assets/objects/weapons/mimita-heavyshotgun-v1.glb"
+  },
+  "network_mode": null,
+  "pellet_count": 30,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": "shotgun",
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": null,
+  "projectile_mass": null,
+  "projectile_radius": null,
+  "projectile_shape": null,
+  "projectile_speed": null,
+  "recoil": 10.0,
+  "recoil_definition": {
+    "enabled": true,
+    "pitch_per_shot": 10.5,
+    "yaw_per_shot": 5.35,
+    "roll_per_shot": -5.0,
+    "accumulation_per_shot": 1.0,
+    "max_accumulation": 0.0,
+    "recovery_delay": 0.28,
+    "recovery_rate": 0.25,
+    "camera_scale": 1.0,
+    "camera_ads_scale": 0.85,
+    "camera_recovery_rate": 10.0,
+    "asdaddssd 2026 10 11 amera_recovery_rate": 10.0,
+    "viewmodel_back_per_shot": 0.18,
+    "viewmodel_pitch_per_shot": 0.0,
+    "viewmodel_yaw_per_shot": -60.0,
+    "viewmodel_roll_per_shot": 35.0,
+    "viewmodel_recovery_rate": 45.0,
+    "2026 10 11 comment viewmodel_recovery_rate": 50.0,
+    "viewmodel_ads_scale": 0.8,
+    "arm_pitch_per_shot": -5.0,
+    "arm_yaw_per_shot": -10.25,
+    "arm_roll_per_shot": -0.8,
+    "arm_recovery_rate": 10.0,
+    "arm_ads_scale": 0.85
+  },
+  "reload_time": 2.5,
+  "render": null,
+  "reserve_ammo": 888,
+  "self_impulse_multiplier": 1.0,
+  "shooter_knockback": 20.0,
+  "shooter_knockback_vertical": 0.02,
+  "sound": {
+    "shoot": "weapon/heavyshotgun/heavyshotgunfire",
+    "reload": "weapon/heavyshotgun/heavyshotgunreload",
+    "hit": "player_hurt",
+    "dry_fire": "ui/click",
+    "equip": "weapon/heavyshotgun/heavyshotgunequip",
+    "pitch": 0.72,
+    "volume": 2.4,
+    "retrigger": true
+  },
+  "spread": 35.0,
+  "square_spread": true,
+  "uses_physics_projectile": false,
+  "victim_knockback": 1.0,
+  "victim_knockback_per_damage": 0.01,
+  "victim_knockback_vertical_fraction": 0.16,
+  "viewmodel": {
+    "enabled": true,
+    "position": [
+      -1.5,
+      -1.5,
+      1.3
+    ],
+    "rotation_degrees": [
+      90.0,
+      -90.0,
+      0.0
+    ],
+    "attachment": {
+      "position": [
+        0.0,
+        0.05,
+        -1.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        -180.0,
+        -90.0
+      ]
+    },
+    "scale": [
+      1.35,
+      0.8,
+      1.0
+    ]
+  }
+}

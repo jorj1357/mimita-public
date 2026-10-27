@@ -1,0 +1,277 @@
+{
+  "version": 2,
+  "clips": {
+    "hurt": {
+      "durationTicks": 16,
+      "loop": false,
+      "speedBased": false,
+      "priority": 8,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "easeout",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                30
+              ]
+            }
+          }
+        },
+        {
+          "tick": 16,
+          "interp": "smooth",
+          "parts": {
+            "spike_00": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_01": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_02": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_03": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_04": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_05": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_06": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_07": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_08": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_09": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_10": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_11": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_12": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_13": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_14": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_15": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_16": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            "spike_17": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

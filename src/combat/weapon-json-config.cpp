@@ -6,6 +6,7 @@
 #include "actor-preset-weapons.h"
 #include "gamemode/match-roles.h"
 #include "../debug/debug-log.h"
+#include "../debug/structured-log.h"
 #include "../network/network-weapons.h"
 #include "../utils/path_utils.h"
 
@@ -14,6 +15,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -65,13 +67,31 @@ const std::string& weaponConfigPath()
 }
 
 json gWeaponConfigRoot = json::object();
-std::filesystem::file_time_type gWeaponConfigLastWrite{};
 std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
-bool gWeaponConfigHasWriteTime = false;
+std::string gWeaponConfigSignature;
+std::string gLastRejectedSignature;
 std::unordered_set<std::string> gBuiltinWeaponIds;
 using AnimationFileState = std::pair<std::string, std::filesystem::file_time_type>;
 std::vector<AnimationFileState> gAnimationLibraryFiles;
 bool gAnimationLibraryStateInitialized = false;
+
+void pruneUnsetFields(json& value)
+{
+    if (!value.is_object()) return;
+    for (auto it = value.begin(); it != value.end();) {
+        if (it.value().is_null()) {
+            it = value.erase(it);
+        } else {
+            pruneUnsetFields(it.value());
+            ++it;
+        }
+    }
+}
+
+std::filesystem::path perWeaponDirectory()
+{
+    return std::filesystem::path(weaponConfigPath()).parent_path() / "weapons";
+}
 
 bool readAnimationLibraryState(std::vector<AnimationFileState>& state)
 {
@@ -419,36 +439,129 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
 
 } // namespace
 
+std::string weaponDefinitionSignature()
+{
+    std::vector<std::filesystem::path> files{
+        weaponConfigPath(), perWeaponDirectory() / "masterlist" / "weapon-masterlist.json"};
+    const auto dir = perWeaponDirectory();
+    std::error_code ec;
+    if (std::filesystem::is_directory(dir, ec)) {
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (entry.is_directory()) {
+                const auto file = entry.path() / "config.json";
+                if (std::filesystem::is_regular_file(file)) files.push_back(file);
+            }
+        }
+    }
+    std::sort(files.begin(), files.end());
+    std::string result;
+    for (const auto& file : files) {
+        const auto stamp = std::filesystem::last_write_time(file, ec);
+        result += file.generic_string() + ":";
+        result += ec ? "missing" : std::to_string(stamp.time_since_epoch().count());
+        result += ";";
+        ec.clear();
+    }
+    return result;
+}
+
+nlohmann::json readWeaponDefinitionRoot()
+{
+    json root = json::object();
+    std::ifstream aggregate(weaponConfigPath());
+    if (aggregate.is_open()) {
+        root = json::parse(aggregate, nullptr, true, true);
+        if (!root.is_object())
+            throw std::runtime_error("aggregate weapon config must be an object");
+    }
+
+    const auto dir = perWeaponDirectory();
+    const auto masterPath = dir / "masterlist" / "weapon-masterlist.json";
+    json fields;
+    json rules;
+    if (std::ifstream master(masterPath); master.is_open()) {
+        const json spec = json::parse(master, nullptr, true, true);
+        fields = spec.at("fields");
+        rules = spec.at("rules");
+        if (!fields.is_array())
+            throw std::runtime_error("weapon masterlist fields must be an array");
+    } else {
+        throw std::runtime_error("weapon masterlist missing: " + masterPath.string());
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) return root;
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) throw std::runtime_error("cannot enumerate per-weapon configs");
+        if (!entry.is_directory()) continue;
+        const auto file = entry.path() / "config.json";
+        if (!std::filesystem::is_regular_file(file)) continue;
+        std::ifstream stream(file);
+        json definition = json::parse(stream, nullptr, true, true);
+        if (!definition.is_object())
+            throw std::runtime_error(file.string() + " must contain an object");
+        const std::string id = entry.path().filename().string();
+        if (!definition.contains("id") || !definition["id"].is_string() ||
+            definition["id"].get<std::string>() != id)
+            throw std::runtime_error(file.string() + " id must match its directory");
+        if (fields.is_array()) {
+            for (const auto& field : fields) {
+                const std::string name = field.get<std::string>();
+                if (!definition.contains(name))
+                    throw std::runtime_error(file.string() + " missing masterlist field: " + name);
+                const json& value = definition[name];
+                const json& rule = rules.at(name);
+                if (value.is_null()) {
+                    if (!rule.value("nullable", false))
+                        throw std::runtime_error(file.string() + " field cannot be null: " + name);
+                } else {
+                    const std::string type = value.is_boolean() ? "boolean" :
+                        value.is_number() ? "number" : value.is_string() ? "string" :
+                        value.is_array() ? "array" : value.is_object() ? "object" : "invalid";
+                    if (std::find(rule["types"].begin(), rule["types"].end(), type) ==
+                        rule["types"].end())
+                        throw std::runtime_error(file.string() + " wrong type for field: " + name);
+                }
+            }
+            for (auto it = definition.begin(); it != definition.end(); ++it) {
+                if (std::find(fields.begin(), fields.end(), it.key()) == fields.end())
+                    throw std::runtime_error(file.string() + " unknown field: " + it.key());
+            }
+        }
+        pruneUnsetFields(definition);
+        root[id] = std::move(definition); // per-weapon file is authoritative
+    }
+    return root;
+}
+
 void loadWeaponJsonConfig()
 {
-    gWeaponConfigRoot = json::object();
-    std::ifstream file(weaponConfigPath());
-    if (!file.is_open())
-    {
-        Debug::warn(Debug::Category::Weapons,
-            "[WEAPON CONFIG] could not open %s; using builtin defaults\n",
-            weaponConfigPath().c_str());
-        return;
-    }
-    Debug::log(Debug::Category::Weapons,
-        "[WEAPON CONFIG] loaded %s\n", weaponConfigPath().c_str());
     try {
-        file >> gWeaponConfigRoot;
-        if (!gWeaponConfigRoot.is_object())
-            gWeaponConfigRoot = json::object();
-        std::error_code ec;
-        if (std::filesystem::exists(weaponConfigPath(), ec) && !ec) {
-            gWeaponConfigLastWrite = std::filesystem::last_write_time(weaponConfigPath(), ec);
-            gWeaponConfigHasWriteTime = !ec;
-        }
+        json candidate = readWeaponDefinitionRoot();
+        gWeaponConfigRoot = std::move(candidate);
+        gWeaponConfigSignature = weaponDefinitionSignature();
+        gLastRejectedSignature.clear();
+        Debug::log(Debug::Category::Weapons,
+            "[WEAPON CONFIG] loaded %zu definitions from aggregate and per-weapon files\n",
+            gWeaponConfigRoot.size());
         std::vector<AnimationFileState> animationFiles;
         if (readAnimationLibraryState(animationFiles)) {
             gAnimationLibraryFiles = std::move(animationFiles);
             gAnimationLibraryStateInitialized = true;
         }
     } catch (const std::exception& e) {
-        Debug::log(Debug::Category::Weapons, "[WEAPON] config parse failed: %s", e.what());
-        gWeaponConfigRoot = json::object();
+        const std::string rejected = weaponDefinitionSignature();
+        if (rejected != gLastRejectedSignature) {
+            gLastRejectedSignature = rejected;
+            Debug::warn(Debug::Category::Weapons, "[WEAPON] config rejected; retaining last valid definitions: %s", e.what());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "config.weapon.invalid", "weapon_definitions",
+                "weapon definition snapshot rejected", 0,
+                {{"reason", e.what()}, {"retained_previous", !gWeaponConfigRoot.empty()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 }
 
@@ -506,20 +619,11 @@ bool reloadBuiltinWeaponsIfChanged()
         return false;
     gWeaponConfigLastCheck = now;
 
-    std::error_code ec;
-    if (!std::filesystem::exists(weaponConfigPath(), ec) || ec)
-        return false;
-    const auto writeTime = std::filesystem::last_write_time(weaponConfigPath(), ec);
-    if (ec)
-        return false;
-    const bool weaponConfigChanged = !gWeaponConfigHasWriteTime ||
-                                     writeTime != gWeaponConfigLastWrite;
+    const bool weaponConfigChanged = weaponDefinitionSignature() != gWeaponConfigSignature;
     const bool animationLibraryWasChanged = animationLibraryChanged();
     if (!weaponConfigChanged && !animationLibraryWasChanged)
         return false;
 
-    gWeaponConfigLastWrite = writeTime;
-    gWeaponConfigHasWriteTime = true;
     registerBuiltinWeapons();
     if (!ActorPresetWeapons::activePresetId().empty()) {
         if (const MatchRoleDefinition* preset =

@@ -1,0 +1,263 @@
+{
+  "version": 2,
+  "clips": {
+    "mimita_sizing_6_stabberidle20261025": {
+      "durationTicks": 60,
+      "loop": true,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.25,
+                0.95,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.0,
+                0.0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.69,
+                0.4,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.7,
+                -0.7,
+                0.1,
+                -0.1
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                0.97,
+                0.81,
+                -0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.03,
+                0.03
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                0.97,
+                0.83,
+                0.1
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.02,
+                0.02
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.44,
+                0.0,
+                0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.03,
+                0.03
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.34,
+                0.0,
+                -0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.01,
+                -0.01
+              ]
+            }
+          }
+        },
+        {
+          "tick": 29,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.48,
+                0.92,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.05,
+                -0.05
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.86,
+                0.38,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.7,
+                -0.7,
+                0.1,
+                -0.1
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                1.14,
+                0.74,
+                -0.11
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.03,
+                -0.03
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                1.14,
+                0.73,
+                0.1
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.03,
+                0.03
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.54,
+                -0.04,
+                0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.03,
+                -0.03
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.51,
+                -0.02,
+                -0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.02,
+                0.02
+              ]
+            }
+          }
+        },
+        {
+          "tick": 59,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.25,
+                0.95,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.0,
+                0.0
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.69,
+                0.4,
+                0.0
+              ],
+              "rotationQuaternionWxyz": [
+                0.7,
+                -0.7,
+                0.1,
+                -0.1
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                1.07,
+                0.79,
+                -0.11
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.03,
+                0.03
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                1.06,
+                0.77,
+                0.08
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.02,
+                0.02
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.44,
+                -0.07,
+                0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                -0.01,
+                0.01
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.32,
+                -0.03,
+                -0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.01,
+                -0.01
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

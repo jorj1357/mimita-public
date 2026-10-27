@@ -19,7 +19,7 @@
     "head_front": {
       "offset_x": 3,
       "offset_y": 21,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "scale_x": 1.1993647813796997,
       "scale_y": 1.9072518348693848,
       "texture": "hey.png"
@@ -259,7 +259,7 @@
     "torso_front": {
       "offset_x": -28,
       "offset_y": -31,
-      "rotation": 178.84329223632813,
+      "rotation": 178.84329223632812,
       "scale_x": 0.10328170657157898,
       "scale_y": 1.0166842937469482,
       "texture": "suitfront.png"
@@ -344,7 +344,7 @@
       "rotation": [
         88.7882080078125,
         185.724609375,
-        90.74539184570313
+        90.74539184570312
       ],
       "scale": [
         1.3579634428024292,
@@ -379,5 +379,36 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-09-02T23:57:21Z"
+  "updated_at": "2026-09-02T23:57:21Z",
+  "animation_profile": {
+    "version": 2,
+    "poseComposition": "layered",
+    "include": [
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_003.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_sprint_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jump_002.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falling_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_landing_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crouched.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_normal_001.json",
+      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_dead.json"
+    ],
+    "states": {
+      "default": "mimita_sizing_6_idle_003",
+      "locomotion": {
+        "walk": "mimita_sizing_6_walk",
+        "fly": "mimita_sizing_6_walk",
+        "crawl": "mimita_sizing_6_walk",
+        "swim": "mimita_sizing_6_walk"
+      },
+      "run": "mimita_sizing_6_sprint_001",
+      "jump": "mimita_sizing_6_jump_002",
+      "fall": "mimita_sizing_6_falling_001",
+      "land": "mimita_sizing_6_landing_001",
+      "crouch": "mimita_sizing_6_crouched",
+      "hurt": "mimita_sizing_6_hurt_normal_001",
+      "death": "mimita_sizing_6_dead"
+    }
+  }
 }

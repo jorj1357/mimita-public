@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "clips": {
+    "hurt": {
+      "durationTicks": 16,
+      "loop": false,
+      "speedBased": false,
+      "priority": 8,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "easeout",
+          "parts": {
+            "torso": {
+              "rotation": [
+                0,
+                0,
+                25
+              ]
+            }
+          }
+        },
+        {
+          "tick": 16,
+          "interp": "smooth",
+          "parts": {
+            "torso": {
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

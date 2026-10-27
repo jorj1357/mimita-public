@@ -2,7 +2,13 @@
   "version": 2,
   "include": [
     "config/animations/library/melee/captainfalcon/punch_a.json",
-    "config/animations/library/melee/captainfalcon/downpunch_a.json"
+    "config/animations/library/melee/captainfalcon/downpunch_a.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_006.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_006.json",
+    "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attackslam_002.json"
   ],
-  "clips": {}
+  "clips": {},
+  "states": {
+    "default": "mimita_sizing_6_idle_006"
+  }
 }

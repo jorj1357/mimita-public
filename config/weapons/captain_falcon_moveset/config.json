@@ -1,0 +1,952 @@
+{
+  "id": "captain_falcon_moveset",
+  "display_name": "Captain Falcon Move Set",
+  "slot": 30,
+  "animation_profile": null,
+  "animations": null,
+  "beam_thickness": null,
+  "beam_world_thickness": null,
+  "behavior_type": "melee",
+  "components": {
+    "melee": {
+      "actions": {
+        "a_ground_punch": {
+          "input": {
+            "button": "primary",
+            "actor_state": "grounded"
+          },
+          "priority": 1,
+          "double_click_window_ticks": 5,
+          "double_click_action": "a_ground_punch2",
+          "animation_clip_id": "punch_a",
+          "hitboxes": [
+            {
+              "id": "fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                2.0,
+                2.0,
+                2.0
+              ],
+              "local_offset": [
+                1.0,
+                -2.0,
+                0.0
+              ],
+              "active_start_tick": 1,
+              "active_end_tick": 14
+            }
+          ],
+          "damage": {
+            "base_percent": 6.0
+          },
+          "knockback": {
+            "base_impulse": 14.0,
+            "vertical_fraction": 0.25,
+            "force_scale": 1.0
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconhitquick",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_ground_punch2": {
+          "input": {
+            "button": "primary",
+            "actor_state": "grounded"
+          },
+          "priority": 0,
+          "phases": {
+            "windup": {
+              "ticks": 5,
+              "clip_id": "cf_punch2_windup"
+            },
+            "active": {
+              "ticks": 3,
+              "clip_id": "cf_punch2_active"
+            },
+            "recovery": {
+              "ticks": 8,
+              "clip_id": "cf_punch2_recovery"
+            }
+          },
+          "hitboxes": [
+            {
+              "id": "fist_l",
+              "attached_part": "leftArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                0.7,
+                0.7,
+                0.7
+              ],
+              "local_offset": [
+                0.0,
+                0.7,
+                1.4
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 2
+            }
+          ],
+          "damage": {
+            "base_percent": 5.0
+          },
+          "knockback": {
+            "base_impulse": 20.0,
+            "vertical_fraction": 0.3,
+            "force_scale": 1.0
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 1.05,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconhit2",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "b_falcon_punch": {
+          "input": {
+            "button": "secondary",
+            "actor_state": "grounded"
+          },
+          "animation_clip_id": "punch_a",
+          "hitboxes": [
+            {
+              "id": "falcon_fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                0.9,
+                0.9,
+                0.9
+              ],
+              "local_offset": [
+                0.0,
+                0.8,
+                1.4
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 30
+            }
+          ],
+          "damage": {
+            "base_percent": 12.0,
+            "shield_damage": 18.0
+          },
+          "knockback": {
+            "base_impulse": 24.0,
+            "vertical_fraction": 0.35,
+            "force_scale": 1.2
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/yeeeaaaaughhh",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconpawnchhh",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_air_kick": {
+          "input": {
+            "button": "primary",
+            "actor_state": "airborne"
+          },
+          "animation_clip_id": "kick_a",
+          "hitboxes": [
+            {
+              "id": "foot",
+              "attached_part": "rightLeg",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                3.2,
+                3.2,
+                3.2
+              ],
+              "local_offset": [
+                1.0,
+                -3.0,
+                0.5
+              ],
+              "active_start_tick": 5,
+              "active_end_tick": 35
+            }
+          ],
+          "damage": {
+            "base_percent": 20.0
+          },
+          "knockback": {
+            "base_impulse": 30.0,
+            "vertical_fraction": 0.15,
+            "force_scale": 1.0
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 2.0,
+              "right": 0.0,
+              "up": 1.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconkick",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "b_air_forward_dash": {
+          "input": {
+            "button": "secondary",
+            "actor_state": "airborne"
+          },
+          "animation_clip_id": "b_air_forward_dash",
+          "hitboxes": [
+            {
+              "id": "dash_foot",
+              "attached_part": "rightLeg",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                3.0,
+                3.0,
+                3.0
+              ],
+              "local_offset": [
+                1.0,
+                3.0,
+                0.5
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 40
+            }
+          ],
+          "damage": {
+            "base_percent": 35.0
+          },
+          "knockback": {
+            "base_impulse": 95.0,
+            "vertical_fraction": 0.1,
+            "force_scale": 1.0
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 12.0,
+              "right": 0.0,
+              "up": 3.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconho",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconkick",
+                "pitch": 0.95,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_uptilt": {
+          "input": {
+            "button": "primary",
+            "actor_state": "grounded",
+            "modifier": "jump"
+          },
+          "animation_clip_id": "uppunch_a",
+          "hitboxes": [
+            {
+              "id": "up_fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                2.0,
+                2.0,
+                2.0
+              ],
+              "local_offset": [
+                2.0,
+                0.0,
+                0.15
+              ],
+              "active_start_tick": 1,
+              "active_end_tick": 10
+            }
+          ],
+          "damage": {
+            "base_percent": 5.0
+          },
+          "knockback": {
+            "base_impulse": 20.0,
+            "vertical_fraction": 0.6,
+            "force_scale": 1.0
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 1.1,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconhit1",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_air_up_kick": {
+          "input": {
+            "button": "primary",
+            "actor_state": "airborne",
+            "modifier": "jump"
+          },
+          "animation_clip_id": "uppunch_a",
+          "hitboxes": [
+            {
+              "id": "up_fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                3.0,
+                3.0,
+                3.0
+              ],
+              "local_offset": [
+                0.0,
+                -4.0,
+                0.0
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 20
+            }
+          ],
+          "damage": {
+            "base_percent": 15.0
+          },
+          "knockback": {
+            "base_impulse": 30.0,
+            "vertical_fraction": 0.55,
+            "force_scale": 1.0
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 0.0,
+              "right": 0.0,
+              "up": 6.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconhitquick",
+                "pitch": 1.1,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "b_air_up_special": {
+          "input": {
+            "button": "secondary",
+            "actor_state": "airborne",
+            "modifier": "jump"
+          },
+          "animation_clip_id": "uppunch_a",
+          "hitboxes": [
+            {
+              "id": "up_special_fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                0.7,
+                0.7,
+                0.7
+              ],
+              "local_offset": [
+                0.0,
+                0.4,
+                0.2
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 2
+            }
+          ],
+          "damage": {
+            "base_percent": 8.0
+          },
+          "knockback": {
+            "base_impulse": 14.0,
+            "vertical_fraction": 0.5,
+            "force_scale": 1.0
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 0.0,
+              "right": 0.0,
+              "up": 14.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falcontuaahh2",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconyes",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_ground_sweep": {
+          "input": {
+            "button": "primary",
+            "actor_state": "grounded",
+            "modifier": "crouch"
+          },
+          "animation_clip_id": "downpunch_a",
+          "hitboxes": [
+            {
+              "id": "down_fist",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                3.0,
+                3.0,
+                3.0
+              ],
+              "local_offset": [
+                1.0,
+                -3.5,
+                0.0
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 30
+            }
+          ],
+          "damage": {
+            "base_percent": 7.0
+          },
+          "knockback": {
+            "base_impulse": 15.0,
+            "vertical_fraction": 0.1,
+            "force_scale": 1.0
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 0.9,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconhit2",
+                "pitch": 0.95,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "b_falcon_punch_crouch": {
+          "input": {
+            "button": "secondary",
+            "actor_state": "grounded",
+            "modifier": "crouch"
+          },
+          "animation_clip_id": "downpunch_a",
+          "hitboxes": [
+            {
+              "id": "down_fist_b",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                0.9,
+                0.9,
+                0.9
+              ],
+              "local_offset": [
+                0.0,
+                0.8,
+                1.4
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 3
+            }
+          ],
+          "damage": {
+            "base_percent": 12.0,
+            "shield_damage": 18.0
+          },
+          "knockback": {
+            "base_impulse": 24.0,
+            "vertical_fraction": 0.3,
+            "force_scale": 1.2
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/yeeeaaaaughhh",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconpawnchhh",
+                "pitch": 1.0,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "a_air_down_kick": {
+          "input": {
+            "button": "primary",
+            "actor_state": "airborne",
+            "modifier": "crouch"
+          },
+          "animation_clip_id": "downkick_a",
+          "hitboxes": [
+            {
+              "id": "down_foot",
+              "attached_part": "rightLeg",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                3.0,
+                3.0,
+                3.0
+              ],
+              "local_offset": [
+                1.0,
+                -2.9,
+                0.1
+              ],
+              "active_start_tick": 1,
+              "active_end_tick": 25
+            }
+          ],
+          "damage": {
+            "base_percent": 25.0
+          },
+          "knockback": {
+            "base_impulse": 50.0,
+            "vertical_fraction": -0.6,
+            "force_scale": 1.0
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 0.0,
+              "right": 0.0,
+              "up": -8.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconswing",
+              "pitch": 0.95,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconkick",
+                "pitch": 0.9,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "b_air_down_strike": {
+          "input": {
+            "button": "secondary",
+            "actor_state": "airborne",
+            "modifier": "crouch"
+          },
+          "animation_clip_id": "downkick_a",
+          "hitboxes": [
+            {
+              "id": "strike_foot",
+              "attached_part": "rightLeg",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                0.7,
+                0.7,
+                0.7
+              ],
+              "local_offset": [
+                0.0,
+                -0.5,
+                0.3
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 3
+            }
+          ],
+          "damage": {
+            "base_percent": 18.0,
+            "shield_damage": 14.0
+          },
+          "knockback": {
+            "base_impulse": 35.0,
+            "vertical_fraction": -0.5,
+            "force_scale": 1.1
+          },
+          "impulses": [
+            {
+              "phase": "active",
+              "tick": 0,
+              "forward": 5.0,
+              "right": 0.0,
+              "up": -10.0
+            }
+          ],
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falcontuaahh3",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            },
+            "events": [
+              {
+                "phase": "active",
+                "tick": 0,
+                "sound_id": "entity/falcon/falconpawnchhh",
+                "pitch": 0.95,
+                "volume": 1.0,
+                "offset": [
+                  0,
+                  0,
+                  0
+                ]
+              }
+            ]
+          }
+        },
+        "grab": {
+          "input": {
+            "button": "grab",
+            "actor_state": "any"
+          },
+          "animation_clip_id": "grab",
+          "hitboxes": [
+            {
+              "id": "grab_sphere",
+              "attached_part": "rightArm",
+              "shape": "sphere",
+              "attachment_mode": "animated_limb",
+              "size": [
+                4.0,
+                4.0,
+                4.0
+              ],
+              "local_offset": [
+                0.0,
+                0.6,
+                0.6
+              ],
+              "active_start_tick": 0,
+              "active_end_tick": 20
+            }
+          ],
+          "damage": {
+            "base_percent": 0.0
+          },
+          "knockback": {
+            "base_impulse": 1.0,
+            "vertical_fraction": 0.0,
+            "force_scale": 10.0
+          },
+          "grab": {
+            "enabled": true,
+            "radius": 1.0,
+            "pull_ticks": 50
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconho",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        },
+        "shield": {
+          "input": {
+            "button": "shield",
+            "actor_state": "any"
+          },
+          "animation_clip_id": "shield",
+          "damage": {
+            "base_percent": 0.0
+          },
+          "knockback": {
+            "base_impulse": 1.0,
+            "vertical_fraction": 0.0,
+            "force_scale": 0.0
+          },
+          "audio": {
+            "on_start": {
+              "sound_id": "entity/falcon/falconcomeon",
+              "pitch": 1.0,
+              "volume": 1.0,
+              "offset": [
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "custom_params": null,
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 0.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": null,
+  "fire_delay": 0.0,
+  "fire_mode": null,
+  "headshot_multiplier": null,
+  "hitscan": false,
+  "magazine_size": 0,
+  "model": {
+    "path": ""
+  },
+  "network_mode": null,
+  "pellet_count": null,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": null,
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": null,
+  "projectile_mass": null,
+  "projectile_radius": null,
+  "projectile_shape": null,
+  "projectile_speed": null,
+  "recoil": null,
+  "recoil_definition": null,
+  "reload_time": 0.0,
+  "render": null,
+  "reserve_ammo": 0,
+  "self_impulse_multiplier": null,
+  "shooter_knockback": null,
+  "shooter_knockback_vertical": null,
+  "sound": null,
+  "spread": null,
+  "square_spread": null,
+  "uses_physics_projectile": null,
+  "victim_knockback": null,
+  "victim_knockback_per_damage": null,
+  "victim_knockback_vertical_fraction": null,
+  "viewmodel": {
+    "enabled": false
+  }
+}

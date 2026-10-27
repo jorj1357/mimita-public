@@ -1,0 +1,148 @@
+{
+  "id": "revolver",
+  "display_name": "Revolver",
+  "slot": 1,
+  "animation_profile": null,
+  "animations": {
+    "fire": {
+      "duration": 0.12,
+      "position_offset": [
+        -0.06,
+        0.02,
+        -0.08
+      ],
+      "rotation_offset": [
+        -6.0,
+        1.5,
+        1.0
+      ],
+      "recover": true
+    },
+    "reload_pose": {
+      "position": [
+        0.04,
+        -0.12,
+        -0.04
+      ],
+      "rotation": [
+        -18.0,
+        5.0,
+        8.0
+      ]
+    }
+  },
+  "beam_thickness": 2.0,
+  "beam_world_thickness": 0.0,
+  "behavior_type": "hitscan",
+  "components": null,
+  "custom_params": {
+    "distanceFalloffStart": 240.0,
+    "minDamageFraction": 0.5,
+    "falloffExponent": 1.1,
+    "limbDamageMultiplier": 0.75,
+    "minAngleFactor": 0.45,
+    "shootPoseTime": 0.12,
+    "equipPoseTime": 0.18
+  },
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 15.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": 1.0,
+  "fire_delay": 0.008,
+  "fire_mode": "semi_auto",
+  "headshot_multiplier": 3.0,
+  "hitscan": true,
+  "magazine_size": 6,
+  "model": {
+    "path": "assets/objects/weapons/mimita-revolver-v1.glb"
+  },
+  "network_mode": null,
+  "pellet_count": 1,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": null,
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": 0.0,
+  "projectile_mass": null,
+  "projectile_radius": 0.0,
+  "projectile_shape": null,
+  "projectile_speed": 0.0,
+  "recoil": 10.0,
+  "recoil_definition": {
+    "enabled": true,
+    "pitch_per_shot": 1.5,
+    "yaw_per_shot": 1.35,
+    "roll_per_shot": 1.0,
+    "accumulation_per_shot": 1.0,
+    "max_accumulation": 0.0,
+    "recovery_delay": 0.28,
+    "recovery_rate": 0.25,
+    "camera_scale": 1.0,
+    "camera_ads_scale": 0.85,
+    "camera_recovery_rate": 10.0,
+    "viewmodel_back_per_shot": 0.18,
+    "viewmodel_pitch_per_shot": 1.0,
+    "viewmodel_yaw_per_shot": -1.0,
+    "viewmodel_roll_per_shot": 3.0,
+    "viewmodel_recovery_rate": 10.0,
+    "viewmodel_ads_scale": 0.8,
+    "arm_pitch_per_shot": -1.0,
+    "arm_yaw_per_shot": -2.25,
+    "arm_roll_per_shot": -0.8,
+    "arm_recovery_rate": 10.0,
+    "arm_ads_scale": 0.85
+  },
+  "reload_time": 1.0,
+  "render": null,
+  "reserve_ammo": null,
+  "self_impulse_multiplier": 1.0,
+  "shooter_knockback": 1.0,
+  "shooter_knockback_vertical": 0.01,
+  "sound": {
+    "shoot": "revolvershoot",
+    "reload": "revolverreload",
+    "hit": "player_hurt",
+    "dry_fire": "ui/click",
+    "equip": "weapon/revolver/revolverequip",
+    "pitch": 0.9,
+    "retrigger": true
+  },
+  "spread": 0.0,
+  "square_spread": null,
+  "uses_physics_projectile": false,
+  "victim_knockback": 5.0,
+  "victim_knockback_per_damage": 1.0,
+  "victim_knockback_vertical_fraction": 0.1,
+  "viewmodel": {
+    "enabled": true,
+    "position": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rotation_degrees": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attachment": {
+      "position": [
+        -0.2,
+        0.0,
+        0.0
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+}

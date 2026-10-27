@@ -1,0 +1,351 @@
+{
+  "version": 1,
+  "description": "Canonical top-level fields for every tool definition. Null means this definition does not use the field.",
+  "fields": [
+    "id",
+    "display_name",
+    "slot",
+    "animation_profile",
+    "animations",
+    "beam_thickness",
+    "beam_world_thickness",
+    "behavior_type",
+    "components",
+    "custom_params",
+    "cut_energy_scale",
+    "cut_radius_scale",
+    "damage",
+    "damage_scale",
+    "enemy_impulse_multiplier",
+    "fire_delay",
+    "fire_mode",
+    "headshot_multiplier",
+    "hitscan",
+    "magazine_size",
+    "model",
+    "network_mode",
+    "pellet_count",
+    "penetration_count",
+    "penetration_scale",
+    "pose_id",
+    "projectile_base_radius",
+    "projectile_density",
+    "projectile_lifetime",
+    "projectile_mass",
+    "projectile_radius",
+    "projectile_shape",
+    "projectile_speed",
+    "recoil",
+    "recoil_definition",
+    "reload_time",
+    "render",
+    "reserve_ammo",
+    "self_impulse_multiplier",
+    "shooter_knockback",
+    "shooter_knockback_vertical",
+    "sound",
+    "spread",
+    "square_spread",
+    "uses_physics_projectile",
+    "victim_knockback",
+    "victim_knockback_per_damage",
+    "victim_knockback_vertical_fraction",
+    "viewmodel"
+  ],
+  "rules": {
+    "id": {
+      "types": [
+        "string"
+      ],
+      "nullable": false
+    },
+    "display_name": {
+      "types": [
+        "string"
+      ],
+      "nullable": false
+    },
+    "slot": {
+      "types": [
+        "number"
+      ],
+      "nullable": false
+    },
+    "animation_profile": {
+      "types": [
+        "string"
+      ],
+      "nullable": true
+    },
+    "animations": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "beam_thickness": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "beam_world_thickness": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "behavior_type": {
+      "types": [
+        "string"
+      ],
+      "nullable": true
+    },
+    "components": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "custom_params": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "cut_energy_scale": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "cut_radius_scale": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "damage": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "damage_scale": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "enemy_impulse_multiplier": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "fire_delay": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "fire_mode": {
+      "types": [
+        "string"
+      ],
+      "nullable": true
+    },
+    "headshot_multiplier": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "hitscan": {
+      "types": [
+        "boolean"
+      ],
+      "nullable": true
+    },
+    "magazine_size": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "model": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "network_mode": {
+      "types": [
+        "string"
+      ],
+      "nullable": true
+    },
+    "pellet_count": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "penetration_count": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "penetration_scale": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "pose_id": {
+      "types": [
+        "string"
+      ],
+      "nullable": true
+    },
+    "projectile_base_radius": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_density": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_lifetime": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_mass": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_radius": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_shape": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "projectile_speed": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "recoil": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "recoil_definition": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "reload_time": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "render": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "reserve_ammo": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "self_impulse_multiplier": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "shooter_knockback": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "shooter_knockback_vertical": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "sound": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    },
+    "spread": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "square_spread": {
+      "types": [
+        "boolean"
+      ],
+      "nullable": true
+    },
+    "uses_physics_projectile": {
+      "types": [
+        "boolean"
+      ],
+      "nullable": true
+    },
+    "victim_knockback": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "victim_knockback_per_damage": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "victim_knockback_vertical_fraction": {
+      "types": [
+        "number"
+      ],
+      "nullable": true
+    },
+    "viewmodel": {
+      "types": [
+        "object"
+      ],
+      "nullable": true
+    }
+  }
+}

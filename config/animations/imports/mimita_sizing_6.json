@@ -1,0 +1,4823 @@
+{
+  "version": 1,
+  "source_blend": "C:\\important\\quiet\\blender-projects\\mimita sizing 6.blend",
+  "scene": "Scene",
+  "fps": 60.0,
+  "entries": [
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/mutantwasp20261013"
+      ],
+      "rig_root": "plrOrigin",
+      "parts": {
+        "head": {
+          "object": "head",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_mutantwasp20261013",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_mutantwasp20261013.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/boy"
+      ],
+      "rig_root": "plrOrigin.001",
+      "parts": {
+        "head": {
+          "object": "head.001",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.001",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.001",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.001",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.001",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.001",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boy",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boy.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/girl"
+      ],
+      "rig_root": "plrOrigin.002",
+      "parts": {
+        "head": {
+          "object": "head.002",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.002",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.002",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.002",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.002",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.002",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_girl",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_girl.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/girlclean"
+      ],
+      "rig_root": "plrOrigin.003",
+      "parts": {
+        "head": {
+          "object": "head.003",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.003",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.003",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.003",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.003",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.003",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_girlclean",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_girlclean.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/hide/monsters pre export/boomer.001"
+      ],
+      "rig_root": "plrOrigin.004",
+      "parts": {},
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomer_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomer_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/btest3"
+      ],
+      "rig_root": "plrOrigin.005",
+      "parts": {
+        "head": {
+          "object": "head.017",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.016",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.014",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.018",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.014",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.015",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_btest3",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_btest3.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/crawler"
+      ],
+      "rig_root": "plrOrigin.006",
+      "parts": {
+        "head": {
+          "object": "head.006",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.006",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.005",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.006",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.005",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.005",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_crawler",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crawler.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/boomer"
+      ],
+      "rig_root": "plrOrigin.007",
+      "parts": {
+        "head": {
+          "object": "head.007",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.007",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.006",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.007",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.006",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.006",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomer",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomer.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/monsters/mutantwasp"
+      ],
+      "rig_root": "plrOrigin.008",
+      "parts": {},
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_mutantwasp",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_mutantwasp.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/mutantwasp2"
+      ],
+      "rig_root": "plrOrigin.009",
+      "parts": {
+        "head": {
+          "object": "head.008",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.008",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.007",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.008",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.007",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.007",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_mutantwasp2",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_mutantwasp2.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/monsters/griever"
+      ],
+      "rig_root": "plrOrigin.010",
+      "parts": {
+        "head": {
+          "object": "head.009",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_griever",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_griever.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/monsters/brute"
+      ],
+      "rig_root": "plrOrigin.011",
+      "parts": {
+        "head": {
+          "object": "head.010",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.010",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.010",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.008",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_brute",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_brute.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/normalzombie"
+      ],
+      "rig_root": "plrOrigin.012",
+      "parts": {
+        "head": {
+          "object": "head.011",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.011",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.008",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.011",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.008",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.009",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_normalzombie",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_normalzombie.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/chainsawboss20261015"
+      ],
+      "rig_root": "plrOrigin.013",
+      "parts": {
+        "head": {
+          "object": "head.012",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.024",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.009",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.013",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.020",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.010",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_chainsawboss20261015",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_chainsawboss20261015.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/charger"
+      ],
+      "rig_root": "plrOrigin.014",
+      "parts": {
+        "head": {
+          "object": "head.013",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.012",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.010",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.014",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.010",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.011",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_charger",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_charger.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/monsters/stabber"
+      ],
+      "rig_root": "plrOrigin.015",
+      "parts": {
+        "head": {
+          "object": "head.014",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.013",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.011",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.015",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.011",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.012",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_stabber",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_stabber.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/boomer20261013"
+      ],
+      "rig_root": "plrOrigin.016",
+      "parts": {
+        "head": {
+          "object": "head.015",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.014",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.012",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.016",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.012",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.013",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomer20261013",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomer20261013.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/boomertest"
+      ],
+      "rig_root": "plrOrigin.017",
+      "parts": {
+        "head": {
+          "object": "head.016",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.015",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.013",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.017",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.013",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.014",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomertest",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomertest.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/stabber20261013"
+      ],
+      "rig_root": "plrOrigin.018",
+      "parts": {
+        "head": {
+          "object": "head.018",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.017",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.015",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.019",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.015",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.016",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_stabber20261013",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_stabber20261013.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/crawler20261013"
+      ],
+      "rig_root": "plrOrigin.019",
+      "parts": {
+        "head": {
+          "object": "head.019",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.018",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.016",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.020",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.016",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.017",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_crawler20261013",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crawler20261013.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/crawler20261013.001"
+      ],
+      "rig_root": "plrOrigin.020",
+      "parts": {
+        "head": {
+          "object": "head.020",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.019",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.017",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.021",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.017",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.018",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_crawler20261013_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crawler20261013_001.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/hide/griever20261013"
+      ],
+      "rig_root": "plrOrigin.021",
+      "parts": {},
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_griever20261013",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_griever20261013.json"
+    },
+    {
+      "status": "unsupported",
+      "reason": "six canonical parts are not present",
+      "collection_paths": [
+        "Scene Collection/hide/brute20261015"
+      ],
+      "rig_root": "plrOrigin.022",
+      "parts": {
+        "head": {
+          "object": "head.021",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.021",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.023",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.019",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_brute20261015",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_brute20261015.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/brute20261015.001"
+      ],
+      "rig_root": "plrOrigin.023",
+      "parts": {
+        "head": {
+          "object": "head.022",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.022",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.018",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.024",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.018",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.020",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_brute20261015_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_brute20261015_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/normalzombie20261015"
+      ],
+      "rig_root": "plrOrigin.024",
+      "parts": {
+        "head": {
+          "object": "head.023",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.023",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.019",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.025",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.019",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.021",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_normalzombie20261015",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_normalzombie20261015.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/charger20261015"
+      ],
+      "rig_root": "plrOrigin.025",
+      "parts": {
+        "head": {
+          "object": "head.024",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.025",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.020",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.012",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.009",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.022",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_charger20261015",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_charger20261015.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/hide/girllarge20261015"
+      ],
+      "rig_root": "plrOrigin.026",
+      "parts": {
+        "head": {
+          "object": "head.025",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.026",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.021",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.026",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.021",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.023",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_girllarge20261015",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_girllarge20261015.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/punch20261018"
+      ],
+      "rig_root": "plrOrigin.027",
+      "parts": {
+        "head": {
+          "object": "head.026",
+          "action": "head.026Action",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.027",
+          "action": "leftArm.027Action",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.022",
+          "action": "leftLeg.022Action",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.027",
+          "action": "rightArm.027Action",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.022",
+          "action": "rightLeg.022Action",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.024",
+          "action": "torso.024Action",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_punch20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_punch20261018.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/mimita-char-clean20261018"
+      ],
+      "rig_root": "plrOrigin.028",
+      "parts": {
+        "head": {
+          "object": "head.027",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.028",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.023",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.028",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.023",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.025",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_mimita_char_clean20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_mimita_char_clean20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/kick20261018"
+      ],
+      "rig_root": "plrOrigin.029",
+      "parts": {
+        "head": {
+          "object": "head.028",
+          "action": "head.028Action",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.029",
+          "action": "leftArm.029Action",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.024",
+          "action": "leftLeg.024Action",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.029",
+          "action": "rightArm.029Action",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.024",
+          "action": "rightLeg.024Action",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.026",
+          "action": "torso.026Action",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        59
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_kick20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_kick20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/walk20261018"
+      ],
+      "rig_root": "plrOrigin.030",
+      "parts": {
+        "head": {
+          "object": "head.029",
+          "action": "head.029Action",
+          "slot": "OBhead.029"
+        },
+        "leftArm": {
+          "object": "leftArm.030",
+          "action": "leftArm.030Action",
+          "slot": "OBleftArm.030"
+        },
+        "leftLeg": {
+          "object": "leftLeg.025",
+          "action": "leftLeg.025Action",
+          "slot": "OBleftLeg.025"
+        },
+        "rightArm": {
+          "object": "rightArm.030",
+          "action": "rightArm.030Action",
+          "slot": "OBrightArm.030"
+        },
+        "rightLeg": {
+          "object": "rightLeg.025",
+          "action": "rightLeg.025Action",
+          "slot": "OBrightLeg.025"
+        },
+        "torso": {
+          "object": "torso.027",
+          "action": "torso.027Action",
+          "slot": "OBtorso.027"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_walk20261018",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/run20261018"
+      ],
+      "rig_root": "plrOrigin.031",
+      "parts": {
+        "head": {
+          "object": "head.030",
+          "action": "head.028Action.003",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.031",
+          "action": "leftArm.029Action.003",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.026",
+          "action": "leftLeg.024Action.003",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.031",
+          "action": "rightArm.029Action.003",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.026",
+          "action": "rightLeg.024Action.003",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.028",
+          "action": "torso.026Action.003",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        59
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_run20261018",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_run20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/upkick20261018"
+      ],
+      "rig_root": "plrOrigin.032",
+      "parts": {
+        "head": {
+          "object": "head.032",
+          "action": "head.028Action.006",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.033",
+          "action": "leftArm.029Action.006",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.028",
+          "action": "leftLeg.024Action.006",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.033",
+          "action": "rightArm.029Action.006",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.028",
+          "action": "rightLeg.024Action.006",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.030",
+          "action": "torso.026Action.006",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_upkick20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_upkick20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/uppunch20261018"
+      ],
+      "rig_root": "plrOrigin.033",
+      "parts": {
+        "head": {
+          "object": "head.035",
+          "action": "head.026Action.001",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.036",
+          "action": "leftArm.027Action.001",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.031",
+          "action": "leftLeg.022Action.001",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.036",
+          "action": "rightArm.027Action.001",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.031",
+          "action": "rightLeg.022Action.001",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.033",
+          "action": "torso.024Action.001",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_uppunch20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_uppunch20261018.json"
+    },
+    {
+      "status": "skip",
+      "reason": "no assigned part Actions",
+      "collection_paths": [
+        "Scene Collection/mimita-char-clean20261018.001"
+      ],
+      "rig_root": "plrOrigin.034",
+      "parts": {
+        "head": {
+          "object": "head.033",
+          "action": null,
+          "slot": null
+        },
+        "leftArm": {
+          "object": "leftArm.034",
+          "action": null,
+          "slot": null
+        },
+        "leftLeg": {
+          "object": "leftLeg.029",
+          "action": null,
+          "slot": null
+        },
+        "rightArm": {
+          "object": "rightArm.034",
+          "action": null,
+          "slot": null
+        },
+        "rightLeg": {
+          "object": "rightLeg.029",
+          "action": null,
+          "slot": null
+        },
+        "torso": {
+          "object": "torso.031",
+          "action": null,
+          "slot": null
+        }
+      },
+      "frame_range": null,
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_mimita_char_clean20261018_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_mimita_char_clean20261018_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/land20261018"
+      ],
+      "rig_root": "plrOrigin.035",
+      "parts": {
+        "head": {
+          "object": "head.034",
+          "action": "head.034Action",
+          "slot": "OBhead.034"
+        },
+        "leftArm": {
+          "object": "leftArm.035",
+          "action": "leftArm.035Action",
+          "slot": "OBleftArm.035"
+        },
+        "leftLeg": {
+          "object": "leftLeg.030",
+          "action": "leftLeg.030Action",
+          "slot": "OBleftLeg.030"
+        },
+        "rightArm": {
+          "object": "rightArm.035",
+          "action": "rightArm.035Action",
+          "slot": "OBrightArm.035"
+        },
+        "rightLeg": {
+          "object": "rightLeg.030",
+          "action": "rightLeg.030Action",
+          "slot": "OBrightLeg.030"
+        },
+        "torso": {
+          "object": "torso.032",
+          "action": "torso.032Action",
+          "slot": "OBtorso.032"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_land20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_land20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/downpunch20261018"
+      ],
+      "rig_root": "plrOrigin.036",
+      "parts": {
+        "head": {
+          "object": "head.036",
+          "action": "head.026Action.002",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.037",
+          "action": "leftArm.027Action.002",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.032",
+          "action": "leftLeg.022Action.002",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.037",
+          "action": "rightArm.027Action.002",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.032",
+          "action": "rightLeg.022Action.002",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.034",
+          "action": "torso.024Action.002",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_downpunch20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_downpunch20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/downkick20261018"
+      ],
+      "rig_root": "plrOrigin.037",
+      "parts": {
+        "head": {
+          "object": "head.037",
+          "action": "head.028Action.007",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.038",
+          "action": "leftArm.029Action.007",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.033",
+          "action": "leftLeg.024Action.007",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.038",
+          "action": "rightArm.029Action.007",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.033",
+          "action": "rightLeg.024Action.007",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.035",
+          "action": "torso.026Action.007",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_downkick20261018",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_downkick20261018.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/grab20261019"
+      ],
+      "rig_root": "plrOrigin.038",
+      "parts": {
+        "head": {
+          "object": "head.038",
+          "action": "head.028Action.008",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.039",
+          "action": "leftArm.029Action.008",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.034",
+          "action": "leftLeg.024Action.008",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.039",
+          "action": "rightArm.029Action.008",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.034",
+          "action": "rightLeg.024Action.008",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.036",
+          "action": "torso.026Action.008",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_grab20261019",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_grab20261019.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/shield20261019"
+      ],
+      "rig_root": "plrOrigin.039",
+      "parts": {
+        "head": {
+          "object": "head.039",
+          "action": "head.028Action.009",
+          "slot": "OBhead.028"
+        },
+        "leftArm": {
+          "object": "leftArm.040",
+          "action": "leftArm.029Action.009",
+          "slot": "OBleftArm.029"
+        },
+        "leftLeg": {
+          "object": "leftLeg.035",
+          "action": "leftLeg.024Action.009",
+          "slot": "OBleftLeg.024"
+        },
+        "rightArm": {
+          "object": "rightArm.040",
+          "action": "rightArm.029Action.009",
+          "slot": "OBrightArm.029"
+        },
+        "rightLeg": {
+          "object": "rightLeg.035",
+          "action": "rightLeg.024Action.009",
+          "slot": "OBrightLeg.024"
+        },
+        "torso": {
+          "object": "torso.037",
+          "action": "torso.026Action.009",
+          "slot": "OBtorso.026"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_shield20261019",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_shield20261019.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/falconpunch20261019"
+      ],
+      "rig_root": "plrOrigin.040",
+      "parts": {
+        "head": {
+          "object": "head.040",
+          "action": "head.026Action.003",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.041",
+          "action": "leftArm.027Action.003",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.036",
+          "action": "leftLeg.022Action.003",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.041",
+          "action": "rightArm.027Action.003",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.036",
+          "action": "rightLeg.022Action.003",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.038",
+          "action": "torso.024Action.003",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_falconpunch20261019",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falconpunch20261019.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/captainfalcon/knee20261019"
+      ],
+      "rig_root": "plrOrigin.041",
+      "parts": {
+        "head": {
+          "object": "head.041",
+          "action": "head.026Action.004",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.042",
+          "action": "leftArm.027Action.004",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.037",
+          "action": "leftLeg.022Action.004",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.042",
+          "action": "rightArm.027Action.004",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.037",
+          "action": "rightLeg.022Action.004",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.039",
+          "action": "torso.024Action.004",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_knee20261019",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_knee20261019.json"
+    },
+    {
+      "status": "review",
+      "reason": "rig basis differs from calibrated default humanoid reference",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/boomer20261025/boomeridle20261025"
+      ],
+      "rig_root": "plrOrigin.042",
+      "parts": {
+        "head": {
+          "object": "head.042",
+          "action": "head.042Action",
+          "slot": "OBhead.042"
+        },
+        "leftArm": {
+          "object": "leftArm.043",
+          "action": "leftArm.043Action",
+          "slot": "OBleftArm.043"
+        },
+        "leftLeg": {
+          "object": "leftLeg.038",
+          "action": "leftLeg.038Action",
+          "slot": "OBleftLeg.038"
+        },
+        "rightArm": {
+          "object": "rightArm.043",
+          "action": "rightArm.043Action",
+          "slot": "OBrightArm.043"
+        },
+        "rightLeg": {
+          "object": "rightLeg.038",
+          "action": "rightLeg.038Action",
+          "slot": "OBrightLeg.038"
+        },
+        "torso": {
+          "object": "torso.040",
+          "action": "torso.040Action",
+          "slot": "OBtorso.040"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomeridle20261025",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomeridle20261025.json"
+    },
+    {
+      "status": "review",
+      "reason": "rig basis differs from calibrated default humanoid reference",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/boomer20261025/boomerwalk20261025"
+      ],
+      "rig_root": "plrOrigin.043",
+      "parts": {
+        "head": {
+          "object": "head.043",
+          "action": "head.042Action.001",
+          "slot": "OBhead.042"
+        },
+        "leftArm": {
+          "object": "leftArm.044",
+          "action": "leftArm.043Action.001",
+          "slot": "OBleftArm.043"
+        },
+        "leftLeg": {
+          "object": "leftLeg.039",
+          "action": "leftLeg.038Action.001",
+          "slot": "OBleftLeg.038"
+        },
+        "rightArm": {
+          "object": "rightArm.044",
+          "action": "rightArm.043Action.001",
+          "slot": "OBrightArm.043"
+        },
+        "rightLeg": {
+          "object": "rightLeg.039",
+          "action": "rightLeg.038Action.001",
+          "slot": "OBrightLeg.038"
+        },
+        "torso": {
+          "object": "torso.041",
+          "action": "torso.040Action.001",
+          "slot": "OBtorso.040"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomerwalk20261025",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomerwalk20261025.json"
+    },
+    {
+      "status": "review",
+      "reason": "rig basis differs from calibrated default humanoid reference",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/boomer20261025/boomerattackarm20261025"
+      ],
+      "rig_root": "plrOrigin.044",
+      "parts": {
+        "head": {
+          "object": "head.044",
+          "action": "head.042Action.002",
+          "slot": "OBhead.042"
+        },
+        "leftArm": {
+          "object": "leftArm.045",
+          "action": "leftArm.043Action.002",
+          "slot": "OBleftArm.043"
+        },
+        "leftLeg": {
+          "object": "leftLeg.040",
+          "action": "leftLeg.038Action.002",
+          "slot": "OBleftLeg.038"
+        },
+        "rightArm": {
+          "object": "rightArm.045",
+          "action": "rightArm.043Action.002",
+          "slot": "OBrightArm.043"
+        },
+        "rightLeg": {
+          "object": "rightLeg.040",
+          "action": "rightLeg.038Action.002",
+          "slot": "OBrightLeg.038"
+        },
+        "torso": {
+          "object": "torso.042",
+          "action": "torso.040Action.002",
+          "slot": "OBtorso.040"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomerattackarm20261025",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomerattackarm20261025.json"
+    },
+    {
+      "status": "review",
+      "reason": "rig basis differs from calibrated default humanoid reference",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/boomer20261025/boomerhurt20261025"
+      ],
+      "rig_root": "plrOrigin.045",
+      "parts": {
+        "head": {
+          "object": "head.045",
+          "action": "head.042Action.003",
+          "slot": "OBhead.042"
+        },
+        "leftArm": {
+          "object": "leftArm.046",
+          "action": "leftArm.043Action.003",
+          "slot": "OBleftArm.043"
+        },
+        "leftLeg": {
+          "object": "leftLeg.041",
+          "action": "leftLeg.038Action.003",
+          "slot": "OBleftLeg.038"
+        },
+        "rightArm": {
+          "object": "rightArm.046",
+          "action": "rightArm.043Action.003",
+          "slot": "OBrightArm.043"
+        },
+        "rightLeg": {
+          "object": "rightLeg.041",
+          "action": "rightLeg.038Action.003",
+          "slot": "OBrightLeg.038"
+        },
+        "torso": {
+          "object": "torso.043",
+          "action": "torso.040Action.003",
+          "slot": "OBtorso.040"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomerhurt20261025",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomerhurt20261025.json"
+    },
+    {
+      "status": "review",
+      "reason": "rig basis differs from calibrated default humanoid reference",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/boomer20261025/boomerattackspit20261025.001"
+      ],
+      "rig_root": "plrOrigin.046",
+      "parts": {
+        "head": {
+          "object": "head.046",
+          "action": "head.042Action.004",
+          "slot": "OBhead.042"
+        },
+        "leftArm": {
+          "object": "leftArm.047",
+          "action": "leftArm.043Action.004",
+          "slot": "OBleftArm.043"
+        },
+        "leftLeg": {
+          "object": "leftLeg.042",
+          "action": "leftLeg.038Action.004",
+          "slot": "OBleftLeg.038"
+        },
+        "rightArm": {
+          "object": "rightArm.047",
+          "action": "rightArm.043Action.004",
+          "slot": "OBrightArm.043"
+        },
+        "rightLeg": {
+          "object": "rightLeg.042",
+          "action": "rightLeg.038Action.004",
+          "slot": "OBrightLeg.038"
+        },
+        "torso": {
+          "object": "torso.044",
+          "action": "torso.040Action.004",
+          "slot": "OBtorso.040"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_boomerattackspit20261025_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_boomerattackspit20261025_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/stabber20261025/stabberidle20261025"
+      ],
+      "rig_root": "plrOrigin.047",
+      "parts": {
+        "head": {
+          "object": "head.047",
+          "action": "head.047Action",
+          "slot": "OBhead.047"
+        },
+        "leftArm": {
+          "object": "leftArm.048",
+          "action": "leftArm.048Action",
+          "slot": "OBleftArm.048"
+        },
+        "leftLeg": {
+          "object": "leftLeg.043",
+          "action": "leftLeg.043Action",
+          "slot": "OBleftLeg.043"
+        },
+        "rightArm": {
+          "object": "rightArm.048",
+          "action": "rightArm.048Action",
+          "slot": "OBrightArm.048"
+        },
+        "rightLeg": {
+          "object": "rightLeg.043",
+          "action": "rightLeg.043Action",
+          "slot": "OBrightLeg.043"
+        },
+        "torso": {
+          "object": "torso.045",
+          "action": "torso.045Action",
+          "slot": "OBtorso.045"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_stabberidle20261025",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_stabberidle20261025.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/monsters/anim20261024/stabber20261025/stabberwalk20261025.002"
+      ],
+      "rig_root": "plrOrigin.048",
+      "parts": {
+        "head": {
+          "object": "head.048",
+          "action": "head.047Action.001",
+          "slot": "OBhead.047"
+        },
+        "leftArm": {
+          "object": "leftArm.049",
+          "action": "leftArm.048Action.001",
+          "slot": "OBleftArm.048"
+        },
+        "leftLeg": {
+          "object": "leftLeg.044",
+          "action": "leftLeg.043Action.001",
+          "slot": "OBleftLeg.043"
+        },
+        "rightArm": {
+          "object": "rightArm.049",
+          "action": "rightArm.048Action.001",
+          "slot": "OBrightArm.048"
+        },
+        "rightLeg": {
+          "object": "rightLeg.044",
+          "action": "rightLeg.043Action.001",
+          "slot": "OBrightLeg.043"
+        },
+        "torso": {
+          "object": "torso.046",
+          "action": "torso.045Action.001",
+          "slot": "OBtorso.045"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_stabberwalk20261025_002",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_stabberwalk20261025_002.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/walk"
+      ],
+      "rig_root": "plrOrigin.049",
+      "parts": {
+        "head": {
+          "object": "head.049",
+          "action": "head.026Action.005",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.050",
+          "action": "leftArm.027Action.005",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.045",
+          "action": "leftLeg.022Action.005",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.050",
+          "action": "rightArm.027Action.005",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.045",
+          "action": "rightLeg.022Action.005",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.047",
+          "action": "torso.024Action.005",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_walk",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/sprint"
+      ],
+      "rig_root": "plrOrigin.050",
+      "parts": {
+        "head": {
+          "object": "head.050",
+          "action": "head.026Action.006",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.051",
+          "action": "leftArm.027Action.006",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.046",
+          "action": "leftLeg.022Action.006",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.051",
+          "action": "rightArm.027Action.006",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.046",
+          "action": "rightLeg.022Action.006",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.048",
+          "action": "torso.024Action.006",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_sprint",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_sprint.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/crouched"
+      ],
+      "rig_root": "plrOrigin.051",
+      "parts": {
+        "head": {
+          "object": "head.051",
+          "action": "head.026Action.007",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.052",
+          "action": "leftArm.027Action.007",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.047",
+          "action": "leftLeg.022Action.007",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.052",
+          "action": "rightArm.027Action.007",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.047",
+          "action": "rightLeg.022Action.007",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.049",
+          "action": "torso.024Action.007",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_crouched",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crouched.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/hurt-small"
+      ],
+      "rig_root": "plrOrigin.052",
+      "parts": {
+        "head": {
+          "object": "head.052",
+          "action": "head.026Action.008",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.053",
+          "action": "leftArm.027Action.008",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.048",
+          "action": "leftLeg.022Action.008",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.053",
+          "action": "rightArm.027Action.008",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.048",
+          "action": "rightLeg.022Action.008",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.050",
+          "action": "torso.024Action.008",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        1
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_small",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_small.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/hurt-normal"
+      ],
+      "rig_root": "plrOrigin.053",
+      "parts": {
+        "head": {
+          "object": "head.053",
+          "action": "head.026Action.009",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.054",
+          "action": "leftArm.027Action.009",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.049",
+          "action": "leftLeg.022Action.009",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.054",
+          "action": "rightArm.027Action.009",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.049",
+          "action": "rightLeg.022Action.009",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.051",
+          "action": "torso.024Action.009",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_normal",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_normal.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/hurt-large"
+      ],
+      "rig_root": "plrOrigin.054",
+      "parts": {
+        "head": {
+          "object": "head.054",
+          "action": "head.026Action.010",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.055",
+          "action": "leftArm.027Action.010",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.050",
+          "action": "leftLeg.022Action.010",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.055",
+          "action": "rightArm.027Action.010",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.050",
+          "action": "rightLeg.022Action.010",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.052",
+          "action": "torso.024Action.010",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_large",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_large.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/knockedback"
+      ],
+      "rig_root": "plrOrigin.055",
+      "parts": {
+        "head": {
+          "object": "head.055",
+          "action": "head.026Action.011",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.056",
+          "action": "leftArm.027Action.011",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.051",
+          "action": "leftLeg.022Action.011",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.056",
+          "action": "rightArm.027Action.011",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.051",
+          "action": "rightLeg.022Action.011",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.053",
+          "action": "torso.024Action.011",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_knockedback",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_knockedback.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/jump"
+      ],
+      "rig_root": "plrOrigin.056",
+      "parts": {
+        "head": {
+          "object": "head.056",
+          "action": "head.026Action.012",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.057",
+          "action": "leftArm.027Action.012",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.052",
+          "action": "leftLeg.022Action.012",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.057",
+          "action": "rightArm.027Action.012",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.052",
+          "action": "rightLeg.022Action.012",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.054",
+          "action": "torso.024Action.012",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_jump",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jump.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/falling"
+      ],
+      "rig_root": "plrOrigin.057",
+      "parts": {
+        "head": {
+          "object": "head.057",
+          "action": "head.026Action.013",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.058",
+          "action": "leftArm.027Action.013",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.053",
+          "action": "leftLeg.022Action.013",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.058",
+          "action": "rightArm.027Action.013",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.053",
+          "action": "rightLeg.022Action.013",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.055",
+          "action": "torso.024Action.013",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_falling",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falling.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/landing"
+      ],
+      "rig_root": "plrOrigin.058",
+      "parts": {
+        "head": {
+          "object": "head.058",
+          "action": "head.026Action.013",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.059",
+          "action": "leftArm.027Action.013",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.054",
+          "action": "leftLeg.022Action.013",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.059",
+          "action": "rightArm.027Action.013",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.054",
+          "action": "rightLeg.022Action.013",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.056",
+          "action": "torso.024Action.013",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_landing",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_landing.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/smalldeath"
+      ],
+      "rig_root": "plrOrigin.059",
+      "parts": {
+        "head": {
+          "object": "head.059",
+          "action": "head.026Action.014",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.060",
+          "action": "leftArm.027Action.014",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.055",
+          "action": "leftLeg.022Action.014",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.060",
+          "action": "rightArm.027Action.014",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.055",
+          "action": "rightLeg.022Action.014",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.057",
+          "action": "torso.024Action.014",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_smalldeath",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_smalldeath.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/bigdeath"
+      ],
+      "rig_root": "plrOrigin.060",
+      "parts": {
+        "head": {
+          "object": "head.060",
+          "action": "head.026Action.015",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.061",
+          "action": "leftArm.027Action.015",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.056",
+          "action": "leftLeg.022Action.015",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.061",
+          "action": "rightArm.027Action.015",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.056",
+          "action": "rightLeg.022Action.015",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.058",
+          "action": "torso.024Action.015",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_bigdeath",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_bigdeath.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/dash"
+      ],
+      "rig_root": "plrOrigin.061",
+      "parts": {
+        "head": {
+          "object": "head.061",
+          "action": "head.026Action.016",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.062",
+          "action": "leftArm.027Action.016",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.057",
+          "action": "leftLeg.022Action.016",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.062",
+          "action": "rightArm.027Action.016",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.057",
+          "action": "rightLeg.022Action.016",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.059",
+          "action": "torso.024Action.016",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_dash",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_dash.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/downdash"
+      ],
+      "rig_root": "plrOrigin.062",
+      "parts": {
+        "head": {
+          "object": "head.062",
+          "action": "head.026Action.017",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.063",
+          "action": "leftArm.027Action.017",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.058",
+          "action": "leftLeg.022Action.017",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.063",
+          "action": "rightArm.027Action.017",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.058",
+          "action": "rightLeg.022Action.017",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.060",
+          "action": "torso.024Action.017",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_downdash",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_downdash.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/freeze"
+      ],
+      "rig_root": "plrOrigin.063",
+      "parts": {
+        "head": {
+          "object": "head.063",
+          "action": "head.026Action.018",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.064",
+          "action": "leftArm.027Action.018",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.059",
+          "action": "leftLeg.022Action.018",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.064",
+          "action": "rightArm.027Action.018",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.059",
+          "action": "rightLeg.022Action.018",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.061",
+          "action": "torso.024Action.018",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_freeze",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_freeze.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/chainsaw/equip.003"
+      ],
+      "rig_root": "plrOrigin.064",
+      "parts": {
+        "head": {
+          "object": "head.064",
+          "action": "head.026Action.049",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.065",
+          "action": "leftArm.027Action.049",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.060",
+          "action": "leftLeg.022Action.049",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.065",
+          "action": "rightArm.027Action.049",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.060",
+          "action": "rightLeg.022Action.049",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.062",
+          "action": "torso.024Action.049",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_003",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_003.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/chainsaw/archive.001/attack1"
+      ],
+      "rig_root": "plrOrigin.065",
+      "parts": {
+        "head": {
+          "object": "head.065",
+          "action": "head.026Action.020",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.066",
+          "action": "leftArm.027Action.020",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.061",
+          "action": "leftLeg.022Action.020",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.066",
+          "action": "rightArm.027Action.020",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.061",
+          "action": "rightLeg.022Action.020",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.063",
+          "action": "torso.024Action.020",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack1",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack1.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/chainsaw/archive.001/equip"
+      ],
+      "rig_root": "plrOrigin.066",
+      "parts": {
+        "head": {
+          "object": "head.066",
+          "action": "head.026Action.021",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.067",
+          "action": "leftArm.027Action.021",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.062",
+          "action": "leftLeg.022Action.021",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.067",
+          "action": "rightArm.027Action.021",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.062",
+          "action": "rightLeg.022Action.021",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.064",
+          "action": "torso.024Action.021",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/idle"
+      ],
+      "rig_root": "plrOrigin.067",
+      "parts": {
+        "head": {
+          "object": "head.067",
+          "action": "head.026Action.022",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.068",
+          "action": "leftArm.027Action.022",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.063",
+          "action": "leftLeg.022Action.022",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.068",
+          "action": "rightArm.027Action.022",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.063",
+          "action": "rightLeg.022Action.022",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.065",
+          "action": "torso.024Action.022",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/attackslam"
+      ],
+      "rig_root": "plrOrigin.068",
+      "parts": {
+        "head": {
+          "object": "head.068",
+          "action": "head.026Action.023",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.069",
+          "action": "leftArm.027Action.023",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.064",
+          "action": "leftLeg.022Action.023",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.069",
+          "action": "rightArm.027Action.023",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.064",
+          "action": "rightLeg.022Action.023",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.066",
+          "action": "torso.024Action.023",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attackslam",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attackslam.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/equip.001"
+      ],
+      "rig_root": "plrOrigin.069",
+      "parts": {
+        "head": {
+          "object": "head.069",
+          "action": "head.026Action.024",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.070",
+          "action": "leftArm.027Action.024",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.065",
+          "action": "leftLeg.022Action.024",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.070",
+          "action": "rightArm.027Action.024",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.065",
+          "action": "rightLeg.022Action.024",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.067",
+          "action": "torso.024Action.024",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/idle.002"
+      ],
+      "rig_root": "plrOrigin.070",
+      "parts": {
+        "head": {
+          "object": "head.070",
+          "action": "head.026Action.025",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.071",
+          "action": "leftArm.027Action.025",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.066",
+          "action": "leftLeg.022Action.025",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.071",
+          "action": "rightArm.027Action.025",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.066",
+          "action": "rightLeg.022Action.025",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.068",
+          "action": "torso.024Action.025",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_002",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_002.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/attack1slash"
+      ],
+      "rig_root": "plrOrigin.071",
+      "parts": {
+        "head": {
+          "object": "head.071",
+          "action": "head.026Action.026",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.072",
+          "action": "leftArm.027Action.026",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.067",
+          "action": "leftLeg.022Action.026",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.072",
+          "action": "rightArm.027Action.026",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.067",
+          "action": "rightLeg.022Action.026",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.069",
+          "action": "torso.024Action.026",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack1slash",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack1slash.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/equip.002"
+      ],
+      "rig_root": "plrOrigin.072",
+      "parts": {
+        "head": {
+          "object": "head.072",
+          "action": "head.026Action.027",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.073",
+          "action": "leftArm.027Action.027",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.068",
+          "action": "leftLeg.022Action.027",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.073",
+          "action": "rightArm.027Action.027",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.068",
+          "action": "rightLeg.022Action.027",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.070",
+          "action": "torso.024Action.027",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_002",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_002.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/attack2lunge"
+      ],
+      "rig_root": "plrOrigin.073",
+      "parts": {
+        "head": {
+          "object": "head.073",
+          "action": "head.026Action.028",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.074",
+          "action": "leftArm.027Action.028",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.069",
+          "action": "leftLeg.022Action.028",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.074",
+          "action": "rightArm.027Action.028",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.069",
+          "action": "rightLeg.022Action.028",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.071",
+          "action": "torso.024Action.028",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack2lunge",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack2lunge.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/attack3arc"
+      ],
+      "rig_root": "plrOrigin.074",
+      "parts": {
+        "head": {
+          "object": "head.074",
+          "action": "head.026Action.029",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.075",
+          "action": "leftArm.027Action.029",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.070",
+          "action": "leftLeg.022Action.029",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.075",
+          "action": "rightArm.027Action.029",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.070",
+          "action": "rightLeg.022Action.029",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.072",
+          "action": "torso.024Action.029",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack3arc",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack3arc.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/archive.003/attack4defense"
+      ],
+      "rig_root": "plrOrigin.075",
+      "parts": {
+        "head": {
+          "object": "head.075",
+          "action": "head.026Action.030",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.076",
+          "action": "leftArm.027Action.030",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.071",
+          "action": "leftLeg.022Action.030",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.076",
+          "action": "rightArm.027Action.030",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.071",
+          "action": "rightLeg.022Action.030",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.073",
+          "action": "torso.024Action.030",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack4defense",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack4defense.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/sprint.001"
+      ],
+      "rig_root": "plrOrigin.076",
+      "parts": {
+        "head": {
+          "object": "head.076",
+          "action": "head.026Action.031",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.077",
+          "action": "leftArm.027Action.031",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.072",
+          "action": "leftLeg.022Action.031",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.077",
+          "action": "rightArm.027Action.031",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.072",
+          "action": "rightLeg.022Action.031",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.074",
+          "action": "torso.024Action.031",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_sprint_001",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_sprint_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/crouching"
+      ],
+      "rig_root": "plrOrigin.077",
+      "parts": {
+        "head": {
+          "object": "head.077",
+          "action": "head.026Action.032",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.078",
+          "action": "leftArm.027Action.032",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.073",
+          "action": "leftLeg.022Action.032",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.078",
+          "action": "rightArm.027Action.032",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.073",
+          "action": "rightLeg.022Action.032",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.075",
+          "action": "torso.024Action.032",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        21
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_crouching",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crouching.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/idle.003"
+      ],
+      "rig_root": "plrOrigin.078",
+      "parts": {
+        "head": {
+          "object": "head.078",
+          "action": "head.026Action.033",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.079",
+          "action": "leftArm.027Action.033",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.074",
+          "action": "leftLeg.022Action.033",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.079",
+          "action": "rightArm.027Action.033",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.074",
+          "action": "rightLeg.022Action.033",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.076",
+          "action": "torso.024Action.033",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_003",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_003.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/hurt-small.001"
+      ],
+      "rig_root": "plrOrigin.079",
+      "parts": {
+        "head": {
+          "object": "head.079",
+          "action": "head.026Action.034",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.080",
+          "action": "leftArm.027Action.034",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.075",
+          "action": "leftLeg.022Action.034",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.080",
+          "action": "rightArm.027Action.034",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.075",
+          "action": "rightLeg.022Action.034",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.077",
+          "action": "torso.024Action.034",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_small_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_small_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/hurt-normal.001"
+      ],
+      "rig_root": "plrOrigin.080",
+      "parts": {
+        "head": {
+          "object": "head.080",
+          "action": "head.026Action.035",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.081",
+          "action": "leftArm.027Action.035",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.076",
+          "action": "leftLeg.022Action.035",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.081",
+          "action": "rightArm.027Action.035",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.076",
+          "action": "rightLeg.022Action.035",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.078",
+          "action": "torso.024Action.035",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_normal_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_normal_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/hurt-large.001"
+      ],
+      "rig_root": "plrOrigin.081",
+      "parts": {
+        "head": {
+          "object": "head.081",
+          "action": "head.026Action.036",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.082",
+          "action": "leftArm.027Action.036",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.077",
+          "action": "leftLeg.022Action.036",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.082",
+          "action": "rightArm.027Action.036",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.077",
+          "action": "rightLeg.022Action.036",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.079",
+          "action": "torso.024Action.036",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_hurt_large_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_large_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/knockedback.001"
+      ],
+      "rig_root": "plrOrigin.082",
+      "parts": {
+        "head": {
+          "object": "head.082",
+          "action": "head.026Action.037",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.083",
+          "action": "leftArm.027Action.037",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.078",
+          "action": "leftLeg.022Action.037",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.083",
+          "action": "rightArm.027Action.037",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.078",
+          "action": "rightLeg.022Action.037",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.080",
+          "action": "torso.024Action.037",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_knockedback_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_knockedback_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/archive/jumpslow 2026 10 27"
+      ],
+      "rig_root": "plrOrigin.083",
+      "parts": {
+        "head": {
+          "object": "head.083",
+          "action": "head.026Action.038",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.084",
+          "action": "leftArm.027Action.038",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.079",
+          "action": "leftLeg.022Action.038",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.084",
+          "action": "rightArm.027Action.038",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.079",
+          "action": "rightLeg.022Action.038",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.081",
+          "action": "torso.024Action.038",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_jumpslow_2026_10_27",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jumpslow_2026_10_27.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/jump.002"
+      ],
+      "rig_root": "plrOrigin.084",
+      "parts": {
+        "head": {
+          "object": "head.084",
+          "action": "head.026Action.039",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.085",
+          "action": "leftArm.027Action.039",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.080",
+          "action": "leftLeg.022Action.039",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.085",
+          "action": "rightArm.027Action.039",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.080",
+          "action": "rightLeg.022Action.039",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.082",
+          "action": "torso.024Action.039",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_jump_002",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jump_002.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/falling.001"
+      ],
+      "rig_root": "plrOrigin.085",
+      "parts": {
+        "head": {
+          "object": "head.085",
+          "action": "head.026Action.040",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.086",
+          "action": "leftArm.027Action.040",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.081",
+          "action": "leftLeg.022Action.040",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.086",
+          "action": "rightArm.027Action.040",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.081",
+          "action": "rightLeg.022Action.040",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.083",
+          "action": "torso.024Action.040",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_falling_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falling_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/landing.001"
+      ],
+      "rig_root": "plrOrigin.086",
+      "parts": {
+        "head": {
+          "object": "head.086",
+          "action": "head.026Action.041",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.087",
+          "action": "leftArm.027Action.041",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.082",
+          "action": "leftLeg.022Action.041",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.087",
+          "action": "rightArm.027Action.041",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.082",
+          "action": "rightLeg.022Action.041",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.084",
+          "action": "torso.024Action.041",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_landing_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_landing_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/smalldeath.001"
+      ],
+      "rig_root": "plrOrigin.087",
+      "parts": {
+        "head": {
+          "object": "head.087",
+          "action": "head.026Action.043",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.088",
+          "action": "leftArm.027Action.043",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.083",
+          "action": "leftLeg.022Action.043",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.088",
+          "action": "rightArm.027Action.043",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.083",
+          "action": "rightLeg.022Action.043",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.085",
+          "action": "torso.024Action.043",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_smalldeath_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_smalldeath_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/dead"
+      ],
+      "rig_root": "plrOrigin.088",
+      "parts": {
+        "head": {
+          "object": "head.088",
+          "action": "head.026Action.044",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.089",
+          "action": "leftArm.027Action.044",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.084",
+          "action": "leftLeg.022Action.044",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.089",
+          "action": "rightArm.027Action.044",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.084",
+          "action": "rightLeg.022Action.044",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.086",
+          "action": "torso.024Action.044",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        1
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_dead",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_dead.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/downdash.001"
+      ],
+      "rig_root": "plrOrigin.089",
+      "parts": {
+        "head": {
+          "object": "head.089",
+          "action": "head.026Action.045",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.090",
+          "action": "leftArm.027Action.045",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.085",
+          "action": "leftLeg.022Action.045",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.090",
+          "action": "rightArm.027Action.045",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.085",
+          "action": "rightLeg.022Action.045",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.087",
+          "action": "torso.024Action.045",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_downdash_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_downdash_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/general/freeze.001"
+      ],
+      "rig_root": "plrOrigin.090",
+      "parts": {
+        "head": {
+          "object": "head.090",
+          "action": "head.026Action.046",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.091",
+          "action": "leftArm.027Action.046",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.086",
+          "action": "leftLeg.022Action.046",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.091",
+          "action": "rightArm.027Action.046",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.086",
+          "action": "rightLeg.022Action.046",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.088",
+          "action": "torso.024Action.046",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_freeze_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_freeze_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/idle.004"
+      ],
+      "rig_root": "plrOrigin.091",
+      "parts": {
+        "head": {
+          "object": "head.091",
+          "action": "head.026Action.048",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.092",
+          "action": "leftArm.027Action.048",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.087",
+          "action": "leftLeg.022Action.048",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.092",
+          "action": "rightArm.027Action.048",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.087",
+          "action": "rightLeg.022Action.048",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.089",
+          "action": "torso.024Action.048",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_004",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_004.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/chainsaw/attack1.001"
+      ],
+      "rig_root": "plrOrigin.092",
+      "parts": {
+        "head": {
+          "object": "head.092",
+          "action": "head.026Action.050",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.093",
+          "action": "leftArm.027Action.050",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.088",
+          "action": "leftLeg.022Action.050",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.093",
+          "action": "rightArm.027Action.050",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.088",
+          "action": "rightLeg.022Action.050",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.090",
+          "action": "torso.024Action.050",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attack1_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack1_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/chainsaw/idle.001"
+      ],
+      "rig_root": "plrOrigin.093",
+      "parts": {
+        "head": {
+          "object": "head.093",
+          "action": "head.026Action.051",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.094",
+          "action": "leftArm.027Action.051",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.089",
+          "action": "leftLeg.022Action.051",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.094",
+          "action": "rightArm.027Action.051",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.089",
+          "action": "rightLeg.022Action.051",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.091",
+          "action": "torso.024Action.051",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_001",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/attackslam.001"
+      ],
+      "rig_root": "plrOrigin.094",
+      "parts": {
+        "head": {
+          "object": "head.094",
+          "action": "head.026Action.052",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.095",
+          "action": "leftArm.027Action.052",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.090",
+          "action": "leftLeg.022Action.052",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.095",
+          "action": "rightArm.027Action.052",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.090",
+          "action": "rightLeg.022Action.052",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.092",
+          "action": "torso.024Action.052",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_attackslam_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attackslam_001.json"
+    },
+    {
+      "status": "skip",
+      "reason": "archive or non-animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/archive.002/equip.004"
+      ],
+      "rig_root": "plrOrigin.095",
+      "parts": {
+        "head": {
+          "object": "head.095",
+          "action": "head.026Action.053",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.096",
+          "action": "leftArm.027Action.053",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.091",
+          "action": "leftLeg.022Action.053",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.096",
+          "action": "rightArm.027Action.053",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.091",
+          "action": "rightLeg.022Action.053",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.093",
+          "action": "torso.024Action.053",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_004",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_004.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/idle.005"
+      ],
+      "rig_root": "plrOrigin.096",
+      "parts": {
+        "head": {
+          "object": "head.096",
+          "action": "head.026Action.048",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.097",
+          "action": "leftArm.027Action.048",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.092",
+          "action": "leftLeg.022Action.048",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.097",
+          "action": "rightArm.027Action.048",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.092",
+          "action": "rightLeg.022Action.048",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.094",
+          "action": "torso.024Action.048",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_005",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_005.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/equip.005"
+      ],
+      "rig_root": "plrOrigin.097",
+      "parts": {
+        "head": {
+          "object": "head.097",
+          "action": "head.026Action.053",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.098",
+          "action": "leftArm.027Action.053",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.093",
+          "action": "leftLeg.022Action.053",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.098",
+          "action": "rightArm.027Action.053",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.093",
+          "action": "rightLeg.022Action.053",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.095",
+          "action": "torso.024Action.053",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_005",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_005.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/attack1slash.001"
+      ],
+      "rig_root": "plrOrigin.098",
+      "parts": {
+        "head": {
+          "object": "head.098",
+          "action": "head.026Action.052",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.099",
+          "action": "leftArm.027Action.052",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.094",
+          "action": "leftLeg.022Action.052",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.099",
+          "action": "rightArm.027Action.052",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.094",
+          "action": "rightLeg.022Action.052",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.096",
+          "action": "torso.024Action.052",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "melee",
+      "clip_id": "mimita_sizing_6_attack1slash_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack1slash_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/attack2lunge.001"
+      ],
+      "rig_root": "plrOrigin.099",
+      "parts": {
+        "head": {
+          "object": "head.099",
+          "action": "head.026Action.054",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.100",
+          "action": "leftArm.027Action.054",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.095",
+          "action": "leftLeg.022Action.054",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.100",
+          "action": "rightArm.027Action.054",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.095",
+          "action": "rightLeg.022Action.054",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.097",
+          "action": "torso.024Action.054",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "melee",
+      "clip_id": "mimita_sizing_6_attack2lunge_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack2lunge_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/attack3arc.001"
+      ],
+      "rig_root": "plrOrigin.100",
+      "parts": {
+        "head": {
+          "object": "head.100",
+          "action": "head.026Action.055",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.101",
+          "action": "leftArm.027Action.055",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.096",
+          "action": "leftLeg.022Action.055",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.101",
+          "action": "rightArm.027Action.055",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.096",
+          "action": "rightLeg.022Action.055",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.098",
+          "action": "torso.024Action.055",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "melee",
+      "clip_id": "mimita_sizing_6_attack3arc_001",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attack3arc_001.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/idle.006"
+      ],
+      "rig_root": "plrOrigin.101",
+      "parts": {
+        "head": {
+          "object": "head.101",
+          "action": "head.026Action.056",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.102",
+          "action": "leftArm.027Action.056",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.097",
+          "action": "leftLeg.022Action.056",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.102",
+          "action": "rightArm.027Action.056",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.097",
+          "action": "rightLeg.022Action.056",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.099",
+          "action": "torso.024Action.056",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_idle_006",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_006.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/equip.006"
+      ],
+      "rig_root": "plrOrigin.102",
+      "parts": {
+        "head": {
+          "object": "head.102",
+          "action": "head.026Action.057",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.103",
+          "action": "leftArm.027Action.057",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.098",
+          "action": "leftLeg.022Action.057",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.103",
+          "action": "rightArm.027Action.057",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.098",
+          "action": "rightLeg.022Action.057",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.100",
+          "action": "torso.024Action.057",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_equip_006",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_equip_006.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/mace/attackslam.002"
+      ],
+      "rig_root": "plrOrigin.103",
+      "parts": {
+        "head": {
+          "object": "head.103",
+          "action": "head.026Action.058",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.104",
+          "action": "leftArm.027Action.058",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.099",
+          "action": "leftLeg.022Action.058",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.104",
+          "action": "rightArm.027Action.058",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.099",
+          "action": "rightLeg.022Action.058",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.101",
+          "action": "torso.024Action.058",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "melee",
+      "clip_id": "mimita_sizing_6_attackslam_002",
+      "loop": false,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_attackslam_002.json"
+    },
+    {
+      "status": "ready",
+      "reason": "named animation collection",
+      "collection_paths": [
+        "Scene Collection/anims/weapons.001/swordsword/defend"
+      ],
+      "rig_root": "plrOrigin.104",
+      "parts": {
+        "head": {
+          "object": "head.104",
+          "action": "head.026Action.059",
+          "slot": "OBhead.026"
+        },
+        "leftArm": {
+          "object": "leftArm.105",
+          "action": "leftArm.027Action.059",
+          "slot": "OBleftArm.027"
+        },
+        "leftLeg": {
+          "object": "leftLeg.100",
+          "action": "leftLeg.022Action.059",
+          "slot": "OBleftLeg.022"
+        },
+        "rightArm": {
+          "object": "rightArm.105",
+          "action": "rightArm.027Action.059",
+          "slot": "OBrightArm.027"
+        },
+        "rightLeg": {
+          "object": "rightLeg.100",
+          "action": "rightLeg.022Action.059",
+          "slot": "OBrightLeg.022"
+        },
+        "torso": {
+          "object": "torso.102",
+          "action": "torso.024Action.059",
+          "slot": "OBtorso.024"
+        }
+      },
+      "frame_range": [
+        1,
+        60
+      ],
+      "clip_type": "generic",
+      "clip_id": "mimita_sizing_6_defend",
+      "loop": true,
+      "output": "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_defend.json"
+    }
+  ]
+}

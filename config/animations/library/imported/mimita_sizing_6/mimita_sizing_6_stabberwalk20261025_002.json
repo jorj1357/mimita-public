@@ -1,0 +1,263 @@
+{
+  "version": 2,
+  "clips": {
+    "mimita_sizing_6_stabberwalk20261025_002": {
+      "durationTicks": 60,
+      "loop": true,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.23,
+                0.67,
+                -0.15
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.0,
+                -0.05
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.4,
+                0.3,
+                0.05
+              ],
+              "rotationQuaternionWxyz": [
+                0.66,
+                -0.7,
+                0.26,
+                -0.1
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                0.69,
+                0.57,
+                -0.15
+              ],
+              "rotationQuaternionWxyz": [
+                0.68,
+                -0.71,
+                0.19,
+                -0.02
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                0.99,
+                0.56,
+                0.03
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.68,
+                -0.02,
+                0.19
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.1,
+                -0.07,
+                0.24
+              ],
+              "rotationQuaternionWxyz": [
+                0.68,
+                -0.71,
+                0.2,
+                -0.04
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.2,
+                -0.04,
+                -0.02
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.69,
+                0.0,
+                0.17
+              ]
+            }
+          }
+        },
+        {
+          "tick": 29,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.29,
+                0.53,
+                0.12
+              ],
+              "rotationQuaternionWxyz": [
+                0.7,
+                -0.71,
+                0.04,
+                0.04
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.51,
+                0.21,
+                -0.04
+              ],
+              "rotationQuaternionWxyz": [
+                0.69,
+                -0.66,
+                0.14,
+                -0.27
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                1.05,
+                0.39,
+                -0.05
+              ],
+              "rotationQuaternionWxyz": [
+                0.72,
+                -0.66,
+                -0.17,
+                0.06
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                0.8,
+                0.38,
+                0.13
+              ],
+              "rotationQuaternionWxyz": [
+                0.64,
+                -0.71,
+                0.13,
+                -0.25
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.13,
+                -0.04,
+                0.04
+              ],
+              "rotationQuaternionWxyz": [
+                0.73,
+                -0.67,
+                -0.14,
+                0.02
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.22,
+                -0.25,
+                -0.21
+              ],
+              "rotationQuaternionWxyz": [
+                0.65,
+                -0.71,
+                0.12,
+                -0.23
+              ]
+            }
+          }
+        },
+        {
+          "tick": 59,
+          "interp": "smooth",
+          "parts": {
+            "head": {
+              "translation": [
+                1.23,
+                0.67,
+                -0.15
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.71,
+                0.0,
+                -0.05
+              ]
+            },
+            "torso": {
+              "translation": [
+                0.4,
+                0.3,
+                0.05
+              ],
+              "rotationQuaternionWxyz": [
+                0.66,
+                -0.7,
+                0.26,
+                -0.1
+              ]
+            },
+            "leftArm": {
+              "translation": [
+                0.69,
+                0.57,
+                -0.15
+              ],
+              "rotationQuaternionWxyz": [
+                0.68,
+                -0.71,
+                0.19,
+                -0.02
+              ]
+            },
+            "rightArm": {
+              "translation": [
+                0.99,
+                0.56,
+                0.03
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.68,
+                -0.02,
+                0.19
+              ]
+            },
+            "leftLeg": {
+              "translation": [
+                0.1,
+                -0.07,
+                0.24
+              ],
+              "rotationQuaternionWxyz": [
+                0.68,
+                -0.71,
+                0.2,
+                -0.04
+              ]
+            },
+            "rightLeg": {
+              "translation": [
+                0.2,
+                -0.04,
+                -0.02
+              ],
+              "rotationQuaternionWxyz": [
+                0.71,
+                -0.69,
+                0.0,
+                0.17
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

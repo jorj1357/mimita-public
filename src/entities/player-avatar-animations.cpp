@@ -200,20 +200,26 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
 
     std::string animFile = "animations.json";
     nlohmann::json avatarRoot;
+    bool inlineProfile = false;
     if (!sharedProfile && readJsonFile(avatarJson, avatarRoot)) {
         parseAvatarRigJson(avatarRoot, next.rig);
+        inlineProfile = avatarRoot.contains("animation_profile") &&
+                        avatarRoot["animation_profile"].is_object();
         if (avatarRoot.contains("animations") && avatarRoot["animations"].is_string())
             animFile = avatarRoot["animations"].get<std::string>();
     }
 
     const std::string animPath = sharedProfile
-        ? resolveAssetPath(avatarName.substr(8)) : dir + "/" + animFile;
+        ? resolveAssetPath(avatarName.substr(8)) :
+        inlineProfile ? avatarJson : dir + "/" + animFile;
     next.animPath = animPath;
     next.animWrite = fileWriteStamp(animPath);
     nlohmann::json animRoot;
     bool valid = false;
     try {
-        if (!readJsonFile(animPath, animRoot))
+        if (inlineProfile)
+            animRoot = avatarRoot["animation_profile"];
+        else if (!readJsonFile(animPath, animRoot))
             throw std::runtime_error("file missing or invalid JSON");
 
         loadIncludes(animRoot, next.set, next.dependencyWrites);

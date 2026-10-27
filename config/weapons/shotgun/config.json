@@ -1,0 +1,125 @@
+{
+  "id": "shotgun",
+  "display_name": "Shotgun",
+  "slot": 3,
+  "animation_profile": null,
+  "animations": {
+    "fire": {
+      "duration": 0.14,
+      "position_offset": [
+        -0.08,
+        0.03,
+        -0.18
+      ],
+      "rotation_offset": [
+        -8.0,
+        3.0,
+        2.0
+      ],
+      "recover": true
+    },
+    "reload_pose": {
+      "position": [
+        0.15,
+        -0.35,
+        -0.08
+      ],
+      "rotation": [
+        -32.0,
+        10.0,
+        22.0
+      ]
+    }
+  },
+  "beam_thickness": 2.0,
+  "beam_world_thickness": 0.0,
+  "behavior_type": "hitscan",
+  "components": null,
+  "custom_params": {
+    "distanceFalloffStart": 30.0,
+    "minDamageFraction": 0.02,
+    "falloffExponent": 2.0,
+    "limbDamageMultiplier": 0.75,
+    "minAngleFactor": 0.15,
+    "shootPoseTime": 0.14,
+    "equipPoseTime": 0.22
+  },
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 5.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": 1.0,
+  "fire_delay": 0.01,
+  "fire_mode": "semi_auto",
+  "headshot_multiplier": 2.0,
+  "hitscan": true,
+  "magazine_size": 2,
+  "model": {
+    "path": "assets/objects/weapons/mimita-shotgun-v1.glb"
+  },
+  "network_mode": null,
+  "pellet_count": 15,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": null,
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": 0.0,
+  "projectile_mass": null,
+  "projectile_radius": 0.0,
+  "projectile_shape": null,
+  "projectile_speed": 0.0,
+  "recoil": 10.0,
+  "recoil_definition": null,
+  "reload_time": 1.0,
+  "render": null,
+  "reserve_ammo": null,
+  "self_impulse_multiplier": null,
+  "shooter_knockback": 3.0,
+  "shooter_knockback_vertical": null,
+  "sound": {
+    "shoot": "shotgunshoot",
+    "reload": "shotgunreload",
+    "hit": "player_hurt",
+    "dry_fire": "ui/click",
+    "equip": "weapon/shotgun/shotgunequip",
+    "pitch": 0.8,
+    "retrigger": true
+  },
+  "spread": 10.0,
+  "square_spread": true,
+  "uses_physics_projectile": false,
+  "victim_knockback": 1.0,
+  "victim_knockback_per_damage": 1.0,
+  "victim_knockback_vertical_fraction": 0.01,
+  "viewmodel": {
+    "enabled": true,
+    "position": [
+      0.0,
+      0.0,
+      0.5
+    ],
+    "rotation_degrees": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "attachment": {
+      "position": [
+        0.0,
+        0.05,
+        -1.5
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -90.0
+      ]
+    },
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
+}

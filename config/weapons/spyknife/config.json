@@ -1,0 +1,119 @@
+{
+  "id": "spyknife",
+  "display_name": "Spy Knife",
+  "slot": 12,
+  "animation_profile": null,
+  "animations": null,
+  "beam_thickness": null,
+  "beam_world_thickness": null,
+  "behavior_type": "spyknife",
+  "components": null,
+  "custom_params": {
+    "networkBatchIntervalTicks": 10.0,
+    "networkBatchMaxContacts": 6.0,
+    "hitboxHalfX": 0.5,
+    "hitboxHalfY": 0.5,
+    "hitboxHalfZ": 3.8,
+    "hitboxOffsetX": 0.0,
+    "hitboxOffsetY": 0.0,
+    "hitboxOffsetZ": 0.0,
+    "hitboxRotX": 0.0,
+    "hitboxRotY": 0.0,
+    "hitboxRotZ": 0.0,
+    "hitboxAlpha": 0.1,
+    "hitboxVisible": 0,
+    "serverContactRadius": 4.0,
+    "serverTargetBodyRadius": 3.25,
+    "baseDamage": 1.0,
+    "minDamage": 9.0,
+    "maxDamage": 35.0,
+    "speedDamageScale": 0.35,
+    "forceDamageScale": 0.65,
+    "angleDamageExponent": 1.0,
+    "impactDamageScale": 1.0,
+    "impactDamageExponent": 1.35,
+    "maxImpactSpeed": 99999.0,
+    "maxImpactForce": 99999.0,
+    "baseKnockback": 10.0,
+    "speedKnockbackFactor": 1.1,
+    "angleKnockbackFactor": 1.01,
+    "maxKnockback": 10.0,
+    "swingDurationTicks": 111.0,
+    "altPoseState": 1.0,
+    "altPoseDurationTicks": 1.0,
+    "damageTickInterval": 0.166
+  },
+  "cut_energy_scale": null,
+  "cut_radius_scale": null,
+  "damage": 1.0,
+  "damage_scale": null,
+  "enemy_impulse_multiplier": null,
+  "fire_delay": 0.0,
+  "fire_mode": "semi_auto",
+  "headshot_multiplier": null,
+  "hitscan": null,
+  "magazine_size": 0,
+  "model": {
+    "path": "assets/objects/weapons/mimita-spy-knife-v2.glb"
+  },
+  "network_mode": null,
+  "pellet_count": null,
+  "penetration_count": null,
+  "penetration_scale": null,
+  "pose_id": null,
+  "projectile_base_radius": null,
+  "projectile_density": null,
+  "projectile_lifetime": null,
+  "projectile_mass": null,
+  "projectile_radius": null,
+  "projectile_shape": null,
+  "projectile_speed": null,
+  "recoil": null,
+  "recoil_definition": null,
+  "reload_time": null,
+  "render": null,
+  "reserve_ammo": null,
+  "self_impulse_multiplier": null,
+  "shooter_knockback": null,
+  "shooter_knockback_vertical": null,
+  "sound": {
+    "shoot": "entity/falcon/falconswing",
+    "hit": "player_hurt"
+  },
+  "spread": null,
+  "square_spread": null,
+  "uses_physics_projectile": null,
+  "victim_knockback": null,
+  "victim_knockback_per_damage": null,
+  "victim_knockback_vertical_fraction": null,
+  "viewmodel": {
+    "enabled": true,
+    "position": [
+      -8.4,
+      -3.0,
+      0.4
+    ],
+    "rotation_degrees": [
+      0.0,
+      30.0,
+      0.0
+    ],
+    "attachment": {
+      "position": [
+        9.3,
+        2.9,
+        -0.1
+      ],
+      "rotation_degrees": [
+        0.0,
+        0.0,
+        -5.0
+      ]
+    },
+    "scale": [
+      1.0,
+      1.0,
+      2.0
+    ]
+  }
+}

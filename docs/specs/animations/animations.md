@@ -1,3 +1,104 @@
+2026 10 27 1012 jorj doing animations
+
+not sure what to do about arms in the animations, if a weapon is equipped mabye defer to the animations.json entry of it? 
+but i dotn liek that i want to have like
+
+one master list of weapons json so each weapon has all the values it could possibly have
+not one big weapons.json
+
+then each waepon has like its own animatons
+bc weapons should be tools
+and tools have their own aniamtions like
+and u can reuse them
+we alreaed have anim library
+idk
+
+### actual anim list 2026 10 27 1045
+
+locomotion
+0. idle 
+1. walk
+2. sprint
+3. crouch
+4. jump
+5. falling
+6. landing
+
+combat
+
+weapons
+
+### general animations list all of them , for normal sized boy or girl avatars
+
+walk
+run
+sprint
+
+starting/stopping anim, e.g 50 m/s to 0 m/s maybe a quick anim  idk
+
+dash
+down dash
+freeze 
+
+knockback
+
+jump
+falling/in air(?)
+landing
+crouching, crouched, uncrouching
+
+get hurt a little
+get hurt normal
+get hurt a lot
+
+death 1?
+death 2?
+
+### weapons
+
+chainsaw
+equip?
+idle
+slash forward?
+
+mace
+equip
+idle
+slam down: windup, active, recovering, back to idle?
+
+swordsword
+equip
+idle
+left click 1x: slash down 
+left click 2x: natural continuaition of being down, like, down then up/to the right
+
+right click 1x: wide arc? sweep?
+right click 2x and then hold: defensive pose, waepon is across ur whole body
+
+### visuals
+
+melee contact:
+
+tick 1 of contact = white spehre like 0.5m diameter spehre, 0.5 alpha, bigger and more alpha when hitting harder
+
+base = 0.5 diameter, 0.5 alpha, 123,123,123 color
+max force = 1.0 diameter, 1.0 alpha, 255,255,255 color
+
+tick 2 of cotnact = white sphere disappears, replaced with 
+this spark effect png
+"C:\mimita-v9\assets\textureshq\sparkv3.png"
+"C:\mimita-v9\assets\textureshq\sparkv2.png"
+"C:\mimita-v9\assets\textureshq\sparkv1.png"
+
+tick 2 thru 6 = spark v1
+tick 7 thru 13 = spark v2
+tick 14 thru 20 = spark v3
+
+client sided tick rate as well
+all sparks configurable alpha and configurable random rotation
+prob add to  C:\mimita-v9\config\impact_decals.json this 
+
+
 
 2026-10-17 user decision (clarifies the earlier note): animation files may author rotations as Euler XYZ degrees or as quaternions. Convert either encoding to one normalized quaternion representation for runtime use. Keep the format names and coordinate spaces explicit so authors and code do not confuse local part rotation with world position.
 
@@ -127,7 +228,7 @@ Rules:
 `config/animations/library/` is not automatically part of an avatar's loaded
 animation set. Until automatic discovery is implemented, add each Melee action
 clip file to the active avatar's `animations.json` `include` list. Keep the
-move's `animation_clip_id` in `config/weapons.json` matched to the clip ID in
+move's `animation_clip_id` in `config/weapons/<id>/config.json` matched to the clip ID in
 that included file.
 
 When a Melee action has no visible animation in game, check these links in
@@ -139,7 +240,7 @@ order:
    action's `animation_clip_id`.
 3. Confirm that included file defines that exact clip ID, with no duplicate
    clip ID in the shared library.
-4. Confirm the Melee action in `config/weapons.json` references that same ID.
+4. Confirm the Melee action in `config/weapons/<id>/config.json` references that same ID.
 5. Check the `anim.melee.clip_missing` diagnostic and profile fallback if the
    clip still does not appear.
 
@@ -425,7 +526,7 @@ actions must use the newly accepted revision.
   device state inside the animation document.
 - `onStartPitchMultiplier` applies the same audio-recipe multiplier rule to
   `onStartSoundId`; it defaults to `1.0`.
-- Melee move sound ownership is in the selected `config/weapons.json` move-set
+- Melee move sound ownership is in the selected `config/weapons/<id>/config.json` move-set
   definition, alongside input, hitboxes, percent, and knockback. A Melee action
   must define a start sound and may define phase-local sound events there; its
   clip must not duplicate those sound values. A new Melee action
@@ -445,7 +546,7 @@ actions must use the newly accepted revision.
 
 ### Animation-authored action timeline
 
-Melee no longer retimes phase clips from durations in `config/weapons.json`.
+Melee no longer retimes phase clips from durations in `config/weapons/<id>/config.json`.
 One action references one authored clip. Its runtime `durationTicks` and phase
 marker `tick` values define the complete action duration and exact server-tick
 windup, active, and recovery windows. The same markers' `sourceTick` values
@@ -457,7 +558,7 @@ or keyframe edits are required. This is the required/default Melee playback
 behavior, not an optional mode.
 
 This is the required/default Melee runtime behavior for every action using
-`animation_clip_id`, not an optional playback mode. `config/weapons.json`
+`animation_clip_id`, not an optional playback mode. `config/weapons/<id>/config.json`
 supplies that clip ID and non-timing combat data such as hitboxes and damage;
 it may not also supply phase durations or separate phase clip IDs. The runtime
 resolves the ID from `config/animations/library`, validates the four markers,
@@ -725,11 +826,13 @@ than six fixed names.
 ### Exclusive authored-pose policy
 
 An actor profile may select `poseComposition: "authored_only"` for a mode or
-actor context that requires JSON keyframes to fully determine the visible rig
-pose. In this policy, sample the selected state/action clip and apply its part
-transforms relative to the normalized rest pose. Do not add locomotion sway,
-weapon/reload, aimbody, camera-follow, dash/freeze, or other procedural pose
-layers to those authored parts. State selection still chooses the appropriate
+actor context that requires JSON keyframes to determine the base rig pose. In
+this policy, sample the selected state/action clip and apply its part transforms
+relative to the normalized rest pose. AimBody adds look pitch to the authored
+base pose by default, including attacks. An individual clip may set
+`aimLayer: false` when looking up or down would spoil its authored action.
+Do not add locomotion sway, weapon/reload, camera-follow, dash/freeze, or other
+procedural pose layers to those authored parts. State selection still chooses the appropriate
 authored clip; it does not bypass the state machine or change the fixed-tick
 clock.
 
@@ -745,10 +848,10 @@ emit a bounded diagnostic; never silently re-enable a suppressed overlay.
 The default policy remains the existing layered composition above. An
 exclusive policy is opt-in and scoped to the actor/profile context, so Melee can
 request it without changing other game modes or introducing a second animator.
-The current Player runtime has an `authoredOnly` policy and uses it to suppress
-procedural, aimbody, weapon, dash, and freeze pose layers for Melee authored
-poses. This is source evidence; matching rendered limbs and hitbox attachments
-still needs runtime verification.
+The current Player runtime uses `authoredOnly` to suppress unrelated procedural,
+weapon, dash, and freeze pose layers for Melee authored poses. It adds AimBody
+unless the selected clip sets `aimLayer: false`. Matching rendered limbs and
+hitbox attachments still need human runtime verification.
 
 ## Runtime contract
 
@@ -779,7 +882,7 @@ To make wings/stingers/tails visible, the loader and renderer generalize from
 
 ## Live editing
 
-- Saving an avatar's `animations.json` or any file it includes updates that
+- Saving an avatar's `avatar.json` animation profile or any file it includes updates that
   avatar's clips in the running game. It never requires rebuilding or
   restarting the executable. This file is presentation data and its watcher is
   independent of the general gameplay-config hot-reload switch.
@@ -805,7 +908,8 @@ To make wings/stingers/tails visible, the loader and renderer generalize from
   the existing lifecycle-safe avatar/model boundary. A clip-only edit must not
   trigger model import or resource rebuilds.
 - The Avatar Editor gains an Animation panel: choose a clip, play/pause/scrub,
-  edit keyframes, add/remove states, and save to the avatar's `animations.json`.
+  edit keyframes, add/remove states, and save to the avatar's `avatar.json`
+  `animation_profile` and shared clip library.
 - Editing an `avatar.json` `rig` re-imports parts at the lifecycle-safe
   boundary (same path as a model change).
 - A terminal command `anim.play <clip>` and `anim.reload` provide the
@@ -813,8 +917,8 @@ To make wings/stingers/tails visible, the loader and renderer generalize from
 
 ### Live-edit acceptance
 
-With a game session already running, change one visible channel value in
-`assets/avatars/captainfalcon/animations.json` and save it. Confirm the journal
+With a game session already running, change one visible channel value in a
+clip included by `assets/avatars/captainfalcon/avatar.json` and save it. Confirm the journal
 records a higher `anim.set.reloaded` revision and the changed pose appears
 within 100 ms plus one fixed tick, with no rebuild, restart, avatar swap, or
 manual reload. Repeat while an action is active: its action and phase tick must

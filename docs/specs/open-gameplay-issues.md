@@ -24,6 +24,38 @@
   back to a generic hand capsule in `WeaponCollisionJsonConfig`, so no-model
   items do not receive a deliberate entity hitbox. This is a configuration and
   collision-ownership request, not yet a verified runtime defect.
+- **Check suspected high VPS disk usage:** The player suspects the website VPS
+  may be around 95% full and says that level is concerning. This figure has not
+  been independently measured, so record it as a lead rather than a confirmed
+  outage or capacity incident. Run the documented read-only VPS audit and
+  capture `df -hT` and `df -i`, then identify the largest top-level filesystems
+  and directories with bounded, same-filesystem usage checks. Compare the
+  results with service needs, database backups, and the VPS storage policy
+  before proposing cleanup; do not delete files merely to reclaim space.
+- **Explore a fun online browser game for the website:** The player wants more
+  games and playful experiences on the website, starting with a simple online
+  2D or 3D game such as Bomb Tag. They are also curious about decentralized
+  browser networking, possibly peer-to-peer play. Treat this as an exploratory
+  product idea, not a selected architecture: define a tiny first playable loop
+  and assess room discovery, connectivity/relay fallback, authoritative game
+  state, abuse prevention, browser support, and hosting/storage costs before
+  choosing a networking model.
+- **Respond to Stripe's Node.js security warning for MiMITA:** Stripe's
+  authenticated October 23, 2026 email says telemetry over the previous seven
+  days indicated the MiMITA Stripe account's environment may use an outdated
+  Node.js version; it does not establish compromise. The email names account
+  `mimita-v1` (`acct_1U05r0GvytRPXxx5`) and advises updating Node.js, reviewing
+  server logs and Stripe activity, and rotating API keys. The Node.js project
+  advisory currently lists patched releases 22.23.4, 24.22.1, and 26.12.1
+  (security release dated October 21, 2026); recheck the current advisory and
+  deployed runtime before acting. First perform read-only host/runtime/log and
+  Stripe Workbench activity reviews, preserving evidence. Then, as an
+  intentional production change, patch the existing Node major to a tested
+  patched release, verify API/database health, create and deploy a replacement
+  least-privilege Stripe key, verify successful requests, and expire the old
+  key. If suspicious use is found, contain and revoke the suspect key promptly.
+  Neither live server review nor key rotation has been performed as part of
+  this intake; do not describe the server as compromised without evidence.
 
 ## New intake — 2026-10-26
 
@@ -1368,8 +1400,11 @@ milestone, and acceptance scenarios.
   with teams of roughly four to six players per car. Players should shoot
   rockets and guns between vehicles and be able to damage or destroy the other
   car. The vehicle rules, seating/respawn, weapon use, damage model, and match
-  objective are open; make a small playable mode contract before expanding
-  vehicle systems. [`vehicles/vehicles.md`](vehicles/vehicles.md),
+  objective are open. The player prefers starting uncertain features from a
+  rough direct prompt and letting implementation expose the unknowns, rather
+  than requiring a comprehensive speculative plan first; see [Start uncertain
+  features with a rough prompt](../gold/20261027-rough-prompt-implementation-first.md).
+  [`vehicles/vehicles.md`](vehicles/vehicles.md),
   [`gamemodes/vehicles/police-chase.md`](gamemodes/vehicles/police-chase.md)
 - **Improve melee weapon collision and impact readability:** The player says
   the new melee weapons pass through walls and register hits inconsistently,

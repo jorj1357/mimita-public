@@ -1,8 +1,44 @@
 # Architecture Direction
 
-9 3 2026 todo maybe expand this? explain what exact kinds of files should go where , without putting exact file paths so that code can change to match the spec 
+**Purpose:** guide ownership, code placement, and the order in which an
+implementation should change the codebase.
+
+**Audience:** contributors designing or changing runtime systems, tools, and
+shared capabilities.
+
+**Does not:** prescribe exact file paths, forbid justified new owners, or
+require a new concept to fit an abstraction that cannot express it correctly.
 
 Target architecture. Use judgment.
+
+## Preferred implementation order
+
+When adding or changing a capability, use this order as the default:
+
+1. **Delete what is in the way.** Remove obsolete, duplicated, or accidental
+   complexity when it is no longer needed. Preserve required behavior and
+   verify callers and ownership before deleting code.
+2. **Strengthen an existing owner.** Search for the current file, function,
+   subsystem, or data model that already owns the behavior. Prefer making that
+   owner more capable and reusable over creating parallel files or functions.
+3. **Add a new owner only when needed.** Create a new file, function, type, or
+   subsystem when the current owners cannot express the capability clearly and
+   safely. State why an existing owner is insufficient and give the new owner
+   one responsibility.
+
+This is a preference order, not a ban on new code or a requirement to preserve
+a poor abstraction. If extending an existing owner would create tangled or
+unsafe responsibilities, define a clear new owner instead.
+
+### Do not force a genuinely new domain into the current model
+
+Before reusing an abstraction, check that its assumptions fit the new behavior.
+For example, a future four-dimensional or node-based environment that does not
+use XYZ coordinates or a fixed tick rate must not be made to pretend that it
+does just to reuse today's movement, transform, or timing code. First remove
+unneeded constraints, then strengthen truly general capabilities, and add a
+new domain owner where the existing model has no honest representation. Share
+lower-level pieces only when their contracts still make sense in both domains.
 
 ## Small Files
 
@@ -256,4 +292,14 @@ Creating a new function requires justification.
 
 ---
 
-9 3 2026 todo explain generalization of functions, e.g. making a gamemode, first attempt = duelsmatchfunction(), but a better function is, gamemodefunction() with duels as an argument within it. think like, how can we step outside the box, and make the desired behavior happen while making the functions that get that behavior to happen  to be more general and support other functions - also add this to like overall vision and direction of repo, over time it becomes atomic and ridiculiusly generic each function so emergent cool behaviors happen no hardcoded animation locks
+## Generalization and composition
+
+Prefer a shared capability with data or policy inputs over copied one-off
+implementations when the behavior and invariants are genuinely shared. For
+example, use a reusable gamemode flow parameterized by a mode definition when
+duel behavior is one case of that flow. Keep functions atomic in responsibility
+and compose them so new behavior can emerge without hardcoded locks between
+systems, including animation and gameplay actions. Do not generalize for its
+own sake: each abstraction must have a clear owner, contract, and real reuse
+case. See [`../vision-mentality/vision.md`](../vision-mentality/vision.md) for
+the wider project direction.

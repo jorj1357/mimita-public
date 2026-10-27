@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "clips": {
+    "idle": {
+      "durationTicks": 60,
+      "loop": true,
+      "speedBased": false,
+      "keyframes": [
+        {
+          "tick": 0,
+          "interp": "smooth",
+          "parts": {
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0.0
+              ]
+            }
+          }
+        },
+        {
+          "tick": 30,
+          "interp": "smooth",
+          "parts": {
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0.08
+              ]
+            }
+          }
+        },
+        {
+          "tick": 60,
+          "interp": "smooth",
+          "parts": {
+            "torso": {
+              "translation": [
+                0,
+                0,
+                0.0
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

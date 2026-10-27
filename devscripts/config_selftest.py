@@ -63,16 +63,19 @@ def validate_procedural(errors):
 
 
 def validate_weapons(errors):
-    root = load_json(ROOT / "config/weapons.json", errors)
-    if not isinstance(root, dict):
-        errors.append("config/weapons.json: root must be an object")
-        return 0
+    paths = sorted((ROOT / "config/weapons").glob("*/config.json"))
+    if not paths:
+        errors.append("config/weapons: no weapon definitions found")
     count = 0
-    for weapon_id, data in root.items():
+    for path in paths:
+        weapon_id = path.parent.name
+        data = load_json(path, errors)
         if not isinstance(data, dict):
-            errors.append(f"config/weapons.json:{weapon_id}: weapon must be an object")
+            errors.append(f"{rel(path)}: weapon must be an object")
             continue
         count += 1
+        if data.get("id") != weapon_id:
+            errors.append(f"{rel(path)}: weapon id must match folder")
         model = data.get("model", {})
         if isinstance(model, dict):
             expect_file(model.get("path", ""), f"weapon {weapon_id}", errors)

@@ -15,7 +15,7 @@ may attach domain meaning to markers, but they do not create parallel clip
 formats or duplicate the clip's timing.
 
 For a melee move, the animation asset is the single source of truth for total
-duration and windup/active/recovery boundaries. `config/weapons.json` references
+duration and windup/active/recovery boundaries. `config/weapons/<id>/config.json` references
 the clip and owns combat values (inputs, hitbox shape/size/offset, damage,
 knockback, movement impulses, and sound recipe). It must not repeat clip
 duration, phase lengths, or per-phase clip IDs. Editing the action's timeline
@@ -102,6 +102,32 @@ It does not add another animation format, animator, or
 per-actor converter. Skeletal skinning, automatic retargeting, and gameplay
 root motion are outside the first supported slice. Blender pose data does not
 decide whether a gameplay hit is accepted.
+
+### Batch inventory and export
+
+For `C:\important\quiet\blender-projects\mimita sizing 6.blend`, inventory
+the source without changing it:
+
+```powershell
+py tools/mimita_animation_batch.py --blend "C:\important\quiet\blender-projects\mimita sizing 6.blend" --inventory
+```
+
+Review `config/animations/imports/mimita_sizing_6.json`. Each entry records
+the exact Blender collection path, rig root, six body-part objects and assigned
+Actions, frame range, clip ID, loop choice, and output path. Only `ready`
+entries export; `review`, `skip`, and `unsupported` entries remain in the
+manifest. Re-inventorying preserves reviewed decisions for unchanged rigs.
+
+```powershell
+py tools/mimita_animation_batch.py --blend "C:\important\quiet\blender-projects\mimita sizing 6.blend" --export
+py devscripts/animation_json_check.py
+```
+
+Use `--only plrOrigin.098` for one rig and `--replace` to update an approved
+export. The checker verifies ready manifest entries, avatar states, and weapon
+action references. The batch exporter uses the interactive exporter's rest-pose
+calibration and root-motion rejection rules. Five boomer rigs remain held for
+review because their root basis differs from the calibrated humanoid basis.
 
 ## Proposed asset organization
 

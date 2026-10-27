@@ -46,7 +46,7 @@ private:
     void load();
 
     std::unordered_map<std::string, WeaponViewModelConfig> mConfigs;
-    std::filesystem::file_time_type mLastWriteTime;
+    std::string mLastSignature;
     std::chrono::steady_clock::time_point mLastCheckTime;
     float mPollInterval = 0.25f;
     bool mLoaded = false;
