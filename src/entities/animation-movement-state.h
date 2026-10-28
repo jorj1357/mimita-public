@@ -14,7 +14,7 @@ enum class AnimationMovementState : std::uint8_t {
 
 inline AnimationMovementState resolveAnimationMovementState(
     float horizontalSpeed, float verticalSpeed, bool grounded,
-    bool crouching, bool moving)
+    bool crouching, bool moving, bool preferRun = false)
 {
     if (!grounded)
         return verticalSpeed > 1.0f ? AnimationMovementState::Jump
@@ -22,9 +22,17 @@ inline AnimationMovementState resolveAnimationMovementState(
     if (crouching)
         return moving ? AnimationMovementState::CrouchWalk
                       : AnimationMovementState::Crouch;
-    if (moving)
-        return horizontalSpeed > 12.0f ? AnimationMovementState::Run
-                                       : AnimationMovementState::Walk;
+    if (moving) {
+        // A tiny hysteresis band stops walk/run from flapping every tick when
+        // an actor's speed sits on the threshold. Without it, each crossing
+        // restarts the clip at tick 0 and looks like a persistent stutter.
+        constexpr float kRunEnterSpeed = 12.0f;
+        constexpr float kRunExitSpeed = 10.0f;
+        return (horizontalSpeed > kRunEnterSpeed ||
+                (preferRun && horizontalSpeed > kRunExitSpeed))
+            ? AnimationMovementState::Run
+            : AnimationMovementState::Walk;
+    }
     return AnimationMovementState::Idle;
 }
 

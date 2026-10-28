@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <filesystem>
 #include <random>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -57,7 +59,7 @@ public:
 
 private:
     MusicManager() = default;
-    ~MusicManager() = default;
+    ~MusicManager();
     MusicManager(const MusicManager&) = delete;
     MusicManager& operator=(const MusicManager&) = delete;
 
@@ -73,6 +75,8 @@ private:
     std::string resolvePlaybackPath(const std::string& path);
     void playNextIngame();
     void pickMenuTrack();
+    void startOpusPredecode();
+    void stopOpusPredecode();
     void applyVolume();
     void applyPlaybackSpeed();
     void uninitSound();
@@ -83,7 +87,8 @@ private:
     size_t mPlaylistIndex = 0;
 
     std::unordered_map<std::string, std::pair<std::string, std::string>> mCredits;
-    std::unordered_map<std::string, std::string> mOpusCache;
+    std::thread mOpusPredecodeThread;
+    std::atomic<bool> mOpusPredecodeStop{false};
 
     ma_engine* mEngine = nullptr;
     ma_sound* mCurrentSound = nullptr;
@@ -102,6 +107,7 @@ private:
     bool mTrackJustChanged = false;
     bool mTrackEnded = false;
     bool mModeTrackMode = false;
+    float mTrackRetryTimer = 0.0f;
     float mTimeSinceTrackChange = 0.0f;
     float mPopupAlpha = 0.0f;
     float mPopupSlide = 0.0f;

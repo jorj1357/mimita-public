@@ -13,6 +13,7 @@
 #include "miniaudio.h"
 #include "debug/debug-log.h"
 #include "replay/replay-export.h"
+#include "perf/perf-spike.h"
 
 using json = nlohmann::json;
 
@@ -20,6 +21,11 @@ MusicManager& MusicManager::instance()
 {
     static MusicManager mgr;
     return mgr;
+}
+
+MusicManager::~MusicManager()
+{
+    stopOpusPredecode();
 }
 
 static bool hasMusicExt(const std::string& name)
@@ -105,62 +111,113 @@ void MusicManager::applyPlaybackSpeed()
     }
 }
 
-std::string MusicManager::resolvePlaybackPath(const std::string& path)
+namespace {
+
+bool isOpusPath(const std::string& path)
 {
     std::string ext = std::filesystem::path(path).extension().string();
     for (char& c : ext)
         c = (char)std::tolower((unsigned char)c);
-    if (ext != ".opus")
-        return path;
+    return ext == ".opus";
+}
 
-    auto cached = mOpusCache.find(path);
-    if (cached != mOpusCache.end() && std::filesystem::exists(cached->second))
-        return cached->second;
+std::string opusCachePath(const std::string& path)
+{
+    std::error_code ec;
+    const auto sourceTime = std::filesystem::last_write_time(path, ec);
+    if (ec)
+        return {};
+    const auto sourceSize = std::filesystem::file_size(path, ec);
+    if (ec)
+        return {};
+    const auto cacheDir = std::filesystem::temp_directory_path(ec) / "mimita-music-opus";
+    if (ec)
+        return {};
+    std::filesystem::create_directories(cacheDir, ec);
+    if (ec)
+        return {};
+    const auto cacheKey = std::to_string(std::hash<std::string>{}(path)) + "_" +
+        std::to_string(sourceSize) + "_" +
+        std::to_string(sourceTime.time_since_epoch().count());
+    return (cacheDir / (cacheKey + ".wav")).string();
+}
 
+bool decodeOpusToCache(const std::string& path)
+{
+    const std::string output = opusCachePath(path);
+    if (output.empty())
+        return false;
+    if (std::filesystem::exists(output))
+        return true;
     const std::string ffmpeg = defaultFfmpegPath();
     if (ffmpeg.empty()) {
         Debug::log(Debug::Category::Audio,
             "[MUSIC] cannot play Opus; FFmpeg was not found: %s\n", path.c_str());
-        return {};
+        return false;
     }
-
-    std::error_code ec;
-    const auto cacheDir = std::filesystem::temp_directory_path(ec) / "mimita-music-opus";
-    if (ec) {
+    const std::string command = "\"" + ffmpeg +
+        "\" -hide_banner -loglevel error -y -i \"" + path +
+        "\" -vn -ac 2 -ar 48000 -c:a pcm_s16le \"" + output + "\"";
+    if (std::system(command.c_str()) != 0 || !std::filesystem::exists(output)) {
         Debug::log(Debug::Category::Audio,
-            "[MUSIC] cannot resolve Opus cache directory: %s\n", path.c_str());
-        return {};
+            "[MUSIC] failed to decode Opus with FFmpeg: %s\n", path.c_str());
+        return false;
     }
-    std::filesystem::create_directories(cacheDir, ec);
-    if (ec) {
-        Debug::log(Debug::Category::Audio,
-            "[MUSIC] cannot create Opus cache directory: %s\n", path.c_str());
-        return {};
-    }
+    return true;
+}
 
-    const auto sourceTime = std::filesystem::last_write_time(path, ec);
-    const auto sourceSize = std::filesystem::file_size(path, ec);
-    const auto cacheKey = std::to_string(std::hash<std::string>{}(path)) + "_" +
-        std::to_string(sourceSize) + "_" + std::to_string(sourceTime.time_since_epoch().count());
-    const auto output = cacheDir / (cacheKey + ".wav");
-    if (!std::filesystem::exists(output)) {
-        const std::string command = "\"" + ffmpeg +
-            "\" -hide_banner -loglevel error -y -i \"" + path +
-            "\" -vn -ac 2 -ar 48000 -c:a pcm_s16le \"" + output.string() + "\"";
-        if (std::system(command.c_str()) != 0 || !std::filesystem::exists(output)) {
-            Debug::log(Debug::Category::Audio,
-                "[MUSIC] failed to decode Opus with FFmpeg: %s\n", path.c_str());
-            return {};
+} // namespace
+
+std::string MusicManager::resolvePlaybackPath(const std::string& path)
+{
+    if (!isOpusPath(path))
+        return path;
+
+    // Never spawn FFmpeg or block on a missing Opus cache from the gameplay
+    // thread. The predecode worker installs the WAV cache in the background.
+    const std::string output = opusCachePath(path);
+    if (output.empty() || !std::filesystem::exists(output))
+        return {};
+    return output;
+}
+
+void MusicManager::startOpusPredecode()
+{
+    if (mOpusPredecodeThread.joinable())
+        return;
+
+    std::vector<std::string> paths;
+    auto collect = [&](const std::vector<TrackEntry>& entries) {
+        for (const TrackEntry& entry : entries) {
+            if (isOpusPath(entry.path))
+                paths.push_back(entry.path);
         }
-    }
+    };
+    collect(mMenuTracks);
+    collect(mIngameTracks);
+    if (paths.empty())
+        return;
 
-    mOpusCache[path] = output.string();
-    Debug::log(Debug::Category::Audio, "[MUSIC] decoded Opus cache: %s\n", path.c_str());
-    return output.string();
+    mOpusPredecodeStop.store(false, std::memory_order_release);
+    mOpusPredecodeThread = std::thread([this, paths = std::move(paths)]() {
+        for (const std::string& path : paths) {
+            if (mOpusPredecodeStop.load(std::memory_order_acquire))
+                return;
+            decodeOpusToCache(path);
+        }
+    });
+}
+
+void MusicManager::stopOpusPredecode()
+{
+    mOpusPredecodeStop.store(true, std::memory_order_release);
+    if (mOpusPredecodeThread.joinable())
+        mOpusPredecodeThread.join();
 }
 
 bool MusicManager::startTrack(const std::string& path)
 {
+    MIMITA_PERF_SCOPE("Audio::MusicStartTrack");
     uninitSound();
 
     if (!mEngine) return false;
@@ -255,6 +312,7 @@ void MusicManager::init()
         mMenuTracks.size() + mIngameTracks.size(), mMenuTracks.size(), mIngameTracks.size());
 
     loadConfig();
+    startOpusPredecode();
 
     // Force-unmute on first boot so theme music plays immediately.
     // After this, the user's manual mute/unmute is always respected.
@@ -269,6 +327,7 @@ void MusicManager::init()
 
 void MusicManager::shutdown()
 {
+    stopOpusPredecode();
     uninitSound();
     if (mEngine) {
         ma_engine_uninit(mEngine);
@@ -280,11 +339,13 @@ void MusicManager::shutdown()
 
 void MusicManager::update(float dt)
 {
+    MIMITA_PERF_SCOPE("Audio::MusicUpdate");
     if (!mInitialized) {
         init();
     }
     // Hot reload: check if config file changed on disk
     {
+        MIMITA_PERF_SCOPE("Audio::MusicConfigPoll");
         std::error_code ec;
         auto wt = std::filesystem::last_write_time(mConfigPath, ec);
         if (!ec && wt != mConfigLastWrite) {
@@ -293,6 +354,21 @@ void MusicManager::update(float dt)
         }
     }
     mWidgetDt = dt;
+
+    // If a track was Opus and its background decode was not ready yet, retry
+    // later instead of running FFmpeg on the gameplay thread or staying silent.
+    if (!mCurrentSound) {
+        mTrackRetryTimer -= dt;
+        if (mTrackRetryTimer <= 0.0f) {
+            mTrackRetryTimer = 1.0f;
+            if (mMode == Mode::Ingame && !mPlaylist.empty())
+                playNextIngame();
+            else if (mMode == Mode::Menu && !mMenuTracks.empty())
+                pickMenuTrack();
+        }
+    } else {
+        mTrackRetryTimer = 1.0f;
+    }
 
     if (mCurrentSound && ma_sound_at_end(mCurrentSound)) {
         if (mModeTrackMode) {

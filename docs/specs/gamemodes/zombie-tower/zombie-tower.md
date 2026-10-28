@@ -228,7 +228,7 @@ sometimes new attacks
 - attack
 1. stings u  , spyknife touch = damage logic , scale with force
 
-### griever
+### griever 2026 10 28 090 jojr doesnt need anims  its a bouncing ball in teh engine bounces 
 - anims
 1. idle
 2. walk

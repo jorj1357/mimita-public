@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
 
 #include "animation-rotation.h"
 #include "animation-movement-state.h"
@@ -30,6 +31,34 @@ struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
     glm::vec3 rotation{0.0f};
     glm::vec3 scale{1.0f};
+};
+
+// Per-tick clip sampling must not allocate. The part names point into the
+// selected clip's keyframe maps, which stay alive for the whole sample.
+struct AnimOverlayBuffer {
+    static constexpr int kMaxParts = 64;
+    struct Entry {
+        const std::string* name = nullptr;
+        AnimOverlayResult value;
+    };
+    Entry entries[kMaxParts];
+    int count = 0;
+
+    const AnimOverlayResult* find(const std::string& name) const
+    {
+        for (int i = 0; i < count; ++i) {
+            if (*entries[i].name == name)
+                return &entries[i].value;
+        }
+        return nullptr;
+    }
+
+    void add(const std::string& name, const AnimOverlayResult& value)
+    {
+        if (count >= kMaxParts)
+            return;
+        entries[count++] = {&name, value};
+    }
 };
 
 static glm::mat4 poseMatrix(const ProceduralPose& pose)
@@ -86,12 +115,12 @@ static glm::vec3 springVec3(SpringState& spring, const glm::vec3& target, float 
     return spring.value;
 }
 
-static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
-    const AnimClip& clip, float timeSeconds, float speedScale = 1.0f,
+static void interpolateAnimClip(
+    const AnimClip& clip, float timeSeconds, AnimOverlayBuffer& result,
+    float speedScale = 1.0f,
     float forcedLoopedTick = -1.0f, float forcedSampleDurationTicks = -1.0f)
 {
-    std::unordered_map<std::string, AnimOverlayResult> result;
-    if (clip.keyframes.empty()) return result;
+    if (clip.keyframes.empty()) return;
 
     float tickTime = timeSeconds * 60.0f * speedScale;
     float duration = forcedLoopedTick >= 0.0f && forcedSampleDurationTicks > 0.0f
@@ -134,39 +163,38 @@ static std::unordered_map<std::string, AnimOverlayResult> interpolateAnimClip(
     }
     t = applyAnimEase(t, prev->interp);
 
-    std::vector<std::string> allParts;
-    for (const auto& p : prev->parts) allParts.push_back(p.first);
-    for (const auto& p : next->parts) {
-        bool found = false;
-        for (const auto& existing : allParts) {
-            if (existing == p.first) { found = true; break; }
-        }
-        if (!found) allParts.push_back(p.first);
-    }
-
-    for (const auto& partName : allParts) {
-        AnimOverlayResult overlay;
+    auto addPart = [&](const std::string& partName) {
         auto prevIt = prev->parts.find(partName);
         auto nextIt = next->parts.find(partName);
 
-        glm::vec3 prevTrans = (prevIt != prev->parts.end()) ? prevIt->second.translation : glm::vec3(0.0f);
-        glm::vec3 nextTrans = (nextIt != next->parts.end()) ? nextIt->second.translation : glm::vec3(0.0f);
-        glm::quat prevRot = (prevIt != prev->parts.end())
+        const glm::vec3 prevTrans = (prevIt != prev->parts.end())
+            ? prevIt->second.translation : glm::vec3(0.0f);
+        const glm::vec3 nextTrans = (nextIt != next->parts.end())
+            ? nextIt->second.translation : glm::vec3(0.0f);
+        const glm::quat prevRot = (prevIt != prev->parts.end())
             ? prevIt->second.rotationQuat : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        glm::quat nextRot = (nextIt != next->parts.end())
+        const glm::quat nextRot = (nextIt != next->parts.end())
             ? nextIt->second.rotationQuat : glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-        glm::vec3 prevScale = (prevIt != prev->parts.end()) ? prevIt->second.scale : glm::vec3(1.0f);
-        glm::vec3 nextScale = (nextIt != next->parts.end()) ? nextIt->second.scale : glm::vec3(1.0f);
+        const glm::vec3 prevScale = (prevIt != prev->parts.end())
+            ? prevIt->second.scale : glm::vec3(1.0f);
+        const glm::vec3 nextScale = (nextIt != next->parts.end())
+            ? nextIt->second.scale : glm::vec3(1.0f);
 
+        AnimOverlayResult overlay;
         overlay.translation = glm::mix(prevTrans, nextTrans, t);
         // Canonical quaternion channels interpolate with shortest-arc SLERP.
         overlay.rotation = AnimRotation::eulerXyzDegreesFromQuat(
             AnimRotation::slerpShortest(prevRot, nextRot, t));
         overlay.scale = glm::mix(prevScale, nextScale, t);
-        result[partName] = overlay;
-    }
+        result.add(partName, overlay);
+    };
 
-    return result;
+    for (const auto& p : prev->parts)
+        addPart(p.first);
+    for (const auto& p : next->parts) {
+        if (prev->parts.find(p.first) == prev->parts.end())
+            addPart(p.first);
+    }
 }
 
 void Player::playOneShot(const std::string& clip, bool loop)
@@ -640,11 +668,17 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         };
         StateCandidate candidates[24];
         int candidateCount = 0;
+        const auto& statePriorities =
+            animationRuntimeSettings().statePriorities;
+        auto statePriority = [&](const char* state) {
+            const auto it = statePriorities.find(state);
+            return it != statePriorities.end() ? it->second : 0;
+        };
         auto addCandidate = [&](const char* state, const std::string& clip,
                                 bool eligible) {
             if (candidateCount >= 24) return;
             const AnimClip* c = clip.empty() ? nullptr : findClip(clip);
-            const int priority = animationStatePriority(state) + (c ? c->priority : 0);
+            const int priority = statePriority(state) + (c ? c->priority : 0);
             if (gAnimationPriorityDebug) {
                 candidateJson.push_back({{"state", state}, {"clip", clip},
                     {"priority", priority}, {"eligible", eligible},
@@ -660,8 +694,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     // reappear later when movement stops.
     if (nowMoving || airborne)
         landAnimTimer = 0.0f;
+        const bool preferRun = !sm->run.empty() && currentAnimName == sm->run;
         const AnimationMovementState movementState = resolveAnimationMovementState(
-            speed, vel.z, ground.stableOnGround, crouching, nowMoving);
+            speed, vel.z, ground.stableOnGround, crouching, nowMoving, preferRun);
         const std::string airFallback = !sm->fall.empty()
             ? sm->fall
             : (!sm->jump.empty() ? sm->jump : locomotionClip());
@@ -796,9 +831,22 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                                     activeAnim == sm->land;
         // The transition tick itself samples the first landing pose (tick 0).
         animStateTime = restartLanding ? -dt : 0.0f;
+
+        const std::string logActor = avatarName().empty() ? username : avatarName();
+        struct ChangeLogState {
+            uint64_t lastMs = 0;
+            uint32_t suppressed = 0;
+        };
+        static std::unordered_map<std::string, ChangeLogState> changeLogs;
+        ChangeLogState& logState = changeLogs[logActor];
+        const uint64_t nowChange = nowMs();
+        const bool writeChange =
+            logState.lastMs == 0 || nowChange - logState.lastMs >= 250;
+        if (writeChange) {
         nlohmann::json stateFields = {
              {"avatar", avatarName()},
              {"from", prevAnim}, {"to", activeAnim},
+             {"suppressed_since_last", logState.suppressed},
              {"selected_state", selectedState},
              {"selected_priority", selectedPriority},
              {"aim_layer", [&]() {
@@ -821,10 +869,15 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             stateFields["candidates"] = candidateJson;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
-            "anim.state.changed", avatarName().empty() ? username : avatarName(),
+            "anim.state.changed", logActor,
             "animation state changed",
             (uint32_t)movementSimulationTick, stateFields,
             __FILE__, __LINE__, __FUNCTION__);
+        logState.lastMs = nowChange;
+        logState.suppressed = 0;
+        } else {
+            ++logState.suppressed;
+        }
 
         if (meleeExclusivePose && lockedClip.empty()) {
             struct FlapWindow {
@@ -1009,7 +1062,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 lockedClipPhaseTick, lockedClipPhaseTicks, lc->durationTicks);
         }
     }
-    std::unordered_map<std::string, AnimOverlayResult> animOverlay;
+    AnimOverlayBuffer animOverlay;
     if (activeClip) {
         float animSpeedScale = std::max(0.01f, activeClip->speedMultiplier);
         if (activeClip->speedBased && activeClip->speedScaleFromVelocity)
@@ -1029,9 +1082,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 animSpeedScale, move01, (int)nowMoving);
         }
 
-        animOverlay = interpolateAnimClip(*activeClip, animStateTime, animSpeedScale,
-                                          animForcedSampleTick,
-                                          animForcedSampleDurationTicks);
+        interpolateAnimClip(*activeClip, animStateTime, animOverlay,
+                            animSpeedScale, animForcedSampleTick,
+                            animForcedSampleDurationTicks);
     }
 
     // Weapon state
@@ -1200,16 +1253,16 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                                         activeClip->partMask.end(),
                                         part.name) != activeClip->partMask.end();
             }
-            auto ovIt = animOverlay.find(part.name);
-            if (partAllowed && ovIt != animOverlay.end()) {
+            const AnimOverlayResult* overlay = animOverlay.find(part.name);
+            if (partAllowed && overlay) {
                 const int rootMode = activeClip && activeClip->rootTranslationMode >= 0
                     ? activeClip->rootTranslationMode : animSettings.rootTranslationMode;
                 const float rootScale = activeClip
                     ? activeClip->rootTranslationScale : 1.0f;
                 target.translation = rootMode == 2
-                    ? glm::vec3(0.0f) : ovIt->second.translation * rootScale;
-                target.rotationEuler = ovIt->second.rotation;
-                target.scale = ovIt->second.scale;
+                    ? glm::vec3(0.0f) : overlay->translation * rootScale;
+                target.rotationEuler = overlay->rotation;
+                target.scale = overlay->scale;
             }
         }
 
@@ -1384,11 +1437,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             continue;
 
         ProceduralPose target;
-        auto ovIt = animOverlay.find(part.name);
-        if (ovIt != animOverlay.end()) {
-            target.translation = ovIt->second.translation;
-            target.rotationEuler = ovIt->second.rotation;
-            target.scale = ovIt->second.scale;
+        if (const AnimOverlayResult* overlay = animOverlay.find(part.name)) {
+            target.translation = overlay->translation;
+            target.rotationEuler = overlay->rotation;
+            target.scale = overlay->scale;
         }
         part.perfectPose = target;
         part.pose.translation =
@@ -1474,10 +1526,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 printf("[ANIM_ARMS]   %s:\n", part.name.c_str());
                 glm::vec3 animTrans(0.0f);
                 glm::vec3 animRot(0.0f);
-                auto ovIt = animOverlay.find(part.name);
-                if (ovIt != animOverlay.end()) {
-                    animTrans = ovIt->second.translation;
-                    animRot = ovIt->second.rotation;
+                if (const AnimOverlayResult* overlay =
+                        animOverlay.find(part.name)) {
+                    animTrans = overlay->translation;
+                    animRot = overlay->rotation;
                 }
                 printf("[ANIM_ARMS]     animKeyframes trans=(%.3f %.3f %.3f) rot=(%.1f %.1f %.1f)\n",
                        animTrans.x, animTrans.y, animTrans.z,

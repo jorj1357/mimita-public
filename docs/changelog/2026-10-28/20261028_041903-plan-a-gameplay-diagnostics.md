@@ -1,7 +1,7 @@
 # Plan A gameplay diagnostics and fixes
 
 Time created: 2026-10-28T04:19:03Z
-Time last updated: 2026-10-28T12:05:15Z
+Time last updated: 2026-10-28T13:27:15Z
 
 Branch: `20261011zt`
 Starting HEAD: `ada6a0d0`
@@ -199,10 +199,96 @@ Runtime results:
   after concurrent networking edits stop is required to identify the next
   confirmed owner.
 
+## Animation and death choppiness continuation — 2026-10-28 13:27 UTC
+
+What was actually making animation/death frames chop:
+
+- **Animation hot-reload file scans ran on the gameplay thread.** The avatar
+  animation registry stat-ed its dependency set every 100 ms, and weapon/global
+  library reload stat-ed 100+ JSON files every 250 ms (duplicated by both
+  `WeaponData` and `WeaponConfig`). Those scans were the unscoped 18–27 ms
+  `Simulation::SimulateTick` and 43 ms `Combat::WeaponReloadPoll` spikes.
+- **Per-tick animation sampling allocated.** `interpolateAnimClip` built a
+  `std::unordered_map` and a `std::vector<std::string>` for every actor every
+  tick. The animation selector also built a `nlohmann::json` candidate array
+  unconditionally even when priority debug was off.
+- **Walk/run state flapped on the 12 m/s threshold.** Each crossing restarted
+  the clip at tick 0. A Juggernaut run emitted 75,689 `anim.state.changed`
+  records in roughly two minutes, much of it walk↔sprint.
+- **Corpse death cost was over-budget.** Six corpses ran the 24-iteration
+  alive-ragdoll solver plus self-collision and two world depenetration passes
+  per tick, while emitting `Important` JSON heartbeats/pose traces and blood
+  every 0.06 s per corpse.
+- **Opus music decoding could run FFmpeg on the main thread.** A track change
+  produced a 701.9 ms `Audio` scope spike.
+
+Changes:
+
+- Added `src/utils/json-file-watch.{h,cpp}`: one background watcher owns JSON
+  directory stamps and publishes a dirty flag. Avatar animation JSON and weapon
+  config/library reload no longer scan the filesystem in the fixed tick or
+  render loop.
+- `src/entities/player-avatar-animations.cpp`: uses the background watcher and
+  a single `last_write_time` stamp instead of `exists` + `last_write_time`.
+- `src/combat/weapon-json-config.cpp`, `src/combat/weapon-config.cpp`,
+  `src/combat/weapon-system.cpp`, `src/combat/weapon-viewmodel.cpp`: one weapon
+  definition scan feeds both runtime registration and viewmodel config; the
+  duplicate per-viewmodel signature poll is removed.
+- `src/entities/player-animation.cpp`: per-tick clip sampling writes into a
+  fixed `AnimOverlayBuffer`; candidate JSON is built only with
+  `anim_priority_debug`; state priorities are read once per selection; state
+  change diagnostics are rate-limited per actor to one per 250 ms with a
+  suppressed count.
+- `src/entities/animation-movement-state.h`: walk→run enters at 12 m/s, but
+  run→walk does not leave until below 10 m/s.
+- `src/ragdoll/ragdoll-mode-config.h/.cpp`, `src/ragdoll/ragdoll-mode.cpp`,
+  `config/ragdoll.json`: corpse-only solver budget (10 joint iterations,
+  1 self-collision iteration, 1 world depenetration pass), corpse blood every
+  0.12 s, high-volume corpse diagnostics moved behind `Ragdoll` trace, and
+  `Ragdoll::StepBody` / world / self / sync scopes.
+- `src/audio/music-manager.h/.cpp`: Opus tracks are decoded to the WAV cache on
+  a background thread; the main thread never launches FFmpeg. Missing cache
+  retries once per second. Added `Audio::MusicUpdate`,
+  `Audio::MusicStartTrack`, and `Audio::MusicConfigPoll` scopes.
+- `src/sim/simulate-tick.cpp`, `src/engine/engine-tick-setup.cpp`: added
+  readiness, lifecycle, animation reload, collision reload, local actor, and
+  per-config polling scopes.
+
+Runtime evidence:
+
+- TDM mode 31, build `3626`, run
+  `logs/2026-10-28/20261028_130112/events.jsonl`: recent p95 5.305 ms,
+  p99 6.342 ms, max simulation 6.571 ms with 14 animation sets.
+- Juggernaut mode 9, build `3627`, run
+  `logs/2026-10-28/20261028_130842/events.jsonl`: 32 active avatars; recent
+  p95 9.283 ms, p99 12.157 ms. `Ragdoll::StepBody` reached 2.84 ms after 68
+  corpses; the old 24-iteration path reached 5.99 ms.
+- Juggernaut mode 9, build `3633`, run
+  `logs/2026-10-28/20261028_132142/events.jsonl`: 32 active avatars.
+  `anim.state.changed` fell from 75,689 to 1,244 records. Steady windows from
+  30–45 s averaged 5.5–8.8 ms with p95 8–16 ms per 60-frame window.
+  `PlayerAnimation` averaged about 0.86 ms per frame across 2,654 actor
+  updates; corpse step averaged about 0.55 ms per frame. The 701.9 ms music
+  spike was gone.
+- The 240 FPS / 60-second target was **not achieved**.
+- Remaining measured costs: `Network::SnapshotApply::NpcLifeReset` /
+  `NpcAvatarApply` still reach 159–178 ms in death/snapshot bursts (Plan B
+  networking), first avatar/animation-set binding can reach 385 ms in one
+  frame, and 32-actor rendering is about 6.85 ms per frame with effects about
+  1.77 ms and corpses about 0.96 ms. `Audio::StartSound` reached 29.5 ms during
+  a mass death. These are the next owners; animation sampling and corpse
+  solving are no longer the dominant spikes.
+
 ## Validation
 
 - Build `3558`, `3563`, `3566`, `3568`, `3570`, `3572`, `3576`, `3579`,
   `3592`, `3596`, and `3598` succeeded through the dev loop.
+- Builds `3621`, `3626`, `3627`, `3629`, and `3633` also succeeded.
+- Final build: `3633`, build id
+  `3633:42f2685b9f924fa7143ee55c0df6d78e9a8d600eddaaee88351772d1587e816c`,
+  `source_current=true`, server/client builds matched.
+- Final runtime journal:
+  `C:\mimita-v9\logs\2026-10-28\20261028_132142\events.jsonl`.
 - Final launch: build `3598`, server/client builds matched,
   `source_current=true`, run `20261028_120549`.
 - The final 20 s launch was a low-actor scene: recent p95 2.235 ms,
