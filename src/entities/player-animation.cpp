@@ -20,6 +20,11 @@
 #include "perf/perf-spike.h"
 using namespace MimitaNet;
 
+static bool gAnimationPriorityDebug = false;
+
+void setAnimationPriorityDebug(bool enabled) { gAnimationPriorityDebug = enabled; }
+bool animationPriorityDebug() { return gAnimationPriorityDebug; }
+
 struct AnimOverlayResult {
     glm::vec3 translation{0.0f};
     glm::vec3 rotation{0.0f};
@@ -483,16 +488,38 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         return (float)std::max(1, c->durationTicks) /
             (60.0f * std::max(0.01f, c->speedMultiplier));
     };
-    const std::string dashClipName = sm ? sm->dash : std::string();
-    const std::string downDashClipName = sm ? sm->downDash : std::string();
-    if (dash.didDash && !dashClipName.empty())
+    const std::string dashClipName = sm
+        ? (sm->dash.empty() ? "dash" : sm->dash) : std::string();
+    const std::string downDashClipName = sm
+        ? (sm->downDash.empty() ? "downDash" : sm->downDash) : std::string();
+    if (dash.didDash && !dashClipName.empty()) {
         dashAnimTimer = clipDurationSeconds(dashClipName);
-    else
+        if (dashAnimTimer <= 0.0f) {
+            static uint64_t lastDashMissingMs = 0;
+            const uint64_t nowDash = nowMs();
+            if (nowDash - lastDashMissingMs >= 1000) {
+                lastDashMissingMs = nowDash;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Errors,
+                    "anim.dash.clip_missing", avatarName(),
+                    "dash state has no clip; holding a short fallback window",
+                    (uint32_t)movementSimulationTick,
+                    {{"actor", username}, {"avatar", avatarName()},
+                     {"clip", dashClipName},
+                     {"weapon", equippedWeaponId}});
+            }
+            dashAnimTimer = 0.15f;
+        }
+    } else {
         dashAnimTimer = std::max(0.0f, dashAnimTimer - dt);
-    if (dash.didDownDash && !downDashClipName.empty())
+    }
+    if (dash.didDownDash && !downDashClipName.empty()) {
         downDashAnimTimer = clipDurationSeconds(downDashClipName);
-    else
+        if (downDashAnimTimer <= 0.0f)
+            downDashAnimTimer = 0.15f;
+    } else {
         downDashAnimTimer = std::max(0.0f, downDashAnimTimer - dt);
+    }
     knockbackAnimTimer = std::max(0.0f, knockbackAnimTimer - dt);
 
     if (crouching != animPrevCrouching) {
@@ -586,8 +613,13 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         authoredDeathTimer > 0.0f && !deathClipName.empty() && findClip(deathClipName);
 
     std::string activeAnim = currentAnimName;
+    nlohmann::json candidateJson = nlohmann::json::array();
+    std::string selectedState;
+    int selectedPriority = -1;
     if (!lockedClip.empty()) {
         activeAnim = lockedClip;
+        selectedState = "locked";
+        selectedPriority = animationStatePriority("locked");
     } else if (sm) {
         MIMITA_PERF_SCOPE("AnimStateSelect");
         // Candidate scoring makes the JSON priorities authoritative. Ties keep
@@ -601,11 +633,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         int candidateCount = 0;
         auto addCandidate = [&](const char* state, const std::string& clip,
                                 bool eligible) {
-            if (!eligible || clip.empty() || candidateCount >= 24) return;
-            const AnimClip* c = findClip(clip);
-            if (!c) return;
-            candidates[candidateCount++] = {state, clip,
-                animationStatePriority(state) + c->priority};
+            if (candidateCount >= 24) return;
+            const AnimClip* c = clip.empty() ? nullptr : findClip(clip);
+            const int priority = animationStatePriority(state) + (c ? c->priority : 0);
+            candidateJson.push_back({{"state", state}, {"clip", clip},
+                {"priority", priority}, {"eligible", eligible},
+                {"clip_found", c != nullptr}});
+            if (!eligible || !c) return;
+            candidates[candidateCount++] = {state, clip, priority};
         };
 
         const bool airborne = !ground.stableOnGround;
@@ -618,8 +653,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         addCandidate("respawn", sm->respawn, respawnAnimTimer > 0.0f);
         addCandidate("hurt", activeHurtClip, hurtTimer > 0.0f);
         addCandidate("freeze", sm->freeze, freeze.freezeActive || freeze.didFreeze);
-        addCandidate("downDash", sm->downDash, downDashAnimTimer > 0.0f);
-        addCandidate("dash", sm->dash, dashAnimTimer > 0.0f);
+        addCandidate("downDash", downDashClipName, downDashAnimTimer > 0.0f);
+        addCandidate("dash", dashClipName, dashAnimTimer > 0.0f);
         addCandidate("knockback", sm->knockback, knockbackAnimTimer > 0.0f);
         addCandidate("crouch", crouchAnimInto ? sm->crouchIn : sm->crouchOut,
                      crouchAnimTimer > 0.0f);
@@ -638,15 +673,18 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             addCandidate("attack", equipClip, !equipClip.empty());
         }
 
-        int bestPriority = -1;
-        std::string bestClip;
         for (int i = 0; i < candidateCount; ++i) {
-            if (candidates[i].priority > bestPriority) {
-                bestPriority = candidates[i].priority;
-                bestClip = candidates[i].clip;
+            if (candidates[i].priority > selectedPriority) {
+                selectedPriority = candidates[i].priority;
+                selectedState = candidates[i].state;
+                activeAnim = candidates[i].clip;
             }
         }
-        activeAnim = bestClip.empty() ? defaultClip() : bestClip;
+        if (selectedPriority < 0) {
+            selectedState = "idle_fallback";
+            selectedPriority = animationStatePriority("idle");
+            activeAnim = defaultClip();
+        }
     } else if (nowMoving) {
         activeAnim = locomotionClip();
     } else if (currentAnimName != defaultClip()) {
@@ -662,6 +700,35 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 ? "return_to_idle" : defaultClip();
         } else {
             activeAnim = defaultClip();
+        }
+    }
+
+    if (gAnimationPriorityDebug) {
+        static uint64_t lastPriorityLogMs = 0;
+        const uint64_t nowPriority = nowMs();
+        if (activeAnim != currentAnimName || nowPriority - lastPriorityLogMs >= 1000) {
+            lastPriorityLogMs = nowPriority;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "anim.priority", avatarName().empty() ? username : avatarName(),
+                "animation candidate priorities and selected state",
+                (uint32_t)movementSimulationTick,
+                {{"actor", username}, {"avatar", avatarName()},
+                 {"weapon", equippedWeaponId}, {"weapon_equipped", hasValidWeapon},
+                 {"selected_state", selectedState}, {"selected_priority", selectedPriority},
+                 {"selected_clip", activeAnim}, {"current_clip", currentAnimName},
+                 {"locked_clip", lockedClip}, {"locked_clip_time", lockedClipTime},
+                 {"locked_clip_sample_tick", lockedClipSampleTick},
+                 {"weapon_pose_action", weaponPoseActionState},
+                 {"dash_timer", dashAnimTimer}, {"downdash_timer", downDashAnimTimer},
+                 {"hurt_timer", hurtTimer}, {"land_timer", landAnimTimer},
+                 {"crouch_timer", crouchAnimTimer}, {"equip_timer", equipAnimTimer},
+                 {"on_ground", ground.onGround},
+                 {"stable_on_ground", ground.stableOnGround},
+                 {"moving", nowMoving}, {"move01", move01},
+                 {"velocity", {vel.x, vel.y, vel.z}},
+                 {"candidates", candidateJson}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 
@@ -694,6 +761,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             (uint32_t)movementSimulationTick,
             {{"avatar", avatarName()},
              {"from", prevAnim}, {"to", activeAnim},
+             {"selected_state", selectedState},
+             {"selected_priority", selectedPriority},
+             {"candidates", candidateJson},
              {"aim_layer", [&]() {
                  const AnimClip* selected = findClip(activeAnim);
                  return selected && selected->aimLayer;

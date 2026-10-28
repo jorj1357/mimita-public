@@ -911,6 +911,11 @@ public:
     void setCosmetics(const std::vector<CosmeticSlot>& c) { mCosmetics = c; }
 };
 
+// Bounded animation state-selection diagnostics. Off by default; the terminal
+// command anim_priority_debug toggles it for live priority investigations.
+void setAnimationPriorityDebug(bool enabled);
+bool animationPriorityDebug();
+
 // Upload mesh to shared body-part VAO for ragdoll rendering
 void uploadBodyPartMesh(const Mesh& mesh);
 

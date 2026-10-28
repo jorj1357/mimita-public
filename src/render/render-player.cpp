@@ -59,6 +59,82 @@ struct TrailVertex {
 std::unordered_map<uint32_t, PlayerTrailHistory> gTrailHistories;
 std::vector<TrailVertex> gTrailBatch;
 
+bool gPlayerVisualDebug = false;
+int gPlayerVisualLayerFilter = 0;
+uint64_t gPlayerVisualDumpGeneration = 0;
+
+struct ActorVisualBounds {
+    bool valid = false;
+    uint32_t parts = 0;
+    uint32_t meshBoundsParts = 0;
+    glm::vec3 min{0.0f};
+    glm::vec3 max{0.0f};
+    glm::vec3 size{0.0f};
+    float maxOffset = 0.0f;
+    float maxPreviousOffset = 0.0f;
+    float maxWorldExtent = 0.0f;
+    float maxPartScale = 0.0f;
+};
+
+ActorVisualBounds computeActorVisualBounds(const Player& player)
+{
+    ActorVisualBounds bounds;
+    bool first = true;
+    auto include = [&](const std::vector<PhysicalBodyPart>& parts,
+                       const std::vector<Mesh>& meshes) {
+        for (size_t i = 0; i < parts.size(); ++i) {
+            const PhysicalBodyPart& part = parts[i];
+            const glm::vec3 position(part.worldTransform[3]);
+            if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
+                !std::isfinite(position.z))
+                continue;
+            if (first) {
+                bounds.min = bounds.max = position;
+                first = false;
+            } else {
+                bounds.min = glm::min(bounds.min, position);
+                bounds.max = glm::max(bounds.max, position);
+            }
+            bounds.maxOffset = std::max(bounds.maxOffset,
+                glm::length(position - player.pos));
+            const glm::vec3 previous(part.previousWorldTransform[3]);
+            if (std::isfinite(previous.x) && std::isfinite(previous.y) &&
+                std::isfinite(previous.z)) {
+                bounds.maxPreviousOffset = std::max(bounds.maxPreviousOffset,
+                    glm::length(previous - player.pos));
+            }
+            const float partScale = std::max({
+                glm::length(glm::vec3(part.worldTransform[0])),
+                glm::length(glm::vec3(part.worldTransform[1])),
+                glm::length(glm::vec3(part.worldTransform[2]))});
+            if (std::isfinite(partScale))
+                bounds.maxPartScale = std::max(bounds.maxPartScale, partScale);
+            if (i < meshes.size()) {
+                for (const Mesh::Batch& batch : meshes[i].batches) {
+                    if (!batch.hasBounds || !std::isfinite(partScale)) continue;
+                    const glm::vec3 localRadius = glm::max(
+                        glm::abs(batch.boundsMin), glm::abs(batch.boundsMax));
+                    const float radius = glm::length(localRadius) * partScale;
+                    bounds.maxWorldExtent = std::max(bounds.maxWorldExtent,
+                        glm::length(position - player.pos) + radius);
+                    ++bounds.meshBoundsParts;
+                }
+            }
+            ++bounds.parts;
+        }
+    };
+    include(player.physicalBody.parts, player.physicalBody.partMeshes);
+    include(player.physicalBody.extraParts, player.physicalBody.extraPartMeshes);
+    if (bounds.parts == 0)
+        return bounds;
+    bounds.size = bounds.max - bounds.min;
+    bounds.valid = std::isfinite(bounds.size.x) && std::isfinite(bounds.size.y) &&
+        std::isfinite(bounds.size.z) && std::isfinite(bounds.maxOffset) &&
+        std::isfinite(bounds.maxPreviousOffset) &&
+        std::isfinite(bounds.maxWorldExtent) && std::isfinite(bounds.maxPartScale);
+    return bounds;
+}
+
 void appendPlayerTrail(const Player& player, const Camera& cam, uint32_t entityId,
                        const PlayerTrailSettings& settings)
 {
@@ -411,6 +487,97 @@ void renderPlayerInternal(
     const bool outlineAllowed = visualLayersAllowed || modeForcesTeamOutline ||
         (isLocal && visualsConfig.hasPlayerOutlinesOverride() &&
          visualsConfig.playerOutlinesEnabled() && visualsConfig.friendlyOutlinesEnabled());
+    const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;
+    const bool friendlyActor = isLocal || teammate;
+    const float outlineAlpha = !friendlyActor && visualsConfig.hasEnemyOutlineAlphaOverride()
+        ? visualsConfig.effectiveEnemyOutlineAlpha(outline->alpha) : outline->alpha;
+    {
+        static std::unordered_map<uint32_t, uint64_t> sLastDebugMs;
+        static std::unordered_map<uint32_t, uint64_t> sLastDumpGeneration;
+        const uint64_t nowDebugMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const uint64_t lastMs = sLastDebugMs[networkEntityId];
+        const bool dumpNow = gPlayerVisualDumpGeneration != 0 &&
+            sLastDumpGeneration[networkEntityId] != gPlayerVisualDumpGeneration;
+        if (networkEntityId != 0 && (dumpNow ||
+            (gPlayerVisualDebug && nowDebugMs - lastMs >= 1000))) {
+            sLastDebugMs[networkEntityId] = nowDebugMs;
+            if (dumpNow)
+                sLastDumpGeneration[networkEntityId] = gPlayerVisualDumpGeneration;
+            const ActorVisualBounds bounds = computeActorVisualBounds(player);
+            const glm::vec3 outlineRgb = visualsConfig.effectiveOutlineColor(
+                friendlyActor, outline->color);
+            const glm::vec3 wireRgb = visualsConfig.effectiveWireframeColor(
+                friendlyActor, wireframe->color);
+            nlohmann::json partJson = nlohmann::json::array();
+            for (size_t i = 0; i < player.physicalBody.parts.size() && i < 12; ++i) {
+                const PhysicalBodyPart& part = player.physicalBody.parts[i];
+                const glm::vec3 origin(part.worldTransform[3]);
+                const float partScale = std::max({
+                    glm::length(glm::vec3(part.worldTransform[0])),
+                    glm::length(glm::vec3(part.worldTransform[1])),
+                    glm::length(glm::vec3(part.worldTransform[2]))});
+                nlohmann::json item{{"name", part.name},
+                    {"origin", {origin.x, origin.y, origin.z}},
+                    {"scale", partScale},
+                    {"verts", i < player.physicalBody.partMeshes.size()
+                        ? player.physicalBody.partMeshes[i].verts.size() : 0}};
+                if (i < player.physicalBody.partMeshes.size()) {
+                    const auto& batches = player.physicalBody.partMeshes[i].batches;
+                    if (!batches.empty() && batches.front().hasBounds) {
+                        item["batch_min"] = {batches.front().boundsMin.x,
+                            batches.front().boundsMin.y, batches.front().boundsMin.z};
+                        item["batch_max"] = {batches.front().boundsMax.x,
+                            batches.front().boundsMax.y, batches.front().boundsMax.z};
+                    }
+                }
+                partJson.push_back(std::move(item));
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "player_visuals.actor", std::to_string(networkEntityId),
+                "actor outline/wireframe layer state and world bounds", 0,
+                nlohmann::json{
+                    {"actor_id", networkEntityId},
+                    {"actor", player.username},
+                    {"avatar", player.avatarName()},
+                    {"is_local", isLocal},
+                    {"dead", player.dead},
+                    {"team", resolvedActorTeam},
+                    {"local_team", localTeam},
+                    {"teammate", teammate},
+                    {"team_identity_known", teamIdentityKnown},
+                    {"model_loaded", player.modelLoaded},
+                    {"size_scale", player.sizeScale},
+                    {"part_count", player.physicalBody.parts.size()},
+                    {"extra_part_count", player.physicalBody.extraParts.size()},
+                    {"position", {player.pos.x, player.pos.y, player.pos.z}},
+                    {"camera_distance", glm::length(player.pos - cam.pos)},
+                    {"bounds_valid", bounds.valid},
+                    {"bounds_parts", bounds.parts},
+                    {"bounds_mesh_parts", bounds.meshBoundsParts},
+                    {"bounds_size", {bounds.size.x, bounds.size.y, bounds.size.z}},
+                    {"bounds_max_offset", bounds.maxOffset},
+                    {"bounds_max_previous_offset", bounds.maxPreviousOffset},
+                    {"bounds_max_world_extent", bounds.maxWorldExtent},
+                    {"bounds_max_part_scale", bounds.maxPartScale},
+                    {"mode_forces_outline", modeForcesTeamOutline},
+                    {"mode_forces_wireframe", modeForcesTeamWireframe},
+                    {"outline_enabled", outlineEnabled},
+                    {"outline_allowed", outlineAllowed},
+                    {"outline_thickness", outline->thickness},
+                    {"outline_alpha", outlineAlpha},
+                    {"outline_color", {outlineRgb.r, outlineRgb.g, outlineRgb.b}},
+                    {"wireframe_enabled", wireframe->enabled},
+                    {"wireframe_alpha", wireframe->alpha},
+                    {"wireframe_line_width", wireframe->lineWidth},
+                    {"wireframe_color", {wireRgb.r, wireRgb.g, wireRgb.b}},
+                    {"layer_filter", gPlayerVisualLayerFilter},
+                    {"debug_enabled", gPlayerVisualDebug},
+                    {"parts", partJson}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     if (!isLocal && pointLight) {
         const glm::vec3 lightPosition = player.pos + glm::vec3(0.0f, 0.0f, pointLight->heightOffset);
         DynamicLightManager::instance().updatePlayerVisualLight(
@@ -468,14 +635,12 @@ void renderPlayerInternal(
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
       player.render(gRenderer->shaderProgram, view, proj, hideHead, playerTint); }
     auto drawTrail = [&]() {
+        if (gPlayerVisualLayerFilter != 0) return;
         if (trail && !isLocal) appendPlayerTrail(player, cam, networkEntityId, *trail);
     };
 
-    const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;
-    const bool friendlyActor = isLocal || teammate;
-    const float outlineAlpha = !friendlyActor && visualsConfig.hasEnemyOutlineAlphaOverride()
-        ? visualsConfig.effectiveEnemyOutlineAlpha(outline->alpha) : outline->alpha;
     auto drawOutline = [&]() {
+    if (gPlayerVisualLayerFilter == 2 || gPlayerVisualLayerFilter == 3) return;
     const bool drawable = outlineAllowed && outlineEnabled &&
         outline->thickness > 0.0f && outlineAlpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath);
@@ -529,6 +694,39 @@ void renderPlayerInternal(
         }
     }
     if (drawable) {
+        const ActorVisualBounds bounds = computeActorVisualBounds(player);
+        const float saneRadius = std::max(64.0f, std::abs(player.sizeScale) * 64.0f);
+        if (!bounds.valid || bounds.maxOffset > saneRadius ||
+            bounds.maxWorldExtent > saneRadius * 2.0f) {
+            static std::unordered_map<uint32_t, uint64_t> sLastRejectMs;
+            const uint64_t nowRejectMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            const uint64_t previous = sLastRejectMs[networkEntityId];
+            if (nowRejectMs - previous >= 1000) {
+                sLastRejectMs[networkEntityId] = nowRejectMs;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "outline.rejected", player.avatarName(),
+                    "outline skipped because posed geometry is outside sane actor bounds",
+                    (uint32_t)player.movementSimulationTick,
+                    nlohmann::json{{"actor_id", networkEntityId},
+                                   {"avatar", player.avatarName()},
+                                   {"actor", player.username},
+                                   {"bounds_valid", bounds.valid},
+                                   {"parts", bounds.parts},
+                                   {"mesh_parts", bounds.meshBoundsParts},
+                                   {"bounds_size", {bounds.size.x, bounds.size.y, bounds.size.z}},
+                                   {"max_offset", bounds.maxOffset},
+                                   {"max_previous_offset", bounds.maxPreviousOffset},
+                                   {"max_world_extent", bounds.maxWorldExtent},
+                                   {"max_part_scale", bounds.maxPartScale},
+                                   {"radius", saneRadius},
+                                   {"size_scale", player.sizeScale},
+                                   {"camera_distance", glm::length(player.pos - cam.pos)}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            return;
+        }
         const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
         const GLboolean blendWas = glIsEnabled(GL_BLEND);
         const GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
@@ -564,6 +762,7 @@ void renderPlayerInternal(
     };
 
     auto drawCapsule = [&]() {
+    if (gPlayerVisualLayerFilter != 0) return;
     if (visualLayersAllowed && capsule->enabled && capsule->alpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath)) {
         const Capsule c = player.getCapsule();
@@ -598,6 +797,7 @@ void renderPlayerInternal(
     };
 
     auto drawWireframe = [&]() {
+    if (gPlayerVisualLayerFilter == 1 || gPlayerVisualLayerFilter == 3) return;
     if ((visualLayersAllowed || modeForcesTeamWireframe) &&
         (modeForcesTeamWireframe || wireframe->enabled) && wireframe->alpha != 0.0f &&
         !(player.dead && wireframe->disappearOnDeath) &&
@@ -606,32 +806,36 @@ void renderPlayerInternal(
         // outline. Normal avatars, including very large monsters, stay well
         // inside this bound; a failed avatar transition can produce part
         // transforms hundreds of metres from the actor.
+        const ActorVisualBounds bounds = computeActorVisualBounds(player);
         const float saneRadius = std::max(64.0f, std::abs(player.sizeScale) * 64.0f);
-        bool boundsSane = true;
-        for (const PhysicalBodyPart& part : player.physicalBody.parts) {
-            const glm::vec3 offset = glm::vec3(part.worldTransform[3]) - player.pos;
-            if (!std::isfinite(offset.x) || !std::isfinite(offset.y) ||
-                !std::isfinite(offset.z) || glm::length(offset) > saneRadius) {
-                boundsSane = false;
-                break;
-            }
-        }
-        if (!boundsSane) {
-            static uint64_t lastWireframeRejectMs = 0;
+        if (!bounds.valid || bounds.maxOffset > saneRadius ||
+            bounds.maxWorldExtent > saneRadius * 2.0f) {
+            static std::unordered_map<uint32_t, uint64_t> sLastRejectMs;
             const uint64_t now = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
-            if (now - lastWireframeRejectMs >= 1000) {
-                lastWireframeRejectMs = now;
+            const uint64_t previous = sLastRejectMs[networkEntityId];
+            if (now - previous >= 1000) {
+                sLastRejectMs[networkEntityId] = now;
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Avatar, StructuredLevel::Important,
                     "wireframe.bounds_rejected", player.avatarName(),
-                    "outline skipped because the posed part transform is outside the sane actor bounds",
+                    "wireframe skipped because posed geometry is outside the sane actor bounds",
                     (uint32_t)player.movementSimulationTick,
-                    nlohmann::json{{"avatar", player.avatarName()},
+                    nlohmann::json{{"actor_id", networkEntityId},
+                                   {"avatar", player.avatarName()},
                                    {"actor", player.username},
+                                   {"bounds_valid", bounds.valid},
+                                   {"parts", bounds.parts},
+                                   {"mesh_parts", bounds.meshBoundsParts},
+                                   {"bounds_size", {bounds.size.x, bounds.size.y, bounds.size.z}},
+                                   {"max_offset", bounds.maxOffset},
+                                   {"max_previous_offset", bounds.maxPreviousOffset},
+                                   {"max_world_extent", bounds.maxWorldExtent},
+                                   {"max_part_scale", bounds.maxPartScale},
                                    {"radius", saneRadius},
                                    {"size_scale", player.sizeScale},
-                                   {"model_loaded", player.modelLoaded}},
+                                   {"model_loaded", player.modelLoaded},
+                                   {"camera_distance", glm::length(player.pos - cam.pos)}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
             return;
@@ -677,6 +881,15 @@ void renderPlayerInternal(
 }
 
 } // namespace
+
+void setPlayerVisualDebugEnabled(bool enabled) { gPlayerVisualDebug = enabled; }
+bool playerVisualDebugEnabled() { return gPlayerVisualDebug; }
+void setPlayerVisualLayerFilter(int filter)
+{
+    gPlayerVisualLayerFilter = std::clamp(filter, 0, 3);
+}
+int playerVisualLayerFilter() { return gPlayerVisualLayerFilter; }
+void requestPlayerVisualDump() { ++gPlayerVisualDumpGeneration; }
 
 void beginPlayerTrailBatch()
 {

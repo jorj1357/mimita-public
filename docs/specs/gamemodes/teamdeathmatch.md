@@ -34,7 +34,9 @@ Status: current first-version behavior
   separated map spawn points; if fewer than two distinct points exist, it
   derives two fallback anchors around the map anchor.
 - TDM keeps health bars visible and requests green teammate and red enemy
-  player mesh wireframes through its JSON presentation settings. Death
+  player mesh outlines through its JSON presentation settings. Wireframes stay
+  off for normal TDM play so the team color reads as a silhouette instead of a
+  filled or dense mesh overlay. Death
   ragdolls are enabled for TDM.
 - TDM selects player and NPC avatars from the masterlist's
   `competitive_no_headless` group. The allow list is authoritative; deny

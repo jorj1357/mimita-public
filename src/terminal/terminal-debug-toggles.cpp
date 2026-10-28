@@ -2,6 +2,8 @@
 #include "debug/debug-log.h"
 #include "devtools/dev-config.h"
 #include "entities/player.h"
+#include "render/render-player.h"
+#include "config/player-visuals-config.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -341,6 +343,99 @@ void registerDebugToggleCommands()
             Terminal::instance().addLog(DebugConfig::DEBUG_WEAPON_HITBOX ? "[OK] weapon hitbox shown" : "[OK] weapon hitbox hidden");
         },
         "2026-08-06", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "anim_priority_debug",
+        "Toggle animation state-priority diagnostics (0=off, 1=on)",
+        "anim_priority_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool enabled = args.empty() ? !animationPriorityDebug() : args[0] != "0";
+            setAnimationPriorityDebug(enabled);
+            Terminal::instance().addLog(enabled
+                ? "[OK] animation priority diagnostics enabled"
+                : "[OK] animation priority diagnostics disabled");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "outline_debug",
+        "Toggle per-actor outline/wireframe diagnostics (0=off, 1=on)",
+        "outline_debug <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool enabled = args.empty() ? !playerVisualDebugEnabled() : args[0] != "0";
+            setPlayerVisualDebugEnabled(enabled);
+            Terminal::instance().addLog(enabled
+                ? "[OK] outline diagnostics enabled (one bounded record per actor per second)"
+                : "[OK] outline diagnostics disabled");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "outline_dump",
+        "Write one outline/wireframe diagnostic record for every rendered actor",
+        "outline_dump",
+        [](const std::vector<std::string>&) {
+            requestPlayerVisualDump();
+            Terminal::instance().addLog("[OK] outline diagnostic dump queued for the next render frame");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "outline_only",
+        "Show only outline and body layers (0=off, 1=on)",
+        "outline_only <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = args.empty() ? playerVisualLayerFilter() != 1 : args[0] != "0";
+            setPlayerVisualLayerFilter(on ? 1 : 0);
+            Terminal::instance().addLog(on
+                ? "[OK] layer filter: outline only"
+                : "[OK] layer filter: all layers");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "wireframe_only",
+        "Show only wireframe and body layers (0=off, 1=on)",
+        "wireframe_only <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = args.empty() ? playerVisualLayerFilter() != 2 : args[0] != "0";
+            setPlayerVisualLayerFilter(on ? 2 : 0);
+            Terminal::instance().addLog(on
+                ? "[OK] layer filter: wireframe only"
+                : "[OK] layer filter: all layers");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "body_only",
+        "Hide outline, wireframe, trail, and capsule layers (0=off, 1=on)",
+        "body_only <0|1>",
+        [](const std::vector<std::string>& args) {
+            const bool on = args.empty() ? playerVisualLayerFilter() != 3 : args[0] != "0";
+            setPlayerVisualLayerFilter(on ? 3 : 0);
+            Terminal::instance().addLog(on
+                ? "[OK] layer filter: body only"
+                : "[OK] layer filter: all layers");
+        }, "2026-10-27", CommandCategory::Debug
+    });
+
+    term.registerCommand({
+        "player_layers",
+        "Print effective player outline/wireframe layer state",
+        "player_layers",
+        [](const std::vector<std::string>&) {
+            const auto& data = PlayerVisualsConfig::instance().data();
+            Terminal::instance().addLog(
+                "[PLAYER LAYERS] filter=" + std::to_string(playerVisualLayerFilter()) +
+                " debug=" + (playerVisualDebugEnabled() ? "1" : "0") +
+                " self.outline=" + (data.self.enabled ? "1" : "0") +
+                " enemy.outline=" + (data.enemy.enabled ? "1" : "0") +
+                " teammate.outline=" + (data.teammate.enabled ? "1" : "0") +
+                " self.wireframe=" + (data.selfWireframe.enabled ? "1" : "0") +
+                " enemy.wireframe=" + (data.enemyWireframe.enabled ? "1" : "0") +
+                " teammate.wireframe=" + (data.teammateWireframe.enabled ? "1" : "0"));
+        }, "2026-10-27", CommandCategory::Debug
     });
 
     term.registerCommand({

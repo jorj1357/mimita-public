@@ -13,6 +13,10 @@
 #include <vector>
 #include <fstream>
 #include <filesystem>
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "video/frame-pacer.h"
 #include "gui/ui-system.h"
@@ -804,6 +808,43 @@ void Perf::endFrame(float currentFrameMs)
     s.frameNumber++;
     s.gameTime += gFramePacer.dt();
 
+    // One launch baseline per process. This is the "what was running" record:
+    // executable/build identity, frame cap, journal, and starting actor/effect
+    // counts. Runtime behavior is still proven by the later performance frames.
+    {
+        static bool baselineEmitted = false;
+        if (!baselineEmitted) {
+            baselineEmitted = true;
+            const auto io = StructuredLogger::instance().ioStats(false);
+            const char* buildId = std::getenv("MIMITA_BUILD_ID");
+#ifdef _WIN32
+            const uint64_t processId = (uint64_t)GetCurrentProcessId();
+#else
+            const uint64_t processId = 0;
+#endif
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.baseline", StructuredLogger::instance().runId(),
+                "process launch performance baseline", 0,
+                nlohmann::json{
+                    {"build_id", buildId ? buildId : ""},
+                    {"process_id", processId},
+                    {"run_id", StructuredLogger::instance().runId()},
+                    {"events_path", StructuredLogger::instance().eventsPath()},
+                    {"target_fps_max", gFramePacer.maxFrames()},
+                    {"target_frame_ms", gFramePacer.targetFrameTimeMs()},
+                    {"vsync", gFramePacer.vsync()},
+                    {"npc_count", s.npcCount},
+                    {"blood_particles", s.bloodCount},
+                    {"effects_alive", s.effectCount},
+                    {"corpses_active", s.corpseCount},
+                    {"logger_events", io.eventsWritten},
+                    {"logger_bytes", io.bytesWritten},
+                    {"logger_flushes", io.flushCount}},
+                __FILE__, __LINE__, "Perf::endFrame");
+        }
+    }
+
     // Use the caller-provided wall-clock time for the current frame instead of
     // gFramePacer.frameTimeMs() which returns the PREVIOUS frame's total cycle
     // time (including the previous frame's sleep).  A zero or negative value
@@ -1103,11 +1144,45 @@ void Perf::endFrame(float currentFrameMs)
             fields["effects_alive"] = gState.effectCount;
             fields["blood_particles"] = gState.bloodCount;
             fields["corpses_active"] = gState.corpseCount;
+            const auto io = StructuredLogger::instance().ioStats(false);
+            static uint64_t lastLoggerEvents = 0;
+            static uint64_t lastLoggerBytes = 0;
+            static uint64_t lastLoggerFlushes = 0;
+            fields["logger_events_total"] = io.eventsWritten;
+            fields["logger_bytes_total"] = io.bytesWritten;
+            fields["logger_events_delta"] = io.eventsWritten >= lastLoggerEvents
+                ? io.eventsWritten - lastLoggerEvents : io.eventsWritten;
+            fields["logger_bytes_delta"] = io.bytesWritten >= lastLoggerBytes
+                ? io.bytesWritten - lastLoggerBytes : io.bytesWritten;
+            fields["logger_flushes_delta"] = io.flushCount >= lastLoggerFlushes
+                ? io.flushCount - lastLoggerFlushes : io.flushCount;
+            fields["logger_flush_us_total"] = io.flushMicroseconds;
+            lastLoggerEvents = io.eventsWritten;
+            lastLoggerBytes = io.bytesWritten;
+            lastLoggerFlushes = io.flushCount;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Performance, StructuredLevel::Important,
                 "PERFORMANCE_FRAME", "", "1s aggregated frame stats",
                 (uint32_t)s.frameNumber, fields, __FILE__, __LINE__,
                 "Perf::endFrame");
+
+            static uint32_t sFiveSecondWindow = 0;
+            ++sFiveSecondWindow;
+            if (sFiveSecondWindow % 5 == 0) {
+                nlohmann::json growth = fields;
+                growth["window_seconds"] = 5;
+                growth["corpses_active"] = gState.corpseCount;
+                growth["effects_alive"] = gState.effectCount;
+                growth["blood_particles"] = gState.bloodCount;
+                growth["npcs_active"] = gState.npcCount;
+                growth["allocations_this_frame"] = gState.allocationsThisFrame;
+                growth["total_allocations"] = gState.totalAllocations;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "performance.combat-growth", "", "5s combat/corpse/log growth snapshot",
+                    (uint32_t)s.frameNumber, growth, __FILE__, __LINE__,
+                    "Perf::endFrame");
+            }
 
             w = Window{};
             w.startUs = nowValueUs;

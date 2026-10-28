@@ -88,6 +88,7 @@
     "bladeLength": 4.0,
     "bladeRadius": 1.62,
     "contactBladeRadius": 1.16,
+    "contactRadiusScale": 1.35,
     "contactMinDamage": 5.0,
     "contactMaxDamage": 15.0,
     "contactMinKnockback": 5.0,

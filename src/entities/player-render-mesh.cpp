@@ -434,7 +434,7 @@ GLuint combinedBatchTexture(const Player& player, const CombinedBatch& batch)
 
 } // namespace
 
-bool drawCombinedBodyParts(const Player& player, unsigned int shader)
+bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outlinePass)
 {
     if (!ensureCombinedBodyParts(player))
         return false;
@@ -482,9 +482,18 @@ bool drawCombinedBodyParts(const Player& player, unsigned int shader)
         }
     }
 
-    glDisable(GL_CULL_FACE);
-    if (singleTexture) {
-        glBindTexture(GL_TEXTURE_2D, firstTexture ? firstTexture : gTextures.get("default"));
+      // The combined path must use the same front-face culling as the
+      // per-part outline path. Rendering both faces of the expanded shell
+      // filled the actor with the outline color instead of drawing a
+      // silhouette, which is the large red/green "outline" seen in TDM.
+      if (outlinePass) {
+          glEnable(GL_CULL_FACE);
+          glCullFace(GL_FRONT);
+      } else {
+          glDisable(GL_CULL_FACE);
+      }
+      if (singleTexture) {
+          glBindTexture(GL_TEXTURE_2D, firstTexture ? firstTexture : gTextures.get("default"));
         glDrawArrays(GL_TRIANGLES, 0, uploads.combinedVertexCount);
     } else {
         for (const CombinedBatch& batch : uploads.combinedBatches) {

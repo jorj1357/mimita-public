@@ -273,6 +273,7 @@ bool HitEffects::loadConfig(const std::string& path)
             if (m.contains("enabled")) cfg.meleeContact.enabled = m["enabled"];
             if (m.contains("baseDiameter")) cfg.meleeContact.baseDiameter = m["baseDiameter"];
             if (m.contains("maxDiameter")) cfg.meleeContact.maxDiameter = m["maxDiameter"];
+            if (m.contains("radiusScale")) cfg.meleeContact.radiusScale = m["radiusScale"];
             if (m.contains("baseAlpha")) cfg.meleeContact.baseAlpha = m["baseAlpha"];
             if (m.contains("maxAlpha")) cfg.meleeContact.maxAlpha = m["maxAlpha"];
             if (m.contains("baseColor")) cfg.meleeContact.baseColor = readVec3Json(m["baseColor"]);
@@ -291,6 +292,19 @@ bool HitEffects::loadConfig(const std::string& path)
                         stage.randomRotationDegrees = item["randomRotationDegrees"];
                     cfg.meleeContact.sparks.push_back(std::move(stage));
                 }
+            }
+            if (m.contains("light") && m["light"].is_object()) {
+                const json& l = m["light"];
+                auto& light = cfg.meleeContact.light;
+                if (l.contains("enabled")) light.enabled = l["enabled"];
+                if (l.contains("color")) light.color = readVec3Json(l["color"]);
+                if (l.contains("maxColor")) light.maxColor = readVec3Json(l["maxColor"]);
+                if (l.contains("intensityBase")) light.intensityBase = l["intensityBase"];
+                if (l.contains("intensityMax")) light.intensityMax = l["intensityMax"];
+                if (l.contains("radiusBase")) light.radiusBase = l["radiusBase"];
+                if (l.contains("radiusMax")) light.radiusMax = l["radiusMax"];
+                if (l.contains("lifetimeTicks")) light.lifetimeTicks = l["lifetimeTicks"];
+                if (l.contains("retriggerTicks")) light.retriggerTicks = l["retriggerTicks"];
             }
         }
 

@@ -15,6 +15,7 @@
 #include "combat/actor-preset-weapons.h"
 #include "combat/death-system.h"
 #include "combat/weapon-registry.h"
+#include "combat/weapon-execution.h"
 #include "config/weapon-hitfx-config.h"
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
@@ -25,6 +26,7 @@
 #include "terminal/terminal-state.h"
 #include "ui/hitmarker.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -106,10 +108,16 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         const float force01 = glm::clamp(
             glm::length(glm::vec3(event.knockX, event.knockY, event.knockZ)) / 60.0f,
             0.0f, 1.0f);
+        const WeaponDefinition* contactDef = defId
+            ? WeaponRegistry::instance().get(*defId) : nullptr;
+        const float contactScale = contactDef
+            ? std::max(0.01f, WeaponExecution::paramOr(
+                *contactDef, "contactRadiusScale", 1.0f))
+            : 1.0f;
         HitEffects::spawnMeleeContact(
             glm::vec3(event.hitX, event.hitY, event.hitZ),
             glm::vec3(event.normalX, event.normalY, event.normalZ),
-            force01, (float)event.header.tick);
+            force01, (float)event.header.tick, contactScale);
         static thread_local uint32_t lastClashSoundTick = 0;
         if (event.header.tick == 0 || event.header.tick >= lastClashSoundTick + 6) {
             lastClashSoundTick = event.header.tick;

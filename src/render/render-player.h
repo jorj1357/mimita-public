@@ -26,3 +26,12 @@ void renderNetworkPlayer(
     bool isLocal,
     int localTeam = -1,
     int actorTeam = -1);
+
+// Bounded, read-only diagnostics for the appearance layers that can hide the
+// actor (outline and wireframe). 0 = all layers, 1 = outline only,
+// 2 = wireframe only, 3 = body only. Debug logging is off by default.
+void setPlayerVisualDebugEnabled(bool enabled);
+bool playerVisualDebugEnabled();
+void setPlayerVisualLayerFilter(int filter);
+int playerVisualLayerFilter();
+void requestPlayerVisualDump();

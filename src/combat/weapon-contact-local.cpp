@@ -2,6 +2,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
 #include "combat/weapon-audio.h"
+#include "combat/weapon-execution.h"
 #include "combat/death-system.h"
 #include "network/server.h"
 #include "entities/player.h"
@@ -99,8 +100,15 @@ void tickLocalPhysicalContactWeapons(Player& player, NpcSystem& npcSystem, uint3
             const glm::vec3 dir = glm::length(contact.request.knockback) > 0.001f
                 ? glm::normalize(contact.request.knockback)
                 : glm::vec3(0.0f, 1.0f, 0.0f);
+            const WeaponDefinition* contactDef =
+                WeaponRegistry::instance().get(contact.request.weaponId);
+            const float contactScale = contactDef
+                ? std::max(0.01f, WeaponExecution::paramOr(
+                    *contactDef, "contactRadiusScale", 1.0f))
+                : 1.0f;
             HitEffects::spawnMeleeContact(
-                contact.hit, dir, force01, (float)contact.request.serverTick);
+                contact.hit, dir, force01, (float)contact.request.serverTick,
+                contactScale);
         }
         if (contact.result.killed) DeathSystem::instance().kill(*victim,
             contact.request.victim.kind == ServerActorKind::Npc

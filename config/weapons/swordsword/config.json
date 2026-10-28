@@ -103,6 +103,7 @@
     "contactMaxKnockback": 40.0,
     "contactMaxForceSpeed": 22.0,
     "contactBladeRadius": 0.08,
+    "contactRadiusScale": 1.2,
     "contactMinVolume": 0.1,
     "contactMaxVolume": 1.0,
     "contactMinPitch": 0.5,

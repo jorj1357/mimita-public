@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "effects/effect-part.h"
+#include "render/dynamic-light.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include <nlohmann/json.hpp>
@@ -65,10 +66,37 @@ void HitEffects::spawnHitParticles(const HitBurstEffect& b)
 }
 
 void HitEffects::spawnMeleeContact(const glm::vec3& position, const glm::vec3& direction,
-                                   float force01, float randomSeed)
+                                   float force01, float randomSeed,
+                                   float weaponRadiusScale)
 {
     const auto& cfg = gConfig.meleeContact;
     if (!gConfig.enabled || !cfg.enabled) return;
+
+    const float force = glm::clamp(force01, 0.0f, 1.0f);
+    const float presentationScale = std::max(0.01f,
+        cfg.radiusScale * weaponRadiusScale);
+    const float diameter = (cfg.baseDiameter + (cfg.maxDiameter - cfg.baseDiameter) * force) *
+        presentationScale;
+    const float alpha = cfg.baseAlpha + (cfg.maxAlpha - cfg.baseAlpha) * force;
+    const glm::vec3 color = glm::mix(cfg.baseColor, cfg.maxColor, force);
+
+    bool lightSpawned = false;
+    if (cfg.light.enabled && cfg.light.lifetimeTicks > 0) {
+        static int sLastContactLightTick = -1000000;
+        const int retrigger = std::max(1, cfg.light.retriggerTicks);
+        if (gGlobalTick - sLastContactLightTick >= retrigger) {
+            sLastContactLightTick = gGlobalTick;
+            const glm::vec3 lightColor = glm::mix(
+                cfg.light.color, cfg.light.maxColor, force);
+            DynamicLightManager::instance().spawn(
+                position, lightColor,
+                cfg.light.intensityBase + (cfg.light.intensityMax - cfg.light.intensityBase) * force,
+                cfg.light.radiusBase + (cfg.light.radiusMax - cfg.light.radiusBase) * force,
+                (float)std::max(1, cfg.light.lifetimeTicks) / 60.0f,
+                0.0f, 0.25f);
+            lightSpawned = true;
+        }
+    }
 
     static int lastContactFxLogTick = -1000;
     if (gGlobalTick - lastContactFxLogTick >= 30) {
@@ -76,18 +104,19 @@ void HitEffects::spawnMeleeContact(const glm::vec3& position, const glm::vec3& d
         StructuredLogger::instance().writeEvent(
             StructuredCategory::General, StructuredLevel::Important,
             "melee.contact.fx", "melee-contact",
-            "spawned client melee white sphere and spark stages",
+            "spawned client melee white sphere, spark stages, and contact light",
             (uint32_t)gGlobalTick,
-            nlohmann::json{{"force", force01},
+            nlohmann::json{{"force", force},
                            {"position", {position.x, position.y, position.z}},
-                           {"sparks", cfg.sparks.size()}},
+                           {"diameter", diameter},
+                           {"weapon_radius_scale", weaponRadiusScale},
+                           {"radius_scale", cfg.radiusScale},
+                           {"sparks", cfg.sparks.size()},
+                           {"light_spawned", lightSpawned},
+                           {"light_intensity", lightSpawned ? cfg.light.intensityBase +
+                               (cfg.light.intensityMax - cfg.light.intensityBase) * force : 0.0f}},
             __FILE__, __LINE__, __FUNCTION__);
     }
-
-    const float force = glm::clamp(force01, 0.0f, 1.0f);
-    const float diameter = cfg.baseDiameter + (cfg.maxDiameter - cfg.baseDiameter) * force;
-    const float alpha = cfg.baseAlpha + (cfg.maxAlpha - cfg.baseAlpha) * force;
-    const glm::vec3 color = glm::mix(cfg.baseColor, cfg.maxColor, force);
 
     EffectPart sphere;
     sphere.position = position;
@@ -110,8 +139,8 @@ void HitEffects::spawnMeleeContact(const glm::vec3& position, const glm::vec3& d
         spark.texturePath = stage.texturePath;
         spark.color = glm::vec3(1.0f);
         spark.alpha = stage.alpha;
-        spark.scale = stage.size;
-        spark.endScale = stage.size;
+        spark.scale = stage.size * presentationScale;
+        spark.endScale = stage.size * presentationScale;
         spark.billboardText = true;
         spark.maxLifetime = std::max(1, stage.endTick - stage.startTick) / 60.0f;
         // Negative lifetime delays the stage until its contact tick.

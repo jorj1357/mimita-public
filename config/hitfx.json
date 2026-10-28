@@ -398,13 +398,25 @@
 
     "meleeContact": {
         "enabled": true,
-        "baseDiameter": 0.5,
-        "maxDiameter": 1.0,
+        "baseDiameter": 0.75,
+        "maxDiameter": 1.5,
+        "radiusScale": 1.25,
         "baseAlpha": 0.5,
         "maxAlpha": 1.0,
         "baseColor": [0.482, 0.482, 0.482],
         "maxColor": [1.0, 1.0, 1.0],
         "whiteSphereTicks": 1,
+        "light": {
+            "enabled": true,
+            "color": [1.0, 0.85, 0.55],
+            "maxColor": [1.0, 1.0, 1.0],
+            "intensityBase": 1.5,
+            "intensityMax": 4.0,
+            "radiusBase": 2.5,
+            "radiusMax": 6.0,
+            "lifetimeTicks": 6,
+            "retriggerTicks": 6
+        },
         "sparks": [
             { "texturePath": "assets/textureshq/sparkv1.png", "startTick": 2, "endTick": 6, "alpha": 1.0, "size": 0.45, "randomRotationDegrees": 180.0 },
             { "texturePath": "assets/textureshq/sparkv2.png", "startTick": 7, "endTick": 13, "alpha": 0.9, "size": 0.6, "randomRotationDegrees": 180.0 },

@@ -1,6 +1,7 @@
 #include "player.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -28,6 +29,16 @@ static glm::mat4 renderPartTransform(const PhysicalBodyPart& part)
         !part.hasPreviousWorldTransform)
         return part.worldTransform;
 
+    // A respawn, avatar swap, or teleport can leave previousWorldTransform at
+    // the old location. Interpolating between that point and the current pose
+    // stretches every triangle across the map, which the outline pass exposes
+    // as huge red/green sheets. Only interpolate a plausible fixed-tick step.
+    const glm::vec3 currentPosition(part.worldTransform[3]);
+    const glm::vec3 previousPosition(part.previousWorldTransform[3]);
+    const float step = glm::length(currentPosition - previousPosition);
+    if (!std::isfinite(step) || step > 8.0f)
+        return part.worldTransform;
+
     glm::vec3 p0(0.0f), p1(0.0f), s0(1.0f), s1(1.0f), skew0(0.0f), skew1(0.0f);
     glm::quat q0(1.0f, 0.0f, 0.0f, 0.0f), q1(1.0f, 0.0f, 0.0f, 0.0f);
     glm::vec4 perspective0(0.0f), perspective1(0.0f);
@@ -47,7 +58,7 @@ extern int capsuleVertCount;
 void initCapsuleMesh();
 void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey);
 GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey);
-bool drawCombinedBodyParts(const Player& player, unsigned int shader);
+bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outlinePass);
 
 void Player::render(unsigned int shader,
                     const glm::mat4& view,
@@ -305,7 +316,7 @@ void Player::renderCurrentPose(unsigned int shader,
                 break;
             }
             if (validPartSet)
-                combinedDrawn = drawCombinedBodyParts(*this, shader);
+                combinedDrawn = drawCombinedBodyParts(*this, shader, outlinePass);
         }
         if (!combinedDrawn) {
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
