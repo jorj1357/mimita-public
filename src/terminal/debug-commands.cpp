@@ -49,7 +49,7 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTARTNOW] Invalid mode number"); return; }
             const auto& mode = cfg.modes()[(size_t)index];
-            if (MimitaNet::isServerHost()) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
                 MimitaNet::serverCommunityStartMatch(true, mode.id);
                 Terminal::instance().addLog("[MODESTARTNOW] started " + mode.id + " at countdown");
@@ -78,7 +78,7 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTART] Invalid mode number"); return; }
             const auto& mode = cfg.modes()[(size_t)index];
-            if (MimitaNet::isServerHost()) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
                 MimitaNet::serverCommunityStartMatch(false, mode.id);
                 Terminal::instance().addLog("[MODESTART] started " + mode.id + " (" + mode.name + ")");
@@ -93,7 +93,7 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "startmelee", "Start and join a Melee room, or switch the connected room to Melee.", "startmelee",
         [](const std::vector<std::string>&) {
-            if (MimitaNet::isServerHost()) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode("melee");
                 MimitaNet::serverCommunityStartMatch(false, "melee");
                 Terminal::instance().addLog("[STARTMELEE] started melee");
@@ -147,7 +147,7 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "juggernaut_skip", "Force the current Juggernaut round to draw; host only.", "juggernaut_skip",
         [](const std::vector<std::string>&) {
-            if (MimitaNet::isServerHost()) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverGamemodeRequestJuggernautSkip();
                 Terminal::instance().addLog("[JUGGERNAUT_SKIP] host requested a draw; actors will respawn for the next 3-2-1");
             } else if (::gpMpContext && ::gpMpContext->active) {
@@ -461,7 +461,8 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)catalog.maps.size()) { Terminal::instance().addLog("[MAPCHANGE] Invalid map number"); return; }
             const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
-            if (MimitaNet::isServerHost()) MimitaNet::serverGamemodeRequestMapChange(mapId);
+            if (!(::gpMpContext && ::gpMpContext->active) &&
+                MimitaNet::isServerHost()) MimitaNet::serverGamemodeRequestMapChange(mapId);
             else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "mapchange " + std::to_string(index + 1));
             else { Terminal::instance().addLog("[MAPCHANGE] HOST ONLY"); return; }
             Terminal::instance().addLog("[MAPCHANGE] requested " + mapId);
@@ -729,7 +730,8 @@ void registerDebugCommands()
             // In-process server (dedicated --server or local listen server):
             // apply the override directly. Otherwise send the command to the
             // server, which applies it only if the sender is the host.
-            if (MimitaNet::isServerHost())
+            if (!(::gpMpContext && ::gpMpContext->active) &&
+                MimitaNet::isServerHost())
             {
                 DevOverrides::healthOverrideEnabled = !isReset;
                 DevOverrides::healthOverrideValue = value;
@@ -771,7 +773,8 @@ void registerDebugCommands()
             }
             const std::string mapId = args[0];
 
-            if (MimitaNet::isServerHost())
+            if (!(::gpMpContext && ::gpMpContext->active) &&
+                MimitaNet::isServerHost())
             {
                 MimitaNet::serverGamemodeRequestMapChange(mapId);
                 Terminal::instance().addLog("[CHANGEMAP] Changing map to " + mapId);

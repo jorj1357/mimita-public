@@ -340,9 +340,6 @@ bool MapConfigRegistry::load(const std::string& mapId)
         mLastWrite = getLastWrite(mPath);
         ++mRevision;
         mSavedRevision = mRevision;
-        mEntityVisibility = std::any_of(
-            mCurrent.entities.begin(), mCurrent.entities.end(),
-            [](const MapEntity& entity) { return entity.visible; });
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Important,
             "map-entity.loaded", mapId, "valid map config applied", 0,
@@ -455,21 +452,6 @@ bool MapConfigRegistry::deleteEntity(const std::string& id)
         nlohmann::json{{"map", mCurrent.mapId}, {"entity_id", id}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;
-}
-
-void MapConfigRegistry::setEntityVisibility(bool visible)
-{
-    mEntityVisibility = visible;
-    for (auto& entity : mCurrent.entities) entity.visible = visible;
-    markChanged();
-}
-
-void MapConfigRegistry::setEntityVisibilityFor(const std::string& id, bool visible)
-{
-    if (auto* entity = findEntityMutable(id)) {
-        entity->visible = visible;
-        markChanged();
-    }
 }
 
 const AuthoredBlock* MapConfigRegistry::findBlock(const std::string& id) const
@@ -643,9 +625,6 @@ void MapConfigRegistry::restoreAuthored(const MapObjectiveConfig& snapshot)
     mCurrent.mapId = mapId;
     mCurrent.loaded = loaded;
     resetRuntimeState();
-    mEntityVisibility = std::any_of(
-        mCurrent.entities.begin(), mCurrent.entities.end(),
-        [](const MapEntity& entity) { return entity.visible; });
     markChanged();
 }
 

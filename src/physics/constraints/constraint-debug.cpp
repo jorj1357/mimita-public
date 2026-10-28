@@ -9,7 +9,7 @@
 
 #include "camera.h"
 #include "debug/debug-visuals.h"
-#include "gamemode/map-config.h"
+#include "debug/entity-visibility.h"
 #include "physics/constraints/constraint-system.h"
 #include "physics/physical-entity.h"
 
@@ -54,8 +54,7 @@ const char* typeName(ConstraintType type)
 
 void drawConstraintDebug(const Camera& camera)
 {
-    if (!MapConfigRegistry::instance().entityVisibility() ||
-        !DebugVis::masterEnabled())
+    if (!EntityVisibility::draw(EntityVisibility::Category::MapObjects))
         return;
 
     const auto& constraints = ConstraintSystem::instance().constraints();

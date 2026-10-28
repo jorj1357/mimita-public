@@ -174,7 +174,7 @@ void registerActorCommands()
                 Terminal::instance().addLog("actor_preset_actor: unknown preset or index");
                 return;
             }
-            if (MimitaNet::isServerHost()) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
                 if (!MimitaNet::serverSetActorPreset(actorId, preset->id)) {
                     Terminal::instance().addLog(
                         "actor_preset_actor: actor not in active server match or preset unavailable");

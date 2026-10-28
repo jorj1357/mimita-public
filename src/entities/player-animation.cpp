@@ -398,7 +398,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     const WeaponDefinition* animationWeapon = hasValidWeapon
         ? WeaponRegistry::instance().get(equippedWeaponId) : nullptr;
-    const AvatarAnimationSet* weaponAnimationSet = animationWeapon &&
+    // NPC-only opt-in: one authored clip tick per fixed simulation tick,
+    // independent of movement speed and per-clip playback multipliers.
+    const bool npcTickLocked = isNpcActor && animationSet && animationSet->valid &&
+                               animationSet->npcTickLocked;    const AvatarAnimationSet* weaponAnimationSet = animationWeapon &&
         !animationWeapon->animationProfile.empty()
         ? AvatarAnimationRegistry::instance().getAnimationSet(
             "profile:" + animationWeapon->animationProfile, (uint32_t)movementSimulationTick)
@@ -478,7 +481,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             // Time-driven one-shot. Phase-driven clips are held by the action
             // owner and are not auto-cleared by elapsed time.
             lockedClipTime += dt;
-            const float speed = std::max(0.01f, lc->speedMultiplier);
+            const float speed = npcTickLocked ? 1.0f
+                : std::max(0.01f, lc->speedMultiplier);
             const float holdSeconds = lc->lockTicks > 0
                 ? (float)lc->lockTicks / 60.0f
                 : (float)std::max(1, lc->durationTicks) / (60.0f * speed);
@@ -515,7 +519,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         if (!c) return 0.0f;
         if (c->lockTicks > 0) return (float)c->lockTicks / 60.0f;
         return (float)std::max(1, c->durationTicks) /
-            (60.0f * std::max(0.01f, c->speedMultiplier));
+            (60.0f * (npcTickLocked ? 1.0f : std::max(0.01f, c->speedMultiplier)));
     };
     const std::string dashClipName = sm
         ? (sm->dash.empty() ? "dash" : sm->dash) : std::string();
@@ -1064,13 +1068,14 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     }
     AnimOverlayBuffer animOverlay;
     if (activeClip) {
-        float animSpeedScale = std::max(0.01f, activeClip->speedMultiplier);
-        if (activeClip->speedBased && activeClip->speedScaleFromVelocity)
+        float animSpeedScale = npcTickLocked ? 1.0f
+            : std::max(0.01f, activeClip->speedMultiplier);
+        if (!npcTickLocked && activeClip->speedBased && activeClip->speedScaleFromVelocity)
             animSpeedScale *= 0.3f + move01 * 1.2f;
 
         // The global profile scales playback by the walk frequency knobs;
         // per-avatar clips play at their authored rate.
-        if (!clipFromAvatar(activeAnim))
+        if (!npcTickLocked && !clipFromAvatar(activeAnim))
             animSpeedScale *= std::max(0.01f,
                 gPlayerProcedural.walkFrequency *
                 gPlayerProcedural.walkFrequencyMultiplier);
@@ -1085,6 +1090,24 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         interpolateAnimClip(*activeClip, animStateTime, animOverlay,
                             animSpeedScale, animForcedSampleTick,
                             animForcedSampleDurationTicks);
+
+        if (npcTickLocked) {
+            static uint64_t lastNpcTickLockedMs = 0;
+            const uint64_t nowTickLocked = nowMs();
+            if (nowTickLocked - lastNpcTickLockedMs >= 250) {
+                lastNpcTickLockedMs = nowTickLocked;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "anim.npc.ticklocked", avatarName(),
+                    "NPC tick-locked animation advanced one authored tick",
+                    (uint32_t)movementSimulationTick,
+                    {{"actor", username}, {"avatar", avatarName()},
+                     {"clip", activeAnim},
+                     {"clip_tick", animStateTime * 60.0f},
+                     {"speed_mps", speed}, {"playback_scale", animSpeedScale}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
     }
 
     // Weapon state

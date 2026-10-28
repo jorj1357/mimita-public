@@ -340,6 +340,70 @@ void handleNpcDamageRequest(SOCKET sock, const char* buffer, int bytes,
         target, clamped, killed, origin, hit, dir, normal, req->weapon);
 }
 
+static bool serverAdminAccessEnabled(const ServerPlayer& player)
+{
+    return player.adminCommandsEnabled;
+}
+
+static void serverStopOngoingAdminModes(ServerPlayer& player)
+{
+    player.flyEnabled = false;
+    player.flySpeedMultiplier = 1.0f;
+}
+
+static std::vector<ServerPlayer*> liveAdminPlayerList(
+    std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    std::vector<ServerPlayer*> list;
+    list.reserve(players.size());
+    for (auto& entry : players)
+        if (!entry.second.connectionStale)
+            list.push_back(&entry.second);
+    std::sort(list.begin(), list.end(), [](const ServerPlayer* a, const ServerPlayer* b) {
+        if (a->isHost != b->isHost) return a->isHost;
+        return a->id < b->id;
+    });
+    return list;
+}
+
+static std::string formatAdminPlayerList(const std::vector<ServerPlayer*>& list)
+{
+    std::string out;
+    for (std::size_t i = 0; i < list.size(); ++i)
+    {
+        const ServerPlayer& p = *list[i];
+        std::string entry = std::to_string(i + 1) + "=" + p.name;
+        if (p.isHost) entry += "(host)";
+        else if (p.adminCommandsGranted) entry += "(granted)";
+        if (p.adminCommandsEnabled) entry += "[admin]";
+        const std::string separator = i == 0 ? "" : " ";
+        if (out.size() + separator.size() + entry.size() > 225)
+        {
+            out += " ...";
+            break;
+        }
+        out += separator + entry;
+    }
+    return out.empty() ? "no connected players" : out;
+}
+
+static bool parseAdminPlayerNumber(const std::string& text, std::size_t& outIndex)
+{
+    if (text.empty() || text.find_first_not_of("0123456789") != std::string::npos)
+        return false;
+    try
+    {
+        const unsigned long long value = std::stoull(text);
+        if (value == 0 || value > 100000) return false;
+        outIndex = static_cast<std::size_t>(value - 1);
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -383,9 +447,131 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
              {"accepted", accepted},
              {"status", status},
              {"player_id", it->second.id},
+             {"is_host", it->second.isHost},
+             {"admin_enabled", it->second.adminCommandsEnabled},
+             {"admin_granted", it->second.adminCommandsGranted},
              {"active_mode", serverGamemodeState().matchMode}},
             __FILE__, __LINE__, __func__);
     };
+
+    // Session admin access. Self-toggle is available to the host or to a
+    // player holding a live host grant; grant/revoke themselves are host-only.
+    if (commandStr == "admincmds" || commandStr.rfind("admincmds ", 0) == 0)
+    {
+        if (!it->second.isHost && !it->second.adminCommandsGranted)
+        {
+            ack(false, "rejected: no admin grant for this session");
+            return;
+        }
+        if (commandStr == "admincmds")
+        {
+            const std::string status = std::string("admincmds=") +
+                (it->second.adminCommandsEnabled ? "1" : "0") +
+                (it->second.isHost ? " (host)" : " (granted)");
+            ack(true, status.c_str());
+            return;
+        }
+        const std::string arg = commandStr.substr(10);
+        if (arg.empty() || (arg != "0" && arg != "1" && arg != "on" && arg != "off"))
+        {
+            ack(false, "rejected: usage admincmds <0|1>");
+            return;
+        }
+        const bool enabled = arg == "1" || arg == "on";
+        it->second.adminCommandsEnabled = enabled;
+        if (!enabled)
+            serverStopOngoingAdminModes(it->second);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "admin.access.changed", "player:" + std::to_string(it->second.id),
+            enabled ? "admin command access enabled" : "admin command access disabled",
+            tick,
+            {{"player_id", it->second.id}, {"name", it->second.name},
+             {"is_host", it->second.isHost},
+             {"granted", it->second.adminCommandsGranted},
+             {"enabled", enabled}},
+            __FILE__, __LINE__, __FUNCTION__);
+        ack(true, enabled ? "applied: admincmds 1" : "applied: admincmds 0");
+        return;
+    }
+
+    if (commandStr == "player_list")
+    {
+        if (!serverAdminAccessEnabled(it->second))
+        {
+            ack(false, "rejected: no admin access");
+            return;
+        }
+        const auto list = liveAdminPlayerList(players);
+        const std::string text = formatAdminPlayerList(list);
+        ack(true, text.c_str());
+        return;
+    }
+
+    if (commandStr.rfind("admincmds_grant ", 0) == 0 ||
+        commandStr.rfind("admincmds_revoke ", 0) == 0)
+    {
+        if (!it->second.isHost)
+        {
+            ack(false, "rejected: host only");
+            return;
+        }
+        if (!serverAdminAccessEnabled(it->second))
+        {
+            ack(false, "rejected: no admin access");
+            return;
+        }
+        const bool grant = commandStr.rfind("admincmds_grant ", 0) == 0;
+        const std::size_t prefix = grant ? 16 : 17;
+        std::size_t index = 0;
+        if (!parseAdminPlayerNumber(commandStr.substr(prefix), index))
+        {
+            ack(false, grant ? "rejected: usage admincmds_grant <player-number>"
+                             : "rejected: usage admincmds_revoke <player-number>");
+            return;
+        }
+        const auto list = liveAdminPlayerList(players);
+        if (index >= list.size())
+        {
+            ack(false, "rejected: player number is no longer connected");
+            return;
+        }
+        ServerPlayer& target = *list[index];
+        if (target.isHost)
+        {
+            ack(false, "rejected: host does not need a grant");
+            return;
+        }
+        if (grant)
+        {
+            target.adminCommandsGranted = true;
+            target.adminCommandsEnabled = true;
+            target.adminCommandsInitialized = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "admin.access.granted", "player:" + std::to_string(target.id),
+                "host granted admin command access for this session", tick,
+                {{"host_id", it->second.id}, {"target_id", target.id},
+                 {"target_name", target.name}},
+                __FILE__, __LINE__, __FUNCTION__);
+            ack(true, ("applied: admincmds_grant " + std::to_string(index + 1)).c_str());
+        }
+        else
+        {
+            target.adminCommandsGranted = false;
+            target.adminCommandsEnabled = false;
+            serverStopOngoingAdminModes(target);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "admin.access.revoked", "player:" + std::to_string(target.id),
+                "host revoked admin command access for this session", tick,
+                {{"host_id", it->second.id}, {"target_id", target.id},
+                 {"target_name", target.name}},
+                __FILE__, __LINE__, __FUNCTION__);
+            ack(true, ("applied: admincmds_revoke " + std::to_string(index + 1)).c_str());
+        }
+        return;
+    }
 
     // Team commands are player actions, not host administration.  They must
     // be processed before the host gate so the server can validate and apply
@@ -490,6 +676,11 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     {
         try
         {
+            if (!serverAdminAccessEnabled(it->second))
+            {
+                ack(false, "rejected: no admin access");
+                return;
+            }
             const float multiplier = std::stof(commandStr.substr(4));
             if (!std::isfinite(multiplier) || multiplier <= 0.0f)
                 throw std::invalid_argument("non-positive");
@@ -567,16 +758,15 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         return;
     }
 
-    // Host-gate: only the player whose name matches the server host (or the
-    // first joiner when no host name is set) may issue server-authoritative
-    // commands. This also stops any client from deleting all NPCs.
-    if (!it->second.isHost)
+    // Admin-gate: the host starts enabled; a non-host needs a live host grant.
+    if (!serverAdminAccessEnabled(it->second))
     {
         Debug::warn(Debug::Category::Networking,
-            "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=not-host hostPlayerId=%u\n",
+            "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=no-admin-access hostPlayerId=%u isHost=%d granted=%d\n",
             serverTimestamp(), it->second.id, it->second.name.c_str(),
-            commandStr.c_str(), gServerHostPlayerId);
-        ack(false, "rejected: not host");
+            commandStr.c_str(), gServerHostPlayerId,
+            (int)it->second.isHost, (int)it->second.adminCommandsGranted);
+        ack(false, "rejected: no admin access");
         return;
     }
 

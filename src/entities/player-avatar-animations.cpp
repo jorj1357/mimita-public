@@ -373,6 +373,7 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
         // Exclusive authored-pose policy opt-in (see docs/specs/animations/animations.md).
         if (animRoot.contains("poseComposition") && animRoot["poseComposition"].is_string())
             next.set.authoredOnly = animRoot["poseComposition"].get<std::string>() == "authored_only";
+        next.set.npcTickLocked = animRoot.value("npcTickLocked", false);
         next.set.valid = !next.set.clips.empty();
         valid = next.set.valid;
         if (!valid)
@@ -416,6 +417,7 @@ AvatarAnimationRegistry::Entry& AvatarAnimationRegistry::load(const std::string&
                        {"clip_count", entry.set.clips.size()},
                        {"rig_parts", entry.rig.parts.size()},
                        {"movement_mode", entry.rig.movement.mode},
+                       {"npc_tick_locked", entry.set.npcTickLocked},
                        {"valid", entry.set.valid}},
         __FILE__, __LINE__, __FUNCTION__);
     return entry;

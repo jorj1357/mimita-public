@@ -65,6 +65,9 @@ void assignHostFlag(ServerPlayer& player, bool existingId)
     if (!existingId && gServerHostPlayerId == 0)
         gServerHostPlayerId = player.id;
     player.isHost = gServerHostPlayerId == player.id;
+    if (player.isHost && !player.adminCommandsInitialized)
+        player.adminCommandsEnabled = true;
+    player.adminCommandsInitialized = true;
     if (previousHostId != gServerHostPlayerId)
     {
         printf("%s [SERVER HOST OWNER] playerId=%u name=\"%s\" reason=first-accepted-session\n",

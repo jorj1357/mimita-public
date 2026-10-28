@@ -418,6 +418,7 @@ void registerAgentCommands()
 #include "terminal/weapon-commands.h"
 #include "terminal/weapon-bench-commands.h"
 #include "terminal/npc-commands.h"
+#include "terminal/admin-commands.h"
 #include "terminal/crate-commands.h"
 #include "terminal/object-commands.h"
 #include "physics/constraints/constraint-commands.h"
@@ -706,6 +707,7 @@ void gameInitSubsystems(Engine& engine)
     registerDevOverlayCommands();
 
     registerNpcCommands();
+    registerAdminCommands();
     registerMapEntityCommands();
     registerCrateCommands();
     registerObjectCommands();

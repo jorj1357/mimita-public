@@ -29,6 +29,12 @@ inline constexpr std::uint64_t actorPairKey(ActorPairKind kind, std::uint32_t id
     return (static_cast<std::uint64_t>(kind) << 32) | id;
 }
 
+// The exact capsule used by the shared actor-pair solver. A profile with
+// dead_capsule_length_m == 0 derives the dead length from standing height.
+Capsule actorPairCapsuleFor(const ActorCollisionProfile& profile,
+                            const glm::vec3& pos, float yaw,
+                            float sizeScale, bool dead);
+
 struct ActorPairCollisionActor
 {
     std::uint32_t id = 0;

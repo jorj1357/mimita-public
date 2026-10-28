@@ -290,6 +290,11 @@ struct ServerPlayer
     // True for the FIRST player to join — the server host. Only the host may
     // issue server-authoritative commands (healthall / setspawn / npc_delete_all).
     bool isHost = false;
+    // Server-session admin-command access. The host starts enabled; another
+    // player may gain access only through a host grant. State is never saved.
+    bool adminCommandsEnabled = false;
+    bool adminCommandsGranted = false;
+    bool adminCommandsInitialized = false;
     bool flyEnabled = false;
     float flySpeedMultiplier = 1.0f;
     glm::vec3 pos{0.0f};

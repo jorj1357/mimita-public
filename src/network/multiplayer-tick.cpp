@@ -26,6 +26,7 @@
 #include "debug/structured-log.h"
 #include "perf/perf-spike.h"
 #include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
 #include "gui/hud/chat-bubble.h"
@@ -428,6 +429,7 @@ static void processSnapshotEntities(
             interpolationState = &(*interpolationMap)[entity.networkEntityId];
         }
         Player& p = *replica;
+        p.isNpcActor = entity.entityType == ENTITY_NPC;
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = *interpolationState;
         const bool npcNewLife = entity.entityType == ENTITY_NPC && existsBefore &&
@@ -2201,6 +2203,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  {"server_name", ctx.serverName},
                  {"local_player_id", ctx.localPlayerId}},
                 __FILE__, __LINE__, __func__);
+            Terminal::instance().addLog(
+                std::string(res->accepted ? "[SERVER] " : "[SERVER REJECT] ") + status);
             if (res->accepted)
             {
                 Debug::warn(Debug::Category::Networking,

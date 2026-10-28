@@ -188,9 +188,6 @@ public:
     std::string createEntity(const std::string& type, const glm::vec3& position,
                              const std::string& requestedId = "");
     bool deleteEntity(const std::string& id);
-    void setEntityVisibility(bool visible);
-    bool entityVisibility() const { return mEntityVisibility; }
-    void setEntityVisibilityFor(const std::string& id, bool visible);
 
     const AuthoredBlock* findBlock(const std::string& id) const;
     AuthoredBlock* findBlockMutable(const std::string& id);
@@ -241,7 +238,6 @@ private:
     void pruneBackups();
 
     MapObjectiveConfig mCurrent;
-    bool mEntityVisibility = false;
     std::filesystem::file_time_type mLastWrite{};
     std::string mPath;
     uint64_t mRevision = 0;

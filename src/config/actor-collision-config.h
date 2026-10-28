@@ -51,10 +51,11 @@ class ActorCollisionConfig
 public:
     static ActorCollisionConfig& instance();
 
-    bool load(const std::string& path = "config/actor-collision.json");
+    bool load(const std::string& path = "config/actor-collision.json",
+              std::uint32_t tick = 0);
     // Call once at the start of a fixed tick. Installs only a fully valid
     // candidate and returns true when the active settings changed.
-    bool pollHotReload();
+    bool pollHotReload(std::uint32_t tick = 0);
 
     const ActorCollisionData& data() const { return mData; }
     const ActorCollisionProfile& profileFor(const std::string& actorPresetId) const;

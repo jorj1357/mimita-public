@@ -80,6 +80,39 @@ When a visual feature is changed, first validate its configuration load, state,
 and command result. Human visual review is still required for appearance, but
 it should not be the only way to discover whether the feature works.
 
+## Server admin-command access
+
+The server owns a session-only admin access state for each connected human.
+The host (first accepted session) starts enabled. Every other player starts
+disabled and can gain access only through a host grant. Grants, revokes, and
+self-toggles are never saved across server restarts.
+
+| Command | Owner | Contract |
+|---|---|---|
+| `admincmds 1\|0` | Server, sender | Host or granted player toggles their own access. No argument reports current state. |
+| `player_list` | Server, enabled admin | Lists connected human players only, host first; numbers are live-list references. |
+| `admincmds_grant N` | Server, host | Grants access to current `player_list` entry `N` and enables it immediately. NPCs cannot receive grants. |
+| `admincmds_revoke N` | Server, host | Revokes entry `N` and disables access immediately. |
+
+Every existing server host command uses the same access gate, not `isHost`
+alone. A client that sends a command directly still receives `rejected: no
+admin access`; the server never trusts the client’s local state. Turning access
+off or revoking it clears ongoing privileged modes such as flight, but does not
+undo completed actions such as teleport or health changes. A disconnected or
+stale target number is rejected; renumber by running `player_list` again.
+
+Connected host clients send host-only terminal commands through the normal
+server command packet, so the same gate applies. Direct application remains
+only for a headless/unconnected server console.
+
+## Debug visibility commands
+
+`entity_visibility 1|0` is the local viewer’s master switch, off by default.
+`entity_visibility_actor_capsules`, `entity_visibility_weapon_hitboxes`,
+`entity_visibility_npc_positions`, and `entity_visibility_map_objects` control
+the individual categories. They are local presentation commands: no packet is
+sent, authored map data is not changed, and another client’s view is unaffected.
+
 ## Live identity command
 
 `versioninfo` is a hot-package diagnostic command. It prints the running EXE

@@ -225,6 +225,41 @@ Rules:
   avatar. They are the generalized library for "any avatar".
 - Exactly one animation format version number at the top of every file.
 
+## How to use this document
+
+**Part I — task guide:** jump to “How to connect an animation to a player or
+item,” “Quick tuning recipe,” “How to edit Melee playback timing,” and “NPC
+tick-locked playback.” These sections describe the shortest path from an asset
+change to a visible result.
+
+**Part II — reference:** the clip/rig/state/runtime/replication sections define
+the format and ownership rules. Read them when adding a new field, tool, or
+actor type.
+
+## NPC tick-locked playback
+
+An avatar animation profile may opt NPC actors into a fixed authored-tick clock:
+
+```json
+"animation_profile": {
+  "set": "general_set_1",
+  "npcTickLocked": true
+}
+```
+
+When this field is true, actors marked as NPCs advance exactly one authored clip
+tick for each fixed 60 Hz simulation tick. Movement speed, `speedMultiplier`,
+`speedBased`, `speedScaleFromVelocity`, and the global walk-frequency knobs do
+not scale that clock. The profile is still sampled once per simulation tick, and
+render-pose interpolation remains presentation-only.
+
+This is an NPC-only option. The local player and remote human players using the
+same avatar keep normal playback. NPC profiles without `npcTickLocked` keep their
+existing playback behavior. Remote NPC replicas use the same flag because they
+are presentation copies of NPC actors. Action clips with an authoritative phase
+timeline continue to follow the action owner’s fixed-tick sample; the flag does
+not retime their markers.
+
 ### Ordered sets, priorities, and runtime settings
 
 `config/animations/masterlist/animation-sets.json` defines named reusable
@@ -233,9 +268,7 @@ An avatar profile selects one with `"set": "<set-id>"`; the set is merged before
 the avatar's own `include` and inline `states`, so avatar values still win.
 `general_set_1` is the ordered set of every imported `mimita_sizing_6` clip.
 
-`config/animations/settings.json` is hot-reloaded and owns runtime policy:
-
-- `statePriorities`: integer priority per state. Higher wins. Defaults keep
+`config/animations/settings.json` is hot-reloaded and owns runtime policy:- `statePriorities`: integer priority per state. Higher wins. Defaults keep
   landing below locomotion, hurt above locomotion/landing, and death highest.
 - `hurtTierMode`: `1` uses percent of max HP at hit time, `2` uses fixed damage.
 - `hurtPercent` / `hurtFixed`: small/normal thresholds. The next tier is large.
@@ -1156,6 +1189,8 @@ animation-specific file.
   transform for troubleshooting.
 - `anim.rig.parts`: declared parts, roles, physical flag, resolved node index,
   whether the node was found.
+- `anim.npc.ticklocked`: bound NPC tick-locked profile, actor, clip, clip tick,
+  movement speed, and playback scale. Emit at most four times per second.
 
 Diagnostics are off by default and enabled through the existing categorized
 logging configuration.
@@ -1219,6 +1254,10 @@ Runtime (dev loop, `docs/specs/debug-logging/AI-fix-live.md`):
 4. trigger attack and damage; confirm one-shot `attack`/`hurt` then return;
 5. load an NPC with the same avatar and confirm identical clip playback;
 6. load the default avatar and confirm unchanged behavior.
+7. enable `npcTickLocked` on an NPC avatar profile and compare clip tick over
+   the same simulation window at low and high movement speed; each simulation
+   tick must advance one authored tick for NPCs while the player and an unset
+   NPC profile keep existing playback.
 
 ## Acceptance
 

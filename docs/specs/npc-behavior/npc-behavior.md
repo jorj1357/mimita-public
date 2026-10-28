@@ -271,17 +271,24 @@ velocity so a repeated actor contact can be correlated with a stuck episode.
 or physical limbs. That is out of scope until the shared root-capsule path
 works for all actor pair types.
 
-**Collision data and live tuning:** use `config/actor-collision.json` as the
-source of truth for actor-pair capsule sizes and push-response tuning. Store
-capsule dimensions per actor/collision profile so a large monster can differ
-from a player while both use the same solver. Resolve each actor's profile
-through its actor preset or another existing stable actor identity; inspect
-current loaders first and avoid a duplicate owner. The file must validate as a
-whole, keep the last valid settings if a reload is invalid, and apply a valid
-reload at a fixed-tick boundary so designers can tune values during a live
-session without changing half a collision step. This file is proposed new work;
-it is not claimed to exist or load today.
-It must own, at minimum:
+**Collision data and live tuning:** `config/actor-collision.json` is the
+current source of truth for actor-pair capsule sizes and push-response tuning.
+Capsule dimensions are stored per actor/collision profile so a large monster can
+differ from a player while both use the same solver. Each actor resolves its
+profile through its existing actor-preset identity; an empty or unknown preset
+uses `default`. The whole file is validated before installation, and an invalid
+save keeps the previous valid settings.
+
+A valid save is installed at the next fixed-tick boundary by
+`ActorCollisionConfig::pollHotReload()`. Existing players, NPCs, and monsters
+read the current profile again on that tick, so radius/height changes apply
+without a respawn. `dead_capsule_length_m: 0` means “derive from the standing
+capsule height”; a positive value must still be at least twice the radius.
+Reload success and rejection are recorded in the canonical journal, and the
+periodic `actor.collision.profile` record carries the resolved profile
+dimensions so the active values are inspectable.
+
+It owns, at minimum:
 
 - per-actor capsule radius and standing height;
 - the ground-level ragdoll capsule length; and
@@ -329,6 +336,9 @@ let an actor fall through a stable support.
   collision time, and render frame time. Confirm the server still simulates at
   60 Hz and compare rendering with the existing 240 FPS goal on the same
   machine. Report measurements; do not claim the goal is met without them.
+- Change a profile's radius or height while actors are active. On the next
+  fixed tick, the same actors use the new capsule values without respawning;
+  an invalid save retains the last valid values.
 - No limb-specific collision is required for this first slice.
 - With a revolver/shotgun/other-weapon loadout and the sustained-fire profile,
   the NPC produces six accepted revolver attacks, switches on the next fixed

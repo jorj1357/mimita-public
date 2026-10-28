@@ -14,12 +14,20 @@
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
+#include "debug/entity-visibility.h"
 #include "config.h"
+#include "config/actor-collision-config.h"
 #include "config/movement-config.h"
 #include "gamemode/map-config.h"
+#include "network/community-match-client.h"
+#include "network/multiplayer-context.h"
+#include "npc/npc.h"
 #include "physics/constraints/constraint-debug.h"
+#include "physics/movement/actor-pair-collision.h"
 
 extern Renderer* gRenderer;
+extern NpcSystem* gpNpcSystem;
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
 extern void flushDebugTris(const Camera& camera);
 extern void flushDebugLines(const Camera& camera);
@@ -116,7 +124,96 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
 {
     drawBhopDebug(player, camera);
 
-    if (!DebugVis::enabled() && !MapConfigRegistry::instance().entityVisibility()) return;
+    const bool localVisibility = EntityVisibility::master();
+    if (!DebugVis::enabled() && !localVisibility) return;
+
+    if (localVisibility)
+    {
+        const ActorCollisionConfig& collisionConfig = ActorCollisionConfig::instance();
+
+        if (EntityVisibility::draw(EntityVisibility::Category::ActorCapsules))
+        {
+            const std::string localPreset =
+                MimitaNet::CommunityMatchClient::instance().active()
+                    ? MimitaNet::CommunityMatchClient::instance().actorPresetId()
+                    : std::string();
+            const auto drawActor = [&](const Player& actor, const std::string& preset,
+                                       const glm::vec4& color) {
+                const ActorCollisionProfile& profile = collisionConfig.profileFor(preset);
+                const Capsule capsule = actorPairCapsuleFor(
+                    profile, actor.pos, actor.yaw, actor.sizeScale, actor.dead);
+                drawCapsuleWire(camera, capsule, color);
+            };
+
+            drawActor(player, localPreset, {0.1f, 0.9f, 1.0f, 0.9f});
+            drawWorldLabel(player.pos + glm::vec3(0.0f, 0.0f, 2.2f),
+                           ("actor capsule " + collisionConfig.profileFor(localPreset).id).c_str(),
+                           {0.1f, 0.9f, 1.0f, 1.0f});
+
+            if (gpNpcSystem)
+                for (const Npc& npc : gpNpcSystem->all())
+                    drawActor(npc.body, npc.actorPresetId, {1.0f, 0.55f, 0.15f, 0.9f});
+
+            if (gpMpContext && gpMpContext->active)
+            {
+                for (const auto& entry : gpMpContext->remotePlayers)
+                    drawActor(entry.second, std::string(), {0.25f, 0.55f, 1.0f, 0.85f});
+                for (const auto& entry : gpMpContext->remoteNpcs)
+                    drawActor(entry.second, std::string(), {0.8f, 0.35f, 1.0f, 0.85f});
+            }
+        }
+
+        if (EntityVisibility::draw(EntityVisibility::Category::WeaponHitboxes))
+        {
+            const glm::vec4 hitboxColor{1.0f, 0.35f, 1.0f, 0.95f};
+            const auto drawWeaponHitboxes = [&](const Player& actor) {
+                const auto& dbgCaps = actor.weaponCollisionDebug.capsules;
+                if (!dbgCaps.empty()) {
+                    for (const auto& cap : dbgCaps) {
+                        if (!cap.enabled) continue;
+                        Capsule weaponCap;
+                        weaponCap.a = cap.currentStart;
+                        weaponCap.b = cap.currentEnd;
+                        weaponCap.r = cap.radius;
+                        drawCapsuleWire(camera, weaponCap, hitboxColor);
+                    }
+                } else if (actor.collision.hasWeaponCollisionCapsule) {
+                    drawCapsuleWire(camera, actor.weaponCollisionCapsule, hitboxColor);
+                }
+            };
+
+            drawWeaponHitboxes(player);
+            if (gpNpcSystem)
+                for (const Npc& npc : gpNpcSystem->all())
+                    drawWeaponHitboxes(npc.body);
+            if (gpMpContext && gpMpContext->active)
+            {
+                for (const auto& entry : gpMpContext->remotePlayers)
+                    drawWeaponHitboxes(entry.second);
+                for (const auto& entry : gpMpContext->remoteNpcs)
+                    drawWeaponHitboxes(entry.second);
+            }
+        }
+
+        if (EntityVisibility::draw(EntityVisibility::Category::NpcPositions) && gpNpcSystem)
+        {
+            const glm::vec4 npcColor{0.15f, 1.0f, 0.4f, 0.9f};
+            for (const DebugVis::NpcDebugInfo& npc : gpNpcSystem->debugInfo())
+            {
+                drawWireSphere(camera, npc.position, 0.18f, npcColor);
+                drawLine(camera, npc.position,
+                         npc.position + glm::vec3(0.0f, 0.0f, 1.8f), npcColor);
+                drawLine(camera, npc.position, npc.pathTarget,
+                         {0.2f, 0.65f, 1.0f, 0.85f});
+                char label[160];
+                std::snprintf(label, sizeof(label), "NPC %s speed=%.1f %s",
+                              npc.action.c_str(), npc.finalSpeed,
+                              npc.onFloor ? "grounded" : "airborne");
+                drawWorldLabel(npc.position + glm::vec3(0.0f, 0.0f, 2.1f),
+                               label, npcColor);
+            }
+        }
+    }
 
     if (DebugVis::physics()) {
         drawCapsuleApprox(player, camera);
@@ -347,7 +444,7 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         }
     }
 
-    if (MapConfigRegistry::instance().entityVisibility()) {
+    if (EntityVisibility::draw(EntityVisibility::Category::MapObjects)) {
         for (const MapEntity& entity : MapConfigRegistry::instance().current().entities) {
             if (!entity.visible) continue;
             glm::vec4 color(0.2f, 0.8f, 1.0f, 1.0f);

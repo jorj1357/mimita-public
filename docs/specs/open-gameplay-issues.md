@@ -1,4 +1,15 @@
-﻿2026 10 28 0850 jojr todo 
+2026 10 28 0958 jorj  ok smallest thing ever but the +1 in tdm mode  iti is not aligend right, 
+and also my team keeps winnign all the time idk why
+evne when i do  nothing
+i think i tshoudl be more balanced?
+ALSO ROCKET LAUCNEHR
+we c
+we need better rocket launcher visuals
+we need better 
+like we can literallt so do that we should just do that its so quick
+but i need to be doing monster anims and zomb tower making idk whatrver 
+
+2026 10 28 0850 jojr todo 
 nooooo spotif streams nto so much 
 tis ok 
  win some lose some
@@ -197,6 +208,19 @@ the fps issue happesn mroe and more as i have melee killing ppl killing npcs
 
 ## New intake — 2026-10-28
 
+- **NPC tick-locked animation, visibility categories, and admin commands:**
+  Added 2026-10-28 (latest session). Implement an opt-in
+  `avatar.json.animation_profile.npcTickLocked` mode that advances one authored
+  tick per fixed simulation tick for NPC actors only; keep player and unset NPC
+  profiles unchanged. Extend the existing live capsule issue instead of adding
+  another one. Make `entity_visibility` the local viewer’s off-by-default master
+  switch with independent actor-capsule, weapon-hitbox, NPC-position, and
+  map-object categories that draw through walls. Add server-authoritative
+  `admincmds 1|0`, `player_list`, `admincmds_grant N`, and `admincmds_revoke N`;
+  the host starts enabled, grants last only for the session, and every existing
+  host command uses the same access gate. Runtime/visual acceptance remains
+  separate from build evidence.
+
 - **Design secure autonomous AI access for Stripe monitoring and incident
   response:** The player wants an AI to check Stripe and related service health
   autonomously so it can notice and respond to problems faster than waiting for
@@ -390,7 +414,9 @@ the fps issue happesn mroe and more as i have melee killing ppl killing npcs
   one shared runtime and reusable clips for players and NPCs; first determine
   whether the current state machine and profiles can express this experiment.
   This is a design/playtest request, not a confirmed animation defect or a
-  request to create a separate NPC animation path.
+  request to create a separate NPC animation path. **2026-10-28:** added the
+  opt-in `npcTickLocked` profile mode for one-authored-tick-per-simulation-tick
+  playback; runtime comparison against movement speed remains open.
 - **Animation authoring needs a much easier, still hand-authored workflow:**
   The player wants animation creation to feel as approachable as the Map Editor
   made Payload map editing: substantially easier to make and adjust authored
@@ -703,6 +729,9 @@ Player report from Dust 2 Cyberia V4 (`dust2cyberiav4`):
 - **Admin ESP:** Admins with high privileges should be able to see NPCs,
   players, and other actors through walls, including their health bars. The
   exact permission level, display details, and mode policy remain open.
+  **2026-10-28:** added local `entity_visibility` categories for actor capsules,
+  active weapon hitboxes, NPC positions, and map objects; these are
+  presentation-only and do not yet include health bars or admin gating.
 - **Mode-specific map limits:** Some modes, such as Zombie Tower, should limit
   which maps can be selected. The allowed-map rules and where to configure
   them remain open.
@@ -1119,7 +1148,7 @@ change.
 | Build output prints extremely slowly | The player reports that while building the game, output can appear at roughly one character per second. | User-reported; build duration and output-delivery delay have not been separated. Compare the build process's output production with when the dashboard/terminal receives and redraws it; inspect pipe reading, buffering, and progress rendering. Keep useful progress and errors readable without making output capture delay the build or UI. | [`../operations/build-and-exe/build-and-exe.md`](../operations/build-and-exe/build-and-exe.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |
 | Resource diagnostics need to survive game hangs and identify retained memory | The player summarizes current coverage: `performance.resource-window` writes frame timing, some memory readings, allocation totals and counts for instrumented scopes to `events.jsonl`; the allocation tracker counts `new` calls/bytes but lacks caller attribution and outstanding retained memory; the dev-loop watcher checks process health/status but does not continuously record game/system resource use. | User wants broader diagnostics so a hang can still be explained after the game stops writing, memory use can be attributed to allocation owners and tracked while retained, and resource use can be monitored externally. Per-function coverage and always-on monitoring need a low-overhead design and measurement so diagnostics do not worsen the game's resource use. Relates to the Juggernaut hang/high-memory report above. | [`performance/performance.md`](performance/performance.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md), [`../architecture/accessibility/accessibility.md`](../architecture/accessibility/accessibility.md) |
 | Avatar textures are stretched again after a previous fix | The player reports that an older avatar-texture stretching issue, which had been fixed before, has returned. | Regression report; the prior fix and current cause have not been identified in this intake. Capture the affected avatar, texture/material, and render state, then compare with the earlier fix before changing UV or texture handling. Keep avatar-texture defects distinct from intentionally stretched/distorted world textures in the visual style. | [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`visuals/visuals.md`](visuals/visuals.md) |
-| Actor collision capsule sizes in JSON do not update live | While changing collision sizes in JSON, the player reports no live change. They want capsule sizes for all actors to be editable and applied live during play. | User-reported; the exact config file/fields, reload event, and whether already spawned actors receive the updated sizes are not established. Trace config discovery, validation/reload, actor-profile application, and collision-shape reads; define and verify how valid edits update existing actors while preserving a safe, consistent actor state. | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`actor-presets/actor-presets.md`](actor-presets/actor-presets.md), [`../architecture/json-configuration/json-configuration.md`](../architecture/json-configuration/json-configuration.md) |
+| Actor collision capsule sizes in JSON do not update live | While changing collision sizes in JSON, the player reports no live change. They want capsule sizes for all actors to be editable and applied live during play. | User-reported; the exact config file/fields, reload event, and whether already spawned actors receive the updated sizes are not established. Trace config discovery, validation/reload,   actor-profile application, and collision-shape reads; define and verify how valid edits update existing actors while preserving a safe, consistent actor state. **2026-10-28 implementation update:** valid reload now applies at the next fixed tick to active actors. The active file’s `default.dead_capsule_length_m: 0.0` previously failed whole-file validation and silently kept built-in defaults; zero now means “derive from standing height.” Reload and per-actor active-profile dimensions are logged. Runtime confirmation remains open. | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`actor-presets/actor-presets.md`](actor-presets/actor-presets.md), [`../architecture/json-configuration/json-configuration.md`](../architecture/json-configuration/json-configuration.md) |
 | Juggernaut frame-time and NPC motion degrade after NPC deaths | **Reported 2026-10-22 18:04–18:05 (time as supplied):** Juggernaut starts and runs smoothly with NPCs moving well; after about two or three NPCs die, stuttering begins, FPS drops, and NPC movement appears to update around 6 Hz instead of smoothly at 60 Hz. The player wonders whether corpses contribute, but is unsure. | Active investigation report, not a confirmed corpse-related cause. Compare the same run immediately before and after the first NPC deaths, correlating frame and server-tick costs, NPC update cadence, corpse/ragdoll creation and lifetime, and any death effects or allocations. Identify the first cost or update divergence before selecting an optimization. | [`performance/performance.md`](performance/performance.md), [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
 
 ## Implementation note — 2026-10-23
@@ -1153,7 +1182,6 @@ intentionally skipped for v1.
 | Build output prints about one character per second | Player reports very slow output delivery while the game is building; the underlying build time has not been measured separately | Compare compiler output production with dashboard/terminal receipt and redraw; inspect capture buffering and progress rendering | [`../operations/build-and-exe/build-and-exe.md`](../operations/build-and-exe/build-and-exe.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |
 | Performance diagnostics lose evidence on hang and do not identify retained allocations | Existing resource windows end when the game stops logging; allocation tracking counts requests but not callers or outstanding retained bytes; the dev-loop watcher does not continuously capture system/game resource use | Define and measure low-overhead hang-surviving resource monitoring, caller/retained-memory attribution, and appropriate scope/function coverage | [`performance/performance.md`](performance/performance.md), [`debug-logging/debug-logging.md`](debug-logging/debug-logging.md), [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md), [`../architecture/accessibility/accessibility.md`](../architecture/accessibility/accessibility.md) |
 | Avatar texture stretching has returned after a reported earlier fix | Player says avatar textures are distorted again; earlier fix details and current cause are unknown | Capture the affected avatar/material and compare the current render path with the earlier fix; distinguish avatar defects from intentional world texture distortion | [`avatar/avatar-editor.md`](avatar/avatar-editor.md), [`visuals/visuals.md`](visuals/visuals.md) |
-| JSON actor collision capsule edits do not apply live | Player wants capsule-size changes for all actors to take effect during play; the reported JSON edits did not change live collision | Trace JSON reload through actor-profile application and collision-shape use; establish safe live-update behavior for existing actors | [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`actor-presets/actor-presets.md`](actor-presets/actor-presets.md), [`../architecture/json-configuration/json-configuration.md`](../architecture/json-configuration/json-configuration.md) |
 | Juggernaut stutters and NPC motion appears to fall to 6 Hz after two or three NPC deaths | Reported 2026-10-22 18:04–18:05 (time as supplied); game starts smooth, then FPS drops and NPC updates appear choppy after deaths | Compare pre/post-death frame, server-tick and NPC-update costs with corpse/ragdoll/effect creation; corpse involvement is a hypothesis only | [`performance/performance.md`](performance/performance.md), [`gamemodes/juggernaut.md`](gamemodes/juggernaut.md), [`npc-behavior/npc-behavior.md`](npc-behavior/npc-behavior.md), [`ragdoll-retrograd/ragdoll-retrograd.md`](ragdoll-retrograd/ragdoll-retrograd.md) |
 | Juggernaut NPCs get stuck and avatar visuals/collision fit are poor on Dust2CyberiaV4 | User reports corner-stuck NPCs, chopped avatar textures, and avatar/world collision sizes that do not fit model scale: a large NPC avatar appears to collide as if it were normal-sized instead of according to its displayed size. Small-avatar mismatch was also reported. Journal has repeated NPC stuck/recovery events, but map corners, visual causes, and collision behavior are unverified. | Reproduce and inspect navigation recovery, avatar asset/render state, and actor collision shapes; establish whether NPC collision dimensions should scale with model size and trace the owning collision-shape/config path before changing it. | [`../architecture/player-npc-systems/npc-movement.md`](../architecture/player-npc-systems/npc-movement.md), [`../architecture/collision/collision.md`](../architecture/collision/collision.md), [`avatar/avatar-editor.md`](avatar/avatar-editor.md) |
 | Dev-loop rainbow clock/status time feels slow to update | Lower-priority player report; documented status animation cadence is one second with immediate redraw on key-triggered status changes | Compare visible update behavior with the dev-loop contract | [`../specs/dev-loop/dev-loop.md`](../specs/dev-loop/dev-loop.md) |

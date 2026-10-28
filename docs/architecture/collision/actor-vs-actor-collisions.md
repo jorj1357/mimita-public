@@ -1,13 +1,18 @@
-2026 10 08 1600 jorj todo explain how  actors vs actor collisions work 
-
-2026 10 08 1624 jorjt odo  make  a section:
-npc "hybrid" mode means 
-
-C:\mimita-v9\config\aimbody.json
-
-see how here its hybrid mode for players just do that body animation mode for npcs too 
-
 # MiMITA Universal Actor-vs-Actor Collision Specification v1
+
+**Current implementation note (2026-10-28):** the shipped actor-pair path uses
+one root capsule per living actor and a ground-level lengthwise capsule for dead
+actors. `config/actor-collision.json` owns radius/height/dead-length and
+push/support tuning, keyed by actor preset with `default` fallback. A valid save
+is validated as a whole and installed at the next fixed-tick boundary; existing
+actors read the new profile on that tick. A zero dead length derives from the
+standing height. The canonical `actor.collision.profile` record exposes the
+active profile dimensions. The full-triangle contract below remains the target
+for later slices, not the current capsule implementation.
+
+NPC “hybrid” mode is documented in the Normative section below: NPCs use the
+same AimBody hybrid body behavior as players, with their target/facing direction
+substituted for camera input.
 
 **Date:** 2026-10-08  
 **Status:** Draft v1 / authoritative target behavior pending implementation and runtime proof  

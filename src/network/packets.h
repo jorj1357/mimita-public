@@ -1106,7 +1106,7 @@ struct ServerCommandPacket
 struct ServerCommandResultPacket
 {
     PacketHeader header;
-    int32_t accepted = 0;      // 1 = applied, 0 = rejected (not host)
+    int32_t accepted = 0;      // 1 = applied, 0 = rejected (not authorized)
     char statusText[240];      // human-readable result for the terminal
 };
 

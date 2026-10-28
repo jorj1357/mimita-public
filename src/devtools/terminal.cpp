@@ -344,7 +344,7 @@ void Terminal::init(GLFWwindow* window) {
         "setspawn_set",
         [](const std::vector<std::string>& args) {
             (void)args;
-            if (MimitaNet::isServerHost())
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost())
             {
                 auto& o = MimitaNet::serverGameOverrides();
                 o.spawnOverridePosition = THE_PLAYER.pos;
@@ -372,7 +372,7 @@ void Terminal::init(GLFWwindow* window) {
         "HOST ONLY — enable/disable the server spawn override. setspawn 1 = use the set position, setspawn 0 = default spawn points",
         "setspawn <0|1>",
         [](const std::vector<std::string>& args) {
-            if (MimitaNet::isServerHost())
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost())
             {
                 if (args.empty()) {
                     auto& o = MimitaNet::serverGameOverrides();

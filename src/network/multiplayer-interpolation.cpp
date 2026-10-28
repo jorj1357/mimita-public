@@ -2004,8 +2004,10 @@ void updateRenderedReplica(
         interpolation.lastAnimationServerTick != render.serverTick;
     if (remotePresentationAlive && animationTickChanged)
     {
+        const bool tickLockedNpc = player.isNpcActor && player.animationSet &&
+                                   player.animationSet->npcTickLocked;
         player.updateProceduralAnimation(
-            dt,
+            tickLockedNpc ? GAMEPLAY_FIXED_DT : dt,
             player.aimDirection,
             player.pos,
             remoteWalking

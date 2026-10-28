@@ -229,6 +229,7 @@ Npc::Npc(std::uint32_t npcId, float npcDifficulty, glm::vec3 spawn,
     rngState = 0x9e3779b9u ^ (id * 747796405u);
     attackCooldown = npcSpawnFireDelaySeconds(*this);
     body.reset();
+    body.isNpcActor = true;
     body.username = customName.empty() ? "NPC-" + std::to_string(id) : customName;
     body.currentHp = body.maxHp;
     if (DevOverrides::healthOverrideEnabled) {

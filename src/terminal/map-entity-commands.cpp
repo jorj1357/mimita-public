@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "debug/debug-visuals.h"
+#include "debug/entity-visibility.h"
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "gamemode/map-config.h"
@@ -98,6 +99,7 @@ void registerMapEntityCommands()
             Terminal::instance().addLog("[ENTITY] entity_move_here [id] | entity_set_position <id> <x> <y> <z>");
             Terminal::instance().addLog("[ENTITY] entity_set <id> <radius|size|spawnCount|maxAlive|spawnCooldownTicks|monsterPool|pickupId|bossId|tag|damageType|damage|damageIntervalTicks|checkpointRequirement|oneShot|enabled|visible> <value>");
             Terminal::instance().addLog("[ENTITY] entity_delete [id] | entity_visibility <on|off>");
+            Terminal::instance().addLog("[ENTITY] entity_visibility_actor_capsules | entity_visibility_weapon_hitboxes | entity_visibility_npc_positions | entity_visibility_map_objects <on|off>");
             Terminal::instance().addLog("[ENTITY] entity_save | entity_reload");
         }, "", CommandCategory::Editor
     });
@@ -215,18 +217,38 @@ void registerMapEntityCommands()
         }, "", CommandCategory::Editor
     });
     terminal.registerCommand({
-        "entity_visibility", "Show or hide authored map entities", "entity_visibility <on|off>",
+        "entity_visibility", "Master switch for local entity debug visibility", "entity_visibility <on|off>",
         [](const std::vector<std::string>& args) {
             const bool visible = args.empty() ? true : args[0] != "off" && args[0] != "0";
-            ensureEntityConfig();
-            registry().setEntityVisibility(visible);
-            if (visible) {
-                DebugVis::setMasterEnabled(true);
-                DebugConfig::DEBUG_RENDER = true;
-            }
+            EntityVisibility::setMaster(visible);
             Terminal::instance().addLog(std::string("[ENTITY] visibility=") + (visible ? "on" : "off"));
         }, "", CommandCategory::Editor
     });
+    auto registerVisibilityCategory = [](EntityVisibility::Category category,
+                                          const char* description) {
+        const std::string name = EntityVisibility::categoryCommand(category);
+        Terminal::instance().registerCommand({
+            name.c_str(), description, name + " <on|off>",
+            [category, name](const std::vector<std::string>& args) {
+                const bool enabled = args.empty()
+                    ? !EntityVisibility::category(category)
+                    : args[0] != "off" && args[0] != "0";
+                EntityVisibility::setCategory(category, enabled);
+                Terminal::instance().addLog(
+                    std::string("[ENTITY] ") + EntityVisibility::categoryName(category) +
+                    "=" + (enabled ? "on" : "off") +
+                    " master=" + (EntityVisibility::master() ? "on" : "off"));
+            }, "", CommandCategory::Editor
+        });
+    };
+    registerVisibilityCategory(EntityVisibility::Category::ActorCapsules,
+                               "Show actor-pair collision capsules through walls");
+    registerVisibilityCategory(EntityVisibility::Category::WeaponHitboxes,
+                               "Show active weapon hitboxes through walls");
+    registerVisibilityCategory(EntityVisibility::Category::NpcPositions,
+                               "Show NPC positions and navigation markers through walls");
+    registerVisibilityCategory(EntityVisibility::Category::MapObjects,
+                               "Show authored map entities and constraints through walls");
     terminal.registerCommand({
         "entity_save", "Save authored map entities to the active map JSON", "entity_save",
         [](const std::vector<std::string>&) {

@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 #include "utils/path_utils.h"
 
@@ -195,9 +196,9 @@ bool ActorCollisionConfig::validate(ActorCollisionData& candidate, std::string& 
             error = "profile '" + entry.first + "' capsule_height_m must be > 0";
             return false;
         }
-        if (!std::isfinite(p.deadCapsuleLengthM) || p.deadCapsuleLengthM <= 0.0f)
+        if (!std::isfinite(p.deadCapsuleLengthM) || p.deadCapsuleLengthM < 0.0f)
         {
-            error = "profile '" + entry.first + "' dead_capsule_length_m must be > 0";
+            error = "profile '" + entry.first + "' dead_capsule_length_m must be >= 0";
             return false;
         }
         if (p.capsuleHeightM < p.capsuleRadiusM * 2.0f)
@@ -205,17 +206,18 @@ bool ActorCollisionConfig::validate(ActorCollisionData& candidate, std::string& 
             error = "profile '" + entry.first + "' capsule_height_m must be >= 2 * radius";
             return false;
         }
-        if (p.deadCapsuleLengthM < p.capsuleRadiusM * 2.0f)
+        if (p.deadCapsuleLengthM > 0.0f &&
+            p.deadCapsuleLengthM < p.capsuleRadiusM * 2.0f)
         {
             error = "profile '" + entry.first +
-                    "' dead_capsule_length_m must be >= 2 * radius";
+                    "' dead_capsule_length_m must be 0 (derive) or >= 2 * radius";
             return false;
         }
     }
     return true;
 }
 
-bool ActorCollisionConfig::load(const std::string& path)
+bool ActorCollisionConfig::load(const std::string& path, std::uint32_t tick)
 {
     const std::string resolvedPath = resolveConfigPath(path);
     if (mPath != resolvedPath)
@@ -310,6 +312,14 @@ bool ActorCollisionConfig::load(const std::string& path)
         printf("[ACTOR COLLISION CONFIG] loaded path=%s revision=%llu profiles=%zu\n",
                mPath.c_str(), (unsigned long long)mData.revision,
                mData.profiles.size());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "actor.collision.reload", mPath,
+            "actor collision config applied at fixed-tick boundary", tick,
+            {{"path", mPath},
+             {"revision", mData.revision},
+             {"profiles", mData.profiles.size()},
+             {"applied_tick", tick}});
         if (!mWatchLogged)
         {
             Debug::log(Debug::Category::Collision,
@@ -329,11 +339,19 @@ bool ActorCollisionConfig::load(const std::string& path)
             mPath.c_str(), e.what());
         printf("[ACTOR COLLISION CONFIG] error path=%s: %s; keeping previous valid settings\n",
                mPath.c_str(), e.what());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Errors,
+            "actor.collision.reload_rejected", mPath,
+            "invalid actor collision config retained previous values", tick,
+            {{"path", mPath},
+             {"reason", e.what()},
+             {"retained_revision", mData.revision},
+             {"applied_tick", tick}});
         return false;
     }
 }
 
-bool ActorCollisionConfig::pollHotReload()
+bool ActorCollisionConfig::pollHotReload(std::uint32_t tick)
 {
     const auto now = std::chrono::steady_clock::now();
     if (mLastCheck.time_since_epoch().count() != 0 &&
@@ -346,7 +364,7 @@ bool ActorCollisionConfig::pollHotReload()
     {
         mPath = resolvedPath;
         mWatchLogged = false;
-        return load(mPath);
+        return load(mPath, tick);
     }
 
     std::error_code ec;
@@ -356,7 +374,7 @@ bool ActorCollisionConfig::pollHotReload()
     if (writeTime == std::filesystem::file_time_type{} || writeTime == mLastWrite)
         return false;
 
-    return load(mPath);
+    return load(mPath, tick);
 }
 
 const ActorCollisionProfile& ActorCollisionConfig::profileFor(

@@ -106,7 +106,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
       AvatarAnimationRegistry::instance().pollReload(
           (std::uint32_t)sim.player->movementSimulationTick); }
     { MIMITA_PERF_SCOPE("Simulation::CollisionConfigReload");
-      ActorCollisionConfig::instance().pollHotReload(); }
+      ActorCollisionConfig::instance().pollHotReload((std::uint32_t)sim.tick); }
 
     // Sweep start for this fixed tick. Reconciliation/teleports have already
     // installed the authoritative position, so a discontinuity does not create
@@ -414,6 +414,15 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         if (sim.tick - lastCollisionProfileTick >= 60)
         {
             lastCollisionProfileTick = sim.tick;
+            nlohmann::json activeProfiles = nlohmann::json::object();
+            for (const ActorPairCollisionActor& actor : collisionActors)
+            {
+                if (!actor.profile) continue;
+                activeProfiles[actor.profile->id] = {
+                    {"capsule_radius_m", actor.profile->capsuleRadiusM},
+                    {"capsule_height_m", actor.profile->capsuleHeightM},
+                    {"dead_capsule_length_m", actor.profile->deadCapsuleLengthM}};
+            }
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Collision, StructuredLevel::Important,
                 "actor.collision.profile", "client",
@@ -437,6 +446,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                     {"broadphase_ms", collisionStats.broadphaseMs},
                     {"collision_ms", collisionStats.totalMs},
                     {"frame_ms", Perf::state().lastFrameTimeMs},
+                    {"active_profiles", activeProfiles},
                     {"config_revision", collisionData.revision}},
                 __FILE__, __LINE__, __FUNCTION__);
         }

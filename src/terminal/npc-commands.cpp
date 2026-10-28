@@ -88,13 +88,13 @@ void registerNpcCommands()
     Terminal::instance().registerCommand({
         "npc_delete_all", "Delete every NPC", "npc_delete_all",
         [](const std::vector<std::string>&) {
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_delete_all");
+                Terminal::instance().addLog("[NPC COMMAND] sent to host");
+                return;
+            }
             if (!MimitaNet::isServerHost()) {
-                if (::gpMpContext && ::gpMpContext->active) {
-                    MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_delete_all");
-                    Terminal::instance().addLog("[NPC COMMAND] sent to host");
-                } else {
-                    Terminal::instance().addLog("[NPC COMMAND] HOST ONLY");
-                }
+                Terminal::instance().addLog("[NPC COMMAND] HOST ONLY");
                 return;
             }
             NpcSystem& npcSystem = THE_NPC_SYSTEM;
@@ -118,11 +118,13 @@ void registerNpcCommands()
         "npcdiffload", "Load an NPC difficulty preset; host only", "npcdiffload <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[NPC DIFFICULTY] Usage: npcdiffload <number>"); return; }
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "npcdiffload " + args[0]);
+                Terminal::instance().addLog("[NPC DIFFICULTY] sent to host");
+                return;
+            }
             if (!MimitaNet::isServerHost()) {
-                if (::gpMpContext && ::gpMpContext->active) {
-                    MimitaNet::mpSendServerCommand(*::gpMpContext, "npcdiffload " + args[0]);
-                    Terminal::instance().addLog("[NPC DIFFICULTY] sent to host");
-                } else Terminal::instance().addLog("[NPC DIFFICULTY] HOST ONLY");
+                Terminal::instance().addLog("[NPC DIFFICULTY] HOST ONLY");
                 return;
             }
             std::vector<std::filesystem::path> presets;

@@ -20,6 +20,43 @@
 
 #include "debug/structured-log.h"
 
+// Shared so visibility/debug rendering shows the same shape the solver uses.
+// A zero dead_capsule_length_m means "derive from the standing capsule height".
+Capsule actorPairCapsuleFor(const ActorCollisionProfile& profile,
+                            const glm::vec3& pos, float yaw,
+                            float sizeScale, bool dead)
+{
+    const float scale = std::max(sizeScale, 0.001f);
+    const float radius = std::max(profile.capsuleRadiusM * scale, 0.01f);
+    const float height = std::max(profile.capsuleHeightM * scale, radius * 2.0f);
+
+    if (dead)
+    {
+        const float feetZ = pos.z - height * 0.5f;
+        const float centerZ = feetZ + radius;
+        const float authoredLength = profile.deadCapsuleLengthM > 0.0f
+            ? profile.deadCapsuleLengthM * scale : height;
+        const float length = std::max(authoredLength, radius * 2.0f);
+        const float halfAxis = std::max(0.0f, length * 0.5f - radius);
+        const glm::vec3 axis(std::cos(yaw) * halfAxis,
+                             std::sin(yaw) * halfAxis,
+                             0.0f);
+        const glm::vec3 center(pos.x, pos.y, centerZ);
+        Capsule cap;
+        cap.a = center - axis;
+        cap.b = center + axis;
+        cap.r = radius;
+        return cap;
+    }
+
+    const float half = height * 0.5f;
+    Capsule cap;
+    cap.r = radius;
+    cap.a = pos - glm::vec3(0.0f, 0.0f, std::max(0.0f, half - radius));
+    cap.b = pos + glm::vec3(0.0f, 0.0f, std::max(0.0f, half - radius));
+    return cap;
+}
+
 namespace {
 
 constexpr float kContactMargin = 0.002f;
@@ -120,37 +157,10 @@ int clampedCellCoord(float value, float cellSize)
 Capsule makeActorCapsule(const ActorPairCollisionActor& actor,
                          const glm::vec3& pos)
 {
-    const ActorCollisionProfile* profile = actor.profile;
-    if (!profile)
+    if (!actor.profile)
         return Capsule{pos, pos, 0.7f};
-
-    const float scale = std::max(actor.sizeScale, 0.001f);
-    const float radius = std::max(profile->capsuleRadiusM * scale, 0.01f);
-    const float height = std::max(profile->capsuleHeightM * scale, radius * 2.0f);
-
-    if (actor.dead)
-    {
-        const float feetZ = pos.z - height * 0.5f;
-        const float centerZ = feetZ + radius;
-        const float length = std::max(profile->deadCapsuleLengthM * scale, radius * 2.0f);
-        const float halfAxis = std::max(0.0f, length * 0.5f - radius);
-        const glm::vec3 axis(std::cos(actor.yaw) * halfAxis,
-                             std::sin(actor.yaw) * halfAxis,
-                             0.0f);
-        const glm::vec3 center(pos.x, pos.y, centerZ);
-        Capsule cap;
-        cap.a = center - axis;
-        cap.b = center + axis;
-        cap.r = radius;
-        return cap;
-    }
-
-    const float half = height * 0.5f;
-    Capsule cap;
-    cap.r = radius;
-    cap.a = pos - glm::vec3(0.0f, 0.0f, std::max(0.0f, half - radius));
-    cap.b = pos + glm::vec3(0.0f, 0.0f, std::max(0.0f, half - radius));
-    return cap;
+    return actorPairCapsuleFor(*actor.profile, pos, actor.yaw,
+                               actor.sizeScale, actor.dead);
 }
 
 Capsule translated(const Capsule& cap, const glm::vec3& move)

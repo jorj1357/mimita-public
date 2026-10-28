@@ -216,6 +216,31 @@ remote-client code path
 There can ONLY BE  1 PATH……………………. 
 ________________
 
+### 3.1 Server-session admin-command authority
+
+The server owns admin-command access for the current session. The first
+accepted human session is the host and starts with access enabled. Every other
+human starts disabled. The server exposes:
+
+- `admincmds 1|0` to enable or disable the sender’s own access;
+- `player_list` to list connected human players with the host first;
+- `admincmds_grant N` for the host to grant a current list entry; and
+- `admincmds_revoke N` for the host to revoke a current list entry.
+
+List numbers are live references to that call’s connected-human list, not stable
+player IDs. NPCs are never listed and cannot receive grants. A grant enables the
+recipient immediately and lasts only while that session/player record exists.
+Granted players may turn their own access off and back on while the grant
+remains. Revoking or disabling access clears ongoing privileged modes such as
+flight; completed actions such as teleport remain applied. State is not saved
+across server restarts.
+
+Every server host command is authorized by this session access state, not by a
+client claim or a display name. A direct command packet from a player without
+access is rejected by the server. The host client uses the same packet path
+while connected; only a headless/unconnected server console may apply a host
+command directly.
+
 
 4. Simulation tick rate
 4.01. Interpolation 

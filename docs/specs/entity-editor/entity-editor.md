@@ -487,9 +487,27 @@ Run `entity_help` in the game for the compact in-game list.
 | `entity_set_position` | `entity_set_position <id> <x> <y> <z>` | Set an exact world position. |
 | `entity_set` | `entity_set <id> <property> <value>` | Change an authored property; `size` takes three values. |
 | `entity_delete` | `entity_delete [id]` | Delete an entity from memory. |
-| `entity_visibility` | `entity_visibility <on\|off>` | Show or hide authored debug markers. |
+| `entity_visibility` | `entity_visibility <on\|off>` | Local master switch for all debug visibility. Off by default. |
+| `entity_visibility_actor_capsules` | `entity_visibility_actor_capsules <on\|off>` | Show actor-pair collision capsules through walls. |
+| `entity_visibility_weapon_hitboxes` | `entity_visibility_weapon_hitboxes <on\|off>` | Show active weapon hitboxes through walls. |
+| `entity_visibility_npc_positions` | `entity_visibility_npc_positions <on\|off>` | Show NPC position/navigation markers through walls. |
+| `entity_visibility_map_objects` | `entity_visibility_map_objects <on\|off>` | Show authored map entities and constraints. |
 | `entity_save` | `entity_save` | Write the current registry to the active map JSON. |
 | `entity_reload` | `entity_reload` | Reload the active map JSON; invalid JSON keeps the last valid state. |
+
+### Local viewer visibility
+
+`entity_visibility 1|0` is the local viewer’s master switch. It starts off and
+is not saved across restarts. The four category commands start enabled, so
+turning the master on shows every category until a category is turned off.
+Categories are independent and may be toggled while the master is off; they
+take effect when the master is on.
+
+Visibility is presentation-only. It never mutates `entity.visible`, saves map
+JSON, sends a packet, or changes another client’s view. Collision shapes are
+drawn with depth testing disabled so the requested capsules and hitboxes are
+visible through walls. `entity_set <id> visible <0|1>` remains the separate
+authored-data control for one map entity.
 
 ### Entity types
 

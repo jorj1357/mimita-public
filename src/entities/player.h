@@ -282,6 +282,9 @@ struct AvatarAnimationSet {
     // Other procedural pose layers are suppressed; AimBody remains layered
     // unless the selected clip sets aimLayer to false.
     bool authoredOnly = false;
+    // Opt-in NPC playback: advance one authored clip tick per simulation tick
+    // and ignore velocity/multiplier playback scaling. Player actors ignore it.
+    bool npcTickLocked = false;
     std::unordered_map<std::string, AnimClip> clips;
     AvatarStateMap states;
 };
@@ -531,6 +534,9 @@ struct GroundReturnState {
 class Player {
 public:
     std::string username = "admin";
+    // Set for NPC bodies and NPC replicas. Player actors stay false so an
+    // avatar profile can opt only its NPC users into tick-locked playback.
+    bool isNpcActor = false;
     MimitaVip::VipAppearance vipAppearance;
     MimitaVip::VipStyleDetail vipStyleDetail;
     int currentHp = 100;
