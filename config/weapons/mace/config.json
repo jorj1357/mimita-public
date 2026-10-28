@@ -20,9 +20,9 @@
             "tap_count": 1
           },
           "contact_min_damage": 25.0,
-          "contact_max_damage": 125.0,
+          "contact_max_damage": 250.0,
           "contact_min_knockback": 30.0,
-          "contact_max_knockback": 125.0,
+          "contact_max_knockback": 300.0,
           "hitboxes": [],
           "impulses": [],
           "audio": {
@@ -34,8 +34,8 @@
           },
           "cooldown_ticks": 60,
           "weapon_pose": {
-            "rotation_degrees": [0.0, 0.0, 0.0],
-            "offset": [0.0, 0.0, 0.0]
+            "rotation_degrees": [0.0, 0.0, 90.0],
+            "offset": [1.0, 0.0, 0.0]
           },
           "animation_clip_id": "mimita_sizing_6_attackslam_002"
         }

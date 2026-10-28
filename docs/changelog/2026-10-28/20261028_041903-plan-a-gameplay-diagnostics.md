@@ -1,7 +1,7 @@
 # Plan A gameplay diagnostics and fixes
 
 Time created: 2026-10-28T04:19:03Z
-Time last updated: 2026-10-28T13:27:15Z
+Time last updated: 2026-10-28T13:52:06Z
 
 Branch: `20261011zt`
 Starting HEAD: `ada6a0d0`
@@ -317,6 +317,28 @@ Pre-existing/other-work state:
   colliders, weapon configs, docs, and gameplay code. They were preserved.
 - `config/analytics.json` was changed by the running game; it is not part of
   this implementation.
+
+## Gold reference — animation/death choppiness
+
+Added `docs/gold/20261028_094500-animation-death-choppiness-evidence.md` as the
+detailed reusable record. It preserves:
+
+- the human confirmation at 2026-10-28 09:45 EDT — jorj:
+  “its smooth i ahvent had issues choppiness etc yet”;
+- exact before/after numbers, including p95/p99, `anim.state.changed` 75,689 to
+  1,244, `PlayerAnimation` per-actor cost, corpse step cost, and the 701.9 ms
+  music spike;
+- before/after code for animation sampling, candidate JSON, walk/run
+  hysteresis, background JSON watching, weapon reload, corpse budget, and Opus
+  predecode;
+- the reasoning chain, dev-loop and logging strengths/weaknesses, time-wasting
+  causes, and a proposed automated 60-second 240 FPS benchmark;
+- the recorded model/human workflow: DeepSeek V4.1 Flash on high in opencode,
+  with GPT-6 Luna on medium sometimes used as a planner.
+
+The concise earlier note
+`docs/gold/20261028_093400-animation-and-death-choppiness.md` now links to the
+detailed record.
 
 ## Plan B boundary
 

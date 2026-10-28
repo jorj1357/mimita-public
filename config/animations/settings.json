@@ -1,6 +1,10 @@
 {
   "version": 1,
+  // 2026 10 28 0948 root mode 1 = limbs go all over 
+  // mode 2 = nullifies part translations 
+  // ok well 2026 10 28 0951 jorj it not good so we need difrent solution
   "rootTranslationMode": 1,
+  // "rootTranslationMode": 2,
   "renderPoseInterpolation": true,
   "deathPresentation": "auto",
   "hurtTierMode": 1,
