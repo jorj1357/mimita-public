@@ -234,6 +234,15 @@ for recovery and walkability.
 `0.9999` smooths only exactly coplanar seams. Lower values also smooth shallow
 ramp creases; this is hot-reloadable but should be tuned by human feel review.
 
+## NPC collision scope — capsule now, triangle target later
+
+NPC world collision currently uses a scaled capsule plus safe spawn and
+post-pose recovery. Full animated triangle-versus-triangle NPC collision is the
+later target. Capsules are cheaper, quicker to iterate, and sufficient for
+keeping NPCs out of solid geometry for now; do not treat the capsule
+approximation as the final actor-vs-actor contract. Players and weapons continue
+to use the shared actor-triangle solver.
+
 ## Safe spawn placement — 2026-10-25
 
 `resolveSafeStandingSpawn` in `src/game/spawn-utils.cpp` rejects inside-solid

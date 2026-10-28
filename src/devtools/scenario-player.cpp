@@ -14,6 +14,7 @@
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "input/scenario-input.h"
+#include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
 
@@ -21,11 +22,8 @@ extern FramePacer gFramePacer;
 
 namespace {
 
-// Input playback may drift because the live server/world state differs. When
-// the local character is this far from the recorded server-side position,
-// snap to the next recorded valid position so the rest of the input sequence
-// is applied at the correct place on the map.
-constexpr float kMaxPlaybackDriftM = 5.0f;
+constexpr float kDivergenceFailM = 2.0f;
+constexpr uint64_t kReadinessTimeoutMs = 5000u;
 
 uint64_t nowMs()
 {
@@ -88,9 +86,11 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
     }
 
     mTicks.clear();
+    mRevisions.clear();
     mMap.clear();
     mMode.clear();
     mWeaponSet = 0;
+    mSchemaVersion = 1;
     mStart = StartState{};
     mIndex = 0;
     mMaxPositionError = 0.0f;
@@ -98,7 +98,13 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
     mFirstDivergenceError = 0.0f;
     mFirstDivergenceExpected = glm::vec3(0.0f);
     mFirstDivergenceActual = glm::vec3(0.0f);
-    mSnapCount = 0;
+    mFailureReason.clear();
+    mServerPrepared = false;
+    mServerBeginAck = false;
+    mServerRejected = false;
+    mServerCommandSent = false;
+    mBeginSent = false;
+    mServerError.clear();
     mPath = path;
 
     bool sawHeader = false;
@@ -135,7 +141,8 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
                 return false;
             }
             sawHeader = true;
-            if (value.value("schema", 0) != 1)
+            mSchemaVersion = value.value("schema", 0);
+            if (mSchemaVersion != 1 && mSchemaVersion != ScenarioTracks::kSchemaV2)
             {
                 if (error) *error = "unsupported_schema";
                 return false;
@@ -144,6 +151,18 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
             {
                 if (error) *error = "unsupported_tick_rate";
                 return false;
+            }
+            if (mSchemaVersion == ScenarioTracks::kSchemaV2)
+            {
+                if (!value.contains("tracks") || !value["tracks"].is_array() ||
+                    std::find(value["tracks"].begin(), value["tracks"].end(),
+                              "server_actors") == value["tracks"].end())
+                {
+                    if (error) *error = "missing_server_actor_track";
+                    return false;
+                }
+                if (value.contains("melee_revisions"))
+                    mRevisions = ScenarioTracks::parseMeleeRevisions(value["melee_revisions"]);
             }
             mMap = value.value("map", "");
             mMode = value.value("mode", "");
@@ -160,6 +179,9 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
                 mStart.health = start.value("health", 100);
                 mStart.weapon = start.value("equipped_weapon", "");
                 mStart.slot = start.value("equipped_slot", 0);
+                mStart.spawnGeneration = start.value("spawn_generation", 0u);
+                mStart.transformEpoch = static_cast<uint16_t>(
+                    start.value("transform_epoch", 0u));
             }
         }
         else if (kind == "tick")
@@ -204,6 +226,7 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
             tick.velocity = jsonVec3(value.value("velocity", nlohmann::json::array()));
             tick.health = value.value("health", 100);
             tick.grounded = value.value("grounded", false);
+            tick.serverTick = value.value("server_tick", 0u);
             mTicks.push_back(tick);
         }
         else if (kind == "footer")
@@ -211,11 +234,18 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
             sawFooter = true;
             break;
         }
+        // actor_identity, actor_lifecycle, and server_tick records are consumed
+        // by the server playback owner; the client input player ignores them.
     }
 
     if (!sawHeader)
     {
         if (error) *error = "missing_header";
+        return false;
+    }
+    if (mSchemaVersion == ScenarioTracks::kSchemaV2 && !sawFooter)
+    {
+        if (error) *error = "incomplete_scenario_track";
         return false;
     }
     (void)sawFooter;
@@ -228,8 +258,10 @@ bool ScenarioPlayer::begin()
         return false;
     mActive = true;
     mWaitingForStart = true;
+    mValid = false;
     mIndex = 0;
     mMaxPositionError = 0.0f;
+    mFailureReason.clear();
     mLastAppliedWeapon = mStart.weapon;
     mLastAppliedSlot = mStart.slot;
     mStartMs = nowMs();
@@ -238,16 +270,34 @@ bool ScenarioPlayer::begin()
     ScenarioInput::setActive(true);
     ScenarioInput::setFrame(&mNeutral);
 
+    mServerPrepared = !schema2() || !MP_CONTEXT.active;
+    mServerBeginAck = !schema2() || !MP_CONTEXT.active;
+    mServerRejected = false;
+    mServerCommandSent = false;
+    mBeginSent = false;
+    mServerError.clear();
+
+    if (schema2() && MP_CONTEXT.active)
+    {
+        MimitaNet::mpSendServerCommand(
+            MP_CONTEXT, "scenario_server_play " + mPath);
+        mServerCommandSent = true;
+    }
+
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Important,
         "scenario.playback.started", "scenario-player",
-        "input playback started; waiting for recorded start state", 0,
+        "scenario playback started; waiting for recorded start state", 0,
         nlohmann::json{{"path", mPath},
+                       {"schema", mSchemaVersion},
                        {"map", mMap},
                        {"mode", mMode},
                        {"weapon_set", mWeaponSet},
                        {"frame_count", mTicks.size()},
-                       {"start_position", {mStart.position.x, mStart.position.y, mStart.position.z}}},
+                       {"start_position", {mStart.position.x, mStart.position.y,
+                                           mStart.position.z}},
+                       {"spawn_generation", mStart.spawnGeneration},
+                       {"transform_epoch", mStart.transformEpoch}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;
 }
@@ -301,9 +351,21 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
     if (!mActive)
         return;
 
+    if (mServerRejected)
+    {
+        fail(mServerError.empty() ? "server_rejected" : mServerError);
+        return;
+    }
+
     if (mWaitingForStart)
     {
         const bool networked = MP_CONTEXT.active;
+        const bool v2 = schema2();
+        if (v2 && !networked)
+        {
+            fail("server_required_for_schema_2");
+            return;
+        }
         const bool positionReady =
             glm::distance(player.pos, mStart.position) <= 0.75f;
         const bool serverPositionReady =
@@ -314,30 +376,101 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
         const bool reconciled =
             !networked || (MP_CONTEXT.localPlayerReconciled &&
                            MP_CONTEXT.hasLocalServerPosition);
-        const bool ready = positionReady && serverPositionReady &&
-                           teleportSettled && reconciled;
-        if (ready || nowMs() - mStartMs > 5000)
+        const bool spawnReady =
+            !networked || (MP_CONTEXT.gameplayActive &&
+                           MP_CONTEXT.pendingSpawnAckGeneration == 0);
+        const bool generationReady =
+            !networked || mStart.spawnGeneration == 0 ||
+            MP_CONTEXT.lastKnownSpawnGeneration == mStart.spawnGeneration;
+        const bool epochReady =
+            !networked || mStart.transformEpoch == 0 ||
+            MP_CONTEXT.localServerEpoch == mStart.transformEpoch;
+        const bool equipmentReady =
+            mStart.weapon.empty() || player.equippedWeaponId == mStart.weapon;
+        const bool localReady = positionReady && serverPositionReady &&
+            teleportSettled && reconciled && spawnReady && generationReady &&
+            epochReady && equipmentReady;
+        const bool serverReady = !v2 || !networked || mServerPrepared;
+
+        if (localReady && serverReady && !mBeginSent)
+        {
+            if (v2 && networked)
+            {
+                MimitaNet::mpSendServerCommand(
+                    MP_CONTEXT,
+                    "scenario_server_play_begin " +
+                        std::to_string(MP_CONTEXT.latestServerTick));
+            }
+            mBeginSent = true;
+            return;
+        }
+        if (mBeginSent && (mServerBeginAck || !v2 || !networked))
         {
             mWaitingForStart = false;
-            // Start motion is restored only when frames begin, so the actor
-            // does not drift during the teleport/reconciliation wait.
+            // Restore the complete recorded start state only when frames begin,
+            // so the actor does not drift during the teleport/reconciliation
+            // wait. This is start restoration, not path snapping.
+            player.pos = mStart.position;
             player.vel = mStart.velocity;
             player.externalImpulse = glm::vec3(0.0f);
+            player.ground.onGround = mStart.grounded;
+            player.ground.stableOnGround = mStart.grounded;
+            player.ground.hasWorldContact = mStart.grounded;
+            player.lastValidWorldCollisionPosition = mStart.position;
+            player.hasLastValidWorldCollisionPosition = true;
+            player.updateModelWorldTransforms();
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::General, StructuredLevel::Important,
                 "scenario.playback.start_ready", "scenario-player",
-                ready
-                    ? "recorded start state reached; playback frames begin"
-                    : "recorded start state was not fully restored before the timeout; playback begins anyway",
+                "recorded start state and server proxies reached; playback frames begin",
                 0,
                 nlohmann::json{{"path", mPath},
-                               {"start_restored", ready},
+                               {"start_restored", true},
                                {"position_ready", positionReady},
                                {"server_position_ready", serverPositionReady},
                                {"teleport_settled", teleportSettled},
                                {"reconciled", reconciled},
+                               {"spawn_ready", spawnReady},
+                               {"generation_ready", generationReady},
+                               {"epoch_ready", epochReady},
+                               {"equipment_ready", equipmentReady},
+                               {"server_prepared", mServerPrepared},
+                               {"server_begin_ack", mServerBeginAck},
                                {"waited_ms", nowMs() - mStartMs}},
                 __FILE__, __LINE__, __FUNCTION__);
+            return;
+        }
+
+        if (nowMs() - mStartMs > kReadinessTimeoutMs)
+        {
+            std::string reason = "readiness_timeout";
+            if (!localReady)
+                reason = "start_readiness_timeout";
+            else if (!serverReady)
+                reason = "server_readiness_timeout";
+            else if (mBeginSent && !mServerBeginAck)
+                reason = "server_begin_timeout";
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Errors,
+                "scenario.playback.start_ready", "scenario-player",
+                "recorded start state was not ready before timeout", 0,
+                nlohmann::json{{"path", mPath},
+                               {"start_restored", false},
+                               {"reason", reason},
+                               {"position_ready", positionReady},
+                               {"server_position_ready", serverPositionReady},
+                               {"teleport_settled", teleportSettled},
+                               {"reconciled", reconciled},
+                               {"spawn_ready", spawnReady},
+                               {"generation_ready", generationReady},
+                               {"epoch_ready", epochReady},
+                               {"equipment_ready", equipmentReady},
+                               {"server_prepared", mServerPrepared},
+                               {"server_begin_ack", mServerBeginAck},
+                               {"begin_sent", mBeginSent},
+                               {"waited_ms", nowMs() - mStartMs}},
+                __FILE__, __LINE__, __FUNCTION__);
+            fail(reason);
         }
         return;
     }
@@ -352,55 +485,60 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
             const Tick& next = mTicks[compareIndex];
             const float error = glm::distance(player.pos, next.position);
             mMaxPositionError = std::max(mMaxPositionError, error);
-            if (error > 1.0f && mFirstDivergenceFrame == 0xFFFFFFFFu)
+            if (error > kDivergenceFailM)
             {
-                mFirstDivergenceFrame = mIndex;
-                mFirstDivergenceError = error;
-                mFirstDivergenceExpected = next.position;
-                mFirstDivergenceActual = player.pos;
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::General, StructuredLevel::Important,
-                    "scenario.playback.divergence", "scenario-player",
-                    "recorded input playback diverged from the recorded pose", mIndex,
-                    nlohmann::json{{"path", mPath},
-                                   {"frame", mIndex},
-                                   {"expected_position", {mFirstDivergenceExpected.x,
-                                                          mFirstDivergenceExpected.y,
-                                                          mFirstDivergenceExpected.z}},
-                                   {"actual_position", {mFirstDivergenceActual.x,
-                                                        mFirstDivergenceActual.y,
-                                                        mFirstDivergenceActual.z}},
-                                   {"error_m", error}},
-                    __FILE__, __LINE__, __FUNCTION__);
-            }
-            if (error >= kMaxPlaybackDriftM)
-            {
-                const glm::vec3 before = player.pos;
-                player.pos = next.position;
-                player.vel = next.velocity;
-                player.externalImpulse = glm::vec3(0.0f);
-                player.lastValidWorldCollisionPosition = next.position;
-                player.hasLastValidWorldCollisionPosition = true;
-                player.updateModelWorldTransforms();
-                ++mSnapCount;
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::General, StructuredLevel::Important,
-                    "scenario.playback.snap", "scenario-player",
-                    "snapped local playback actor to the next recorded valid position", mIndex,
-                    nlohmann::json{{"path", mPath},
-                                   {"frame", mIndex},
-                                   {"drift_m", error},
-                                   {"max_drift_m", kMaxPlaybackDriftM},
-                                   {"actual_before", {before.x, before.y, before.z}},
-                                   {"snapped_to", {next.position.x, next.position.y,
-                                                   next.position.z}}},
-                    __FILE__, __LINE__, __FUNCTION__);
+                if (mFirstDivergenceFrame == 0xFFFFFFFFu)
+                {
+                    mFirstDivergenceFrame = mIndex;
+                    mFirstDivergenceError = error;
+                    mFirstDivergenceExpected = next.position;
+                    mFirstDivergenceActual = player.pos;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::General, StructuredLevel::Errors,
+                        "scenario.playback.divergence", "scenario-player",
+                        "recorded input playback diverged from the recorded pose",
+                        mIndex,
+                        nlohmann::json{{"path", mPath},
+                                       {"frame", mIndex},
+                                       {"server_tick", next.serverTick},
+                                       {"expected_position", {mFirstDivergenceExpected.x,
+                                                              mFirstDivergenceExpected.y,
+                                                              mFirstDivergenceExpected.z}},
+                                       {"actual_position", {mFirstDivergenceActual.x,
+                                                            mFirstDivergenceActual.y,
+                                                            mFirstDivergenceActual.z}},
+                                       {"error_m", error},
+                                       {"threshold_m", kDivergenceFailM}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+                fail("position_divergence");
+                return;
             }
         }
         ++mIndex;
     }
     if (mIndex >= mTicks.size())
         finish("complete");
+}
+
+void ScenarioPlayer::onServerCommandResult(bool accepted,
+                                           const std::string& status)
+{
+    if (!mActive && !mWaitingForStart)
+        return;
+    if (accepted)
+    {
+        if (status.find("scenario server prepared") != std::string::npos)
+            mServerPrepared = true;
+        else if (status.find("scenario server playback began") != std::string::npos)
+            mServerBeginAck = true;
+    }
+    else if (status.find("scenario playback rejected") != std::string::npos ||
+             status.find("scenario server") != std::string::npos)
+    {
+        mServerRejected = true;
+        mServerError = status;
+    }
 }
 
 void ScenarioPlayer::stop(const char* reason)
@@ -410,27 +548,29 @@ void ScenarioPlayer::stop(const char* reason)
     finish(reason ? reason : "stop");
 }
 
-void ScenarioPlayer::finish(const char* reason)
+void ScenarioPlayer::fail(const std::string& reason)
 {
     if (!mActive)
         return;
+    mFailureReason = reason;
+    mValid = false;
     mActive = false;
     mWaitingForStart = false;
     ScenarioInput::clear();
     gFramePacer.setMaxFrames(mSavedMaxFrames > 0 ? mSavedMaxFrames : 999);
-    const bool completed = std::string(reason ? reason : "") == "complete";
+    if (schema2() && MP_CONTEXT.active)
+        MimitaNet::mpSendServerCommand(MP_CONTEXT, "scenario_server_stop");
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::General, StructuredLevel::Important,
-        completed ? "scenario.playback.completed" : "scenario.playback.stopped",
-        "scenario-player",
-        completed ? "input playback finished" : "input playback stopped", mIndex,
+        StructuredCategory::General, StructuredLevel::Errors,
+        "scenario.playback.failed", "scenario-player",
+        "scenario playback invalidated without snapping to the recorded path",
+        mIndex,
         nlohmann::json{{"path", mPath},
-                       {"completed", completed},
-                       {"end_reason", reason ? reason : "unknown"},
+                       {"valid", false},
+                       {"reason", reason},
                        {"frames_played", mIndex},
                        {"frame_count", mTicks.size()},
                        {"max_position_error_m", mMaxPositionError},
-                       {"snap_count", mSnapCount},
                        {"first_divergence_frame", mFirstDivergenceFrame == 0xFFFFFFFFu
                             ? nlohmann::json(nullptr) : nlohmann::json(mFirstDivergenceFrame)},
                        {"first_divergence_error_m", mFirstDivergenceError},
@@ -442,4 +582,43 @@ void ScenarioPlayer::finish(const char* reason)
                                                      mFirstDivergenceActual.z}}},
         __FILE__, __LINE__, __FUNCTION__);
 }
-// force scenario-player recompile: per-tick equipment and playback drift snap.
+
+void ScenarioPlayer::finish(const char* reason)
+{
+    if (!mActive)
+        return;
+    mActive = false;
+    mWaitingForStart = false;
+    ScenarioInput::clear();
+    gFramePacer.setMaxFrames(mSavedMaxFrames > 0 ? mSavedMaxFrames : 999);
+    if (schema2() && MP_CONTEXT.active)
+        MimitaNet::mpSendServerCommand(MP_CONTEXT, "scenario_server_stop");
+    const bool completed = std::string(reason ? reason : "") == "complete" &&
+        mFailureReason.empty();
+    mValid = completed;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General,
+        completed ? StructuredLevel::Important : StructuredLevel::Errors,
+        completed ? "scenario.playback.completed" : "scenario.playback.stopped",
+        "scenario-player",
+        completed ? "scenario playback finished" : "scenario playback stopped",
+        mIndex,
+        nlohmann::json{{"path", mPath},
+                       {"completed", completed},
+                       {"valid", mValid},
+                       {"end_reason", reason ? reason : "unknown"},
+                       {"failure_reason", mFailureReason},
+                       {"frames_played", mIndex},
+                       {"frame_count", mTicks.size()},
+                       {"max_position_error_m", mMaxPositionError},
+                       {"first_divergence_frame", mFirstDivergenceFrame == 0xFFFFFFFFu
+                            ? nlohmann::json(nullptr) : nlohmann::json(mFirstDivergenceFrame)},
+                       {"first_divergence_error_m", mFirstDivergenceError},
+                       {"first_divergence_expected", {mFirstDivergenceExpected.x,
+                                                       mFirstDivergenceExpected.y,
+                                                       mFirstDivergenceExpected.z}},
+                       {"first_divergence_actual", {mFirstDivergenceActual.x,
+                                                     mFirstDivergenceActual.y,
+                                                     mFirstDivergenceActual.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+}

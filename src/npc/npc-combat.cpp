@@ -15,7 +15,6 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "combat/weapon-audio.h"
-#include "combat/weapon-rocket-launcher.h"
 #include "combat/weapon-grenade-launcher.h"
 #include "config.h"
 #include "debug/debug-log.h"
@@ -26,9 +25,6 @@
 #include "world/world.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
-
-// Shared NPC projectile state (rockets, grenades, etc.)
-static RocketLauncherState gNpcRocketState;
 
 namespace {
 
@@ -487,7 +483,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     case WeaponBehaviorType::Projectile:
     case WeaponBehaviorType::RocketLauncher:
     {
-        WeaponRocketLauncher::fire(gNpcRocketState, *def, rt, npc.body, npcPos, aimDir);
+        // NPC projectiles are authoritative server projectiles spawned by the
+        // network owner. Do not run a separate local NPC rocket simulation.
         fired = true;
         {
             float range = effectiveRange(*def);
@@ -592,26 +589,4 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         npc.id, def->id.c_str(), minDelay, maxDelay,
         aggression, npc.fireRhythmOffset, pos, npc.attackCooldown);
     return fired;
-}
-
-void NpcCombat::updateNpcProjectiles(const World& world, NpcSystem& npcSystem,
-                                     Camera& camera, Player& player, float dt) {
-    // Update NPC rocket launcher projectiles using the same logic as the player.
-    // WeaponRocketLauncher::update handles movement, world collision, player/NPC
-    // collision, and explosion damage — exactly the same path the player's rockets use.
-    if (!gNpcRocketState.activeRockets.empty()) {
-        // Find a rocket launcher definition from any NPC with one equipped
-        for (Npc& npc : npcSystem.all()) {
-            if (npc.body.dead || npc.body.currentHp <= 0.0f) continue;
-            const WeaponDefinition* def = WeaponRegistry::instance().get(npc.body.equippedWeaponId);
-            if (def && def->behaviorType == WeaponBehaviorType::RocketLauncher) {
-                auto& rt = npc.body.weaponRuntimes[def->id];
-                WeaponRocketLauncher::update(gNpcRocketState, *def, rt, npc.body, npcSystem, world, camera, dt, &player);
-                break;
-            }
-        }
-        // If no NPC has a rocket launcher equipped, still tick the game time
-        // so rockets don't freeze if the NPC switched weapons mid-flight.
-        gNpcRocketState.gameTime += dt;
-    }
 }

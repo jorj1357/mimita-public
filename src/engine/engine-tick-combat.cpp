@@ -134,7 +134,6 @@ void engineTickCombat(Engine& engine, float dt)
     }
     if (!replayPlaybackActive) {
         MIMITA_PERF_SCOPE("Combat::EffectSpawn");
-        NpcCombat::updateNpcProjectiles(world, npcSystem, camera, player, dt);
     }
     if (!replayPlaybackActive) {
         // Mirror the server-authoritative procedural exit barrier as a client

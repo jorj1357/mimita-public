@@ -168,6 +168,25 @@ public:
     float hitReactionTimer = 0.0f;
     float wakeupTimer = 0.0f;  // JSON-controlled fixed-tick spawn delay
 
+    // ── Scenario replay control ──────────────────────────────────────
+    // A replay-controlled actor is a temporary authoritative target proxy. It
+    // is driven from a recorded track instead of AI/physics, but still uses the
+    // normal collision, melee, and damage paths.
+    struct ReplayBodyPart {
+        std::string name;
+        glm::vec3 center{0.0f};
+        glm::vec3 half{0.0f};
+    };
+    bool replayControlled = false;
+    uint32_t replayTrackId = 0;
+    std::vector<ReplayBodyPart> replayBodyParts;
+    bool hasReplayWeaponShape = false;
+    glm::vec3 replayBladePreviousA{0.0f};
+    glm::vec3 replayBladePreviousB{0.0f};
+    glm::vec3 replayBladeCurrentA{0.0f};
+    glm::vec3 replayBladeCurrentB{0.0f};
+    float replayBladeRadius = 0.0f;
+
     // Bomb tag behavior flags
     bool bombTagActive = false;
     bool bombTagHasBomb = false;

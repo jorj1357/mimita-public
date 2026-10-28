@@ -390,6 +390,37 @@ void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
     pushSurfaceDecal(decal, c.maxCount, "world_hit_crack");
 }
 
+void EffectPartSystem::spawnExplosionMark(glm::vec3 position, glm::vec3 normal) {
+    const auto& cfg = ImpactDecalsConfig::instance().data();
+    if (!cfg.enabled || !cfg.explosionMarks.enabled) return;
+    const auto& c = cfg.explosionMarks;
+    const glm::vec3 n = glm::length(normal) > 0.001f
+        ? glm::normalize(normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::vec3 tangent = glm::normalize(
+        std::fabs(n.z) < 0.9f
+            ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
+            : glm::cross(n, glm::vec3(0.0f, 1.0f, 0.0f)));
+    const float rotationRange = glm::radians(std::clamp(c.randomRotationDegrees, 0.0f, 360.0f));
+    const float rotation = rotationRange * ((float)(rand() % 1001) / 1000.0f - 0.5f);
+    const glm::vec3 perpendicular = glm::normalize(glm::cross(n, tangent));
+    tangent = glm::normalize(tangent * std::cos(rotation) + perpendicular * std::sin(rotation));
+
+    SurfaceDecal decal;
+    decal.position = position + n * 0.006f;
+    decal.normal = n;
+    decal.axis = tangent;
+    decal.rotationRadians = rotation;
+    decal.color = glm::vec3(1.0f);
+    decal.kind = SurfaceDecalKind::ExplosionMark;
+    decal.radius = std::max(0.01f, c.radius);
+    decal.height = decal.radius * 2.0f;
+    decal.lifetime = c.lifetime;
+    decal.fadeTime = c.fadeTime;
+    decal.alpha = c.alpha;
+    decal.baseAlpha = decal.alpha;
+    pushSurfaceDecal(decal, c.maxCount, "explosion_mark");
+}
+
 void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount,
                                         const char* reason,
                                         const std::string& sourceActorId,
@@ -409,13 +440,15 @@ void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal& decal, int maxCount,
     if (gHitFxTraceEnabled) {
         const auto& cfg = ImpactDecalsConfig::instance().data();
         const auto& group = stored.kind == SurfaceDecalKind::Blood ? cfg.blood
-            : (stored.kind == SurfaceDecalKind::BulletHole ? cfg.bulletHoles : cfg.worldCracks);
+            : (stored.kind == SurfaceDecalKind::BulletHole ? cfg.bulletHoles
+            : (stored.kind == SurfaceDecalKind::ExplosionMark ? cfg.explosionMarks : cfg.worldCracks));
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Rendering, StructuredLevel::Important,
             "impact_decal.spawn", "decal-" + std::to_string(stored.traceId), reason, 0,
             nlohmann::json{{"decal_id", stored.traceId},
                            {"kind", stored.kind == SurfaceDecalKind::Blood ? "blood" :
-                               (stored.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" : "world_crack")},
+                               (stored.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" :
+                               (stored.kind == SurfaceDecalKind::ExplosionMark ? "explosion_mark" : "world_crack"))},
                            {"source_actor", sourceActorId}, {"target_actor", targetActorId},
                            {"position", {stored.position.x, stored.position.y, stored.position.z}},
                            {"normal", {stored.normal.x, stored.normal.y, stored.normal.z}},

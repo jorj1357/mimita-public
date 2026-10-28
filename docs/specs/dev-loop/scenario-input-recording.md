@@ -86,6 +86,31 @@ Footer:
 `position`, `velocity`, `health`, and `grounded` are context for divergence
 reporting. Playback never forces them.
 
+### Schema 2: actor and authoritative tracks
+
+Schema 2 keeps every schema 1 field and adds a combined world track. It is
+recorded when the local dev-loop server is active.
+
+- The header adds `schema:2`, `build_id`, `local_player_id`, `tracks`,
+  `melee_revisions`, and start `spawn_generation` / `transform_epoch`.
+- `kind:"actor_identity"` records a stable `track` and `entity` identity for
+  the local player, local NPCs, remote players, and remote NPCs.
+- Each `kind:"tick"` adds `server_tick` and an `actors` array of
+  client-rendered actor state: transform, health, lifecycle generations,
+  equipped weapon, action/phase, collision body boxes, and the rendered weapon
+  contact capsule.
+- `kind:"actor_lifecycle"` records spawn, despawn, death, and respawn changes.
+- `kind:"server_tick"` records the authoritative server transform, health,
+  equipment, melee action, collision pose, and contact shape at the
+  pre-contact boundary for the same server tick.
+- The client writes its track and the server writes
+  `<scenario>.server.jsonl`; when recording stops the client merges both into
+  one schema 2 file and deletes the sidecar.
+- The schema 2 bootstrap rejects recording until the client reports gameplay
+  readiness with no pending spawn acknowledgement.
+
+Schema 1 recordings remain playable input-only scenarios.
+
 ## Recording behavior
 
 - Captures `InputFrame` at the fixed-tick boundary in
@@ -102,34 +127,52 @@ reporting. Playback never forces them.
 ## Playback behavior
 
 - Loads and validates the whole JSONL once; no per-tick JSON parsing.
-- Requires schema 1 and tick rate 60.
-- Rejects map, mode, or weapon-set mismatch.
+- Accepts schema 1 and schema 2 at tick rate 60. Schema 2 requires the
+  `server_actors` track and a completed footer.
+- Rejects map or weapon-set mismatch, missing server tracks, and schema 2
+  melee move-set hash/revision mismatch before frame 0.
 - Restores the recorded start position, aim direction, weapon, and start
   velocity through the normal command/state path.
-- Waits up to 5 seconds for the client and server to agree on the start
-  position and for the teleport to settle before frame 0.
+- Schema 2 sends `scenario_server_play` to the local server, waits for
+  authoritative proxy preparation, then sends `scenario_server_play_begin`
+  only after local readiness passes.
+- Waits up to 5 seconds for restored position, teleport settlement,
+  reconciliation, spawn activation with no pending acknowledgement,
+  matching spawn generation/transform epoch, and matching equipment. A
+  timeout fails the run with an actionable readiness reason.
+- The server creates temporary Npc-backed proxies for recorded NPCs and remote
+  players, follows the authoritative transforms/collision poses/weapon states,
+  disables normal AI for them, and never proxies a connected human.
 - Runs at a fixed 60 FPS via `FramePacer` so one recorded tick equals one
   simulation tick and one network input.
 - Feeds the recorded `InputFrame` into local simulation and the recorded
   movement/action intent into `MpInput`.
 - Applies the recorded camera and mouse/key overrides before combat so firing
   and aiming use the recorded direction.
-- Compares the actual player position to the next recorded pre-tick position,
-  reports `max_position_error_m`, and emits `scenario.playback.divergence` on
-  the first error above 1 m.
-- Emits `scenario.playback.completed` on finish and `scenario.playback.stopped`
-  on cancel.
+- Compares the actual player position to the next recorded pre-tick position.
+  The first error above 2 m emits `scenario.playback.divergence` and
+  immediately fails playback. There is no snap-back behavior.
+- Emits `scenario.playback.completed` only for a valid completed run;
+  `scenario.playback.failed` reports readiness, track, or divergence failure.
+  `scenario.playback.stopped` remains the user-cancel event.
 
 ## Structured events
 
-- `scenario.record.started`
-- `scenario.record.stopped`
-- `scenario.playback.started`
-- `scenario.playback.start_ready`
-- `scenario.playback.divergence`
-- `scenario.playback.completed`
-- `scenario.playback.rejected`
-- `scenario.playback.stopped`
+- `scenario.record.started`, `scenario.record.stopped`,
+  `scenario.record.rejected`
+- `scenario.record.merged`, `scenario.record.merge_failed`
+- `scenario.server.record.started`, `scenario.server.record.stopped`
+- `scenario.playback.started`, `scenario.playback.start_ready`
+- `scenario.playback.server_ready`, `scenario.playback.server_began`
+- `scenario.playback.proxy_lifecycle`, `scenario.playback.proxy_divergence`
+- `scenario.playback.divergence`, `scenario.playback.completed`,
+  `scenario.playback.failed`, `scenario.playback.rejected`,
+  `scenario.playback.stopped`
+- `scenario.contact.query`, `scenario.contact.weapon`
+- `server.actor.spawn_ack.received`, `server.actor.spawn_ack.rejected`,
+  `server.actor.spawn_activated`, `server.actor.spawn_activated.sent`
+- `client.actor.spawn_ack.sent`, `client.actor.spawn_activated.received`,
+  `client.actor.spawn_activated.skipped`
 
 ## Dev-loop integration
 
@@ -172,8 +215,12 @@ of the 15-second per-command timeout.
 
 ## Known limitations
 
-- Not a full deterministic world replay. NPCs, remote players, and server state
-  can differ between record and playback.
+- Schema 2 targets are replayed as authoritative Npc-backed proxies; live
+  connected humans are always left under their own control. A recorded human
+  who is still connected causes playback to fail with `live_target_conflict`.
+- Proxy health is initialized from the track and then owned by playback damage.
+  The recorded health remains a reference so damage can be observed rather than
+  overwritten every tick.
 - Terminal-only actions that do not pass through `InputFrame` or the normal
   mouse/keyboard path are not guaranteed to replay. Normal mouse/keyboard play
   is the supported path.
@@ -197,14 +244,14 @@ crossing, one slope junction). Longer segments accumulate server/NPC/state
 differences and make the position error less useful. Inspect the collision
 events around the probe rather than expecting the whole trajectory to match.
 
-## Position drift snap
+## Position divergence policy
 
-During playback the live server/world state can differ from the recording. The
-player compares its position to the next recorded tick position. If the drift is
-`>= 5 m`, it snaps the local actor to that recorded position, restores the
-recorded velocity, and emits `scenario.playback.snap`. This keeps the recorded
-inputs applied at the recorded map location instead of doing the right moves in
-the wrong place.
+Playback never snaps the player back onto the recorded path. The player compares
+its position to the next recorded tick position; the first error above `2 m`
+emits `scenario.playback.divergence` and terminates the run with
+`scenario.playback.failed`, `valid:false`, and the expected/actual positions.
+Continue from the wrong start would make contact and damage evidence
+untrustworthy.
 
 ## Per-tick weapon replay
 

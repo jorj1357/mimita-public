@@ -225,6 +225,7 @@ public:
 
     void set(MeleeMoveSet set);
     const MeleeMoveSet* get(const std::string& definitionId) const;
+    const std::unordered_map<std::string, MeleeMoveSet>& all() const { return mSets; }
     void clear();
 
 private:

@@ -2029,7 +2029,8 @@ ServerPacketProcessResult processServerPacket(
     DisagreementRetransmitState* retransmitState,
     ServerPlayer* authenticatedPlayer,
     std::unique_ptr<IGameTransport>* claimedTransport,
-    std::vector<uint32_t>* pendingRemovals)
+    std::vector<uint32_t>* pendingRemovals,
+    NpcSystem* npcSystem)
 {
     ServerPacketProcessResult result{};
     ++totalPacketsIn;
@@ -2319,7 +2320,7 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_SERVER_COMMAND)
     {
         handleServerCommand(sock, from, buffer, bytes, players, npcs,
-                            tick, totalPacketsOut);
+                            tick, totalPacketsOut, npcSystem);
         result.handled = true;
     }
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)
@@ -3110,8 +3111,34 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
         ack->spawnGeneration == p.spawnGeneration &&
         ack->transformEpoch == p.transformEpoch;
 
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.actor.spawn_ack.received", std::to_string(p.id),
+        "client spawn acknowledgement received", tick,
+        nlohmann::json{{"actor_id", p.id},
+                       {"received_spawn_generation", ack->spawnGeneration},
+                       {"received_transform_epoch", ack->transformEpoch},
+                       {"server_spawn_generation", p.spawnGeneration},
+                       {"server_transform_epoch", p.transformEpoch},
+                       {"matches_lifecycle", matchesLifecycle},
+                       {"spawn_state", static_cast<int>(p.spawnState)}},
+        __FILE__, __LINE__, __FUNCTION__);
+
     if (!matchesLifecycle)
     {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "server.actor.spawn_ack.rejected", std::to_string(p.id),
+            "spawn acknowledgement does not match the current life", tick,
+            nlohmann::json{{"actor_id", p.id},
+                           {"reason", ack->spawnGeneration != p.spawnGeneration
+                                ? "generation_mismatch" : "epoch_mismatch"},
+                           {"received_spawn_generation", ack->spawnGeneration},
+                           {"received_transform_epoch", ack->transformEpoch},
+                           {"server_spawn_generation", p.spawnGeneration},
+                           {"server_transform_epoch", p.transformEpoch},
+                           {"spawn_state", static_cast<int>(p.spawnState)}},
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK REJECT] playerId=%u recvGen=%u recvEpoch=%u expectGen=%u expectEpoch=%u state=%d\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch, p.spawnGeneration, p.transformEpoch, (int)p.spawnState);
         return;
@@ -3122,6 +3149,15 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
         p.spawnState = ServerPlayer::Active;
         resetServerMovementForAuthoritativeLifecycle(
             p, makeCurrentRuntimeMovementConfig());
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.actor.spawn_activated", std::to_string(p.id),
+            "player spawn acknowledged and activated", tick,
+            nlohmann::json{{"actor_id", p.id},
+                           {"spawn_generation", p.spawnGeneration},
+                           {"transform_epoch", p.transformEpoch},
+                           {"spawn_state", static_cast<int>(p.spawnState)}},
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK ACCEPT] playerId=%u spawnGen=%u epoch=%u — now Active\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch);
     }
@@ -3151,6 +3187,15 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
     else
         sendto(sock, (const char*)&act, sizeof(act), 0,
                (sockaddr*)&p.addr, sizeof(p.addr));
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "server.actor.spawn_activated.sent", std::to_string(p.id),
+        "spawn activation confirmation sent", tick,
+        nlohmann::json{{"actor_id", p.id},
+                       {"spawn_generation", act.spawnGeneration},
+                       {"transform_epoch", act.transformEpoch},
+                       {"server_tick", act.serverTick}},
+        __FILE__, __LINE__, __FUNCTION__);
     Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED SEND] playerId=%u spawnGen=%u epoch=%u\n",
                p.id, act.spawnGeneration, act.transformEpoch);
 }

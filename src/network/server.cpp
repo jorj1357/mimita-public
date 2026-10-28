@@ -40,6 +40,8 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
+#include "devtools/scenario-server-playback.h"
+#include "devtools/scenario-server-recorder.h"
 #include "audio/audio.h"
 #include "persistence/persistence-queue.h"
 #include "auth/auth-system.h"
@@ -923,7 +925,8 @@ int runServer(const LaunchOptions& options)
             processServerPacket(sock, event, players, npcs, projectiles,
                                 nextPlayerId, nextEntityId, nextProjectileId,
                                 world, tick, totalPacketsIn, totalPacketsOut,
-                                &transportStats, &disagreementRetransmit);
+                                &transportStats, &disagreementRetransmit,
+                                nullptr, nullptr, nullptr, &npcSystem);
         }
 
         ::StructuredLogger::instance().pollConfig();
@@ -980,6 +983,7 @@ int runServer(const LaunchOptions& options)
                                    {"build_ms", buildMs}},
                     __FILE__, __LINE__, __func__);
             }
+            ScenarioServerPlayback::instance().tick(tick, players, npcSystem);
             simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
@@ -989,6 +993,8 @@ int runServer(const LaunchOptions& options)
                 if (!kv.second.connectionStale)
                     pushPositionHistory(kv.second, tick);
             const uint64_t npcUs = elapsedMicroseconds(npcStart);
+            ScenarioServerRecorder::instance().captureTick(
+                players, npcs, npcSystem, tick);
             const auto projectileStart = std::chrono::steady_clock::now();
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
@@ -1534,7 +1540,8 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.nextEntityId, state.nextProjectileId,
                                 state.world, state.tick, state.totalPacketsIn,
                                 state.totalPacketsOut, nullptr,
-                                &state.disagreementRetransmit);
+                                &state.disagreementRetransmit, nullptr, nullptr,
+                                nullptr, state.npcSystem.get());
         }
 
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
@@ -1554,6 +1561,8 @@ static void simulateOneServerTick(ListenServerState& state)
         }
         tickWeaponRuntimes(state.players, state.tick);
         checkVoidDeath(state.players, state.npcs);
+        ScenarioServerPlayback::instance().tick(
+            state.tick, state.players, *state.npcSystem);
         simulateSharedNpcs(state.sock, state.players, state.npcs,
                            *state.npcSystem, state.world, *state.npcWorld,
                            *state.mirrorPlayer, state.npcIdsAlive,
@@ -1562,6 +1571,8 @@ static void simulateOneServerTick(ListenServerState& state)
         for (auto& kv : state.players)
             if (!kv.second.connectionStale)
                 pushPositionHistory(kv.second, state.tick);
+        ScenarioServerRecorder::instance().captureTick(
+            state.players, state.npcs, *state.npcSystem, state.tick);
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);

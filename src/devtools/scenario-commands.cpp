@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "camera.h"
+#include "combat/weapon-melee-config.h"
 #include "debug/structured-log.h"
 #include "entities/player.h"
 #include "devtools/scenario-player.h"
@@ -98,11 +99,16 @@ void RegisterScenarioCommands()
             out << "[SCENARIO] recording="
                 << (ScenarioRecorder::instance().active() ? 1 : 0)
                 << " frames=" << ScenarioRecorder::instance().frames()
+                << " networked=" << (ScenarioRecorder::instance().networked() ? 1 : 0)
+                << " merged=" << (ScenarioRecorder::instance().merged() ? 1 : 0)
+                << " merge_error=" << ScenarioRecorder::instance().mergeError()
                 << " path=" << ScenarioRecorder::instance().path()
                 << " playback="
                 << (ScenarioPlayer::instance().active() ? 1 : 0)
                 << " playback_frame=" << ScenarioPlayer::instance().frame()
                 << "/" << ScenarioPlayer::instance().frameCount()
+                << " playback_schema="
+                << (ScenarioPlayer::instance().schema2() ? 2 : 1)
                 << " playback_path=" << ScenarioPlayer::instance().path();
             Terminal::instance().addLog(out.str());
         },
@@ -158,6 +164,38 @@ void RegisterScenarioCommands()
             {
                 emitRejected(args[0], "weapon_set_mismatch");
                 return;
+            }
+            if (ScenarioPlayer::instance().schema2())
+            {
+                if (!MP_CONTEXT.active)
+                {
+                    emitRejected(args[0], "server_required_for_schema_2");
+                    return;
+                }
+                for (const auto& revision : ScenarioPlayer::instance().revisions())
+                {
+                    const WeaponData::MeleeMoveSet* current =
+                        WeaponData::MeleeMoveSetRegistry::instance().get(revision.weaponId);
+                    if (!current)
+                    {
+                        emitRejected(args[0],
+                            "melee_moveset_missing:" + revision.weaponId);
+                        return;
+                    }
+                    if (revision.hash != 0 && current->hash != revision.hash)
+                    {
+                        emitRejected(args[0],
+                            "melee_moveset_hash_mismatch:" + revision.weaponId);
+                        return;
+                    }
+                    if (revision.revision != 0 &&
+                        current->revision != revision.revision)
+                    {
+                        emitRejected(args[0],
+                            "melee_moveset_revision_mismatch:" + revision.weaponId);
+                        return;
+                    }
+                }
             }
 
             const auto& start = ScenarioPlayer::instance().startState();

@@ -23,6 +23,8 @@ using json = nlohmann::json;
 #include "terminal/terminal-state.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-fire.h"
+
+bool gRocketPreview = false;
 #include "combat/weapon-data.h"
 #include "combat/weapon-config.h"
 #include "combat/weapon-registry.h"
@@ -651,6 +653,20 @@ void registerWeaponCommands()
             WeaponSystem& weapons = THE_WEAPONS;
             weapons.inspect();
         }
+    });
+
+    Terminal::instance().registerCommand({
+        "rocket_preview",
+        "Toggle the live rocket projectile appearance preview",
+        "rocket_preview [0|1]",
+        [](const std::vector<std::string>& args) {
+            extern bool gRocketPreview;
+            bool val = args.empty() ? !gRocketPreview : (args[0] != "0");
+            gRocketPreview = val;
+            Terminal::instance().addLog(std::string("[ROCKET PREVIEW] ") + (val ? "on" : "off"));
+        },
+        std::string(),
+        CommandCategory::Weapon
     });
 
     Terminal::instance().registerCommand({

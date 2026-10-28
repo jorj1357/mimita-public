@@ -6,6 +6,7 @@ aggregate. Run ``--check`` after editing weapon files or the masterlist.
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 from jsonc import load as load_jsonc
@@ -81,6 +82,15 @@ def check():
             errors.append(f"{path}: missing={missing} unknown={unknown}")
         if data.get("id") != path.parent.name:
             errors.append(f"{path}: id does not match folder")
+        expected_order = [field for field in fields if field in data]
+        actual_order = [field for field in data if field in fields]
+        if actual_order != expected_order:
+            first = next((i for i, (a, b) in enumerate(zip(actual_order, expected_order))
+                          if a != b), 0)
+            errors.append(
+                f"{path}: fields are not in masterlist order "
+                f"(first mismatch at position {first}: "
+                f"expected {expected_order[first]!r}, found {actual_order[first]!r})")
         for field in fields:
             value = data.get(field)
             rule = rules[field]
@@ -133,16 +143,114 @@ def sync():
     print(f"Synced missing masterlist fields in {synced} weapon files")
 
 
+def split_top_level_members(text):
+    opening = text.find("{")
+    closing = text.rfind("}")
+    if opening < 0 or closing <= opening:
+        raise ValueError("expected a top-level object")
+    body = text[opening + 1:closing]
+    members = []
+    buf = []
+    depth = 0
+    in_string = False
+    escaped = False
+    line_comment = False
+    block_comment = False
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        nxt = body[i + 1] if i + 1 < len(body) else ""
+        if line_comment:
+            buf.append(ch)
+            if ch == "\n":
+                line_comment = False
+        elif block_comment:
+            buf.append(ch)
+            if ch == "*" and nxt == "/":
+                buf.append(nxt)
+                i += 1
+                block_comment = False
+        elif in_string:
+            buf.append(ch)
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            buf.append(ch)
+        elif ch == "/" and nxt == "/":
+            line_comment = True
+            buf.append(ch)
+        elif ch == "/" and nxt == "*":
+            block_comment = True
+            buf.append(ch)
+            buf.append(nxt)
+            i += 1
+        elif ch in "{[":
+            depth += 1
+            buf.append(ch)
+        elif ch in "}]":
+            depth -= 1
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            member = "".join(buf).strip()
+            if member:
+                members.append(member)
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    member = "".join(buf).strip()
+    if member:
+        members.append(member)
+    return members
+
+
+def reorder():
+    """Put every top-level field in exact masterlist order, preserving comments
+    and existing values. Adds missing fields first through sync()."""
+    sync()
+    master = load_jsonc(MASTER)
+    fields = master["fields"]
+    reordered = 0
+    for path in sorted(WEAPONS.glob("*/config.json")):
+        text = path.read_text(encoding="utf-8")
+        members = split_top_level_members(text)
+        by_key = {}
+        unknown = []
+        for member in members:
+            match = re.match(
+                r'^\s*(?://[^\n]*\n|/\*.*?\*/\s*)*\s*"([^"]+)"\s*:',
+                member, re.DOTALL)
+            if match:
+                by_key[match.group(1)] = member
+            else:
+                unknown.append(member)
+        ordered = [by_key[field] for field in fields if field in by_key]
+        ordered.extend(unknown)
+        new_text = "{\n" + ",\n".join(ordered) + "\n}\n"
+        if new_text != text:
+            path.write_text(new_text, encoding="utf-8")
+            reordered += 1
+    print(f"Reordered {reordered} weapon files")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--migrate", action="store_true")
     mode.add_argument("--check", action="store_true")
     mode.add_argument("--sync", action="store_true")
+    mode.add_argument("--reorder", action="store_true")
     args = parser.parse_args()
     if args.migrate:
         migrate()
     elif args.sync:
         sync()
+    elif args.reorder:
+        reorder()
     if not check():
         raise SystemExit(1)

@@ -19,14 +19,18 @@
 #include "debug/structured-log.h"
 #include "world/texture-store.h"
 #include "combat/projectile-render.h"
+#include "map/map_common.h"
+#include "map/map_loader.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cstring>
 #include <limits>
 #include <vector>
+#include <unordered_map>
 
 extern Renderer* gRenderer;
 
@@ -38,6 +42,89 @@ struct TexturedParticleVertex {
     glm::vec3 normal;
     glm::vec4 color;
 };
+
+struct EffectModelMesh {
+    Mesh mesh;
+    GLuint vao = 0;
+    GLuint vbo = 0;
+    bool attempted = false;
+    bool ready = false;
+};
+
+std::unordered_map<std::string, EffectModelMesh> gEffectModels;
+
+EffectModelMesh& effectModelFor(const std::string& path)
+{
+    EffectModelMesh& cached = gEffectModels[path];
+    if (cached.attempted)
+        return cached;
+    cached.attempted = true;
+    cached.mesh = loadGLB(path, false);
+    if (cached.mesh.verts.empty())
+        return cached;
+    glGenVertexArrays(1, &cached.vao);
+    glGenBuffers(1, &cached.vbo);
+    glBindVertexArray(cached.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)(cached.mesh.verts.size() * sizeof(Vertex)),
+                 cached.mesh.verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, uv));
+    glBindVertexArray(0);
+    cached.ready = true;
+    return cached;
+}
+
+void drawEffectModel(const Camera& camera, const EffectPart& effect,
+                     float scale, const glm::vec4& color)
+{
+    if (effect.modelPath.empty() || !gRenderer || !gRenderer->shaderProgram)
+        return;
+    EffectModelMesh& model = effectModelFor(effect.modelPath);
+    if (!model.ready)
+        return;
+    const glm::vec3 normal = glm::length(effect.normal) > 0.001f
+        ? glm::normalize(effect.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+    glm::quat orientation(1.0f, 0.0f, 0.0f, 0.0f);
+    const glm::vec3 source(0.0f, 0.0f, 1.0f);
+    const float alignment = glm::dot(source, normal);
+    if (alignment < -0.9999f)
+        orientation = glm::angleAxis(3.14159265f, glm::vec3(1.0f, 0.0f, 0.0f));
+    else if (alignment < 0.9999f)
+        orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(source, normal)));
+    glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), effect.position)
+        * glm::mat4_cast(orientation)
+        * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
+    unsigned int shader = gRenderer->shaderProgram;
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
+    glUseProgram(shader);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &modelMatrix[0][0]);
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glUniform3f(glGetUniformLocation(shader, "uTint"), color.x, color.y, color.z);
+    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.0f);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(model.vao);
+    for (const Mesh::Batch& batch : model.mesh.batches) {
+        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+    }
+    glBindVertexArray(0);
+}
 
 void drawTexturedHitParticles(const Camera& camera,
                               const std::vector<TexturedParticleVertex>& vertices,
@@ -470,6 +557,9 @@ void EffectPartSystem::render(const Camera& camera) const {
                 orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(sourceAxis, direction)));
             renderProjectile(camera, effect.position, orientation, rocketCfg);
         }
+        else if (effect.replayType == "explosion_shockwave" && !effect.modelPath.empty()) {
+            drawEffectModel(camera, effect, drawScale, drawColor);
+        }
         else if (!effect.billboardText) {
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }
@@ -572,10 +662,12 @@ void EffectPartSystem::render(const Camera& camera) const {
     static std::vector<TexturedParticleVertex> bloodDecalVerts;
     static std::vector<TexturedParticleVertex> holeDecalVerts;
     static std::vector<TexturedParticleVertex> crackDecalVerts;
+    static std::vector<TexturedParticleVertex> explosionDecalVerts;
     bloodSprayVerts.clear();
     bloodDecalVerts.clear();
     holeDecalVerts.clear();
     crackDecalVerts.clear();
+    explosionDecalVerts.clear();
 
     const std::string& bloodTexture = decalCfg.blood.texture;
     const float bloodRenderFadeStart = std::max(0.0f, decalCfg.blood.renderFadeStartDistance);
@@ -631,7 +723,8 @@ void EffectPartSystem::render(const Camera& camera) const {
             ? decalCfg.blood
             : (decal.kind == SurfaceDecalKind::BulletHole
                 ? decalCfg.bulletHoles
-                : decalCfg.worldCracks);
+                : (decal.kind == SurfaceDecalKind::ExplosionMark
+                    ? decalCfg.explosionMarks : decalCfg.worldCracks));
         const float renderFadeStart = std::max(0.0f, groupCfg.renderFadeStartDistance);
         const float renderDistance = std::max(0.0f, groupCfg.renderDistance);
         const float renderFadeEnd = std::max(
@@ -661,12 +754,14 @@ void EffectPartSystem::render(const Camera& camera) const {
             ? decalCfg.blood.texture
             : (decal.kind == SurfaceDecalKind::BulletHole
                 ? decalCfg.bulletHoles.texture
-                : decalCfg.worldCracks.texture);
+                : (decal.kind == SurfaceDecalKind::ExplosionMark
+                    ? decalCfg.explosionMarks.texture : decalCfg.worldCracks.texture));
         const float texScale = decal.kind == SurfaceDecalKind::Blood
             ? decalCfg.blood.textureScale
             : (decal.kind == SurfaceDecalKind::BulletHole
                 ? decalCfg.bulletHoles.textureScale
-                : decalCfg.worldCracks.textureScale);
+                : (decal.kind == SurfaceDecalKind::ExplosionMark
+                    ? decalCfg.explosionMarks.textureScale : decalCfg.worldCracks.textureScale));
 
         glm::vec3 tangent, bitangent;
         decalInPlaneBasis(n, decal.axis, glm::vec3(0.0f, 0.0f, 1.0f), tangent, bitangent);
@@ -686,7 +781,8 @@ void EffectPartSystem::render(const Camera& camera) const {
                 "decal-" + std::to_string(decal.traceId), "first_visible_quad", 0,
                 nlohmann::json{{"decal_id", decal.traceId},
                                {"kind", decal.kind == SurfaceDecalKind::Blood ? "blood" :
-                                   (decal.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" : "world_crack")},
+                                   (decal.kind == SurfaceDecalKind::BulletHole ? "bullet_hole" :
+                                   (decal.kind == SurfaceDecalKind::ExplosionMark ? "explosion_mark" : "world_crack"))},
                                {"position", {decal.position.x, decal.position.y, decal.position.z}},
                                {"normal", {n.x, n.y, n.z}},
                                {"tangent", {tangent.x, tangent.y, tangent.z}},
@@ -722,6 +818,8 @@ void EffectPartSystem::render(const Camera& camera) const {
             appendTexturedQuad(bloodDecalVerts, decal.position, right, up, color);
         else if (decal.kind == SurfaceDecalKind::BulletHole)
             appendTexturedQuad(holeDecalVerts, decal.position, right, up, color);
+        else if (decal.kind == SurfaceDecalKind::ExplosionMark)
+            appendTexturedQuad(explosionDecalVerts, decal.position, right, up, color);
         else
             appendTexturedQuad(crackDecalVerts, decal.position, right, up, color);
     }
@@ -735,6 +833,8 @@ void EffectPartSystem::render(const Camera& camera) const {
         drawTexturedHitParticles(camera, holeDecalVerts, decalCfg.bulletHoles.texture);
     if (!crackDecalVerts.empty())
         drawTexturedHitParticles(camera, crackDecalVerts, decalCfg.worldCracks.texture);
+    if (!explosionDecalVerts.empty())
+        drawTexturedHitParticles(camera, explosionDecalVerts, decalCfg.explosionMarks.texture);
 
     static auto lastPresentationReport = std::chrono::steady_clock::now() -
         std::chrono::seconds(2);

@@ -62,7 +62,8 @@ static void doExplosion(
     uint32_t directHitEntityId,
     bool directHitIsNpc,
     Player* victimPlayer,
-    bool presentationOnly)
+    bool presentationOnly,
+    const glm::vec3& surfaceNormal = glm::vec3(0.0f, 0.0f, 1.0f))
 {
     const auto& sc = SizeScalingConfig::instance().data();
     float ss = std::max(owner.sizeScale, 0.001f);
@@ -75,7 +76,7 @@ static void doExplosion(
     const float knockbackHorizontalMul = cp(def, "knockbackHorizontalMultiplier", 1.0f);
     const float knockbackVerticalMul = cp(def, "knockbackVerticalMultiplier", 1.0f);
 
-    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly);
+    spawnExplosionFx(position, "rocket_launcher", owner.username, owner.sizeScale, !presentationOnly, surfaceNormal);
 
     {
         float distToCam = glm::length(position - camera.pos);
@@ -410,7 +411,8 @@ void update(
                         rocket.lifetime -= dt * (wallDecay - 1.0f);
                     } else {
                         doExplosion(state, def, runtime, owner, npcs, camera,
-                            worldHitPos, 0, false, victimPlayer, presentationOnly);
+                            worldHitPos, 0, false, victimPlayer, presentationOnly,
+                            worldNormal);
                         rocket.exploded = true;
                         it = state.activeRockets.erase(it);
                         continue;
@@ -576,6 +578,10 @@ void update(
                     p.affectedByGravity = std::fabs(smokeGravity) > 0.001f;
                     p.billboardText = false;
                     p.replayType = "rocket_trail";
+                    if (!def.projectileSmokeTexture.empty()) {
+                        p.texturePath = def.projectileSmokeTexture;
+                        p.replayType = "hitfx_particle";
+                    }
                     EffectPartSystem::instance().spawn(p);
                 }
             }

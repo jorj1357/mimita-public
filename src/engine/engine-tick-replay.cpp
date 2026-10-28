@@ -91,6 +91,8 @@ void engineTickReplay(Engine& engine, float dt)
     auto& gReplayTimeline = REPLAY_TIMELINE;
     auto& replayPerf = Perf::state().replayPerf;
 
+    ScenarioRecorder::instance().poll();
+
     struct ReplayTestState {
         bool active = false;
         uint32_t tick = 0;
@@ -376,7 +378,8 @@ void engineTickReplay(Engine& engine, float dt)
                 advanceScheduledTerminalMoveFixedTick(&moveStarted, &moveEnded);
             const glm::vec3 positionBeforeTick = player.pos;
             if (!scenarioPlaybackActive)
-                ScenarioRecorder::instance().captureTick(tickFrame, player, camera);
+                ScenarioRecorder::instance().captureTick(
+                    tickFrame, player, camera, npcSystem, mpContext, weapons);
             simulateTick(simContext, tickFrame);
             if (scheduledMoveTick && (moveStarted || moveEnded)) {
                 const std::string& requestId = scheduledTerminalMoveRequestId();

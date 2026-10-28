@@ -27,6 +27,7 @@
 #include "perf/perf-spike.h"
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
+#include "devtools/scenario-player.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
 #include "gui/hud/chat-bubble.h"
@@ -1933,7 +1934,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ctx.pendingSpawnAckEpoch = 0;
                     ctx.pendingSpawnAckLastSendMs = 0;
                 }
+                const bool wasActive = ctx.gameplayActive;
                 ctx.gameplayActive = true;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "client.actor.spawn_activated.received",
+                    std::to_string(ctx.localPlayerId),
+                    "server confirmed spawn acknowledgement; gameplay enabled",
+                    ctx.tick,
+                    nlohmann::json{{"actor_id", ctx.localPlayerId},
+                                   {"spawn_generation", act->spawnGeneration},
+                                   {"transform_epoch", act->transformEpoch},
+                                   {"server_tick", act->serverTick},
+                                   {"gameplay_active_before", wasActive},
+                                   {"gameplay_active_after", ctx.gameplayActive},
+                                   {"retry_cleared", ctx.pendingSpawnAckGeneration == 0}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACTIVATED RX] playerId=%u spawnGen=%u epoch=%u — gameplay enabled\n",
                            ctx.localPlayerId, act->spawnGeneration, act->transformEpoch);
             }
@@ -1942,6 +1958,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 // Visible diagnostic: a stale/delayed activation is silently
                 // skipped. If this repeats, gameplay stays disabled and all
                 // attacks are blocked.
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Errors,
+                    "client.actor.spawn_activated.skipped",
+                    std::to_string(ctx.localPlayerId),
+                    "activation generation does not match the current life",
+                    ctx.tick,
+                    nlohmann::json{{"actor_id", ctx.localPlayerId},
+                                   {"received_spawn_generation", act->spawnGeneration},
+                                   {"current_spawn_generation", ctx.lastKnownSpawnGeneration},
+                                   {"received_transform_epoch", act->transformEpoch},
+                                   {"local_server_epoch", ctx.localServerEpoch},
+                                   {"gameplay_active", ctx.gameplayActive}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 Debug::logThrottled(Debug::Category::Weapons, "spawn-activated-skip", 0.5f,
                                     "[SPAWN ACTIVATED SKIPPED] playerId=%u recvGen=%u currentGen=%u\n",
                                     ctx.localPlayerId, act->spawnGeneration,
@@ -2190,6 +2219,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 reinterpret_cast<const ServerCommandResultPacket*>(buffer);
             const std::string status(res->statusText,
                                      strnlen(res->statusText, sizeof(res->statusText)));
+            ScenarioPlayer::instance().onServerCommandResult(
+                res->accepted != 0, status);
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network,
                 StructuredLevel::Important,

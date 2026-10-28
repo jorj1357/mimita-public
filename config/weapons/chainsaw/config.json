@@ -1,16 +1,16 @@
 {
-  "id": "chainsaw",
-  "display_name": "Chainsaw",
-  "slot": 25,
-  "animation_profile": "config/animations/library/weapons/chainsaw.json",
-  "animation": {
+"id": "chainsaw",
+"display_name": "Chainsaw",
+"slot": 25,
+"animation_profile": "config/animations/library/weapons/chainsaw.json",
+"animation": {
     "profile": "config/animations/library/weapons/chainsaw.json"
   },
-  "animations": null,
-  "beam_thickness": null,
-  "beam_world_thickness": null,
-  "behavior_type": "swordsword",
-  "components": {
+"animations": null,
+"beam_thickness": null,
+"beam_world_thickness": null,
+"behavior_type": "swordsword",
+"components": {
     "melee": {
       "animation_only": true,
       "actions": {
@@ -84,7 +84,7 @@
       }
     }
   },
-  "custom_params": {
+"custom_params": {
     "bladeLength": 4.0,
     "bladeRadius": 1.62,
     "contactBladeRadius": 1.16,
@@ -108,53 +108,53 @@
     "revColorBaseB": 0.02,
     "npcGuardTicks": 60.0
   },
-  "cut_energy_scale": null,
-  "cut_radius_scale": null,
-  "damage": 15.0,
-  "damage_scale": null,
-  "enemy_impulse_multiplier": null,
-  "fire_delay": 0.0,
-  "fire_mode": "semi_auto",
-  "headshot_multiplier": 1.0,
-  "hitscan": false,
-  "magazine_size": 0,
-  "model": {
+"cut_energy_scale": null,
+"cut_radius_scale": null,
+"damage": 15.0,
+"damage_scale": null,
+"enemy_impulse_multiplier": null,
+"fire_delay": 0.0,
+"fire_mode": "semi_auto",
+"headshot_multiplier": 1.0,
+"hitscan": false,
+"magazine_size": 0,
+"model": {
     "path": "assets/objects/weapons/mimita-chainsaw-v1.glb"
   },
-  "network_mode": null,
-  "pellet_count": 1,
-  "penetration_count": null,
-  "penetration_scale": null,
-  "pose_id": "chainsaw",
-  "projectile_base_radius": null,
-  "projectile_density": null,
-  "projectile_lifetime": 0.0,
-  "projectile_mass": null,
-  "projectile_radius": 0.0,
-  "projectile_shape": null,
-  "projectile_speed": 0.0,
-  "recoil": 0.0,
-  "recoil_definition": null,
-  "reload_time": 0.0,
-  "render": null,
-  "reserve_ammo": null,
-  "self_impulse_multiplier": null,
-  "shooter_knockback": null,
-  "shooter_knockback_vertical": null,
-  "sound": {
+"network_mode": null,
+"pellet_count": 1,
+"penetration_count": null,
+"penetration_scale": null,
+"pose_id": "chainsaw",
+"projectile_base_radius": null,
+"projectile_density": null,
+"projectile_lifetime": 0.0,
+"projectile_mass": null,
+"projectile_radius": 0.0,
+"projectile_shape": null,
+"projectile_speed": 0.0,
+"recoil": 0.0,
+"recoil_definition": null,
+"reload_time": 0.0,
+"render": null,
+"reserve_ammo": null,
+"self_impulse_multiplier": null,
+"shooter_knockback": null,
+"shooter_knockback_vertical": null,
+"sound": {
     "shoot": "weapon/chainsaw/chainsawidle",
     "reload": "",
     "hit": "weapon/chainsaw/chainsawhit1",
     "dry_fire": "",
     "equip": "weapon/chainsaw/chainsawequip"
   },
-  "spread": 0.0,
-  "square_spread": null,
-  "uses_physics_projectile": false,
-  "victim_knockback": null,
-  "victim_knockback_per_damage": null,
-  "victim_knockback_vertical_fraction": null,
-  "viewmodel": {
+"spread": 0.0,
+"square_spread": null,
+"uses_physics_projectile": false,
+"victim_knockback": null,
+"victim_knockback_per_damage": null,
+"victim_knockback_vertical_fraction": null,
+"viewmodel": {
     "enabled": true,
     "position": [
       0.3,

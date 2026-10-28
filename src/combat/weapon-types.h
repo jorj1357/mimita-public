@@ -106,6 +106,18 @@ struct WeaponDefinition {
     int slot = 0;
 
     std::string modelPath;
+    // Optional projectile appearance block from render.projectile. Kept
+    // separate from gameplay hitboxes and the weapon viewmodel.
+    std::string projectileModelPath;
+    std::string projectileFacingAxis = "+Z";
+    glm::vec3 projectileModelScale{1.0f};
+    glm::vec3 projectileModelRotation{0.0f};
+    glm::vec3 projectileModelOffset{0.0f};
+    std::string projectileSmokeTexture;
+    std::string explosionMarkTexture;
+    std::string explosionShockwaveModel;
+    float explosionShockwaveScale = 1.0f;
+    float explosionShockwaveLifetime = 0.18f;
     glm::vec3 viewModelOffset{0.0f};
     glm::vec3 viewModelRotation{0.0f};
     glm::vec3 attachmentOffset{0.0f};

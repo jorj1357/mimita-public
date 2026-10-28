@@ -22,8 +22,11 @@
     {"type": "event_present", "event": "scenario.playback.started"},
     {"type": "event_present", "event": "scenario.playback.start_ready"},
     {"type": "event_present", "event": "scenario.playback.completed"},
+    {"type": "event_absent", "event": "scenario.playback.failed"},
     {"type": "event_field_equals", "event": "scenario.playback.completed",
-     "field": "completed", "equals": true}
+     "field": "completed", "equals": true},
+    {"type": "event_field_equals", "event": "scenario.playback.completed",
+     "field": "valid", "equals": true}
   ],
   "timeout_seconds": 180
 }

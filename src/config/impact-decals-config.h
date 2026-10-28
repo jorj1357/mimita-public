@@ -130,6 +130,7 @@ struct ImpactDecalsData {
     ImpactDecalGroupConfig blood;
     ImpactDecalGroupConfig bulletHoles;
     ImpactDecalGroupConfig worldCracks;
+    ImpactDecalGroupConfig explosionMarks;
 };
 
 class ImpactDecalsConfig {

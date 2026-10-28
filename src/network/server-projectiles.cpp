@@ -1846,6 +1846,35 @@ void tickServerProjectiles(SOCKET sock,
     uint32_t movingCount = 0;
     uint32_t sleepingCount = 0;
 
+    auto sendTerminalDespawn = [&](const ServerProjectile& projectile,
+                                   uint8_t reason) {
+        ProjectileDespawnEventPacket event{};
+        event.header.type = PACKET_PROJECTILE_DESPAWN_EVENT;
+        event.header.tick = tick;
+        event.eventId = nextReliableGameplayEventId();
+        event.eventSessionId = serverReliableEventSessionId();
+        event.projectileId = projectile.id;
+        event.weapon = projectile.weaponType;
+        event.weaponDefNetworkId = projectile.weaponDefNetworkId;
+        event.reason = reason;
+        queueReliableGameplayEventToAll(
+            sock, players, &event, sizeof(event), event.eventId,
+            event.eventSessionId, totalPacketsOut);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "server.projectile.terminal", std::to_string(projectile.id),
+            "authoritative projectile removed without explosion", tick,
+            {{"projectile_id", projectile.id},
+             {"owner_player_id", projectile.ownerPlayerId},
+             {"owner_npc_id", projectile.ownerNpcId},
+             {"weapon", networkWeaponTypeName(projectile.weaponType)},
+             {"weapon_def_network_id", projectile.weaponDefNetworkId},
+             {"reason", (int)reason},
+             {"age", projectile.age},
+             {"lifetime", projectile.lifetime}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
     for (auto it = projectiles.begin(); it != projectiles.end(); )
     {
         ServerProjectile& projectile = it->second;
@@ -2068,7 +2097,10 @@ void tickServerProjectiles(SOCKET sock,
                                           glm::vec3(0.0f, 0.0f, 1.0f),
                                           "lifetime", 0, tick, stepTick, totalPacketsOut);
                     else
+                    {
+                        sendTerminalDespawn(projectile, 1); // lifetime
                         projectile.exploded = true;
+                    }
                 }
                 else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
                 {
@@ -2135,7 +2167,10 @@ void tickServerProjectiles(SOCKET sock,
                                       "lifetime", 0, tick, tick,
                                       totalPacketsOut);
                 else
+                {
+                    sendTerminalDespawn(projectile, 1); // lifetime
                     projectile.exploded = true;
+                }
             }
         }
 

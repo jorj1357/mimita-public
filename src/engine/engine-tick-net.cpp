@@ -607,6 +607,16 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.pendingSpawnAckGeneration = spawn.spawnGeneration;
                 mpContext.pendingSpawnAckEpoch = spawn.transformEpoch;
                 mpContext.pendingSpawnAckLastSendMs = MimitaNet::nowMs();
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "client.actor.spawn_ack.sent",
+                    std::to_string(mpContext.localPlayerId),
+                    "client acknowledged the authoritative spawn", mpContext.tick,
+                    nlohmann::json{{"actor_id", mpContext.localPlayerId},
+                                   {"spawn_generation", spawn.spawnGeneration},
+                                   {"transform_epoch", spawn.transformEpoch},
+                                   {"retry_armed", true}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 Debug::log(Debug::Category::Weapons, "[SPAWN ACK SEND] playerId=%u spawnGen=%u epoch=%u (after weapon reconciliation)\n",
                            mpContext.localPlayerId, ack.spawnGeneration, ack.transformEpoch);
             }

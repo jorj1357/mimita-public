@@ -12,6 +12,7 @@
 #include "entities/player-avatar-animations.h"
 #include "entities/player.h"
 #include "debug/structured-log.h"
+#include "devtools/scenario-server-playback.h"
 #include "physics/movement/movement-step.h"
 #include "utils/path_utils.h"
 #include <algorithm>
@@ -278,6 +279,18 @@ bool preparePose(ActorView& actor, const std::string& avatar, uint32_t tick)
         runtime.minimum = glm::min(runtime.minimum, center - half);
         runtime.maximum = glm::max(runtime.maximum, center + half);
     };
+    // Replay-controlled proxies carry the recorded authoritative collision
+    // pose. Use it instead of re-deriving a pose from the live animation so the
+    // contact query evaluates the same body geometry that was recorded.
+    if (actor.ref.npc && actor.ref.npc->replayControlled &&
+        actor.ref.npc->bodyPartCount > 0) {
+        for (uint8_t i = 0; i < actor.ref.npc->bodyPartCount; ++i) {
+            const auto& part = actor.ref.npc->bodyParts[i];
+            append(glm::vec3(part.cx, part.cy, part.cz),
+                   glm::vec3(part.hx, part.hy, part.hz));
+        }
+        return !target.bodyParts.empty();
+    }
     if (actor.ref.player && actor.ref.player->hasRagdollPose &&
         !actor.ref.player->ragdollHistory.empty() && !pose.usesMeleeAuthoredPose()) {
         const auto& replicated = actor.ref.player->ragdollHistory.back().pose;
@@ -431,8 +444,9 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
             }
         }
         WeaponAttachmentPose attachment;
-        bool valid = false;
-        for (const auto& part : state.pose->physicalBody.parts) if (part.name == "rightArm") {
+        bool valid = attacker.ref.npc && attacker.ref.npc->replayControlled &&
+            attacker.ref.npc->hasReplayWeaponShape;
+        if (!valid) for (const auto& part : state.pose->physicalBody.parts) if (part.name == "rightArm") {
             valid = resolveWeaponAttachment(*def, part, attacker.scale, attachment,
                                             actionRotation, actionOffset); break;
         }
@@ -451,6 +465,21 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
         shape.previousA = state.previousValid ? state.shape.currentA : shape.currentA;
         shape.previousB = state.previousValid ? state.shape.currentB : shape.currentB;
         shape.radius = attachment.bladeRadius;
+        if (attacker.ref.npc && attacker.ref.npc->replayControlled &&
+            attacker.ref.npc->hasReplayWeaponShape) {
+            shape.previousA = attacker.ref.npc->replayBladePreviousA;
+            shape.previousB = attacker.ref.npc->replayBladePreviousB;
+            shape.currentA = attacker.ref.npc->replayBladeCurrentA;
+            shape.currentB = attacker.ref.npc->replayBladeCurrentB;
+            shape.radius = attacker.ref.npc->replayBladeRadius;
+        }
+        if (attacker.ref.npc) {
+            attacker.ref.npc->lastPhysicalWeaponShape = shape;
+            attacker.ref.npc->hasLastPhysicalWeaponShape = true;
+        } else if (attacker.ref.player) {
+            attacker.ref.player->lastPhysicalWeaponShape = shape;
+            attacker.ref.player->hasLastPhysicalWeaponShape = true;
+        }
         if (tick - state.lastDiagnostic >= 60) {
             state.lastDiagnostic = tick;
             StructuredLogger::instance().writeEvent(StructuredCategory::Weapons, StructuredLevel::Important,
@@ -596,6 +625,42 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     request.weaponDisplayName = def->displayName; request.serverTick = tick;
                     request.eventId = episode.serial; request.correlationId = episode.serial;
                     const auto result = applyActorDamage(players, npcs, request);
+                    if (ScenarioServerPlayback::instance().active()) {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Weapons,
+                            result.applied ? StructuredLevel::Important : StructuredLevel::Errors,
+                            "scenario.contact.query", std::to_string(attacker.ref.id),
+                            "scenario melee contact query and authoritative decision",
+                            tick,
+                            nlohmann::json{
+                                {"attacker", attacker.ref.id},
+                                {"attacker_kind", (int)attacker.ref.kind},
+                                {"target", target.ref.id},
+                                {"target_kind", (int)target.ref.kind},
+                                {"attacker_generation", attacker.generation},
+                                {"target_generation", target.generation},
+                                {"weapon", def->id},
+                                {"action", attacker.actionId},
+                                {"action_start_tick", attacker.actionStart},
+                                {"blade_base", {shape.currentA.x, shape.currentA.y,
+                                                shape.currentA.z}},
+                                {"blade_tip", {shape.currentB.x, shape.currentB.y,
+                                               shape.currentB.z}},
+                                {"blade_radius", shape.radius},
+                                {"contact", true},
+                                {"contact_position", {hit.hitPosition.x, hit.hitPosition.y,
+                                                      hit.hitPosition.z}},
+                                {"damage", damage},
+                                {"knockback", {impulse.x, impulse.y, impulse.z}},
+                                {"accepted", result.applied},
+                                {"rejection_reason", result.rejectionReason},
+                                {"health_before", result.healthBefore},
+                                {"health_after", result.healthAfter},
+                                {"killed", result.killed},
+                                {"target_health_reference", target.ref.player
+                                    ? target.ref.player->health : target.ref.npc->health}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
                     if (result.applied) {
                         if (localResults) localResults->push_back({request, result, hit.hitPosition, force,
                             beginning || episode.samples + 1 >= 4 || result.killed});
@@ -678,6 +743,29 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                              {"force", force},
                              {"impulse", strength},
                              {"contact", {contactPoint.x, contactPoint.y, contactPoint.z}}});
+                        if (ScenarioServerPlayback::instance().active()) {
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Weapons, StructuredLevel::Important,
+                                "scenario.contact.weapon", std::to_string(attacker.ref.id),
+                                "scenario weapon-versus-weapon contact resolved", tick,
+                                nlohmann::json{
+                                    {"attacker", attacker.ref.id},
+                                    {"attacker_kind", (int)attacker.ref.kind},
+                                    {"target", target.ref.id},
+                                    {"target_kind", (int)target.ref.kind},
+                                    {"attacker_weapon", def->id},
+                                    {"target_weapon", target.weapon->id},
+                                    {"distance", weaponDistance},
+                                    {"threshold", shape.radius +
+                                        target.runtime->shape.radius + 0.12f},
+                                    {"relative_speed", relativeSpeed},
+                                    {"force", force},
+                                    {"impulse", strength},
+                                    {"contact", {contactPoint.x, contactPoint.y,
+                                                 contactPoint.z}},
+                                    {"throttle_ticks", 6}},
+                                __FILE__, __LINE__, __FUNCTION__);
+                        }
                     }
                 }
             }

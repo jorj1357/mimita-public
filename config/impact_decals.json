@@ -173,5 +173,19 @@
     // "textureScale": 25.0,
     // "randomRotationDegrees": 0.0,
     "randomRotationDegrees": 360.0
+  },
+  "explosionMarks": {
+    "enabled": true,
+    "radius": 4.0,
+    "alpha": 0.85,
+    "lifetime": 30.0,
+    "fadeTime": 4.0,
+    "maxCount": 128,
+    "renderDistance": 1250.0,
+    "renderFadeStartDistance": 1000.0,
+    "renderFadeEndDistance": 1250.0,
+    "texture": "assets/textureshq/explosionmarkv1.png",
+    "textureScale": 1.0,
+    "randomRotationDegrees": 360.0
   }
 }

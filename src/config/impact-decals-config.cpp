@@ -261,6 +261,8 @@ bool ImpactDecalsConfig::load(const std::string& path)
             readGroup(root["bulletHoles"], data.bulletHoles);
         if (root.contains("worldCracks"))
             readGroup(root["worldCracks"], data.worldCracks);
+        if (root.contains("explosionMarks"))
+            readGroup(root["explosionMarks"], data.explosionMarks);
 
         mData = data;
         if (mRuntimeBloodOverride)

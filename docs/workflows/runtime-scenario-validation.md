@@ -82,12 +82,25 @@ scenario_endrecord
 scenario_play devscripts/scenarios/user/scenario-YYYYMMDD_HHMMSS-coolplace_edge.jsonl
 ```
 
-The recording is local-only under `devscripts/scenarios/user/`. The player
-auto-restores the recorded start position, aim, weapon, and start velocity, runs
-at fixed 60 Hz, and reports `scenario.playback.completed` with
-`max_position_error_m` and the first divergence. A checked-in template is
+The recording is local-only under `devscripts/scenarios/user/`. Schema 2 also
+records client-rendered actor tracks and a merged authoritative server track.
+The player auto-restores the recorded start position, aim, weapon, and start
+velocity, requires client/server spawn readiness plus matching map, weapon set,
+and melee move-set revisions, and runs at fixed 60 Hz.
+
+The server creates temporary Npc-backed proxies for recorded NPCs and remote
+players, drives them from the authoritative track, disables normal AI for them,
+and leaves live connected humans under their own control. Inspect
+`scenario.playback.server_ready`, `scenario.playback.proxy_lifecycle`,
+`scenario.contact.query`, `scenario.contact.weapon`, `weapon.contact.result`,
+and `server.damage.applied` together to correlate an apparent hit with the
+authoritative contact and damage outcome.
+
+Playback is invalid if readiness times out or the player diverges by more than
+2 m. The runner must treat `scenario.playback.failed` or an invalid completion
+as a failed scenario; there is no snap-back path. A checked-in template is
 `devscripts/scenarios/recorded_input_playback.example.json`.
 
-Input playback is not a full deterministic world replay. Run it on the same
-map, mode, weapon set, and local dev server; NPC and remote-player state can
-differ.
+Schema 1 recordings remain input-only playable scenarios. Run playback on the
+same map, mode, weapon set, and local dev server; with schema 1, NPC and
+remote-player state can still differ.

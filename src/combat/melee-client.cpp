@@ -749,4 +749,35 @@ void clientTick(Player& player,
     g_state.lastImpulsePhaseTick = phaseTick;
 }
 
+bool currentActionActive()
+{
+    return g_state.active;
+}
+
+const std::string& currentActionDefinitionId()
+{
+    return g_state.definitionId;
+}
+
+const std::string& currentActionId()
+{
+    return g_state.actionId;
+}
+
+uint32_t currentActionStartTick()
+{
+    return g_state.startSimTick;
+}
+
+int currentActionPhaseTick()
+{
+    return g_state.currentPhaseTick;
+}
+
+uint32_t currentActionRevision()
+{
+    const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(g_state.definitionId);
+    return set ? set->revision : 0;
+}
+
 } // namespace MimitaMelee

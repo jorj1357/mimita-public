@@ -20,6 +20,10 @@ struct ProjectileRenderMesh {
 struct ProjectileVisualConfig {
     bool sphere = false;
     glm::vec3 fillColor = glm::vec3(1.0f);
+    // Optional GLB model. When set, replaces the procedural cylinder.
+    std::string modelPath;
+    std::string facingAxis = "+Z";
+    glm::vec3 modelOffset = glm::vec3(0.0f);
     // Main projectile
     std::string texturePath = "assets/textureshq/colorful2.png";
     float length = 1.5f;

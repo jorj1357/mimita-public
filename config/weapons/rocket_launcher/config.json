@@ -1,10 +1,10 @@
 {
-  "animation": null,
-  "id": "rocket_launcher",
-  "display_name": "Rocket Launcher",
-  "slot": 7,
-  "animation_profile": null,
-  "animations": {
+"id": "rocket_launcher",
+"display_name": "Rocket Launcher",
+"slot": 7,
+"animation_profile": null,
+"animation": null,
+"animations": {
     "fire": {
       "duration": 0.02,
       "position_offset": [
@@ -32,11 +32,11 @@
       ]
     }
   },
-  "beam_thickness": null,
-  "beam_world_thickness": null,
-  "behavior_type": "rocket_launcher",
-  "components": null,
-  "custom_params": {
+"beam_thickness": null,
+"beam_world_thickness": null,
+"behavior_type": "rocket_launcher",
+"components": null,
+"custom_params": {
     "rocketSpeed": 45.0,
     "rocketRadius": 1.0,
     "splashRadius": 12.0,
@@ -114,53 +114,68 @@
     "smokeEndColorA": 0.0,
     "flightSoundVolumeDb": 15.0
   },
-  "cut_energy_scale": null,
-  "cut_radius_scale": null,
-  "damage": 0.0,
-  "damage_scale": null,
-  "enemy_impulse_multiplier": null,
-  "fire_delay": 0.75,
-  "fire_mode": "semi_auto",
-  "headshot_multiplier": 1.0,
-  "hitscan": false,
-  "magazine_size": 666,
-  "model": {
+"cut_energy_scale": null,
+"cut_radius_scale": null,
+"damage": 0.0,
+"damage_scale": null,
+"enemy_impulse_multiplier": null,
+"fire_delay": 0.75,
+"fire_mode": "semi_auto",
+"headshot_multiplier": 1.0,
+"hitscan": false,
+"magazine_size": 666,
+"model": {
     "path": "assets/objects/weapons/mimita-rpg-v3.glb"
   },
-  "network_mode": null,
-  "pellet_count": 1,
-  "penetration_count": null,
-  "penetration_scale": null,
-  "pose_id": "rocket_launcher",
-  "projectile_base_radius": null,
-  "projectile_density": null,
-  "projectile_lifetime": 5.0,
-  "projectile_mass": null,
-  "projectile_radius": 0.7,
-  "projectile_shape": null,
-  "projectile_speed": 45.0,
-  "recoil": 50.0,
-  "recoil_definition": null,
-  "reload_time": 1.5,
-  "render": null,
-  "reserve_ammo": null,
-  "self_impulse_multiplier": null,
-  "shooter_knockback": null,
-  "shooter_knockback_vertical": null,
-  "sound": {
+"network_mode": null,
+"pellet_count": 1,
+"penetration_count": null,
+"penetration_scale": null,
+"pose_id": "rocket_launcher",
+"projectile_base_radius": null,
+"projectile_density": null,
+"projectile_lifetime": 5.0,
+"projectile_mass": null,
+"projectile_radius": 0.7,
+"projectile_shape": null,
+"projectile_speed": 45.0,
+"recoil": 50.0,
+"recoil_definition": null,
+"reload_time": 1.5,
+"render": {
+    "projectile": {
+      "model": "assets/objects/weapons/weapon-objects/mimita-rocket-model-v1.glb",
+      "facingAxis": "+Z",
+      "scale": [1.0, 1.0, 1.0],
+      "rotationDegrees": [0.0, 0.0, 0.0],
+      "offset": [0.0, 0.0, 0.0],
+      "smokeTexture": "assets/textureshq/rocketsmokev1.png"
+    },
+    "explosion": {
+      "markTexture": "assets/textureshq/explosionmarkv1.png",
+      "shockwaveModel": "assets/objects/things/effects-objects/shockwave-v1.glb",
+      "shockwaveScale": 1.0,
+      "shockwaveLifetimeSeconds": 0.18
+    }
+  },
+"reserve_ammo": null,
+"self_impulse_multiplier": null,
+"shooter_knockback": null,
+"shooter_knockback_vertical": null,
+"sound": {
     "shoot": "rocketlauncher/rocketshoot",
     "reload": "rocketlauncher/rocketlauncherreload",
     "hit": "",
     "dry_fire": "ui/click",
     "equip": ""
   },
-  "spread": 0.0,
-  "square_spread": null,
-  "uses_physics_projectile": false,
-  "victim_knockback": null,
-  "victim_knockback_per_damage": null,
-  "victim_knockback_vertical_fraction": null,
-  "viewmodel": {
+"spread": 0.0,
+"square_spread": null,
+"uses_physics_projectile": false,
+"victim_knockback": null,
+"victim_knockback_per_damage": null,
+"victim_knockback_vertical_fraction": null,
+"viewmodel": {
     "enabled": true,
     "position": [
       0.2,

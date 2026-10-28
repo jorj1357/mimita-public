@@ -236,12 +236,17 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     }
 
     // Part-driven push: the moving limb/weapon is the dominant impact, so give
-    // the root body an outward velocity along the surface normal.
+    // the root body an outward velocity along the surface normal. Animated body
+    // parts are damped relative to weapons: a fast arm/leg swing must not turn
+    // into an outsized root launch, while a weapon contact keeps its lively
+    // rebound. Root-driven contacts still use the full configured response.
     if (partInto > totalInto && !rootBounceAlreadyApplied)
     {
+        const bool weaponPart = actorPart && std::strcmp(actorPart, "weapon") == 0;
+        const float partWeight = weaponPart ? 1.0f : 0.25f;
         const glm::vec3 tangent = p.vel - normal * glm::dot(p.vel, normal);
         p.vel = tangent * retention +
-                normal * (std::min(partInto, maxInto) * strength);
+                normal * (std::min(partInto, maxInto) * strength * partWeight);
     }
 
     if (bodyContact)

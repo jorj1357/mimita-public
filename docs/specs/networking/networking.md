@@ -161,6 +161,17 @@ remote-client gameplay
 dedicated-server gameplay
 There is one gameplay simulation. ONLY ONE
 The difference is only where the authoritative server process runs.
+
+### Remove offline/local gameplay paths
+
+A solo session is still a client connected to a local authoritative server
+process. Do not add or preserve a parallel offline/local gameplay
+implementation with different rules. When touching a system that still has a
+local/offline compatibility path, prefer deleting it once the client/server
+owner can express the same behavior. Local presentation-only replay and editor
+paths are allowed, but they must not simulate gameplay or become a second source
+of truth. This rule exists because parallel local paths confuse contributors and
+AI agents about which owner is authoritative.
 ________________
 
 

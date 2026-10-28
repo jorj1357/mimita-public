@@ -28,6 +28,7 @@ struct EffectPart
     std::string label;
     std::string replayType = "effect";
     std::string texturePath;
+    std::string modelPath;
     std::string materialName;
     std::string assetId;
     bool billboardText = true;
@@ -65,6 +66,7 @@ struct EffectPart
         label.clear();
         replayType = "effect";
         texturePath.clear();
+        modelPath.clear();
         materialName.clear();
         assetId.clear();
         sourceActorId.clear();
@@ -86,7 +88,7 @@ struct BloodParticle
     float stretch = 1.0f;
 };
 
-enum class SurfaceDecalKind { Blood, BulletHole, Crack };
+enum class SurfaceDecalKind { Blood, BulletHole, Crack, ExplosionMark };
 
 struct SurfaceDecal
 {
@@ -143,6 +145,7 @@ public:
     EffectPart* spawnMuzzleFlash(glm::vec3 position, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {}, bool spawnVisual = true, bool spawnLighting = true);
     EffectPart* spawnTracer(glm::vec3 start, glm::vec3 end, const std::string& sourceActorId = {}, float sizeScale = 1.0f, const std::string& weaponId = {});
     EffectPart* spawnBulletImpact(glm::vec3 position, glm::vec3 normal, float sizeScale = 1.0f, float lifetimeScale = 1.0f, float alphaScale = 1.0f);
+    void spawnExplosionMark(glm::vec3 position, glm::vec3 normal);
     void spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
                           const glm::vec3& direction = glm::vec3(0.0f),
                           float sizeScale = 1.0f, float lifetimeScale = 1.0f,

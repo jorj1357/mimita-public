@@ -419,8 +419,33 @@ void applyWeaponCustomParamsJson(WeaponDefinition& def, const json& root)
 
 void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
 {
-    if (root.contains("render") && root["render"].is_object())
-        weaponJsonVec3(root["render"], "color", def.tint);
+    if (root.contains("render") && root["render"].is_object()) {
+        const json& render = root["render"];
+        weaponJsonVec3(render, "color", def.tint);
+        if (render.contains("projectile") && render["projectile"].is_object()) {
+            const json& projectile = render["projectile"];
+            if (projectile.contains("model") && projectile["model"].is_string())
+                def.projectileModelPath = projectile["model"].get<std::string>();
+            if (projectile.contains("facingAxis") && projectile["facingAxis"].is_string())
+                def.projectileFacingAxis = projectile["facingAxis"].get<std::string>();
+            weaponJsonVec3(projectile, "scale", def.projectileModelScale);
+            weaponJsonVec3(projectile, "rotationDegrees", def.projectileModelRotation);
+            weaponJsonVec3(projectile, "offset", def.projectileModelOffset);
+            if (projectile.contains("smokeTexture") && projectile["smokeTexture"].is_string())
+                def.projectileSmokeTexture = projectile["smokeTexture"].get<std::string>();
+        }
+        if (render.contains("explosion") && render["explosion"].is_object()) {
+            const json& explosion = render["explosion"];
+            if (explosion.contains("markTexture") && explosion["markTexture"].is_string())
+                def.explosionMarkTexture = explosion["markTexture"].get<std::string>();
+            if (explosion.contains("shockwaveModel") && explosion["shockwaveModel"].is_string())
+                def.explosionShockwaveModel = explosion["shockwaveModel"].get<std::string>();
+            if (explosion.contains("shockwaveScale") && explosion["shockwaveScale"].is_number())
+                def.explosionShockwaveScale = explosion["shockwaveScale"].get<float>();
+            if (explosion.contains("shockwaveLifetimeSeconds") && explosion["shockwaveLifetimeSeconds"].is_number())
+                def.explosionShockwaveLifetime = explosion["shockwaveLifetimeSeconds"].get<float>();
+        }
+    }
     else if (root.contains("color") && root["color"].is_array())
         weaponJsonVec3(root, "color", def.tint);
 }

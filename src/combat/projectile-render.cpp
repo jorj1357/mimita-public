@@ -16,6 +16,7 @@
 #include "combat/weapon-registry.h"
 #include "debug/debug-visuals.h"
 #include "map/map_common.h"
+#include "map/map_loader.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 
@@ -24,6 +25,104 @@ extern Renderer* gRenderer;
 static std::unordered_map<std::string, ProjectileRenderMesh> gMeshCache;
 
 namespace {
+
+struct ProjectileModelMesh {
+    Mesh mesh;
+    unsigned int vao = 0;
+    unsigned int vbo = 0;
+    bool attempted = false;
+    bool ready = false;
+};
+
+std::unordered_map<std::string, ProjectileModelMesh> gModelCache;
+
+ProjectileModelMesh& projectileModelFor(const std::string& path)
+{
+    ProjectileModelMesh& cached = gModelCache[path];
+    if (cached.attempted)
+        return cached;
+    cached.attempted = true;
+    cached.mesh = loadGLB(path, false);
+    if (cached.mesh.verts.empty())
+        return cached;
+    glGenVertexArrays(1, &cached.vao);
+    glGenBuffers(1, &cached.vbo);
+    glBindVertexArray(cached.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)(cached.mesh.verts.size() * sizeof(Vertex)),
+                 cached.mesh.verts.data(), GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, pos));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, normal));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                          (void*)offsetof(Vertex, uv));
+    glBindVertexArray(0);
+    cached.ready = true;
+    return cached;
+}
+
+glm::quat facingAxisCorrection(const std::string& axis)
+{
+    if (axis == "+X" || axis == "X") return glm::angleAxis(glm::radians(-90.0f), glm::vec3(0, 1, 0));
+    if (axis == "-X") return glm::angleAxis(glm::radians(90.0f), glm::vec3(0, 1, 0));
+    if (axis == "+Y" || axis == "Y") return glm::angleAxis(glm::radians(90.0f), glm::vec3(1, 0, 0));
+    if (axis == "-Y") return glm::angleAxis(glm::radians(-90.0f), glm::vec3(1, 0, 0));
+    if (axis == "-Z") return glm::angleAxis(glm::radians(180.0f), glm::vec3(1, 0, 0));
+    return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+}
+
+bool drawProjectileModel(const Camera& camera, const glm::vec3& position,
+                         const glm::quat& orientation,
+                         const ProjectileVisualConfig& cfg)
+{
+    if (cfg.modelPath.empty() || !gRenderer || !gRenderer->shaderProgram)
+        return false;
+    ProjectileModelMesh& model = projectileModelFor(cfg.modelPath);
+    if (!model.ready)
+        return false;
+
+    glm::mat4 offsetRot(1.0f);
+    if (glm::length(cfg.rotationOffsetDegrees) > 0.001f) {
+        offsetRot = glm::rotate(offsetRot, glm::radians(cfg.rotationOffsetDegrees.x), glm::vec3(1, 0, 0));
+        offsetRot = glm::rotate(offsetRot, glm::radians(cfg.rotationOffsetDegrees.y), glm::vec3(0, 1, 0));
+        offsetRot = glm::rotate(offsetRot, glm::radians(cfg.rotationOffsetDegrees.z), glm::vec3(0, 0, 1));
+    }
+    glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), position)
+        * glm::mat4_cast(orientation)
+        * glm::mat4_cast(facingAxisCorrection(cfg.facingAxis))
+        * offsetRot
+        * glm::translate(glm::mat4(1.0f), cfg.modelOffset)
+        * glm::scale(glm::mat4(1.0f), cfg.scale);
+
+    unsigned int shader = gRenderer->shaderProgram;
+    glm::mat4 view = camera.getView();
+    glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
+    glUseProgram(shader);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &modelMatrix[0][0]);
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    glUniform3f(glGetUniformLocation(shader, "uTint"), 1.0f, 1.0f, 1.0f);
+    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.5f);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(model.vao);
+    for (const Mesh::Batch& batch : model.mesh.batches) {
+        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        glBindTexture(GL_TEXTURE_2D, tex);
+        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+    }
+    glBindVertexArray(0);
+    return true;
+}
 
 float projectileParam(const WeaponDefinition* def, const char* key, float fallback)
 {
@@ -40,6 +139,9 @@ ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weapon
     const bool rocket = weaponId == "rocket_launcher";
     const WeaponDefinition* def = WeaponRegistry::instance().get(weaponId);
     ProjectileVisualConfig cfg;
+    cfg.modelPath = def ? def->projectileModelPath : "";
+    cfg.facingAxis = def ? def->projectileFacingAxis : "+Z";
+    cfg.modelOffset = def ? def->projectileModelOffset : glm::vec3(0.0f);
     cfg.sphere = projectileParam(def, "projectileVisualSphere", 0.0f) > 0.0f;
     cfg.fillColor = {
         projectileParam(def, "projectileVisualFillR", 1.0f),
@@ -58,6 +160,10 @@ ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weapon
         projectileParam(def, "projectileVisualRotationOffsetX", 0.0f),
         projectileParam(def, "projectileVisualRotationOffsetY", 0.0f),
         projectileParam(def, "projectileVisualRotationOffsetZ", 0.0f)};
+    if (def && !def->projectileModelPath.empty()) {
+        cfg.scale = def->projectileModelScale;
+        cfg.rotationOffsetDegrees = def->projectileModelRotation;
+    }
     cfg.textureTiling = {
         projectileParam(def, "projectileVisualTextureTilingU", 1.0f),
         projectileParam(def, "projectileVisualTextureTilingV", 1.0f)};
@@ -305,6 +411,16 @@ void renderProjectile(
             glm::vec4(cfg.fillColor, cfg.fillAlpha));
         return;
     }
+
+    if (!cfg.modelPath.empty() && drawProjectileModel(camera, position, orientation, cfg)) {
+        if (cfg.glowEnabled && cfg.glowAlpha > 0.001f) {
+            float glowRadius = cfg.radius * cfg.glowRadiusMultiplier * std::max({cfg.scale.x, cfg.scale.y, cfg.scale.z});
+            DebugVis::drawFilledSphere(camera, position, glowRadius,
+                glm::vec4(cfg.glowColor, cfg.glowAlpha));
+        }
+        return;
+    }
+
 
     // Load texture
     GLuint tex = gTextures.getPath(cfg.texturePath);

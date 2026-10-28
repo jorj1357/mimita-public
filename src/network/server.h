@@ -729,6 +729,21 @@ struct ServerNpc
     // so the server validates the trace against the matching historical pose
     // instead of the NPC's current position. Mirrors ServerPlayer::posHistory.
     std::deque<ServerNpcPositionSample> posHistory;
+    // Last authoritative weapon capsule sampled by the physical-contact pass.
+    // Scenario v2 capture reads this so playback can compare the exact contact
+    // shape the server used without re-deriving it.
+    WeaponExecution::PhysicalContactShape lastPhysicalWeaponShape;
+    bool hasLastPhysicalWeaponShape = false;
+    // Scenario replay proxy state mirrored from the real Npc so the normal
+    // contact pass can consume the recorded authoritative pose/shape.
+    bool replayControlled = false;
+    uint32_t replayTrackId = 0;
+    bool hasReplayWeaponShape = false;
+    glm::vec3 replayBladePreviousA{0.0f};
+    glm::vec3 replayBladePreviousB{0.0f};
+    glm::vec3 replayBladeCurrentA{0.0f};
+    glm::vec3 replayBladeCurrentB{0.0f};
+    float replayBladeRadius = 0.0f;
     // Current-tick body-part AABBs computed during rebuild so pushNpcPositionHistory
     // can snapshot them into the history for hit rewind.
     std::array<ServerNpcBodyPartSample, 8> bodyParts{};
@@ -1246,7 +1261,8 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                         uint32_t tick, uint64_t& totalPacketsOut);
+                         uint32_t tick, uint64_t& totalPacketsOut,
+                         NpcSystem* npcSystem = nullptr);
 
 // ── Migration: join/reconnect packet handlers ────────────────────────
 void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
@@ -1297,7 +1313,8 @@ ServerPacketProcessResult processServerPacket(
     DisagreementRetransmitState* retransmitState = nullptr,
     ServerPlayer* authenticatedPlayer = nullptr,
     std::unique_ptr<IGameTransport>* claimedTransport = nullptr,
-    std::vector<uint32_t>* pendingRemovals = nullptr);
+    std::vector<uint32_t>* pendingRemovals = nullptr,
+    NpcSystem* npcSystem = nullptr);
 
 // Generate a secure reconnect token
 std::string generateReconnectToken();

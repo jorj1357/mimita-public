@@ -117,6 +117,20 @@
                 "randomIntensityMax": 1.1,
                 "randomRadiusMin": 0.9,
                 "randomRadiusMax": 1.1
+            },
+            "explosion": {
+                "enabled": true,
+                "color": [1.0, 0.45, 0.15],
+                "intensity": 180.0,
+                "radius": 16.0,
+                "lifetime": 0.25,
+                "fadeIn": 0.0,
+                "fadeOut": 0.25,
+                "positionOffset": [0.0, 0.0, 0.0],
+                "randomIntensityMin": 0.85,
+                "randomIntensityMax": 1.15,
+                "randomRadiusMin": 0.9,
+                "randomRadiusMax": 1.1
             }
         },
         "grenade_launcher": {

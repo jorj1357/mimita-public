@@ -32,9 +32,9 @@
 #include "entities/player.h"
 #include "world/world.h"
 #include "map/map-loader-collision.h"
-#include "config/collision-lod-config.h"
 #include "config/spawn-velocity-config.h"
 #include "config/actor-collision-config.h"
+#include "game/spawn-utils.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/actor-pair-collision.h"
@@ -168,13 +168,10 @@ static void runRecastIsolatedSelfTest(const World& npcWorld,
 
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 {
-    // The client NpcSystem only reads collision data from the World, so mirror
-    // the headless collision world (no GPU/GL work, safe on a headless server).
-    // Decimate with the live collision-LOD cell size so NPC collision near dense
-    // objects stays cheap, matching the client world.
+    // The headless world is already decimated, unioned, and face-cleaned by the
+    // map loader. Re-decimating that output collapses union vertices and can
+    // create open seams/T-junctions that the client never sees. Reuse it as-is.
     npcWorld.collisionMesh.triangles = hw.triangles;
-    decimateCollisionTriangleList(npcWorld.collisionMesh.triangles,
-                                  CollisionLodConfig::instance().cellSize());
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
 
     // Build the same acceleration grids the client builds: chunk cells PLUS
@@ -249,7 +246,8 @@ static void applyRoleStartingAmmo(Npc& npc, const ActorSpawnProfile& profile);
 
 static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& npcs,
                                NpcSystem& npcSystem,
-                               std::unordered_set<uint32_t>& npcIdsAlive)
+                               std::unordered_set<uint32_t>& npcIdsAlive,
+                               const World& world)
 {
     for (const auto& kv : npcs)
     {
@@ -263,7 +261,11 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
             continue;
         npcIdsAlive.insert(kv.first);
         if (!alreadySimulated)
-            npcSystem.spawnNpc(kv.first, kv.second.difficulty, kv.second.pos);
+        {
+            const glm::vec3 safeSpawn = resolveSafeStandingSpawn(
+                world, kv.second.pos, 0.60f, 2.0f);
+            npcSystem.spawnNpc(kv.first, kv.second.difficulty, safeSpawn);
+        }
         // Map-mode startup NPCs can exist before the managed match roster is
         // built. Give them the configured NPC team role before resolving their
         // spawn profile, so role movement presets apply in Sandbox too.
@@ -471,9 +473,10 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 
 // Reset a killed server NPC body back to full health at its spawn point so the
 // snapshot pipeline re-admits it (rebuildServerNpcMap skips dead bodies).
-static void respawnServerNpc(Npc& npc)
+static void respawnServerNpc(Npc& npc, const World& world)
 {
-    const glm::vec3 spawnPos = effectiveServerSpawn(npc.body.respawnPosition);
+    const glm::vec3 rawSpawn = effectiveServerSpawn(npc.body.respawnPosition);
+    const glm::vec3 spawnPos = resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f);
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
     // New life: bump the lifecycle counter so clients detect the respawn.
@@ -622,6 +625,8 @@ static void broadcastNpcFiring(SOCKET sock,
             projectile.ownerNpcId = n.id; // the NPC that fired this
             projectile.fireSerial = 0;
             projectile.weaponType = netWeapon;
+            projectile.weaponDefNetworkId =
+                MimitaNet::weaponDefNetworkIdFor(wdef->id);
             projectile.position = origin;
             projectile.previousPosition = origin;
 
@@ -669,6 +674,7 @@ static void broadcastNpcFiring(SOCKET sock,
             spawn.ownerPlayerId = 0;
             spawn.fireSerial = 0;
             spawn.weapon = netWeapon;
+            spawn.weaponDefNetworkId = projectile.weaponDefNetworkId;
             spawn.posX = projectile.position.x;
             spawn.posY = projectile.position.y;
             spawn.posZ = projectile.position.z;
@@ -720,6 +726,22 @@ static void broadcastNpcFiring(SOCKET sock,
                 n.id, wdef->id.c_str(), projectile.id,
                 projectile.position.x, projectile.position.y, projectile.position.z,
                 projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "npc.projectile-created", std::to_string(projectile.id),
+                "authoritative NPC projectile spawned", tick,
+                nlohmann::json{
+                    {"projectile_id", projectile.id},
+                    {"owner_npc_id", n.id},
+                    {"weapon", wdef->id},
+                    {"weapon_def_network_id", projectile.weaponDefNetworkId},
+                    {"lifetime", projectile.lifetime},
+                    {"explode_on_world", projectile.explodeOnWorldImpact},
+                    {"explode_on_lifetime", projectile.explodeOnLifetime},
+                    {"pass_through_world", cp("passThroughWorld", 0.0f) > 0.0f},
+                    {"pass_through_actors", cp("passThroughActors", 0.0f) > 0.0f}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
 
         // For multi-pellet weapons (shotgun), broadcast a PelletBlastEventPacket
@@ -867,6 +889,61 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         sn.equippedSlot = n.body.equippedSlot;
         sn.equippedWeaponId = n.body.equippedWeaponId;
         sn.weaponState = 0;
+        sn.replayControlled = n.replayControlled;
+        sn.replayTrackId = n.replayTrackId;
+        sn.hasReplayWeaponShape = n.hasReplayWeaponShape;
+        sn.replayBladePreviousA = n.replayBladePreviousA;
+        sn.replayBladePreviousB = n.replayBladePreviousB;
+        sn.replayBladeCurrentA = n.replayBladeCurrentA;
+        sn.replayBladeCurrentB = n.replayBladeCurrentB;
+        sn.replayBladeRadius = n.replayBladeRadius;
+        sn.bodyPartCount = 0;
+        if (n.replayControlled && !n.replayBodyParts.empty())
+        {
+            for (const Npc::ReplayBodyPart& part : n.replayBodyParts)
+            {
+                if (sn.bodyPartCount >= sn.bodyParts.size())
+                    break;
+                ServerNpcBodyPartSample& sample =
+                    sn.bodyParts[sn.bodyPartCount++];
+                sample.cx = part.center.x;
+                sample.cy = part.center.y;
+                sample.cz = part.center.z;
+                sample.hx = part.half.x;
+                sample.hy = part.half.y;
+                sample.hz = part.half.z;
+                sample.bodyPart = static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
+            }
+        }
+        else
+        {
+            for (const PhysicalBodyPart& part : n.body.physicalBody.parts)
+            {
+                if (sn.bodyPartCount >= sn.bodyParts.size())
+                    break;
+                glm::vec3 low(std::numeric_limits<float>::max());
+                glm::vec3 high = -low;
+                for (int corner = 0; corner < 8; ++corner)
+                {
+                    const glm::vec3 local(
+                        (corner & 1) ? part.collider.localMax.x : part.collider.localMin.x,
+                        (corner & 2) ? part.collider.localMax.y : part.collider.localMin.y,
+                        (corner & 4) ? part.collider.localMax.z : part.collider.localMin.z);
+                    const glm::vec3 world = glm::vec3(part.worldTransform * glm::vec4(local, 1.0f));
+                    low = glm::min(low, world);
+                    high = glm::max(high, world);
+                }
+                if (glm::any(glm::greaterThan(low, high)))
+                    continue;
+                ServerNpcBodyPartSample& sample =
+                    sn.bodyParts[sn.bodyPartCount++];
+                const glm::vec3 center = (low + high) * 0.5f;
+                const glm::vec3 half = (high - low) * 0.5f;
+                sample.cx = center.x; sample.cy = center.y; sample.cz = center.z;
+                sample.hx = half.x; sample.hy = half.y; sample.hz = half.z;
+                sample.bodyPart = static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
+            }
+        }
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
         {
@@ -902,6 +979,8 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         if (oldIt != npcs.end())
         {
             sn.posHistory = std::move(oldIt->second.posHistory);
+            sn.lastPhysicalWeaponShape = oldIt->second.lastPhysicalWeaponShape;
+            sn.hasLastPhysicalWeaponShape = oldIt->second.hasLastPhysicalWeaponShape;
             if (oldIt->second.transformEpoch == sn.transformEpoch &&
                 oldIt->second.equippedWeaponId == sn.equippedWeaponId) {
                 sn.meleeActionActive = oldIt->second.meleeActionActive;
@@ -1146,6 +1225,9 @@ static void resolveServerActorPairCollisions(
 
     for (Npc& npc : npcSystem.all())
     {
+        // Replay proxies participate in actor-pair collision so the local
+        // player receives the same recorded pushes. Their recorded transform is
+        // restored by the playback owner before the next contact tick.
         const bool dead = npc.body.dead || npc.body.currentHp <= 0;
         ActorPairCollisionActor actor;
         actor.id = npc.id;
@@ -1304,7 +1386,7 @@ void simulateSharedNpcs(SOCKET sock,
 {
     Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
     ActorCollisionConfig::instance().pollHotReload(tick);
-    adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive);
+    adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive, world);
     syncServerNpcDamageToNpc(npcs, npcSystem, npcIdsAlive);
 
     // Keep the authoritative roster and health mirrors synchronized, but skip
@@ -1431,6 +1513,10 @@ void simulateSharedNpcs(SOCKET sock,
         && npcDifficulty.freezeDuringWaveBanner;
     for (Npc& n : npcSystem.all())
     {
+        // Replay-controlled target proxies are driven by the scenario track,
+        // not AI, targeting, navigation, or normal physics.
+        if (n.replayControlled)
+            continue;
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
         if (freezeWaveBanner)
@@ -1663,6 +1749,28 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
+        // Capsule recovery: if animated/movement state leaves the NPC root
+        // inside static solid geometry, push it to the nearest validated
+        // standing position. This is a capsule fallback, not full body-triangle
+        // NPC collision; it keeps the actor out of geometry without the cost of
+        // a per-limb solver.
+        if (worldPointInsideSolid(world, n.body.pos)) {
+            const glm::vec3 resolved = resolveSafeStandingSpawn(
+                world, n.body.pos, 0.60f, 2.0f);
+            if (glm::length(resolved - n.body.pos) > 0.001f) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Collision, StructuredLevel::Important,
+                    "npc.capsule.recovered", std::to_string(n.id),
+                    "npc root was inside static solid geometry", tick,
+                    {{"npc_id", n.id},
+                     {"from", {n.body.pos.x, n.body.pos.y, n.body.pos.z}},
+                     {"to", {resolved.x, resolved.y, resolved.z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                n.body.pos = resolved;
+                n.body.vel = glm::vec3(0.0f);
+            }
+        }
+
         if ((nearestPlayer || nearestNpc) && hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
@@ -1785,6 +1893,7 @@ void simulateSharedNpcs(SOCKET sock,
     const bool npcWaveMode = serverGamemodeState().npcWaves;
     for (Npc& n : npcSystem.all())
     {
+        if (n.replayControlled) continue;
         if (!n.body.dead) continue;
         if (!npcRespawns) continue;
         // NPC Waves actors are one-life per wave. Reviving them makes the wave
@@ -1796,7 +1905,7 @@ void simulateSharedNpcs(SOCKET sock,
         if (serverProceduralWorldOwnsNpc(n.id)) continue;
         n.body.respawnTimer = std::max(0.0f, n.body.respawnTimer - SERVER_DT);
         if (n.body.respawnTimer <= 0.0f)
-            respawnServerNpc(n);
+            respawnServerNpc(n, world);
     }
 
     // The NPC map is the authoritative lifecycle gate for its rockets. This

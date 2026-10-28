@@ -3,6 +3,7 @@
     "bodySampleRadius": 0.25,
     "maxStepHeight": 0.25,
     "bodyMeshCollision": true,
+    // "bodyMeshCollision": false,
     "collisionSkin": 0.0,
     "edgeTouchTolerance": 0.0,
     "smoothSeamDot": 0.9999,
@@ -37,8 +38,8 @@
         // "strength": 0.1,
         "friction": 0.0,
         "minSpeed": 0.01,
-        // "maxSpeed": 999999.0,
-        "maxSpeed": 50.0,
+        "maxSpeed": 999999.0,
+        // "maxSpeed": 50.0,
         "cooldown": 0.0001,
         // "cooldown": 0.2,
         "minPush": 0.1

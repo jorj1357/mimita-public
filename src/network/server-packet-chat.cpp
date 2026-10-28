@@ -26,6 +26,8 @@
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-step.h"
+#include "devtools/scenario-server-playback.h"
+#include "devtools/scenario-server-recorder.h"
 
 #include <algorithm>
 #include <cctype>
@@ -408,7 +410,8 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
-                         uint32_t tick, uint64_t& totalPacketsOut)
+                         uint32_t tick, uint64_t& totalPacketsOut,
+                         NpcSystem* npcSystem)
 {
     if (bytes < (int)sizeof(ServerCommandPacket))
         return;
@@ -773,6 +776,91 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     printf("%s [SERVER COMMAND] playerId=%u name=\"%s\" cmd=\"%s\"\n",
            serverTimestamp(), it->second.id, it->second.name.c_str(),
            commandStr.c_str());
+
+    constexpr const char* scenarioRecordStart = "scenario_server_record_start ";
+    constexpr const char* scenarioRecordStop = "scenario_server_record_stop";
+    constexpr const char* scenarioPlay = "scenario_server_play ";
+    constexpr const char* scenarioPlayBegin = "scenario_server_play_begin ";
+    if (commandStr.rfind(scenarioRecordStart, 0) == 0)
+    {
+        const std::string path = commandStr.substr(std::strlen(scenarioRecordStart));
+        std::string error;
+        if (!ScenarioServerRecorder::instance().start(path, &error))
+        {
+            ack(false, ("scenario record rejected: " + error).c_str());
+            return;
+        }
+        ack(true, ("scenario record started: " +
+                   ScenarioServerRecorder::instance().sidecarPath()).c_str());
+        return;
+    }
+    if (commandStr == scenarioRecordStop ||
+        commandStr.rfind(std::string(scenarioRecordStop) + " ", 0) == 0)
+    {
+        if (!ScenarioServerRecorder::instance().active())
+        {
+            ack(false, "scenario record rejected: not recording");
+            return;
+        }
+        ScenarioServerRecorder::instance().stop("command");
+        ack(true, "scenario record stopped");
+        return;
+    }
+    if (commandStr.rfind(scenarioPlay, 0) == 0)
+    {
+        if (!npcSystem)
+        {
+            ack(false, "scenario playback rejected: server npc system unavailable");
+            return;
+        }
+        const std::string path = commandStr.substr(std::strlen(scenarioPlay));
+        std::string error;
+        std::string status;
+        if (!ScenarioServerPlayback::instance().prepare(
+                path, players, *npcSystem, &error, &status))
+        {
+            ack(false, ("scenario playback rejected: " + error).c_str());
+            return;
+        }
+        ack(true, status.c_str());
+        return;
+    }
+    if (commandStr.rfind(scenarioPlayBegin, 0) == 0)
+    {
+        if (!npcSystem)
+        {
+            ack(false, "scenario playback rejected: server npc system unavailable");
+            return;
+        }
+        uint32_t startTick = tick;
+        try
+        {
+            startTick = static_cast<uint32_t>(
+                std::stoul(commandStr.substr(std::strlen(scenarioPlayBegin))));
+        }
+        catch (...)
+        {
+            ack(false, "scenario playback rejected: invalid start tick");
+            return;
+        }
+        std::string error;
+        std::string status;
+        if (!ScenarioServerPlayback::instance().begin(
+                startTick, players, &error, &status))
+        {
+            ack(false, ("scenario playback rejected: " + error).c_str());
+            return;
+        }
+        ack(true, status.c_str());
+        return;
+    }
+    if (commandStr == "scenario_server_stop")
+    {
+        if (npcSystem)
+            ScenarioServerPlayback::instance().stop("command", *npcSystem);
+        ack(true, "scenario playback stopped");
+        return;
+    }
 
     constexpr const char* actorPresetCommand = "actor_preset_actor ";
     if (commandStr.rfind(actorPresetCommand, 0) == 0) {

@@ -60,12 +60,12 @@
         "rightLeg": { "radius": 0.30, "half_height": 0.50, "axis": [0, 0, 1], "alpha": 0.1, "center_of_mass": [-0.1, 0, 0.1] }
     },
     "attachments": {
-        "head":      { "parent": "torso", "offset": [0, 0.0, 1.0], "cone_limit_deg": 999,
-                      "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "leftArm":  { "parent": "torso", "offset": [0.2, 0.6, 0.4], "cone_limit_deg": 999,
-                      "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
-        "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4], "cone_limit_deg": 999,
-                      "rotation_limit_deg": { "x": [-180, 180], "y": [-180, 180], "z": [-180, 180] } },
+        "head":      { "parent": "torso", "offset": [0, 0.0, 1.0], "cone_limit_deg": 80,
+                      "rotation_limit_deg": { "x": [-60, 60], "y": [-90, 90], "z": [-45, 45] } },
+        "leftArm":  { "parent": "torso", "offset": [0.2, 0.6, 0.4], "cone_limit_deg": 110,
+                      "rotation_limit_deg": { "x": [-120, 120], "y": [-120, 120], "z": [-120, 120] } },
+        "rightArm": { "parent": "torso", "offset": [0.2, -0.6, 0.4], "cone_limit_deg": 110,
+                      "rotation_limit_deg": { "x": [-120, 120], "y": [-120, 120], "z": [-120, 120] } },
         "leftLeg":  { "parent": "torso", "offset": [0.1, 0.3, -0.8], "cone_limit_deg": 50,
                       "rotation_limit_deg": { "x": [-40, 40], "y": [-40, 40], "z": [-40, 40]} },
         "rightLeg": { "parent": "torso", "offset": [0.1, -0.3, -0.8], "cone_limit_deg": 50,

@@ -169,6 +169,55 @@ animations: jump over fall, fall over idle, in air over idle, etc, idle need to 
 
 the fps issue happesn mroe and more as i have melee killing ppl killing npcs 
 
+## Implementation update — 2026-10-28: collision, rockets, deathball
+
+- **Solid geometry (top priority): implemented first-pass fixes; runtime feel
+  still needs review.** Walkable ramp/edge seams now use a relaxed seam
+  threshold and a wider contact tolerance in the actor-triangle path; the
+  server NPC world no longer re-decimates already-unioned collision triangles;
+  NPC spawn/respawn uses safe standing resolution; and server NPCs recover a
+  root that ends up inside solid geometry. Runtime TDM evidence recorded
+  repeated `npc.capsule.recovered` events and a player rollback. The `tdmtest3` ramp
+  spawn/seam, block edge, sphere, and persistent-penetration scenarios still
+  need live player and NPC traversal review.
+- **NPC collision scope:** documented in
+  [`../architecture/collision/collision.md`](../architecture/collision/collision.md)
+  as capsule-now / triangle-later. Capsules are the accepted current cost/feel
+  tradeoff; full animated NPC triangle collision remains a later target.
+- **NPC rockets in TDM:** authoritative NPC projectiles now carry
+  `weaponDefNetworkId`; the unused local `gNpcRocketState` path was deleted;
+  non-exploding lifetime removals send a terminal despawn; and the client
+  rejects stale state-recovery ghosts. Runtime TDM evidence showed NPC rocket
+  spawns with `weapon_def_network_id=8`, deathball spawns with `=27` and
+  pass-through enabled, repeated `server.projectile.terminal` events, and zero
+  `client.projectile.state-recover` events.
+- **Deathball damage:** the server damage branch now resolves the real
+  `deathball` definition instead of falling back to a solid rocket, and
+  `deathball.wall-pass` records the 3x lifetime decay. A live player/NPC hit
+  scenario is still required to confirm edge/center damage and knockback.
+- **Rocket Launcher visuals:** the supplied model, smoke sprite, explosion
+  light, explosion mark, and surface-aligned shockwave are wired through the
+  shared projectile/explosion owners; the red explosion sphere is unchanged.
+  Added `rocket_preview 0|1` for live JSON inspection. Visual acceptance is
+  still required.
+- **Animation-driven bounce:** body-part-driven root push is damped to 25% of
+  the configured response while weapon contacts keep the full rebound. The
+  frozen `config/collision.json` values (`maxSpeed: 50`, `strength: 0.35`) are
+  unchanged.
+- **Ragdoll limb limits:** head and arm attachment cones/rotation ranges are now
+  bounded instead of effectively unlimited; leg limits are unchanged.
+- **Weapon config order:** `devscripts/weapon_json_sync.py --check` now fails
+  out-of-order top-level fields, and `--reorder` preserves JSONC comments and
+  existing values. All 34 per-weapon configs now match masterlist order.
+- **Client/server-only directive:** added to
+  [`networking/networking.md`](networking/networking.md) and cross-linked from
+  [`../architecture/code-ownership/code-ownership.md`](../architecture/code-ownership/code-ownership.md);
+  prefer deleting local/offline gameplay paths once the client/server owner
+  exists.
+- **Deferred feature ideas:** melee-focused mode changes, projectile
+  revolver/shotgun experiments, heavier movement mode, and weapon-clash feedback
+  remain tracker-only in this pass.
+
 ## New intake — 2026-10-27: networking and mode-start reliability
 
 - **Connection attempts, mode starts, and NPC Waves starts are timing-dependent.**
@@ -1716,6 +1765,45 @@ fix.
   damage/contact cause remains UNCONFIRMED;
   client-authority and ordering semantics need review. Preserve current user edits to
   `config/weapons/mace/config.json` while investigating.
+  Scenario v2 tooling now records client-rendered actor tracks plus a merged
+  authoritative server track, drives Npc-backed target proxies from that track,
+  and fails playback on readiness timeout or >2 m divergence instead of
+  snapping. Clean Sandbox recording `20261028_201146` (build 3674,
+  `scenario-20261028_201213-sandboxmelee9.jsonl`) captured all three weapons
+  against one high-health target: SwordSword 4 hits / 67 damage, mace 4 hits /
+  11 damage, chainsaw 4 hits / 41 damage. Per-weapon replays on build 3684:
+  mace `20261028_201749` completed valid with one accepted contact / 3 damage
+  and max position error 1.223 m; chainsaw `20261028_201814` completed valid
+  with six accepted contacts / 57 damage and max error 0.045 m. Sword replay
+  `20261028_201726` produced seven accepted contact queries / 65 damage before
+  a post-contact 2.33 m position divergence. All three used accepted
+  authoritative contact queries with health-before/after changes; no
+  SwordSword/mace pass-through was reproduced in these clean runs. A capture of
+  the reported live pass-through with the original target/weapon state remains
+  required. Spawn-ack mismatch evidence exists in run `20261028_201856`
+  (`server.actor.spawn_ack.rejected`, reason `epoch_mismatch`, received epoch 1
+  vs server epoch 2), and that playback stopped with `start_readiness_timeout`
+  before frame 0.
+
+  **Dev-loop scenario and test-suite improvement requested:** Use this melee
+  issue to make the scenario system useful for finding why SwordSword and mace
+  can visibly intersect a target without damage while chainsaw appears to
+  work. Current melee scenarios mostly assert that action/animation events
+  occurred; they do not require an authoritative contact or target health
+  change. The recent `meleeissue_recorded_replay` runner passed its lifecycle
+  event assertions despite an unrestored start position, 55 server attack
+  rejections, no target, and no damage events. Improve scenario recording and
+  playback to capture the other actors, compare client-rendered poses with
+  server-authoritative state, and drive recorded targets as temporary server
+  proxies. Gate playback on spawn activation and matching melee move-set
+  revision; fail the run if setup is not ready instead of reporting a gameplay
+  pass. For SwordSword, mace, and chainsaw, run equivalent controlled hit and
+  miss cases and assert the full chain: visible overlap, authoritative contact
+  decision, accepted/rejected reason, and target health before/after. Report
+  the first stage where the weapons differ. Keep config validation, focused
+  calculation checks, runtime scenario evidence, and human visual acceptance
+  as separate claims. This is a proposed dev-loop/test improvement, not
+  implemented or verified.
 
 ### Longer-range game and project ideas — 2026-10-27
 

@@ -420,15 +420,27 @@ bool smoothSeamResponseNormal(const CollisionMeshCache& mesh,
             bestEdge = edge;
         }
     }
-    if (bestEdge >= 0 && bestEdgeDistance <= tolerance)
+    if (bestEdge >= 0)
     {
         const int smoothIndex =
             mesh.smoothEdgeIndex[(size_t)triangleIndex * 3 + bestEdge];
         if (smoothIndex >= 0 && smoothIndex < (int)mesh.smoothEdges.size())
         {
             const CollisionSmoothEdge& smooth = mesh.smoothEdges[smoothIndex];
-            if (glm::dot(smooth.normalA, smooth.normalB) >=
-                CollisionConfig::instance().smoothSeamDot())
+            const float alignment = glm::dot(smooth.normalA, smooth.normalB);
+            // Two walkable faces sharing an edge are one traversable seam even
+            // when their normals differ by more than the exact-coplanar
+            // smoothSeamDot. Keep real corners sharp; only relax the threshold
+            // for a shallow walkable crease such as a ramp-to-ramp seam.
+            constexpr float kWalkableSeamNormalZ = 0.80f;
+            const bool walkableSeam =
+                smooth.normalA.z >= kWalkableSeamNormalZ &&
+                smooth.normalB.z >= kWalkableSeamNormalZ;
+            const float seamDot = walkableSeam
+                ? std::min(CollisionConfig::instance().smoothSeamDot(), 0.50f)
+                : CollisionConfig::instance().smoothSeamDot();
+            const float edgeTolerance = walkableSeam ? 0.05f : tolerance;
+            if (bestEdgeDistance <= edgeTolerance && alignment >= seamDot)
             {
                 const glm::vec3 blended = smooth.normalA + smooth.normalB;
                 const float length = glm::length(blended);

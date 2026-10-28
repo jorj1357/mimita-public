@@ -471,6 +471,10 @@ void spawnProjectileTrail(NetworkProjectile& projectile, float dt)
         }
         part.replayType = rocket ? "net_rocket_trail"
             : rifle ? "net_projectile_trail" : "net_grenade_spark";
+        if (rocket && def && !def->projectileSmokeTexture.empty()) {
+            part.texturePath = def->projectileSmokeTexture;
+            part.replayType = "hitfx_particle";
+        }
         EffectPartSystem::instance().spawn(part);
     }
 }
@@ -963,6 +967,12 @@ void mpProcessProjectileStateEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.predicted = false;
         projectile.exploded = false;
         configureNetworkProjectile(projectile, projectileDefinition(event->weaponDefNetworkId, event->weapon));
+        if (projectile.lifetime <= 0.0f)
+            projectile.lifetime = 5.0f;
+        if (event->age > projectile.lifetime + 1.0f) {
+            ctx.networkProjectiles.erase(event->projectileId);
+            return;
+        }
         // Initialize render state for recovery
         projectile.renderPosition = projectile.position;
         projectile.renderVelocity = projectile.velocity;

@@ -17,7 +17,10 @@ When adding or changing a capability, use this order as the default:
 
 1. **Delete what is in the way.** Remove obsolete, duplicated, or accidental
    complexity when it is no longer needed. Preserve required behavior and
-   verify callers and ownership before deleting code.
+   verify callers and ownership before deleting code. Do not keep a parallel
+   offline/local gameplay owner when the client/server owner exists; see
+   [`../../specs/networking/networking.md`](../../specs/networking/networking.md)
+   (“Remove offline/local gameplay paths”).
 2. **Strengthen an existing owner.** Search for the current file, function,
    subsystem, or data model that already owns the behavior. Prefer making that
    owner more capable and reusable over creating parallel files or functions.

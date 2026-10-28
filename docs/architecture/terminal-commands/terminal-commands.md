@@ -168,5 +168,9 @@ synthetic self-test is considered.
 | scenario_play <path.jsonl> | Validate, restore the recorded start state, and play the input. |
 | scenario_stop | Cancel playback. |
 
-The recording/playback contract is
+Schema 2 recording also arms an authoritative actor track on the local
+dev-loop server and merges it into the same scenario file when recording
+stops. Playback requires spawn readiness and matching map/weapon/move-set
+identity, and a readiness timeout or substantial divergence invalidates the
+run instead of snapping. The recording/playback contract is
 [docs/specs/dev-loop/scenario-input-recording.md](../../specs/dev-loop/scenario-input-recording.md).

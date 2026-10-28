@@ -655,45 +655,26 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
         }
     }
 
-    // ── Helper to build ProjectileVisualConfig from weapon definition ──
-    auto buildProjCfg = [&](const WeaponDefinition& wdef, bool isRocket) -> ProjectileVisualConfig {
-        auto cp = [&](const char* key, float fallback) {
-            return wdef.customParams.count(key) ? wdef.customParams.at(key) : fallback;
-        };
-        ProjectileVisualConfig cfg;
-        cfg.sphere = cp("projectileVisualSphere", 0.0f) > 0.0f;
-        cfg.texturePath = isRocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
-        cfg.length = cp("projectileVisualLength", isRocket ? 1.5f : 1.8f);
-        cfg.radius = wdef.id == "deathball" && wdef.projectileRadius > 0.0f
-            ? wdef.projectileRadius
-            : cp("projectileVisualRadius", isRocket ? 0.18f : 0.28f);
-        cfg.scale = glm::vec3(cp("projectileVisualScaleX", 1.0f), cp("projectileVisualScaleY", 1.0f), cp("projectileVisualScaleZ", 1.0f));
-        cfg.rotationOffsetDegrees = glm::vec3(cp("projectileVisualRotationOffsetX", 0.0f), cp("projectileVisualRotationOffsetY", 0.0f), cp("projectileVisualRotationOffsetZ", 0.0f));
-        cfg.textureTiling = glm::vec2(cp("projectileVisualTextureTilingU", 1.0f), cp("projectileVisualTextureTilingV", 1.0f));
-        cfg.fillAlpha = cp("projectileFillAlpha", 1.0f);
-        cfg.outlineEnabled = cp("projectileOutlineEnabled", 1.0f) > 0.0f;
-        cfg.outlineColor = glm::vec3(cp("projectileOutlineColorR", 1.0f), cp("projectileOutlineColorG", 0.8f), cp("projectileOutlineColorB", 0.2f));
-        cfg.outlineAlpha = cp("projectileOutlineAlpha", 0.4f);
-        cfg.outlineScale = cp("projectileOutlineScale", 1.15f);
-        cfg.glowEnabled = cp("projectileGlowEnabled", 1.0f) > 0.0f;
-        cfg.glowColor = glm::vec3(cp("projectileGlowColorR", 1.0f), cp("projectileGlowColorG", 0.6f), cp("projectileGlowColorB", 0.0f));
-        cfg.glowAlpha = cp("projectileGlowAlpha", 0.15f);
-        cfg.glowRadiusMultiplier = cp("projectileGlowRadiusMultiplier", 3.0f);
-        return cfg;
-    };
-
     // ── Projectile rendering for rocket launcher ──
     if (def->behaviorType == WeaponBehaviorType::RocketLauncher) {
-        ProjectileVisualConfig cfg = buildProjCfg(*def, true);
+        ProjectileVisualConfig cfg = projectileVisualConfigForWeapon(def->id);
         for (const auto& rocket : mRocketState.activeRockets) {
             if (rocket.exploded) continue;
             renderProjectile(camera, rocket.position, rocket.orientation, cfg);
+        }
+        extern bool gRocketPreview;
+        if (gRocketPreview) {
+            const glm::vec3 direction = glm::length(camera.front) > 0.001f
+                ? glm::normalize(camera.front) : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::quat orientation = glm::normalize(glm::quat(1.0f + glm::dot(direction, glm::vec3(0.0f, 0.0f, 1.0f)),
+                glm::cross(direction, glm::vec3(0.0f, 0.0f, 1.0f))));
+            const glm::vec3 previewPos = camera.pos + direction * 3.0f + camera.up * 0.3f;
+            renderProjectile(camera, previewPos, orientation, cfg);
         }
     }
 
     // ── Projectile rendering for grenade launcher ──
     if (def->behaviorType == WeaponBehaviorType::GrenadeLauncher) {
-        ProjectileVisualConfig cfg = buildProjCfg(*def, false);
         for (const PersistentPhysicsObject& obj : PersistentPhysicsSystem::instance().objects()) {
             if (obj.exploded) continue;
             const WeaponDefinition* projectileDef = WeaponRegistry::instance().get(obj.weaponId);

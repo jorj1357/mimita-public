@@ -414,13 +414,13 @@
             "intensityMax": 40.0,
             "radiusBase": 2.5,
             "radiusMax": 6.0,
-            "lifetimeTicks": 6,
+            "lifetimeTicks": 3,
             "retriggerTicks": 1
         },
         "sparks": [
-            { "texturePath": "assets/textureshq/sparkv1.png", "startTick": 2, "endTick": 6, "alpha": 1.0, "size": 3.0, "randomRotationDegrees": 333.0 },
-            { "texturePath": "assets/textureshq/sparkv2.png", "startTick": 7, "endTick": 13, "alpha": 0.9, "size": 2.0, "randomRotationDegrees": 333.0 },
-            { "texturePath": "assets/textureshq/sparkv3.png", "startTick": 14, "endTick": 20, "alpha": 0.8, "size": 1.0, "randomRotationDegrees": 333.0 }
+            { "texturePath": "assets/textureshq/sparkv1.png", "startTick": 1, "endTick": 2, "alpha": 1.0, "size": 3.0, "randomRotationDegrees": 1.0 },
+            { "texturePath": "assets/textureshq/sparkv2.png", "startTick": 3, "endTick": 4, "alpha": 0.9, "size": 2.0, "randomRotationDegrees": 55.0 },
+            { "texturePath": "assets/textureshq/sparkv3.png", "startTick": 5, "endTick": 6, "alpha": 0.8, "size": 1.0, "randomRotationDegrees": 33.0 }
         ]
     },
 

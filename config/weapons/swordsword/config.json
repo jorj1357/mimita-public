@@ -1,16 +1,16 @@
 {
-  "id": "swordsword",
-  "display_name": "Swordsword",
-  "slot": 4,
-  "animation_profile": "config/animations/library/weapons/swordsword.json",
-  "animation": {
+"id": "swordsword",
+"display_name": "Swordsword",
+"slot": 4,
+"animation_profile": "config/animations/library/weapons/swordsword.json",
+"animation": {
     "profile": "config/animations/library/weapons/swordsword.json"
   },
-  "animations": null,
-  "beam_thickness": null,
-  "beam_world_thickness": null,
-  "behavior_type": "swordsword",
-  "components": {
+"animations": null,
+"beam_thickness": null,
+"beam_world_thickness": null,
+"behavior_type": "swordsword",
+"components": {
     "melee": {
       "animation_only": true,
       "actions": {
@@ -81,7 +81,7 @@
       }
     }
   },
-  "custom_params": {
+"custom_params": {
     "range": 16.0,
     "arcDegrees": 120.0,
     "slashDamage": 35.0,
@@ -111,40 +111,40 @@
     "damageTickInterval": 0.01,
     "npcGuardTicks": 60.0
   },
-  "cut_energy_scale": null,
-  "cut_radius_scale": null,
-  "damage": 35.0,
-  "damage_scale": null,
-  "enemy_impulse_multiplier": null,
-  "fire_delay": 0.0,
-  "fire_mode": "semi_auto",
-  "headshot_multiplier": 1.5,
-  "hitscan": false,
-  "magazine_size": 0,
-  "model": {
+"cut_energy_scale": null,
+"cut_radius_scale": null,
+"damage": 35.0,
+"damage_scale": null,
+"enemy_impulse_multiplier": null,
+"fire_delay": 0.0,
+"fire_mode": "semi_auto",
+"headshot_multiplier": 1.5,
+"hitscan": false,
+"magazine_size": 0,
+"model": {
     "path": "assets/objects/weapons/mimita-swordsword-v2.glb"
   },
-  "network_mode": null,
-  "pellet_count": 1,
-  "penetration_count": null,
-  "penetration_scale": null,
-  "pose_id": "swordsword",
-  "projectile_base_radius": null,
-  "projectile_density": null,
-  "projectile_lifetime": 0.0,
-  "projectile_mass": null,
-  "projectile_radius": 0.0,
-  "projectile_shape": null,
-  "projectile_speed": 0.0,
-  "recoil": 10.0,
-  "recoil_definition": null,
-  "reload_time": 0.0,
-  "render": null,
-  "reserve_ammo": null,
-  "self_impulse_multiplier": null,
-  "shooter_knockback": null,
-  "shooter_knockback_vertical": null,
-  "sound": {
+"network_mode": null,
+"pellet_count": 1,
+"penetration_count": null,
+"penetration_scale": null,
+"pose_id": "swordsword",
+"projectile_base_radius": null,
+"projectile_density": null,
+"projectile_lifetime": 0.0,
+"projectile_mass": null,
+"projectile_radius": 0.0,
+"projectile_shape": null,
+"projectile_speed": 0.0,
+"recoil": 10.0,
+"recoil_definition": null,
+"reload_time": 0.0,
+"render": null,
+"reserve_ammo": null,
+"self_impulse_multiplier": null,
+"shooter_knockback": null,
+"shooter_knockback_vertical": null,
+"sound": {
     "shoot": "weapon/hafs/hafsswing",
     "reload": "",
     "hit": "weapon/hafs/hafsknockback",
@@ -153,13 +153,13 @@
     "alt_fire": "weapon/hafs/hafslunge",
     "world_hit": "weapon/hafs/hafsWorldHit"
   },
-  "spread": 0.0,
-  "square_spread": null,
-  "uses_physics_projectile": false,
-  "victim_knockback": null,
-  "victim_knockback_per_damage": null,
-  "victim_knockback_vertical_fraction": null,
-  "viewmodel": {
+"spread": 0.0,
+"square_spread": null,
+"uses_physics_projectile": false,
+"victim_knockback": null,
+"victim_knockback_per_damage": null,
+"victim_knockback_vertical_fraction": null,
+"viewmodel": {
     "enabled": true,
     "position": [
       0.0,

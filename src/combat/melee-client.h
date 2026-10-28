@@ -74,4 +74,12 @@ bool debugShieldHeld();
 // Press/release through the same fixed-tick button resolver as mouse input.
 void requestButton(bool secondary, bool held);
 
+// Read-only scenario/diagnostic view of the local action instance.
+bool currentActionActive();
+const std::string& currentActionDefinitionId();
+const std::string& currentActionId();
+uint32_t currentActionStartTick();
+int currentActionPhaseTick();
+uint32_t currentActionRevision();
+
 } // namespace MimitaMelee

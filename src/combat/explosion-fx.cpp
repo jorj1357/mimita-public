@@ -15,6 +15,8 @@
 #include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "render/dynamic-light-config.h"
+#include "render/dynamic-light.h"
 
 void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
                       const std::string& attacker, float sizeScale, bool playSound,
@@ -104,8 +106,52 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
             part.affectedByGravity = true;
             part.billboardText = false;
             part.replayType = weaponId + "_explosion_smoke";
+            if (weaponDef && !weaponDef->projectileSmokeTexture.empty()) {
+                part.texturePath = weaponDef->projectileSmokeTexture;
+                part.replayType = "hitfx_particle";
+            }
             EffectPartSystem::instance().spawn(part);
         }
+    }
+
+    // Dedicated explosion light. Muzzle flash lighting stays separate.
+    {
+        const auto& lightCfg =
+            DynamicLightConfig::instance().weaponLight(weaponId, "explosion");
+        if (lightCfg.enabled) {
+            DynamicLightManager::instance().spawn(
+                position + lightCfg.positionOffset,
+                lightCfg.color,
+                lightCfg.intensity,
+                lightCfg.radius,
+                lightCfg.lifetime,
+                lightCfg.fadeIn,
+                lightCfg.fadeOut);
+        }
+    }
+
+    // Surface-aligned shockwave. Only spawned when the weapon owns a model.
+    if (weaponDef && !weaponDef->explosionShockwaveModel.empty()) {
+        const glm::vec3 normal = glm::length(surfaceNormal) > 0.001f
+            ? glm::normalize(surfaceNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
+        EffectPart shockwave;
+        shockwave.position = position + normal * 0.02f;
+        shockwave.normal = normal;
+        shockwave.maxLifetime = std::max(0.02f, weaponDef->explosionShockwaveLifetime);
+        shockwave.scale = weaponDef->explosionShockwaveScale;
+        shockwave.endScale = weaponDef->explosionShockwaveScale;
+        shockwave.alpha = 1.0f;
+        shockwave.color = glm::vec3(1.0f);
+        shockwave.billboardText = false;
+        shockwave.replayType = "explosion_shockwave";
+        shockwave.modelPath = weaponDef->explosionShockwaveModel;
+        EffectPartSystem::instance().spawn(shockwave);
+    }
+
+    // Surface-aligned explosion mark decal.
+    if (weaponDef && !weaponDef->explosionMarkTexture.empty() &&
+        glm::length(surfaceNormal) > 0.001f) {
+        EffectPartSystem::instance().spawnExplosionMark(position, surfaceNormal);
     }
 
     // Fireball sphere — expanding, clamped to a visible bright color

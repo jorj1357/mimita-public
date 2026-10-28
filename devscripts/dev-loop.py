@@ -3789,6 +3789,8 @@ def run_scenario_file(args: argparse.Namespace) -> int:
         current_set = _server_weapon_set(current)
         if current_set is None or str(current_set) != str(desired_set):
             need_launch = True
+    if launch_cfg.get("reuse_matching_run") is False:
+        need_launch = True
     if need_launch:
         previous_run_id = str(current.get("run_id", ""))
         payload = {"token": token, "action": "launch", "request_id": request_id + "-launch"}
@@ -3867,6 +3869,29 @@ def run_scenario_file(args: argparse.Namespace) -> int:
         pump()
         return False, None
 
+    def wait_for_playback_terminal(path: str, deadline: float) -> tuple[bool, str]:
+        start = len(records)
+        while time.time() < deadline:
+            pump()
+            for record in records[start:]:
+                event_name = str(record.get("event", ""))
+                if event_name not in ("scenario.playback.completed",
+                                      "scenario.playback.failed"):
+                    continue
+                fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+                if fields.get("path") not in (None, path):
+                    continue
+                if event_name == "scenario.playback.failed":
+                    return False, "playback failed: " + str(
+                        fields.get("reason", "unknown_reason"))
+                if fields.get("completed") is True and fields.get("valid", True) is True:
+                    return True, "playback completed"
+                return False, "playback completed invalid: " + str(
+                    fields.get("failure_reason", fields.get("end_reason", "unknown")))
+            time.sleep(0.25)
+        pump()
+        return False, "playback timeout"
+
     def queue_command(command_text: str, rid: str, deadline: float) -> tuple[bool, str]:
         try:
             response = _control_send(port, token, {
@@ -3933,20 +3958,16 @@ def run_scenario_file(args: argparse.Namespace) -> int:
             ok, detail = queue_command("scenario_play " + path, rid, time.time() + 15.0)
             if ok:
                 step_timeout = float(step.get("timeout_seconds", timeout) or timeout)
-                ok, record = wait_for_event(
-                    {"wait_for_event": "scenario.playback.completed",
-                     "where": {"path": path}},
-                    time.time() + step_timeout)
-                if ok:
-                    detail = "playback completed"
-                else:
+                ok, detail = wait_for_playback_terminal(
+                    path, time.time() + step_timeout)
+                if not ok:
                     pump()
                     rejected = next(
                         (r for r in records if r.get("event") == "scenario.playback.rejected"),
                         None)
-                    detail = ("playback rejected: " + json.dumps(
-                        (rejected or {}).get("fields", {}), separators=(",", ":"))
-                        if rejected else "playback timeout")
+                    if rejected:
+                        detail = ("playback rejected: " + json.dumps(
+                            rejected.get("fields", {}), separators=(",", ":")))
             _append_journal_event(events_path, "scenario.step", {
                 "scenario_id": scenario_id, "step_id": step_id, "step_index": index,
                 "operation": "input_playback", "path": path,
