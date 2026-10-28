@@ -4,10 +4,12 @@
 #include "weapon-config.h"
 #include "combat/weapon-model-cache.h"
 #include "combat/weapon-collision-config.h"
+#include "combat/weapon-melee-config.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 #include <glad/glad.h>
 #include <glm/gtc/matrix_transform.hpp>
@@ -520,8 +522,28 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             player.weaponRadiusLocal = colRadius;
         }
         if (def && !def->animationProfile.empty()) {
+            glm::vec3 actionRotation(0.0f), actionOffset(0.0f);
+            if (const auto* moveSet = WeaponData::MeleeMoveSetRegistry::instance().get(def->id)) {
+                std::string actionId = player.weaponPoseActionState;
+                const WeaponData::MeleeAction* action = actionId.empty() ? nullptr : moveSet->find(actionId);
+                if (!action) {
+                    for (const char* suffix : {"_windup", "_active", "_recovery"}) {
+                        const size_t suffixLen = std::strlen(suffix);
+                        if (actionId.size() > suffixLen &&
+                            actionId.compare(actionId.size() - suffixLen, suffixLen, suffix) == 0) {
+                            action = moveSet->find(actionId.substr(0, actionId.size() - suffixLen));
+                            if (action) break;
+                        }
+                    }
+                }
+                if (action && action->hasWeaponPose) {
+                    actionRotation = action->weaponPoseRotation;
+                    actionOffset = action->weaponPoseOffset;
+                }
+            }
             WeaponAttachmentPose attachment;
-            if (resolveWeaponAttachment(*def, part, player.sizeScale, attachment)) {
+            if (resolveWeaponAttachment(*def, part, player.sizeScale, attachment,
+                                        actionRotation, actionOffset)) {
                 weaponTransform = attachment.world;
                 muzzle = attachment.bladeTip;
                 forward = glm::normalize(attachment.bladeTip - attachment.bladeBase);

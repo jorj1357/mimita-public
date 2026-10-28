@@ -249,6 +249,51 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
     // removed.  world.boundsMin is map metadata, not collision geometry.
     // Players below bounds must continue falling naturally until the
     // void-death threshold.  Actual collision triangles handle platforms.
+
+    // Approximate weapon-vs-world collision. The client already pushes its
+    // animated weapon out of geometry; this keeps the authoritative server
+    // position from accepting a player whose held weapon is embedded in a wall.
+    // This pass is capsule/box approximation. The future triangle mode may
+    // replace it with cached exact weapon triangles.
+    if (p.dead || p.equippedWeaponId.empty()) return;
+    const WeaponDefinition* weapon = WeaponRegistry::instance().get(p.equippedWeaponId);
+    if (!weapon || weapon->id == "nothing") return;
+    auto param = [&](const char* key, float fallback) {
+        const auto it = weapon->customParams.find(key);
+        return it != weapon->customParams.end() ? it->second : fallback;
+    };
+    const float radius = std::max(0.05f,
+        param("contactBladeRadius", param("bladeRadius", 0.2f)));
+    const float length = std::max(0.2f,
+        param("bladeLength", param("contactBladeLength", 2.5f)));
+    glm::vec3 dir = p.input.camForward;
+    if (glm::length(dir) < 0.001f)
+        dir = glm::vec3(std::cos(p.yaw), std::sin(p.yaw), 0.0f);
+    dir = glm::normalize(dir);
+    const glm::vec3 base = p.pos + dir * 0.2f;
+    const glm::vec3 tip = p.pos + dir * length;
+    thread_local std::vector<int> candidates;
+    for (int sampleIndex = 0; sampleIndex <= 4; ++sampleIndex) {
+        const glm::vec3 sample = glm::mix(base, tip, (float)sampleIndex / 4.0f);
+        AABB queryBounds;
+        queryBounds.min = sample - glm::vec3(radius + 0.05f);
+        queryBounds.max = sample + glm::vec3(radius + 0.05f);
+        candidates.clear();
+        gatherHeadlessTrianglesForAABB(world, queryBounds, radius * 0.1f, candidates);
+        for (int triIdx : candidates) {
+            if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+            const CollisionTriangle& tri = world.triangles[triIdx];
+            const glm::vec3 cp = closestPointTriangle(sample, tri.a, tri.b, tri.c);
+            const glm::vec3 delta = sample - cp;
+            const float dist = glm::length(delta);
+            if (dist >= radius || dist < 0.00001f) continue;
+            glm::vec3 n = delta / dist;
+            if (glm::dot(n, tri.normal) < 0.0f) n = -n;
+            p.pos += n * (radius - dist + 0.001f);
+            const float into = glm::dot(p.vel, n);
+            if (into < 0.0f) p.vel -= n * into;
+        }
+    }
 }
 
 static bool serverPointInsideWorld(const HeadlessWorld& world,

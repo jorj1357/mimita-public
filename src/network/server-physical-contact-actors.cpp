@@ -16,6 +16,7 @@
 #include "utils/path_utils.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -410,10 +411,30 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
         const auto* def = attacker.weapon;
         if (!def || def->id == "nothing") continue;
         const bool damaging = def->executionType == WeaponExecutionType::PhysicalContact;
+        glm::vec3 actionRotation(0.0f), actionOffset(0.0f);
+        if (const auto* set = WeaponData::MeleeMoveSetRegistry::instance().get(def->id)) {
+            std::string actionId = attacker.actionId;
+            const WeaponData::MeleeAction* action = actionId.empty() ? nullptr : set->find(actionId);
+            if (!action) {
+                for (const char* suffix : {"_windup", "_active", "_recovery"}) {
+                    const size_t suffixLen = std::strlen(suffix);
+                    if (actionId.size() > suffixLen &&
+                        actionId.compare(actionId.size() - suffixLen, suffixLen, suffix) == 0) {
+                        action = set->find(actionId.substr(0, actionId.size() - suffixLen));
+                        if (action) break;
+                    }
+                }
+            }
+            if (action && action->hasWeaponPose) {
+                actionRotation = action->weaponPoseRotation;
+                actionOffset = action->weaponPoseOffset;
+            }
+        }
         WeaponAttachmentPose attachment;
         bool valid = false;
         for (const auto& part : state.pose->physicalBody.parts) if (part.name == "rightArm") {
-            valid = resolveWeaponAttachment(*def, part, attacker.scale, attachment); break;
+            valid = resolveWeaponAttachment(*def, part, attacker.scale, attachment,
+                                            actionRotation, actionOffset); break;
         }
         if (!valid) {
             if (tick - state.lastDiagnostic >= 60) {

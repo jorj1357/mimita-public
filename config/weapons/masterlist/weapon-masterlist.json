@@ -7,6 +7,7 @@
     "display_name",
     "slot",
     "animation_profile",
+    "animation",
     "animations",
     "beam_thickness",
     "beam_world_thickness",
@@ -75,6 +76,12 @@
     "animation_profile": {
       "types": [
         "string"
+      ],
+      "nullable": true
+    },
+    "animation": {
+      "types": [
+        "object"
       ],
       "nullable": true
     },

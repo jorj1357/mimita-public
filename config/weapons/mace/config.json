@@ -3,6 +3,9 @@
   "display_name": "Mace",
   "slot": 26,
   "animation_profile": "config/animations/library/weapons/mace.json",
+  "animation": {
+    "profile": "config/animations/library/weapons/mace.json"
+  },
   "animations": null,
   "beam_thickness": null,
   "beam_world_thickness": null,
@@ -30,6 +33,10 @@
             }
           },
           "cooldown_ticks": 60,
+          "weapon_pose": {
+            "rotation_degrees": [0.0, 0.0, 0.0],
+            "offset": [0.0, 0.0, 0.0]
+          },
           "animation_clip_id": "mimita_sizing_6_attackslam_002"
         }
       }

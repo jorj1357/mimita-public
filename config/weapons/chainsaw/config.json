@@ -3,6 +3,9 @@
   "display_name": "Chainsaw",
   "slot": 25,
   "animation_profile": "config/animations/library/weapons/chainsaw.json",
+  "animation": {
+    "profile": "config/animations/library/weapons/chainsaw.json"
+  },
   "animations": null,
   "beam_thickness": null,
   "beam_world_thickness": null,

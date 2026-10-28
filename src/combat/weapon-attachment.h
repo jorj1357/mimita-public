@@ -17,4 +17,6 @@ struct WeaponAttachmentPose {
 };
 
 bool resolveWeaponAttachment(const WeaponDefinition& definition,
-    const PhysicalBodyPart& arm, float actorScale, WeaponAttachmentPose& out);
+    const PhysicalBodyPart& arm, float actorScale, WeaponAttachmentPose& out,
+    const glm::vec3& actionRotationDegrees = glm::vec3(0.0f),
+    const glm::vec3& actionOffset = glm::vec3(0.0f));

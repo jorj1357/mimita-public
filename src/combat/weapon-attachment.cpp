@@ -21,7 +21,8 @@ glm::mat4 rotateDegrees(glm::mat4 matrix, const glm::vec3& degrees) {
 }
 
 bool resolveWeaponAttachment(const WeaponDefinition& def,
-    const PhysicalBodyPart& arm, float actorScale, WeaponAttachmentPose& out)
+    const PhysicalBodyPart& arm, float actorScale, WeaponAttachmentPose& out,
+    const glm::vec3& actionRotationDegrees, const glm::vec3& actionOffset)
 {
     const auto* config = WeaponConfig::instance().get(def.id);
     const std::string& path = config && !config->modelPath.empty() ? config->modelPath : def.modelPath;
@@ -61,6 +62,8 @@ bool resolveWeaponAttachment(const WeaponDefinition& def,
         glm::mat4_cast(glm::rotation(glm::normalize(tip - base), handDirection)) *
         rotateDegrees(glm::mat4(1), def.attachmentRotation) *
         glm::translate(glm::mat4(1), def.attachmentOffset) *
+        rotateDegrees(glm::mat4(1), actionRotationDegrees) *
+        glm::translate(glm::mat4(1), actionOffset) *
         glm::translate(glm::mat4(1), -base);
     if (config && config->enabled) {
         const auto& scaling = SizeScalingConfig::instance().data();

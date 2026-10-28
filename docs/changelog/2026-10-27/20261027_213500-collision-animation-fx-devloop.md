@@ -57,7 +57,7 @@
   - TDM NPCs selected permitted human avatars with `candidate_count: 7`.
   - `weapon.contact.result` showed NPC melee damage.
   - `weapon.clash` showed revolver vs chainsaw and sword vs sword contacts.
-  - `melee.contact.fx` appeared on the client with `sparks: 3`.
+  - `melee.contact.fx` appeared on the client with `sparks: 3`.\n  - `PERFORMANCE_FRAME` now includes `npcs_active`, `effects_alive`,\n    `blood_particles`, and `corpses_active` growth counters.
   - `anim.settings.loaded` reported the expected priorities and settings.
   - No `config.weapon.invalid` or `config.gamemode.invalid` appeared in the
     inspected interval.
@@ -74,6 +74,6 @@
   full Phase 3 pass.
 - Per-weapon animation profiles and per-action weapon attachment rotation have
   not been migrated into `config/weapons/<id>/config.json` yet.
-- NPC/remote animation parity diagnostics were not added in this slice.
+- NPC/remote animation parity diagnostics were not added in this slice.\n- Combat/simulation frame spikes remain; growth counters were added, but the\n  logging/corpse/contact cost pass is not complete.
 - Visual review is required for chainsaw wall push-out, TDM outlines, white
   sphere/spark timing, falling/landing root motion, and mace cooldown feedback.

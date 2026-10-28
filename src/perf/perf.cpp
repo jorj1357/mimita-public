@@ -1099,6 +1099,10 @@ void Perf::endFrame(float currentFrameMs)
             fields["max_npcs"] = w.maxNpcs;
             fields["max_effects"] = w.maxEffects;
             fields["max_draw_calls"] = w.maxDrawCalls;
+            fields["npcs_active"] = gState.npcCount;
+            fields["effects_alive"] = gState.effectCount;
+            fields["blood_particles"] = gState.bloodCount;
+            fields["corpses_active"] = gState.corpseCount;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Performance, StructuredLevel::Important,
                 "PERFORMANCE_FRAME", "", "1s aggregated frame stats",

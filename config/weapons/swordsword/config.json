@@ -3,6 +3,9 @@
   "display_name": "Swordsword",
   "slot": 4,
   "animation_profile": "config/animations/library/weapons/swordsword.json",
+  "animation": {
+    "profile": "config/animations/library/weapons/swordsword.json"
+  },
   "animations": null,
   "beam_thickness": null,
   "beam_world_thickness": null,
@@ -19,6 +22,10 @@
           "double_click_window_ticks": 30,
           "double_click_action": "slash_two",
           "animation_clip_id": "mimita_sizing_6_attack1slash_001",
+          "weapon_pose": {
+            "rotation_degrees": [0.0, 0.0, 0.0],
+            "offset": [0.0, 0.0, 0.0]
+          },
           "hitboxes": [],
           "impulses": [
             {
@@ -36,6 +43,10 @@
             "tap_count": 2
           },
           "animation_clip_id": "mimita_sizing_6_attack2lunge_001",
+          "weapon_pose": {
+            "rotation_degrees": [0.0, 0.0, 0.0],
+            "offset": [0.0, 0.0, 0.0]
+          },
           "contact_damage_multiplier": 2.0,
           "hitboxes": [],
           "impulses": []
@@ -49,7 +60,11 @@
           "double_click_action": "defensive",
           "hitboxes": [],
           "impulses": [],
-          "animation_clip_id": "mimita_sizing_6_attack3arc_001"
+          "animation_clip_id": "mimita_sizing_6_attack3arc_001",
+          "weapon_pose": {
+            "rotation_degrees": [0.0, 0.0, 0.0],
+            "offset": [0.0, 0.0, 0.0]
+          }
         },
         "defensive": {
           "input": {

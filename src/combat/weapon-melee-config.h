@@ -135,6 +135,11 @@ struct MeleeAction {
     // Weapon-wide minimum delay after the action finishes before another
     // attack can start. Fixed ticks, never frame time.
     int cooldownTicks = 0;
+    // Per-action weapon attachment correction, authored inside the weapon
+    // config. Applied to both the rendered weapon and collision attachment.
+    glm::vec3 weaponPoseRotation{0.0f};
+    glm::vec3 weaponPoseOffset{0.0f};
+    bool hasWeaponPose = false;
     int tapCount = 1;
     bool holdWhileButton = false;
 

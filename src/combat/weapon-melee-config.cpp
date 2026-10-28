@@ -317,6 +317,15 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
         out.doubleClickWindowTicks = std::max(0, j["double_click_window_ticks"].get<int>());
     if (j.contains("cooldown_ticks") && j["cooldown_ticks"].is_number())
         out.cooldownTicks = std::max(0, j["cooldown_ticks"].get<int>());
+    if (j.contains("weapon_pose") && j["weapon_pose"].is_object()) {
+        const auto& wp = j["weapon_pose"];
+        if (wp.contains("rotation_degrees"))
+            out.hasWeaponPose = jsonVec3(wp, "rotation_degrees", out.weaponPoseRotation) ||
+                                out.hasWeaponPose;
+        if (wp.contains("offset"))
+            out.hasWeaponPose = jsonVec3(wp, "offset", out.weaponPoseOffset) ||
+                                out.hasWeaponPose;
+    }
     if (j.contains("double_click_action") && j["double_click_action"].is_string())
         out.doubleClickAction = j["double_click_action"].get<std::string>();
 

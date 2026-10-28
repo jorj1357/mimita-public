@@ -281,6 +281,11 @@ void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
     weaponJsonBool(root, "uses_physics_projectile", def.usesPhysicsProjectile);
     weaponJsonString(root, "pose_id", def.poseId);
     weaponJsonString(root, "animation_profile", def.animationProfile);
+    if (def.animationProfile.empty() && root.contains("animation") &&
+        root["animation"].is_object() && root["animation"].contains("profile") &&
+        root["animation"]["profile"].is_string()) {
+        def.animationProfile = root["animation"]["profile"].get<std::string>();
+    }
 }
 
 void applyWeaponRecoilJson(WeaponDefinition& def, const json& root)
