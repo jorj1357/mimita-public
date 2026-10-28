@@ -1652,6 +1652,71 @@ fix.
   architecture/weapon documentation with an explicit owner and invariant so
   future weapon fields cannot reintroduce hidden melee cadence limits.
 
+- **SwordSword and mace physical hits fail inconsistently in Sandbox:** The
+  player reports that SwordSword and mace can pass through a target without
+  damage, while chainsaw appears more reliable, and sometimes sees “Melee move
+  set could not start” while attacking. A later user-provided recording,
+  `devscripts/scenarios/user/scenario-20261028_181131-meleeissue.jsonl`, was
+  captured in Sandbox on `tdmtest3.glb`; its start state has mace equipped in
+  slot 26, and the recording contains mace and SwordSword input only (no
+  chainsaw). The player reports corner snagging and SwordSword/mace passing
+  through targets in this scenario. The recording captures local input and
+  movement, not target state, weapon contact results, or authoritative health,
+  so it narrows the reproduction but does not itself establish a damage
+  disagreement. Desired behavior is ordinary,
+  reliable damage from these weapons in Sandbox; Super Smash Bros. Melee style
+  animation should not gate whether physical contact damages. Current evidence
+  from `logs/2026-10-28/20261028_164809/events.jsonl`: client and server each
+  emit `weapon.melee.moveset_loaded` for SwordSword (4 actions), mace (1), and
+  chainsaw (1). The journal also contains repeated Sandbox
+  `weapon.equip.rejected` records for requested slot 10 with reason
+  `not-owned-or-unknown`; it does not establish that the reported weapon was
+  equipped during an attempted hit. No corresponding attack/contact/damage
+  outcome sequence is recorded there, so the first failing stage and any
+  client/server disagreement remain unknown. Configuration differs: mace and
+  SwordSword use `behavior_type: swordsword`; mace's configured contact damage
+  parameters say 1–5 while its move action says 25–250, and its contact blade
+  radius is 1.35 versus SwordSword's 0.08 and chainsaw's 1.16. Their
+  `damageTickInterval` values also differ (0.01, 0.01, and 0.001 seconds
+  respectively); runtime meaning is not established by these logs. Trace
+  equip identity, move-set action start, weapon pose/shape, authoritative
+  contact query, contact batching/referee, and damage application/rejection
+  for one reproducible Sandbox attempt with the intended weapon and target.
+  Runtime replay evidence: the recording was run through the existing dev loop
+  on build 3644, Sandbox, `tdmtest3`, weapon set 29. Journal:
+  `logs/2026-10-28/20261028_181600/events.jsonl`. The runner reported its
+  four event-presence assertions passed, but playback was not faithfully
+  restored: `scenario.playback.start_ready` says `start_restored=false` and
+  `server_position_ready=false`; frame 0 already differed by 15.98 m, and 40
+  later drift snaps occurred. During this run, the client emitted 55 local
+  melee action starts, while all 55 server `weapon.attack.result` records were
+  rejected with reason 8. Their request and server spawn generations match;
+  `handleAttackRequest` uses reason 8 when the server player is not Active,
+  and the earlier `server.actor.spawn_published` record has `spawn_state=1`
+  (`AwaitingSpawnAck`). This is direct evidence of client-started attacks
+  failing the server spawn-state gate in this run, before authoritative melee
+  action acceptance; it does not prove the reported body-contact/damage miss.
+  The journal has one server player spawn, no target, and no authoritative
+  contact/damage outcome, so enemy hits and weapon-versus-weapon ordering were
+  not exercised. It does show 407 weapon-part world-bounce records and 73
+  last-valid-position rollbacks; leading rollback contacts include weapon
+  parts against static map triangles (for example triangle 1003 at tick 8).
+  This supports a weapon/world collision path as a snagging lead, though the
+  triangle IDs have not been visually mapped to the reported corners. The
+  playback start failure and missing target limit what this replay can prove.
+  Separate collision acceptance: weapons should not snag on map corners.
+  The player reports weapon-versus-weapon contacts appear to work, but suspects
+  they are processed before damage and prefers the two outcomes to resolve in
+  the same tick / together. This ordering is not established by the supplied
+  input recording. Design proposal for review: make melee hit presentation and
+  damage prediction more client-responsive, with a damaging contact as the
+  weapon visibly passes through an enemy rather than stopping on the enemy;
+  define server confirmation/reconciliation and keep map collision behavior
+  explicit before implementation. Status: PARTIALLY LOCALIZED / overall
+  damage/contact cause remains UNCONFIRMED;
+  client-authority and ordering semantics need review. Preserve current user edits to
+  `config/weapons/mace/config.json` while investigating.
+
 ### Longer-range game and project ideas — 2026-10-27
 
 The following are roadmap ideas and priorities from the player, not approved

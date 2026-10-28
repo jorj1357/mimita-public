@@ -119,7 +119,8 @@
     "visible": false,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.01,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "mace", "center": [0.0, 0.0, 2.5],

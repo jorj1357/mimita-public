@@ -32,9 +32,11 @@
               "volume": 1.5
             }
           },
-          "cooldown_ticks": 60,
+          "cooldown_ticks": 1,
           "weapon_pose": {
-            "rotation_degrees": [0.0, 0.0, 90.0],
+            // "rotation_degrees": [0.0, 0.0, 90.0],
+            // "rotation_degrees": [0.0, 0.0, 50.0],
+            "rotation_degrees": [0.0, 0.0, 10.0],
             "offset": [1.0, 0.0, 0.0]
           },
           "animation_clip_id": "mimita_sizing_6_attackslam_002"
@@ -44,8 +46,15 @@
   },
   "custom_params": {
     "bladeLength": 10.0,
-    "bladeRadius": 2.0,
+    // "bladeLength": 15.0,
+    // "bladeRadius": 2.0,
+    "bladeRadius": 5.0,
     "contactBladeRadius": 1.35,
+    // "contactBladeRadius": 2.35,
+    // "contactBladeRadius": 3.0,
+    // "contactBladeRadius": 5.0,
+    // "contactBladeRadius": 30.0,
+    // "contactBladeRadius": 0.35,
     // "contactBladeRadius": 0.01,
     "contactRadiusScale": 1.6,
     "contactMinDamage": 1.0,
@@ -53,7 +62,7 @@
     "contactMinKnockback": 5.0,
     "contactMaxKnockback": 25.0,
     "contactMaxForceSpeed": 22.0,
-    "damageTickInterval": 0.001,
+    "damageTickInterval": 0.01,
     "npcGuardTicks": 60.0
   },
   "cut_energy_scale": null,
