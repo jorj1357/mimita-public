@@ -1,3 +1,8 @@
+2026 10 28 0859 make videos jorj explain 
+C:\mimita-v9\docs\specs\distribution\distribution.md
+relates here
+but thsi doc current repla doc not detaield enough and neither is distruution 
+
 2026 10 25 1107 there is a  list of songs i want to do edits to in the mimta plan i think v38
 
 btu

@@ -198,6 +198,7 @@ sometimes new attacks
 2. slashes at u withclaws? or idk, spyknie damage, touch = dmg 
 
 ### stabber: 
+2026 10 28 0901 all done 
 - anims
 1. idle
 2026 10 25 1123 done
@@ -208,6 +209,7 @@ sometimes new attacks
 - attack
 1. stabs u , spyknife touch = damage logic , scale with force
 
+2026 10 28 0901 jorj - dont makr as done antmore 
 ### crawler: 
 - anims
 1. idle

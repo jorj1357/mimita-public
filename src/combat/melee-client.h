@@ -31,6 +31,7 @@ struct ClientInput {
     bool shieldHeld = false;       // Q held
     bool jumpHeld = false;         // Space held
     bool crouchHeld = false;       // Ctrl held
+    bool movementPressed = false;  // movement input this fixed tick
 };
 
 // True when the player's currently equipped definition has a parsed Melee move

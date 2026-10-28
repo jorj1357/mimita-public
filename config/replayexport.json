@@ -2,6 +2,8 @@
   "encoder": "ffmpeg",
   "encoderMode": "auto",
   "audioVolumeMultiplier": 0.8,
+  "autoSaveKillClips": false,
+  "autoRecord": false,
   "resolution": {
     "width": 1024,
     "height": 768

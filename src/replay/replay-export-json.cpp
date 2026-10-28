@@ -84,6 +84,10 @@ static void reloadReplayExportConfig()
         }
         if (j.contains("audioVolumeMultiplier"))
             loaded.audioVolumeMultiplier = j["audioVolumeMultiplier"].get<float>();
+        if (j.contains("autoSaveKillClips"))
+            loaded.autoSaveKillClips = j["autoSaveKillClips"].get<bool>();
+        if (j.contains("autoRecord"))
+            loaded.autoRecord = j["autoRecord"].get<bool>();
         const nlohmann::json& resolution = j.value("resolution", nlohmann::json::object());
         loaded.exportWidth = resolution.value("width", j.value("exportWidth", loaded.exportWidth));
         loaded.exportHeight = resolution.value("height", j.value("exportHeight", loaded.exportHeight));

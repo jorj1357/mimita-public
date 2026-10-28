@@ -19,8 +19,10 @@
 #include "weapon-registry.h"
 #include "weapon-runtime.h"
 #include "weapon-collision-config.h"
+#include "weapon-config.h"
 #include "combat/weapon-model-cache.h"
 #include "combat/projectile-render.h"
+#include "perf/perf-spike.h"
 #include "pobjects/persistent-physics.h"
 #include "network/packets.h"
 #include "debug/debug-visuals.h"
@@ -117,13 +119,17 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                            std::unordered_map<uint32_t, Player>* remoteNpcs, float dt) {
     // Upload any finished background weapon model parses (must run on the main
     // thread) before viewmodels try to adopt them this frame.
-    WeaponModelCache::instance().finalizeWeaponModelsIfReady();
+    { MIMITA_PERF_SCOPE("Combat::WeaponModelFinalize");
+      WeaponModelCache::instance().finalizeWeaponModelsIfReady(); }
 
-    if (WeaponData::reloadBuiltinWeaponsIfChanged())
-        Terminal::instance().addLog("[WEAPON] Reloaded weapon definitions");
-
-    // Hot reload weapon collision config
-    WeaponCollisionJsonConfig::instance().pollHotReload();
+    // One definition scan feeds both runtime registration and viewmodel config.
+    // WeaponViewModel::update must not poll the same signature independently.
+    { MIMITA_PERF_SCOPE("Combat::WeaponReloadPoll");
+      if (WeaponData::reloadBuiltinWeaponsIfChanged()) {
+          WeaponConfig::instance().reloadNow();
+          Terminal::instance().addLog("[WEAPON] Reloaded weapon definitions");
+      }
+      WeaponCollisionJsonConfig::instance().pollHotReload(); }
 
     mShotCooldown = std::max(0.0f, mShotCooldown - dt);
     mShootingTimer = std::max(0.0f, mShootingTimer - dt);
@@ -191,12 +197,14 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
             player.weaponModelTransform = glm::mat4(1.0f);
             mPhysicalAimValid = false;
         } else {
+            MIMITA_PERF_SCOPE("Combat::Viewmodel");
             mViewModels[idx].recoil = mRecoilValue;
             mViewModels[idx].update(camera, player, dt, def, true, &world);
         }
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL)
             printf("[VMTRACE] WeaponSystem::update done for %s (slot=%d idx=%d)\n", def->id.c_str(), def->slot, idx);
 
+        MIMITA_PERF_SCOPE("Combat::WeaponBehavior");
         if (def->behaviorType == WeaponBehaviorType::Godball) {
             if (!mGodballPhys.active) {
                 WeaponGodball::spawnBall(mGodballPhys, *def, player);

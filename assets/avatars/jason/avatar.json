@@ -474,6 +474,7 @@
       "fall": "mimita_sizing_6_falling_001",
       "land": "mimita_sizing_6_landing_001",
       "crouch": "mimita_sizing_6_crouched",
+      "crouchWalk": "mimita_sizing_6_crouch_walk_001",
       "hurt": "mimita_sizing_6_hurt_normal_001",
       "death": "mimita_sizing_6_dead"
     }

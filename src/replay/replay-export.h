@@ -61,6 +61,14 @@ struct ReplayExportConfig {
     // fallback, never the discrete GPU) | "discrete" | "software"
     std::string encoderMode = "auto";
     float audioVolumeMultiplier = 0.8f;
+    // Auto-saving a clip for every kill snapshots the replay ring on the
+    // gameplay thread and produces recurring frame spikes in busy matches.
+    // Manual replay save and round-winning clips remain available.
+    bool autoSaveKillClips = false;
+    // The 60-second recording ring samples every actor and effect at 60 Hz.
+    // It is opt-in for live play because the ring and kill-clip snapshots can
+    // dominate busy scenes. Manual `replay.record` remains available.
+    bool autoRecord = false;
     int exportWidth = 1024;
     int exportHeight = 768;
     int exportBitrate = 0;

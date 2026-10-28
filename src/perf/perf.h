@@ -358,6 +358,13 @@ struct PerfState {
     int effectCount = 0;
     int audioSourceCount = 0;
     int corpseCount = 0;
+    // Animation/resource retention counters. These are cheap cache sizes, not
+    // per-actor animation work, and are sampled by the 200 ms performance slice.
+    int animationSetCacheCount = 0;
+    int animationClipCacheCount = 0;
+    int avatarPendingLoads = 0;
+    int avatarCacheEntries = 0;
+    int modelUploadCacheEntries = 0;
 
     static constexpr int MAX_NPC_PROFILE = 64;
     int npcProfileCount = 0;

@@ -87,9 +87,10 @@ struct MovementValidationConfig
     float collisionDepenetrationAllowance = 2.0f;
     float authoritativeAckDistance = 5.0f;
     float wallSweepTolerance = 0.35f;
-    glm::vec3 worldBoundsMin{-20000.0f, -20000.0f, -5000.0f};
-    glm::vec3 worldBoundsMax{20000.0f, 20000.0f, 20000.0f};
-    float worldBoundsPadding = 8.0f;
+    // General coordinate sanity limit, not a map boundary. Player movement may
+    // leave map-derived bounds on any axis; only non-finite values or absurd
+    // coordinates beyond this limit are rejected.
+    float sanityPositionLimit = 1.0e9f;
     float smallCorrectionDistance = 0.5f;
     float mediumCorrectionDistance = 5.0f;
     // Client/server position error above which the client hard-snaps to the
@@ -142,7 +143,7 @@ enum class MovementValidationReason : uint8_t
     MalformedState,
     ImpossibleDisplacement,
     ImpossibleVelocity,
-    OutOfBounds,
+    SanityLimit,
     BlockingGeometry,
     AbilityTransition,
     AwaitingAuthoritativeTransformAck,
@@ -191,7 +192,7 @@ struct MovementValidationCounters
     uint64_t oldLifeReports = 0;
     uint64_t wrongEpochReports = 0;
     uint64_t nonFiniteReports = 0;
-    uint64_t boundsCorrections = 0;
+    uint64_t sanityLimitCorrections = 0;
     uint64_t wallCorrections = 0;
     float maximumPositionError = 0.0f;
     float maximumVelocityError = 0.0f;
@@ -201,8 +202,7 @@ struct MovementValidationCounters
 };
 
 MovementValidationConfig makeMovementValidationConfig(
-    const MovementConfig& movementConfig,
-    const HeadlessWorld* world = nullptr);
+    const MovementConfig& movementConfig);
 
 bool movementReportSequenceIsNewer(uint32_t incoming, uint32_t previous);
 

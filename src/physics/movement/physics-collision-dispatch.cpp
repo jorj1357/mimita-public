@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 #include <cmath>
 #include <limits>
@@ -29,11 +30,73 @@
 #include "perf/perf.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "debug/structured-log.h"
+#include <nlohmann/json.hpp>
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define BLOCK_LOG(...) Debug::logThrottled(Debug::Category::Collision, "block-pipeline", 1.0f, __VA_ARGS__)
 
 extern CollisionTraceSnapshot gLastCollisionTrace;
+
+void logCollisionBounceResponse(const Player& player,
+                                const glm::vec3& normal,
+                                const glm::vec3& partVelocity,
+                                bool bodyContact,
+                                float penetration,
+                                const char* actorPart,
+                                int worldTriangle,
+                                float bounceScale,
+                                const glm::vec3& beforeVelocity,
+                                const glm::vec3& beforeImpulse,
+                                float impact,
+                                float strength,
+                                bool dynamicEntity)
+{
+    static thread_local uint64_t sLastBounceLogMs = 0;
+    const uint64_t now = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now - sLastBounceLogMs < 100)
+        return;
+    const glm::vec3 delta = player.vel - beforeVelocity;
+    if (glm::length(delta) < 0.05f)
+        return;
+    sLastBounceLogMs = now;
+    const CollisionConfig& cfg = CollisionConfig::instance();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Collision, StructuredLevel::Important,
+        "collision.bounce.applied", player.username,
+        "collision response changed actor velocity",
+        static_cast<uint32_t>(player.movementSimulationTick),
+        nlohmann::json{
+            {"actor", player.username},
+            {"actor_part", actorPart ? actorPart : ""},
+            {"world_triangle", worldTriangle},
+            {"body_contact", bodyContact},
+            {"dynamic_entity", dynamicEntity},
+            {"weapon_contact", actorPart && std::strcmp(actorPart, "weapon") == 0},
+            {"normal", {normal.x, normal.y, normal.z}},
+            {"part_velocity", {partVelocity.x, partVelocity.y, partVelocity.z}},
+            {"penetration", penetration},
+            {"impact", impact},
+            {"strength", strength},
+            {"bounce_scale", bounceScale},
+            {"bounce_enabled", cfg.bounceEnabled()},
+            {"config_strength", cfg.bounceStrength()},
+            {"config_friction", cfg.bounceFriction()},
+            {"config_min_speed", cfg.bounceMinSpeed()},
+            {"config_max_speed", cfg.bounceMaxSpeed()},
+            {"config_min_push", cfg.bounceMinPush()},
+            {"config_cooldown", cfg.bounceCooldown()},
+            {"velocity_before", {beforeVelocity.x, beforeVelocity.y, beforeVelocity.z}},
+            {"impulse_before", {beforeImpulse.x, beforeImpulse.y, beforeImpulse.z}},
+            {"velocity_after", {player.vel.x, player.vel.y, player.vel.z}},
+            {"impulse_after", {player.externalImpulse.x, player.externalImpulse.y,
+                               player.externalImpulse.z}},
+            {"velocity_delta", {delta.x, delta.y, delta.z}},
+            {"root_bounce_already_applied",
+             player.collision.rootBounceAppliedTick == player.movementSimulationTick}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
 
 static inline AABB makeBlockAABB(const Block& b)
 {

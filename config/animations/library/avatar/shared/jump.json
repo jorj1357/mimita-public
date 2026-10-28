@@ -2,7 +2,7 @@
   "version": 2,
   "clips": {
     "jump": {
-      "durationTicks": 60,
+      "durationTicks": 1,
       "loop": false,
       "keyframes": [
         {

@@ -919,8 +919,47 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
             if (sn.matchTeam < 0)
                 sn.matchTeam = oldIt->second.matchTeam;
         }
+        static std::unordered_set<uint32_t> sNpcTraceSeen;
+        const bool firstTraceObservation = sNpcTraceSeen.insert(sn.entityId).second;
+        const bool lifecycleChanged = firstTraceObservation || oldIt == npcs.end() ||
+            oldIt->second.health != sn.health ||
+            oldIt->second.transformEpoch != sn.transformEpoch ||
+            oldIt->second.avatarName != sn.avatarName;
+        if (lifecycleChanged) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.npc.lifecycle.trace", std::to_string(sn.entityId),
+                oldIt == npcs.end() ? "NPC entered snapshot map" :
+                    "NPC lifecycle or avatar changed in snapshot map",
+                0,
+                {{"actor_id", sn.entityId}, {"name", sn.name},
+                 {"avatar", sn.avatarName}, {"alive", sn.health > 0},
+                 {"health", sn.health}, {"transform_epoch", sn.transformEpoch},
+                 {"position", {sn.pos.x, sn.pos.y, sn.pos.z}},
+                 {"snapshot_included", true}, {"previous_present", oldIt != npcs.end()},
+                 {"previous_health", oldIt != npcs.end() ? oldIt->second.health : -1},
+                 {"previous_transform_epoch", oldIt != npcs.end()
+                    ? oldIt->second.transformEpoch : 0}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         next[sn.entityId] = std::move(sn);
         npcIdsAlive.insert(sn.entityId);
+    }
+    for (const auto& oldNpc : npcs) {
+        if (npcIdsAlive.find(oldNpc.first) == npcIdsAlive.end()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.npc.lifecycle.trace", std::to_string(oldNpc.first),
+                "NPC removed from snapshot map", 0,
+                {{"actor_id", oldNpc.first}, {"name", oldNpc.second.name},
+                 {"avatar", oldNpc.second.avatarName}, {"alive", false},
+                 {"health", oldNpc.second.health},
+                 {"transform_epoch", oldNpc.second.transformEpoch},
+                 {"position", {oldNpc.second.pos.x, oldNpc.second.pos.y,
+                               oldNpc.second.pos.z}},
+                 {"snapshot_included", false}, {"previous_present", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     npcs = std::move(next);
 }
@@ -1733,10 +1772,14 @@ void simulateSharedNpcs(SOCKET sock,
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
     // One-life modes never revive: the dead body stays Spectating for the round.
     const bool npcRespawns = serverMatchRespawnsEnabled();
+    const bool npcWaveMode = serverGamemodeState().npcWaves;
     for (Npc& n : npcSystem.all())
     {
         if (!n.body.dead) continue;
         if (!npcRespawns) continue;
+        // NPC Waves actors are one-life per wave. Reviving them makes the wave
+        // clear condition unreachable even when every spawned NPC is killed.
+        if (npcWaveMode) continue;
         // Procedural encounter NPCs never revive: a room completes exactly when
         // its alive count reaches zero. Dead bodies linger for their normal
         // death presentation only.

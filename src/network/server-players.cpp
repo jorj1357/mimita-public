@@ -31,6 +31,7 @@
 #include "debug/structured-log.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -352,8 +353,10 @@ static bool serverCapsuleFits(const HeadlessWorld& world, const glm::vec3& pos)
 // points are commonly placed at floor level, so the horizontal capsule check is
 // done at the snapped standing center, not at the raw point. Returns the
 // ground-snapped standing center in outStanding.
-static bool serverValidateStandingSpot(const HeadlessWorld& world, const glm::vec3& cand,
-                                       glm::vec3& outStanding)
+static bool serverValidateStandingSpot(
+    const HeadlessWorld& world, const glm::vec3& cand,
+    glm::vec3& outStanding,
+    const std::chrono::steady_clock::time_point* deadline = nullptr)
 {
     const float maxDist =
         std::max(200.0f, (world.boundsMax.z - world.boundsMin.z) + 64.0f);
@@ -380,6 +383,8 @@ static bool serverValidateStandingSpot(const HeadlessWorld& world, const glm::ve
                                    std::sin(angle) * ring, 0.0f);
             for (float lift : lifts)
             {
+                if (deadline && std::chrono::steady_clock::now() >= *deadline)
+                    return false;
                 if (lift > 0.0f && cand.z + lift >= ceilingZ - 0.05f)
                     break;
                 const glm::vec3 candidate = cand + offset +
@@ -424,23 +429,34 @@ static bool serverProbeSafeStanding(const HeadlessWorld& world, const glm::vec3&
     if (!(mx.x > mn.x) || !(mx.y > mn.y) || !(mx.z > mn.z))
         return false;
 
-    const float stepX = std::max(2.0f, (mx.x - mn.x) / 32.0f);
-    const float stepY = std::max(2.0f, (mx.y - mn.y) / 32.0f);
+    // A join must not scan the whole collision world. Probe a bounded local
+    // area around the hint and stop at a small time budget; the caller has a
+    // validated fallback path if this cannot find a spot quickly.
+    constexpr float kProbeRadius = 32.0f;
+    constexpr float kProbeStep = 4.0f;
+    constexpr auto kProbeBudget = std::chrono::milliseconds(250);
+    const auto probeDeadline = std::chrono::steady_clock::now() + kProbeBudget;
+    const float x0 = std::max(mn.x, hint.x - kProbeRadius);
+    const float x1 = std::min(mx.x, hint.x + kProbeRadius);
+    const float y0 = std::max(mn.y, hint.y - kProbeRadius);
+    const float y1 = std::min(mx.y, hint.y + kProbeRadius);
     const float maxDrop = (mx.z - mn.z) + 16.0f;
     float bestDistSq = std::numeric_limits<float>::max();
     bool found = false;
 
-    for (float x = mn.x + stepX * 0.5f; x <= mx.x; x += stepX)
+    for (float x = x0; x <= x1; x += kProbeStep)
     {
-        for (float y = mn.y + stepY * 0.5f; y <= mx.y; y += stepY)
+        for (float y = y0; y <= y1; y += kProbeStep)
         {
+            if (std::chrono::steady_clock::now() >= probeDeadline)
+                return found;
             const glm::vec3 origin(x, y, std::max(mn.z, mx.z - 0.5f));
             glm::vec3 hit, nrm;
             if (!serverRaycastWorld(origin, glm::vec3(0.0f, 0.0f, -1.0f), maxDrop, world, hit, nrm))
                 continue;
             const glm::vec3 cand(x, y, hit.z + PLAYER_HEIGHT * 0.5f);
             glm::vec3 standing;
-            if (!serverValidateStandingSpot(world, cand, standing))
+            if (!serverValidateStandingSpot(world, cand, standing, &probeDeadline))
                 continue;
             const float dx = standing.x - hint.x;
             const float dy = standing.y - hint.y;
@@ -530,6 +546,26 @@ bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
             emit("derived-authored-probe", (long)defaultIdx, true);
             return true;
         }
+
+        // Join reliability fallback: the authored point is the map author's
+        // explicit spawn. If validation/probing cannot improve it within the
+        // bounded budget, admit the player there instead of making the mode
+        // wait forever for an active client. The event marks it unvalidated so
+        // the unsafe-spawn condition remains visible in the journal.
+        outPos = points[defaultIdx].position;
+        outYaw = points[defaultIdx].yaw;
+        if (outIndex)
+            *outIndex = defaultIdx;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "spawn.authored-unvalidated", playerKey,
+            "authored spawn used after bounded validation/probe failed", 0,
+            {{"spawn_index", (long)defaultIdx},
+             {"position", {outPos.x, outPos.y, outPos.z}},
+             {"spawn_points", (long)points.size()},
+             {"validation", "unvalidated-fallback"}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return true;
     }
 
     // Derive a validated standing position from collision geometry. This covers

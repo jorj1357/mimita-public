@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace DebugConfig
 {
     inline bool GLB_VERBOSE = false;
@@ -32,6 +34,9 @@ namespace DebugConfig
     inline bool DEBUG_COMMANDS = false;
     inline bool DEBUG_NPC = false;
     inline bool DEBUG_NPC_COMBAT = false;
+    // Focused presentation/lifecycle trace for one NPC identity.
+    inline bool DEBUG_NPC_TRACE = false;
+    inline uint32_t NPC_TRACE_TARGET = 0;
     inline bool DEBUG_RAGDOLL = false;
     inline bool DEBUG_PERSISTENT_PHYSICS = false;
     inline bool DEBUG_NPC_DEATH = false;
@@ -154,6 +159,8 @@ namespace DebugConfig
         DEBUG_INPUT = false;
         DEBUG_COMMANDS = false;
         DEBUG_NPC = false;
+        DEBUG_NPC_TRACE = false;
+        NPC_TRACE_TARGET = 0;
         DEBUG_BLOOD_RAYS = false;
         DEBUG_BLOOD_HITS = false;
         DEBUG_BLOOD_FORCE = false;

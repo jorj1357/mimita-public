@@ -19,6 +19,7 @@
 #include <memory>
 #include <GLFW/glfw3.h>
 #include "camera.h"
+#include "config.h"
 #include "entities/player.h"
 #include "entities/player-avatar-animations.h"
 #include "avatar/avatar.h"
@@ -677,6 +678,28 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     throw;
                 }
             }
+            if (DebugConfig::DEBUG_NPC_TRACE && DebugConfig::NPC_TRACE_TARGET != 0 &&
+                mpContext.remoteNpcs.find(DebugConfig::NPC_TRACE_TARGET) ==
+                    mpContext.remoteNpcs.end()) {
+                static uint64_t sLastMissingTraceMs = 0;
+                const uint64_t nowMissingTrace = (uint64_t)std::chrono::duration_cast<
+                    std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now().time_since_epoch()).count();
+                if (nowMissingTrace - sLastMissingTraceMs >= 1000) {
+                    sLastMissingTraceMs = nowMissingTrace;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "client.npc.trace", std::to_string(DebugConfig::NPC_TRACE_TARGET),
+                        "focused NPC is absent from the client remote-NPC map", 0,
+                        nlohmann::json{
+                            {"actor_id", DebugConfig::NPC_TRACE_TARGET},
+                            {"present_in_remote_npcs", false},
+                            {"remote_npc_count", mpContext.remoteNpcs.size()},
+                            {"server_tick", mpContext.latestServerTick}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
+
             // Bounded viewport evidence for actor-count performance runs.
             static auto lastNpcViewportLog = std::chrono::steady_clock::time_point{};
             const auto viewportNow = std::chrono::steady_clock::now();

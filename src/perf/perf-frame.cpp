@@ -296,6 +296,237 @@ void accumulateResourceFrame(const PerfFrame& frame)
     }
 }
 
+// Compact time-based slice for periodic hitch evidence. The full 60-frame
+// resource window is too coarse on a slow frame and can cover more than a
+// second; this slice is bounded by wall-clock time so a sustained session can
+// be compared at roughly 200 ms resolution without dumping every frame.
+struct FastSliceScope {
+    char name[64] = {};
+    uint32_t calls = 0;
+    double totalMs = 0.0;
+    double maxMs = 0.0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
+};
+
+struct FastSlice {
+    uint64_t startNs = 0;
+    uint32_t frames = 0;
+    double sumMs = 0.0;
+    double maxMs = 0.0;
+    uint32_t overBudget = 0;
+    std::array<double, 240> samples{};
+    uint32_t sampleCount = 0;
+    uint64_t allocCount = 0;
+    uint64_t allocBytes = 0;
+    int maxNpcs = 0;
+    int maxEffects = 0;
+    int maxBlood = 0;
+    int maxCorpses = 0;
+    int maxAudio = 0;
+    int maxProjectiles = 0;
+    FastSliceScope scopes[48];
+    int scopeCount = 0;
+};
+
+FastSlice gFastSlice;
+
+FastSliceScope* fastScopeFor(const char* name)
+{
+    for (int i = 0; i < gFastSlice.scopeCount; ++i)
+        if (std::strncmp(gFastSlice.scopes[i].name, name,
+                         sizeof(gFastSlice.scopes[i].name)) == 0)
+            return &gFastSlice.scopes[i];
+    if (gFastSlice.scopeCount >=
+        static_cast<int>(sizeof(gFastSlice.scopes) / sizeof(gFastSlice.scopes[0])))
+        return nullptr;
+    FastSliceScope& out = gFastSlice.scopes[gFastSlice.scopeCount++];
+    std::snprintf(out.name, sizeof(out.name), "%s", name ? name : "?");
+    return &out;
+}
+
+void accumulateFastSlice(const PerfFrame& frame, const PerfState& state)
+{
+    const uint64_t nowNs = steadyNowNanoseconds();
+    if (gFastSlice.startNs == 0)
+        gFastSlice.startNs = nowNs;
+    ++gFastSlice.frames;
+    gFastSlice.sumMs += frame.totalMs;
+    gFastSlice.maxMs = std::max(gFastSlice.maxMs, frame.totalMs);
+    if (frame.totalMs > frame.budgetMs)
+        ++gFastSlice.overBudget;
+    if (gFastSlice.sampleCount < gFastSlice.samples.size())
+        gFastSlice.samples[gFastSlice.sampleCount++] = frame.totalMs;
+    gFastSlice.allocCount += frame.allocCount;
+    gFastSlice.allocBytes += frame.allocBytes;
+    gFastSlice.maxNpcs = std::max(gFastSlice.maxNpcs, frame.npcCount);
+    gFastSlice.maxEffects = std::max(gFastSlice.maxEffects, frame.effectCount);
+    gFastSlice.maxBlood = std::max(gFastSlice.maxBlood, state.bloodCount);
+    gFastSlice.maxCorpses = std::max(gFastSlice.maxCorpses, frame.corpseCount);
+    gFastSlice.maxAudio = std::max(gFastSlice.maxAudio, frame.audioCount);
+    gFastSlice.maxProjectiles = std::max(gFastSlice.maxProjectiles, frame.projectileCount);
+
+    for (int i = 0; i < frame.entryCount; ++i) {
+        const PerfBreakdownEntry& entry = frame.entries[i];
+        FastSliceScope* scope = fastScopeFor(entry.label);
+        if (!scope) continue;
+        scope->calls += entry.callCount;
+        scope->totalMs += entry.inclMs;
+        scope->maxMs = std::max(scope->maxMs, entry.inclMs);
+        scope->allocCount += entry.allocCount;
+        scope->allocBytes += entry.allocBytes;
+    }
+}
+
+void emitFastSliceIfDue(const PerfFrame& lastFrame, const PerfState& state)
+{
+    if (gFastSlice.startNs == 0)
+        return;
+    const uint64_t nowNs = steadyNowNanoseconds();
+    const double elapsedMs = static_cast<double>(nowNs - gFastSlice.startNs) / 1e6;
+    if (elapsedMs < 200.0)
+        return;
+
+    PROCESS_MEMORY_COUNTERS_EX memory{};
+    const bool memoryOk = GetProcessMemoryInfo(
+        GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),
+        sizeof(memory)) != 0;
+    const StructuredLogger::IoStats io = StructuredLogger::instance().ioStats(false);
+
+    std::array<double, 240> sorted = gFastSlice.samples;
+    const int count = std::min(gFastSlice.sampleCount,
+        static_cast<uint32_t>(sorted.size()));
+    std::sort(sorted.begin(), sorted.begin() + count);
+    auto pct = [&](double p) {
+        if (count <= 0) return 0.0;
+        return sorted[std::min(count - 1,
+            static_cast<int>(std::ceil(count * p)) - 1)];
+    };
+
+    std::vector<const FastSliceScope*> slowScopes;
+    std::vector<const FastSliceScope*> allocatingScopes;
+    slowScopes.reserve(gFastSlice.scopeCount);
+    allocatingScopes.reserve(gFastSlice.scopeCount);
+    for (int i = 0; i < gFastSlice.scopeCount; ++i) {
+        slowScopes.push_back(&gFastSlice.scopes[i]);
+        if (gFastSlice.scopes[i].allocBytes > 0)
+            allocatingScopes.push_back(&gFastSlice.scopes[i]);
+    }
+    std::sort(slowScopes.begin(), slowScopes.end(),
+        [](const FastSliceScope* a, const FastSliceScope* b) {
+            return a->maxMs > b->maxMs;
+        });
+    std::sort(allocatingScopes.begin(), allocatingScopes.end(),
+        [](const FastSliceScope* a, const FastSliceScope* b) {
+            return a->allocBytes > b->allocBytes;
+        });
+    auto scopeJson = [](const FastSliceScope& scope) {
+        return nlohmann::json{{"name", scope.name}, {"calls", scope.calls},
+                              {"total_ms", scope.totalMs}, {"max_ms", scope.maxMs},
+                              {"alloc_count", scope.allocCount},
+                              {"alloc_bytes", scope.allocBytes}};
+    };
+    nlohmann::json scopes = nlohmann::json::array();
+    for (size_t i = 0; i < slowScopes.size() && i < 10; ++i)
+        scopes.push_back(scopeJson(*slowScopes[i]));
+    nlohmann::json allocScopes = nlohmann::json::array();
+    for (size_t i = 0; i < allocatingScopes.size() && i < 10; ++i)
+        allocScopes.push_back(scopeJson(*allocatingScopes[i]));
+
+    static uint64_t sSessionStartNs = 0;
+    static uint64_t sSessionFirstWorkingSet = 0;
+    static uint64_t sSessionFirstPrivate = 0;
+    static uint64_t sSessionFirstAlloc = 0;
+    static uint64_t sLastSessionGrowthNs = 0;
+    if (sSessionStartNs == 0) {
+        sSessionStartNs = nowNs;
+        sLastSessionGrowthNs = nowNs;
+    }
+    if (memoryOk && sSessionFirstWorkingSet == 0) {
+        sSessionFirstWorkingSet = memory.WorkingSetSize;
+        sSessionFirstPrivate = memory.PrivateUsage;
+        sSessionFirstAlloc = state.totalAllocations;
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.frame-slice", "performance", "200ms hitch evidence slice",
+        static_cast<uint32_t>(lastFrame.frameNumber),
+        nlohmann::json{
+            {"window_ms", elapsedMs},
+            {"frames", gFastSlice.frames},
+            {"frame_avg_ms", gFastSlice.sumMs / std::max(1u, gFastSlice.frames)},
+            {"frame_max_ms", gFastSlice.maxMs},
+            {"frame_p50_ms", pct(0.50)},
+            {"frame_p95_ms", pct(0.95)},
+            {"frame_p99_ms", pct(0.99)},
+            {"frames_over_budget", gFastSlice.overBudget},
+            {"alloc_count", gFastSlice.allocCount},
+            {"alloc_bytes", gFastSlice.allocBytes},
+            {"memory_available", memoryOk},
+            {"working_set_bytes", memoryOk ? memory.WorkingSetSize : 0},
+            {"private_bytes", memoryOk ? memory.PrivateUsage : 0},
+            {"pagefile_usage_bytes", memoryOk ? memory.PagefileUsage : 0},
+            {"logger_events_total", io.eventsWritten},
+            {"logger_bytes_total", io.bytesWritten},
+            {"logger_flushes_total", io.flushCount},
+            {"npcs", gFastSlice.maxNpcs},
+            {"players", state.playerCount},
+            {"effects", gFastSlice.maxEffects},
+            {"blood_particles", gFastSlice.maxBlood},
+            {"corpses", gFastSlice.maxCorpses},
+            {"audio", gFastSlice.maxAudio},
+            {"projectiles", gFastSlice.maxProjectiles},
+            {"animation_set_cache", state.animationSetCacheCount},
+            {"animation_clip_cache", state.animationClipCacheCount},
+            {"avatar_pending_loads", state.avatarPendingLoads},
+            {"avatar_cache_entries", state.avatarCacheEntries},
+            {"model_upload_cache_entries", state.modelUploadCacheEntries},
+            {"replay_memory_mb", state.replayMemoryMb},
+            {"scopes", std::move(scopes)},
+            {"alloc_scopes", std::move(allocScopes)}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    if (nowNs - sLastSessionGrowthNs >= 30000000000ull) {
+        sLastSessionGrowthNs = nowNs;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.session-growth", "performance",
+            "30s retained-resource growth snapshot",
+            static_cast<uint32_t>(lastFrame.frameNumber),
+            nlohmann::json{
+                {"session_elapsed_s",
+                 static_cast<double>(nowNs - sSessionStartNs) / 1e9},
+                {"working_set_bytes", memoryOk ? memory.WorkingSetSize : 0},
+                {"working_set_delta_bytes", memoryOk && sSessionFirstWorkingSet != 0
+                    ? (int64_t)memory.WorkingSetSize -
+                      (int64_t)sSessionFirstWorkingSet : 0},
+                {"private_bytes", memoryOk ? memory.PrivateUsage : 0},
+                {"private_delta_bytes", memoryOk && sSessionFirstPrivate != 0
+                    ? (int64_t)memory.PrivateUsage -
+                      (int64_t)sSessionFirstPrivate : 0},
+                {"total_allocations", state.totalAllocations},
+                {"allocation_delta", state.totalAllocations >= sSessionFirstAlloc
+                    ? state.totalAllocations - sSessionFirstAlloc : 0},
+                {"npcs", state.npcCount},
+                {"effects", state.effectCount},
+                {"blood_particles", state.bloodCount},
+                {"corpses", state.corpseCount},
+                {"animation_set_cache", state.animationSetCacheCount},
+                {"animation_clip_cache", state.animationClipCacheCount},
+                {"avatar_pending_loads", state.avatarPendingLoads},
+                {"avatar_cache_entries", state.avatarCacheEntries},
+                {"model_upload_cache_entries", state.modelUploadCacheEntries},
+                {"replay_memory_mb", state.replayMemoryMb},
+                {"logger_events_total", io.eventsWritten},
+                {"logger_bytes_total", io.bytesWritten}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    gFastSlice = FastSlice{};
+    gFastSlice.startNs = nowNs;
+}
+
 void emitResourceWindowSummary()
 {
     if (gResourceWindow.frames == 0) return;
@@ -521,6 +752,8 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
     }
 
     accumulateResourceFrame(frame);
+    accumulateFastSlice(frame, ps);
+    emitFastSliceIfDue(frame, ps);
     if (gResourceWindow.frames >= 60)
         emitResourceWindowSummary();
 

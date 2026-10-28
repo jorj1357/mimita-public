@@ -72,6 +72,11 @@ uint64_t meshGeometryGeneration(const Mesh& mesh)
 
 } // namespace
 
+std::size_t playerModelUploadCacheCount()
+{
+    return gModelUploads.size();
+}
+
 GLuint bodyPartVAO = 0;
 GLuint bodyPartVBO = 0;
 

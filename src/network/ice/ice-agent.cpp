@@ -11,9 +11,11 @@
 #include "network/ice/ice-agent.h"
 #include "network/net_common.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 #include <cstdio>
 #include <cstring>
+#include <sstream>
 
 IceAgent::IceAgent() = default;
 
@@ -26,8 +28,10 @@ bool IceAgent::initialize(const IceConfiguration& config)
 {
     if (mInitialized) shutdown();
 
+    mForceRelay = config.forceRelay;
     const bool stunConfigured = !config.stun.host.empty();
-    Debug::warn(Debug::Category::Networking, "ICE INIT libjuiceVersion=%s\n", "1.7.2");
+    Debug::warn(Debug::Category::Networking, "ICE INIT libjuiceVersion=%s forceRelay=%d\n",
+                "1.7.2", (int)mForceRelay);
     Debug::warn(Debug::Category::Networking, "ICE INIT stunHost=%s stunPort=%u\n",
            stunConfigured ? config.stun.host.c_str() : "(disabled)", config.stun.port);
 
@@ -113,7 +117,8 @@ bool IceAgent::setRemoteDescription(const std::string& sdp)
 {
     if (!mAgent || !mInitialized) return false;
 
-    int ret = juice_set_remote_description(mAgent, sdp.c_str());
+    const std::string remoteSdp = mForceRelay ? filterRelayCandidates(sdp) : sdp;
+    int ret = juice_set_remote_description(mAgent, remoteSdp.c_str());
     if (ret != JUICE_ERR_SUCCESS)
     {
         Debug::warn(Debug::Category::Networking, "ICE SET REMOTE DESC failed: %d\n", ret);
@@ -163,6 +168,18 @@ void IceAgent::logSelectedPath()
            local.c_str(), iceCandidateTypeToString(localType),
            remote.c_str(), iceCandidateTypeToString(remoteType),
            (int)direct, (int)relay);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.ice.path", "ICE_PATH", "selected ICE candidate pair", 0,
+        nlohmann::json{
+            {"local_type", iceCandidateTypeToString(localType)},
+            {"remote_type", iceCandidateTypeToString(remoteType)},
+            {"local_candidate", local},
+            {"remote_candidate", remote},
+            {"direct", direct},
+            {"relay", relay},
+            {"force_relay", mForceRelay}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 void IceAgent::shutdown()
@@ -332,6 +349,13 @@ void IceAgent::handleGatheringDone()
     if (juice_get_local_description(mAgent, sdpBuf, sizeof(sdpBuf)) == JUICE_ERR_SUCCESS)
     {
         mLocalSdp = sdpBuf;
+        if (mForceRelay)
+        {
+            mLocalSdp = filterRelayCandidates(mLocalSdp);
+            if (mRelayCount == 0)
+                Debug::warn(Debug::Category::Networking,
+                    "ICE FORCE RELAY: no relay candidates; join will fail without TURN\n");
+        }
     }
 
     {
@@ -344,6 +368,21 @@ void IceAgent::handleGatheringDone()
     Debug::warn(Debug::Category::Networking,
            "ICE GATHER COMPLETE hostCandidates=%d srflxCandidates=%d relayCandidates=%d\n",
            mHostCount, mSrflxCount, mRelayCount);
+}
+
+std::string IceAgent::filterRelayCandidates(const std::string& sdp) const
+{
+    std::istringstream in(sdp);
+    std::ostringstream out;
+    std::string line;
+    while (std::getline(in, line))
+    {
+        const bool candidate = line.compare(0, 12, "a=candidate:") == 0;
+        if (candidate && line.find(" typ relay ") == std::string::npos)
+            continue;
+        out << line << "\r\n";
+    }
+    return out.str();
 }
 
 void IceAgent::handleRecv(const char* data, size_t size)

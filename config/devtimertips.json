@@ -18,8 +18,8 @@
     "TODO 2026 10 26: zombie tower plzzzz full"
   ],
   "mode": "repeat",
-  "repeat_message": "TODO 2026 10 26: payload cart path",
-  "repeat_message": "TODO 2026 10 27: animaitons smooth, perofrm smooth, npcs use anims, melee feedback better",
+  // "repeat_message": "TODO 2026 10 27: animaitons smooth, perofrm smooth, npcs use anims, melee feedback better",
+  "repeat_message": "TODO 2026 10 28: 240 fps whole play session, all mosnter anims, 100 floor zomb tower!!!",
   "text_format": "{seconds}s — {message}",
   "title": "TIME PLAYED"
 }

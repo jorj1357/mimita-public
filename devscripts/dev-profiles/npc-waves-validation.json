@@ -1,0 +1,23 @@
+{
+  "name": "npc-waves-validation",
+  "launch_mode": 17,
+  "launch_visibility": "visible",
+  "map": "npcwavesv2",
+  "map_selection": "configured",
+  "allowed_maps_file": "config/gamemode-good-maps.json",
+  "mode": "npc_waves",
+  "gamemode": "npc_waves",
+  "weapon_set": 1,
+  "npc_count": 0,
+  "auto_map_rotation": false,
+  "discord_notification": false,
+  "host_player_name": "",
+  "client_name": "NPC Dev",
+  "server_name": "NPC Dev Server",
+  "server_bind": "127.0.0.1:0",
+  "join_via_room_code": true,
+  "require_client_connection": true,
+  "require_mode_start": true,
+  "require_npcwaves_start": true,
+  "max_mimita_processes": 1
+}

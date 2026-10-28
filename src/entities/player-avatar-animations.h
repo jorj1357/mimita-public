@@ -55,6 +55,15 @@ public:
     // The rig for an avatar name. present=false when no rig is declared.
     const AvatarRig* getRig(const std::string& avatarName);
 
+    // Bounded cache-size counters for performance evidence.
+    std::size_t cacheSize() const { return mEntries.size(); }
+    std::size_t cachedClipCount() const {
+        std::size_t count = 0;
+        for (const auto& item : mEntries)
+            count += item.second.set.clips.size();
+        return count;
+    }
+
     // Drop one entry (or all) so the next get() re-reads from disk.
     void invalidate(const std::string& avatarName = "");
 

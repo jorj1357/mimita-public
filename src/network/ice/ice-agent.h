@@ -65,6 +65,7 @@ private:
     void handleCandidate(const char* sdp);
     void handleGatheringDone();
     void handleRecv(const char* data, size_t size);
+    std::string filterRelayCandidates(const std::string& sdp) const;
 
     mutable std::mutex mMutex;
     juice_agent_t* mAgent = nullptr;
@@ -76,4 +77,5 @@ private:
     int mSrflxCount = 0;
     int mRelayCount = 0;
     bool mInitialized = false;
+    bool mForceRelay = false;
 };

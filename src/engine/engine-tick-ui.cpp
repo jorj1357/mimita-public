@@ -13,7 +13,9 @@
 #include <cstdio>
 #include <GLFW/glfw3.h>
 #include "camera.h"
+#include "avatar/avatar.h"
 #include "entities/player.h"
+#include "entities/player-avatar-animations.h"
 #include "world/world.h"
 #include "npc/npc.h"
 #include "combat/weapon-system.h"
@@ -125,6 +127,16 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     Perf::state().particleCount = EffectPartSystem::instance().activeCount();
     Perf::state().effectCount = (int)EffectPartSystem::instance().activeCount();
     Perf::state().corpseCount = 0;
+    Perf::state().animationSetCacheCount =
+        (int)AvatarAnimationRegistry::instance().cacheSize();
+    Perf::state().animationClipCacheCount =
+        (int)AvatarAnimationRegistry::instance().cachedClipCount();
+    Perf::state().avatarPendingLoads =
+        (int)AvatarSystem::instance().pendingLoadCount();
+    Perf::state().avatarCacheEntries =
+        (int)AvatarSystem::instance().avatarCacheSize();
+    Perf::state().modelUploadCacheEntries =
+        (int)playerModelUploadCacheCount();
     if (gReplayPlayer.isPlaying())
         Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
 

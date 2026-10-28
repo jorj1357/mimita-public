@@ -36,6 +36,9 @@ struct IceConfiguration
 {
     IceStunConfig stun;
     IceTurnConfig turn;
+    // Test-only switch: advertise/accept relay candidates only so a direct
+    // path cannot be chosen. Requires working TURN credentials.
+    bool forceRelay = false;
 };
 
 // Load config from file, optionally overriding TURN credentials
@@ -59,6 +62,8 @@ inline void applyIceEnvOverrides(IceConfiguration& config)
         config.stun.host.clear();
         config.stun.port = 0;
     }
+    if (iceEnvEnabled("MIMITA_ICE_FORCE_RELAY"))
+        config.forceRelay = true;
 }
 
 inline IceConfiguration loadIceConfig(const std::string& path)

@@ -724,6 +724,9 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.clientMapReadySent = true;
                 mpContext.clientMapReadySentForPlayerId = mpContext.localPlayerId;
                 mpContext.clientMapReadySentForMap = mpContext.requiredMapId;
+                MimitaNet::mpLogConnectStage(mpContext, "map_ready", "sent",
+                    0, 0, "",
+                    "client reported the authoritative map as ready");
 
                 printf("[CLIENT MAP READY] sent playerId=%u mapId=%s reason=%s\n",
                        mpContext.localPlayerId, ready.mapId,

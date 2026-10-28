@@ -15,8 +15,14 @@
         "fade_seconds": 4.0,
         "death_impulse_multiplier": 1.5,
         "spawn_velocity_multiplier": 2.01,
-        "blood_interval_seconds": 0.06,
-        "blood_enabled": true
+        "blood_interval_seconds": 0.12,
+        "blood_enabled": true,
+        // Presentation-only corpse solver budget. The alive G ragdoll keeps
+        // the full solver_iterations below.
+        "solver_iterations": 10,
+        "self_collision_iterations": 1,
+        "world_depenetration_iterations": 1,
+        "max_steps_per_tick": 6
     },
     "debug_hitboxes_visible": false,
     "attachments_visible": true,

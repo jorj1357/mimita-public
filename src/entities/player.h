@@ -258,6 +258,7 @@ struct AvatarStateMap {
     std::string fall;     // airborne and falling
     std::string land;     // brief landing pose
     std::string crouch;   // grounded crouch
+    std::string crouchWalk; // grounded crouched locomotion
     std::string crouchIn; // transition into crouch
     std::string crouchOut;// transition out of crouch
     std::string dash;     // authored dash pose
@@ -918,6 +919,7 @@ bool animationPriorityDebug();
 
 // Upload mesh to shared body-part VAO for ragdoll rendering
 void uploadBodyPartMesh(const Mesh& mesh);
+std::size_t playerModelUploadCacheCount();
 
 // Build a 4x4 transform from position + rotation quaternion
 glm::mat4 transformMatrix(const glm::vec3& position, const glm::quat& rotation);

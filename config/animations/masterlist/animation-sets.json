@@ -25,6 +25,7 @@
         "freeze": "mimita_sizing_6_freeze_001",
         "knockback": "mimita_sizing_6_knockedback_001",
         "crouch": "mimita_sizing_6_crouched",
+        "crouchWalk": "mimita_sizing_6_crouch_walk_001",
         "crouchIn": "mimita_sizing_6_crouching",
         "hurtSmall": "mimita_sizing_6_hurt_small_001",
         "hurtNormal": "mimita_sizing_6_hurt_normal_001",

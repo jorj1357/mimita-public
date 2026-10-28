@@ -4269,6 +4269,30 @@ void beginMatchCountdown(ServerGamemodeState& d,
         if (gm.features.freezeDuringCountdown) d.roundCountdownFreeze = true;
         reconcileZombieTowerParty(d, players, npcs);
     }
+    const uint32_t activePlayers = countActivePlayers(players);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "network.mode.start", std::to_string(d.duelId),
+        "managed mode entered countdown", currentTick,
+        nlohmann::json{
+            {"mode", d.matchMode},
+            {"community_mode", d.communityMode},
+            {"map", d.mapId},
+            {"phase", (int)d.phase},
+            {"stage", "countdown"},
+            {"duel_id", d.duelId},
+            {"state_version", d.stateVersion},
+            {"server_tick", currentTick},
+            {"active_players", activePlayers},
+            {"participants", d.participants.size()},
+            {"npc_count", npcs.size()},
+            {"required_players", 1},
+            {"waiting_for", activePlayers == 0 ? "required_clients" : "none"},
+            {"mode_config_valid", !d.matchMode.empty()},
+            {"countdown_seconds", d.countdownSeconds},
+            {"start_countdown_immediately", d.startCountdownImmediately},
+            {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+        __FILE__, __LINE__, __FUNCTION__);
     Debug::log(Debug::Category::Duel,
         "[ServerMatch] countdown started mode=%s duelId=%u matchStartTick=%u timeLimitTick=%u participants=%zu\n",
         d.matchMode.c_str(), d.duelId, d.matchStartTick, d.matchTimeLimitTick, d.participants.size());
@@ -4393,12 +4417,75 @@ static void reconcileZombieTowerParty(
     }
 }
 
+static void logNpcWaveState(
+    const ServerGamemodeState& d,
+    const std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const std::unordered_set<uint32_t>& npcIdsAlive,
+    uint32_t tick, const char* stage, const char* result,
+    const std::string& reason)
+{
+    uint32_t alive = 0;
+    uint32_t dead = 0;
+    uint32_t firstId = 0;
+    uint32_t lastId = 0;
+    for (const auto& kv : npcs)
+    {
+        if (kv.second.health > 0) ++alive;
+        else ++dead;
+        if (firstId == 0 || kv.first < firstId) firstId = kv.first;
+        if (kv.first > lastId) lastId = kv.first;
+    }
+    uint32_t humans = 0;
+    for (const auto& kv : d.matchActors)
+        if (kv.second.controller == ActorController::Human) ++humans;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel,
+        std::strcmp(result, "stalled") == 0 || std::strcmp(result, "failed") == 0
+            ? StructuredLevel::Errors : StructuredLevel::Important,
+        "network.npcwaves.start", std::to_string(d.duelId),
+        reason.empty() ? "NPC Waves lifecycle stage" : reason, tick,
+        nlohmann::json{
+            {"mode", d.matchMode},
+            {"map", d.mapId},
+            {"duel_id", d.duelId},
+            {"wave_number", d.waveNumber},
+            {"wave_target", d.waveNpcTarget},
+            {"wave_spawned", d.waveNpcSpawned},
+            {"wave_alive", alive},
+            {"wave_dead", dead},
+            {"npc_ids_alive", npcIdsAlive.size()},
+            {"snapshot_npc_count", npcs.size()},
+            {"first_npc_id", firstId},
+            {"last_npc_id", lastId},
+            {"human_participants", humans},
+            {"participants", d.participants.size()},
+            {"phase", (int)d.phase},
+            {"server_tick", tick},
+            {"stage", stage},
+            {"result", result},
+            {"npc_respawns_enabled", serverMatchRespawnsEnabled() && !d.npcWaves},
+            {"wave_start_count", d.waveStartCount},
+            {"wave_increment", d.waveIncrement},
+            {"wave_npcs_per_wave", d.waveNpcsPerWave},
+            {"wave_stagger", d.waveStaggerEnabled},
+            {"wave_npcs_per_tick", d.waveNpcsPerTick},
+            {"failure_reason", std::strcmp(result, "stalled") == 0 ||
+                               std::strcmp(result, "failed") == 0
+                                   ? reason : std::string()},
+            {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void spawnNpcWaveBatch(ServerGamemodeState& d,
-                       std::unordered_map<uint32_t, ServerNpc>& npcs)
+                       std::unordered_map<uint32_t, ServerNpc>& npcs,
+                       uint32_t tick,
+                       const std::unordered_set<uint32_t>& npcIdsAlive)
 {
     const uint32_t remaining = d.waveNpcTarget > d.waveNpcSpawned
         ? d.waveNpcTarget - d.waveNpcSpawned : 0;
     if (remaining == 0) return;
+    const uint32_t spawnedBefore = d.waveNpcSpawned;
     const uint32_t batch = d.waveStaggerEnabled
         ? std::min<uint32_t>((uint32_t)std::max(1, d.waveNpcsPerTick), remaining)
         : remaining;
@@ -4414,6 +4501,12 @@ void spawnNpcWaveBatch(ServerGamemodeState& d,
         addNpcWaveParticipant(d, npc);
         npcs.emplace(npc.entityId, std::move(npc));
         ++d.waveNpcSpawned;
+    }
+    if (spawnedBefore == 0 || d.waveNpcSpawned >= d.waveNpcTarget)
+    {
+        logNpcWaveState(d, npcs, npcIdsAlive, tick,
+            d.waveNpcSpawned >= d.waveNpcTarget ? "target_reached" : "spawned",
+            "ok", "wave NPC batch spawned");
     }
     Debug::log(Debug::Category::Duel,
         "[WAVES] wave=%u spawned=%u/%u stagger=%d perTick=%d\n",
@@ -5125,12 +5218,16 @@ void beginNpcWave(ServerGamemodeState& d,
     d.waveRunOver = false;
     d.waveBannerVisible = false;
     assignMatchParticipants(d, players, &npcs);
+    logNpcWaveState(d, npcs, npcIdsAlive, tick, "begin", "ok",
+        "wave countdown started");
     beginMatchCountdown(d, players, npcs, npcSystem, tick);
     Debug::log(Debug::Category::Duel,
         "[WAVES] countdown wave=%u target=%u\n", d.waveNumber, d.waveNpcTarget);
 }
 
 void checkNpcWaveConditions(ServerGamemodeState& d,
+                            const std::unordered_map<uint32_t, ServerNpc>& npcs,
+                            const std::unordered_set<uint32_t>& npcIdsAlive,
                             uint32_t tick)
 {
     if (d.waveNpcSpawned < d.waveNpcTarget) return;
@@ -5151,6 +5248,8 @@ void checkNpcWaveConditions(ServerGamemodeState& d,
         d.phase = DUEL_PHASE_RESULTS;
         d.phaseTimer = d.resultsSeconds;
         ++d.stateVersion;
+        logNpcWaveState(d, npcs, npcIdsAlive, tick, "run_over", "ok",
+            "human lives exhausted");
         Debug::log(Debug::Category::Duel,
             "[WAVES] run over wave=%u tick=%u\n", d.waveNumber, tick);
     }
@@ -5161,6 +5260,8 @@ void checkNpcWaveConditions(ServerGamemodeState& d,
         d.phase = DUEL_PHASE_RESULTS;
         d.phaseTimer = 0.0f;
         ++d.stateVersion;
+        logNpcWaveState(d, npcs, npcIdsAlive, tick, "cleared", "ok",
+            "all wave NPCs are dead");
         Debug::log(Debug::Category::Duel,
             "[WAVES] wave cleared wave=%u tick=%u\n", d.waveNumber, tick);
     }
@@ -6691,6 +6792,42 @@ void serverGamemodeTick(SOCKET sock,
                     "[FFA/TDM] Countdown started mode=%s participants=%zu\n",
                     d.matchMode.c_str(), d.participants.size());
             }
+            else
+            {
+                static uint32_t sLastWaitLogTick = 0;
+                static std::string sLastWaitKey;
+                const uint32_t activePlayers = countActivePlayers(players);
+                const std::string key = d.matchMode + ":" +
+                    std::to_string(activePlayers) + ":" + std::to_string(npcs.size()) +
+                    ":" + std::to_string(world.spawnPoints.size());
+                if (key != sLastWaitKey || tick >= sLastWaitLogTick + 60)
+                {
+                    sLastWaitKey = key;
+                    sLastWaitLogTick = tick;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Important,
+                        "network.mode.start", std::to_string(d.duelId),
+                        "managed mode is waiting for required clients", tick,
+                        nlohmann::json{
+                            {"mode", d.matchMode},
+                            {"community_mode", d.communityMode},
+                            {"map", d.mapId},
+                            {"phase", (int)d.phase},
+                            {"stage", "waiting"},
+                            {"duel_id", d.duelId},
+                            {"state_version", d.stateVersion},
+                            {"server_tick", tick},
+                            {"active_players", activePlayers},
+                            {"participants", d.participants.size()},
+                            {"npc_count", npcs.size()},
+                            {"map_spawn_points", world.spawnPoints.size()},
+                            {"waiting_for", world.spawnPoints.empty()
+                                ? "server_world_ready" : "required_clients"},
+                            {"mode_config_valid", !d.matchMode.empty()},
+                            {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+            }
             break;
 
         case DUEL_PHASE_COUNTDOWN:
@@ -6703,7 +6840,7 @@ void serverGamemodeTick(SOCKET sock,
                 d.waveBannerUntilTick = d.npcWaves
                     ? tick + (uint32_t)std::ceil(d.waveBannerSeconds * 60.0f) : 0;
                 if (d.npcWaves)
-                    spawnNpcWaveBatch(d, npcs);
+                    spawnNpcWaveBatch(d, npcs, tick, npcIdsAlive);
                 const Gamemode& goMode = GamemodeRegistry::instance().get(d.matchMode);
                 if (!goMode.features.freezeDuringGo)
                     d.roundCountdownFreeze = false;
@@ -6737,7 +6874,7 @@ void serverGamemodeTick(SOCKET sock,
         case DUEL_PHASE_GO:
             d.phaseTimer -= SERVER_DT;
             if (d.npcWaves)
-                spawnNpcWaveBatch(d, npcs);
+                spawnNpcWaveBatch(d, npcs, tick, npcIdsAlive);
             if (d.phaseTimer <= 0.0f)
             {
                 d.phase = DUEL_PHASE_ACTIVE;
@@ -6747,7 +6884,7 @@ void serverGamemodeTick(SOCKET sock,
                 if (d.persistentNpcSpawns)
                     d.npcSpawnNextTick = tick + (uint32_t)std::max(1, d.npcSpawnIntervalTicks);
                 if (d.npcWaves) {
-                    spawnNpcWaveBatch(d, npcs);
+                    spawnNpcWaveBatch(d, npcs, tick, npcIdsAlive);
                     ++d.stateVersion;
                     d.lastBroadcastTick = tick;
                     broadcastDuelState(sock, d, players, totalPacketsOut);
@@ -6770,6 +6907,27 @@ void serverGamemodeTick(SOCKET sock,
                 resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "network.mode.start", std::to_string(d.duelId),
+                    "managed mode became active", tick,
+                    nlohmann::json{
+                        {"mode", d.matchMode},
+                        {"community_mode", d.communityMode},
+                        {"map", d.mapId},
+                        {"phase", (int)d.phase},
+                        {"stage", "active"},
+                        {"duel_id", d.duelId},
+                        {"state_version", d.stateVersion},
+                        {"server_tick", tick},
+                        {"match_start_tick", d.matchStartTick},
+                        {"active_players", countActivePlayers(players)},
+                        {"participants", d.participants.size()},
+                        {"npc_count", npcs.size()},
+                        {"waiting_for", "none"},
+                        {"mode_config_valid", !d.matchMode.empty()},
+                        {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 Debug::log(Debug::Category::Duel,
                     "[FFA/TDM] Match ACTIVE mode=%s tick=%u\n",
                     d.matchMode.c_str(), tick, d.matchStartTick);
@@ -6788,9 +6946,60 @@ void serverGamemodeTick(SOCKET sock,
             mapEntityRuntimeTick(d, sock, players, npcs, tick, totalPacketsOut);
             if (d.npcWaves) {
                 if (d.waveNpcSpawned < d.waveNpcTarget)
-                    spawnNpcWaveBatch(d, npcs);
+                    spawnNpcWaveBatch(d, npcs, tick, npcIdsAlive);
                 updateActorStates(d, sock, players, npcs, tick, totalPacketsOut);
-                checkNpcWaveConditions(d, tick);
+                {
+                    static uint32_t sStallDuelId = 0;
+                    static uint32_t sStallWave = 0;
+                    static uint32_t sStallSinceTick = 0;
+                    static bool sStallLogged = false;
+                    size_t aliveNpcs = 0;
+                    for (const auto& kv : npcs)
+                        if (kv.second.health > 0) ++aliveNpcs;
+                    // A live, fighting NPC is normal wave time, not a stall.
+                    // Only report a stuck lifecycle: either spawning never
+                    // reaches the target, or the roster still claims a living
+                    // NPC while every actual NPC body is dead/absent.
+                    bool rosterStale = false;
+                    if (d.waveNpcSpawned >= d.waveNpcTarget && aliveNpcs == 0)
+                    {
+                        for (const auto& kv : d.matchActors)
+                        {
+                            if (kv.second.controller == ActorController::Npc &&
+                                (kv.second.state == ActorState::Alive ||
+                                 kv.second.state == ActorState::Respawning))
+                            {
+                                rosterStale = true;
+                                break;
+                            }
+                        }
+                    }
+                    const bool lifecycleStuck =
+                        d.waveNpcSpawned < d.waveNpcTarget || rosterStale;
+                    if (lifecycleStuck)
+                    {
+                        if (sStallDuelId != d.duelId || sStallWave != d.waveNumber)
+                        {
+                            sStallDuelId = d.duelId;
+                            sStallWave = d.waveNumber;
+                            sStallSinceTick = tick;
+                            sStallLogged = false;
+                        }
+                        if (!sStallLogged && tick - sStallSinceTick >= 600)
+                        {
+                            sStallLogged = true;
+                            logNpcWaveState(d, npcs, npcIdsAlive, tick,
+                                "stalled", "stalled",
+                                "wave lifecycle made no progress for 10s");
+                        }
+                    }
+                    else
+                    {
+                        sStallSinceTick = 0;
+                        sStallLogged = false;
+                    }
+                }
+                checkNpcWaveConditions(d, npcs, npcIdsAlive, tick);
                 if (d.phase != DUEL_PHASE_ACTIVE) {
                     broadcastDuelState(sock, d, players, totalPacketsOut);
                     break;
@@ -6927,6 +7136,30 @@ void serverGamemodeTick(SOCKET sock,
             if (d.npcWaves) {
                 d.phaseTimer -= SERVER_DT;
                 if (d.phaseTimer <= 0.0f) {
+                    if (countActivePlayers(players) == 0) {
+                        // A wave must never begin before a human is active and
+                        // map-ready; otherwise the late joiner misses the roster.
+                        d.phaseTimer = std::max(1.0f, d.intermissionSeconds);
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Duel, StructuredLevel::Important,
+                            "network.mode.start", std::to_string(d.duelId),
+                            "NPC Waves is waiting for an active human", tick,
+                            nlohmann::json{
+                                {"mode", d.matchMode},
+                                {"map", d.mapId},
+                                {"phase", (int)d.phase},
+                                {"stage", "waiting"},
+                                {"duel_id", d.duelId},
+                                {"server_tick", tick},
+                                {"active_players", 0},
+                                {"participants", d.participants.size()},
+                                {"npc_count", npcs.size()},
+                                {"map_spawn_points", world.spawnPoints.size()},
+                                {"waiting_for", "required_clients"},
+                                {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                        break;
+                    }
                     assignGamemodeSpawns(d, world);
                     d.waveNumber = 1;
                     beginNpcWave(d, players, npcs, npcSystem, npcIdsAlive, tick);
@@ -6940,6 +7173,32 @@ void serverGamemodeTick(SOCKET sock,
             d.phaseTimer -= SERVER_DT;
             if (d.phaseTimer <= 0.0f)
             {
+                if (countActivePlayers(players) == 0) {
+                    // Do not start a managed match with an empty roster. The
+                    // server starts in intermission at boot, before a client
+                    // has joined; starting here would make mode readiness
+                    // depend on how fast the client connected.
+                    d.phaseTimer = std::max(1.0f, d.intermissionSeconds);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Important,
+                        "network.mode.start", std::to_string(d.duelId),
+                        "managed mode is waiting for an active client", tick,
+                        nlohmann::json{
+                            {"mode", d.matchMode},
+                            {"map", d.mapId},
+                            {"phase", (int)d.phase},
+                            {"stage", "waiting"},
+                            {"duel_id", d.duelId},
+                            {"server_tick", tick},
+                            {"active_players", 0},
+                            {"participants", d.participants.size()},
+                            {"npc_count", npcs.size()},
+                            {"map_spawn_points", world.spawnPoints.size()},
+                            {"waiting_for", "required_clients"},
+                            {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                    break;
+                }
                 if ((d.winCondition == "first_to_score" ||
                      GamemodeRegistry::instance().get(d.matchMode).npcSpawnPolicy == "team_roster") &&
                     countActivePlayers(players) == 0) {

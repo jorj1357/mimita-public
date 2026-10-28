@@ -22,7 +22,6 @@ namespace MimitaNet {
 namespace {
 
 constexpr float kTickSeconds = 1.0f / 60.0f;
-constexpr float kFinitePositionLimit = 100000.0f;
 constexpr float kFiniteVelocityLimit = 5000.0f;
 constexpr float kMaximumFlightSpeed = 9999.0f;
 
@@ -103,22 +102,10 @@ bool tickTooFuture(const ClientMovementReport& report,
                config.maximumFutureTickLead;
 }
 
-glm::vec3 validationBoundsMin(const MovementValidationConfig& config)
+bool withinSanityLimit(glm::vec3 position, const MovementValidationConfig& config)
 {
-    return config.worldBoundsMin - glm::vec3(config.worldBoundsPadding);
-}
-
-glm::vec3 validationBoundsMax(const MovementValidationConfig& config)
-{
-    return config.worldBoundsMax + glm::vec3(config.worldBoundsPadding);
-}
-
-bool insideBounds(glm::vec3 position, const MovementValidationConfig& config)
-{
-    const glm::vec3 minB = validationBoundsMin(config);
-    const glm::vec3 maxB = validationBoundsMax(config);
-    return position.x >= minB.x && position.y >= minB.y && position.z >= minB.z &&
-           position.x <= maxB.x && position.y <= maxB.y && position.z <= maxB.z;
+    const float limit = std::max(1.0f, config.sanityPositionLimit);
+    return componentMagnitudeAllowed(position, limit);
 }
 
 } // namespace
@@ -348,8 +335,7 @@ bool invalidAbilityTransition(const ServerPlayer& player,
 } // namespace
 
 MovementValidationConfig makeMovementValidationConfig(
-    const MovementConfig& movementConfig,
-    const HeadlessWorld* world)
+    const MovementConfig& movementConfig)
 {
     MovementValidationConfig config;
     config.maximumBaseHorizontalSpeed =
@@ -370,17 +356,6 @@ MovementValidationConfig makeMovementValidationConfig(
     config.downDashDisplacementAllowance =
         std::max(18.0f, std::abs(movementConfig.downDashVerticalSpeed) * 0.18f);
     config.maximumAirJumps = movementConfig.maximumAirJumps;
-    if (world && movementIsFinite(world->boundsMin) && movementIsFinite(world->boundsMax) &&
-        glm::length(world->boundsMax - world->boundsMin) > 0.001f)
-    {
-        // Keep the map's XY bounds for anti-glitch protection, but leave the
-        // Z floor far below any void-death threshold so players falling off a
-        // map can reach the void instead of being clamped back above it.
-        config.worldBoundsMin = glm::vec3(world->boundsMin.x,
-                                          world->boundsMin.y,
-                                          -100000.0f);
-        config.worldBoundsMax = world->boundsMax;
-    }
     return config;
 }
 
@@ -437,7 +412,7 @@ const char* movementValidationReasonName(MovementValidationReason reason)
     case MovementValidationReason::MalformedState: return "malformed-state";
     case MovementValidationReason::ImpossibleDisplacement: return "impossible-displacement";
     case MovementValidationReason::ImpossibleVelocity: return "impossible-velocity";
-    case MovementValidationReason::OutOfBounds: return "out-of-bounds";
+    case MovementValidationReason::SanityLimit: return "sanity-limit";
     case MovementValidationReason::BlockingGeometry: return "blocking-geometry";
     case MovementValidationReason::AbilityTransition: return "ability-transition";
     case MovementValidationReason::AwaitingAuthoritativeTransformAck:
@@ -598,12 +573,14 @@ MovementValidationResult validateClientMovementReport(
         return reject(MovementValidationReason::NonFinite);
     const float maximumBaseVelocity = player.flyEnabled
         ? kMaximumFlightSpeed : kFiniteVelocityLimit;
-    if (!componentMagnitudeAllowed(report.position, kFinitePositionLimit) ||
+    if (!withinSanityLimit(report.position, config) ||
         !componentMagnitudeAllowed(report.baseVelocity, maximumBaseVelocity) ||
         !componentMagnitudeAllowed(report.externalImpulse, kFiniteVelocityLimit) ||
         report.sizeScale <= 0.0f)
     {
-        return reject(MovementValidationReason::MalformedState);
+        return reject(!withinSanityLimit(report.position, config)
+            ? MovementValidationReason::SanityLimit
+            : MovementValidationReason::MalformedState);
     }
 
     // if (player.awaitingAuthoritativeTransformAck)
@@ -683,17 +660,6 @@ MovementValidationResult validateClientMovementReport(
         }
     }
 
-    if (!player.flyEnabled && !insideBounds(report.position, config))
-    {
-        result.decision = MovementValidationDecision::Correct;
-        result.reason = MovementValidationReason::OutOfBounds;
-        result.acceptedState.position = glm::clamp(
-            report.position,
-            validationBoundsMin(config),
-            validationBoundsMax(config));
-        return result;
-    }
-
     glm::vec3 blockingNormal(0.0f);
     if (crossesBlockingGeometry(context.world,
                                 previousPosition,
@@ -759,8 +725,8 @@ void applyMovementValidationCounters(MovementValidationCounters& counters,
     if (result.reason == MovementValidationReason::NonFinite ||
         result.reason == MovementValidationReason::MalformedState)
         ++counters.nonFiniteReports;
-    if (result.reason == MovementValidationReason::OutOfBounds)
-        ++counters.boundsCorrections;
+    if (result.reason == MovementValidationReason::SanityLimit)
+        ++counters.sanityLimitCorrections;
     if (result.reason == MovementValidationReason::BlockingGeometry)
         ++counters.wallCorrections;
 

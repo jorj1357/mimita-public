@@ -93,6 +93,20 @@ inline glm::vec3 actorSweepVelocity(const glm::vec3& sweepDelta, float dt)
 // the SAME contact in the same tick is suppressed (per-contact dedup); a valid
 // different contact is never muted by a global cooldown. Callers without an
 // identity keep the legacy bounceCooldown gate.
+void logCollisionBounceResponse(const Player& player,
+                                const glm::vec3& normal,
+                                const glm::vec3& partVelocity,
+                                bool bodyContact,
+                                float penetration,
+                                const char* actorPart,
+                                int worldTriangle,
+                                float bounceScale,
+                                const glm::vec3& beforeVelocity,
+                                const glm::vec3& beforeImpulse,
+                                float impact,
+                                float strength,
+                                bool dynamicEntity);
+
 inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
                                          const glm::vec3& partVelocity = glm::vec3(0.0f),
                                          bool bodyContact = false,
@@ -102,6 +116,8 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
                                          float bounceScale = 1.0f)
 {
     const CollisionConfig& cfg = CollisionConfig::instance();
+    const glm::vec3 beforeVelocity = p.vel;
+    const glm::vec3 beforeImpulse = p.externalImpulse;
     glm::vec3* velocities[] =
     {
         &p.vel,
@@ -130,6 +146,15 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     }
 
     const bool hasIdentity = (actorPart != nullptr && worldTriangle >= 0);
+    // Ordinary root/ground support contacts are not impacts. Bouncing them
+    // launches actors on every ground contact (the confirmed high-bounce path
+    // from the block/NPC fallback collision). Keep configured bounce for
+    // identified limb/body/weapon contacts, walls, ceilings, and rolling avatars.
+    if (!hasIdentity && !p.rollLowFriction &&
+        normal.z > MAX_WALKABLE_SLOPE_DOT) {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
     if (hasIdentity)
     {
         // Dedupe by contact identity, not by a global timer: a duplicate of the
@@ -185,6 +210,9 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
             if (bodyContact)
                 p.collision.rootBounceAppliedTick = p.movementSimulationTick;
             p.collision.bounceCooldown = cfg.bounceCooldown();
+            logCollisionBounceResponse(p, normal, partVelocity, bodyContact,
+                penetration, actorPart, worldTriangle, bounceScale,
+                beforeVelocity, beforeImpulse, impact, strength, false);
             return;
         }
         projectVelocityAgainstNormal(p, normal);
@@ -220,6 +248,9 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
         p.collision.rootBounceAppliedTick = p.movementSimulationTick;
 
     p.collision.bounceCooldown = cfg.bounceCooldown();
+    logCollisionBounceResponse(p, normal, partVelocity, bodyContact,
+        penetration, actorPart, worldTriangle, bounceScale,
+        beforeVelocity, beforeImpulse, impact, strength, false);
 }
 
 void applyCollisionContact(

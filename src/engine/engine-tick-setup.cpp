@@ -133,30 +133,40 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         const int group = nextPollGroup++;
         --pendingPollGroups;
         switch (group) {
-        case 0:
-            GameplayConfig::instance().pollReload();
-            MovementJsonConfig::instance().pollReload();
+        case 0: {
+            MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game0");
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Gameplay");
+              GameplayConfig::instance().pollReload(); }
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Movement");
+              MovementJsonConfig::instance().pollReload(); }
             CrosshairConfig::instance().pollReload();
             pollWorldCrosshairConfig();
             pollCoolShotLineConfig();
             WeaponTracersConfig::instance().pollReload();
             HealthbarConfig::instance().pollReload();
-            HitEffects::pollReload();
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::HitEffects");
+              HitEffects::pollReload(); }
             MuzzleFlashConfig::instance().pollReload();
-            DynamicLightConfig::instance().pollReload();
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::DynamicLight");
+              DynamicLightConfig::instance().pollReload(); }
             MapEditorConfig::instance().pollReload();
-            VehicleSystem::instance().pollReload();
-            break;
-        case 1:
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Vehicle");
+              VehicleSystem::instance().pollReload(); }
+            break; }
+        case 1: {
+            MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game1");
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Avatar");
+              AvatarSystem::instance().pollHotReload(); }
             MimitaNet::pollDisagreementReload();
             CamConfig::instance().pollReload();
             SizeScalingConfig::instance().pollReload();
-            AvatarSystem::instance().pollHotReload();
-            RagdollModeConfig::instance().pollReload();
-            RagdollDeathConfig::instance().pollReload();
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Ragdoll");
+              RagdollModeConfig::instance().pollReload();
+              RagdollDeathConfig::instance().pollReload(); }
             SpawnVelocityConfig::instance().pollReload();
-            break;
-        case 2:
+            break; }
+        case 2: {
+            MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game2");
             if (NpcDifficultyConfig::instance().pollReload())
             {
                 static uint64_t lastNpcDifficultyRevision = 0;
@@ -166,28 +176,34 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
                     lastNpcDifficultyRevision = NpcDifficultyConfig::instance().revision();
                 }
             }
-            GamemodeRegistry::instance().pollReload();
-            if (MatchRoleRegistry::instance().pollReload()) {
-                MimitaNet::CommunityMatchClient::instance().refreshActorPreset();
-                ActorPresetWeapons::refresh();
-            }
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Gamemode");
+              GamemodeRegistry::instance().pollReload(); }
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::MatchRoles");
+              if (MatchRoleRegistry::instance().pollReload()) {
+                  MimitaNet::CommunityMatchClient::instance().refreshActorPreset();
+                  ActorPresetWeapons::refresh();
+              } }
             BehaviorProfileRegistry::instance().pollReload();
             RoleMovementCache::instance().pollReload();
             GamemodeMapPool::instance().pollReload();
-            break;
-        case 3:
-            if (gpActiveMapPath && !gpActiveMapPath->empty()) {
-                const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
-                if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
-                    MapConfigRegistry::instance().load(mapId);
-                else
-                    MapConfigRegistry::instance().pollReload();
-            }
+            break; }
+        case 3: {
+            MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game3");
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Map");
+              if (gpActiveMapPath && !gpActiveMapPath->empty()) {
+                  const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
+                  if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
+                      MapConfigRegistry::instance().load(mapId);
+                  else
+                      MapConfigRegistry::instance().pollReload();
+              } }
             WeaponHitFxConfig::instance().pollReload();
             ImpactDecalsConfig::instance().pollReload();
             NotificationSystem::instance().pollReload();
-            GuiLayoutManager::instance().pollReload();
-            NetworkingConfig::instance().pollReload();
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::GuiLayout");
+              GuiLayoutManager::instance().pollReload(); }
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Networking");
+              NetworkingConfig::instance().pollReload(); }
             PlayerVisualsConfig::instance().pollReload();
             PostFX::instance().pollReload();
             {
@@ -205,17 +221,21 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
                     cameraConfig.lensDistortionEdgeDarkness,
                     cameraConfig.lensDistortionPeripheralBlur);
             }
-            break;
-        case 4:
-            if (CollisionLodConfig::instance().pollHotReload())
-                redecimateCollision(THE_WORLD);
-            CollisionConfig::instance().pollHotReload();
+            break; }
+        case 4: {
+            MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game4");
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::CollisionLod");
+              if (CollisionLodConfig::instance().pollHotReload())
+                  redecimateCollision(THE_WORLD); }
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Collision");
+              CollisionConfig::instance().pollHotReload(); }
             MimitaImpact::MaterialConfig::instance().pollReload();
             MimitaImpact::DestructibleWorldConfig::instance().pollReload();
             RewardPopupConfig::instance().pollReload();
-            if (KillfeedConfig::instance().pollReload())
-                KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);
-            break;
+            { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Killfeed");
+              if (KillfeedConfig::instance().pollReload())
+                  KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode); }
+            break; }
         default:
             pendingPollGroups = 0;
             break;

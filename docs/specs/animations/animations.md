@@ -248,7 +248,7 @@ the avatar's own `include` and inline `states`, so avatar values still win.
   ragdoll is not presenting the death.
 
 New state keys are supported by `AvatarStateMap`: `dash`, `downDash`, `freeze`,
-`knockback`, `crouchIn`, `crouchOut`, `equip`, `hurtSmall`, `hurtNormal`,
+`knockback`, `crouchWalk`, `crouchIn`, `crouchOut`, `equip`, `hurtSmall`, `hurtNormal`,
 `hurtLarge`, `deathSmall`, and `death`. Missing states fall back to the old
 behavior.
 
@@ -387,22 +387,166 @@ flight integration (steering, altitude sticks, banking) iterates later.
 |---|---|---|---|
 | `durationTicks` | int | 60 | Clip length in fixed ticks. |
 | `loop` | bool | true | Loop continuously, or clamp on the last keyframe. |
+| `aimLayer` | bool | true | Apply AimBody over this clip. Set false to keep this clip's authored look pose unchanged. |
 | `speedMultiplier` | float | 1.0 | Multiplies clip playback speed. |
-| `lockTicks` | int | -1 | Minimum fixed ticks this clip owns the state; -1 uses durationTicks. |
-| `overrideMode` | string | priority | `priority`, `must_finish`, `lock_ticks`, or `instant`. |
+| `lockTicks` | int | -1 | For a regular non-looping `playOneShot`, sets how long it holds. Phase-driven weapon actions are timed by their action owner. This does not currently enable interruptions. |
+| `overrideMode` | string | priority | Parsed, but not currently used by the runtime. Do not rely on its values to interrupt clips. |
 | `partMask` | array | [] | Optional part whitelist; empty owns every part. |
 | `rootTranslationMode` | int | -1 | `1` keeps authored translation, `2` zeroes it, `-1` inherits settings. |
 | `rootTranslationScale` | float | 1.0 | Multiplier on authored part translation. |
-| `speedBased` | bool | false | Scale playback by actor speed. |
+| `speedBased` | bool | true | Allow this clip's playback rate to scale with actor movement. |
 | `speedScaleFromVelocity` | bool | true | When `speedBased`, map speed to playback rate. |
 | `inputTriggered` | bool | false | Locomotion presence is input-driven, not speed-driven. |
 | `tickBasedReturnToIdle` | bool | false | Play `return_to_idle`/`default` clip before settling. |
-| `priority` | int | 0 | Higher-priority clips interrupt lower ones. |
-| `blendInTicks` | int | 0 | Blend from the previous pose over this many ticks. |
-| `blendOutTicks` | int | 0 | Blend toward the next pose over this many ticks. |
+| `priority` | int | 0 | Added to the mapped state's priority during automatic state selection. It does not interrupt a locked weapon action. |
+| `blendInTicks` | int | 0 | Parsed, but not currently used to blend poses. |
+| `blendOutTicks` | int | 0 | Parsed, but not currently used to blend poses. |
 | `markers` | array | [] | Optional named, clip-local timeline markers. Combat phase markers are authoritative for that action's phase boundaries; see below. |
 | `keyframes` | array | required | Ordered keyframes. |
 | `audio` | object | optional | Tick-addressed animation sounds; schema below. |
+
+### How to connect an animation to a player or item
+
+Think of animation setup as three separate steps: put the pose in the library,
+tell an actor or item which clip names it can use, then map the game situations
+to those names. A clip sitting in the library by itself will not play.
+
+**For an avatar:** the current loader first checks
+`assets/avatars/<avatar>/avatar.json` for an `animation_profile` object. That
+profile can select a reusable set and then override its state map. For example,
+Jason selects `general_set_1`; the set already contains the imported walk,
+idle, sprint, jump, fall, landing, hurt, and death clips:
+
+```json
+"animation_profile": {
+  "version": 2,
+  "set": "general_set_1",
+  "states": {
+    "default": "mimita_sizing_6_idle_003",
+    "locomotion": { "walk": "mimita_sizing_6_walk" },
+    "run": "mimita_sizing_6_sprint_001",
+    "hurt": "mimita_sizing_6_hurt_normal_001",
+    "death": "mimita_sizing_6_dead"
+  }
+}
+```
+
+The set is defined in `config/animations/masterlist/animation-sets.json` and
+its clips are files under `config/animations/library/`. Set clips and states
+load first; the avatar profile's `include` files and inline `states` can replace
+them. You can also omit `set` and list only the clip files you need in
+`include`. If there is no inline `animation_profile`, the loader falls back to
+the avatar's legacy `animations` filename (normally `animations.json`).
+
+**For a weapon or held item:** its
+`config/weapons/<id>/config.json` `animation_profile` points to a clip profile,
+for example `config/animations/library/weapons/swordsword.json`. The profile's
+`states.default` selects its held idle and `states.equip` selects its equip
+clip. For a Melee move, the weapon's
+`components.melee.actions.<action>.animation_clip_id` must exactly match a clip
+ID included by that weapon profile. The weapon profile does not automatically
+make every library clip available to every avatar.
+
+### Which settings currently change playback
+
+`config/animations/settings.json` is the shared, hot-reloaded policy file.
+`statePriorities` gives each automatic state a base score. Each eligible clip's
+`priority` is added to that score; the highest score wins on the next fixed
+tick. Ties keep the earlier candidate in the runtime's selection order. For
+example, `hurt: 60` beats `walk: 10` while a hurt timer is active. Raising hurt
+or dash above another state makes it win more often whenever both are eligible.
+Priority does not make a state eligible: the actor still needs to be hurt,
+dashing, airborne, and so on.
+
+For example, these values make hurt and dash beat equip and the lower movement
+states more often:
+
+```json
+"statePriorities": {
+  "idle": 0,
+  "land": 5,
+  "walk": 10,
+  "run": 10,
+  "jump": 20,
+  "fall": 20,
+  "crouch": 30,
+  "crouchWalk": 30,
+  "hurt": 85,
+  "dash": 90,
+  "downDash": 92,
+  "freeze": 94,
+  "attack": 80,
+  "death": 100
+}
+```
+
+These scores only choose among automatic candidates. In particular, raising
+`hurt` above `attack` can beat an equip pose, but it still cannot break a locked
+Melee attack clip.
+
+### Locomotion clips should interrupt one another
+
+Walk, run, land, crouch, jump, and fall belong to the actor's movement pose
+family. When the actor changes to a different eligible movement state, the new
+state should take over on that fixed tick; the old clip should not finish just
+because it is a one-shot. Examples: run replaces walk when speed crosses the
+run threshold, movement replaces landing as soon as movement starts, and a new
+crouch transition replaces the previous crouch transition. The latest actor
+state is then reevaluated each tick, so stopping or becoming airborne selects
+the appropriate current state.
+
+This rule also applies when a movement state interrupts a weapon swing. The
+action owner must stop the action at the same fixed tick as the pose change, so
+later phase events and hitbox samples from the canceled move do not run. The
+server is authoritative for Melee hitboxes; the client predicts the pose and
+sends the existing action-cancel request. Remote actors stop showing the action
+when the next inactive action snapshot arrives.
+
+The selector now chooses one movement-family state at a time. Crouch plus
+movement uses the dedicated `states.crouchWalk` clip; if a profile does not
+provide it, the normal walk clip is used. Starting movement or becoming
+airborne clears any crouch-in/out transition timer. Changing movement state
+replaces the prior clip on that fixed tick.
+
+The automatic state selection covers idle, walk/run, jump/fall, land, crouch,
+crouch-walk, hurt tiers, dash/down-dash, freeze, knockback, respawn, equip, and death. An
+avatar's `states` map tells the runtime which clip ID to use for those states.
+The profile's `states.attack` value is parsed but not currently read by the
+Player state selector. Its temporary equip candidate is scored under the
+`attack` priority name, but takes the clip from `states.equip`. So mapping a
+general clip to `states.attack` does not automatically play it. Weapon attacks
+are triggered by their weapon action and `animation_clip_id`.
+
+**Locked weapon actions:** the action owner supplies the attack clip and
+authoritative phase timeline. State priorities alone do not replace that lock.
+When a movement state changes during a Melee action, the client ends its local
+action and sends the existing cancel request; the server ends the authoritative
+action before any later hitbox sweep. Death, unequip, and held-shield changes
+also end an action through their existing owners. A cancel does not undo hits or
+impulses that already occurred.
+
+`overrideMode`, `blendInTicks`, and `blendOutTicks` are present in the clip
+format and parsed by the loader, but source inspection shows they are not yet
+applied by playback. They should not be tuned as if they already control
+interruptions or blending. Implementing those behaviors for weapon actions
+needs a shared rule for interrupting the visible pose while keeping action
+timing and hitbox sampling in agreement.
+
+### Quick tuning recipe for more frequent state changes
+
+1. Confirm the state exists in the avatar profile and points to the intended
+   clip ID. Confirm the clip file is loaded by `set` or `include`.
+2. In `config/animations/settings.json`, compare the state priorities. Raise the
+   reaction that should win (for example `hurt`) above the states it should
+   replace. Keep `death` highest.
+3. If two eligible clips map to states with close scores, add a small positive
+   clip `priority` to the one that should win. State and clip scores add
+   together.
+4. Save the JSON while the game runs; the animation profile and runtime
+   settings hot-reload. Check the `anim.state.changed` event for `selected_state`,
+   `selected_priority`, `from`, and `to`.
+5. A movement transition cancels the active Melee move and its future hitbox
+   samples. State priorities do not cancel an action by themselves.
 
 ### Clip markers and action timing
 
@@ -800,25 +944,36 @@ part, plus the special key `plrOrigin` for whole-body root motion.
 States are logical; clips are concrete. The machine is evaluated once per fixed
 tick after movement and combat have produced their flags.
 
-For the built-in actor-state selector, precedence from lowest to highest is
-`idle < crouch < walk < run < jump < fall < land < hurt < respawn < death`.
-An explicit locked action clip, hurt, respawn, or terminal state may replace the
-selected state clip. Landing starts at clip tick 0 on the landing tick
-(including a retrigger while the same clip is active) and remains selected over
-automatic jump, fall, crouch, locomotion, and idle states until its non-looping
-clip duration has elapsed. The latest automatic state resumes afterward. If the
-profile has no landing clip, the existing brief landing fallback remains.
+**Implementation status:** the current Player selector chooses the highest
+scoring eligible automatic candidate each tick, using `statePriorities` plus
+the chosen clip's `priority`. Movement states are mutually exclusive, including
+the dedicated crouch-walk state. A `lockedClip` still wins before automatic
+selection; the Melee action owner explicitly clears it when the movement-state
+signature changes, and the server stops the authoritative action before its
+next hitbox sweep. `states.attack` is still not connected to a general attack
+trigger. Other transition rules below may not be implemented yet.
+
+For the built-in actor-state selector, eligible states are scored each fixed
+tick using `settings.json` priorities plus clip priority. The movement pose is
+exclusive: grounded crouch plus movement selects `crouchWalk`; crouch without
+movement selects crouch; otherwise the current walk/run, jump/fall, landing, or
+idle state is selected. A new state starts at tick 0 and interrupts the old
+clip. Landing is eligible only while grounded and not moving. If the profile
+has no crouch-walk clip, the normal walk clip is used; if it has no landing
+clip, the existing brief landing fallback remains.
 
 | State | Entered when | Default clip resolution | Loop | One-shot |
 |---|---|---|---|---|
 | `idle` | not moving, alive | `states.default` | yes | no |
 | `locomotion` | moving | `states.locomotion.<movement-mode>` | yes | no |
+| `crouchWalk` | grounded, crouch held, moving | `states.crouchWalk` or locomotion fallback | yes | no |
+| `crouch` | grounded, crouch held, not moving | `states.crouch` | yes | no |
 | `attack` | an attack/hit edge this tick | `states.attack` | no | yes |
 | `hurt` | damage taken edge | `states.hurt` | no | yes |
 | `death` | actor died | `states.death` | no | terminal |
 | `return_to_idle` | one-shot finished with `tickBasedReturnToIdle` | `states.default` | no | yes |
 
-Transition rules (this is the tick-17 behavior the user asked for):
+Target transition rules:
 
 1. A higher-priority or higher-urgency trigger interrupts the current clip.
 2. An interrupted clip stops at its current tick; the new clip starts at tick 0.

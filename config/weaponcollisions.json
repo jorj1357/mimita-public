@@ -104,7 +104,8 @@
     "visible": false,
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
-    "player_bounce": 0.99,
+    // "player_bounce": 0.99,
+    "player_bounce": 0.01,
     "source": "boxes",
     "boxes": [
       { "enabled": true, "name": "blade", "center": [0.0, 1.3, 0.0],

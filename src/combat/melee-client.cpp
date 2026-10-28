@@ -7,6 +7,7 @@
 
 #include "camera.h"
 #include "entities/player.h"
+#include "entities/animation-movement-state.h"
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
@@ -16,6 +17,7 @@
 #include "audio/audio.h"
 #include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
+#include "physics/config.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +51,17 @@ struct ClientActionState {
     std::string actionId;         // current action id (may be the double-click upgrade)
     std::string basePrimaryId;    // base primary action id for the double-click window
     uint32_t startSimTick = 0;
+    AnimationMovementState startMovementState = AnimationMovementState::Idle;
+    bool startMovementPressed = false;
+    int startHp = 100;
+    float startPercent = 0.0f;
+    float startHurtTimer = 0.0f;
+    float startDashTimer = 0.0f;
+    float startDownDashTimer = 0.0f;
+    float startKnockbackTimer = 0.0f;
+    float startRespawnTimer = 0.0f;
+    bool startFreezeActive = false;
+    bool startDeathActive = false;
     int64_t lastPrimarySimTick = -1000000;
     int64_t lastSecondarySimTick = -1000000;
     std::string baseSecondaryId;
@@ -88,6 +101,13 @@ glm::vec3 horizontalForward(const glm::vec3& raw)
         glm::length(forward) < 0.001f)
         return glm::vec3(1.0f, 0.0f, 0.0f);
     return glm::normalize(forward);
+}
+
+AnimationMovementState movementState(const Player& player, bool movementPressed)
+{
+    const float speed = glm::length(glm::vec2(player.vel.x, player.vel.y));
+    return resolveAnimationMovementState(speed, player.vel.z,
+        player.ground.stableOnGround, player.crouching, movementPressed);
 }
 
 const MeleeMoveSet* equippedMoveSet(const Player& player, WeaponSystem& weapons)
@@ -190,6 +210,7 @@ void startAction(Player& player,
                  int actionIndex,
                  const glm::vec3& cameraFront,
                  uint32_t simTick,
+                 bool movementPressed,
                  bool isPrimary,
                  const std::string& basePrimaryId,
                  const char* source)
@@ -199,6 +220,17 @@ void startAction(Player& player,
     g_state.actionId = action.id;
     g_state.actionSnapshot = action;
     g_state.startSimTick = simTick;
+    g_state.startMovementState = movementState(player, movementPressed);
+    g_state.startMovementPressed = movementPressed;
+    g_state.startHp = player.currentHp;
+    g_state.startPercent = player.percent;
+    g_state.startHurtTimer = player.hurtTimer;
+    g_state.startDashTimer = player.dashAnimTimer;
+    g_state.startDownDashTimer = player.downDashAnimTimer;
+    g_state.startKnockbackTimer = player.knockbackAnimTimer;
+    g_state.startRespawnTimer = player.respawnAnimTimer;
+    g_state.startFreezeActive = player.freeze.freezeActive;
+    g_state.startDeathActive = player.authoredDeathActive;
     g_state.forward = horizontalForward(cameraFront);
     if (def.id == "chainsaw")
         g_lastChainsawRevTick = simTick;
@@ -225,7 +257,8 @@ void startAction(Player& player,
          {"forward", {g_state.forward.x, g_state.forward.y, g_state.forward.z}},
          {"windup_ticks", action.windup.ticks},
          {"active_ticks", action.active.ticks},
-         {"recovery_ticks", action.recovery.ticks}});
+         {"recovery_ticks", action.recovery.ticks},
+         {"movement_state", animationMovementStateName(g_state.startMovementState)}});
     logMeleeLimbPose(player, action, "melee.client.limb", "start", simTick);
 
     // Send the intent to the server through the generic AttackRequest path. The
@@ -255,6 +288,36 @@ void endAction(Player& player)
     player.weaponPoseActionState.clear();
     player.clearOneShot();
     player.proceduralMeleePoseActive = false;
+}
+
+void cancelAction(Player& player, MimitaNet::MultiplayerContext& ctx,
+                  WeaponSystem& weapons, uint32_t simTick,
+                  const char* reason, const char* nextState)
+{
+    if (!g_state.active) return;
+    const std::string actionId = g_state.actionId;
+    const AnimationMovementState previousState = g_state.startMovementState;
+    const WeaponDefinition* def = weapons.getCurrentDef(player);
+    const uint16_t netId = def ? MimitaNet::weaponDefNetworkIdFor(def->id) : 0;
+    if (ctx.active && ctx.gameplayActive && def && netId != 0) {
+        uint16_t revision = 0;
+        if (const MeleeMoveSet* moveSet =
+                WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
+            revision = (uint16_t)(moveSet->revision & 0xffff);
+        MimitaNet::mpSendAttackRequest(ctx, netId,
+            (int16_t)actionRequestSlot(*def, ctx), player.pos,
+            glm::vec3(1.0f, 0.0f, 0.0f), player.pos,
+            255, 0u, glm::vec3(0.0f), 0, revision);
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "melee.client.action.cancel", actionId,
+        "a newer actor state interrupted the active melee action", simTick,
+        {{"action", actionId},
+         {"from_movement_state", animationMovementStateName(previousState)},
+         {"to_state", nextState}, {"reason", reason},
+         {"server_cancel_requested", ctx.active && ctx.gameplayActive && netId != 0}});
+    endAction(player);
 }
 
 } // namespace
@@ -417,6 +480,7 @@ void clientTick(Player& player,
             const WeaponDefinition* def = weapons.getCurrentDef(player);
             if (def)
                 startAction(player, ctx, *def, *forced, index, camera.front, simTick,
+                            input.movementPressed,
                             false, forcedId, "agent");
         }
     }
@@ -463,6 +527,7 @@ void clientTick(Player& player,
             const WeaponDefinition* def = weapons.getCurrentDef(player);
             if (def)
                 startAction(player, ctx, *def, *action, index, camera.front, simTick,
+                            input.movementPressed,
                             isPrimary, baseId, "input");
         }
     }
@@ -471,7 +536,7 @@ void clientTick(Player& player,
     // the durability/decay/break; the client only predicts the pose).
     if (g_shieldHeld) {
         if (g_state.active)
-            endAction(player);
+            cancelAction(player, ctx, weapons, simTick, "shield_raised", "shield");
         if (const MeleeAction* shieldAction = moveSet->find("shield")) {
             if (!shieldAction->animationClipId.empty()) {
                 // A held shield stays on the clip's authored active pose for as
@@ -486,6 +551,52 @@ void clientTick(Player& player,
             }
         }
         return;
+    }
+
+    if (g_state.active) {
+        const AnimationMovementState currentState = movementState(player, input.movementPressed);
+        const char* reason = nullptr;
+        const char* nextState = animationMovementStateName(currentState);
+        if (player.dead || player.authoredDeathActive) {
+            reason = "death";
+            nextState = "death";
+        } else if (player.currentHp < g_state.startHp ||
+                   player.percent > g_state.startPercent + 0.001f ||
+                   (player.hurtTimer > g_state.startHurtTimer + 0.02f)) {
+            reason = "hurt";
+            nextState = "hurt";
+        } else if (player.dashAnimTimer > g_state.startDashTimer + 0.02f ||
+                   player.dash.didDash) {
+            reason = "dash";
+            nextState = "dash";
+        } else if (player.downDashAnimTimer > g_state.startDownDashTimer + 0.02f ||
+                   player.dash.didDownDash) {
+            reason = "down_dash";
+            nextState = "downDash";
+        } else if ((player.freeze.freezeActive && !g_state.startFreezeActive) ||
+                   player.freeze.didFreeze) {
+            reason = "freeze";
+            nextState = "freeze";
+        } else if (player.knockbackAnimTimer > g_state.startKnockbackTimer + 0.02f) {
+            reason = "knockback";
+            nextState = "knockback";
+        } else if (player.respawnAnimTimer > g_state.startRespawnTimer + 0.02f) {
+            reason = "respawn";
+            nextState = "respawn";
+        } else if (player.jump.didGroundJump || player.jump.didAirJump) {
+            reason = "jump";
+            nextState = "jump";
+        } else if (input.movementPressed && !g_state.startMovementPressed) {
+            // A new movement input cancels the attack. Continuing movement that
+            // was already held when the attack started, or crossing a walk/run
+            // speed threshold, must not overwrite the swing mid-action.
+            reason = "movement_started";
+            nextState = animationMovementStateName(currentState);
+        }
+        if (reason) {
+            cancelAction(player, ctx, weapons, simTick, reason, nextState);
+            return;
+        }
     }
 
     if (!g_state.active)

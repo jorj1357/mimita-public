@@ -31,8 +31,14 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <fstream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <deque>
 
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
@@ -72,10 +78,28 @@ static bool gSoundDebug = true;
 
 static std::unordered_map<std::string, std::vector<uint8_t>> gSoundFileCache;
 
-// Background cache queue: one sound loaded per frame in audioUpdate()
-static std::vector<const char*> gSoundCacheQueue;
-static size_t gSoundCacheIndex = 0;
-static bool gSoundCacheComplete = false;
+// Sound file I/O and decoding preparation run on a worker thread. A cache
+// miss during gameplay must not block the main thread on a large WAV read.
+static std::mutex gSoundLoadMutex;
+static std::condition_variable gSoundLoadCv;
+static std::deque<std::string> gSoundLoadQueue;
+static std::unordered_set<std::string> gSoundLoadQueued;
+static std::thread gSoundLoadThread;
+static std::atomic<bool> gSoundLoadStop{false};
+static bool gSoundLoadStarted = false;
+
+static void soundLoadWorker();
+static void requestSoundCache(const std::string& name);
+
+struct SoundCacheLifetime {
+    ~SoundCacheLifetime() {
+        gSoundLoadStop.store(true, std::memory_order_relaxed);
+        gSoundLoadCv.notify_all();
+        if (gSoundLoadThread.joinable())
+            gSoundLoadThread.join();
+    }
+};
+static SoundCacheLifetime gSoundCacheLifetime;
 
 static std::string soundPath(const std::string& name)
 {
@@ -122,31 +146,72 @@ static std::string soundPath(const std::string& name)
     return path;
 }
 
+static void requestSoundCache(const std::string& name)
+{
+    if (name.empty())
+        return;
+    {
+        std::lock_guard<std::mutex> lock(gSoundLoadMutex);
+        if (gSoundFileCache.find(name) != gSoundFileCache.end())
+            return;
+        if (!gSoundLoadQueued.insert(name).second)
+            return;
+        gSoundLoadQueue.push_back(name);
+    }
+    gSoundLoadCv.notify_one();
+}
+
+static void soundLoadWorker()
+{
+    for (;;) {
+        std::string name;
+        {
+            std::unique_lock<std::mutex> lock(gSoundLoadMutex);
+            gSoundLoadCv.wait(lock, [] {
+                return gSoundLoadStop.load(std::memory_order_relaxed) ||
+                       !gSoundLoadQueue.empty();
+            });
+            if (gSoundLoadStop.load(std::memory_order_relaxed) &&
+                gSoundLoadQueue.empty())
+                return;
+            name = std::move(gSoundLoadQueue.front());
+            gSoundLoadQueue.pop_front();
+        }
+
+        std::string path = soundPath(name);
+        std::vector<uint8_t> data;
+        if (std::filesystem::exists(path)) {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (file) {
+                const size_t size = (size_t)file.tellg();
+                file.seekg(0);
+                data.resize(size);
+                file.read((char*)data.data(), (std::streamsize)size);
+            }
+        }
+
+        std::lock_guard<std::mutex> lock(gSoundLoadMutex);
+        gSoundFileCache.emplace(std::move(name), std::move(data));
+    }
+}
+
 static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound::CacheLookup");
-    auto it = gSoundFileCache.find(name);
-    if (it != gSoundFileCache.end()) {
-        Perf::state().audioPerf.cacheHits++;
-        return it->second;
+    {
+        std::lock_guard<std::mutex> lock(gSoundLoadMutex);
+        auto it = gSoundFileCache.find(name);
+        if (it != gSoundFileCache.end()) {
+            Perf::state().audioPerf.cacheHits++;
+            return it->second;
+        }
     }
     Perf::state().audioPerf.cacheMisses++;
-    std::string path = soundPath(name);
-    if (!std::filesystem::exists(path)) {
-        static std::vector<uint8_t> empty;
-        return empty;
-    }
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) {
-        static std::vector<uint8_t> empty;
-        return empty;
-    }
-    size_t size = (size_t)file.tellg();
-    file.seekg(0);
-    std::vector<uint8_t> data(size);
-    file.read((char*)data.data(), size);
-    auto result = gSoundFileCache.emplace(name, std::move(data));
-    return result.first->second;
+    // Do not read or decode a missing file on the gameplay thread. Request it
+    // for the worker; the current one-shot is silent, the next one is ready.
+    requestSoundCache(name);
+    static const std::vector<uint8_t> empty;
+    return empty;
 }
 
 static void startSound(const std::string& name, float volume, float pitch,
@@ -254,9 +319,13 @@ static void initAudioOnce()
         "dash", "jump", "land",
         "ui/hover"
     };
-    gSoundCacheQueue.assign(combatSounds, combatSounds + sizeof(combatSounds) / sizeof(combatSounds[0]));
-    gSoundCacheIndex = 0;
-    gSoundCacheComplete = false;
+    if (!gSoundLoadStarted) {
+        gSoundLoadStarted = true;
+        gSoundLoadStop.store(false, std::memory_order_relaxed);
+        gSoundLoadThread = std::thread(soundLoadWorker);
+    }
+    for (const char* sound : combatSounds)
+        requestSoundCache(sound);
 }
 
 void audioUpdate(float dt)
@@ -269,19 +338,6 @@ void audioUpdate(float dt)
     // Initialize audio engine early (first frame, fast — no I/O)
     if (!gAudioInit)
         initAudioOnce();
-
-    // Background cache: one sound per frame, never block
-    if (gAudioInit && !gSoundCacheComplete && gSoundCacheIndex < gSoundCacheQueue.size())
-    {
-        MIMITA_PERF_SCOPE("Audio::Update::CacheOneSound");
-        getCachedSoundData(gSoundCacheQueue[gSoundCacheIndex]);
-        ++gSoundCacheIndex;
-        if (gSoundCacheIndex >= gSoundCacheQueue.size())
-        {
-            gSoundCacheComplete = true;
-            printf("[AUDIO] Combat sounds cached: %zu files\n", gSoundFileCache.size());
-        }
-    }
 
     const size_t voicesBeforeCleanup = gActiveSounds.size();
     { MIMITA_PERF_SCOPE("Audio::Update::RemoveFinishedSounds");

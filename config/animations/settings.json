@@ -20,6 +20,7 @@
     "jump": 20,
     "fall": 20,
     "crouch": 30,
+    "crouchWalk": 30,
     "hurt": 60,
     "dash": 70,
     "downDash": 72,

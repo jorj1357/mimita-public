@@ -10,7 +10,7 @@
     "BLUE"
   ],
   "goal_value": 20,
-  "weapon_set_id": 1,
+  "weapon_set_id": 29,
   "time_limit_seconds": 180,
   "time_limit_outcome": "stalemate",
   "respawn_seconds": 0.01,

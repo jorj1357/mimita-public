@@ -1,30 +1,47 @@
 #include "player-avatar-animations.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "utils/path_utils.h"
+#include "utils/json-file-watch.h"
 #include "player-animation-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "perf/perf-spike.h"
 
 namespace {
 
 std::uint64_t fileWriteStamp(const std::string& path)
 {
     std::error_code ec;
-    if (!std::filesystem::exists(path, ec) || ec)
-        return 0;
     const auto t = std::filesystem::last_write_time(path, ec);
     if (ec)
         return 0;
     return (std::uint64_t)t.time_since_epoch().count();
+}
+
+// Animation JSON live edit is a presentation feature, not a simulation task.
+// Stat-ing every clip and avatar JSON on the gameplay thread caused 20 ms
+// fixed-tick stalls on busy scenes. Keep the same 100 ms visibility by doing
+// only the directory stamps on a background thread; the main thread validates
+// and installs a changed set when that thread publishes a dirty flag.
+JsonFileWatch& animationFileWatch()
+{
+    static JsonFileWatch watch(
+        {resolveAssetPath("config/animations"),
+         resolveAssetPath("assets/avatars")},
+        std::chrono::milliseconds(100));
+    return watch;
 }
 
 bool readJsonFile(const std::string& path, nlohmann::json& out)
@@ -69,6 +86,7 @@ void parseStateMap(const nlohmann::json& root, AvatarStateMap& states)
     states.fall = s.value("fall", states.fall);
     states.land = s.value("land", states.land);
     states.crouch = s.value("crouch", states.crouch);
+    states.crouchWalk = s.value("crouchWalk", states.crouchWalk);
     states.crouchIn = s.value("crouchIn", states.crouchIn);
     states.crouchOut = s.value("crouchOut", states.crouchOut);
     states.dash = s.value("dash", states.dash);
@@ -147,7 +165,8 @@ void installDefaultPriorities(AnimationRuntimeSettings& s)
 {
     s.statePriorities = {
         {"idle", 0}, {"land", 5}, {"walk", 10}, {"run", 10}, {"jump", 20},
-        {"fall", 20}, {"crouch", 30}, {"hurt", 60}, {"dash", 70},
+        {"fall", 20}, {"crouch", 30}, {"crouchWalk", 30},
+        {"hurt", 60}, {"dash", 70},
         {"downDash", 72}, {"freeze", 74}, {"attack", 80}, {"death", 100}
     };
 }
@@ -435,6 +454,21 @@ void AvatarAnimationRegistry::pollReload(std::uint32_t activationTick)
         return;
     mLastPollMs = now;
 
+    const bool watchDirty = animationFileWatch().consumeDirty();
+    bool hasUnloaded = false;
+    if (!watchDirty) {
+        for (const auto& [name, entry] : mEntries) {
+            (void)name;
+            if (!entry.loaded) {
+                hasUnloaded = true;
+                break;
+            }
+        }
+    }
+    if (!watchDirty && !hasUnloaded)
+        return;
+
+    MIMITA_PERF_SCOPE("Animation::HotReloadPoll");
     std::vector<std::string> changedAvatars;
     for (auto& [name, entry] : mEntries) {
         bool changed = !entry.loaded ||

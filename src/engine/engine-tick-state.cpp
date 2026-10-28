@@ -261,7 +261,7 @@ void engineTickState(Engine& engine, float dt)
         if (gameState != prevState)
         {
             if (gameState == GAME_PLAYING && worldLoaded &&
-                !gReplayRecorder.isRecording()) {
+                !gReplayRecorder.isRecording() && gExportConfig.autoRecord) {
                 Terminal::instance().execute("replay.record");
                 Terminal::instance().addLog(
                     "[REPLAY] 60 second ring buffer active");

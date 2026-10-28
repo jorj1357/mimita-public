@@ -38,7 +38,7 @@
     "poseComposition": "layered or authored_only",
     "include": "repository-relative shared clip paths",
     "set": "optional ordered set id from animation-sets.json",
-    "states": "default, locomotion, run, jump, fall, land, dash, downDash, freeze, knockback, crouch, crouchIn, crouchOut, respawn, attack, equip, hurt, hurtSmall, hurtNormal, hurtLarge, death, deathSmall"
+    "states": "default, locomotion, run, jump, fall, land, dash, downDash, freeze, knockback, crouch, crouchWalk, crouchIn, crouchOut, respawn, attack, equip, hurt, hurtSmall, hurtNormal, hurtLarge, death, deathSmall"
   },
   "animation_set_fields": {
     "order": "integer ordering hint for editors and diagnostics",

@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include "animation-rotation.h"
+#include "animation-movement-state.h"
 #include "debug/structured-log.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
@@ -523,6 +524,8 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     knockbackAnimTimer = std::max(0.0f, knockbackAnimTimer - dt);
 
     if (crouching != animPrevCrouching) {
+        // A new crouch transition supersedes a landing presentation.
+        landAnimTimer = 0.0f;
         const std::string crouchClip = sm
             ? (crouching ? sm->crouchIn : sm->crouchOut) : std::string();
         crouchAnimTimer = crouchClip.empty() ? 0.0f : clipDurationSeconds(crouchClip);
@@ -531,6 +534,10 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     } else {
         crouchAnimTimer = std::max(0.0f, crouchAnimTimer - dt);
     }
+    // Crouch-in/out are transitions for a stationary stance. Moving or taking
+    // off immediately selects the new movement pose instead of finishing them.
+    if (nowMoving || !ground.stableOnGround)
+        crouchAnimTimer = 0.0f;
 
     // Tool equip clip (owned by the weapon animation profile).
     const WeaponRuntime* preRuntime = nullptr;
@@ -613,7 +620,9 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         authoredDeathTimer > 0.0f && !deathClipName.empty() && findClip(deathClipName);
 
     std::string activeAnim = currentAnimName;
-    nlohmann::json candidateJson = nlohmann::json::array();
+    nlohmann::json candidateJson;
+    if (gAnimationPriorityDebug)
+        candidateJson = nlohmann::json::array();
     std::string selectedState;
     int selectedPriority = -1;
     if (!lockedClip.empty()) {
@@ -636,16 +645,23 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
             if (candidateCount >= 24) return;
             const AnimClip* c = clip.empty() ? nullptr : findClip(clip);
             const int priority = animationStatePriority(state) + (c ? c->priority : 0);
-            candidateJson.push_back({{"state", state}, {"clip", clip},
-                {"priority", priority}, {"eligible", eligible},
-                {"clip_found", c != nullptr}});
+            if (gAnimationPriorityDebug) {
+                candidateJson.push_back({{"state", state}, {"clip", clip},
+                    {"priority", priority}, {"eligible", eligible},
+                    {"clip_found", c != nullptr}});
+            }
             if (!eligible || !c) return;
             candidates[candidateCount++] = {state, clip, priority};
         };
 
         const bool airborne = !ground.stableOnGround;
-        const bool rising = vel.z > 1.0f;
-        const bool fast = speed > 12.0f;
+    // Landing is a one-time presentation of the grounded landing state. Any
+    // move or renewed airborne state supersedes it instead of letting it
+    // reappear later when movement stops.
+    if (nowMoving || airborne)
+        landAnimTimer = 0.0f;
+        const AnimationMovementState movementState = resolveAnimationMovementState(
+            speed, vel.z, ground.stableOnGround, crouching, nowMoving);
         const std::string airFallback = !sm->fall.empty()
             ? sm->fall
             : (!sm->jump.empty() ? sm->jump : locomotionClip());
@@ -656,17 +672,43 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         addCandidate("downDash", downDashClipName, downDashAnimTimer > 0.0f);
         addCandidate("dash", dashClipName, dashAnimTimer > 0.0f);
         addCandidate("knockback", sm->knockback, knockbackAnimTimer > 0.0f);
-        addCandidate("crouch", crouchAnimInto ? sm->crouchIn : sm->crouchOut,
-                     crouchAnimTimer > 0.0f);
-        addCandidate("land", sm->land, landAnimTimer > 0.0f && !nowMoving);
-        addCandidate("jump", sm->jump, airborne && rising);
-        addCandidate("fall", airFallback, airborne);
-        addCandidate("crouch", sm->crouch, crouching && crouchAnimTimer <= 0.0f);
-        if (nowMoving) {
-            addCandidate(fast ? "run" : "walk",
-                         fast && !sm->run.empty() ? sm->run : locomotionClip(), true);
+        const bool landingActive = ground.stableOnGround && !nowMoving &&
+                                   landAnimTimer > 0.0f && !sm->land.empty();
+        if (landingActive) {
+            addCandidate("land", sm->land, true);
+        } else {
+            switch (movementState) {
+                case AnimationMovementState::Idle:
+                    addCandidate("idle", defaultClip(), true);
+                    break;
+                case AnimationMovementState::Walk:
+                    addCandidate("walk", locomotionClip(), true);
+                    break;
+                case AnimationMovementState::Run:
+                    addCandidate("run", sm->run.empty() ? locomotionClip() : sm->run, true);
+                    break;
+                case AnimationMovementState::Crouch: {
+                    const std::string clip = crouchAnimTimer > 0.0f
+                        ? (crouchAnimInto ? sm->crouchIn : sm->crouchOut)
+                        : sm->crouch;
+                    addCandidate("crouch", clip, !clip.empty());
+                    break;
+                }
+                case AnimationMovementState::CrouchWalk: {
+                    std::string clip = sm->crouchWalk.empty()
+                        ? locomotionClip() : sm->crouchWalk;
+                    if (!findClip(clip)) clip = locomotionClip();
+                    addCandidate("crouchWalk", clip, true);
+                    break;
+                }
+                case AnimationMovementState::Jump:
+                    addCandidate("jump", sm->jump.empty() ? airFallback : sm->jump, true);
+                    break;
+                case AnimationMovementState::Fall:
+                    addCandidate("fall", airFallback, airborne);
+                    break;
+            }
         }
-        addCandidate("idle", defaultClip(), !nowMoving && !airborne);
         if (equipAnimTimer > 0.0f) {
             const std::string equipClip = weaponAnimationSet && weaponAnimationSet->valid
                 ? weaponAnimationSet->states.equip : sm->equip;
@@ -754,16 +796,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                                     activeAnim == sm->land;
         // The transition tick itself samples the first landing pose (tick 0).
         animStateTime = restartLanding ? -dt : 0.0f;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Avatar, StructuredLevel::Important,
-            "anim.state.changed", avatarName().empty() ? username : avatarName(),
-            "animation state changed",
-            (uint32_t)movementSimulationTick,
-            {{"avatar", avatarName()},
+        nlohmann::json stateFields = {
+             {"avatar", avatarName()},
              {"from", prevAnim}, {"to", activeAnim},
              {"selected_state", selectedState},
              {"selected_priority", selectedPriority},
-             {"candidates", candidateJson},
              {"aim_layer", [&]() {
                  const AnimClip* selected = findClip(activeAnim);
                  return selected && selected->aimLayer;
@@ -777,7 +814,16 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
              {"stable_on_ground", ground.stableOnGround},
              {"crouching", crouching},
              {"move01", move01},
-             {"velocity", {vel.x, vel.y, vel.z}}},
+             {"velocity", {vel.x, vel.y, vel.z}}};
+        // Candidate arrays are large and hot; keep them behind the explicit
+        // priority-debug switch so normal play does not pay JSON/log cost.
+        if (gAnimationPriorityDebug)
+            stateFields["candidates"] = candidateJson;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "anim.state.changed", avatarName().empty() ? username : avatarName(),
+            "animation state changed",
+            (uint32_t)movementSimulationTick, stateFields,
             __FILE__, __LINE__, __FUNCTION__);
 
         if (meleeExclusivePose && lockedClip.empty()) {
@@ -1079,6 +1125,43 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
         weaponAnimationSet->clips.count(activeAnim)) {
         hasWeaponPose = false;
         weaponPoseCfg = nullptr;
+    }
+
+    if (weaponId == "mace" && (!lockedClip.empty() || !weaponPoseActionState.empty())) {
+        static uint64_t lastMaceTraceMs = 0;
+        static std::string lastMaceTraceKey;
+        const std::string traceSelectedWeaponPose =
+            hasWeaponPose ? poseLookupId : std::string();
+        const std::string traceKey = activeAnim + "|" + lockedClip + "|" +
+            weaponPoseActionState + "|" + traceSelectedWeaponPose + "|" +
+            std::to_string((int)nowMoving) + "|" + std::to_string((int)ground.stableOnGround);
+        const uint64_t nowTrace = nowMs();
+        if (traceKey != lastMaceTraceKey || nowTrace - lastMaceTraceMs >= 250) {
+            lastMaceTraceKey = traceKey;
+            lastMaceTraceMs = nowTrace;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "mace.anim.trace", avatarName().empty() ? username : avatarName(),
+                "Mace action animation ownership snapshot",
+                (uint32_t)movementSimulationTick,
+                {{"actor", username}, {"avatar", avatarName()},
+                 {"weapon", weaponId}, {"action_locked_clip", lockedClip},
+                 {"locked_clip_sample_tick", lockedClipSampleTick},
+                 {"selected_clip", activeAnim}, {"current_clip", currentAnimName},
+                 {"selected_state", selectedState},
+                 {"selected_priority", selectedPriority},
+                 {"weapon_pose_action", weaponPoseActionState},
+                 {"selected_weapon_pose", traceSelectedWeaponPose},
+                 {"has_weapon_pose", hasWeaponPose},
+                 {"active_clip_in_weapon_profile", activeClip && weaponAnimationSet &&
+                    weaponAnimationSet->clips.count(activeAnim) > 0},
+                 {"moving", nowMoving}, {"movement_pressed", movementPressed},
+                 {"on_ground", ground.onGround},
+                 {"stable_on_ground", ground.stableOnGround},
+                 {"velocity", {vel.x, vel.y, vel.z}},
+                 {"hitbox_action_active", !lockedClip.empty()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     const std::string selectedWeaponPose = hasWeaponPose ? poseLookupId : std::string();

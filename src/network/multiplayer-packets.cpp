@@ -427,6 +427,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     // lower value. Reset cached community state before packet ordering starts.
     CommunityMatchClient::instance().reset();
     ctx.serverAddress = address;
+    ++ctx.connectionAttemptId;
+    ctx.joinRequestSends = 0;
 
     if (!netStartup())
     {
@@ -779,6 +781,73 @@ const char* connectionStateName(ConnectionState state)
     return "Unknown";
 }
 
+// ── Bounded connection/session diagnostics ────────────────────────────
+// These helpers emit one structured record per transition. They never poll or
+// run per frame; callers must only call them when a stage actually changes.
+
+static std::string runtimeBuildId()
+{
+    const char* value = std::getenv("MIMITA_BUILD_ID");
+    return value && *value ? std::string(value) : std::string();
+}
+
+static void writeConnectStage(const std::string& roomCode,
+                              const std::string& transport,
+                              const std::string& serverAddress,
+                              uint32_t attempt, uint32_t maxAttempts,
+                              const char* stage, const char* result,
+                              uint64_t elapsedMs, uint64_t timeoutMs,
+                              const std::string& errorCode,
+                              const std::string& reason)
+{
+    const bool failed = std::strcmp(result, "failed") == 0 ||
+                        std::strcmp(result, "timeout") == 0 ||
+                        std::strcmp(result, "rejected") == 0 ||
+                        std::strcmp(result, "cancelled") == 0;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network,
+        failed ? StructuredLevel::Errors : StructuredLevel::Important,
+        "network.connect.stage", roomCode,
+        reason.empty() ? (failed ? "connection stage failed" : "connection stage")
+                       : reason,
+        0,
+        nlohmann::json{
+            {"attempt", attempt}, {"max_attempts", maxAttempts},
+            {"stage", stage}, {"result", result},
+            {"elapsed_ms", elapsedMs}, {"timeout_ms", timeoutMs},
+            {"room_code", roomCode}, {"transport", transport},
+            {"server_address", serverAddress},
+            {"build_id", runtimeBuildId()},
+            {"error_code", errorCode},
+            {"error_status", failed ? result : ""}},
+        __FILE__, __LINE__, __func__);
+}
+
+void mpLogConnectStage(const MultiplayerContext& ctx,
+                       const char* stage, const char* result,
+                       uint64_t elapsedMs, uint64_t timeoutMs,
+                       const std::string& errorCode,
+                       const std::string& reason)
+{
+    writeConnectStage(ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode,
+                      ctx.transport ? "ice" : "udp", ctx.serverAddress,
+                      ctx.connectionAttemptId, 0, stage, result,
+                      elapsedMs, timeoutMs, errorCode, reason);
+}
+
+void mpLogConnectStageForRoom(const std::string& roomCode,
+                              const std::string& transport,
+                              const std::string& serverAddress,
+                              uint32_t attempt, uint32_t maxAttempts,
+                              const char* stage, const char* result,
+                              uint64_t elapsedMs, uint64_t timeoutMs,
+                              const std::string& errorCode,
+                              const std::string& reason)
+{
+    writeConnectStage(roomCode, transport, serverAddress, attempt, maxAttempts,
+                      stage, result, elapsedMs, timeoutMs, errorCode, reason);
+}
+
 // ── ICE client connection ──────────────────────────────────────────────
 // Connects to an ICE-enabled server via the coordinator.
 // Creates an IceAgent, exchanges SDP through coordinator, establishes
@@ -876,7 +945,13 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
     // authoritative, so a transient propagation delay must not fail the join.
     iceConnectSetMessage(job, "Checking room...");
     {
+        const uint64_t lookupStartMs = nowMs();
         CoordinatorLookupResult lookup = coordinatorIceLookup(roomCode);
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode, 1, 1,
+            "room_lookup",
+            lookup.reachable ? (lookup.exists ? "ok" : "not_visible") : "unreachable",
+            nowMs() - lookupStartMs, 5000, lookup.status,
+            lookup.reachable ? "" : "coordinator lookup failed");
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Important,
             "network.ice-room-lookup", roomCode,
@@ -905,7 +980,16 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
     // Fetch TURN credentials from coordinator (overrides local ice-dev.json)
     {
+        const uint64_t turnStartMs = nowMs();
         TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode, 1, 1,
+            "turn_credentials",
+            turnCreds.ok && !turnCreds.credential.empty() ? "ok" : "unavailable",
+            nowMs() - turnStartMs, 5000,
+            turnCreds.ok ? "" : "turn-credentials-unavailable",
+            turnCreds.ok && !turnCreds.credential.empty()
+                ? ""
+                : "direct connections may fail behind symmetric NAT");
         if (turnCreds.ok && !turnCreds.credential.empty())
         {
             iceConfig.turn.host = turnCreds.host;
@@ -933,10 +1017,14 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
         if (cancelled()) break;
 
         printf("[ICE CONNECT] attempt %d/%d room=%s\n", attempt, kMaxRetries, roomCode.c_str());
+        const uint64_t attemptStartMs = nowMs();
 
         auto agentPtr = std::make_unique<IceAgent>();
         if (!agentPtr->initialize(iceConfig))
         {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "agent_init", "failed",
+                nowMs() - attemptStartMs, 0, "agent-init-failed", "ICE agent init failed");
             printf("[ICE CONNECT] agent initialization failed (attempt %d)\n", attempt);
             if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
             backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
@@ -944,8 +1032,16 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
         }
 
         iceConnectSetMessage(job, "ICE: gathering candidates...");
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+            attempt, kMaxRetries, "candidate_gather", "started",
+            nowMs() - attemptStartMs, 15000, "", "");
+        const uint64_t gatherStartMs = nowMs();
         if (!agentPtr->gatherCandidates())
         {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "candidate_gather", "failed",
+                nowMs() - gatherStartMs, 15000, "gather-start-failed",
+                "juice_gather_candidates failed");
             printf("[ICE CONNECT] candidate gathering failed (attempt %d)\n", attempt);
             if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
             backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
@@ -955,11 +1051,18 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
                                   nullptr, &job->cancel))
         {
             if (cancelled()) break;
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "candidate_gather", "timeout",
+                nowMs() - gatherStartMs, 15000, "gather-timeout",
+                "candidate gathering did not complete");
             printf("[ICE CONNECT] gather timeout (15s) (attempt %d)\n", attempt);
             if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
             backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+            attempt, kMaxRetries, "candidate_gather", "ok",
+            nowMs() - gatherStartMs, 15000, "", "");
         printf("[ICE CONNECT] candidates gathered (attempt %d)\n", attempt);
 
         // Exchange SDP via coordinator (two-phase offer/answer)
@@ -967,9 +1070,14 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
             + "_" + std::to_string(nowMs()) + "_" + std::to_string(attempt);
         iceConnectSetMessage(job, "ICE: contacting coordinator...");
 
+        const uint64_t beginJoinStartMs = nowMs();
         auto beginJoin = coordinatorIceBeginJoin(roomCode, sessionId, agentPtr->localSdp());
         if (!beginJoin.ok || beginJoin.requestId.empty())
         {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "coordinator_begin_join", "failed",
+                nowMs() - beginJoinStartMs, 5000, beginJoin.errorCode,
+                "coordinator rejected or lost begin-join");
             printf("[ICE CONNECT] coordinator ICE begin-join failed "
                    "room=%s error=%s (attempt %d)\n",
                    roomCode.c_str(),
@@ -979,6 +1087,10 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
             continue;
         }
 
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+            attempt, kMaxRetries, "coordinator_begin_join", "ok",
+            nowMs() - beginJoinStartMs, 5000, "",
+            beginJoin.requestId.substr(0, 12));
         printf("[ICE CONNECT] begin-join accepted room=%s request=%s (attempt %d)\n",
                roomCode.c_str(),
                beginJoin.requestId.substr(0, std::min<size_t>(12, beginJoin.requestId.size())).c_str(),
@@ -990,6 +1102,20 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
         const uint64_t answerWaitStartedMs = nowMs();
         constexpr uint64_t kHostAnswerTimeoutMs = 15000;
         bool retriedBeginJoin = false;
+        bool hostAnswerTerminalLogged = !hostIceDescription.empty();
+        if (!hostAnswerTerminalLogged)
+        {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "host_answer", "waiting",
+                0, kHostAnswerTimeoutMs, "", "waiting for server SDP");
+        }
+        else
+        {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "host_answer", "ok",
+                nowMs() - answerWaitStartedMs, kHostAnswerTimeoutMs, "",
+                "server SDP supplied by begin-join");
+        }
 
         while (hostIceDescription.empty() &&
                nowMs() - answerWaitStartedMs < kHostAnswerTimeoutMs)
@@ -1002,12 +1128,22 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
             if (pollResult.ok && !pollResult.hostIceDescription.empty())
             {
                 hostIceDescription = pollResult.hostIceDescription;
+                mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                    attempt, kMaxRetries, "host_answer", "ok",
+                    nowMs() - answerWaitStartedMs, kHostAnswerTimeoutMs, "",
+                    "server SDP received");
+                hostAnswerTerminalLogged = true;
                 break;
             }
 
             if (pollResult.status == "failed" ||
                 pollResult.status == "expired")
             {
+                hostAnswerTerminalLogged = true;
+                mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                    attempt, kMaxRetries, "host_answer", "failed",
+                    nowMs() - answerWaitStartedMs, kHostAnswerTimeoutMs,
+                    pollResult.errorCode, pollResult.status);
                 printf("[ICE CONNECT] server answer failed "
                        "room=%s request=%s status=%s error=%s (attempt %d)\n",
                        roomCode.c_str(),
@@ -1050,6 +1186,13 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
         if (hostIceDescription.empty())
         {
+            if (!hostAnswerTerminalLogged)
+            {
+                mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                    attempt, kMaxRetries, "host_answer", "timeout",
+                    nowMs() - answerWaitStartedMs, kHostAnswerTimeoutMs,
+                    "host-answer-timeout", "server never answered begin-join");
+            }
             printf("[ICE CONNECT] server answer timeout "
                    "room=%s request=%s (attempt %d)\n",
                    roomCode.c_str(),
@@ -1066,6 +1209,10 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
         if (!agentPtr->setRemoteDescription(hostIceDescription))
         {
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "ice_remote_description", "failed",
+                nowMs() - answerWaitStartedMs, 0, "set-remote-description-failed",
+                "libjuice rejected the server SDP");
             printf("[ICE CONNECT] setRemoteDescription failed (attempt %d)\n", attempt);
             if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
             backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
@@ -1075,15 +1222,26 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
         iceConnectSetMessage(job, "ICE: connecting...");
 
         std::string earlyRecv;
+        const uint64_t iceConnectStartMs = nowMs();
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+            attempt, kMaxRetries, "ice_connect", "started",
+            0, 30000, "", "");
         if (!waitForIceAgentState(*agentPtr, IceAgentState::Connected, 30000,
                                   &earlyRecv, &job->cancel))
         {
             if (cancelled()) break;
+            mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+                attempt, kMaxRetries, "ice_connect", "timeout",
+                nowMs() - iceConnectStartMs, 30000, "ice-connect-timeout",
+                "ICE agent did not reach Connected");
             printf("[ICE CONNECT] connection timeout (30s) (attempt %d)\n", attempt);
             if (attempt < kMaxRetries && !sleepInterruptible(backoffMs, job->cancel)) break;
             backoffMs = std::min<uint64_t>(backoffMs * 2, 16000);
             continue;
         }
+        mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+            attempt, kMaxRetries, "ice_connect", "ok",
+            nowMs() - iceConnectStartMs, 30000, "", "");
         printf("[ICE CONNECT] ICE connection established (attempt %d)\n", attempt);
         agentPtr->logSelectedPath();
 
@@ -1110,6 +1268,10 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
         return;
     }
 
+    mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode,
+        kMaxRetries, kMaxRetries, "ice_connect", "failed",
+        0, 0, "all-attempts-failed",
+        "all ICE join attempts failed");
     printf("[ICE CONNECT] FATAL: all %d attempts failed room=%s\n", kMaxRetries, roomCode.c_str());
 
     // Check if room still exists — helps user understand the failure
@@ -1144,6 +1306,8 @@ bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
         mpShutdown(ctx);
 
     ctx.currentRoomCode = roomCode;
+    ++ctx.connectionAttemptId;
+    ctx.joinRequestSends = 0;
     ctx.connectFailed = false;
     ctx.connectionStatus = "Connecting...";
 
@@ -1251,6 +1415,7 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.hasLocalServerPosition = false;
     ctx.localPlayerReconciled = false;
     ctx.connectionState = ConnectionState::Connecting;
+    ctx.joinRequestSends = 0;
     ctx.vipJoinTicket.clear();
     ctx.vipJoinTicketRequested = false;
     ctx.joinToken = status.joinToken;
@@ -1416,6 +1581,62 @@ static void mpNotifyReconnectAttempt(const MultiplayerContext& ctx)
     pushConnectionNotification(ctx, "Reconnecting", buf);
 }
 
+static void writeSessionHealthEvent(const MultiplayerContext& ctx,
+                                    ConnectionState before, ConnectionState next,
+                                    const char* trigger,
+                                    const std::string& title,
+                                    const std::string& message)
+{
+    const auto& cfg = NetworkingConfig::instance().data();
+    const uint64_t now = nowMs();
+    const uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
+        ? now - ctx.lastHeardServerMs : 0;
+    const uint64_t graceRemaining = ctx.reconnectGraceDeadlineMs > now
+        ? ctx.reconnectGraceDeadlineMs - now : 0;
+    const bool heardSinceDisconnect =
+        ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
+    const bool falsePositive =
+        next == ConnectionState::Reconnecting &&
+        lastHeardAge > 0 &&
+        lastHeardAge <= (uint64_t)cfg.timeouts.stalePacketThresholdMs;
+    const bool terminal = next == ConnectionState::ReconnectFailed ||
+                          next == ConnectionState::HostClosed ||
+                          next == ConnectionState::Kicked ||
+                          next == ConnectionState::ServerCrashed;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network,
+        terminal ? StructuredLevel::Errors : StructuredLevel::Important,
+        "network.session.health",
+        "CONNECTION_" + std::to_string(ctx.localPlayerId),
+        "client connection health transition", ctx.tick,
+        nlohmann::json{
+            {"from", connectionStateName(before)},
+            {"to", connectionStateName(next)},
+            {"trigger", trigger},
+            {"last_heard_age_ms", lastHeardAge},
+            {"stale_threshold_ms", (uint64_t)cfg.timeouts.stalePacketThresholdMs},
+            {"hard_timeout_ms", (uint64_t)cfg.timeouts.clientTimeoutMs},
+            {"grace_deadline_ms", ctx.reconnectGraceDeadlineMs},
+            {"grace_remaining_ms", graceRemaining},
+            {"heard_since_disconnect", heardSinceDisconnect},
+            {"packet_received_after_disconnect", heardSinceDisconnect},
+            {"reconnect_attempt", ctx.reconnectAttempts},
+            {"reconnect_max_attempts", cfg.retries.reconnectMaxAttempts},
+            {"reconnect_backoff_ms", ctx.reconnectBackoffMs},
+            {"last_heard_server_ms", ctx.lastHeardServerMs},
+            {"disconnect_started_ms", ctx.disconnectStartedMs},
+            {"false_positive_suspected", falsePositive},
+            {"notification_title", title},
+            {"notification_message", message},
+            {"active", ctx.active},
+            {"connected", ctx.connected},
+            {"room_code", ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode},
+            {"server_address", ctx.serverAddress},
+            {"local_player_id", ctx.localPlayerId},
+            {"build_id", runtimeBuildId()}},
+        __FILE__, __LINE__, __func__);
+}
+
 void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
                                    ConnectionState before, ConnectionState next)
 {
@@ -1423,6 +1644,8 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
         return;
     ctx.lastNotifiedConnectionState = next;
 
+    std::string title;
+    std::string message;
     char buf[256];
     switch (next)
     {
@@ -1432,18 +1655,18 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
             ? (double)(nowMs() - ctx.lastHeardServerMs) / 1000.0 : 0.0;
         snprintf(buf, sizeof(buf),
                  "Server status: Weak connection — last packet %.2fs ago", age);
-        pushConnectionNotification(ctx, "Weak connection", buf);
+        title = "Weak connection";
+        message = buf;
         break;
     }
     case ConnectionState::Connected:
     {
         const bool recovered = before == ConnectionState::Reconnecting;
-        pushConnectionNotification(ctx,
-            recovered ? "Reconnected" : "Connected",
-            (recovered ? "Server status: Reconnected"
-                       : (ctx.serverName.empty()
-                           ? "Server status: Connected"
-                           : "Connected to " + ctx.serverName + "!!!!")).c_str());
+        title = recovered ? "Reconnected" : "Connected";
+        message = recovered ? "Server status: Reconnected"
+                            : (ctx.serverName.empty()
+                                ? "Server status: Connected"
+                                : "Connected to " + ctx.serverName + "!!!!");
         break;
     }
     case ConnectionState::Reconnecting:
@@ -1454,26 +1677,31 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
                  ctx.disconnectStartedMs
                      ? (double)(nowMs() - ctx.disconnectStartedMs) / 1000.0
                      : 0.0);
-        pushConnectionNotification(ctx, "Reconnecting", buf);
-        break;    case ConnectionState::ReconnectFailed:
-        pushConnectionNotification(ctx, "Disconnected",
-            "Server status: Disconnected — reconnect failed");
+        title = "Reconnecting";
+        message = buf;
+        break;
+    case ConnectionState::ReconnectFailed:
+        title = "Disconnected";
+        message = "Server status: Disconnected — reconnect failed";
         break;
     case ConnectionState::HostClosed:
-        pushConnectionNotification(ctx, "Host closed",
-            "Server status: Host closed the connection");
+        title = "Host closed";
+        message = "Server status: Host closed the connection";
         break;
     case ConnectionState::Kicked:
-        pushConnectionNotification(ctx, "Kicked",
-            "Server status: Kicked from server");
+        title = "Kicked";
+        message = "Server status: Kicked from server";
         break;
     case ConnectionState::ServerCrashed:
-        pushConnectionNotification(ctx, "Server unreachable",
-            "Server status: Server unreachable — connection lost");
+        title = "Server unreachable";
+        message = "Server status: Server unreachable — connection lost";
         break;
     default:
         break;
     }
+
+    if (!title.empty())
+        pushConnectionNotification(ctx, title.c_str(), message.c_str());
 
     // Keep the legacy connectionStatus string honest for existing HUD paths.
     ctx.connectionStatus = mpConnectionHealthText(ctx);
@@ -1496,6 +1724,8 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
          {"local_player_id", ctx.localPlayerId},
          {"required_map_id", ctx.requiredMapId}},
         __FILE__, __LINE__, __func__);
+
+    writeSessionHealthEvent(ctx, before, next, "notification", title, message);
 }
 
 void mpStartReconnect(MultiplayerContext& ctx)
@@ -1530,6 +1760,11 @@ void mpStartReconnect(MultiplayerContext& ctx)
         ctx.lastReconnectAttemptMs = now;
     }
     logReconnectResourceProbe(ctx, "attempt-start");
+
+    writeSessionHealthEvent(ctx, ConnectionState::Reconnecting,
+                            ConnectionState::Reconnecting,
+                            "reconnect_attempt", "Reconnecting",
+                            "attempt #" + std::to_string(ctx.reconnectAttempts));
 
     Debug::warn(Debug::Category::Networking,
                 "[NET RECONNECT] starting player=%u graceDeadlineMs=%llu\n",
@@ -1572,6 +1807,10 @@ void mpTickReconnect(MultiplayerContext& ctx)
     logReconnectResourceProbe(ctx, "attempt-sent");
 
     mpNotifyReconnectAttempt(ctx);
+    writeSessionHealthEvent(ctx, ConnectionState::Reconnecting,
+                            ConnectionState::Reconnecting,
+                            "reconnect_attempt", "Reconnecting",
+                            "attempt #" + std::to_string(ctx.reconnectAttempts));
 
     Debug::warn(Debug::Category::Networking,
                 "[NET RECONNECT] attempt=%d/%u interval=%llums elapsed=%llums\n",

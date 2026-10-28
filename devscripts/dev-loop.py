@@ -2730,6 +2730,9 @@ class DevLoop:
                 "MIMITA_BUILD_ID": build_id,
                 "MIMITA_RUN_METADATA": json.dumps(metadata, separators=(",", ":")),
             }
+            if (self.profile.get("ice_force_relay", False) or
+                    self.launch_mode.get("ice_force_relay", False)):
+                common_env["MIMITA_ICE_FORCE_RELAY"] = "1"
             server_env = {**common_env, "MIMITA_PROCESS_ROLE": "server"}
             self.save_state("launching_server")
             version_env = {**common_env, "MIMITA_PROCESS_ROLE": "preflight"}
@@ -2846,6 +2849,39 @@ class DevLoop:
                   server_pid=server.pid, local_port=local_server_port)
             self.write_server_marker()
             room_code = ""
+
+        join_via_room_code = bool(self.profile.get("join_via_room_code", False) or
+                                  self.launch_mode.get("join_via_room_code", False))
+        if join_via_room_code and not room_code:
+            stage_started = time.monotonic()
+            stage("server_room_registration", "waiting",
+                  "waiting for coordinator room code before client launch",
+                  stage_started, server_pid=self.server_pid,
+                  room_file=str(self.room_file_path or ""))
+            room_code = self.wait_for_room_code(self.server_pid,
+                                                self.room_file_path,
+                                                timeout=60.0)
+            if room_code:
+                self.record_runtime_event(
+                    "dev-loop.room-code.published",
+                    {"server_pid": self.server_pid, "room_code": room_code,
+                     "room_file": str(self.room_file_path)},
+                    "coordinator room code received before room-code client launch",
+                )
+                print(f"[DEV] ROOM CODE: {room_code}")
+            stage("server_room_registration",
+                  "ready" if room_code else "failed",
+                  "coordinator room code ready" if room_code
+                  else "coordinator room code did not arrive before the timeout",
+                  stage_started, server_pid=self.server_pid,
+                  timeout_seconds=60)
+            if not room_code:
+                self.last_message = "room-code join requested but no room code arrived"
+                stage("complete", "failed", self.last_message,
+                      server_pid=self.server_pid)
+                self.save_state("room_code_timeout")
+                stop_server_for_launch()
+                return False
 
         client_args = [str(launch_exe)]
         if room_code:
@@ -2968,14 +3004,65 @@ class DevLoop:
                 "server/client readiness or build identity did not match"
             )
             self.last_message = self.build_mismatch_reason
+
+        connection_ready = True
+        if self.client_ready and bool(
+                self.profile.get("require_client_connection", False) or
+                self.launch_mode.get("require_client_connection", False)):
+            stage_started = time.monotonic()
+            connected_event = self.wait_for_journal_event(
+                "network.connection-state.changed", {client.pid},
+                timeout=45.0, field_key="to", field_value="Connected")
+            connection_ready = connected_event is not None
+            if not connection_ready:
+                self.last_message = (
+                    f"client pid={client.pid} did not reach Connected before the timeout")
+            stage("client_connection", "ready" if connection_ready else "failed",
+                  self.last_message if not connection_ready else "client reached Connected",
+                  stage_started, client_pid=client.pid, timeout_seconds=45)
+
+        mode_ready = True
+        if connection_ready and bool(
+                self.profile.get("require_mode_start", False) or
+                self.launch_mode.get("require_mode_start", False)):
+            stage_started = time.monotonic()
+            mode_event = self.wait_for_journal_event(
+                "network.mode.start", {client.pid, self.server_pid},
+                timeout=45.0, field_key="stage", field_value="active")
+            mode_ready = mode_event is not None
+            if not mode_ready:
+                self.last_message = "managed mode did not become active before the timeout"
+            stage("mode_start", "ready" if mode_ready else "failed",
+                  self.last_message if not mode_ready else "managed mode reached ACTIVE",
+                  stage_started, server_pid=self.server_pid, client_pid=client.pid,
+                  timeout_seconds=45)
+
+        npcwaves_ready = True
+        if mode_ready and bool(
+                self.profile.get("require_npcwaves_start", False) or
+                self.launch_mode.get("require_npcwaves_start", False)):
+            stage_started = time.monotonic()
+            wave_event = self.wait_for_journal_event(
+                "network.npcwaves.start", {client.pid, self.server_pid},
+                timeout=45.0, field_key="stage", field_value="begin")
+            npcwaves_ready = wave_event is not None
+            if not npcwaves_ready:
+                self.last_message = "NPC Waves did not begin before the timeout"
+            stage("npcwaves_start", "ready" if npcwaves_ready else "failed",
+                  self.last_message if not npcwaves_ready else "NPC Waves wave 1 began",
+                  stage_started, server_pid=self.server_pid, client_pid=client.pid,
+                  timeout_seconds=45)
+
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
         if self.client_ready:
             self.apply_launch_visibility()
             self.restore_prelaunch_foreground(prelaunch_windows)
             self.monitor_launch_windows()
-        self.save_state("running" if self.client_ready else "client_logger_missing")
+        launch_succeeded = bool(self.client_ready and self.builds_match and
+                                connection_ready and mode_ready and npcwaves_ready)
+        self.save_state("running" if launch_succeeded else
+                        ("client_ready" if self.client_ready else "client_logger_missing"))
         self.print_status()
-        launch_succeeded = bool(self.client_ready and self.builds_match)
         stage("build_identity_match", "matched" if self.builds_match else "mismatch",
               self.build_mismatch_reason or "server and client use the selected build",
               server_pid=self.server_pid, client_pid=client.pid,
@@ -2993,6 +3080,57 @@ class DevLoop:
                 name="dev-loop-room-code",
             ).start()
         return launch_succeeded
+
+    def wait_for_room_code(self, server_pid: int | None,
+                           room_file_path: Path | None, timeout: float = 60.0) -> str:
+        """Wait for the server-written coordinator room code, bounded."""
+        if room_file_path is None:
+            return ""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if server_pid is not None and self.server_pid != server_pid:
+                return ""
+            if server_pid is not None and not self.server_health():
+                return ""
+            try:
+                room_code = room_file_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                room_code = ""
+            if room_code:
+                self.room_code = room_code
+                self.write_server_marker()
+                return room_code
+            time.sleep(0.1)
+        return ""
+
+    def wait_for_journal_event(self, event_name: str, pids: set[int],
+                               timeout: float = 45.0,
+                               field_key: str = "",
+                               field_value: str = "") -> dict | None:
+        """Wait for one matching event in this run's shared journal."""
+        if not self.events_path:
+            return None
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with open(self.events_path, "r", encoding="utf-8") as journal:
+                    for line in journal:
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if event.get("event") != event_name:
+                            continue
+                        if pids and event.get("pid") not in pids:
+                            continue
+                        fields = event.get("fields", {})
+                        if field_key and fields.get(field_key) != field_value:
+                            continue
+                        return event
+            except OSError:
+                pass
+            time.sleep(0.1)
+        return None
 
     def wait_for_registered_room_code(self, server_pid: int | None,
                                       room_file_path: Path) -> None:

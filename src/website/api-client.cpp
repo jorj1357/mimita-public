@@ -71,7 +71,8 @@ HINTERNET hOpen() {
 
 bool httpRequest(const std::string& method, const std::string& url,
                  const std::string& body, const std::string& authToken,
-                 std::string& responseBody, int& statusCode)
+                 std::string& responseBody, int& statusCode,
+                 int timeoutMs = 0)
 {
     responseBody.clear();
     statusCode = 0;
@@ -90,6 +91,11 @@ bool httpRequest(const std::string& method, const std::string& url,
         WINHTTP_DEFAULT_ACCEPT_TYPES,
         u.secure ? WINHTTP_FLAG_SECURE : 0);
     if (!request) { WinHttpCloseHandle(connect); WinHttpCloseHandle(session); return false; }
+
+    // A join-critical caller may pass a short bound so a website outage cannot
+    // stall the authoritative server tick.
+    if (timeoutMs > 0)
+        WinHttpSetTimeouts(request, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
 
     std::string headers = "Content-Type: application/json\r\n";
     if (!authToken.empty())
@@ -1118,7 +1124,8 @@ std::string requestVipJoinTicket(const std::string& sessionToken,
 
 VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
                                         const std::string& roomCode,
-                                        const std::string& joinToken)
+                                        const std::string& joinToken,
+                                        int timeoutMs)
 {
     VipJoinTicketResult result;
     if (joinTicket.empty())
@@ -1135,7 +1142,7 @@ VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
     std::string respBody;
     int httpCode = 0;
     bool ok = httpRequest("POST", "https://mimita.fun/api/vip/verify-join-ticket",
-                          req.dump(), "", respBody, httpCode);
+                          req.dump(), "", respBody, httpCode, timeoutMs);
     result.ok = ok && httpCode == 200;
     if (!result.ok)
     {

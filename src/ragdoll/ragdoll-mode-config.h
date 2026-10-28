@@ -69,6 +69,13 @@ struct RagdollModeConfigData {
     float corpseSpawnVelocityMultiplier = 1.0f;
     float corpseBloodIntervalSeconds = 0.18f;
     bool corpseBloodEnabled = true;
+    // Corpses are presentation-only, so they use a shorter solver than the
+    // interactive alive ragdoll. This caps the fixed-tick cost of a multi-death
+    // frame without changing the alive ragdoll or its deterministic trajectory.
+    int corpseSolverIterations = 10;
+    int corpseSelfCollisionIterations = 1;
+    int corpseWorldDepenetrationIterations = 1;
+    int corpseMaxStepsPerTick = 6;
 
     // Rigid-body solver
     int solverIterations = 24;

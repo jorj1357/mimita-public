@@ -917,6 +917,8 @@ bool solveActorTriangleCollision(
         {
             constexpr float kPlayerMass = 80.0f;
             const float objectMass = std::max(c.surfaceMass, 0.0001f);
+            const glm::vec3 beforeVelocity = player.vel;
+            const glm::vec3 beforeImpulse = player.externalImpulse;
             const glm::vec3 incoming = player.vel + player.externalImpulse;
             const float normalSpeed = glm::dot(incoming, responseNormal);
             if (normalSpeed < 0.0f)
@@ -925,6 +927,10 @@ bool solveActorTriangleCollision(
                 const float impulse = -(1.0f + restitution) * normalSpeed /
                     (1.0f / kPlayerMass + 1.0f / objectMass);
                 player.vel += responseNormal * (impulse / kPlayerMass);
+                logCollisionBounceResponse(player, responseNormal, glm::vec3(0.0f),
+                    true, c.penetration, c.label, c.triangleIndex,
+                    restitution, beforeVelocity, beforeImpulse,
+                    std::abs(normalSpeed), restitution, true);
             }
             else
             {

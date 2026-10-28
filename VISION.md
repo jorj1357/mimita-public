@@ -1,3 +1,7 @@
+2026 10 28 0900 jorj ummm
+C:\mimita-v9\docs\architecture\vision-mentality\vision.md
+this is the better one i think 
+
 2026 10 17 1214 jorj todo explain  
 the vision form imtia 
 hmmmmm

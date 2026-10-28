@@ -340,6 +340,51 @@
       ],
       "client_args": [],
       "map": "tdmtest3"
+    },
+    "40": {
+      "name": "npc waves networking validation",
+      "server_args": [
+        "--mode",
+        "npc_waves",
+        "--gamemode",
+        "npc_waves",
+        "--no-npcs"
+      ],
+      "client_args": [],
+      "map": "npcwavesv2",
+      "join_via_room_code": true,
+      "require_client_connection": true,
+      "require_mode_start": true,
+      "require_npcwaves_start": true
+    },
+    "41": {
+      "name": "tdm networking validation",
+      "server_args": [
+        "--mode",
+        "team_deathmatch",
+        "--gamemode",
+        "tdm"
+      ],
+      "client_args": [],
+      "map": "atdm",
+      "join_via_room_code": true,
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "42": {
+      "name": "tdm relay-only validation",
+      "server_args": [
+        "--mode",
+        "team_deathmatch",
+        "--gamemode",
+        "tdm"
+      ],
+      "client_args": [],
+      "map": "atdm",
+      "join_via_room_code": true,
+      "require_client_connection": true,
+      "require_mode_start": true,
+      "ice_force_relay": true
     }
   }
 }

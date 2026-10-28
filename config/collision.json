@@ -33,7 +33,8 @@
     "bounce": {
         "enabled": true,
         // "enabled": false,
-        "strength": 0.35,
+        // "strength": 0.35,
+        "strength": 0.1,
         "friction": 0.0,
         "minSpeed": 0.01,
         "maxSpeed": 999999.0,

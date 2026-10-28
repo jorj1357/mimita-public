@@ -1266,9 +1266,8 @@ void handleAttackRequest(
                                     "melee move-set revision mismatch");
                 return;
             }
-            if (meleeSet->animationOnly && req->attackVariant == 255) {
-                shooter.meleeActionActive = false;
-                shooter.meleeActionId.clear();
+            if (req->attackVariant == 255) {
+                serverMeleeCancelAction(shooter, tick, "client_animation_interrupt");
                 rt.stateRevision++;
                 sendAttackResult(sock, shooter, req, tick, true, 0, 0,
                     rt.magazineAmmo, rt.reserveAmmo, rt.nextAllowedFireTick, rt.stateRevision);

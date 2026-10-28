@@ -448,6 +448,7 @@ struct ServerPlayer
     // struct only tracks the instance.
     bool meleeActionActive = false;
     std::string meleeActionId;
+    std::string meleeActionMovementState;
     uint32_t meleeActionStartTick = 0;
     uint32_t meleeNextAllowedTick = 0;
     int meleePhaseTick = 0;
@@ -698,6 +699,7 @@ struct ServerNpc
     // move-set actions, percent, and knockback as a player.
     bool meleeActionActive = false;
     std::string meleeActionId;
+    std::string meleeActionMovementState;
     uint32_t meleeActionStartTick = 0;
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
     float meleeActionYaw = 0.0f;
@@ -1181,6 +1183,8 @@ void tickServerMeleeActions(SOCKET sock,
 // action id is unknown.
 bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
                             uint32_t tick);
+void serverMeleeCancelAction(ServerPlayer& attacker, uint32_t tick,
+                             const char* reason);
 void serverWriteWeaponActionSnapshot(const std::string& definitionId, bool active,
     const std::string& actionId, uint32_t startTick, SnapshotEntity& out);
 // Melee percent meter accessors (0 in non-Melee contexts).

@@ -1333,12 +1333,12 @@ void AvatarSystem::pollHotReload() {
 
     const std::string jsonPath = mBasePath + "/avatar.json";
     // printf("[AVATAR HR] Checking %s...\n", jsonPath.c_str());
-    if (!std::filesystem::exists(jsonPath)) {
+    std::error_code writeEc;
+    auto writeTime = std::filesystem::last_write_time(jsonPath, writeEc);
+    if (writeEc) {
         printf("[AVATAR HR] File does not exist\n");
         return;
     }
-
-    auto writeTime = std::filesystem::last_write_time(jsonPath);
     // printf("[AVATAR HR] writeTime=%lld lastWriteTime=%lld diff=%lld\n",
     //        (long long)writeTime.time_since_epoch().count(),
     //        (long long)mLastWriteTime.time_since_epoch().count(),

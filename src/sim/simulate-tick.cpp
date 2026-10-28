@@ -92,18 +92,21 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // Networking, map loading, and the spawn handshake continue in engineTickNet.
     auto& mpContext = MP_CONTEXT;
     auto& ragdoll = RagdollModeSystem::instance();
-    if (mpContext.active &&
-        !MimitaNet::mpLocalGameplaySimulationReady(mpContext, *sim.player))
-    {
-        return;
-    }
+    { MIMITA_PERF_SCOPE("Simulation::Readiness");
+      if (mpContext.active &&
+          !MimitaNet::mpLocalGameplaySimulationReady(mpContext, *sim.player))
+      {
+          return;
+      } }
 
     // Install changed avatar animation JSON before any player or NPC samples a
     // pose this tick. This presentation path remains live even when generic
     // config hot reload is disabled.
-    AvatarAnimationRegistry::instance().pollReload(
-        (std::uint32_t)sim.player->movementSimulationTick);
-    ActorCollisionConfig::instance().pollHotReload();
+    { MIMITA_PERF_SCOPE("Simulation::AnimationReload");
+      AvatarAnimationRegistry::instance().pollReload(
+          (std::uint32_t)sim.player->movementSimulationTick); }
+    { MIMITA_PERF_SCOPE("Simulation::CollisionConfigReload");
+      ActorCollisionConfig::instance().pollHotReload(); }
 
     // Sweep start for this fixed tick. Reconciliation/teleports have already
     // installed the authoritative position, so a discontinuity does not create
@@ -117,6 +120,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
     // instant respawn, teleport, duel, map change, reconnect, or transform-epoch
     // change) rebuilds the aim body at the new authoritative pose before it
     // simulates, instead of letting the old body fall and tether across.
+    MIMITA_PERF_SCOPE("Simulation::Lifecycle");
     const uint64_t lifeId = MimitaNet::mpLocalLifecycleId(mpContext);
     static uint64_t s_aimLifecycleId = 0;
     const bool lifecycleChanged = lifeId != 0 && lifeId != s_aimLifecycleId;
@@ -134,6 +138,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         ragdoll.rebindAimToAuthoritativePlayer(*sim.player);
     s_aimLifecycleId = lifeId;
 
+    { MIMITA_PERF_SCOPE("Simulation::LocalActor");
     if (!sim.player->dead) {
         InputFrame tickFrame = frame;
         if (InputCommandSystem::instance().consumeScheduledActionTick("walkforward")) {
@@ -241,7 +246,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         if (!ragdoll.isActive())
             sim.player->updateProceduralAnimation(TICK_DT, THE_CAMERA.front,
                                                   THE_CAMERA.pos, false);
-    }
+    } }
 
     {
         MIMITA_PERF_SCOPE("NpcUpdate");

@@ -2,7 +2,7 @@
   "version": 2,
   "clips": {
     "death": {
-      "durationTicks": 60,
+      "durationTicks": 1,
       "loop": false,
       "keyframes": [
         {

@@ -165,7 +165,8 @@ std::string requestVipJoinTicket(const std::string& sessionToken,
                                  const std::string& joinToken);
 VipJoinTicketResult verifyVipJoinTicket(const std::string& joinTicket,
                                         const std::string& roomCode,
-                                        const std::string& joinToken);
+                                        const std::string& joinToken,
+                                        int timeoutMs = 0);
 // Game Auth (direct username/email + password login)
 struct GameLoginResult
 {

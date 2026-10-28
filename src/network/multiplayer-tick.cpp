@@ -217,8 +217,18 @@ static void processSnapshotEntities(
     const auto& lifecycleCfg =
         NetworkingConfig::instance().data().remoteEntityLifecycle;
 
-    std::unordered_map<uint32_t, bool> seenPlayers;
-    std::unordered_map<uint32_t, bool> seenNpcs;
+    // Reusable membership scratch. The old per-snapshot unordered_maps
+    // allocated buckets and nodes every authority update, showing up as
+    // Network::ReceivePoll allocation spikes in the 200 ms performance slices.
+    static thread_local std::vector<uint32_t> seenPlayers;
+    static thread_local std::vector<uint32_t> seenNpcs;
+    seenPlayers.clear();
+    seenNpcs.clear();
+    seenPlayers.reserve(16);
+    seenNpcs.reserve(16);
+    auto wasSeen = [](const std::vector<uint32_t>& seen, uint32_t id) {
+        return std::find(seen.begin(), seen.end(), id) != seen.end();
+    };
 
     {
     MIMITA_PERF_SCOPE("Network::SnapshotApply::EntityLoop");
@@ -355,7 +365,7 @@ static void processSnapshotEntities(
 
         std::unordered_map<uint32_t, Player>* replicas = nullptr;
         std::unordered_map<uint32_t, EntityInterpolationState>* interpolationMap = nullptr;
-        std::unordered_map<uint32_t, bool>* seen = nullptr;
+        std::vector<uint32_t>* seen = nullptr;
         const char* typeName = nullptr;
         if (entity.entityType == ENTITY_PLAYER)
         {
@@ -623,8 +633,8 @@ static void processSnapshotEntities(
         }
         if (membershipAllowed)
         {
-            (*seen)[entity.networkEntityId] = true;
-            interpolation.missingTracker.noteSeen();
+        seen->push_back(entity.networkEntityId);
+        interpolation.missingTracker.noteSeen();
         }
 
         static uint64_t lastEntityLogMs = 0;
@@ -659,7 +669,7 @@ static void processSnapshotEntities(
     // snapshots for long enough to be authoritative rather than packet loss.
     for (auto it = ctx.remotePlayers.begin(); it != ctx.remotePlayers.end(); )
     {
-        if (!seenPlayers[it->first])
+        if (!wasSeen(seenPlayers, it->first))
         {
             const uint32_t eid = it->first;
             EntityInterpolationState& interp =
@@ -698,7 +708,7 @@ static void processSnapshotEntities(
     }
     for (auto it = ctx.remoteNpcs.begin(); it != ctx.remoteNpcs.end(); )
     {
-        if (!seenNpcs[it->first])
+        if (!wasSeen(seenNpcs, it->first))
         {
             const uint32_t eid = it->first;
             EntityInterpolationState& interp =
@@ -791,6 +801,13 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     std::memset(join.password, 0, sizeof(join.password));
     std::strncpy(join.password, ctx.serverPassword.c_str(), sizeof(join.password) - 1);
     mpSendPacket(ctx, &join, sizeof(join));
+    ++ctx.joinRequestSends;
+    if (ctx.joinRequestSends == 1 || ctx.joinRequestSends % 10 == 0)
+    {
+        mpLogConnectStage(ctx, "join_request", "sent",
+            nowMs() - ctx.connectStartMs, 0, "",
+            "join request send #" + std::to_string(ctx.joinRequestSends));
+    }
     printf("[NET CONNECT] join request sent token=%s\n", ctx.joinToken.c_str());
 }
 
@@ -838,6 +855,12 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
                        {"velocity", {spawn->velX, spawn->velY, spawn->velZ}},
                        {"reliable_event_id", spawn->eventId}},
         __FILE__, __LINE__, __FUNCTION__);
+    if (oldGen == 0)
+    {
+        mpLogConnectStage(ctx, "spawn", "applied",
+            ctx.connectStartMs ? nowMs() - ctx.connectStartMs : 0, 0, "",
+            "authoritative spawn installed");
+    }
     Debug::log(Debug::Category::Duel,
         "[DuelSpawnApply] player=%u generation=%u epoch=%u position=(%.3f,%.3f,%.3f) transformGate=reset\n",
         ctx.localPlayerId, spawn->spawnGeneration, spawn->transformEpoch,
@@ -1208,6 +1231,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
+            mpLogConnectStage(ctx, "join_accept", "ok",
+                nowMs() - ctx.connectStartMs, 0, "", "welcome received");
+            mpLogConnectStage(ctx, "map_required", "ok", 0, 0, "",
+                std::string(welcome->mapId));
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "network.map-required", "",
@@ -1278,6 +1305,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
+            mpLogConnectStage(ctx, "join_accept", "ok",
+                nowMs() - ctx.connectStartMs, 0, "", "join accept received");
+            mpLogConnectStage(ctx, "map_required", "ok", 0, 0, "",
+                std::string(accept->mapId));
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "network.map-required", "",
@@ -1372,6 +1403,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                    ctx.localPlayerId, accept->restoredHealth,
                    accept->restoredKills, accept->restoredDeaths,
                    ctx.transformEpoch, ctx.lastKnownSpawnGeneration);
+            mpLogConnectStage(ctx, "reconnect_accept", "ok",
+                ctx.disconnectStartedMs ? nowMs() - ctx.disconnectStartedMs : 0,
+                0, "", "reconnect accept received");
             mpNotifyConnectionStateChange(ctx, ConnectionState::Reconnecting,
                                           ConnectionState::Connected);
         }
@@ -2228,7 +2262,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     MIMITA_PERF_SCOPE("Network::ReceivePoll");
     if (ctx.transport)
     {
-        std::vector<ReceivedPacket> pkts;
+        // Persistent receive buffer: transport poll reuses packet byte
+        // capacities, avoiding one heap allocation per received datagram.
+        static thread_local std::vector<ReceivedPacket> pkts;
         ctx.transport->poll(pkts);
         badconn::processIncoming(pkts);
         for (const ReceivedPacket& rp : pkts)
@@ -2246,7 +2282,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     else
     {
         // ── Raw UDP recv loop ──
-        std::vector<ReceivedPacket> rawPkts;
+        static thread_local std::vector<ReceivedPacket> rawPkts;
+        size_t rawUsed = 0;
         for (;;)
         {
             sockaddr_in from{};
@@ -2277,11 +2314,13 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                        addressToString(from).c_str());
                 continue;
             }
-            ReceivedPacket rp;
+            if (rawUsed >= rawPkts.size())
+                rawPkts.emplace_back();
+            ReceivedPacket& rp = rawPkts[rawUsed++];
             rp.bytes.assign(buffer, buffer + bytes);
             rp.receivedAtMs = nowMs();
-            rawPkts.push_back(std::move(rp));
         }
+        rawPkts.resize(rawUsed);
         badconn::processIncoming(rawPkts);
         for (const ReceivedPacket& rp : rawPkts)
         {

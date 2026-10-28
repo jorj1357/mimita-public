@@ -298,6 +298,18 @@
           "direction": "both",
           "release_queued": false
         }
+      },
+      "10": {
+        "name": "Immediate 5 second blackout (reconnect test)",
+        "blackout": {
+          "enabled": true,
+          "start_probability_per_second": 1.0,
+          "min_ms": 5000,
+          "max_ms": 5000,
+          "cooldown_ms": 30000,
+          "direction": "both",
+          "release_queued": false
+        }
       }
     }
   }

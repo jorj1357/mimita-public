@@ -1812,9 +1812,22 @@ void updateRenderedReplica(
                     player.proceduralMeleePoseActive = false;
                 }
             }
-        } else if (set->animationOnly) {
+        } else if (remotePresentationAlive) {
+            bool lockedMeleeClip = false;
+            if (!player.lockedClip.empty()) {
+                for (const auto& action : set->actions) {
+                    if (player.lockedClip == action.animationClipId ||
+                        player.lockedClip == action.windup.clipId ||
+                        player.lockedClip == action.active.clipId ||
+                        player.lockedClip == action.recovery.clipId) {
+                        lockedMeleeClip = true;
+                        break;
+                    }
+                }
+            }
             player.weaponPoseActionState.clear();
-            player.clearOneShot();
+            if (set->animationOnly || lockedMeleeClip)
+                player.clearOneShot();
             player.proceduralMeleePoseActive = false;
         }
     } else {

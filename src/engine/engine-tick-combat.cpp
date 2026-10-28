@@ -388,6 +388,10 @@ void engineTickCombat(Engine& engine, float dt)
                    MimitaMelee::debugCrouchHeld());
             grabPrev = grabDown;
         }
+        const InputFrame* movementFrame = ScenarioInput::frame();
+        meleeInput.movementPressed = scenarioInputActive && movementFrame
+            ? movementFrame->movementPressed
+            : glm::length(InputCommandSystem::instance().getMoveVector()) > 0.01f;
         MimitaMelee::clientTick(player, camera, weapons, mpContext, meleeInput,
                                 g_clientSimulationTick);
         // Publish crouch intent for the authored `crouch` state clip, independent

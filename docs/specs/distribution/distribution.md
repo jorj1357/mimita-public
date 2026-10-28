@@ -1,3 +1,15 @@
+2026 10 28 0859 jorj explain cotnent
+hmmm
+like
+uoutbe vidoes
+do uoutube vidoes me as jorj 
+i thikn thats good idea
+bc it woudlb e fun 
+and u can do them in the engine with repla editor we need to get that to be super good first tho 
+but then it jsut its good 
+and then u can use it for making vidoes finally
+i fw that a lot 
+
 2026 10 06 1708 jorj todo - 
 
 explainnnnnnnnnnnnnnnnnnnnnnn

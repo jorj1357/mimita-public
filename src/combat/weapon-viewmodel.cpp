@@ -190,9 +190,8 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
                              const WeaponDefinition* def, bool updatePlayerPose,
                              const World* world,
                              bool useDefinitionModelPath) {
-    // Attempt to load weapon config for this weapon (supports hot reload)
+    // WeaponSystem owns the shared definition scan and reloads this config.
     WeaponConfig& wc = WeaponConfig::instance();
-    wc.pollHotReload();
     bool hasConfig = false;
     const WeaponViewModelConfig* vmcfg = nullptr;
     if (def && !def->id.empty()) {

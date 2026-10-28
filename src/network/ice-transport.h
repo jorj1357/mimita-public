@@ -44,16 +44,19 @@ public:
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
 
+        size_t used = 0;
         for (auto& ev : events)
         {
             if (ev.type == IceEventType::Recv)
             {
-                ReceivedPacket pkt;
+                if (used >= out.size())
+                    out.emplace_back();
+                ReceivedPacket& pkt = out[used++];
                 pkt.bytes.assign(ev.data.begin(), ev.data.end());
                 pkt.receivedAtMs = now;
-                out.push_back(std::move(pkt));
             }
         }
+        out.resize(used);
     }
 
     bool connected() const override

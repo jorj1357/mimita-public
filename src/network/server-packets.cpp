@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -353,6 +354,38 @@ void logMovementValidation(const ServerPlayer& player,
         classifyMovementCorrection(result.metrics.positionError,
                                    makeMovementValidationConfig(
                                        makeCurrentRuntimeMovementConfig()));
+    if (result.decision == MovementValidationDecision::Correct) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "movement.server-position-corrected", std::to_string(player.id),
+            "server corrected a client movement report",
+            static_cast<uint32_t>(report.clientSimulationTick),
+            nlohmann::json{
+                {"actor_id", player.id},
+                {"reason", movementValidationReasonName(result.reason)},
+                {"reason_code", static_cast<int>(result.reason)},
+                {"correction_class", movementCorrectionClassName(correctionClass)},
+                {"reported_position", {report.position.x, report.position.y,
+                                       report.position.z}},
+                {"accepted_position", {result.acceptedState.position.x,
+                                       result.acceptedState.position.y,
+                                       result.acceptedState.position.z}},
+                {"correction", {result.acceptedState.position.x - report.position.x,
+                                result.acceptedState.position.y - report.position.y,
+                                result.acceptedState.position.z - report.position.z}},
+                {"position_error", result.metrics.positionError},
+                {"move_axes", {report.moveAxes.x, report.moveAxes.y}},
+                {"base_velocity", {report.baseVelocity.x, report.baseVelocity.y,
+                                   report.baseVelocity.z}},
+                {"external_impulse", {report.externalImpulse.x,
+                                      report.externalImpulse.y,
+                                      report.externalImpulse.z}},
+                {"client_tick", report.clientSimulationTick},
+                {"sequence", report.movementSequence},
+                {"collision_reason", result.reason ==
+                    MovementValidationReason::BlockingGeometry ? "blocking-geometry" : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     Debug::logThrottled(
         Debug::Category::Networking,
         "server-movement-validation",
@@ -1102,7 +1135,7 @@ void handleInputPacket(const char* buffer, int bytes,
     const ClientMovementReport report = movementReportFromInputPacket(*in, p);
     const MovementConfig movementConfig = makeCurrentRuntimeMovementConfig();
     const MovementValidationConfig validationConfig =
-        makeMovementValidationConfig(movementConfig, &world);
+        makeMovementValidationConfig(movementConfig);
     MovementValidationContext validationContext;
     validationContext.playerExists = true;
     validationContext.connectionActive = true;
@@ -1427,24 +1460,38 @@ void handleTeleportRequest(const char* buffer, int bytes,
 
     const glm::vec3 requestedPosition{
         request->px, request->py, request->pz};
-    if (!std::isfinite(requestedPosition.x) ||
-        !std::isfinite(requestedPosition.y) ||
-        !std::isfinite(requestedPosition.z))
+    constexpr float kTeleportSanityLimit = 1.0e9f;
+    const bool finite = std::isfinite(requestedPosition.x) &&
+        std::isfinite(requestedPosition.y) &&
+        std::isfinite(requestedPosition.z);
+    const bool withinSanity = std::abs(requestedPosition.x) <= kTeleportSanityLimit &&
+        std::abs(requestedPosition.y) <= kTeleportSanityLimit &&
+        std::abs(requestedPosition.z) <= kTeleportSanityLimit;
+    if (!finite || !withinSanity)
     {
-        printf("%s [SERVER TELEPORT] playerId=%u rejected=non-finite\n",
-               serverTimestamp(), request->header.playerId);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "movement.teleport.rejected", std::to_string(request->header.playerId),
+            finite ? "requested coordinate exceeds sanity limit" : "requested coordinate is non-finite",
+            0,
+            {{"actor_id", request->header.playerId},
+             {"requested_position", {requestedPosition.x, requestedPosition.y,
+                                     requestedPosition.z}},
+             {"sanity_limit", kTeleportSanityLimit},
+             {"finite", finite}},
+            __FILE__, __LINE__, __FUNCTION__);
+        printf("%s [SERVER TELEPORT] playerId=%u rejected=%s\n",
+               serverTimestamp(), request->header.playerId,
+               finite ? "sanity-limit" : "non-finite");
         return;
     }
 
     ServerPlayer& p = it->second;
-    const glm::vec3 clampedPos = glm::clamp(
-        requestedPosition,
-        world.boundsMin - glm::vec3(2.0f),
-        world.boundsMax + glm::vec3(2.0f));
-    beginAuthoritativeTeleport(p, clampedPos, p.yaw, "teleport");
+    (void)world;
+    beginAuthoritativeTeleport(p, requestedPosition, p.yaw, "teleport");
     p.onGround = false;
     printf("%s [SERVER TELEPORT] playerId=%u position=(%.2f,%.2f,%.2f) epoch=%u\n",
-           serverTimestamp(), p.id, clampedPos.x, clampedPos.y, clampedPos.z, (unsigned)p.transformEpoch);
+           serverTimestamp(), p.id, requestedPosition.x, requestedPosition.y, requestedPosition.z, (unsigned)p.transformEpoch);
 }
 
 void handleExplodeRequest(const char* buffer, int bytes,
@@ -1485,6 +1532,23 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     if (bytes < (int)sizeof(JoinRequestPacket))
         return;
     const JoinRequestPacket* join = reinterpret_cast<const JoinRequestPacket*>(buffer);
+    const std::string joinTokenStr = boundedPacketString(join->joinToken, sizeof(join->joinToken));
+
+    // A client retries JoinRequest until it receives JoinAccept. The join token
+    // identifies that join attempt, so a retry must reuse the same player and
+    // skip coordinator validation instead of creating a duplicate session.
+    uint32_t existingJoinId = 0;
+    if (!joinTokenStr.empty())
+    {
+        for (const auto& kv : players)
+        {
+            if (!kv.second.dead && kv.second.joinToken == joinTokenStr)
+            {
+                existingJoinId = kv.first;
+                break;
+            }
+        }
+    }
 
     // Apply the selected community mode's human capacity before the server-wide
     // transport limit. NPC participants do not consume human connection slots.
@@ -1493,7 +1557,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     const size_t playerLimit = communityMode && communityMode->maxPlayers > 0
         ? std::min<size_t>(MAX_PLAYERS, (size_t)communityMode->maxPlayers)
         : MAX_PLAYERS;
-    if (players.size() >= playerLimit)
+    if (existingJoinId == 0 && players.size() >= playerLimit)
     {
         JoinRejectPacket reject{};
         reject.header.type = PACKET_JOIN_REJECT;
@@ -1511,7 +1575,6 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     }
 
     // Validate join token — coordinator validation
-    const std::string joinTokenStr = boundedPacketString(join->joinToken, sizeof(join->joinToken));
     if (joinTokenStr.empty())
     {
         JoinRejectPacket reject{};
@@ -1529,6 +1592,27 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         return;
     }
 
+    const uint64_t joinValidationStartMs = nowMs();
+    if (existingJoinId != 0)
+    {
+        printf("%s [SERVER JOIN] duplicate join token for existing player=%u; skipping validation\n",
+               serverTimestamp(), existingJoinId);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.connect.stage", joinTokenStr.substr(0, 12),
+            "duplicate join request reuses the existing session", tick,
+            {{"stage", "join_request"}, {"result", "duplicate"},
+             {"attempt", 0}, {"max_attempts", 0},
+             {"elapsed_ms", nowMs() - joinValidationStartMs},
+             {"existing_player_id", existingJoinId},
+             {"players", players.size()},
+             {"room_code", gServerCoordinatorCode},
+             {"transport", "server"},
+             {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    else
+    {
     // Validate ICE join token with coordinator
     // (skip validation for local-only servers)
     if (gServerCoordinatorCode == "LOCAL")
@@ -1580,6 +1664,22 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
         return;
     }
+    }
+    if (existingJoinId == 0)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.connect.stage", joinTokenStr.substr(0, 12),
+            "server accepted and validated the join request", tick,
+            {{"stage", "join_request"}, {"result", "validated"},
+             {"attempt", 0}, {"max_attempts", 0},
+             {"elapsed_ms", nowMs() - joinValidationStartMs},
+             {"players", players.size()},
+             {"room_code", gServerCoordinatorCode},
+             {"transport", "server"},
+             {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     // ── Password check for private servers ──
     if (gServerPasswordProtected && !gServerPassword.empty())
@@ -1613,8 +1713,24 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     VipJoinTicketResult vipResult;
     if (!vipTicket.empty())
     {
+        const uint64_t vipStartMs = nowMs();
+        constexpr int kVipJoinVerifyTimeoutMs = 2000;
         vipResult = verifyVipJoinTicket(
-            vipTicket, gServerCoordinatorCode, "");
+            vipTicket, gServerCoordinatorCode, "", kVipJoinVerifyTimeoutMs);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network,
+            vipResult.ok && vipResult.verified ? StructuredLevel::Important
+                                               : StructuredLevel::Errors,
+            "network.connect.stage", joinTokenStr.substr(0, 12),
+            "VIP join ticket verification completed", tick,
+            {{"stage", "vip_ticket_verify"},
+             {"result", vipResult.ok && vipResult.verified ? "ok" : "fallback"},
+             {"elapsed_ms", nowMs() - vipStartMs},
+             {"timeout_ms", kVipJoinVerifyTimeoutMs},
+             {"reason", vipResult.reason},
+             {"transport", "server"},
+             {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
         if (vipResult.ok && vipResult.verified)
         {
             hasVerifiedVipTicket = true;
@@ -1636,19 +1752,25 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         }
     }
 
-    // Check for existing reconnection
-    uint32_t existingId = 0;
-    for (auto& kv : players)
+    // Check for existing reconnection. A retried join with the same join token
+    // has already been resolved above; do not scan or create another player.
+    uint32_t existingId = existingJoinId;
+    if (existingId == 0)
     {
-        if (kv.second.reconnectToken == joinTokenStr && !kv.second.dead)
+        for (auto& kv : players)
         {
-            existingId = kv.first;
-            break;
+            if (kv.second.reconnectToken == joinTokenStr && !kv.second.dead)
+            {
+                existingId = kv.first;
+                break;
+            }
         }
     }
 
     uint32_t id = existingId ? existingId : nextPlayerId++;
     ServerPlayer& p = players[id];
+    if (p.reconnectToken.empty())
+        p.reconnectToken = generateReconnectToken();
     p.id = id;
     bindPlayerConnection(p, from, connectionId, claimedTransport);
     p.lastHeardMs = nowMs();
@@ -1658,7 +1780,6 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.projectileFireCooldown = 0.0f;
     p.joinToken = joinTokenStr;
     p.joinTokenValidated = true;
-    p.reconnectToken = generateReconnectToken();
     p.accountId = hasVerifiedVipTicket ? static_cast<uint32_t>(verifiedVipAccountId) : 0;
     p.progressionTicket = hasVerifiedVipTicket ? vipTicket : std::string();
     p.name = uniquePlayerName(players, boundedPacketString(join->name, sizeof(join->name)), id);
@@ -1755,7 +1876,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         broadcastVipStyleEvent(sock, kv.second, players, tick, totalPacketsOut);
     }
 
-    // Broadcast join message to all players
+    // Broadcast the join message once. A retried JoinRequest or reconnect must
+    // not look like another player joining.
+    if (!existingId)
     {
         std::string joinMsg = std::string(p.name) + " joined the game";
         broadcastServerChatMessage(sock, players, tick, totalPacketsOut, joinMsg.c_str());
@@ -1796,6 +1919,16 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
 
     if (foundId == 0)
     {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "network.session.health", "SERVER_RECONNECT",
+            "server rejected a reconnect token", tick,
+            {{"trigger", "reconnect_rejected"},
+             {"token_state", "not_found"},
+             {"token_prefix", requestedToken.substr(0, 12)},
+             {"players", players.size()},
+             {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
                serverTimestamp(), requestedToken.c_str());
         if (claimedTransport && claimedTransport->get())
@@ -1814,7 +1947,11 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
         p.pendingReliableEvents.clear();
         p.reliableEventSessionId = 0;
         p.previousReconnectToken = requestedToken;
-        p.previousReconnectTokenValidUntilMs = currentMs + 5000;
+        // A lost ReconnectAccept must remain retryable for the full reconnect
+        // grace window. The client retries at reconnect_interval_ms, which is
+        // longer than the old fixed 5 s window.
+        p.previousReconnectTokenValidUntilMs = currentMs +
+            (uint64_t)NetworkingConfig::instance().data().retries.reconnectGraceMs;
         p.reconnectToken = generateReconnectToken(); // rotate token
         beginAuthoritativeTransform(p, p.pos, p.vel, p.yaw, "reconnect");
         p.awaitingAuthoritativeTransformAck = false;
@@ -1851,6 +1988,21 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
             ++totalPacketsOut;
     }
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.session.health", "SERVER_RECONNECT",
+        "server accepted a reconnect request", tick,
+        {{"trigger", resendExistingAccept ? "reconnect_resend" : "reconnect_accepted"},
+         {"token_state", resendExistingAccept ? "previous" : "current"},
+         {"token_prefix", requestedToken.substr(0, 12)},
+         {"player_id", foundId},
+         {"copies", acceptCopies},
+         {"previous_token_valid_ms", p.previousReconnectTokenValidUntilMs > currentMs
+             ? p.previousReconnectTokenValidUntilMs - currentMs : 0},
+         {"health", p.health},
+         {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     printf("%s [SERVER RECONNECT] %s id=%u name=\"%s\" health=%d copies=%d\n",
            serverTimestamp(), resendExistingAccept ? "resent" : "accepted",

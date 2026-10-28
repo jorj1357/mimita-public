@@ -17,6 +17,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-execution.h"
 #include "config/weapon-hitfx-config.h"
+#include "debug/structured-log.h"
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
@@ -89,6 +90,25 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
 
     const bool localAttacker = event.attackerPlayerId == ctx.localPlayerId;
     const bool localVictim = event.targetPlayerId == ctx.localPlayerId;
+    if (localVictim && event.attackerEntityType == ENTITY_NPC) {
+        const auto npcIt = ctx.remoteNpcs.find(event.attackerPlayerId);
+        const Player* npc = npcIt != ctx.remoteNpcs.end() ? &npcIt->second : nullptr;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "client.npc.damage-visible", std::to_string(event.attackerPlayerId),
+            "NPC damaged local player; recording client presentation state",
+            event.header.tick,
+            {{"attacker_id", event.attackerPlayerId},
+             {"present_in_remote_npcs", npc != nullptr},
+             {"model_loaded", npc ? npc->modelLoaded : false},
+             {"avatar", npc ? npc->avatarName() : std::string()},
+             {"dead", npc ? npc->dead : true},
+             {"position", npc ? nlohmann::json{npc->pos.x, npc->pos.y, npc->pos.z}
+                              : nlohmann::json::array()},
+             {"damage", event.damage},
+             {"event_id", event.eventId}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     // Local-victim presentation is owned by the projectile damage path so it
     // can attach blood/flinch to the local body once. Remote observers still
     // need the same damage numbers and hit effects as the attacker.

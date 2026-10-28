@@ -35,7 +35,7 @@ public:
 
     void poll(std::vector<ReceivedPacket>& out) override
     {
-        out.clear();
+        size_t used = 0;
         char buffer[2048];
         sockaddr_in from{};
 
@@ -47,11 +47,13 @@ public:
             if (bytes <= 0)
                 break;
 
-            ReceivedPacket pkt;
+            if (used >= out.size())
+                out.emplace_back();
+            ReceivedPacket& pkt = out[used++];
             pkt.bytes.assign(buffer, buffer + bytes);
             pkt.receivedAtMs = nowMs();
-            out.push_back(std::move(pkt));
         }
+        out.resize(used);
     }
 
     bool connected() const override

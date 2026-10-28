@@ -525,6 +525,9 @@ struct MultiplayerContext
     std::string roomCode;
     std::string serverName;
     std::string joinToken;
+    // Number of JoinRequest packets sent for the current join attempt. Used to
+    // keep retry diagnostics bounded while still making retry activity visible.
+    uint32_t joinRequestSends = 0;
     std::string vipJoinTicket;
     bool vipJoinTicketRequested = false;
     std::string serverPassword;
@@ -921,6 +924,22 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
 // Current honest connection-status text derived from state + packet freshness
 // (replaces the transport-level "Connected via ICE" lie in persistent UI).
 std::string mpConnectionHealthText(const MultiplayerContext& ctx);
+// Bounded connection-stage evidence. One event per stage transition; the
+// caller is responsible for not calling this from a polling loop.
+void mpLogConnectStage(const MultiplayerContext& ctx,
+                       const char* stage, const char* result,
+                       uint64_t elapsedMs = 0, uint64_t timeoutMs = 0,
+                       const std::string& errorCode = std::string(),
+                       const std::string& reason = std::string());
+// Same event for the async ICE worker, which must not touch MultiplayerContext.
+void mpLogConnectStageForRoom(const std::string& roomCode,
+                              const std::string& transport,
+                              const std::string& serverAddress,
+                              uint32_t attempt, uint32_t maxAttempts,
+                              const char* stage, const char* result,
+                              uint64_t elapsedMs, uint64_t timeoutMs,
+                              const std::string& errorCode,
+                              const std::string& reason);
 void mpRequestNpcSpawn(MultiplayerContext& ctx, const glm::vec3& position, float difficulty = 1.0f);
 void mpRequestTeleport(MultiplayerContext& ctx, const glm::vec3& position);
 void mpRequestExplode(MultiplayerContext& ctx);

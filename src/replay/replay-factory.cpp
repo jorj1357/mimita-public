@@ -13,6 +13,7 @@
 
 #include "combat/weapon-types.h"
 #include "gui/ui-system.h"
+#include "replay/replay-export.h"
 
 using json = nlohmann::json;
 
@@ -94,7 +95,7 @@ void ReplayFactory::update()
         }
     }
 
-    if (mLastClip && !mLastClip->roundWinning) {
+    if (mLastClip && !mLastClip->roundWinning && gExportConfig.autoSaveKillClips) {
         if (mRing.currentTick() >= mLastClip->killTick + 3u * ReplayRingBuffer::TickRate) {
             finalizeAndSave(*mLastClip);
             mLastClip.reset();

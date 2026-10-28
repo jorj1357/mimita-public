@@ -190,6 +190,8 @@ public:
     void setBackgroundWorker(ReplaySaveWorker* worker) { mBackgroundWorker = worker; }
     void pollBackgroundAvatarLoads();
     bool isAvatarLoadPending(const std::string& name) const;
+    std::size_t pendingLoadCount() const { return mPendingAvatarLoads.size(); }
+    std::size_t avatarCacheSize() const { return mCache.size(); }
 
     // Per-instance API: loads avatar into cache, applies to player without mutating singleton.
     // reloadTextures=false (default): reuse cached atlas when possible.

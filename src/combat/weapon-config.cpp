@@ -7,6 +7,7 @@
 
 #include "devtools/terminal.h"
 #include "weapon-json-config.h"
+#include "perf/perf-spike.h"
 
 using json = nlohmann::json;
 
@@ -125,6 +126,7 @@ void WeaponConfig::pollHotReload() {
         return;
     mLastCheckTime = now;
 
+    MIMITA_PERF_SCOPE("Config::WeaponViewModelSignature");
     const auto signature = WeaponData::weaponDefinitionSignature();
     if (signature == mLastSignature)
         return;

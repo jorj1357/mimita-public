@@ -22,6 +22,7 @@
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "entities/player-avatar-animations.h"
+#include "entities/animation-movement-state.h"
 #include "entities/animation-rotation.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -158,6 +159,7 @@ struct NpcMeleeState {
     bool active = false;
     std::string actionId;
     uint32_t startTick = 0;
+    std::string movementState;
     glm::vec3 forward{1.0f, 0.0f, 0.0f};
     float modelYaw = 0.0f;
     glm::vec3 lastHitboxCenter{0.0f};
@@ -181,6 +183,21 @@ static glm::vec3 horizontalForward(const glm::vec3& raw)
         glm::length(forward) < 0.001f)
         return glm::vec3(1.0f, 0.0f, 0.0f);
     return glm::normalize(forward);
+}
+
+static std::string playerMovementState(const ServerPlayer& player)
+{
+    const float speed = glm::length(glm::vec2(player.vel.x, player.vel.y));
+    return animationMovementStateName(resolveAnimationMovementState(
+        speed, player.vel.z, player.onGround, player.input.crouchHeld,
+        glm::length(player.input.wish) > 0.01f));
+}
+
+static std::string npcMovementState(const ServerNpc& npc)
+{
+    const float speed = glm::length(glm::vec2(npc.vel.x, npc.vel.y));
+    return animationMovementStateName(resolveAnimationMovementState(
+        speed, npc.vel.z, npc.onGround, false, speed > 0.2f));
 }
 
 struct SampledPartPose {
@@ -675,6 +692,7 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     st.active = true;
     st.actionId = action.id;
     st.startTick = tick;
+    st.movementState = npcMovementState(npc);
     st.forward = forward;
     st.modelYaw = glm::degrees(std::atan2(npc.aim.y, npc.aim.x));
     st.lastHitboxCenter = glm::vec3(0.0f);
@@ -688,6 +706,7 @@ static void startNpcMeleeAction(ServerNpc& npc, NpcMeleeState& st,
     // previous clip on clients when the new action snapshot arrives.
     npc.meleeActionActive = true;
     npc.meleeActionId = action.id;
+    npc.meleeActionMovementState = npcMovementState(npc);
     npc.meleeActionStartTick = tick;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
@@ -724,6 +743,7 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
 
     attacker.meleeActionActive = true;
     attacker.meleeActionId = action->id;
+    attacker.meleeActionMovementState = playerMovementState(attacker);
     attacker.meleeActionStartTick = tick;
     attacker.meleePhaseTick = 0;
     attacker.meleeActionForward = horizontalForward(attacker.input.camForward);
@@ -759,6 +779,32 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     return true;
 }
 
+void serverMeleeCancelAction(ServerPlayer& attacker, uint32_t tick,
+                             const char* reason)
+{
+    if (!attacker.meleeActionActive) return;
+    const std::string actionId = attacker.meleeActionId;
+    const std::string movementState = attacker.meleeActionMovementState;
+    attacker.meleeActionActive = false;
+    attacker.meleeActionId.clear();
+    attacker.meleeActionMovementState.clear();
+    attacker.meleePhaseTick = 0;
+    attacker.meleeLastHitboxCenter = glm::vec3(0.0f);
+    attacker.meleeHitTargets.clear();
+    g_meleeActionSnapshots.erase(attacker.id);
+    emitMeleeActionEvent(attacker, "melee.action.cancel",
+                         "melee action canceled before its timeline completed",
+                         tick, actionId);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "melee.action.interrupted", std::to_string(attacker.id),
+        "authoritative melee action stopped with its hitbox timeline", tick,
+        nlohmann::json{{"actor", attacker.id}, {"action", actionId},
+                       {"reason", reason ? reason : "unspecified"},
+                       {"movement_state", movementState},
+                       {"hitbox_active", false}});
+}
+
 void serverWriteWeaponActionSnapshot(const std::string& definitionId, bool active,
     const std::string& actionId, uint32_t startTick, SnapshotEntity& out)
 {
@@ -781,6 +827,7 @@ void serverMeleeResetForSpawn(ServerPlayer& player)
     player.meleePercent = 0.0f;
     player.meleeActionActive = false;
     player.meleeActionId.clear();
+    player.meleeActionMovementState.clear();
     player.meleePhaseTick = 0;
     player.meleeHitTargets.clear();
     player.meleeLastHitboxCenter = glm::vec3(0.0f);
@@ -804,6 +851,7 @@ void serverMeleeResetNpcForSpawn(ServerNpc& npc)
     npc.meleePercent = 0.0f;
     npc.meleeActionActive = false;
     npc.meleeActionId.clear();
+    npc.meleeActionMovementState.clear();
     npc.meleeActionStartTick = 0;
     npc.meleeActionForward = glm::vec3(1.0f, 0.0f, 0.0f);
     npc.meleeActionYaw = 0.0f;
@@ -840,6 +888,22 @@ void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>
                 (uint32_t)WeaponExecution::paramOr(*def, "npcGuardTicks", 60.0f))))) {
             npc.meleeActionActive = false;
             npc.meleeActionId.clear();
+            npc.meleeActionMovementState.clear();
+        }
+        if (npc.meleeActionActive && !npc.meleeActionMovementState.empty() &&
+            npcMovementState(npc) != npc.meleeActionMovementState) {
+            const std::string interruptedAction = npc.meleeActionId;
+            const std::string nextState = npcMovementState(npc);
+            npc.meleeActionActive = false;
+            npc.meleeActionId.clear();
+            npc.meleeActionMovementState.clear();
+            g_meleeActionSnapshots.erase(npc.entityId);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "melee.npc.action.interrupted", std::to_string(npc.entityId),
+                "NPC movement state canceled its active action", tick,
+                {{"actor", npc.entityId}, {"action", interruptedAction},
+                 {"to_movement_state", nextState}, {"hitbox_active", false}});
         }
         if (!npc.meleeActionActive && nearest <= range && tick >= npc.meleeNextAttackTick && !set->actions.empty()) {
             std::vector<const WeaponData::MeleeAction*> selectable;
@@ -851,6 +915,7 @@ void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>
             const auto& selected = *selectable[(npc.entityId + tick / 30u) % selectable.size()];
             npc.meleeActionActive = true;
             npc.meleeActionId = selected.id;
+            npc.meleeActionMovementState = npcMovementState(npc);
             npc.meleeActionStartTick = tick;
             npc.meleeNextAttackTick = tick + selected.totalTicks() + 20u;
             StructuredLogger::instance().writeEvent(
@@ -874,6 +939,8 @@ void tickServerMeleeActions(SOCKET sock,
         ServerPlayer& attacker = entry.second;
         if (attacker.dead || attacker.spawnState != ServerPlayer::Active) {
             attacker.meleeActionActive = false;
+            attacker.meleeActionId.clear();
+            attacker.meleeActionMovementState.clear();
             g_meleeActionSnapshots.erase(attacker.id);
             continue;
         }
@@ -881,6 +948,7 @@ void tickServerMeleeActions(SOCKET sock,
         if (attacker.meleeActionActive && (!moveSet || !moveSet->find(attacker.meleeActionId))) {
             attacker.meleeActionActive = false;
             attacker.meleeActionId.clear();
+            attacker.meleeActionMovementState.clear();
             g_meleeActionSnapshots.erase(attacker.id);
         }
         const bool animationOnly = moveSet && moveSet->animationOnly;
@@ -896,6 +964,23 @@ void tickServerMeleeActions(SOCKET sock,
 
         if (!attacker.meleeActionActive)
             continue;
+
+        const std::string currentMovementState = playerMovementState(attacker);
+        if (!attacker.meleeActionMovementState.empty() &&
+            currentMovementState != attacker.meleeActionMovementState) {
+            const std::string interruptedAction = attacker.meleeActionId;
+            const std::string previousState = attacker.meleeActionMovementState;
+            serverMeleeCancelAction(attacker, tick, "movement_state_changed");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "melee.action.movement_interrupt", std::to_string(attacker.id),
+                "movement state change canceled the attack and hitbox timeline", tick,
+                {{"actor", attacker.id}, {"action", interruptedAction},
+                 {"from_movement_state", previousState},
+                 {"to_movement_state", currentMovementState},
+                 {"hitbox_active", false}});
+            continue;
+        }
 
         // Prefer the action snapshot taken at start (retains the starting
         // revision); fall back to the live move set.
@@ -1088,6 +1173,27 @@ void tickServerMeleeActions(SOCKET sock,
             }
 
             if (st.active) {
+                const std::string nextMovementState = npcMovementState(npc);
+                if (!st.movementState.empty() && nextMovementState != st.movementState) {
+                    const std::string interruptedAction = st.actionId;
+                    st.active = false;
+                    st.actionId.clear();
+                    st.movementState.clear();
+                    st.hitTargets.clear();
+                    st.lastHitboxCenter = glm::vec3(0.0f);
+                    npc.meleeActionActive = false;
+                    npc.meleeActionId.clear();
+                    npc.meleeActionMovementState.clear();
+                    g_meleeActionSnapshots.erase(npc.entityId);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Weapons, StructuredLevel::Important,
+                        "melee.npc.action.interrupted", std::to_string(npc.entityId),
+                        "NPC movement state canceled its active melee action", tick,
+                        {{"actor", npc.entityId}, {"action", interruptedAction},
+                         {"to_movement_state", nextMovementState},
+                         {"hitbox_active", false}});
+                    continue;
+                }
                 const WeaponData::MeleeAction* action = nullptr;
                 auto sit = g_meleeActionSnapshots.find(npc.entityId);
                 if (sit != g_meleeActionSnapshots.end())

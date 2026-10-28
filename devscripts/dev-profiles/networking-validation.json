@@ -1,0 +1,22 @@
+{
+  "name": "networking-validation",
+  "launch_mode": 31,
+  "launch_visibility": "visible",
+  "map": "atdm",
+  "map_selection": "configured",
+  "allowed_maps_file": "config/gamemode-good-maps.json",
+  "mode": "team_deathmatch",
+  "gamemode": "tdm",
+  "weapon_set": 29,
+  "npc_count": 5,
+  "auto_map_rotation": false,
+  "discord_notification": false,
+  "host_player_name": "",
+  "client_name": "NPC Dev",
+  "server_name": "NPC Dev Server",
+  "server_bind": "127.0.0.1:0",
+  "join_via_room_code": true,
+  "require_client_connection": true,
+  "require_mode_start": true,
+  "max_mimita_processes": 1
+}

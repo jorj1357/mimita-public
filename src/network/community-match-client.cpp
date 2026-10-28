@@ -30,6 +30,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 
 namespace MimitaNet {
@@ -353,6 +354,9 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     }
 
     const uint8_t prevPhase = mPhase;
+    const uint32_t prevWaveNumber = mWaveNumber;
+    const uint32_t prevWaveSpawned = mWaveNpcSpawned;
+    const uint32_t prevMatchId = mMatchId;
     const bool newCountdown = packet.phase == DUEL_PHASE_COUNTDOWN &&
         (prevPhase != DUEL_PHASE_COUNTDOWN || packet.duelId != mMatchId ||
          packet.roundVersion != mRoundVersion || packet.matchStartTick != mMatchStartTick);
@@ -535,6 +539,56 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mWaveLivesRemaining = packet.waveLivesRemaining;
     mWaveHighest = packet.waveHighest;
     mMatchOver = packet.matchOver != 0;
+
+    if (packet.phase != prevPhase || packet.duelId != prevMatchId)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.mode.start", std::to_string(packet.duelId),
+            "client observed authoritative mode phase", packet.serverTick,
+            nlohmann::json{
+                {"mode", packet.matchMode},
+                {"map", std::string(packet.mapId)},
+                {"phase", (int)packet.phase},
+                {"previous_phase", (int)prevPhase},
+                {"stage", packet.phase == DUEL_PHASE_ACTIVE ? "active" :
+                          packet.phase == DUEL_PHASE_COUNTDOWN ? "countdown" :
+                          packet.phase == DUEL_PHASE_GO ? "go" : "phase"},
+                {"duel_id", packet.duelId},
+                {"state_version", packet.stateVersion},
+                {"server_tick", packet.serverTick},
+                {"participant_count", packet.participantCount},
+                {"wave_number", packet.waveNumber},
+                {"wave_npc_target", packet.waveNpcTarget},
+                {"wave_npc_spawned", packet.waveNpcSpawned},
+                {"source", "client_packet"},
+                {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+    if (packet.waveNumber != prevWaveNumber ||
+        (packet.waveNpcSpawned >= packet.waveNpcTarget && prevWaveSpawned < packet.waveNpcTarget))
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "network.npcwaves.start", std::to_string(packet.duelId),
+            "client observed NPC Waves state", packet.serverTick,
+            nlohmann::json{
+                {"mode", packet.matchMode},
+                {"map", std::string(packet.mapId)},
+                {"duel_id", packet.duelId},
+                {"wave_number", packet.waveNumber},
+                {"wave_target", packet.waveNpcTarget},
+                {"wave_spawned", packet.waveNpcSpawned},
+                {"wave_lives_remaining", packet.waveLivesRemaining},
+                {"wave_highest", packet.waveHighest},
+                {"phase", (int)packet.phase},
+                {"server_tick", packet.serverTick},
+                {"stage", packet.waveNpcSpawned >= packet.waveNpcTarget
+                    ? "target_reached" : "begin"},
+                {"source", "client_packet"},
+                {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     if (packet.phase == DUEL_PHASE_GO)
     {
         // phaseTimer carries the remaining GO wall duration. Project it onto

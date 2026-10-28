@@ -16,6 +16,7 @@
 #include <cmath>
 #include <nlohmann/json.hpp>
 #include "camera.h"
+#include "config.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
 #include "avatar/cosmetic-system.h"
@@ -344,6 +345,39 @@ void renderPlayerInternal(
            !player.authoredDeathActive
             ? "dead_without_death_presentation" : "passed"));
     logPlayerRenderState(player, networkEntityId, isLocal, renderGate);
+    if (!isLocal && networkEntityId != 0 && DebugConfig::DEBUG_NPC_TRACE &&
+        DebugConfig::NPC_TRACE_TARGET == networkEntityId) {
+        static std::unordered_map<uint32_t, uint64_t> sLastNpcTraceMs;
+        const uint64_t nowTraceMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        const uint64_t previous = sLastNpcTraceMs[networkEntityId];
+        if (nowTraceMs - previous >= 1000) {
+            sLastNpcTraceMs[networkEntityId] = nowTraceMs;
+            const ActorVisualBounds traceBounds = computeActorVisualBounds(player);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "client.npc.trace", std::to_string(networkEntityId),
+                "focused NPC client/render state", 0,
+                nlohmann::json{
+                    {"actor_id", networkEntityId},
+                    {"name", player.username},
+                    {"present_in_remote_npcs", true},
+                    {"avatar", player.avatarName()},
+                    {"dead", player.dead},
+                    {"model_loaded", player.modelLoaded},
+                    {"avatar_bound", player.avatarInstance != nullptr},
+                    {"render_gate", renderGate},
+                    {"position", {player.pos.x, player.pos.y, player.pos.z}},
+                    {"velocity", {player.vel.x, player.vel.y, player.vel.z}},
+                    {"camera_distance", glm::length(player.pos - cam.pos)},
+                    {"part_count", player.physicalBody.parts.size()},
+                    {"mesh_bounds_valid", traceBounds.valid},
+                    {"mesh_bounds_size", {traceBounds.size.x, traceBounds.size.y,
+                                           traceBounds.size.z}},
+                    {"snapshot_age_unknown_in_render", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     static std::unordered_map<uint32_t, uint64_t> lastLogMs;
     const uint64_t nowMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(

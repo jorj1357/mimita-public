@@ -87,6 +87,10 @@ bool RagdollModeConfig::load(const std::string& path)
             next.corpseSpawnVelocityMultiplier = c.value("spawn_velocity_multiplier", next.corpseSpawnVelocityMultiplier);
             next.corpseBloodIntervalSeconds = c.value("blood_interval_seconds", next.corpseBloodIntervalSeconds);
             next.corpseBloodEnabled = c.value("blood_enabled", next.corpseBloodEnabled);
+            next.corpseSolverIterations = c.value("solver_iterations", next.corpseSolverIterations);
+            next.corpseSelfCollisionIterations = c.value("self_collision_iterations", next.corpseSelfCollisionIterations);
+            next.corpseWorldDepenetrationIterations = c.value("world_depenetration_iterations", next.corpseWorldDepenetrationIterations);
+            next.corpseMaxStepsPerTick = c.value("max_steps_per_tick", next.corpseMaxStepsPerTick);
         }
 
         next.solverIterations = root.value("solver_iterations", next.solverIterations);
@@ -316,6 +320,11 @@ bool RagdollModeConfig::load(const std::string& path)
             next.exitPreserveVelocity = e.value("preserve_velocity", next.exitPreserveVelocity);
             next.exitHopVelocity = e.value("hop_velocity", next.exitHopVelocity);
         }
+
+        next.corpseSolverIterations = std::clamp(next.corpseSolverIterations, 1, 48);
+        next.corpseSelfCollisionIterations = std::clamp(next.corpseSelfCollisionIterations, 0, 8);
+        next.corpseWorldDepenetrationIterations = std::clamp(next.corpseWorldDepenetrationIterations, 0, 4);
+        next.corpseMaxStepsPerTick = std::clamp(next.corpseMaxStepsPerTick, 1, 64);
 
         next.generation = mData.generation + 1;
         mData = next;

@@ -9,6 +9,8 @@
 #include "../debug/structured-log.h"
 #include "../network/network-weapons.h"
 #include "../utils/path_utils.h"
+#include "../utils/json-file-watch.h"
+#include "perf/perf-spike.h"
 
 #include <algorithm>
 #include <cctype>
@@ -67,13 +69,21 @@ const std::string& weaponConfigPath()
 }
 
 json gWeaponConfigRoot = json::object();
-std::chrono::steady_clock::time_point gWeaponConfigLastCheck{};
 std::string gWeaponConfigSignature;
 std::string gLastRejectedSignature;
 std::unordered_set<std::string> gBuiltinWeaponIds;
 using AnimationFileState = std::pair<std::string, std::filesystem::file_time_type>;
 std::vector<AnimationFileState> gAnimationLibraryFiles;
 bool gAnimationLibraryStateInitialized = false;
+
+JsonFileWatch& weaponFileWatch()
+{
+    static JsonFileWatch watch(
+        {resolveAssetPath("config/weapons"),
+         resolveAssetPath("config/animations/library")},
+        std::chrono::milliseconds(250));
+    return watch;
+}
 
 void pruneUnsetFields(json& value)
 {
@@ -95,6 +105,7 @@ std::filesystem::path perWeaponDirectory()
 
 bool readAnimationLibraryState(std::vector<AnimationFileState>& state)
 {
+    MIMITA_PERF_SCOPE("Config::AnimationLibraryScan");
     state.clear();
     const std::filesystem::path root(resolveAssetPath("config/animations/library"));
     std::error_code ec;
@@ -446,6 +457,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
 
 std::string weaponDefinitionSignature()
 {
+    MIMITA_PERF_SCOPE("Config::WeaponDefinitionSignature");
     std::vector<std::filesystem::path> files{
         weaponConfigPath(), perWeaponDirectory() / "masterlist" / "weapon-masterlist.json"};
     const auto dir = perWeaponDirectory();
@@ -618,11 +630,10 @@ void registerWeaponsFromJsonRoot()
 
 bool reloadBuiltinWeaponsIfChanged()
 {
-    const auto now = std::chrono::steady_clock::now();
-    if (gWeaponConfigLastCheck.time_since_epoch().count() != 0 &&
-        now - gWeaponConfigLastCheck < std::chrono::milliseconds(250))
+    // Config and clip trees are watched off-thread. Only a dirty signal pays
+    // for the full signature and library comparison on the gameplay thread.
+    if (!weaponFileWatch().consumeDirty())
         return false;
-    gWeaponConfigLastCheck = now;
 
     const bool weaponConfigChanged = weaponDefinitionSignature() != gWeaponConfigSignature;
     const bool animationLibraryWasChanged = animationLibraryChanged();

@@ -346,6 +346,30 @@ void registerDebugToggleCommands()
     });
 
     term.registerCommand({
+        "npc_trace",
+        "Trace one NPC identity across lifecycle, snapshot, client, and render (id or off)",
+        "npc_trace <entityId|off>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty() || args[0] == "off" || args[0] == "0") {
+                DebugConfig::DEBUG_NPC_TRACE = false;
+                DebugConfig::NPC_TRACE_TARGET = 0;
+                Terminal::instance().addLog("[OK] NPC trace disabled");
+                return;
+            }
+            try {
+                const uint32_t id = (uint32_t)std::stoul(args[0]);
+                DebugConfig::NPC_TRACE_TARGET = id;
+                DebugConfig::DEBUG_NPC_TRACE = id != 0;
+                Terminal::instance().addLog(
+                    "[OK] NPC trace " + std::string(id != 0 ? "enabled for " : "disabled") +
+                    (id != 0 ? std::to_string(id) : ""));
+            } catch (...) {
+                Terminal::instance().addLog("[ERROR] Usage: npc_trace <entityId|off>");
+            }
+        }, "2026-10-28", CommandCategory::Debug
+    });
+
+    term.registerCommand({
         "anim_priority_debug",
         "Toggle animation state-priority diagnostics (0=off, 1=on)",
         "anim_priority_debug <0|1>",

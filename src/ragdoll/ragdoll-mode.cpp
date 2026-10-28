@@ -34,6 +34,7 @@
 #include "debug/debug-log.h"
 #include "debug/gl-debug.h"
 #include "debug/structured-log.h"
+#include "perf/perf-spike.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
@@ -2402,31 +2403,37 @@ void RagdollModeSystem::spawnCorpse(const Player& victim,
 
 void RagdollModeSystem::stepBody(RagdollBody& b, const World& world, float dt)
 {
+    MIMITA_PERF_SCOPE("Ragdoll::StepBody");
     const auto& cfg = RagdollModeConfig::instance().data();
 
     glm::vec3 gravity(0.0f, 0.0f, -GRAVITY * cfg.gravityScale);
     for (auto& part : b.parts)
         integrate(part.body, gravity, dt);
 
-    solveJoints(cfg.solverIterations, true, b);
+    solveJoints(cfg.corpseSolverIterations, true, b);
 
     if (cfg.worldCollision) {
+        MIMITA_PERF_SCOPE("Ragdoll::WorldCollision");
         for (auto& part : b.parts)
             collideWithWorld(part.body, world, dt);
     }
 
-    if (cfg.selfCollision)
-        selfCollision(b);
-
-    solveJoints(cfg.solverIterations / 2, true, b);
-
     if (cfg.selfCollision) {
-        for (int i = 0; i < cfg.selfCollisionIterations; ++i) selfCollision(b);
+        MIMITA_PERF_SCOPE("Ragdoll::SelfCollision");
+        selfCollision(b);
     }
 
-    if (cfg.worldCollision) {
+    solveJoints(cfg.corpseSolverIterations / 2, true, b);
+
+    if (cfg.selfCollision) {
+        MIMITA_PERF_SCOPE("Ragdoll::SelfCollision");
+        for (int i = 0; i < cfg.corpseSelfCollisionIterations; ++i) selfCollision(b);
+    }
+
+    if (cfg.worldCollision && cfg.corpseWorldDepenetrationIterations > 0) {
+        MIMITA_PERF_SCOPE("Ragdoll::WorldDepenetration");
         for (auto& part : b.parts)
-            depenetrateWorld(part.body, world, 2);
+            depenetrateWorld(part.body, world, cfg.corpseWorldDepenetrationIterations);
     }
 
     for (auto& part : b.parts) {
@@ -2482,10 +2489,13 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
     // the full solver per tick so a busy match cannot turn render-frame
     // catch-up into a multi-tick corpse cost. Older corpses keep aging,
     // fading, and rendering from their last simulated pose.
-    static constexpr size_t kMaxCorpseStepsPerTick = 6;
-    size_t simulatedCorpseStart = mCorpses.size() > kMaxCorpseStepsPerTick
-        ? mCorpses.size() - kMaxCorpseStepsPerTick : 0;
+    const size_t maxCorpseStepsPerTick =
+        (size_t)std::max(cfg.corpseMaxStepsPerTick, 1);
+    size_t simulatedCorpseStart = mCorpses.size() > maxCorpseStepsPerTick
+        ? mCorpses.size() - maxCorpseStepsPerTick : 0;
     size_t corpseIndex = 0;
+    const bool ragdollTrace = StructuredLogger::instance().shouldLog(
+        StructuredCategory::Ragdoll, StructuredLevel::Trace);
 
     for (auto it = mCorpses.begin(); it != mCorpses.end();) {
         RagdollCorpse& corpse = *it;
@@ -2563,9 +2573,9 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
             continue;
         }
 
-        if (corpse.lifeTicks % 60 == 0) {
+        if (ragdollTrace && corpse.lifeTicks % 60 == 0) {
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                StructuredCategory::Ragdoll, StructuredLevel::Trace,
                 "ragdoll.corpse.position_sample", corpse.actorId,
                 "corpse position sampled during lifetime", 
                 static_cast<uint32_t>(corpse.actor.movementSimulationTick),
@@ -2587,7 +2597,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
 
         std::vector<glm::vec3> poseBeforePositions;
         std::vector<glm::quat> poseBeforeOrientations;
-        if (!corpse.poseStepTraceLogged) {
+        if (ragdollTrace && !corpse.poseStepTraceLogged) {
             poseBeforePositions.reserve(corpse.body.parts.size());
             poseBeforeOrientations.reserve(corpse.body.parts.size());
             for (const RagdollModePart& part : corpse.body.parts) {
@@ -2597,9 +2607,10 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
         }
 
         stepBody(corpse.body, world, dt);
-        syncToPlayer(corpse.actor, corpse.body);
+        { MIMITA_PERF_SCOPE("Ragdoll::CorpseSync");
+          syncToPlayer(corpse.actor, corpse.body); }
 
-        if (!corpse.poseStepTraceLogged) {
+        if (ragdollTrace && !corpse.poseStepTraceLogged) {
             corpse.poseStepTraceLogged = true;
             nlohmann::json beforeParts = nlohmann::json::array();
             nlohmann::json afterParts = nlohmann::json::array();
@@ -2625,7 +2636,7 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
                 maxRotationDegrees = std::max(maxRotationDegrees, rotation);
             }
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                StructuredCategory::Ragdoll, StructuredLevel::Trace,
                 "ragdoll.corpse.pose_step_trace", corpse.actorId,
                 "first corpse pose before and after physics step",
                 static_cast<uint32_t>(corpse.actor.movementSimulationTick),
@@ -2667,16 +2678,18 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
-        if (cfg.corpseBloodEnabled)
+        if (cfg.corpseBloodEnabled) {
+            MIMITA_PERF_SCOPE("Ragdoll::CorpseBlood");
             sprayCorpseBlood(corpse, dt);
+        }
 
-        if (corpse.lifeTicks % 60 == 0) {
+        if (ragdollTrace && corpse.lifeTicks % 60 == 0) {
             float fastestSpeed = 0.0f;
             for (const RagdollModePart& part : corpse.body.parts)
                 fastestSpeed = std::max(fastestSpeed,
                     glm::length(part.body.linearVelocity));
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                StructuredCategory::Ragdoll, StructuredLevel::Trace,
                 "ragdoll.corpse.heartbeat", corpse.actorId,
                 "corpse fixed-tick update heartbeat",
                 static_cast<uint32_t>(corpse.actor.movementSimulationTick),
@@ -2701,6 +2714,8 @@ void RagdollModeSystem::updateCorpses(float dt, const World& world,
 
 void RagdollModeSystem::renderCorpses(const Camera& camera)
 {
+    const bool ragdollTrace = StructuredLogger::instance().shouldLog(
+        StructuredCategory::Ragdoll, StructuredLevel::Trace);
     for (RagdollCorpse& corpse : mCorpses) {
         if (corpse.fade >= 1.0f) continue;
         ++corpse.renderSubmissionCount;
@@ -2721,7 +2736,7 @@ void RagdollModeSystem::renderCorpses(const Camera& camera)
                   {"active_corpses", mCorpses.size()} },
                 __FILE__, __LINE__, __FUNCTION__);
         }
-        if (!corpse.poseRenderTraceLogged) {
+        if (ragdollTrace && !corpse.poseRenderTraceLogged) {
             corpse.poseRenderTraceLogged = true;
             nlohmann::json renderParts = nlohmann::json::array();
             for (const RagdollModePart& part : corpse.body.parts) {
@@ -2731,7 +2746,7 @@ void RagdollModeSystem::renderCorpses(const Camera& camera)
                     {"orientation", quatJson(part.body.orientation)}});
             }
             StructuredLogger::instance().writeEvent(
-                StructuredCategory::Ragdoll, StructuredLevel::Important,
+                StructuredCategory::Ragdoll, StructuredLevel::Trace,
                 "ragdoll.corpse.pose_render_trace", corpse.actorId,
                 "first corpse pose submitted to renderer",
                 static_cast<uint32_t>(corpse.actor.movementSimulationTick),
