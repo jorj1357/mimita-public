@@ -1,7 +1,7 @@
 # Contact Authority Documentation, Quality Gates, and Inert Deletion
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T18:10:00Z`
+Time last updated: `2026-10-29T18:25:00Z`
 
 ## Summary
 
@@ -184,3 +184,20 @@ Still pending:
 - full N-client matrix runner
 - server-view overlay
 - PvP and bad-connection accuracy measurement
+## Initial empty hands and checked-in smoke scenarios
+
+- Player boot now starts at equipped slot `0`; the saved hotbar slot is no
+  longer applied at boot.
+- Server initial spawn no longer applies a role starting weapon; it publishes an
+  empty equipped weapon id and slot `0`. Respawns still preserve an owned
+  previous item or fall back to the role starting weapon.
+- Added `devscripts/scenarios/melee_initial_empty_hands_v1.json`.
+- Added `devscripts/scenarios/melee_attack_identity_v1.json`.
+- Added a note to `docs/specs/open-gameplay-issues.md` requesting instant
+  animation snapping as an explicit optional animation mode in normal gameplay.
+
+Runtime evidence:
+
+- `melee_initial_empty_hands_v1` passed on run `20261029_182302`
+- `melee_attack_identity_v1` passed on run `20261029_182324`
+- build `3724` succeeded

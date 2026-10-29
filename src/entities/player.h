@@ -549,7 +549,7 @@ public:
     bool meleeShieldActive = false;
     float meleeShieldFraction = 1.0f;
     bool inventoryOpen = false;
-    int equippedSlot = 1;
+    int equippedSlot = 0;
     bool hasValidWeapon = false;
     uint8_t networkWeaponState = 0;
     float networkShootEffectTimer = 0.0f;

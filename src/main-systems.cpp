@@ -557,7 +557,9 @@ void gameInitSubsystems(Engine& engine)
     static Player player;
     player.username = AuthSystem::instance().displayName();
     Debug::warn(Debug::Category::Auth, "[BOOT] player.username=%s\n", player.username.c_str());
-    player.equippedSlot = GetPlayerSettings().equippedSlot;
+    // Every new game starts with empty hands. The saved slot is a convenience
+    // for later equips, not an initial loadout.
+    player.equippedSlot = 0;
     player.mCharacterName = GetPlayerSettings().characterName;
     if (player.mCharacterName.empty())
         player.mCharacterName = "DefaultGuy";

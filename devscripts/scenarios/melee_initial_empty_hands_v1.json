@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "id": "melee_initial_empty_hands_v1",
+  "description": "A new game starts with empty hands: initial spawn publishes no equipped weapon and slot 0.",
+  "launch": {"profile": "npc-navigation", "launch_mode": "1", "map": "funworld3", "weapon_set": "29", "visibility": "headless", "reuse_matching_run": false},
+  "setup": [{"id": "settle", "wait_seconds": 5}],
+  "steps": [],
+  "assertions": [
+    {"type": "event_field_equals", "event": "weapon.spawn.equipped_published", "field": "weapon_id", "equals": ""},
+    {"type": "event_field_equals", "event": "weapon.spawn.equipped_published", "field": "native_slot", "equals": 0}
+  ],
+  "timeout_seconds": 120
+}

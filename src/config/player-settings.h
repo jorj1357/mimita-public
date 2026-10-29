@@ -8,7 +8,7 @@ struct PlayerSettings {
     float musicVolume = 1.0f;
     float sfxVolume = 1.0f;
     float sensitivity = 0.15f;
-    int equippedSlot = 1;
+    int equippedSlot = 0;
     std::string outfitPath = "devscripts/character_outfit_template.png";
     std::string avatarName;
     std::string characterName = "DefaultGuy";

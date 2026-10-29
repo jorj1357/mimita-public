@@ -68,7 +68,7 @@ bool LoadPlayerSettings(const std::string& account)
 
         gSettings.fov = std::clamp(gSettings.fov, 60.0f, 140.0f);
         gSettings.sensitivity = std::clamp(gSettings.sensitivity, 0.01f, 2.0f);
-        gSettings.equippedSlot = std::clamp(gSettings.equippedSlot, 1, 10);
+        gSettings.equippedSlot = std::clamp(gSettings.equippedSlot, 0, 10);
         CAMERA_SENS = gSettings.sensitivity;
         gBloodFXEnabled = gSettings.bloodFX;
         return true;

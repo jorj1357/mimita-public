@@ -1,4 +1,4 @@
-﻿2026 10 21 1606 todo 
+2026 10 21 1606 todo 
 WE NEE TO MAKE A  
 MIGRATION 
 EXPLAIN
@@ -2456,3 +2456,12 @@ A projectile may become an arbitrary `.glb` mesh. The intended path is:
 Melee may use the same mesh-vs-mesh path later. Until then, authored boxes and
 capsules are the supported melee damage geometry. Mesh collision must not create
 a new damage formula or a second authority path.
+## Initial spawn equip policy (2026-10-29)
+
+A new game starts with empty hands. The server publishes an empty equipped
+weapon id and native slot `0` on the initial spawn. The client also boots with
+slot `0` instead of restoring the last saved hotbar slot.
+
+Respawns may preserve the previous equipped item when it is still owned and
+allowed, then fall back to the role's documented starting weapon. NPC loadouts
+keep their own `startingWeapon` path.

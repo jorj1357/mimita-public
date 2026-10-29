@@ -1979,3 +1979,16 @@ milestone, and acceptance scenarios.
   Treat governance, contribution/voting scope, forkability, monetization, and
   creator livelihood as connected but distinct design questions to document
   openly with the community.
+## Melee-mode instant animation snapping as an optional normal-gameplay mode (2026-10-29)
+
+Melee mode currently snaps instantly between authored animation states. The
+player wants to preserve that as an explicit animation mode available in normal
+gameplay, rather than only as an incidental melee-mode behavior.
+
+Desired direction:
+
+- expose an animation mode that selects instant state snaps;
+- keep the existing normal interpolated animation mode available;
+- make the mode data-driven/config-owned, not a melee-only hardcoded branch;
+- document how it interacts with authored melee poses, remote actors, and
+  reconciliation.

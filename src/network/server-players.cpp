@@ -789,8 +789,14 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
         player.equippedSlot = def->slot;
         return true;
     };
-    if (!applyEquippedById(previousEquipped) &&
-        !applyEquippedById(profile.startingWeapon) &&
+    // A new game starts with empty hands. Preserve the previous stable item
+    // only across respawns; do not apply a role starting weapon on the first
+    // spawn. NPC loadouts still use their own startingWeapon path.
+    if (!isInitialSpawn) {
+        (void)applyEquippedById(previousEquipped);
+        (void)applyEquippedById(profile.startingWeapon);
+    }
+    if (!isInitialSpawn && player.equippedWeaponId.empty() &&
         !profile.startingWeapon.empty()) {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Weapons, StructuredLevel::Errors,

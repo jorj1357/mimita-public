@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "id": "melee_attack_identity_v1",
+  "description": "Mace attack uses the generic attack request and accepted mace move-set action on weapon set 29.",
+  "launch": {"profile": "npc-navigation", "launch_mode": "1", "map": "funworld3", "weapon_set": "29", "visibility": "headless", "reuse_matching_run": false},
+  "setup": [
+    {"id": "settle", "wait_seconds": 5},
+    {"id": "equip", "command": "equipweapon", "args": ["mace"], "delay_ms_after": 2000}
+  ],
+  "steps": [
+    {"id": "attack_down", "command": "agent.weaponbutton", "args": ["primary", "1"], "delay_ms_after": 1400},
+    {"id": "attack_up", "command": "agent.weaponbutton", "args": ["primary", "0"], "delay_ms_after": 500}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "melee.action.start"},
+    {"type": "event_field_equals", "event": "weapon.attack.result", "field": "accepted", "equals": true}
+  ],
+  "timeout_seconds": 120
+}
