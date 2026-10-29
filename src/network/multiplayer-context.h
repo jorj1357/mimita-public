@@ -594,6 +594,9 @@ struct MultiplayerContext
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;
+    // Debug-only: render raw authoritative server positions instead of the
+    // interpolated/predicted client view. No gameplay effect.
+    bool serverViewOnly = false;
     bool waitingForMapLoad = false;
     uint32_t mapLoadAttempts = 0;
     uint64_t lastMapLoadAttemptMs = 0;

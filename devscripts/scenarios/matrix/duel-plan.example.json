@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "duel-plan-example",
+  "description": "Two clients on one server. Replace the example commands with a real duel script.",
+  "clients": [
+    {
+      "id": "p1",
+      "name": "Matrix P1",
+      "steps": [
+        {"id": "settle", "command": "agent.snapshot", "args": ["p1_ready"], "delay_ms_after": 1000}
+      ],
+      "assertions": [
+        {"type": "event_present", "event": "avatar.command.assert"}
+      ]
+    },
+    {
+      "id": "p2",
+      "name": "Matrix P2",
+      "steps": [
+        {"id": "settle", "command": "agent.snapshot", "args": ["p2_ready"], "delay_ms_after": 1000}
+      ],
+      "assertions": [
+        {"type": "event_present", "event": "avatar.command.assert"}
+      ]
+    }
+  ]
+}

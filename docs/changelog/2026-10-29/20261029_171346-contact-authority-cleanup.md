@@ -1,7 +1,7 @@
 # Contact Authority Documentation, Quality Gates, and Inert Deletion
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T18:25:00Z`
+Time last updated: `2026-10-29T18:40:00Z`
 
 ## Summary
 
@@ -201,3 +201,41 @@ Runtime evidence:
 - `melee_initial_empty_hands_v1` passed on run `20261029_182302`
 - `melee_attack_identity_v1` passed on run `20261029_182324`
 - build `3724` succeeded
+## Shared server contact resolver, matrix runner, and server view
+
+Added `src/network/server-contact.h/.cpp` with
+`resolveServerContact(...)`, which centralizes victim lookup,
+generation/lifecycle checks, friendly-fire policy, and `applyActorDamage`.
+
+Migrated:
+
+- hitscan player and NPC damage application
+- projectile-rifle direct player and NPC damage application
+- deathball player/NPC tick contacts
+
+Added the runnable matrix path to `devscripts/dev-loop-matrix.py`:
+
+- reuses or restarts the dev-loop server when its build is stale
+- stops the dev-loop's single client
+- launches N clients with unique journals and command queues
+- executes per-client steps and assertions
+- writes `matrix-run.json`
+- leaves the server running for the next case
+
+Added `server_view [0|1]` to toggle the authoritative-position debug overlay and
+suppress local predicted/replica capsules while enabled.
+
+Evidence:
+
+- build `3732` succeeded
+- `melee_initial_empty_hands_v1` passed
+- `melee_attack_identity_v1` passed
+- two-client matrix example passed with `assertions=2 failed=0`
+- `server_view 1` command delivered and completed
+
+Still pending:
+
+- projectile explosion splash migration
+- godball claim migration
+- full geometry validation sharing for every family
+- PvP/bad-connection accuracy measurement

@@ -4941,3 +4941,10 @@ client IDs, never silently merged.
   wall-blocked contacts reject.
 - There is no low artificial damage cap. `combat.max_authoritative_damage` is a
   representation/safety bound; weapon/action configuration owns gameplay damage.
+### Authoritative server view (2026-10-29)
+
+The `server_view [0|1]` client command enables the network debug overlay and the
+authoritative-position ghost. While enabled, the overlay renders raw server
+target positions and suppresses the local predicted capsule/replica capsules, so
+the observer can compare the client view with the server view. This is
+presentation-only and does not change gameplay or authority.

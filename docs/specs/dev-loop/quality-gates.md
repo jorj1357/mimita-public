@@ -232,3 +232,20 @@ returning.
 
 Do not use the quality-gate document as a changelog. It defines standing rules;
 changelogs record work, and regression files record confirmed failures.
+## Matrix runner implementation
+
+`devscripts/dev-loop-matrix.py` now has a runnable path:
+
+```text
+python devscripts/dev-loop-matrix.py --run \
+  --plan devscripts/scenarios/matrix/duel-plan.example.json \
+  --launch-mode 1
+```
+
+It reuses or restarts the dev-loop server, stops the dev-loop's single client,
+launches N clients with unique `MIMITA_EVENTS_FILE` journals and command queues,
+runs each client's step list, evaluates its assertions, and writes
+`matrix-run.json` beside the run journals. Client processes are terminated after
+the run; the server remains available for the next matrix case.
+
+The example plan is `devscripts/scenarios/matrix/duel-plan.example.json`.

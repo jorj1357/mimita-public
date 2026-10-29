@@ -1010,10 +1010,13 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                     camera, capsule.a, capsule.b, color);
             };
 
-        DebugVis::drawWireSphere(camera, player.pos, 0.72f, predictedColor);
-        DebugVis::drawWorldLabel(
-            player.pos + glm::vec3(0.0f, 0.0f, 2.0f),
-            "LOCAL PREDICTED", predictedColor);
+        if (!mpContext.serverViewOnly)
+        {
+            DebugVis::drawWireSphere(camera, player.pos, 0.72f, predictedColor);
+            DebugVis::drawWorldLabel(
+                player.pos + glm::vec3(0.0f, 0.0f, 2.0f),
+                "LOCAL PREDICTED", predictedColor);
+        }
         if (mpContext.hasLocalServerPosition)
         {
             DebugVis::drawWireSphere(
@@ -1051,7 +1054,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 
         for (const auto& kv : mpContext.remotePlayers)
         {
-            drawReplicaCapsule(kv.second, remoteColor);
+            if (!mpContext.serverViewOnly)
+                drawReplicaCapsule(kv.second, remoteColor);
             bool usedHeadTransform = false;
             const glm::vec3 healthbarAnchor =
                 playerHealthbarAnchor(
@@ -1097,7 +1101,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
         for (const auto& kv : mpContext.remoteNpcs)
         {
-            drawReplicaCapsule(kv.second, npcColor);
+            if (!mpContext.serverViewOnly)
+                drawReplicaCapsule(kv.second, npcColor);
             const auto interpolation = mpContext.remoteNpcInterpolation.find(kv.first);
             if (interpolation != mpContext.remoteNpcInterpolation.end() &&
                 interpolation->second.hasTarget)

@@ -325,3 +325,22 @@ offline gameplay simulation with different contact, damage, or validation rules.
 8. client-owned journals and N-client matrix runner
 9. server-view debug overlay
 10. accuracy measurement and playtesting
+## Implementation status (2026-10-29)
+
+`src/network/server-contact.h/.cpp` now provides
+`resolveServerContact(...)`, the shared victim lookup, generation/lifecycle/team
+check, and `applyActorDamage` path.
+
+Migrated to it:
+
+- hitscan player targets
+- hitscan NPC targets
+- projectile-rifle direct player targets
+- projectile-rifle direct NPC targets
+- deathball player/NPC tick contacts
+
+Still pending migration:
+
+- projectile explosion player/NPC splash loops
+- godball claim application
+- full shared geometry validation for every family

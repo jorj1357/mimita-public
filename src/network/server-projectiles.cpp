@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-contact.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "debug/structured-log.h"
@@ -784,21 +785,40 @@ void explodeProjectile(SOCKET sock,
         if (directNpcTarget && (projectile.ownerNpcId == 0 || npcFriendlyFire))
         {
             ServerNpc& npc = npcIt->second;
-            if (projectile.ownerNpcId == 0 && serverFriendlyFireBlocks(
-                    projectile.ownerPlayerId, false, npc.entityId, true,
-                    players, npcs, "projectile-direct-player-to-npc", tick))
+            ServerActorRef attackerRef{};
+            if (projectile.ownerNpcId != 0)
             {
-                Debug::log(Debug::Category::Weapons,
-                    "[PROJECTILE NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
-                    projectile.ownerPlayerId, npc.entityId);
-                return;
+                auto ownerIt = npcs.find(projectile.ownerNpcId);
+                if (ownerIt != npcs.end())
+                    attackerRef = {ownerIt->first, ServerActorKind::Npc, nullptr, &ownerIt->second};
             }
-            npc.health -= damageValue;
-            npc.knockbackImpulse += victimKnockback;
-            const bool killed = npc.health <= 0;
+            else
+            {
+                auto ownerIt = players.find(projectile.ownerPlayerId);
+                if (ownerIt != players.end())
+                    attackerRef = {ownerIt->first, ServerActorKind::Player, &ownerIt->second, nullptr};
+            }
+            ServerContactRequest contact;
+            contact.attacker = attackerRef;
+            contact.victimId = npc.entityId;
+            contact.victimKind = ServerActorKind::Npc;
+            contact.victimGeneration = npc.transformEpoch;
+            contact.point = position;
+            contact.normal = -shotDir;
+            contact.damage = damageValue;
+            contact.knockback = victimKnockback;
+            contact.source = ServerDamageSource::Hitscan;
+            contact.weaponId = def ? def->id : "projectile_rifle";
+            contact.weaponDisplayName = def ? def->displayName : "Projectile Rifle";
+            contact.serverTick = tick;
+            contact.contactId = projectile.id;
+            const ServerContactResult contactResult =
+                resolveServerContact(players, npcs, contact);
+            if (!contactResult.accepted)
+                return;
+            const bool killed = contactResult.damage.killed;
             if (killed)
             {
-                npc.health = 0;
                 const uint32_t ownerId = projectile.ownerNpcId != 0
                     ? projectile.ownerNpcId : projectile.ownerPlayerId;
                 const uint8_t ownerKind = projectile.ownerNpcId != 0
@@ -823,9 +843,38 @@ void explodeProjectile(SOCKET sock,
             if (playerIt != players.end() && !playerIt->second.dead)
             {
                 ServerPlayer& victim = playerIt->second;
-                ServerDamageResult damage = applyServerDamage(
-                    players, victim, projectile.ownerPlayerId, damageValue,
-                    victimKnockback, ServerDamageSource::Hitscan);
+                ServerActorRef attackerRef{};
+                if (projectile.ownerNpcId != 0)
+                {
+                    auto ownerIt = npcs.find(projectile.ownerNpcId);
+                    if (ownerIt != npcs.end())
+                        attackerRef = {ownerIt->first, ServerActorKind::Npc, nullptr, &ownerIt->second};
+                }
+                else
+                {
+                    auto ownerIt = players.find(projectile.ownerPlayerId);
+                    if (ownerIt != players.end())
+                        attackerRef = {ownerIt->first, ServerActorKind::Player, &ownerIt->second, nullptr};
+                }
+                ServerContactRequest contact;
+                contact.attacker = attackerRef;
+                contact.victimId = victim.id;
+                contact.victimKind = ServerActorKind::Player;
+                contact.victimGeneration = victim.spawnGeneration;
+                contact.point = position;
+                contact.normal = -shotDir;
+                contact.damage = damageValue;
+                contact.knockback = victimKnockback;
+                contact.source = ServerDamageSource::Hitscan;
+                contact.weaponId = def ? def->id : "projectile_rifle";
+                contact.weaponDisplayName = def ? def->displayName : "Projectile Rifle";
+                contact.serverTick = tick;
+                contact.contactId = projectile.id;
+                const ServerContactResult contactResult =
+                    resolveServerContact(players, npcs, contact);
+                const ServerDamageResult& damage = contactResult.damage;
+                if (!contactResult.accepted)
+                    return;
                 queueServerDamageConfirmedEvent(
                     sock, players, tick, totalPacketsOut,
                     projectile.ownerPlayerId, victim, damageValue, damage,
@@ -1550,16 +1599,24 @@ void tickServerProjectiles(SOCKET sock,
                         push = glm::normalize(push);
                         const glm::vec3 impulse = push * (float)damage *
                             std::max(0.0f, stepParam("deathballKnockbackPerDamage", 0.1f));
-                        ServerActorDamageRequest request;
-                        request.attacker = attackerRef;
-                        request.victim = victimRef;
-                        request.damage = damage;
-                        request.knockback = impulse;
-                        request.source = ServerDamageSource::RocketExplosion;
-                        request.weaponId = stepDef->id;
-                        request.weaponDisplayName = stepDef->displayName;
-                        request.serverTick = stepTick;
-                        const auto result = applyActorDamage(players, npcs, request);
+                        ServerContactRequest contact;
+                        contact.attacker = attackerRef;
+                        contact.victimId = victimRef.id;
+                        contact.victimKind = victimRef.kind;
+                        contact.victimGeneration = victimRef.kind == ServerActorKind::Npc
+                            ? victimRef.npc->transformEpoch : victimRef.player->spawnGeneration;
+                        contact.point = center;
+                        contact.normal = step.hitNormal;
+                        contact.damage = damage;
+                        contact.knockback = impulse;
+                        contact.source = ServerDamageSource::RocketExplosion;
+                        contact.weaponId = stepDef->id;
+                        contact.weaponDisplayName = stepDef->displayName;
+                        contact.serverTick = stepTick;
+                        contact.contactId = projectile.id;
+                        const ServerContactResult contactResult =
+                            resolveServerContact(players, npcs, contact);
+                        const auto& result = contactResult.damage;
                         if (result.applied) {
                             if (victimRef.kind == ServerActorKind::Player && victimRef.player) {
                                 queueServerDamageConfirmedEvent(sock, players, stepTick,

@@ -448,6 +448,7 @@ void registerNetworkCommands()
             Terminal::instance().addLog("disconnectserver         - Disconnect from server");
             Terminal::instance().addLog("badconn <list|N|0>      - Per-client network simulation");
             Terminal::instance().addLog("net_debug_presentation [0|1] - Debug overlay");
+            Terminal::instance().addLog("server_view [0|1]        - Raw authoritative server view");
             Terminal::instance().addLog("net_damage_debug [0|1]   - Damage pipeline debug");
             Terminal::instance().addLog("net_hit_debug [0|1]      - Hit raycast debug");
             Terminal::instance().addLog("net_compare              - Client/server state compare");
@@ -568,6 +569,20 @@ void registerNetworkCommands()
             Terminal::instance().addLog(mpContext.showServerGhost
                 ? "[SERVER GHOST] Server position ghost enabled"
                 : "[SERVER GHOST] Server position ghost disabled");
+        }
+    });
+    Terminal::instance().registerCommand({
+        "server_view", "Debug: show raw authoritative server positions and hit volumes",
+        "server_view [0|1]",
+        [](const std::vector<std::string>& args) {
+            MimitaNet::MultiplayerContext& mpContext = MP_CONTEXT;
+            const bool on = args.empty() ? !mpContext.serverViewOnly : args[0] == "1";
+            mpContext.serverViewOnly = on;
+            mpContext.showDebugOverlay = on;
+            mpContext.showServerGhost = on;
+            Terminal::instance().addLog(on
+                ? "[SERVER VIEW] authoritative server view ON"
+                : "[SERVER VIEW] authoritative server view OFF");
         }
     });
     Terminal::instance().registerCommand({

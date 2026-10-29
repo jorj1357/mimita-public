@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-contact.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
 #include "network/server-gamemode.h"
@@ -820,79 +821,27 @@ void handleAttackRequest(
             if (npcIt != npcs.end())
             {
                 ServerNpc& npcTarget = npcIt->second;
-                if (serverFriendlyFireBlocks(
-                        shooter.id, false, npcTarget.entityId, true,
-                        players, npcs, "generic-hitscan-player-to-npc", tick))
-                {
-                    Debug::log(Debug::Category::Weapons,
-                        "[ATTACK NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
-                        shooter.id, npcTarget.entityId);
+                ServerContactRequest contact;
+                contact.attacker = {shooter.id, ServerActorKind::Player, &shooter, nullptr};
+                contact.victimId = npcTarget.entityId;
+                contact.victimKind = ServerActorKind::Npc;
+                contact.victimGeneration = aggregate.targetSpawnGeneration;
+                contact.point = aggregate.hitPosition;
+                contact.normal = aggregate.hitNormal;
+                contact.damage = aggregate.damage;
+                contact.knockback = aggregate.knockback;
+                contact.source = ServerDamageSource::Hitscan;
+                contact.weaponId = def->id;
+                contact.weaponDisplayName = def->displayName;
+                contact.serverTick = tick;
+                contact.contactId = req->requestId;
+                const ServerContactResult contactResult =
+                    resolveServerContact(players, npcs, contact);
+                if (!contactResult.accepted)
                     continue;
-                }
-                const int healthBefore = npcTarget.health;
-                if (npcTarget.health > 0)
-                {
-                    npcTarget.health -= aggregate.damage;
-                    npcTarget.knockbackImpulse += aggregate.knockback;
-                }
-                const bool killed = npcTarget.health <= 0;
-                const bool newlyKilled = healthBefore > 0 && killed;
-                const int damageApplied = std::max(0, healthBefore - npcTarget.health);
-
-                if (damageApplied > 0)
-                {
-                    StructuredLogger::instance().writeEvent(
-                        StructuredCategory::Network, StructuredLevel::Important,
-                        "server.damage.applied",
-                        "npc_" + std::to_string(npcTarget.entityId),
-                        "authoritative server NPC damage changed health", tick,
-                        { {"attacker_id", shooter.id},
-                          {"attacker_team", shooter.matchTeam},
-                          {"target_actor_id", npcTarget.entityId},
-                          {"target_actor_type", "npc"},
-                          {"target_name", npcTarget.name},
-                          {"target_team", npcTarget.matchTeam},
-                          {"friendly_fire", serverFriendlyFireEnabled()},
-                          {"damage_path", "generic-hitscan-player-to-npc"},
-                          {"damage_requested", aggregate.damage},
-                          {"damage_applied", damageApplied},
-                          {"health_before", healthBefore},
-                          {"health_after", npcTarget.health},
-                          {"dead_before", healthBefore <= 0},
-                          {"dead_after", npcTarget.health <= 0},
-                          {"killed", newlyKilled},
-                          {"source", "hitscan"},
-                          {"transform_epoch", npcTarget.transformEpoch},
-                          {"position", {npcTarget.pos.x, npcTarget.pos.y, npcTarget.pos.z}},
-                          {"knockback", {aggregate.knockback.x, aggregate.knockback.y,
-                                          aggregate.knockback.z}} },
-                        __FILE__, __LINE__, __FUNCTION__);
-                }
-
-                if (newlyKilled)
-                {
-                    StructuredLogger::instance().writeEvent(
-                        StructuredCategory::Network, StructuredLevel::Important,
-                        "server.death.transition",
-                        "npc_" + std::to_string(npcTarget.entityId),
-                        "authoritative server NPC transitioned alive to dead", tick,
-                        { {"attacker_id", shooter.id},
-                          {"target_actor_id", npcTarget.entityId},
-                          {"target_actor_type", "npc"},
-                          {"target_name", npcTarget.name},
-                          {"target_team", npcTarget.matchTeam},
-                          {"health_before", healthBefore},
-                          {"health_after", npcTarget.health},
-                          {"damage_applied", damageApplied},
-                          {"source", "hitscan"},
-                          {"transform_epoch", npcTarget.transformEpoch},
-                          {"position", {npcTarget.pos.x, npcTarget.pos.y, npcTarget.pos.z}} },
-                        __FILE__, __LINE__, __FUNCTION__);
-                }
-
+                const bool killed = contactResult.damage.killed;
                 if (killed)
                 {
-                    npcTarget.health = 0;
                     printf("%s [SERVER NPC KILL] shooter=%u npcId=%u name=\"%s\"\n",
                            serverTimestamp(), shooter.id,
                            npcTarget.entityId, npcTarget.name.c_str());
@@ -905,8 +854,6 @@ void handleAttackRequest(
                         npcTarget.entityId, ENTITY_NPC,
                         killWeaponId, killWeaponDisplay, req->requestId,
                         shooter.pos, npcTarget.pos, tick, totalPacketsOut);
-                    // Do NOT erase: syncServerNpcDamageToNpc marks the real NPC
-                    // dead and respawnServerNpc re-admits it after the delay.
                 }
                 broadcastNpcDamageEvent(
                     sock, players, tick, totalPacketsOut, shooter.id, npcTarget,
@@ -916,16 +863,30 @@ void handleAttackRequest(
                 continue;
             }
             auto targetIt = players.find(aggregate.targetPlayerId);
-            if (targetIt == players.end() ||
-                targetIt->second.spawnGeneration != aggregate.targetSpawnGeneration)
+            if (targetIt == players.end())
                 continue;
             ServerPlayer& target = targetIt->second;
-            ServerDamageResult dmgResult = applyServerDamage(
-                players, target, shooter.id, aggregate.damage,
-                aggregate.knockback, ServerDamageSource::Hitscan);
+            ServerContactRequest contact;
+            contact.attacker = {shooter.id, ServerActorKind::Player, &shooter, nullptr};
+            contact.victimId = target.id;
+            contact.victimKind = ServerActorKind::Player;
+            contact.victimGeneration = aggregate.targetSpawnGeneration;
+            contact.point = aggregate.hitPosition;
+            contact.normal = aggregate.hitNormal;
+            contact.damage = aggregate.damage;
+            contact.knockback = aggregate.knockback;
+            contact.source = ServerDamageSource::Hitscan;
+            contact.weaponId = def->id;
+            contact.weaponDisplayName = def->displayName;
+            contact.serverTick = tick;
+            contact.contactId = req->requestId;
+            const ServerContactResult contactResult =
+                resolveServerContact(players, npcs, contact);
+            if (!contactResult.accepted)
+                continue;
             queueServerDamageConfirmedEvent(
                 sock, players, tick, totalPacketsOut, shooter.id, target,
-                aggregate.damage, dmgResult,
+                aggregate.damage, contactResult.damage,
                 aggregate.hitPosition, aggregate.hitNormal, aggregate.knockback,
                 ServerDamageSource::Hitscan, netWeapon, req->requestId,
                 0, 0, def->id);
