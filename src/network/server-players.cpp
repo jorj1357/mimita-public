@@ -810,6 +810,9 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.lastMeleeAttackSerial = 0;
     player.swordswordState = SwordswordState{};
     player.meleeCooldownTimer = 0.0f;
+    player.meleeNextAllowedTick = 0;
+    player.meleeClaimedTargetTicks.clear();
+    player.meleeClaimedTargetTickOrder.clear();
     player.godballActive = false;
     player.godballX = player.godballY = player.godballZ = 0.0f;
     player.godballVx = player.godballVy = player.godballVz = 0.0f;

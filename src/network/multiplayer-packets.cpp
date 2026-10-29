@@ -702,6 +702,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.predictedMuzzle = predictedMuzzle;
     pending.deterministicSeed = req.deterministicSeed;
     pending.attackVariant = req.attackVariant;
+    pending.movesetRevision = movesetRevision;
     pending.claimedTargetId = claimedTargetId;
     pending.claimedHit = claimedHit;
     pending.claimedBodyPart = claimedBodyPart;

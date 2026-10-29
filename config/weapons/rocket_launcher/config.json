@@ -80,7 +80,8 @@
     "projectileOutlineColorB": 0.2,
     "projectileOutlineAlpha": 1.0,
     "projectileOutlineScale": 1.15,
-    "projectileGlowEnabled": 1.0,
+    // "projectileGlowEnabled": 1.0,
+    "projectileGlowEnabled": 0.0,
     "projectileGlowColorR": 1.0,
     "projectileGlowColorG": 0.95,
     "projectileGlowColorB": 0.95,
@@ -99,7 +100,7 @@
     "smokeSpreadDegrees": 30.0,
     "smokeLifetime": 1.5,
     "smokeLifetimeRandom": 0.3,
-    "smokeSize": 0.3,
+    "smokeSize": 12.0,
     "smokeEndSize": 1.0,
     "smokeSizeRandom": 0.1,
     "smokeGravity": 0.0,
@@ -124,6 +125,7 @@
 "headshot_multiplier": 1.0,
 "hitscan": false,
 "magazine_size": 666,
+"melee_contact": {"enabled": false, "use_weapon_collision_hitbox": false, "claim_tolerance_m": 0.75, "target_radius_m": 0.9, "max_reach_m": 0.0, "claim_batch_ticks": 6, "occlusion": true, "damage_scale": 1.0, "force_scale": 1.0},
 "model": {
     "path": "assets/objects/weapons/mimita-rpg-v3.glb"
   },
@@ -145,7 +147,7 @@
 "render": {
     "projectile": {
       "model": "assets/objects/weapons/weapon-objects/mimita-rocket-model-v1.glb",
-      "facingAxis": "+Z",
+      "facingAxis": "+X",
       "scale": [1.0, 1.0, 1.0],
       "rotationDegrees": [0.0, 0.0, 0.0],
       "offset": [0.0, 0.0, 0.0],
@@ -160,7 +162,7 @@
   },
 "reserve_ammo": null,
 "self_impulse_multiplier": null,
-"shooter_knockback": null,
+"shooter_knockback": 0.0,
 "shooter_knockback_vertical": null,
 "sound": {
     "shoot": "rocketlauncher/rocketshoot",

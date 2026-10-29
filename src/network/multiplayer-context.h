@@ -668,6 +668,7 @@ struct MultiplayerContext
         glm::vec3 predictedMuzzle{0.0f};
         uint32_t deterministicSeed = 0;
         uint8_t attackVariant = 0;
+        uint16_t movesetRevision = 0;
         uint32_t claimedTargetId = 0;
         glm::vec3 claimedHit{0.0f};
         uint8_t claimedBodyPart = 0;

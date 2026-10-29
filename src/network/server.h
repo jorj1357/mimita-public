@@ -457,6 +457,11 @@ struct ServerPlayer
     uint32_t meleeActionStartTick = 0;
     uint32_t meleeNextAllowedTick = 0;
     int meleePhaseTick = 0;
+    // Client physical-contact claims already applied, keyed by
+    // (targetId << 32) | serverTick. The authoritative fallback scan uses this
+    // to avoid applying the same contact twice.
+    std::unordered_set<uint64_t> meleeClaimedTargetTicks;
+    std::deque<uint64_t> meleeClaimedTargetTickOrder;
     // Captured camera-horizontal-forward at action start (never re-aimed).
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};
     float meleeActionYaw = 0.0f; // actor model yaw captured at action start

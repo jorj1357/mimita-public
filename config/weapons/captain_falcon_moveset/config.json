@@ -917,6 +917,7 @@
 "headshot_multiplier": null,
 "hitscan": false,
 "magazine_size": 0,
+"melee_contact": {"enabled": false, "use_weapon_collision_hitbox": false, "claim_tolerance_m": 0.75, "target_radius_m": 0.9, "max_reach_m": 0.0, "claim_batch_ticks": 6, "occlusion": true, "damage_scale": 1.0, "force_scale": 1.0},
 "model": {
     "path": ""
   },

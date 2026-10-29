@@ -1749,28 +1749,6 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
-        // Capsule recovery: if animated/movement state leaves the NPC root
-        // inside static solid geometry, push it to the nearest validated
-        // standing position. This is a capsule fallback, not full body-triangle
-        // NPC collision; it keeps the actor out of geometry without the cost of
-        // a per-limb solver.
-        if (worldPointInsideSolid(world, n.body.pos)) {
-            const glm::vec3 resolved = resolveSafeStandingSpawn(
-                world, n.body.pos, 0.60f, 2.0f);
-            if (glm::length(resolved - n.body.pos) > 0.001f) {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Collision, StructuredLevel::Important,
-                    "npc.capsule.recovered", std::to_string(n.id),
-                    "npc root was inside static solid geometry", tick,
-                    {{"npc_id", n.id},
-                     {"from", {n.body.pos.x, n.body.pos.y, n.body.pos.z}},
-                     {"to", {resolved.x, resolved.y, resolved.z}}},
-                    __FILE__, __LINE__, __FUNCTION__);
-                n.body.pos = resolved;
-                n.body.vel = glm::vec3(0.0f);
-            }
-        }
-
         if ((nearestPlayer || nearestNpc) && hpBefore > mirrorPlayer.currentHp)
         {
             const int damage = hpBefore - mirrorPlayer.currentHp;
@@ -1877,6 +1855,72 @@ void simulateSharedNpcs(SOCKET sock,
                         wId, wDisp.c_str(), damage, victim.health,
                         (int)killed, tick);
                 }
+            }
+        }
+    }
+
+    // Capsule recovery: keep the NPC root out of static solid geometry without
+    // scanning the whole map for every NPC every tick. One candidate is checked
+    // per tick, rotating through the roster. A candidate qualifies when the
+    // navigation code reports it stuck, or on a staggered low-frequency
+    // fallback. The deep inside-solid query is cheap enough at this rate even
+    // on large maps (funworld3 has ~44k collision triangles).
+    {
+        std::vector<Npc>& allNpcs = npcSystem.all();
+        if (!allNpcs.empty()) {
+            static size_t recoveryCursor = 0;
+            static std::unordered_map<uint32_t, uint32_t> recoveryCooldownTick;
+            const size_t start = recoveryCursor % allNpcs.size();
+            for (size_t offset = 0; offset < allNpcs.size(); ++offset) {
+                const size_t index = (start + offset) % allNpcs.size();
+                Npc& candidate = allNpcs[index];
+                if (candidate.replayControlled || candidate.body.dead ||
+                    candidate.body.currentHp <= 0)
+                    continue;
+                const auto cooldownIt = recoveryCooldownTick.find(candidate.id);
+                if (cooldownIt != recoveryCooldownTick.end() &&
+                    tick < cooldownIt->second)
+                    continue;
+                const bool stuck =
+                    NpcNavigation::isStuck(candidate) ||
+                    candidate.wasStuck ||
+                    candidate.movementStuckEpisodeActive;
+                const bool periodic =
+                    ((tick + candidate.id) % 120u) == 0u;
+                if (!stuck && !periodic)
+                    continue;
+                recoveryCursor = index + 1;
+                if (worldPointInsideSolid(world, candidate.body.pos)) {
+                    // Cheap recovery: use the broadphase ground query instead of
+                    // the full multi-candidate safe-spawn search. The latter can
+                    // scan the whole 44k-triangle map several times and create a
+                    // multi-hundred-ms server spike when an NPC stays inside
+                    // geometry. If this single correction cannot find a clear
+                    // standing point, wait for the cooldown rather than stalling
+                    // the whole server.
+                    const glm::vec3 before = candidate.body.pos;
+                    glm::vec3 resolved = before;
+                    const float floorZ = NpcNavigation::groundHeightAt(
+                        world, before, 100.0f, 5.0f);
+                    if (floorZ > -1e5f)
+                        resolved.z = floorZ + 1.8f;
+                    recoveryCooldownTick[candidate.id] = tick + 120u;
+                    if (glm::length(resolved - before) > 0.001f &&
+                        !worldPointInsideSolid(world, resolved)) {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision, StructuredLevel::Important,
+                            "npc.capsule.recovered", std::to_string(candidate.id),
+                            "npc root was inside static solid geometry", tick,
+                            {{"npc_id", candidate.id},
+                             {"from", {before.x, before.y, before.z}},
+                             {"to", {resolved.x, resolved.y, resolved.z}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                        candidate.body.pos = resolved;
+                        candidate.body.vel = glm::vec3(0.0f);
+                    }
+                }
+                // At most one deep inside-solid check per server tick.
+                break;
             }
         }
     }

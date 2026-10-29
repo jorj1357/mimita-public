@@ -100,8 +100,29 @@ struct WeaponRecoilDefinition {
     float armAdsScale = 1.0f;
 };
 
-struct WeaponDefinition {
-    std::string id;
+struct MeleeContactConfig {
+    // Enables the lenient client contact-claim path for this physical melee
+    // weapon. The server still recalculates damage and owns final health.
+    bool enabled = false;
+    // Use the weaponcollisions.json box as the damage hitbox instead of the
+    // animated blade capsule.
+    bool useWeaponCollisionHitbox = false;
+    // Extra radius allowed between the claimed blade/box and the target body.
+    float claimToleranceM = 0.75f;
+    // Target body radius used by the server's lenient historical check.
+    float targetRadiusM = 0.9f;
+    // 0 = derive from the weapon blade/box length.
+    float maxReachM = 0.0f;
+    // Claim transmission cadence in fixed ticks (1 = every tick).
+    int claimBatchTicks = 6;
+    // Reject a claim when world geometry clearly blocks the contact segment.
+    bool occlusion = true;
+    // Post-contact scaling applied by the authoritative claim damage path.
+    float damageScale = 1.0f;
+    float forceScale = 1.0f;
+};
+
+struct WeaponDefinition {    std::string id;
     std::string displayName;
     int slot = 0;
 
@@ -227,6 +248,7 @@ struct WeaponDefinition {
     bool muzzleFlashEnabled = true;
 
     std::unordered_map<std::string, float> customParams;
+    MeleeContactConfig meleeContact;
 
     bool validate() const;
 };

@@ -11,7 +11,14 @@
 #include "combat/weapon-system.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
+#include "combat/weapon-attachment.h"
+#include "combat/weapon-collision-config.h"
+#include "combat/weapon-execution.h"
+#include "combat/weapon-types.h"
+#include "effects/hit-effects.h"
+#include "ui/hitmarker.h"
 #include "network/multiplayer-context.h"
+#include "network/packets.h"
 #include "network/network-weapons.h"
 #include "network/community-server-config.h"
 #include "audio/audio.h"
@@ -21,7 +28,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 #include <nlohmann/json.hpp>
@@ -82,6 +91,514 @@ bool g_shieldHeld = false;
 bool g_debugShield = false;
 ClientInput g_pendingInput;
 bool g_primaryHeld = false, g_secondaryHeld = false;
+
+// ── Client melee contact claims ────────────────────────────────────────
+// The client detects the same physical blade contact it renders and sends a
+// batched claim. The server still owns final damage but accepts a contact when
+// the claimed blade is within a lenient radius of the rewound target.
+struct PendingMeleeClaim {
+    uint32_t targetId = 0;
+    bool targetIsNpc = false;
+    uint32_t contactTick = 0;
+    uint32_t contactId = 0;
+    glm::vec3 hitPosition{0.0f};
+    glm::vec3 direction{0.0f, 0.0f, 1.0f};
+    glm::vec3 boxCenter{0.0f};
+    glm::vec3 boxHalf{0.0f};
+    glm::vec3 boxAxes[3] = {glm::vec3(1,0,0), glm::vec3(0,1,0), glm::vec3(0,0,1)};
+    float impactSpeed = 0.0f;
+    float impactForce = 0.0f;
+    float impactDirectness = 0.0f;
+    uint8_t flags = 0;
+};
+
+std::vector<PendingMeleeClaim> g_pendingMeleeClaims;
+WeaponExecution::PhysicalContactShape g_lastClientMeleeShape;
+std::string g_lastClientMeleeWeapon;
+uint32_t g_nextMeleeContactId = 1;
+uint32_t g_lastMeleeContactSimTick = 0;
+uint32_t g_lastMeleeClaimFlushTick = 0;
+
+bool isClaimMeleeWeapon(const WeaponDefinition& def)
+{
+    return def.meleeContact.enabled;
+}
+
+struct ClientDamageBox {
+    glm::vec3 center{0.0f};
+    glm::vec3 half{0.1f};
+    glm::vec3 axes[3] = {glm::vec3(1,0,0), glm::vec3(0,1,0), glm::vec3(0,0,1)};
+};
+
+bool obbSphereOverlap(const ClientDamageBox& box,
+                      const glm::vec3& sphereCenter,
+                      float sphereRadius)
+{
+    const glm::vec3 delta = sphereCenter - box.center;
+    const float x = glm::clamp(glm::dot(delta, box.axes[0]), -box.half.x, box.half.x);
+    const float y = glm::clamp(glm::dot(delta, box.axes[1]), -box.half.y, box.half.y);
+    const float z = glm::clamp(glm::dot(delta, box.axes[2]), -box.half.z, box.half.z);
+    const glm::vec3 closest = box.center + box.axes[0] * x + box.axes[1] * y + box.axes[2] * z;
+    return glm::length(sphereCenter - closest) <= sphereRadius;
+}
+
+std::vector<ClientDamageBox> clientCollisionDamageBoxes(const Player& player,
+                                                        const WeaponDefinition& def)
+{
+    std::vector<ClientDamageBox> out;
+    const WeaponCollisionEntry* entry = WeaponCollisionJsonConfig::instance().get(def.id);
+    if (!entry || entry->source != "boxes" || entry->boxes.empty())
+        return out;
+    auto buildRot = [](const glm::vec3& rotDeg) {
+        glm::mat4 rot(1.0f);
+        rot = glm::rotate(rot, glm::radians(rotDeg.x), glm::vec3(1,0,0));
+        rot = glm::rotate(rot, glm::radians(rotDeg.y), glm::vec3(0,1,0));
+        rot = glm::rotate(rot, glm::radians(rotDeg.z), glm::vec3(0,0,1));
+        return rot;
+    };
+    for (const WeaponCollisionBoxConfig& box : entry->boxes)
+    {
+        if (!box.enabled)
+            continue;
+        const glm::mat4 rot = buildRot(box.rotationDegrees);
+        const glm::mat4 scaleMat = glm::scale(glm::mat4(1.0f), box.scale);
+        const glm::mat4 world = player.weaponCollisionWorld * rot * scaleMat;
+        ClientDamageBox outBox;
+        outBox.center = glm::vec3(world * glm::vec4(box.center, 1.0f));
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const glm::vec3 column(world[axis]);
+            const float length = glm::length(column);
+            outBox.axes[axis] = length > 0.0001f ? column / length
+                                                 : (axis == 0 ? glm::vec3(1,0,0)
+                                                    : (axis == 1 ? glm::vec3(0,1,0)
+                                                                 : glm::vec3(0,0,1)));
+            (&outBox.half.x)[axis] = std::max(0.01f,
+                (&box.halfSize.x)[axis] * std::max(length, 0.001f));
+        }
+        out.push_back(outBox);
+    }
+    return out;
+}
+
+std::vector<ClientDamageBox> g_lastClientDamageBoxes;
+std::string g_lastClientDamageBoxWeapon;
+
+WeaponExecution::HitBodyPart bodyPartFromName(const std::string& name)
+{
+    if (name == "head") return WeaponExecution::HitBodyPart::Head;
+    if (name == "leftLeg" || name == "rightLeg")
+        return WeaponExecution::HitBodyPart::Leg;
+    return WeaponExecution::HitBodyPart::Torso;
+}
+
+WeaponExecution::PlayerTarget makeClientTarget(const Player& player,
+                                               uint32_t id,
+                                               bool npc,
+                                               uint32_t generation)
+{
+    WeaponExecution::PlayerTarget target;
+    target.playerId = id;
+    target.spawnGeneration = npc ? generation : player.spawnGeneration;
+    target.position = player.pos;
+    target.radius = 0.65f;
+    target.height = 1.8f;
+    target.dead = player.dead;
+    for (const PhysicalBodyPart& part : player.physicalBody.parts)
+    {
+        glm::vec3 low(std::numeric_limits<float>::max());
+        glm::vec3 high = -low;
+        for (int corner = 0; corner < 8; ++corner)
+        {
+            const glm::vec3 local(
+                (corner & 1) ? part.collider.localMax.x : part.collider.localMin.x,
+                (corner & 2) ? part.collider.localMax.y : part.collider.localMin.y,
+                (corner & 4) ? part.collider.localMax.z : part.collider.localMin.z);
+            const glm::vec3 world = glm::vec3(part.worldTransform * glm::vec4(local, 1.0f));
+            low = glm::min(low, world);
+            high = glm::max(high, world);
+        }
+        if (glm::any(glm::greaterThan(low, high)))
+            continue;
+        WeaponExecution::PlayerTarget::BodyPartBox box;
+        box.center = (low + high) * 0.5f;
+        box.half = (high - low) * 0.5f;
+        box.bodyPart = bodyPartFromName(part.name);
+        target.bodyParts.push_back(box);
+    }
+    return target;
+}
+
+bool clientMeleeShape(const Player& player,
+                      const WeaponDefinition& def,
+                      const MeleeAction* action,
+                      WeaponExecution::PhysicalContactShape& shape)
+{
+    glm::vec3 actionRotation(0.0f);
+    glm::vec3 actionOffset(0.0f);
+    if (action && action->hasWeaponPose)
+    {
+        actionRotation = action->weaponPoseRotation;
+        actionOffset = action->weaponPoseOffset;
+    }
+    for (const PhysicalBodyPart& part : player.physicalBody.parts)
+    {
+        if (part.name != "rightArm")
+            continue;
+        WeaponAttachmentPose attachment;
+        if (!resolveWeaponAttachment(def, part, player.sizeScale, attachment,
+                                     actionRotation, actionOffset))
+            return false;
+        shape.kind = WeaponExecution::PhysicalShapeKind::Capsule;
+        shape.currentA = attachment.bladeBase;
+        shape.currentB = attachment.bladeTip;
+        shape.radius = attachment.bladeRadius;
+        shape.previousA = shape.currentA;
+        shape.previousB = shape.currentB;
+        return true;
+    }
+    return false;
+}
+
+float clientContactDamage(const WeaponDefinition& def,
+                          const MeleeAction* action,
+                          bool actionActive,
+                          float force,
+                          float revMultiplier)
+{
+    float minDamage = WeaponExecution::paramOr(def, "contactMinDamage", 1.0f);
+    float maxDamage = WeaponExecution::paramOr(def, "contactMaxDamage", (float)def.damage);
+    if (action && actionActive)
+    {
+        if (action->contactMinDamage >= 0.0f) minDamage = action->contactMinDamage;
+        if (action->contactMaxDamage >= 0.0f) maxDamage = action->contactMaxDamage;
+        minDamage *= std::max(0.0f, action->contactDamageMultiplier);
+        maxDamage *= std::max(0.0f, action->contactDamageMultiplier);
+    }
+    minDamage *= revMultiplier;
+    maxDamage *= revMultiplier;
+    return std::max(1.0f, std::round(glm::mix(minDamage, maxDamage,
+        glm::clamp(force, 0.0f, 1.0f)) *
+        std::max(0.0f, def.meleeContact.damageScale)));
+}
+
+void flushMeleeContactClaims(MimitaNet::MultiplayerContext& ctx)
+{
+    while (!g_pendingMeleeClaims.empty())
+    {
+        MimitaNet::SpyKnifeContactBatchPacket batch{};
+        batch.header.type = MimitaNet::PACKET_NPC_DAMAGE_REQUEST;
+        batch.header.tick = ctx.tick;
+        batch.header.playerId = ctx.localPlayerId;
+        batch.attackerId = ctx.localPlayerId;
+        batch.attackerSpawnGeneration = ctx.lastKnownSpawnGeneration;
+        batch.batchId = g_nextMeleeContactId;
+        const size_t count = std::min<size_t>(
+            MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX, g_pendingMeleeClaims.size());
+        batch.contactCount = static_cast<uint8_t>(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            const PendingMeleeClaim& claim = g_pendingMeleeClaims[i];
+            auto& out = batch.contacts[i];
+            out.targetId = claim.targetId;
+            out.contactTick = claim.contactTick;
+            out.contactId = claim.contactId;
+            out.targetIsNpc = claim.targetIsNpc ? 1 : 0;
+            out.isBackstab = 0;
+            out.impactSpeed = claim.impactSpeed;
+            out.impactForce = claim.impactForce;
+            out.impactDirectness = claim.impactDirectness;
+            out.reserved = claim.flags;
+            out.hitX = claim.hitPosition.x;
+            out.hitY = claim.hitPosition.y;
+            out.hitZ = claim.hitPosition.z;
+            out.dirX = claim.direction.x;
+            out.dirY = claim.direction.y;
+            out.dirZ = claim.direction.z;
+            out.boxCenterX = claim.boxCenter.x;
+            out.boxCenterY = claim.boxCenter.y;
+            out.boxCenterZ = claim.boxCenter.z;
+            out.boxHalfX = claim.boxHalf.x;
+            out.boxHalfY = claim.boxHalf.y;
+            out.boxHalfZ = claim.boxHalf.z;
+            out.boxAxis0X = claim.boxAxes[0].x;
+            out.boxAxis0Y = claim.boxAxes[0].y;
+            out.boxAxis0Z = claim.boxAxes[0].z;
+            out.boxAxis1X = claim.boxAxes[1].x;
+            out.boxAxis1Y = claim.boxAxes[1].y;
+            out.boxAxis1Z = claim.boxAxes[1].z;
+            out.boxAxis2X = claim.boxAxes[2].x;
+            out.boxAxis2Y = claim.boxAxes[2].y;
+            out.boxAxis2Z = claim.boxAxes[2].z;
+        }
+        MimitaNet::mpSendPacket(ctx, &batch, sizeof(batch));
+        g_pendingMeleeClaims.erase(g_pendingMeleeClaims.begin(),
+                                   g_pendingMeleeClaims.begin() + count);
+    }
+}
+
+void tickClientMeleeContactClaims(Player& player,
+                                  WeaponSystem& weapons,
+                                  MimitaNet::MultiplayerContext& ctx,
+                                  const MeleeMoveSet& moveSet,
+                                  uint32_t simTick)
+{
+    if (!ctx.active || !ctx.gameplayActive || !ctx.localPlayerId)
+        return;
+    const WeaponDefinition* def = weapons.getCurrentDef(player);
+    if (!def || !isClaimMeleeWeapon(*def))
+    {
+        g_lastClientMeleeShape = WeaponExecution::PhysicalContactShape{};
+        g_lastClientMeleeWeapon.clear();
+        return;
+    }
+    if (!g_state.active && g_lastClientMeleeShape.radius > 0.0f && g_pendingMeleeClaims.empty())
+        return;
+    if (simTick == g_lastMeleeContactSimTick)
+        return;
+    g_lastMeleeContactSimTick = simTick;
+
+    const MeleeAction* action = g_state.active ? &g_state.actionSnapshot : nullptr;
+    WeaponExecution::PhysicalContactShape shape;
+    if (!clientMeleeShape(player, *def, action, shape))
+        return;
+    if (g_lastClientMeleeWeapon == def->id && g_lastClientMeleeShape.radius > 0.0f)
+    {
+        shape.previousA = g_lastClientMeleeShape.currentA;
+        shape.previousB = g_lastClientMeleeShape.currentB;
+    }
+    g_lastClientMeleeShape = shape;
+    g_lastClientMeleeWeapon = def->id;
+
+    const bool actionActive = action && g_state.currentPhaseIndex == 1;
+    float revMultiplier = 1.0f;
+    if (def->id == "chainsaw" && action)
+    {
+        const float revMax = WeaponExecution::paramOr(*def, "revDamageMultiplier", 1.0f);
+        const float revDecay = WeaponExecution::paramOr(*def, "revDecayTicks", 1.0f);
+        if (revMax > 1.0f && revDecay > 0.0f)
+        {
+            const float t = glm::clamp((float)(simTick - g_state.startSimTick) / revDecay,
+                                       0.0f, 1.0f);
+            revMultiplier = 1.0f + (revMax - 1.0f) * (1.0f - t);
+        }
+    }
+
+    const glm::vec3 blade = shape.currentB - shape.currentA;
+    const float bladeLength = glm::length(blade);
+    glm::vec3 bladeDir = bladeLength > 0.0001f ? blade / bladeLength : glm::vec3(0, 0, 1);
+    glm::vec3 axis1 = glm::cross(bladeDir, glm::vec3(0, 0, 1));
+    if (glm::length(axis1) < 0.001f)
+        axis1 = glm::cross(bladeDir, glm::vec3(1, 0, 0));
+    axis1 = glm::normalize(axis1);
+    const glm::vec3 axis2 = glm::normalize(glm::cross(bladeDir, axis1));
+    const glm::vec3 boxCenter = (shape.currentA + shape.currentB) * 0.5f;
+    const glm::vec3 boxHalf(std::max(0.01f, bladeLength * 0.5f),
+                            std::max(0.01f, shape.radius),
+                            std::max(0.01f, shape.radius));
+    const bool useCollisionBoxes = def->meleeContact.useWeaponCollisionHitbox;
+    std::vector<ClientDamageBox> damageBoxes =
+        useCollisionBoxes ? clientCollisionDamageBoxes(player, *def)
+                          : std::vector<ClientDamageBox>{};
+    const std::vector<ClientDamageBox> previousDamageBoxes =
+        (g_lastClientDamageBoxWeapon == def->id &&
+         g_lastClientDamageBoxes.size() == damageBoxes.size())
+            ? g_lastClientDamageBoxes : damageBoxes;
+
+    auto tryTarget = [&](const Player& remote, uint32_t id, bool npc, uint32_t generation) {
+        if (remote.dead || remote.currentHp <= 0)
+            return;
+        Player& mutableRemote = const_cast<Player&>(remote);
+        if (!mutableRemote.physicalBody.parts.empty())
+            mutableRemote.updateModelWorldTransforms();
+        WeaponExecution::PlayerTarget target = makeClientTarget(remote, id, npc, generation);
+        WeaponExecution::PhysicalContactHit hit;
+        glm::vec3 claimCenter = boxCenter;
+        glm::vec3 claimHalf = boxHalf;
+        glm::vec3 claimAxes[3] = {bladeDir, axis1, axis2};
+        glm::vec3 volumeVelocity =
+            (shape.currentB - shape.previousB) / (1.0f / 60.0f);
+        bool hitFound = false;
+        if (!damageBoxes.empty())
+        {
+            const glm::vec3 targetCenter = remote.pos + glm::vec3(0, 0, 0.9f);
+            for (size_t boxIndex = 0; boxIndex < damageBoxes.size() && !hitFound;
+                 ++boxIndex)
+            {
+                const ClientDamageBox& box = damageBoxes[boxIndex];
+                const ClientDamageBox& previous = previousDamageBoxes[boxIndex];
+                for (int step = 0; step < 4 && !hitFound; ++step)
+                {
+                    ClientDamageBox swept = box;
+                    swept.center = glm::mix(previous.center, box.center,
+                                            (float)step / 3.0f);
+                    if (!target.bodyParts.empty())
+                    {
+                        for (const auto& part : target.bodyParts)
+                        {
+                            if (!obbSphereOverlap(swept, part.center,
+                                                  glm::length(part.half) * 1.1f))
+                                continue;
+                            hitFound = true;
+                            hit.hitPosition = part.center;
+                            hit.normal = glm::length(part.center - swept.center) > 0.001f
+                                ? glm::normalize(part.center - swept.center)
+                                : glm::vec3(0, 0, 1);
+                            break;
+                        }
+                    }
+                    else if (obbSphereOverlap(swept, targetCenter, target.radius))
+                    {
+                        hitFound = true;
+                        hit.hitPosition = targetCenter;
+                        hit.normal = glm::length(targetCenter - swept.center) > 0.001f
+                            ? glm::normalize(targetCenter - swept.center)
+                            : glm::vec3(0, 0, 1);
+                    }
+                    if (hitFound)
+                    {
+                        claimCenter = swept.center;
+                        claimHalf = box.half;
+                        claimAxes[0] = box.axes[0];
+                        claimAxes[1] = box.axes[1];
+                        claimAxes[2] = box.axes[2];
+                        volumeVelocity = (box.center - previous.center) /
+                            (1.0f / 60.0f);
+                    }
+                }
+            }
+            if (!hitFound)
+                return;
+            hit.hit = true;
+            hit.targetPlayerId = id;
+            hit.targetSpawnGeneration = target.spawnGeneration;
+        }
+        else if (!WeaponExecution::testPhysicalContact(shape, target, hit))
+        {
+            // Lenient fallback for replicas whose limb boxes are missing or a
+            // frame behind: treat the target root capsule as the contact body.
+            const glm::vec3 targetCenter = remote.pos + glm::vec3(0, 0, 0.9f);
+            const glm::vec3 ab = shape.currentB - shape.currentA;
+            const float abLenSq = glm::dot(ab, ab);
+            const float t = abLenSq > 0.000001f
+                ? glm::clamp(glm::dot(targetCenter - shape.currentA, ab) / abLenSq,
+                             0.0f, 1.0f)
+                : 0.0f;
+            const glm::vec3 closest = shape.currentA + ab * t;
+            const float reach = glm::length(targetCenter - closest);
+            if (reach > target.radius + shape.radius + 0.5f)
+                return;
+            hit.hit = true;
+            hit.hitPosition = closest;
+            hit.normal = glm::length(targetCenter - closest) > 0.001f
+                ? glm::normalize(targetCenter - closest) : glm::vec3(0, 0, 1);
+            hit.targetPlayerId = id;
+            hit.targetSpawnGeneration = target.spawnGeneration;
+        }
+        const glm::vec3 relative = volumeVelocity - remote.vel;
+        const float speed = glm::length(relative);
+        const glm::vec3 toTarget = remote.pos - hit.hitPosition;
+        const glm::vec3 normal = glm::length(toTarget) > 0.001f
+            ? glm::normalize(toTarget) : glm::vec3(0, 0, 1);
+        const float forceRaw = std::max(0.0f, glm::dot(relative, normal));
+        const float maxForce = std::max(0.001f,
+            action && action->contactMaxForceSpeed >= 0.0f
+                ? action->contactMaxForceSpeed
+                : WeaponExecution::paramOr(*def, "contactMaxForceSpeed", 22.0f));
+        const float directness = speed > 0.001f
+            ? glm::clamp(forceRaw / speed, 0.0f, 1.0f) : 0.0f;
+        const float force = glm::clamp(speed / maxForce, 0.0f, 1.0f) * directness;
+        const int damage = (int)clientContactDamage(*def, action, actionActive,
+                                                    force, revMultiplier);
+
+        MimitaNet::mpApplyPredictedDamage(ctx, id, damage, npc);
+
+        HitEvent ev;
+        ev.position = hit.hitPosition;
+        ev.normal = normal;
+        ev.direction = bladeDir;
+        ev.hitEntity = true;
+        ev.damage = damage;
+        ev.attacker = player.username;
+        ev.victim = remote.username;
+        ev.weaponSource = def->id;
+        HitEffects::onHit(ev);
+        hitmarker(damage);
+
+        PendingMeleeClaim claim;
+        claim.targetId = id;
+        claim.targetIsNpc = npc;
+        claim.contactTick = ctx.latestServerTick != 0
+            ? ctx.latestServerTick : ctx.latestLocalSnapshotTick;
+        claim.contactId = g_nextMeleeContactId++;
+        claim.hitPosition = hit.hitPosition;
+        claim.direction = normal;
+        claim.boxCenter = claimCenter;
+        claim.boxHalf = claimHalf;
+        claim.boxAxes[0] = claimAxes[0];
+        claim.boxAxes[1] = claimAxes[1];
+        claim.boxAxes[2] = claimAxes[2];
+        claim.impactSpeed = speed;
+        claim.impactForce = forceRaw;
+        claim.impactDirectness = directness;
+        claim.flags = damageBoxes.empty() ? 0 : 1;
+        g_pendingMeleeClaims.push_back(claim);
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.client.contact_claim", def->id,
+            "client physical blade contact claim queued", simTick,
+            nlohmann::json{{"weapon", def->id},
+                           {"target", id},
+                           {"target_is_npc", npc},
+                           {"target_generation", target.spawnGeneration},
+                           {"contact_id", claim.contactId},
+                           {"contact_tick", claim.contactTick},
+                           {"damage_predicted", damage},
+                           {"blade_base", {shape.currentA.x, shape.currentA.y,
+                                           shape.currentA.z}},
+                           {"blade_tip", {shape.currentB.x, shape.currentB.y,
+                                          shape.currentB.z}},
+                           {"blade_radius", shape.radius},
+                           {"weapon_collision_hitbox", !damageBoxes.empty()},
+                           {"box_center", {claimCenter.x, claimCenter.y, claimCenter.z}},
+                           {"box_half", {claimHalf.x, claimHalf.y, claimHalf.z}},
+                           {"hit", {hit.hitPosition.x, hit.hitPosition.y,
+                                    hit.hitPosition.z}},
+                           {"speed", speed},
+                           {"force", force},
+                           {"directness", directness}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
+    for (const auto& entry : ctx.remotePlayers)
+        tryTarget(entry.second, entry.first, false, entry.second.spawnGeneration);
+    for (const auto& entry : ctx.remoteNpcs)
+        tryTarget(entry.second, entry.first, true, entry.second.networkTransformEpoch);
+
+    g_lastClientDamageBoxes = damageBoxes;
+    g_lastClientDamageBoxWeapon = def->id;
+
+    const uint32_t batchTicks = (uint32_t)std::max(1,
+        def->meleeContact.claimBatchTicks);
+    if (!g_pendingMeleeClaims.empty() &&
+        simTick - g_lastMeleeClaimFlushTick >= batchTicks)
+    {
+        g_lastMeleeClaimFlushTick = simTick;
+        flushMeleeContactClaims(ctx);
+    }
+}
+
+void resetClientMeleeClaims()
+{
+    g_pendingMeleeClaims.clear();
+    g_lastClientMeleeShape = WeaponExecution::PhysicalContactShape{};
+    g_lastClientMeleeWeapon.clear();
+    g_lastClientDamageBoxes.clear();
+    g_lastClientDamageBoxWeapon.clear();
+    g_lastMeleeContactSimTick = 0;
+    g_lastMeleeClaimFlushTick = 0;
+}
 
 int actionRequestSlot(const WeaponDefinition& def, const MimitaNet::MultiplayerContext& ctx)
 {
@@ -335,6 +852,7 @@ bool shieldHeld()
 void reset()
 {
     g_state = ClientActionState{};
+    resetClientMeleeClaims();
     g_shieldHeld = false;
     g_debugShield = false;
     g_forceActionId.clear();
@@ -422,6 +940,12 @@ void clientTick(Player& player,
     input.secondaryPressed = input.secondaryPressed || g_pendingInput.secondaryPressed;
     input.secondaryHeld = input.secondaryHeld || g_secondaryHeld;
     g_pendingInput = ClientInput{};
+    if (!g_pendingMeleeClaims.empty() &&
+        simTick - g_lastMeleeClaimFlushTick >= 6)
+    {
+        g_lastMeleeClaimFlushTick = simTick;
+        flushMeleeContactClaims(ctx);
+    }
     const MeleeMoveSet* moveSet = equippedMoveSet(player, weapons);
     if (!moveSet || player.dead) {
         if (g_state.active)
@@ -433,6 +957,7 @@ void clientTick(Player& player,
     if (!g_state.definitionId.empty() && g_state.definitionId != moveSet->definitionId) {
         endAction(player);
         g_state = ClientActionState{};
+        resetClientMeleeClaims();
     }
     g_shieldHeld = !moveSet->animationOnly && (input.shieldHeld || g_debugShield);
     // Publish crouch intent so the animation state machine can select the
@@ -747,6 +1272,7 @@ void clientTick(Player& player,
 
     g_state.lastImpulsePhaseIndex = phaseIndex;
     g_state.lastImpulsePhaseTick = phaseTick;
+    tickClientMeleeContactClaims(player, weapons, ctx, *moveSet, simTick);
 }
 
 bool currentActionActive()

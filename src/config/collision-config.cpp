@@ -75,6 +75,7 @@ bool CollisionConfig::load(const std::string& path)
         {
             mBounceEnabled = false;
         }
+        mLimbBounceMode = std::clamp(j.value("limbBounceMode", 2), 1, 2);
 
         std::error_code ec;
         mLastWrite = std::filesystem::last_write_time(path, ec);
@@ -82,10 +83,11 @@ bool CollisionConfig::load(const std::string& path)
 
         Debug::log(Debug::Category::Collision,
             "[COLLISION CONFIG] skin=%.3f edgeTouch=%.4f smoothSeamDot=%.4f bounce enabled=%d strength=%.3f friction=%.2f "
-            "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f minPush=%.3f\n",
+            "minSpeed=%.2f maxSpeed=%.2f cooldown=%.3f minPush=%.3f limbBounceMode=%d\n",
             mCollisionSkin, mEdgeTouchTolerance, mSmoothSeamDot, (int)mBounceEnabled,
             mBounceStrength, mBounceFriction,
-            mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown, mBounceMinPush);
+            mBounceMinSpeed, mBounceMaxSpeed, mBounceCooldown, mBounceMinPush,
+            mLimbBounceMode);
         Debug::log(Debug::Category::Collision,
             "[COLLISION CONFIG] maxSubStepDistance=%.3f maxSubSteps=%d\n",
             mMaxSubStepDistance, mMaxSubSteps);

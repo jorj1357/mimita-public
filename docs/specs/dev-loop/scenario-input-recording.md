@@ -168,6 +168,8 @@ Schema 1 recordings remain playable input-only scenarios.
 - `scenario.playback.divergence`, `scenario.playback.completed`,
   `scenario.playback.failed`, `scenario.playback.rejected`,
   `scenario.playback.stopped`
+- `melee.client.contact_claim`
+- `melee.contact.claim.accepted`, `melee.contact.claim.rejected`
 - `scenario.contact.query`, `scenario.contact.weapon`
 - `server.actor.spawn_ack.received`, `server.actor.spawn_ack.rejected`,
   `server.actor.spawn_activated`, `server.actor.spawn_activated.sent`

@@ -460,8 +460,30 @@ void applyWeaponMeleeJson(WeaponDefinition& def, const json& root)
         MeleeMoveSetRegistry::instance().set(std::move(moveSet));
 }
 
-void applyWeaponJson(WeaponDefinition& def, const json& root)
+void applyWeaponMeleeContactJson(WeaponDefinition& def, const json& root)
 {
+    if (!root.contains("melee_contact") || !root["melee_contact"].is_object())
+        return;
+    const json& contact = root["melee_contact"];
+    def.meleeContact.enabled = contact.value("enabled", false);
+    def.meleeContact.useWeaponCollisionHitbox =
+        contact.value("use_weapon_collision_hitbox", false);
+    def.meleeContact.claimToleranceM = std::max(0.0f,
+        contact.value("claim_tolerance_m", 0.75f));
+    def.meleeContact.targetRadiusM = std::max(0.05f,
+        contact.value("target_radius_m", 0.9f));
+    def.meleeContact.maxReachM = std::max(0.0f,
+        contact.value("max_reach_m", 0.0f));
+    def.meleeContact.claimBatchTicks = std::max(1,
+        contact.value("claim_batch_ticks", 6));
+    def.meleeContact.occlusion = contact.value("occlusion", true);
+    def.meleeContact.damageScale = std::max(0.0f,
+        contact.value("damage_scale", 1.0f));
+    def.meleeContact.forceScale = std::max(0.0f,
+        contact.value("force_scale", 1.0f));
+}
+
+void applyWeaponJson(WeaponDefinition& def, const json& root){
     if (!root.is_object())
         return;
     applyWeaponIdentityJson(def, root);
@@ -475,6 +497,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root)
     applyWeaponProjectileImpactJson(def, root);
     applyWeaponRenderJson(def, root);
     applyWeaponMeleeJson(def, root);
+    applyWeaponMeleeContactJson(def, root);
 
 }
 

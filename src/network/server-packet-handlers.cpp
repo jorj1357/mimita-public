@@ -21,6 +21,7 @@
 #include "combat/weapon-fire.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-execution.h"
+#include "combat/weapon-melee-config.h"
 #include "combat/spyknife-damage.h"
 #include "physics/movement/physics-collision.h"
 #include "debug/debug-log.h"
@@ -1056,6 +1057,366 @@ void handleGodballHitClaim(SOCKET sock,
     }
 }
 
+static float pointSegmentDistance(const glm::vec3& point,
+                                  const glm::vec3& a,
+                                  const glm::vec3& b)
+{
+    const glm::vec3 ab = b - a;
+    const float lengthSq = glm::dot(ab, ab);
+    if (lengthSq <= 0.000001f)
+        return glm::length(point - a);
+    const float t = glm::clamp(glm::dot(point - a, ab) / lengthSq, 0.0f, 1.0f);
+    return glm::length(point - (a + ab * t));
+}
+
+static bool handleGenericMeleeContactBatch(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    std::unordered_map<uint32_t, ServerNpc>& npcs,
+    const HeadlessWorld& world,
+    const SpyKnifeContactBatchPacket& batch,
+    ServerPlayer& attacker,
+    const WeaponDefinition& def,
+    uint32_t tick,
+    uint64_t& totalPacketsOut)
+{
+    const WeaponData::MeleeMoveSet* set =
+        WeaponData::MeleeMoveSetRegistry::instance().get(def.id);
+    if (!set || !set->animationOnly)
+        return false;
+
+    const float tolerance = std::max(0.0f, def.meleeContact.claimToleranceM);
+    const float targetBodyRadius = std::max(0.05f,
+        def.meleeContact.targetRadiusM);
+    const float maxBoxHalf = 8.0f;
+    const float maxBoxDiagonal = 24.0f;
+    const float maxImpactSpeed = std::max(1.0f,
+        WeaponExecution::paramOr(def, "maxImpactSpeed", 250.0f));
+    const uint8_t count = std::min<uint8_t>(batch.contactCount,
+                                            SPYKNIFE_CONTACT_BATCH_MAX);
+
+    ServerActorRef attackerRef{attacker.id, ServerActorKind::Player, &attacker, nullptr};
+
+    for (uint8_t i = 0; i < count; ++i)
+    {
+        const SpyKnifeContact& pkt = batch.contacts[i];
+        const bool boxClaim = (pkt.reserved & 1u) != 0;
+        if (pkt.targetId == 0 || pkt.contactId == 0 ||
+            pkt.contactTick > tick || tick - pkt.contactTick > 600 ||
+            !std::isfinite(pkt.hitX) || !std::isfinite(pkt.hitY) ||
+            !std::isfinite(pkt.hitZ) ||
+            !std::isfinite(pkt.impactSpeed) ||
+            !std::isfinite(pkt.impactDirectness))
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "malformed or stale melee contact claim", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"contact_tick", pkt.contactTick},
+                               {"reason", "invalid_contact"}});
+            continue;
+        }
+
+        const uint64_t dedupeKey =
+            (static_cast<uint64_t>(pkt.targetId) << 32) | pkt.contactTick;
+        if (attacker.meleeClaimedTargetTicks.count(dedupeKey))
+            continue;
+
+        const glm::vec3 center(pkt.boxCenterX, pkt.boxCenterY, pkt.boxCenterZ);
+        const glm::vec3 half(std::max(0.001f, pkt.boxHalfX),
+                             std::max(0.001f, pkt.boxHalfY),
+                             std::max(0.001f, pkt.boxHalfZ));
+        glm::vec3 axes[3] = {
+            glm::vec3(pkt.boxAxis0X, pkt.boxAxis0Y, pkt.boxAxis0Z),
+            glm::vec3(pkt.boxAxis1X, pkt.boxAxis1Y, pkt.boxAxis1Z),
+            glm::vec3(pkt.boxAxis2X, pkt.boxAxis2Y, pkt.boxAxis2Z)
+        };
+        for (glm::vec3& axis : axes)
+        {
+            if (glm::length(axis) < 0.001f)
+                axis = glm::vec3(0, 0, 1);
+            axis = glm::normalize(axis);
+        }
+        const float boxDiagonal = glm::length(half) * 2.0f;
+        if (!std::isfinite(center.x) || !std::isfinite(center.y) ||
+            !std::isfinite(center.z) || !std::isfinite(half.x) ||
+            !std::isfinite(half.y) || !std::isfinite(half.z) ||
+            half.x > maxBoxHalf || half.y > maxBoxHalf ||
+            half.z > maxBoxHalf || boxDiagonal > maxBoxDiagonal ||
+            pkt.impactSpeed < 0.0f || pkt.impactSpeed > maxImpactSpeed ||
+            pkt.impactDirectness < 0.0f || pkt.impactDirectness > 1.0f)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "claimed melee contact volume exceeds configured bounds", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"half", {half.x, half.y, half.z}},
+                               {"diagonal", boxDiagonal},
+                               {"max_diagonal", maxBoxDiagonal},
+                               {"box_claim", boxClaim},
+                               {"reason", "invalid_contact_bounds"}});
+            continue;
+        }
+
+        auto npcIt = npcs.find(pkt.targetId);
+        ServerNpc* npc = npcIt != npcs.end() ? &npcIt->second : nullptr;
+        ServerPlayer* playerTarget = nullptr;
+        if (!npc)
+        {
+            auto playerIt = players.find(pkt.targetId);
+            if (playerIt != players.end())
+                playerTarget = &playerIt->second;
+        }
+        if (!npc && !playerTarget)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "melee claim target not found", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"reason", "target_not_found"}});
+            continue;
+        }
+        if (npc && (npc->health <= 0 ||
+                    serverFriendlyFireBlocks(attacker.id, false, npc->entityId, true,
+                                             players, npcs, "melee-melee-claim", tick)))
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "melee claim target is dead or friendly", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"target_health", npc ? npc->health : 0},
+                               {"reason", "target_invalid"}});
+            continue;
+        }
+        if (playerTarget && (playerTarget->dead ||
+                             playerTarget->spawnState != ServerPlayer::Active))
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "melee claim player target is not active", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"reason", "target_inactive"}});
+            continue;
+        }
+
+        glm::vec3 targetPos = npc ? npc->pos : playerTarget->pos;
+        float targetYaw = npc ? npc->yaw : playerTarget->yaw;
+        if (npc)
+            getNpcPoseAtTick(*npc, pkt.contactTick, targetPos, targetYaw);
+        else
+            getPlayerPoseAtTick(*playerTarget, pkt.contactTick, targetPos, targetYaw);
+        const glm::vec3 targetCenter = targetPos + glm::vec3(0, 0, 0.9f);
+        const float contactDistance = glm::length(targetCenter - center);
+        const float allowedDistance = glm::length(half) + targetBodyRadius + tolerance;
+        const bool contactOverlap = spyKnifeObbSphereOverlap(
+            center, half, axes, targetCenter, targetBodyRadius + tolerance);
+        if (!contactOverlap && contactDistance > allowedDistance)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "claimed contact volume is outside the target collision radius", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"distance", contactDistance},
+                               {"allowed_distance", allowedDistance},
+                               {"tolerance", tolerance},
+                               {"box_claim", boxClaim},
+                               {"reason", "outside_claim_radius"}});
+            continue;
+        }
+        glm::vec3 attackerContactPos = attacker.pos;
+        float attackerContactYaw = attacker.yaw;
+        getPlayerPoseAtTick(attacker, pkt.contactTick, attackerContactPos,
+                            attackerContactYaw);
+        const float reach = glm::length(targetCenter - attackerContactPos);
+        const float maxReach = std::max(
+            def.meleeContact.maxReachM,
+            glm::length(half) + targetBodyRadius + tolerance + 2.0f);
+        if (reach > maxReach)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "claimed blade target is beyond the weapon reach", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"reach", reach},
+                               {"max_reach", maxReach},
+                               {"reason", "out_of_reach"}});
+            continue;
+        }
+        {
+            const glm::vec3 toTarget = targetCenter - attackerContactPos;
+            const float distance = glm::length(toTarget);
+            glm::vec3 blockedPos{0.0f};
+            glm::vec3 blockedNormal{0.0f};
+            if (def.meleeContact.occlusion && distance > 0.5f &&
+                serverRaycastWorld(attackerContactPos, toTarget / distance,
+                                   distance - 0.1f, world,
+                                   blockedPos, blockedNormal))
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Errors,
+                    "melee.contact.claim.rejected", std::to_string(attacker.id),
+                    "claimed melee contact is blocked by world geometry", tick,
+                    nlohmann::json{{"attacker", attacker.id},
+                                   {"target", pkt.targetId},
+                                   {"contact_id", pkt.contactId},
+                                   {"distance", distance},
+                                   {"reason", "world_occluded"}});
+                continue;
+            }
+        }
+
+        const int elapsed = (int)(pkt.contactTick - attacker.meleeActionStartTick);
+        const WeaponData::MeleeAction* action =
+            attacker.meleeActionActive && set && !attacker.meleeActionId.empty()
+                ? set->find(attacker.meleeActionId) : nullptr;
+        const bool actionActive = action &&
+            elapsed >= action->windup.ticks &&
+            elapsed < action->windup.ticks + action->active.ticks;
+        const float force = glm::clamp(pkt.impactSpeed /
+            std::max(1.0f, action && action->contactMaxForceSpeed >= 0.0f
+                ? action->contactMaxForceSpeed
+                : WeaponExecution::paramOr(def, "contactMaxForceSpeed", 22.0f)),
+            0.0f, 1.0f) * glm::clamp(pkt.impactDirectness, 0.0f, 1.0f);
+        float minDamage = WeaponExecution::paramOr(def, "contactMinDamage", 1.0f);
+        float maxDamage = WeaponExecution::paramOr(def, "contactMaxDamage",
+                                                   (float)def.damage);
+        float minKnockback = WeaponExecution::paramOr(def, "contactMinKnockback", 0.5f);
+        float maxKnockback = WeaponExecution::paramOr(def, "contactMaxKnockback", 40.0f);
+        float multiplier = 1.0f;
+        if (action && actionActive)
+        {
+            if (action->contactMinDamage >= 0.0f) minDamage = action->contactMinDamage;
+            if (action->contactMaxDamage >= 0.0f) maxDamage = action->contactMaxDamage;
+            if (action->contactMinKnockback >= 0.0f) minKnockback = action->contactMinKnockback;
+            if (action->contactMaxKnockback >= 0.0f) maxKnockback = action->contactMaxKnockback;
+            multiplier = std::max(0.0f, action->contactDamageMultiplier);
+        }
+        float revMultiplier = 1.0f;
+        {
+            const float revMax = WeaponExecution::paramOr(def, "revDamageMultiplier", 1.0f);
+            const float revDecay = WeaponExecution::paramOr(def, "revDecayTicks", 0.0f);
+            if (revMax > 1.0f && revDecay > 0.0f && attacker.meleeActionStartTick != 0)
+            {
+                const float t = glm::clamp(
+                    (float)(pkt.contactTick - attacker.meleeActionStartTick) / revDecay,
+                    0.0f, 1.0f);
+                revMultiplier = 1.0f + (revMax - 1.0f) * (1.0f - t);
+            }
+        }
+        const int damage = std::max(1, (int)std::lround(
+            glm::mix(minDamage, maxDamage, force) * multiplier * revMultiplier *
+            std::max(0.0f, def.meleeContact.damageScale)));
+        glm::vec3 kbDir = targetCenter - attacker.pos;
+        if (glm::length(kbDir) < 0.001f)
+            kbDir = axes[0];
+        kbDir = glm::normalize(kbDir);
+        const glm::vec3 knockback =
+            kbDir * glm::mix(minKnockback, maxKnockback, force) *
+            std::max(0.0f, def.meleeContact.forceScale);
+        const glm::vec3 hitPos(pkt.hitX, pkt.hitY, pkt.hitZ);
+
+        ServerActorDamageRequest request;
+        request.attacker = attackerRef;
+        request.victim = npc
+            ? ServerActorRef{npc->entityId, ServerActorKind::Npc, nullptr, npc}
+            : ServerActorRef{playerTarget->id, ServerActorKind::Player, playerTarget, nullptr};
+        request.damage = damage;
+        request.knockback = knockback;
+        request.source = ServerDamageSource::PhysicalContact;
+        request.weaponId = def.id;
+        request.weaponDisplayName = def.displayName;
+        request.serverTick = tick;
+        request.eventId = pkt.contactId;
+        request.correlationId = pkt.contactId;
+        const ServerDamageResult result = applyActorDamage(players, npcs, request);
+        if (!result.applied)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "melee.contact.claim.rejected", std::to_string(attacker.id),
+                "authoritative damage owner rejected the melee claim", tick,
+                nlohmann::json{{"attacker", attacker.id},
+                               {"target", pkt.targetId},
+                               {"contact_id", pkt.contactId},
+                               {"damage", damage},
+                               {"reason", result.rejectionReason}});
+            continue;
+        }
+
+        attacker.meleeClaimedTargetTicks.insert(dedupeKey);
+        attacker.meleeClaimedTargetTickOrder.push_back(dedupeKey);
+        while (attacker.meleeClaimedTargetTickOrder.size() > 512)
+        {
+            attacker.meleeClaimedTargetTicks.erase(
+                attacker.meleeClaimedTargetTickOrder.front());
+            attacker.meleeClaimedTargetTickOrder.pop_front();
+        }
+
+        if (npc)
+        {
+            const bool killed = result.killed;
+            broadcastNpcDamageEvent(
+                sock, players, tick, totalPacketsOut,
+                attacker.id, *npc, damage, killed,
+                attacker.pos, hitPos, kbDir, kbDir,
+                networkWeaponTypeForDefinition(def));
+            if (killed)
+                serverGamemodeRecordKill(
+                    sock, players, &npcs, attacker.id, ENTITY_PLAYER,
+                    npc->entityId, ENTITY_NPC, def.id, def.displayName,
+                    pkt.contactId, attacker.pos, npc->pos, tick,
+                    totalPacketsOut);
+        }
+        else
+        {
+            queueServerDamageConfirmedEvent(
+                sock, players, tick, totalPacketsOut,
+                attacker.id, *playerTarget, damage, result,
+                hitPos, kbDir, knockback, ServerDamageSource::PhysicalContact,
+                networkWeaponTypeForDefinition(def), pkt.contactId,
+                0, 0, def.id);
+        }
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.contact.claim.accepted", std::to_string(attacker.id),
+            "lenient client melee claim accepted and applied", tick,
+            nlohmann::json{{"attacker", attacker.id},
+                           {"target", pkt.targetId},
+                           {"contact_id", pkt.contactId},
+                           {"contact_tick", pkt.contactTick},
+                           {"weapon", def.id},
+                           {"action", attacker.meleeActionId},
+                           {"distance", contactDistance},
+                           {"allowed_distance", allowedDistance},
+                           {"tolerance", tolerance},
+                           {"damage", damage},
+                           {"health_before", result.healthBefore},
+                           {"health_after", result.healthAfter},
+                           {"killed", result.killed}});
+    }
+    return true;
+}
+
 void handleSpyKnifeHitClaim(SOCKET sock,
                             std::unordered_map<uint32_t, ServerPlayer>& players,
                             std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -1063,7 +1424,6 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                             char* buffer, int bytes,
                             uint32_t tick, uint64_t& totalPacketsOut)
 {
-    (void)world;
     if (bytes < (int)sizeof(SpyKnifeContactBatchPacket)) {
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_AUTH] REJECT reason=short_batch bytes=%d expected=%zu serverTick=%u",
@@ -1095,6 +1455,22 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             attacker.spawnGeneration, tick);
         return;
     }
+
+    // Generic physical-contact melee claims (SwordSword/mace/chainsaw) share
+    // the existing contact-batch transport but use the lenient blade claim
+    // validator instead of Spy Knife's OBB/sphere model.
+    const WeaponDefinition* equippedDef =
+        WeaponRegistry::instance().get(attacker.equippedWeaponId);
+    if (equippedDef &&
+        equippedDef->behaviorType == WeaponBehaviorType::Swordsword &&
+        equippedDef->executionType == WeaponExecutionType::PhysicalContact)
+    {
+        if (handleGenericMeleeContactBatch(sock, players, npcs, world, *batch,
+                                           attacker, *equippedDef, tick,
+                                           totalPacketsOut))
+            return;
+    }
+
     bool hasSpyKnife = false;
     for (const std::string& id : attacker.ownedWeaponIds) {
         const WeaponDefinition* d = WeaponRegistry::instance().get(id);

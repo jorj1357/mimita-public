@@ -521,6 +521,14 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                 WeaponExecution::PhysicalContactHit hit;
                 touching = WeaponExecution::testPhysicalContact(relative, target.runtime->target, hit);
                 if (touching) {
+                    const uint64_t claimKey =
+                        (static_cast<uint64_t>(target.ref.id) << 32) | tick;
+                    if (attacker.ref.player &&
+                        attacker.ref.player->meleeClaimedTargetTicks.count(claimKey))
+                    {
+                        // A lenient client claim already applied this target/tick.
+                        continue;
+                    }
                     auto& episode = state.episodes[target.key];
                     if (episode.generation != target.generation) episode = Episode{};
                     episode.generation = target.generation; episode.lastTick = tick;

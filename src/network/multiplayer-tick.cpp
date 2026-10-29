@@ -2771,6 +2771,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 retry.muzzlePosZ = p.predictedMuzzle.z;
                 retry.deterministicSeed = p.deterministicSeed;
                 retry.attackVariant = p.attackVariant;
+                retry.reservedAttack[0] = (uint8_t)(p.movesetRevision & 0xff);
+                retry.reservedAttack[1] = (uint8_t)((p.movesetRevision >> 8) & 0xff);
                 retry.claimedTargetId = p.claimedTargetId;
                 retry.claimedHitX = p.claimedHit.x;
                 retry.claimedHitY = p.claimedHit.y;

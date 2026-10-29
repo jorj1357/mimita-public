@@ -10,6 +10,13 @@
     // "smoothSeamDot": 0.1,
     // "smoothSeamDot": 0.9,
     // "smoothSeamDot": 0.01,
+    // Limb bounce behavior, hot-reloadable:
+    //   2 = current damped limbs (default). Animated limbs only add a small
+    //       root push; weapons keep their full rebound.
+    //   1 = legacy limb bounce. Animated limbs and weapons both use the full
+    //       configured part-driven bounce, so limbs can launch the player again.
+    // "limbBounceMode": 2,
+    "limbBounceMode": 1,
     // Anti-tunneling (mitigation). Split the fixed tick into enough collision
     // sub-steps that no single sub-step moves the actor more than this many
     // world units. Lower = safer at extreme speed, higher = cheaper. 0 disables
@@ -38,8 +45,8 @@
         // "strength": 0.1,
         "friction": 0.0,
         "minSpeed": 0.01,
-        "maxSpeed": 999999.0,
-        // "maxSpeed": 50.0,
+        // "maxSpeed": 999999.0,
+        "maxSpeed": 50.0,
         "cooldown": 0.0001,
         // "cooldown": 0.2,
         "minPush": 0.1

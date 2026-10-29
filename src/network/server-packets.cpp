@@ -3107,9 +3107,9 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
     // spawn sync. Whether we are still AwaitingSpawnAck or already Active, the
     // server re-sends SpawnActivated so the client's reliable ack retry always
     // terminates — a dropped SpawnActivated can never leave the player wedged.
-    const bool matchesLifecycle =
-        ack->spawnGeneration == p.spawnGeneration &&
-        ack->transformEpoch == p.transformEpoch;
+    const bool generationMatches = ack->spawnGeneration == p.spawnGeneration;
+    const bool epochMatches = ack->transformEpoch == p.transformEpoch;
+    const bool matchesLifecycle = generationMatches && epochMatches;
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
@@ -3124,15 +3124,20 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
                        {"spawn_state", static_cast<int>(p.spawnState)}},
         __FILE__, __LINE__, __FUNCTION__);
 
-    if (!matchesLifecycle)
+    // The generation identifies the life. The transform epoch can advance
+    // between the spawn packet leaving the server and the ack arriving because
+    // a respawn/teleport boundary ran in that window. In that case the ack still
+    // proves the client received the correct life; accept it and let the
+    // activation/snapshot path reconcile the newer transform epoch. Reject only
+    // a different generation.
+    if (!generationMatches)
     {
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network, StructuredLevel::Errors,
             "server.actor.spawn_ack.rejected", std::to_string(p.id),
-            "spawn acknowledgement does not match the current life", tick,
+            "spawn acknowledgement generation does not match the current life", tick,
             nlohmann::json{{"actor_id", p.id},
-                           {"reason", ack->spawnGeneration != p.spawnGeneration
-                                ? "generation_mismatch" : "epoch_mismatch"},
+                           {"reason", "generation_mismatch"},
                            {"received_spawn_generation", ack->spawnGeneration},
                            {"received_transform_epoch", ack->transformEpoch},
                            {"server_spawn_generation", p.spawnGeneration},
@@ -3142,6 +3147,20 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
         Debug::log(Debug::Category::Weapons, "[SPAWN ACK REJECT] playerId=%u recvGen=%u recvEpoch=%u expectGen=%u expectEpoch=%u state=%d\n",
                    p.id, ack->spawnGeneration, ack->transformEpoch, p.spawnGeneration, p.transformEpoch, (int)p.spawnState);
         return;
+    }
+    if (!epochMatches)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.actor.spawn_ack.epoch_drift", std::to_string(p.id),
+            "spawn ack matched the life but used an older transform epoch", tick,
+            nlohmann::json{{"actor_id", p.id},
+                           {"received_spawn_generation", ack->spawnGeneration},
+                           {"received_transform_epoch", ack->transformEpoch},
+                           {"server_spawn_generation", p.spawnGeneration},
+                           {"server_transform_epoch", p.transformEpoch},
+                           {"spawn_state", static_cast<int>(p.spawnState)}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     if (p.spawnState == ServerPlayer::AwaitingSpawnAck)

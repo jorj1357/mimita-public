@@ -29,6 +29,12 @@ public:
     // so a touching limb/tool still nudges the whole body.
     float bounceMinPush() const { return mBounceMinPush; }
 
+    // 1 = legacy limb bounce: animated limbs/weapons transfer the full
+    // configured part-driven launch to the root. 2 = current damped limb
+    // bounce: limbs transfer only a fraction so fast swings do not launch the
+    // player, while weapon contacts keep their full rebound. Hot-reloadable.
+    int limbBounceMode() const { return mLimbBounceMode; }
+
     // When true, limb collision uses each body part's real mesh triangles
     // (triangle-vs-triangle against the world) instead of one AABB sphere per
     // part. Toggle off to fall back to the sphere approximation.
@@ -77,6 +83,7 @@ private:
     float mBounceMaxSpeed = 45.0f;
     float mBounceCooldown = 0.05f;
     float mBounceMinPush = 0.1f;
+    int mLimbBounceMode = 2;
     bool mBodyMeshCollision = true;
     bool mActorTriangleSolver = false;
     bool mActorCollisionAccelerated = true;

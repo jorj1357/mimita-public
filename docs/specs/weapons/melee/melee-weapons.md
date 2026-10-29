@@ -1237,3 +1237,170 @@ backstab sound/effects
 
 > **Future swords, chainsaws, clubs, pistol whips, fists, and other physical melee weapons should reuse this system instead of creating new fundamental implementations.**
 
+## Client contact claims — implementation bridge (2026-10-28)
+
+SwordSword, mace, and chainsaw now use a lenient client-contact claim path in
+addition to the existing authoritative server contact scan.
+
+- The client resolves the same rendered weapon attachment it draws, tests the
+  swept blade capsule against remote player/NPC replicas at the fixed 60 Hz
+  tick, and queues one contact per target per tick.
+- Claims carry target identity/kind, contact tick and ID, blade segment and
+  radius, contact point/normal, and impact speed/directness. They are batched
+  through the existing physical-contact batch transport at the configured
+  contact claim cadence, initially 6 ticks.
+- The server validates attacker life/equipment/generation, target life and
+  friendliness, claimed tick, blade bounds, historical target pose, reach, and
+  clear world occlusion. It accepts when the claimed blade is within the
+  target collision volume plus blade radius plus configurable
+  `contactClaimTolerance` (default 0.75 m).
+- The server recalculates damage/knockback from the weapon/action configuration
+  and applies it through the shared damage owner. Client damage numbers remain
+  prediction.
+- The existing server contact scan remains a fallback. Accepted claims are
+  deduplicated per target/tick so the fallback cannot apply the same contact
+  twice.
+- A rejected claim does not grant damage; the client receives the normal
+  disagreement/reconciliation presentation. No generic melee hit cooldown is
+  added. Contact frequency remains one per victim per weapon per simulation
+  tick.
+
+### Per-weapon melee contact configuration
+
+Every `config/weapons/<id>/config.json` carries a top-level
+`melee_contact` object. The weapon masterlist
+`config/weapons/masterlist/weapon-masterlist.json` owns the field definition
+and default value. Use:
+
+```text
+python devscripts/weapon_json_sync.py --sync
+python devscripts/weapon_json_sync.py --reorder
+python devscripts/weapon_json_sync.py --check
+```
+
+Defaults:
+
+```json
+"melee_contact": {
+  "enabled": false,
+  "use_weapon_collision_hitbox": false,
+  "claim_tolerance_m": 0.75,
+  "target_radius_m": 0.9,
+  "max_reach_m": 0.0,
+  "claim_batch_ticks": 6,
+  "occlusion": true,
+  "damage_scale": 1.0,
+  "force_scale": 1.0
+}
+```
+
+Current enabled weapons:
+- SwordSword: enabled, weapon-collision box, tolerance `0.75`, target radius
+  `0.9`.
+- Mace: enabled, weapon-collision box, tolerance `1.0`, target radius `1.1`.
+- Chainsaw: enabled, weapon-collision box, tolerance `0.9`, target radius
+  `1.0`.
+
+#### What the setting changes in the pipeline
+
+For an accepted client claim the server computes approximately:
+
+```text
+force01 = clamp(impact_speed / contactMaxForceSpeed, 0, 1) * impact_directness
+damage  = mix(contactMinDamage, contactMaxDamage, force01)
+        * action_damage_multiplier
+        * rev_multiplier
+        * melee_contact.damage_scale
+knockback = knockback_direction
+          * mix(contactMinKnockback, contactMaxKnockback, force01)
+          * melee_contact.force_scale
+```
+
+The claim is accepted only after the server:
+
+1. checks attacker life, spawn generation, equipment, and move-set revision;
+2. rewinds the target to the claimed tick;
+3. checks the claimed capsule/box against the target volume using
+   `target_radius_m + claim_tolerance_m`;
+4. checks reach and optional world occlusion; and
+5. applies damage through the shared authoritative damage owner.
+
+`damage_scale` and `force_scale` are **after** all normal weapon/action/impact
+calculations. They tune this claim path without changing the base weapon
+damage or knockback fields.
+
+#### Field reference and tuning
+
+| Field | What it does | If hits feel too weak / not registering | If hits feel too strong / phantom |
+|---|---|---|---|
+| `enabled` | Turns on client contact claims for this weapon. With `false`, only the older server animated-contact fallback can damage. | Set `true` if the client visibly hits but authoritative health does not change. Verify the move set and weapon identity first. | Set `false` only as a diagnostic fallback; this makes hit detection slower and less aligned with the client. |
+| `use_weapon_collision_hitbox` | `true` uses the `config/weaponcollisions.json` box as the damage volume and sweeps it through target body parts. `false` uses the animated blade capsule. | Set `true` when the visual weapon is much larger than the thin blade capsule, especially SwordSword/mace. Enlarge the box in `weaponcollisions.json` if the visual weapon still exceeds it. | Set `false` for a tighter shape. If true causes phantom hits, shrink the box in `weaponcollisions.json`; do not compensate with a large negative tolerance. |
+| `claim_tolerance_m` | Extra radius added to the target body radius when validating the claimed contact. This absorbs network lag, one-frame pose differences, and animation mismatch. | Increase in steps of `0.25` (`0.75 → 1.0 → 1.25`). Use more for fast weapons, high ping, or large swings. | Decrease toward `0.25–0.5`. If hits land visibly beside the target, tolerance or target radius is too large. |
+| `target_radius_m` | Treats the historical target as a body sphere of this radius for the lenient claim check. It is deliberately larger than the true limb geometry. | Increase toward `1.1–1.3` if edge/limb hits are rejected with `outside_claim_radius`. | Decrease toward `0.6–0.8` if near-misses count. Keep it close to the actual actor capsule; do not use it to fake reach. |
+| `max_reach_m` | Explicit maximum attacker-to-target distance for a claim. `0` derives a value from the claimed shape size + target radius + tolerance + 2 m. | If valid long-reach swings are rejected as `out_of_reach`, set an explicit value slightly above the visible reach (for example sword `8`, chainsaw `7`, mace `14`). | Lower it toward the visible reach. Never set it below the actual blade/box length or legitimate overhead swings will be rejected. |
+| `claim_batch_ticks` | Sends queued contacts every N fixed ticks. Detection still runs every 60 Hz tick; only transmission is batched. `1` = every tick, `6` = 10 Hz. | Lower to `2–3` when damage feels delayed behind the visual hit. | Raise toward `6–12` if packet volume is a concern; higher values increase perceived latency. Never set below `1`. |
+| `occlusion` | When `true`, rejects a claim if world geometry is clearly between the attacker position at the contact tick and the target center. | Set `false` only if legitimate corner/limb/through-gap hits are being rejected as `world_occluded`. | Keep `true` to prevent hits through walls. If it causes false rejects, fix the contact point/geometry rather than disabling it globally. |
+| `damage_scale` | Multiplies authoritative damage after base range, action multiplier, rev multiplier, and impact force. | Increase above `1.0` (`1.1–1.5`) if accepted contacts do too little health damage. Check `server.damage.applied` first. | Decrease below `1.0` (`0.5–0.9`) if accepted contacts damage too much. This does not change hit registration. |
+| `force_scale` | Multiplies authoritative knockback impulse. | Increase above `1.0` if hits connect but barely move the target. | Decrease below `1.0` if targets launch too far. This does not change damage. |
+
+#### Quick tuning recipes
+
+**"I see the sword/mace pass through but health does not change."**
+
+1. Confirm `enabled: true`.
+2. Set `use_weapon_collision_hitbox: true`.
+3. Inspect the journal for `melee.contact.claim.rejected`:
+   - `outside_claim_radius`: raise `claim_tolerance_m` and/or
+     `target_radius_m`.
+   - `out_of_reach`: set or raise `max_reach_m`.
+   - `world_occluded`: check the contact geometry; lower/disable `occlusion`
+     only if the rejection is a false wall hit.
+   - `invalid_contact_bounds`: the `weaponcollisions.json` box is too large or
+     malformed; resize it.
+4. If the client emits no `melee.client.contact_claim`, the client did not
+   detect contact. Check the `weaponcollisions.json` box dimensions, weapon
+   model pose, and that the target replica is present/aligned.
+
+**"It hits too easily / hits nothing visible."**
+
+1. Lower `damage_scale` and `force_scale` first if only the numbers are too
+   strong.
+2. If phantom contacts are the problem, lower `claim_tolerance_m` and
+   `target_radius_m`, then set `use_weapon_collision_hitbox: false` or shrink
+   the box in `weaponcollisions.json`.
+3. Keep `occlusion: true` unless it is producing demonstrated false rejects.
+
+**"Damage is too weak even though contact is accepted."**
+
+1. Check `damage` in `melee.contact.claim.accepted` and
+   `server.damage.applied`.
+2. Raise `damage_scale`.
+3. If the damage is still low, inspect the base/action contact damage range
+   (`contactMinDamage`, `contactMaxDamage`, action `contact_min_damage`,
+   `contact_max_damage`) and impact speed/directness.
+
+**"Target barely moves."**
+
+1. Raise `force_scale`.
+2. If still weak, inspect `contactMinKnockback` / `contactMaxKnockback` and the
+   action knockback overrides.
+3. Do not change hit registration settings to compensate for weak knockback.
+
+**"Damage arrives late."**
+
+1. Lower `claim_batch_ticks` toward `2–3`.
+2. Do not add a cooldown or change contact geometry.
+
+#### Important invariants
+
+- `melee_contact` settings tune the claim/validation path; they do not add a
+  generic melee damage cooldown.
+- Contact detection remains one possible damage event per weapon per victim per
+  60 Hz tick.
+- The server still owns final health, death, friendly-fire, spawn protection,
+  and knockback application.
+- Client damage numbers are prediction; if they disagree with accepted server
+  damage, check `damage_scale`, base/action contact values, and move-set
+  revision/hash agreement.
+- The masterlist is the source of truth for field presence. Edit per-weapon
+  values, then run `--sync`, `--reorder`, and `--check`.

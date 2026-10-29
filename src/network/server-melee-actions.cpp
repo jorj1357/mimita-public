@@ -829,6 +829,9 @@ void serverMeleeResetForSpawn(ServerPlayer& player)
     player.meleeActionId.clear();
     player.meleeActionMovementState.clear();
     player.meleePhaseTick = 0;
+    player.meleeNextAllowedTick = 0;
+    player.meleeClaimedTargetTicks.clear();
+    player.meleeClaimedTargetTickOrder.clear();
     player.meleeHitTargets.clear();
     player.meleeLastHitboxCenter = glm::vec3(0.0f);
     player.meleeShieldBroken = false;

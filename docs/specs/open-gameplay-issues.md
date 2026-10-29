@@ -184,6 +184,18 @@ the fps issue happesn mroe and more as i have melee killing ppl killing npcs
   [`../architecture/collision/collision.md`](../architecture/collision/collision.md)
   as capsule-now / triangle-later. Capsules are the accepted current cost/feel
   tradeoff; full animated NPC triangle collision remains a later target.
+- **Future: accelerated per-tick NPC inside-solid query.** `funworld3` has about
+  44,214 collision triangles, so the original unconditional
+  `worldPointInsideSolid` call for every NPC every tick cost about 50 ms and
+  dropped the listen server to 17–19 Hz. The current fix caps deep checks to one
+  staggered NPC per tick, triggers them from stuck state or a low-frequency
+  fallback, applies a 120-tick per-NPC cooldown, and uses the broadphase ground
+  query instead of the full multi-candidate safe-spawn search. A 9-NPC
+  `funworld3` run returned to roughly 60 Hz in most windows. If per-tick
+  penetration detection becomes necessary, add a chunk-DDA/AABB-tree
+  accelerated ray query instead of scanning every triangle. Occasional
+  multi-hundred-ms NPC navigation spikes still exist separately from this
+  inside-solid scan and need their own profile.
 - **NPC rockets in TDM:** authoritative NPC projectiles now carry
   `weaponDefNetworkId`; the unused local `gNpcRocketState` path was deleted;
   non-exploding lifetime removals send a terminal despawn; and the client
@@ -203,7 +215,8 @@ the fps issue happesn mroe and more as i have melee killing ppl killing npcs
 - **Animation-driven bounce:** body-part-driven root push is damped to 25% of
   the configured response while weapon contacts keep the full rebound. The
   frozen `config/collision.json` values (`maxSpeed: 50`, `strength: 0.35`) are
-  unchanged.
+  unchanged. A hot-reloadable `limbBounceMode` switch now selects `2` (damped
+  limbs, default) or `1` (legacy full limb bounce).
 - **Ragdoll limb limits:** head and arm attachment cones/rotation ranges are now
   bounded instead of effectively unlimited; leg limits are unchanged.
 - **Weapon config order:** `devscripts/weapon_json_sync.py --check` now fails
