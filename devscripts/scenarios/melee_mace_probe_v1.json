@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "melee_mace_probe_v1",
+  "description": "Start Melee on cramped with weapon set 29, equip the mace, spawn one server NPC, and repeat mace swings to compare client claims with server acceptance.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "cramped",
+    "weapon_set": "29",
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [
+    {"id": "tank", "command": "healthme", "args": ["999999"], "delay_ms_after": 1000}
+  ],
+  "steps": [
+    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 5000},
+    {"id": "equip_mace", "command": "equipweapon", "args": ["mace"], "delay_ms_after": 1000},
+    {"id": "npc_spawn", "command": "npc_spawn", "args": ["1"], "delay_ms_after": 1500},
+    {"id": "swing_1", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "swing_2", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "swing_3", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "swing_4", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "swing_5", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "swing_6", "command": "agent.melee", "args": ["mace_swing"], "delay_ms_after": 1200},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["mace_probe_end"], "delay_ms_after": 1000}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "melee.client.contact_claim"},
+    {"type": "event_present", "event": "melee.contact.claim.accepted"}
+  ],
+  "timeout_seconds": 120
+}

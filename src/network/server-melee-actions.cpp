@@ -738,11 +738,15 @@ bool serverMeleeStartAction(ServerPlayer& attacker, const std::string& actionId,
     const WeaponData::MeleeAction* action = moveSet->find(actionId);
     if (!action)
         return false;
-    if (tick < attacker.meleeNextAllowedTick)
+    // The client owns the action timeline/input cadence. Do not reject an
+    // animation-only melee action just because the server's previous action
+    // cooldown has not elapsed; that produced "melee action could not start".
+    if (!moveSet->animationOnly && tick < attacker.meleeNextAllowedTick)
         return false;
 
     attacker.meleeActionActive = true;
     attacker.meleeActionId = action->id;
+    attacker.lastMeleeActionId = action->id;
     attacker.meleeActionMovementState = playerMovementState(attacker);
     attacker.meleeActionStartTick = tick;
     attacker.meleePhaseTick = 0;
@@ -827,6 +831,7 @@ void serverMeleeResetForSpawn(ServerPlayer& player)
     player.meleePercent = 0.0f;
     player.meleeActionActive = false;
     player.meleeActionId.clear();
+    player.lastMeleeActionId.clear();
     player.meleeActionMovementState.clear();
     player.meleePhaseTick = 0;
     player.meleeNextAllowedTick = 0;

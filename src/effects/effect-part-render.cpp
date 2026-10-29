@@ -453,7 +453,9 @@ void EffectPartSystem::render(const Camera& camera) const {
         const bool damageNumber = effect.replayType == "damage_number" ||
                                   effect.replayType == "server_disagreement_text";
         float alpha = effect.alpha * distFade;
-        if (!damageNumber && (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade))
+        if (effect.replayType == "explosion_shockwave")
+            alpha = glm::mix(effect.alpha, effect.endAlpha, t) * distFade;
+        else if (!damageNumber && (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade))
             alpha *= (1.0f - t);
         alpha = std::max(0.0f, alpha);
         float drawScale = effect.scale + (effect.endScale - effect.scale) * t;
@@ -556,6 +558,20 @@ void EffectPartSystem::render(const Camera& camera) const {
             else if (alignment < 0.9999f)
                 orientation = glm::normalize(glm::quat(alignment + 1.0f, glm::cross(sourceAxis, direction)));
             renderProjectile(camera, effect.position, orientation, rocketCfg);
+        }
+        else if (effect.replayType == "explosion_shockwave" && !effect.texturePath.empty()) {
+            const glm::vec3 n = glm::length(effect.normal) > 0.001f
+                ? glm::normalize(effect.normal) : glm::vec3(0.0f, 0.0f, 1.0f);
+            const glm::vec3 tangent = glm::normalize(
+                std::fabs(n.z) < 0.99f ? glm::cross(n, glm::vec3(0.0f, 0.0f, 1.0f))
+                                       : glm::cross(n, glm::vec3(1.0f, 0.0f, 0.0f)));
+            const glm::vec3 bitangent = glm::normalize(glm::cross(n, tangent));
+            const float angle = glm::radians(glm::mix(effect.rotation.z, effect.endRotation.z, t));
+            const glm::vec3 right = tangent * std::cos(angle) + bitangent * std::sin(angle);
+            const glm::vec3 up = -tangent * std::sin(angle) + bitangent * std::cos(angle);
+            std::vector<TexturedParticleVertex> verts;
+            appendTexturedQuad(verts, effect.position, right * drawScale, up * drawScale, drawColor);
+            drawTexturedHitParticles(camera, verts, effect.texturePath);
         }
         else if (effect.replayType == "explosion_shockwave" && !effect.modelPath.empty()) {
             drawEffectModel(camera, effect, drawScale, drawColor);

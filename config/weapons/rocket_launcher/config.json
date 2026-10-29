@@ -156,8 +156,18 @@
     "explosion": {
       "markTexture": "assets/textureshq/explosionmarkv1.png",
       "shockwaveModel": "assets/objects/things/effects-objects/shockwave-v1.glb",
+      "shockwaveTexture": "assets/textureshq/giygas2.png",
+      // "shockwaveTexture": "",
       "shockwaveScale": 1.0,
-      "shockwaveLifetimeSeconds": 0.18
+      "shockwaveLifetimeSeconds": 0.18,
+      "shockwaveStartRotationDeg": 0.0,
+      "shockwaveEndRotationDeg": 360.0,
+      "shockwaveStartScale": 1.0,
+      "shockwaveEndScale": 2.5,
+      "shockwaveStartAlpha": 1.0,
+      "shockwaveEndAlpha": 0.0,
+      "shockwaveRandomRotationMinDeg": 0.0,
+      "shockwaveRandomRotationMaxDeg": 360.0
     }
   },
 "reserve_ammo": null,

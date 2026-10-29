@@ -15,8 +15,6 @@
 #include "combat/weapon-collision-config.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-types.h"
-#include "effects/hit-effects.h"
-#include "ui/hitmarker.h"
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 #include "network/network-weapons.h"
@@ -105,6 +103,8 @@ struct PendingMeleeClaim {
     bool targetIsNpc = false;
     uint32_t contactTick = 0;
     uint32_t contactId = 0;
+    uint16_t actionElapsedTicks = 0;
+    uint16_t actionIndex = 0xffff;
     glm::vec3 hitPosition{0.0f};
     glm::vec3 direction{0.0f, 0.0f, 1.0f};
     glm::vec3 boxCenter{0.0f};
@@ -195,6 +195,46 @@ WeaponExecution::HitBodyPart bodyPartFromName(const std::string& name)
     if (name == "leftLeg" || name == "rightLeg")
         return WeaponExecution::HitBodyPart::Leg;
     return WeaponExecution::HitBodyPart::Torso;
+}
+
+bool sampleClientTargetPosition(const MimitaNet::MultiplayerContext& ctx,
+                                uint32_t id, bool npc, uint32_t tick,
+                                glm::vec3& outPosition)
+{
+    const auto& states = npc ? ctx.remoteNpcInterpolation
+                             : ctx.remotePlayerInterpolation;
+    auto it = states.find(id);
+    if (it == states.end() || it->second.buffer.empty())
+        return false;
+    const auto& buffer = it->second.buffer;
+    const MimitaNet::SnapshotTransform* older = nullptr;
+    const MimitaNet::SnapshotTransform* newer = nullptr;
+    for (const auto& sample : buffer)
+    {
+        if (sample.serverTick <= tick)
+            older = &sample;
+        if (sample.serverTick >= tick)
+        {
+            newer = &sample;
+            break;
+        }
+    }
+    if (!older && !newer)
+        return false;
+    if (!older)
+    {
+        outPosition = newer->position;
+        return true;
+    }
+    if (!newer || older->serverTick == newer->serverTick)
+    {
+        outPosition = older->position;
+        return true;
+    }
+    const float t = (float)(tick - older->serverTick) /
+                    (float)(newer->serverTick - older->serverTick);
+    outPosition = glm::mix(older->position, newer->position, t);
+    return true;
 }
 
 WeaponExecution::PlayerTarget makeClientTarget(const Player& player,
@@ -307,6 +347,8 @@ void flushMeleeContactClaims(MimitaNet::MultiplayerContext& ctx)
             out.targetGeneration = claim.targetGeneration;
             out.contactTick = claim.contactTick;
             out.contactId = claim.contactId;
+            out.actionElapsedTicks = claim.actionElapsedTicks;
+            out.actionIndex = claim.actionIndex;
             out.targetIsNpc = claim.targetIsNpc ? 1 : 0;
             out.isBackstab = 0;
             out.impactSpeed = claim.impactSpeed;
@@ -335,7 +377,18 @@ void flushMeleeContactClaims(MimitaNet::MultiplayerContext& ctx)
             out.boxAxis2Y = claim.boxAxes[2].y;
             out.boxAxis2Z = claim.boxAxes[2].z;
         }
-        MimitaNet::mpSendPacket(ctx, &batch, sizeof(batch));
+        const bool sent = MimitaNet::mpSendPacket(ctx, &batch, sizeof(batch));
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "melee.client.contact_claim.batch", std::to_string(ctx.localPlayerId),
+            "client flushed a melee contact batch", ctx.tick,
+            nlohmann::json{{"attacker", ctx.localPlayerId},
+                           {"batch_id", batch.batchId},
+                           {"count", count},
+                           {"bytes", (int)sizeof(batch)},
+                           {"sent", sent},
+                           {"first_contact_id", count > 0 ? batch.contacts[0].contactId : 0},
+                           {"last_contact_id", count > 0 ? batch.contacts[count - 1].contactId : 0}});
         g_pendingMeleeClaims.erase(g_pendingMeleeClaims.begin(),
                                    g_pendingMeleeClaims.begin() + count);
     }
@@ -418,8 +471,17 @@ void tickClientMeleeContactClaims(Player& player,
             player.matchTeam == remote.matchTeam &&
             !GamemodeRegistry::instance().get(ACTIVE_GAME_MODE).friendlyFire)
             return;
-        const uint32_t contactTick =
-            MimitaNet::mpFireRenderTickForTarget(ctx, id, ctx.latestLocalSnapshotTick);
+        const uint32_t newestServerTick = ctx.latestServerTick != 0
+            ? ctx.latestServerTick : ctx.latestLocalSnapshotTick;
+        const uint32_t renderedContactTick =
+            MimitaNet::mpFireRenderTickForTarget(ctx, id, newestServerTick);
+        // The interpolation/render clock can be ahead of the newest server
+        // snapshot. Never send a future historical claim: the server cannot
+        // rewind to a pose it has not simulated yet. Clamp to the newest
+        // usable server tick, matching the Spy Knife claim path.
+        const uint32_t contactTick = newestServerTick != 0
+            ? std::min(renderedContactTick, newestServerTick)
+            : renderedContactTick;
         const uint64_t claimKey = ((uint64_t)id << 32) | contactTick;
         if (g_predictedMeleeTargetTicks.count(claimKey))
             return;
@@ -427,6 +489,14 @@ void tickClientMeleeContactClaims(Player& player,
         if (!mutableRemote.physicalBody.parts.empty())
             mutableRemote.updateModelWorldTransforms();
         WeaponExecution::PlayerTarget target = makeClientTarget(remote, id, npc, generation);
+        glm::vec3 sampledTargetPos = remote.pos;
+        if (sampleClientTargetPosition(ctx, id, npc, contactTick, sampledTargetPos))
+        {
+            const glm::vec3 offset = sampledTargetPos - remote.pos;
+            target.position = sampledTargetPos;
+            for (auto& part : target.bodyParts)
+                part.center += offset;
+        }
         WeaponExecution::PhysicalContactHit hit;
         glm::vec3 claimCenter = boxCenter;
         glm::vec3 claimHalf = boxHalf;
@@ -436,7 +506,7 @@ void tickClientMeleeContactClaims(Player& player,
         bool hitFound = false;
         if (!damageBoxes.empty())
         {
-            const glm::vec3 targetCenter = remote.pos + glm::vec3(0, 0, 0.9f);
+            const glm::vec3 targetCenter = target.position + glm::vec3(0, 0, 0.9f);
             for (size_t boxIndex = 0; boxIndex < damageBoxes.size() && !hitFound;
                  ++boxIndex)
             {
@@ -492,7 +562,7 @@ void tickClientMeleeContactClaims(Player& player,
         {
             // Lenient fallback for replicas whose limb boxes are missing or a
             // frame behind: treat the target root capsule as the contact body.
-            const glm::vec3 targetCenter = remote.pos + glm::vec3(0, 0, 0.9f);
+            const glm::vec3 targetCenter = target.position + glm::vec3(0, 0, 0.9f);
             const glm::vec3 ab = shape.currentB - shape.currentA;
             const float abLenSq = glm::dot(ab, ab);
             const float t = abLenSq > 0.000001f
@@ -512,7 +582,7 @@ void tickClientMeleeContactClaims(Player& player,
         }
         const glm::vec3 relative = volumeVelocity - remote.vel;
         const float speed = glm::length(relative);
-        const glm::vec3 toTarget = remote.pos - hit.hitPosition;
+        const glm::vec3 toTarget = target.position - hit.hitPosition;
         const glm::vec3 normal = glm::length(toTarget) > 0.001f
             ? glm::normalize(toTarget) : glm::vec3(0, 0, 1);
         const float forceRaw = std::max(0.0f, glm::dot(relative, normal));
@@ -526,26 +596,25 @@ void tickClientMeleeContactClaims(Player& player,
         const int damage = (int)clientContactDamage(*def, action, actionActive,
                                                     force, revMultiplier);
 
-        MimitaNet::mpApplyPredictedDamage(ctx, id, damage, npc);
-
-        HitEvent ev;
-        ev.position = hit.hitPosition;
-        ev.normal = normal;
-        ev.direction = bladeDir;
-        ev.hitEntity = true;
-        ev.damage = damage;
-        ev.attacker = player.username;
-        ev.victim = remote.username;
-        ev.weaponSource = def->id;
-        HitEffects::onHit(ev);
-        hitmarker(damage);
-
+        // Melee damage feedback is server-confirmed only. Sending the claim is
+        // the prediction; HP, hitmarker, blood, and damage number are shown
+        // when the authoritative damage event arrives. This guarantees that
+        // every visible melee damage event corresponds to real server damage.
         PendingMeleeClaim claim;
         claim.targetId = id;
         claim.targetGeneration = target.spawnGeneration;
         claim.targetIsNpc = npc;
         claim.contactTick = contactTick;
         claim.contactId = g_nextMeleeContactId++;
+        claim.actionElapsedTicks = (uint16_t)std::clamp(
+            (int)(simTick - g_state.startSimTick), 0, 65535);
+        claim.actionIndex = 0xffff;
+        for (size_t actionIdx = 0; actionIdx < moveSet.actions.size(); ++actionIdx) {
+            if (moveSet.actions[actionIdx].id == g_state.actionId) {
+                claim.actionIndex = (uint16_t)actionIdx;
+                break;
+            }
+        }
         claim.hitPosition = hit.hitPosition;
         claim.direction = normal;
         claim.boxCenter = claimCenter;
@@ -570,7 +639,11 @@ void tickClientMeleeContactClaims(Player& player,
                            {"target_generation", target.spawnGeneration},
                            {"contact_id", claim.contactId},
                            {"contact_tick", claim.contactTick},
+                           {"action_elapsed_ticks", claim.actionElapsedTicks},
+                           {"action_index", claim.actionIndex},
+                           {"action_active", actionActive},
                            {"damage_predicted", damage},
+                           {"feedback", "server_confirmed"},
                            {"blade_base", {shape.currentA.x, shape.currentA.y,
                                            shape.currentA.z}},
                            {"blade_tip", {shape.currentB.x, shape.currentB.y,

@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "network/server-contact.h"
 #include "network/server-gamemode.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
@@ -19,6 +20,7 @@
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-fire.h"
+#include "combat/weapon-godball.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-execution.h"
 #include "combat/weapon-melee-config.h"
@@ -928,17 +930,8 @@ void handleGodballHitClaim(SOCKET sock,
                            const HeadlessWorld& world,
                            char* buffer, int bytes,
                            uint32_t tick, uint64_t& totalPacketsOut) {
-    (void)world;
     if (bytes < (int)sizeof(GodballHitClaimPacket)) return;
     GodballHitClaimPacket* pkt = reinterpret_cast<GodballHitClaimPacket*>(buffer);
-
-    Debug::warn(Debug::Category::Weapons,
-        "[GODBALL_DBG] SERVER_CLAIM_RECEIVED attacker=%u target=%u "
-        "damageClaimed=%.1f simulationTick=%u spawnGeneration=%u serverTick=%u "
-        "players=%zu npcs=%zu",
-        pkt->attackerId, pkt->targetId, pkt->damage,
-        pkt->simulationTick, pkt->spawnGeneration, tick,
-        players.size(), npcs.size());
 
     auto attackerIt = players.find(pkt->attackerId);
     if (attackerIt == players.end()) {
@@ -955,48 +948,63 @@ void handleGodballHitClaim(SOCKET sock,
         return;
     }
 
-    const float clampedDamage = std::clamp(pkt->damage, 1.0f, 500.0f);
+    const WeaponDefinition* def = WeaponRegistry::instance().get("godball");
+    if (!def) {
+        Debug::warn(Debug::Category::Weapons,
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=definition-missing");
+        return;
+    }
+
+    const int intDamage = std::max(1, (int)std::round(
+        WeaponGodball::damageFromSpeed(*def, pkt->ballSpeed)));
     const glm::vec3 normal = glm::length(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ)) > 0.001f
         ? glm::normalize(glm::vec3(pkt->normalX, pkt->normalY, pkt->normalZ))
         : glm::vec3(0.0f, 0.0f, 1.0f);
-    const glm::vec3 knockback = normal * std::max(1.0f, clampedDamage * 0.75f);
+    const glm::vec3 knockback = normal * std::max(1.0f, intDamage * 0.75f);
     const glm::vec3 hitPos(pkt->hitX, pkt->hitY, pkt->hitZ);
+    const uint32_t contactTick = pkt->simulationTick != 0
+        ? pkt->simulationTick : tick;
+    const uint32_t contactId = pkt->contactSerial != 0
+        ? pkt->contactSerial : contactTick;
+
+    ServerContactRequest contact;
+    contact.attacker = {attacker.id, ServerActorKind::Player, &attacker, nullptr};
+    contact.victimId = pkt->targetId;
+    contact.kind = ServerContactKind::Deathball;
+    contact.origin = hitPos;
+    contact.point = hitPos;
+    contact.normal = normal;
+    contact.damage = intDamage;
+    contact.knockback = knockback;
+    contact.source = ServerDamageSource::PhysicalContact;
+    contact.weaponId = def->id;
+    contact.weaponDisplayName = def->displayName;
+    contact.serverTick = tick;
+    contact.contactTick = contactTick;
+    contact.maxContactAgeTicks = 600;
+    contact.eventId = pkt->contactSerial;
+    contact.contactId = contactId;
+    contact.hitTolerance = 0.75f;
+    contact.validateHitVolume = true;
+    contact.world = &world;
+    contact.dedupe = true;
 
     // NPC entity IDs are authoritative. Resolve NPCs before players so an
     // accidental ID overlap cannot route an NPC hit through player damage.
     auto npcIt = npcs.find(pkt->targetId);
     if (npcIt != npcs.end()) {
         ServerNpc& npc = npcIt->second;
-        if (serverFriendlyFireBlocks(
-                pkt->attackerId, false, npc.entityId, true,
-                players, npcs, "godball-player-to-npc", tick))
-        {
-            Debug::log(Debug::Category::Weapons,
-                "[GODBALL NPC DAMAGE BLOCKED] attacker=%u targetNpc=%u reason=friendly-fire\n",
-                pkt->attackerId, npc.entityId);
-            return;
-        }
-        if (npc.health <= 0) {
+        contact.victimKind = ServerActorKind::Npc;
+        contact.victimGeneration = npc.transformEpoch;
+        const ServerContactResult contactResult =
+            resolveServerContact(players, npcs, contact);
+        if (!contactResult.accepted) {
             Debug::warn(Debug::Category::Weapons,
-                "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=npc-already-dead targetNpc=%u health=%d",
-                pkt->targetId, npc.health);
+                "[GODBALL_DBG] SERVER_CLAIM_REJECT targetNpc=%u reason=%s",
+                npc.entityId, contactResult.rejectionReason.c_str());
             return;
         }
-
-        const int healthBefore = npc.health;
-        const int intDamage = std::max(1, (int)std::round(clampedDamage));
-        npc.health = std::max(0, npc.health - intDamage);
-        npc.knockbackImpulse += knockback;
-        const bool killed = npc.health == 0;
-
-        Debug::warn(Debug::Category::Weapons,
-            "[GODBALL_DBG] SERVER_NPC_DAMAGE attacker=%u targetNpc=%u "
-            "damageClaimed=%.1f damageApplied=%d healthBefore=%d healthAfter=%d killed=%d "
-            "hit=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f)",
-            pkt->attackerId, pkt->targetId, pkt->damage, intDamage,
-            healthBefore, npc.health, (int)killed,
-            hitPos.x, hitPos.y, hitPos.z,
-            normal.x, normal.y, normal.z);
+        const ServerDamageResult& result = contactResult.damage;
 
         const glm::vec3 origin = attacker.pos;
         const glm::vec3 dir = glm::length(hitPos - origin) > 0.001f
@@ -1004,17 +1012,17 @@ void handleGodballHitClaim(SOCKET sock,
 
         broadcastNpcDamageEvent(
             sock, players, tick, totalPacketsOut,
-            pkt->attackerId, npc, intDamage, killed,
+            pkt->attackerId, npc, intDamage, result.killed,
             origin, hitPos, dir, normal, NETWORK_WEAPON_GODBALL);
 
-        if (killed) {
+        if (result.killed) {
             const char* killWeaponId = networkWeaponTypeName(NETWORK_WEAPON_GODBALL);
             std::string killWeaponDisplay = killWeaponId;
             if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
                 if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
             serverGamemodeRecordKill(sock, players, &npcs,
                 pkt->attackerId, ENTITY_PLAYER, npc.entityId, ENTITY_NPC,
-                killWeaponId, killWeaponDisplay, pkt->contactSerial,
+                killWeaponId, killWeaponDisplay, contactId,
                 attacker.pos, npc.pos, tick, totalPacketsOut);
         }
         return;
@@ -1030,33 +1038,23 @@ void handleGodballHitClaim(SOCKET sock,
     }
 
     ServerPlayer& target = targetIt->second;
-    if (target.dead || target.spawnState != ServerPlayer::Active) {
+    contact.victimKind = ServerActorKind::Player;
+    contact.victimGeneration = pkt->spawnGeneration;
+    const ServerContactResult contactResult =
+        resolveServerContact(players, npcs, contact);
+    if (!contactResult.accepted) {
         Debug::warn(Debug::Category::Weapons,
-            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-inactive target=%u",
-            pkt->targetId);
+            "[GODBALL_DBG] SERVER_CLAIM_REJECT target=%u reason=%s",
+            target.id, contactResult.rejectionReason.c_str());
         return;
     }
-    if (target.spawnGeneration != pkt->spawnGeneration) {
-        Debug::warn(Debug::Category::Weapons,
-            "[GODBALL_DBG] SERVER_CLAIM_REJECT reason=player-generation-mismatch target=%u expected=%u received=%u",
-            pkt->targetId, target.spawnGeneration, pkt->spawnGeneration);
-        return;
-    }
 
-    ServerDamageResult result = applyServerDamage(
-        players, target, pkt->attackerId, (int)std::round(clampedDamage),
-        knockback, ServerDamageSource::PhysicalContact);
-
-
-    if (result.applied) {
-        queueServerDamageConfirmedEvent(
-            sock, players, tick, totalPacketsOut,
-            pkt->attackerId, target, (int)std::round(clampedDamage), result,
-            hitPos, normal, knockback, ServerDamageSource::PhysicalContact,
-            NETWORK_WEAPON_GODBALL, pkt->contactSerial);
-    }
+    queueServerDamageConfirmedEvent(
+        sock, players, tick, totalPacketsOut,
+        pkt->attackerId, target, intDamage, contactResult.damage,
+        hitPos, normal, knockback, ServerDamageSource::PhysicalContact,
+        NETWORK_WEAPON_GODBALL, contactId, 0, 0, def->id);
 }
-
 static float pointSegmentDistance(const glm::vec3& point,
                                   const glm::vec3& a,
                                   const glm::vec3& b)
@@ -1101,24 +1099,35 @@ static bool handleGenericMeleeContactBatch(
     {
         const SpyKnifeContact& pkt = batch.contacts[i];
         const bool boxClaim = (pkt.reserved & 1u) != 0;
+        constexpr uint32_t kMaxFutureContactTicks = 120;
+        const bool futureContact =
+            pkt.contactTick > tick + kMaxFutureContactTicks;
+        const bool staleContact =
+            pkt.contactTick <= tick && tick - pkt.contactTick > 600;
         if (pkt.targetId == 0 || pkt.contactId == 0 ||
-            pkt.contactTick > tick || tick - pkt.contactTick > 600 ||
+            futureContact || staleContact ||
             !std::isfinite(pkt.hitX) || !std::isfinite(pkt.hitY) ||
             !std::isfinite(pkt.hitZ) ||
             !std::isfinite(pkt.impactSpeed) ||
-            !std::isfinite(pkt.impactDirectness))
+            !std::isfinite(pkt.impactDirectness) ||
+            pkt.actionElapsedTicks > 600)
         {
+            const char* reason = futureContact ? "future_contact"
+                : (staleContact ? "stale_contact" : "invalid_contact");
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Weapons, StructuredLevel::Errors,
                 "melee.contact.claim.rejected", std::to_string(attacker.id),
-                "malformed or stale melee contact claim", tick,
+                "malformed, future, or stale melee contact claim", tick,
                 nlohmann::json{{"attacker", attacker.id},
                                {"target", pkt.targetId},
                                {"contact_id", pkt.contactId},
                                {"contact_tick", pkt.contactTick},
-                               {"reason", "invalid_contact"}});
+                               {"server_tick", tick},
+                               {"delta_ticks", (int64_t)pkt.contactTick - (int64_t)tick},
+                               {"reason", reason}});
             continue;
         }
+        const uint32_t contactTick = std::min(pkt.contactTick, tick);
 
         const uint64_t dedupeKey =
             (static_cast<uint64_t>(pkt.targetId) << 32) | pkt.contactTick;
@@ -1241,9 +1250,9 @@ static bool handleGenericMeleeContactBatch(
         glm::vec3 targetPos = npc ? npc->pos : playerTarget->pos;
         float targetYaw = npc ? npc->yaw : playerTarget->yaw;
         if (npc)
-            getNpcPoseAtTick(*npc, pkt.contactTick, targetPos, targetYaw);
+            getNpcPoseAtTick(*npc, contactTick, targetPos, targetYaw);
         else
-            getPlayerPoseAtTick(*playerTarget, pkt.contactTick, targetPos, targetYaw);
+            getPlayerPoseAtTick(*playerTarget, contactTick, targetPos, targetYaw);
         const glm::vec3 hitPos(pkt.hitX, pkt.hitY, pkt.hitZ);
         const float targetRadius = targetBodyRadius + tolerance;
         const float allowedDistance = glm::length(half) + targetRadius;
@@ -1278,7 +1287,7 @@ static bool handleGenericMeleeContactBatch(
         }
         glm::vec3 attackerContactPos = attacker.pos;
         float attackerContactYaw = attacker.yaw;
-        getPlayerPoseAtTick(attacker, pkt.contactTick, attackerContactPos,
+        getPlayerPoseAtTick(attacker, contactTick, attackerContactPos,
                             attackerContactYaw);
         const float reach = glm::length(hitPos - attackerContactPos);
         const float maxReach = std::max(
@@ -1321,10 +1330,21 @@ static bool handleGenericMeleeContactBatch(
             }
         }
 
-        const int elapsed = (int)(pkt.contactTick - attacker.meleeActionStartTick);
-        const WeaponData::MeleeAction* action =
-            attacker.meleeActionActive && set && !attacker.meleeActionId.empty()
-                ? set->find(attacker.meleeActionId) : nullptr;
+        const int elapsed = pkt.actionElapsedTicks != 0
+            ? (int)pkt.actionElapsedTicks
+            : (int)(pkt.contactTick - attacker.meleeActionStartTick);
+        const WeaponData::MeleeAction* action = nullptr;
+        if (set && pkt.actionIndex < set->actions.size())
+        {
+            action = &set->actions[pkt.actionIndex];
+        }
+        else
+        {
+            const std::string& claimActionId = attacker.meleeActionActive
+                ? attacker.meleeActionId : attacker.lastMeleeActionId;
+            action = set && !claimActionId.empty()
+                ? set->find(claimActionId) : nullptr;
+        }
         const bool actionActive = action &&
             elapsed >= action->windup.ticks &&
             elapsed < action->windup.ticks + action->active.ticks;
@@ -1351,11 +1371,10 @@ static bool handleGenericMeleeContactBatch(
         {
             const float revMax = WeaponExecution::paramOr(def, "revDamageMultiplier", 1.0f);
             const float revDecay = WeaponExecution::paramOr(def, "revDecayTicks", 0.0f);
-            if (revMax > 1.0f && revDecay > 0.0f && attacker.meleeActionStartTick != 0)
+            if (revMax > 1.0f && revDecay > 0.0f && elapsed > 0)
             {
                 const float t = glm::clamp(
-                    (float)(pkt.contactTick - attacker.meleeActionStartTick) / revDecay,
-                    0.0f, 1.0f);
+                    (float)elapsed / revDecay, 0.0f, 1.0f);
                 revMultiplier = 1.0f + (revMax - 1.0f) * (1.0f - t);
             }
         }
@@ -1370,20 +1389,30 @@ static bool handleGenericMeleeContactBatch(
             kbDir, minKnockback, maxKnockback, force,
             def.meleeContact.forceScale);
 
-        ServerActorDamageRequest request;
-        request.attacker = attackerRef;
-        request.victim = npc
-            ? ServerActorRef{npc->entityId, ServerActorKind::Npc, nullptr, npc}
-            : ServerActorRef{playerTarget->id, ServerActorKind::Player, playerTarget, nullptr};
-        request.damage = damage;
-        request.knockback = knockback;
-        request.source = ServerDamageSource::PhysicalContact;
-        request.weaponId = def.id;
-        request.weaponDisplayName = def.displayName;
-        request.serverTick = tick;
-        request.eventId = pkt.contactId;
-        request.correlationId = pkt.contactId;
-        const ServerDamageResult result = applyActorDamage(players, npcs, request);
+        ServerContactRequest contact;
+        contact.attacker = attackerRef;
+        contact.victimId = npc ? npc->entityId : playerTarget->id;
+        contact.victimKind = npc ? ServerActorKind::Npc : ServerActorKind::Player;
+        contact.victimGeneration = npc ? npc->transformEpoch : playerTarget->spawnGeneration;
+        contact.kind = ServerContactKind::Melee;
+        contact.origin = attacker.pos;
+        contact.point = hitPos;
+        contact.normal = kbDir;
+        contact.damage = damage;
+        contact.knockback = knockback;
+        contact.source = ServerDamageSource::PhysicalContact;
+        contact.weaponId = def.id;
+        contact.weaponDisplayName = def.displayName;
+        contact.serverTick = tick;
+        contact.contactTick = contactTick;
+        contact.maxContactAgeTicks = 600;
+        contact.eventId = pkt.contactId;
+        contact.contactId = pkt.contactId;
+        contact.hitTolerance = 0.5f;
+        contact.validateHitVolume = true;
+        const ServerContactResult contactResult =
+            resolveServerContact(players, npcs, contact);
+        const ServerDamageResult result = contactResult.damage;
         if (!result.applied)
         {
             StructuredLogger::instance().writeEvent(
@@ -1394,9 +1423,11 @@ static bool handleGenericMeleeContactBatch(
                                {"target", pkt.targetId},
                                {"contact_id", pkt.contactId},
                                {"damage", damage},
-                               {"reason", result.rejectionReason}});
+                               {"reason", contactResult.rejectionReason},
+                               {"damage_rejection", result.rejectionReason}});
             continue;
         }
+
 
         attacker.meleeClaimedTargetTicks.insert(dedupeKey);
         attacker.meleeClaimedTargetTickOrder.push_back(dedupeKey);
@@ -1440,8 +1471,15 @@ static bool handleGenericMeleeContactBatch(
                            {"target", pkt.targetId},
                            {"contact_id", pkt.contactId},
                            {"contact_tick", pkt.contactTick},
+                           {"client_action_elapsed", pkt.actionElapsedTicks},
+                           {"server_action_elapsed", (int)(tick - attacker.meleeActionStartTick)},
                            {"weapon", def.id},
-                           {"action", attacker.meleeActionId},
+                           {"action", action ? action->id : ""},
+                           {"server_action_active", attacker.meleeActionActive},
+                           {"action_active", actionActive},
+                           {"force", force},
+                           {"damage_multiplier", multiplier},
+                           {"rev_multiplier", revMultiplier},
                            {"distance", contactDistance},
                            {"allowed_distance", allowedDistance},
                            {"tolerance", tolerance},
@@ -1491,6 +1529,17 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             attacker.spawnGeneration, tick);
         return;
     }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Weapons, StructuredLevel::Important,
+        "melee.contact.batch.received", std::to_string(attacker.id),
+        "server received a melee contact batch", tick,
+        nlohmann::json{{"attacker", attacker.id},
+                       {"batch_id", batch->batchId},
+                       {"count", (int)batch->contactCount},
+                       {"equipped_weapon", attacker.equippedWeaponId},
+                       {"attacker_spawn_generation", attacker.spawnGeneration},
+                       {"batch_spawn_generation", batch->attackerSpawnGeneration}});
 
     // Generic physical-contact melee claims (SwordSword/mace/chainsaw) share
     // the existing contact-batch transport but use the lenient blade claim
@@ -1580,6 +1629,7 @@ void handleSpyKnifeHitClaim(SOCKET sock,
                 pkt.contactTick, tick);
             continue;
         }
+        const uint32_t contactTick = std::min(pkt.contactTick, tick);
         const glm::vec3 boxCenter(pkt.boxCenterX, pkt.boxCenterY, pkt.boxCenterZ);
         const glm::vec3 boxHalf(pkt.boxHalfX, pkt.boxHalfY, pkt.boxHalfZ);
         const glm::vec3 boxAxes[3] = {
@@ -1658,7 +1708,7 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             }
 
         glm::vec3 historicalNpcPos;
-        if (!getNpcPositionAtTick(npc, pkt.contactTick, historicalNpcPos)) continue;
+        if (!getNpcPositionAtTick(npc, contactTick, historicalNpcPos)) continue;
         float dist = glm::length(attacker.pos - historicalNpcPos);
         if (!spyKnifeObbSphereOverlap(boxCenter, boxHalf, boxAxes,
                                       historicalNpcPos, targetBodyRadius)) {
@@ -1669,24 +1719,50 @@ void handleSpyKnifeHitClaim(SOCKET sock,
             continue;
         }
 
-        const int healthBefore = npc.health;
         const int intDamage = std::max(1, damage);
-        npc.health = std::max(0, npc.health - intDamage);
-
         glm::vec3 kbDir = glm::length(historicalNpcPos - attacker.pos) > 0.001f
             ? glm::normalize(historicalNpcPos - attacker.pos)
             : glm::vec3(0.0f, 0.0f, 1.0f);
             kbDir.z = std::max(kbDir.z, pkt.isBackstab ? 0.15f : 0.3f);
         kbDir = glm::normalize(kbDir);
-        npc.knockbackImpulse += kbDir * kbStrength;
+        const glm::vec3 npcKnockback = kbDir * kbStrength;
 
-        const bool killed = npc.health == 0;
+        ServerContactRequest contact;
+        contact.attacker = {batch->attackerId, ServerActorKind::Player, &attacker, nullptr};
+        contact.victimId = npc.entityId;
+        contact.victimKind = ServerActorKind::Npc;
+        contact.victimGeneration = npc.transformEpoch;
+        contact.kind = ServerContactKind::Melee;
+        contact.origin = attacker.pos;
+        contact.point = hitPos;
+        contact.normal = kbDir;
+        contact.damage = intDamage;
+        contact.knockback = npcKnockback;
+        contact.source = ServerDamageSource::PhysicalContact;
+        contact.weaponId = def->id;
+        contact.weaponDisplayName = def->displayName;
+        contact.serverTick = tick;
+        contact.contactTick = contactTick;
+        contact.maxContactAgeTicks = 600;
+        contact.eventId = pkt.contactId;
+        contact.contactId = pkt.contactId;
+        const ServerContactResult contactResult =
+            resolveServerContact(players, npcs, contact);
+        if (!contactResult.accepted) {
+            Debug::warn(Debug::Category::Weapons,
+                "[SPYKNIFE_AUTH] NPC_DAMAGE_REJECT attacker=%u target=%u reason=%s contactId=%u",
+                batch->attackerId, npc.entityId,
+                contactResult.rejectionReason.c_str(), pkt.contactId);
+            continue;
+        }
+        const ServerDamageResult& result = contactResult.damage;
+        const bool killed = result.killed;
 
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_AUTH] NPC_APPLIED attacker=%u target=%u damage=%d backstab=%d speed=%.2f force=%.2f directness=%.2f healthBefore=%d healthAfter=%d killed=%d dist=%.2f contactId=%u contactTick=%u serverTick=%u",
             batch->attackerId, pkt.targetId, intDamage, (int)pkt.isBackstab,
             pkt.impactSpeed, pkt.impactForce, pkt.impactDirectness,
-            healthBefore, npc.health, (int)killed, dist, pkt.contactId,
+            result.healthBefore, result.healthAfter, (int)killed, dist, pkt.contactId,
             pkt.contactTick, tick);
 
         const glm::vec3 origin = attacker.pos;
@@ -1719,7 +1795,7 @@ void handleSpyKnifeHitClaim(SOCKET sock,
 
     glm::vec3 historicalTargetPos;
     float historicalTargetYaw = 0.0f;
-    if (!getPlayerPoseAtTick(target, pkt.contactTick, historicalTargetPos, historicalTargetYaw)) continue;
+    if (!getPlayerPoseAtTick(target, contactTick, historicalTargetPos, historicalTargetYaw)) continue;
     float dist = glm::length(attacker.pos - historicalTargetPos);
     if (!spyKnifeObbSphereOverlap(boxCenter, boxHalf, boxAxes,
                                   historicalTargetPos, targetBodyRadius)) {
@@ -1739,10 +1815,28 @@ void handleSpyKnifeHitClaim(SOCKET sock,
     kbDir = glm::normalize(kbDir);
     glm::vec3 knockback = kbDir * kbStrength;
 
-    ServerDamageResult result = applyServerDamage(
-        players, target, batch->attackerId, damage, knockback,
-        ServerDamageSource::PhysicalContact);
-
+    ServerContactRequest contact;
+    contact.attacker = {batch->attackerId, ServerActorKind::Player, &attacker, nullptr};
+    contact.victimId = target.id;
+    contact.victimKind = ServerActorKind::Player;
+    contact.victimGeneration = target.spawnGeneration;
+    contact.kind = ServerContactKind::Melee;
+    contact.origin = attacker.pos;
+    contact.point = hitPos;
+    contact.normal = kbDir;
+    contact.damage = damage;
+    contact.knockback = knockback;
+    contact.source = ServerDamageSource::PhysicalContact;
+    contact.weaponId = def->id;
+    contact.weaponDisplayName = def->displayName;
+    contact.serverTick = tick;
+    contact.contactTick = contactTick;
+    contact.maxContactAgeTicks = 600;
+    contact.eventId = pkt.contactId;
+    contact.contactId = pkt.contactId;
+    const ServerContactResult contactResult =
+        resolveServerContact(players, npcs, contact);
+    const ServerDamageResult result = contactResult.damage;
 
     if (result.applied) {
         queueServerDamageConfirmedEvent(

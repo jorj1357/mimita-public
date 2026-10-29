@@ -120,11 +120,13 @@
     //
     // Matches the fast Source preset.
     "gravity": -40.0,
+    // "gravity": -70.0,
 
     // Upward velocity applied when jumping.
     //
     // Matches the fast Source preset.
     "jump_velocity": 15.1,
+    // "jump_velocity": 23.1,
     // "jump_velocity": 10.0,
 
     // Add the jump impulse to the current vertical velocity. This preserves

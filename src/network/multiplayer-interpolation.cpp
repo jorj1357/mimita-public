@@ -732,6 +732,30 @@ bool mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
 
     EntityInterpolationState& interpolation = stateIt->second;
     Player& replica = playerIt->second;
+    if (interpolation.hasTarget)
+    {
+        const bool staleLife = npc
+            ? (interpolation.target.transformEpoch != 0 &&
+               replica.networkTransformEpoch != 0 &&
+               interpolation.target.transformEpoch != replica.networkTransformEpoch)
+            : (interpolation.target.spawnGeneration != 0 &&
+               replica.spawnGeneration != 0 &&
+               interpolation.target.spawnGeneration != replica.spawnGeneration);
+        if (staleLife)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "net.prediction.damage.skipped_stale_life", std::to_string(entityId),
+                "skipped prediction because the authoritative target life already advanced",
+                ctx.latestServerTick,
+                nlohmann::json{{"entity", entityId}, {"npc", npc},
+                               {"rendered_epoch", npc ? (uint32_t)replica.networkTransformEpoch
+                                                      : replica.spawnGeneration},
+                               {"target_epoch", npc ? (uint32_t)interpolation.target.transformEpoch
+                                                    : interpolation.target.spawnGeneration}});
+            return false;
+        }
+    }
     const int baseHealth = std::max(0, replica.currentHp);
     const int predictedHealth = std::max(0, baseHealth - damage);
     if (interpolation.predictedHealthCap < 0)
@@ -748,6 +772,13 @@ bool mpApplyPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         "[NET PREDICTED DAMAGE] entityId=%u npc=%d damage=%d displayHp=%d pending=%d",
         entityId, (int)npc, damage, replica.currentHp,
         interpolation.pendingPredictedDamage);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "net.prediction.damage.applied", std::to_string(entityId),
+        "client applied predicted damage to a remote actor", ctx.latestServerTick,
+        nlohmann::json{{"entity", entityId}, {"npc", npc},
+                       {"damage", damage}, {"display_hp", replica.currentHp},
+                       {"pending_predicted_damage", interpolation.pendingPredictedDamage}});
     return true;
 }
 
@@ -804,6 +835,14 @@ void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         entityId, (int)npc, healthAfter, (int)killed,
         interpolation.predictedHealthCap,
         interpolation.pendingPredictedDamage);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "net.prediction.damage.confirmed", std::to_string(entityId),
+        "server confirmed damage for a client prediction", ctx.latestServerTick,
+        nlohmann::json{{"entity", entityId}, {"npc", npc},
+                       {"health_after", healthAfter}, {"killed", killed},
+                       {"predicted_cap", interpolation.predictedHealthCap},
+                       {"confirm_count", interpolation.predictedHealthConfirmCount}});
 }
 
 void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
@@ -828,6 +867,14 @@ void mpRollbackPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         replica.currentHp = interpolation.target.health;
     clearPredictedDeath(replica, replica.pos, entityId,
                         reason ? reason : "PREDICTED HIT ROLLBACK", false);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Errors,
+        "net.prediction.damage.rollback", std::to_string(entityId),
+        "client rolled back predicted damage after server disagreement",
+        ctx.latestServerTick,
+        nlohmann::json{{"entity", entityId}, {"npc", npc},
+                       {"reason", reason ? reason : "predicted-hit-rollback"},
+                       {"rollback_count", interpolation.predictedHealthRollbackCount}});
 }
 
 void mpApplyPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId, bool npc)

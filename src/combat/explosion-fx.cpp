@@ -15,6 +15,7 @@
 #include "combat/weapon-registry.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
+#include "debug/structured-log.h"
 #include "render/dynamic-light-config.h"
 #include "render/dynamic-light.h"
 
@@ -130,22 +131,54 @@ void spawnExplosionFx(const glm::vec3& position, const std::string& weaponId,
         }
     }
 
-    // Surface-aligned shockwave. Only spawned when the weapon owns a model.
-    if (weaponDef && !weaponDef->explosionShockwaveModel.empty()) {
+    // Surface-aligned shockwave. The weapon may use an authored model or a
+    // plain PNG; the PNG path takes precedence when configured.
+    if (weaponDef &&
+        (!weaponDef->explosionShockwaveModel.empty() ||
+         !weaponDef->explosionShockwaveTexture.empty())) {
         const glm::vec3 normal = glm::length(surfaceNormal) > 0.001f
             ? glm::normalize(surfaceNormal) : glm::vec3(0.0f, 0.0f, 1.0f);
+        const float rand01 = (float)std::rand() / (float)RAND_MAX;
+        const float rand01b = (float)std::rand() / (float)RAND_MAX;
+        const float randomMin = weaponDef->explosionShockwaveRandomRotationMinDeg;
+        const float randomMax = weaponDef->explosionShockwaveRandomRotationMaxDeg;
+        const float randomSpan = randomMax - randomMin;
+        const float startRotation = weaponDef->explosionShockwaveStartRotationDeg +
+            (randomSpan > 0.0f ? randomMin + rand01 * randomSpan : 0.0f);
+        const float endRotation = weaponDef->explosionShockwaveEndRotationDeg +
+            (randomSpan > 0.0f ? randomMin + rand01b * randomSpan : 0.0f);
         EffectPart shockwave;
         shockwave.position = position + normal * 0.02f;
         shockwave.normal = normal;
         shockwave.maxLifetime = std::max(0.02f, weaponDef->explosionShockwaveLifetime);
-        shockwave.scale = weaponDef->explosionShockwaveScale;
-        shockwave.endScale = weaponDef->explosionShockwaveScale;
-        shockwave.alpha = 1.0f;
+        shockwave.rotation.z = startRotation;
+        shockwave.endRotation.z = endRotation;
+        shockwave.scale = weaponDef->explosionShockwaveStartScale;
+        shockwave.endScale = weaponDef->explosionShockwaveEndScale;
+        shockwave.alpha = weaponDef->explosionShockwaveStartAlpha;
+        shockwave.endAlpha = weaponDef->explosionShockwaveEndAlpha;
         shockwave.color = glm::vec3(1.0f);
         shockwave.billboardText = false;
         shockwave.replayType = "explosion_shockwave";
         shockwave.modelPath = weaponDef->explosionShockwaveModel;
+        shockwave.texturePath = weaponDef->explosionShockwaveTexture;
         EffectPartSystem::instance().spawn(shockwave);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "explosion.shockwave.spawn", weaponId,
+            "spawned configured explosion shockwave", 0,
+            nlohmann::json{{"weapon", weaponId},
+                           {"texture", weaponDef->explosionShockwaveTexture},
+                           {"model", weaponDef->explosionShockwaveModel},
+                           {"start_rotation_deg", startRotation},
+                           {"end_rotation_deg", endRotation},
+                           {"start_scale", shockwave.scale},
+                           {"end_scale", shockwave.endScale},
+                           {"start_alpha", shockwave.alpha},
+                           {"end_alpha", shockwave.endAlpha},
+                           {"random_rotation_min_deg", randomMin},
+                           {"random_rotation_max_deg", randomMax},
+                           {"lifetime_seconds", shockwave.maxLifetime}});
     }
 
     // Surface-aligned explosion mark decal.

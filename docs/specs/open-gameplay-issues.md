@@ -1,4 +1,11 @@
-﻿2026 10 29 1121 npcs are pahsing into the ground  after eth solid checking fixes 
+﻿2026 10 29 1558 jojr  zomb tower needs its own  movement mode faster than tpical 
+
+2026 1 029 1346 also need to maek ti so u can pla offline
+like
+if u have no wifi it still works
+cuz right now it dont work if u donthave wifi cnat connec tto the coodrinadrotr 
+
+2026 10 29 1121 npcs are pahsing into the ground  after eth solid checking fixes 
 oon dust2cyberiav4 map
 no phaseing no no no no hpasing 
 theres 2 whole npcs that are just stck in the grund on teh map rigt now i saw 

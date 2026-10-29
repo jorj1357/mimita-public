@@ -440,10 +440,32 @@ void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
                 def.explosionMarkTexture = explosion["markTexture"].get<std::string>();
             if (explosion.contains("shockwaveModel") && explosion["shockwaveModel"].is_string())
                 def.explosionShockwaveModel = explosion["shockwaveModel"].get<std::string>();
+            if (explosion.contains("shockwaveTexture") && explosion["shockwaveTexture"].is_string())
+                def.explosionShockwaveTexture = explosion["shockwaveTexture"].get<std::string>();
             if (explosion.contains("shockwaveScale") && explosion["shockwaveScale"].is_number())
                 def.explosionShockwaveScale = explosion["shockwaveScale"].get<float>();
             if (explosion.contains("shockwaveLifetimeSeconds") && explosion["shockwaveLifetimeSeconds"].is_number())
                 def.explosionShockwaveLifetime = explosion["shockwaveLifetimeSeconds"].get<float>();
+            if (explosion.contains("shockwaveStartRotationDeg") && explosion["shockwaveStartRotationDeg"].is_number())
+                def.explosionShockwaveStartRotationDeg = explosion["shockwaveStartRotationDeg"].get<float>();
+            if (explosion.contains("shockwaveEndRotationDeg") && explosion["shockwaveEndRotationDeg"].is_number())
+                def.explosionShockwaveEndRotationDeg = explosion["shockwaveEndRotationDeg"].get<float>();
+            if (explosion.contains("shockwaveStartScale") && explosion["shockwaveStartScale"].is_number())
+                def.explosionShockwaveStartScale = explosion["shockwaveStartScale"].get<float>();
+            else
+                def.explosionShockwaveStartScale = def.explosionShockwaveScale;
+            if (explosion.contains("shockwaveEndScale") && explosion["shockwaveEndScale"].is_number())
+                def.explosionShockwaveEndScale = explosion["shockwaveEndScale"].get<float>();
+            else
+                def.explosionShockwaveEndScale = def.explosionShockwaveStartScale;
+            if (explosion.contains("shockwaveStartAlpha") && explosion["shockwaveStartAlpha"].is_number())
+                def.explosionShockwaveStartAlpha = explosion["shockwaveStartAlpha"].get<float>();
+            if (explosion.contains("shockwaveEndAlpha") && explosion["shockwaveEndAlpha"].is_number())
+                def.explosionShockwaveEndAlpha = explosion["shockwaveEndAlpha"].get<float>();
+            if (explosion.contains("shockwaveRandomRotationMinDeg") && explosion["shockwaveRandomRotationMinDeg"].is_number())
+                def.explosionShockwaveRandomRotationMinDeg = explosion["shockwaveRandomRotationMinDeg"].get<float>();
+            if (explosion.contains("shockwaveRandomRotationMaxDeg") && explosion["shockwaveRandomRotationMaxDeg"].is_number())
+                def.explosionShockwaveRandomRotationMaxDeg = explosion["shockwaveRandomRotationMaxDeg"].get<float>();
         }
     }
     else if (root.contains("color") && root["color"].is_array())

@@ -449,6 +449,9 @@ struct ServerPlayer
     // struct only tracks the instance.
     bool meleeActionActive = false;
     std::string meleeActionId;
+    // Retained after the action timeline ends so a late client contact claim
+    // can still resolve the exact authored action damage/rev profile.
+    std::string lastMeleeActionId;
     std::string meleeActionMovementState;
     uint32_t meleeActionStartTick = 0;
     uint32_t meleeNextAllowedTick = 0;
@@ -705,6 +708,9 @@ struct ServerNpc
     // move-set actions, percent, and knockback as a player.
     bool meleeActionActive = false;
     std::string meleeActionId;
+    // Retained after the action timeline ends so a late client contact claim
+    // can still resolve the exact authored action damage/rev profile.
+    std::string lastMeleeActionId;
     std::string meleeActionMovementState;
     uint32_t meleeActionStartTick = 0;
     glm::vec3 meleeActionForward{1.0f, 0.0f, 0.0f};

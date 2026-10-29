@@ -826,6 +826,8 @@ void handleAttackRequest(
                 contact.victimId = npcTarget.entityId;
                 contact.victimKind = ServerActorKind::Npc;
                 contact.victimGeneration = aggregate.targetSpawnGeneration;
+                contact.kind = ServerContactKind::Hitscan;
+                contact.origin = origin;
                 contact.point = aggregate.hitPosition;
                 contact.normal = aggregate.hitNormal;
                 contact.damage = aggregate.damage;
@@ -834,7 +836,12 @@ void handleAttackRequest(
                 contact.weaponId = def->id;
                 contact.weaponDisplayName = def->displayName;
                 contact.serverTick = tick;
+                contact.contactTick = tick;
                 contact.contactId = req->requestId;
+                contact.maxDistance = maxRange;
+                contact.hitTolerance = 0.35f;
+                contact.validateHitVolume = true;
+                contact.dedupe = true;
                 const ServerContactResult contactResult =
                     resolveServerContact(players, npcs, contact);
                 if (!contactResult.accepted)
@@ -871,6 +878,8 @@ void handleAttackRequest(
             contact.victimId = target.id;
             contact.victimKind = ServerActorKind::Player;
             contact.victimGeneration = aggregate.targetSpawnGeneration;
+            contact.kind = ServerContactKind::Hitscan;
+            contact.origin = origin;
             contact.point = aggregate.hitPosition;
             contact.normal = aggregate.hitNormal;
             contact.damage = aggregate.damage;
@@ -879,7 +888,12 @@ void handleAttackRequest(
             contact.weaponId = def->id;
             contact.weaponDisplayName = def->displayName;
             contact.serverTick = tick;
+            contact.contactTick = tick;
             contact.contactId = req->requestId;
+            contact.maxDistance = maxRange;
+            contact.hitTolerance = 0.35f;
+            contact.validateHitVolume = true;
+            contact.dedupe = true;
             const ServerContactResult contactResult =
                 resolveServerContact(players, npcs, contact);
             if (!contactResult.accepted)
@@ -1222,6 +1236,9 @@ void handleAttackRequest(
                 emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                                     shooter, req->requestId,
                                     "melee action could not start");
+                sendAttackResult(sock, shooter, req, tick, false, 7, 0,
+                                 rt.magazineAmmo, rt.reserveAmmo,
+                                 rt.nextAllowedFireTick, rt.stateRevision);
                 return;
             }
         }

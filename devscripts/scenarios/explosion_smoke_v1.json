@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "explosion_smoke_v1",
+  "description": "Equip the rocket launcher after the empty-hands start, fire at spawned NPCs, and confirm the shared explosion contact path applies authoritative damage.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "dust2cyberiav4",
+    "weapon_set": 5,
+    "visibility": "visible",
+    "reuse_matching_run": true
+  },
+  "setup": [
+    {"id": "spawn_npc", "command": "npc_spawn_legacy", "args": ["-594", "29", "2361"], "delay_ms_after": 1500}
+  ],
+  "steps": [
+    {"id": "equip_rocket", "command": "equipweapon", "args": ["rocket_launcher"], "delay_ms_after": 1000},
+    {"id": "aim_npc", "command": "agent.aim", "args": ["-594", "30", "2361"], "delay_ms_after": 300},
+    {"id": "shoot", "command": "agent.shoot", "args": [], "delay_ms_after": 3000},
+    {"id": "settle", "command": "agent.snapshot", "args": ["explosion_settle"], "delay_ms_after": 1000}
+  ],
+  "assertions": [
+    {"type": "event_field_count_at_least", "event": "weapon.attack.result", "field": "accepted", "equals": true, "minimum": 1},
+    {"type": "event_field_equals", "event": "server.damage.applied", "field": "source", "equals": "rocket_explosion"}
+  ],
+  "timeout_seconds": 120
+}

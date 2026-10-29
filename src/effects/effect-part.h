@@ -20,6 +20,7 @@ struct EffectPart
     glm::vec3 velocity{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
     glm::vec3 rotation{0.0f};
+    glm::vec3 endRotation{0.0f};
     glm::vec3 angularVelocity{0.0f};
     glm::vec3 endPosition{0.0f};
     glm::vec3 halfSize{0.1f};
@@ -35,6 +36,7 @@ struct EffectPart
     float scale = 1.0f;
     float endScale = 1.0f;
     float alpha = 1.0f;
+    float endAlpha = 1.0f;
     // Optional age-based color cycle for lightweight client-only trails.
     // The values are expressed in 60 Hz ticks so the visual is predictable.
     bool phaseColors = false;

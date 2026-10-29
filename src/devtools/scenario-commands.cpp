@@ -1,6 +1,8 @@
 #include "devtools/scenario-commands.h"
 
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <iomanip>
 #include <sstream>
 
@@ -83,9 +85,31 @@ void RegisterScenarioCommands()
                 return;
             }
             ScenarioRecorder::instance().stop("command");
-            Terminal::instance().addLog(
-                "[SCENARIO] recording stopped: " +
-                ScenarioRecorder::instance().path());
+            // A networked recording is not complete until the server sidecar
+            // has been merged. Wait here so closing the game immediately after
+            // scenario_endrecord cannot leave a client-only file.
+            const auto deadline = std::chrono::steady_clock::now() +
+                std::chrono::seconds(6);
+            while (!ScenarioRecorder::instance().merged() &&
+                   ScenarioRecorder::instance().mergeError().empty() &&
+                   std::chrono::steady_clock::now() < deadline)
+            {
+                ScenarioRecorder::instance().poll();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            if (ScenarioRecorder::instance().merged())
+            {
+                Terminal::instance().addLog(
+                    "[SCENARIO] recording stopped and merged: " +
+                    ScenarioRecorder::instance().path());
+            }
+            else
+            {
+                Terminal::instance().addLog(
+                    "[SCENARIO] recording stopped WITHOUT server track: " +
+                    ScenarioRecorder::instance().mergeError() +
+                    " path=" + ScenarioRecorder::instance().path());
+            }
         },
         "2026-10-25", CommandCategory::Debug
     });

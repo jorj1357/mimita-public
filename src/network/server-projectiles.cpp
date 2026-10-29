@@ -610,108 +610,6 @@ void applyPhysicsState(ServerProjectile& projectile,
     projectile.bounceCount = state.bounceCount;
 }
 
-// Splash line-of-sight: the blast reaches the victim unless a non-floor surface
-// (wall/column/cover) lies between the explosion center and the victim's nearest
-// body part. Floors/ceilings (|normal.z| > 0.7) never block, so a grenade on the
-// ground still splashes someone standing next to it. Uses the shared kernel
-// helpers from projectile-simulation.h (identical rule on the client).
-bool splashHasLineOfSight(const HeadlessWorld& world,
-                          const glm::vec3& explosionPos,
-                          const glm::vec3& victimPoint)
-{
-    const glm::vec3 delta = victimPoint - explosionPos;
-    const float maxDist = glm::length(delta);
-    if (maxDist < 0.75f)
-        return true;
-    const glm::vec3 dir = delta / maxDist;
-
-    AABB rayBounds;
-    rayBounds.min = glm::min(explosionPos, victimPoint);
-    rayBounds.max = glm::max(explosionPos, victimPoint);
-    std::vector<int> candidates;
-    gatherHeadlessTrianglesForAABB(world, rayBounds, 0.05f, candidates);
-
-    return !splashRayBlockedByWall(explosionPos, dir, maxDist, candidates, world.triangles);
-}
-
-// Reconstruct the victim's REAL body-part boxes (head/arms/legs/torso) at their
-// current pose — same template + yaw math the server's hit-rewind uses, never a
-// capsule. Writes the nearest body-part point to the blast into outPoint.
-// Falls back to the torso center when no template is available.
-bool splashNearestPlayerBodyPoint(const ServerPlayer& victim,
-                                  const glm::vec3& blast,
-                                  glm::vec3& outPoint,
-                                  const glm::vec3* historicalPos = nullptr,
-                                  const float* historicalYaw = nullptr)
-{
-    SplashBodyPartBox boxes[8];
-    int count = 0;
-    if (const auto* tpl = standardPlayerBodyTemplate())
-    {
-        const glm::vec3 basePos = historicalPos ? *historicalPos : victim.pos;
-        const float yaw = historicalYaw ? *historicalYaw : victim.yaw;
-        const float c = std::cos(yaw);
-        const float s = std::sin(yaw);
-        for (const auto& t : *tpl)
-        {
-            if (count >= 8)
-                break;
-            const glm::vec3 off(t.offset.x * c - t.offset.y * s,
-                                t.offset.x * s + t.offset.y * c,
-                                t.offset.z);
-            boxes[count].center = basePos + off;
-            boxes[count].half = t.half;
-            ++count;
-        }
-    }
-    if (count == 0)
-    {
-        outPoint = (historicalPos ? *historicalPos : victim.pos) +
-            glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
-        return true;
-    }
-    return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
-}
-
-bool splashNearestNpcBodyPoint(const ServerNpc& npc,
-                               const glm::vec3& blast,
-                               glm::vec3& outPoint,
-                               uint32_t historicalTick = 0)
-{
-    SplashBodyPartBox boxes[8];
-    int count = 0;
-    if (historicalTick != 0)
-    {
-        const ServerNpcBodyPartSample* parts = nullptr;
-        uint8_t partCount = 0;
-        if (getNpcBodyPartsAtTick(npc, historicalTick, &parts, &partCount))
-        {
-            SplashBodyPartBox boxes[8];
-            const int count = std::min<int>(partCount, 8);
-            for (int i = 0; i < count; ++i)
-            {
-                boxes[i].center = {parts[i].cx, parts[i].cy, parts[i].cz};
-                boxes[i].half = {parts[i].hx, parts[i].hy, parts[i].hz};
-            }
-            if (count > 0)
-                return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
-        }
-    }
-    for (uint8_t i = 0; i < npc.bodyPartCount && i < npc.bodyParts.size(); ++i)
-    {
-        const ServerNpcBodyPartSample& s = npc.bodyParts[i];
-        boxes[count].center = {s.cx, s.cy, s.cz};
-        boxes[count].half = {s.hx, s.hy, s.hz};
-        ++count;
-    }
-    if (count == 0)
-    {
-        outPoint = npc.pos + glm::vec3(0.0f, 0.0f, PLAYER_HEIGHT * 0.25f);
-        return true;
-    }
-    return splashNearestBodyPartPoint(blast, boxes, count, outPoint);
-}
-
 void explodeProjectile(SOCKET sock,
                        const HeadlessWorld& world,
                        std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -803,6 +701,8 @@ void explodeProjectile(SOCKET sock,
             contact.victimId = npc.entityId;
             contact.victimKind = ServerActorKind::Npc;
             contact.victimGeneration = npc.transformEpoch;
+            contact.kind = ServerContactKind::Projectile;
+            contact.origin = position;
             contact.point = position;
             contact.normal = -shotDir;
             contact.damage = damageValue;
@@ -811,7 +711,12 @@ void explodeProjectile(SOCKET sock,
             contact.weaponId = def ? def->id : "projectile_rifle";
             contact.weaponDisplayName = def ? def->displayName : "Projectile Rifle";
             contact.serverTick = tick;
+            contact.contactTick = targetTick != 0 ? targetTick : tick;
+            contact.maxContactAgeTicks = 600;
             contact.contactId = projectile.id;
+            contact.hitTolerance = std::max(0.2f, projectile.radius + 0.5f);
+            contact.validateHitVolume = true;
+            contact.dedupe = true;
             const ServerContactResult contactResult =
                 resolveServerContact(players, npcs, contact);
             if (!contactResult.accepted)
@@ -861,6 +766,8 @@ void explodeProjectile(SOCKET sock,
                 contact.victimId = victim.id;
                 contact.victimKind = ServerActorKind::Player;
                 contact.victimGeneration = victim.spawnGeneration;
+                contact.kind = ServerContactKind::Projectile;
+                contact.origin = position;
                 contact.point = position;
                 contact.normal = -shotDir;
                 contact.damage = damageValue;
@@ -869,7 +776,12 @@ void explodeProjectile(SOCKET sock,
                 contact.weaponId = def ? def->id : "projectile_rifle";
                 contact.weaponDisplayName = def ? def->displayName : "Projectile Rifle";
                 contact.serverTick = tick;
+                contact.contactTick = targetTick != 0 ? targetTick : tick;
+                contact.maxContactAgeTicks = 600;
                 contact.contactId = projectile.id;
+                contact.hitTolerance = std::max(0.2f, projectile.radius + 0.5f);
+                contact.validateHitVolume = true;
+                contact.dedupe = true;
                 const ServerContactResult contactResult =
                     resolveServerContact(players, npcs, contact);
                 const ServerDamageResult& damage = contactResult.damage;
@@ -941,19 +853,37 @@ void explodeProjectile(SOCKET sock,
     const uint8_t ownerKind = projectile.ownerNpcId != 0
         ? ENTITY_NPC : ENTITY_PLAYER;
 
+    ServerActorRef attackerRef{};
+    if (projectile.ownerNpcId != 0)
+    {
+        auto ownerIt = npcs.find(projectile.ownerNpcId);
+        if (ownerIt != npcs.end())
+            attackerRef = {ownerIt->first, ServerActorKind::Npc, nullptr,
+                           &ownerIt->second};
+    }
+    else
+    {
+        auto ownerIt = players.find(projectile.ownerPlayerId);
+        if (ownerIt != players.end())
+            attackerRef = {ownerIt->first, ServerActorKind::Player,
+                           &ownerIt->second, nullptr};
+    }
+
+    const std::string* splashWeaponIdPtr =
+        weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+    const std::string splashWeaponId = splashWeaponIdPtr
+        ? *splashWeaponIdPtr : networkWeaponTypeName(projectile.weaponType);
+    std::string splashWeaponDisplay = splashWeaponId;
+    if (const WeaponDefinition* wd = WeaponRegistry::instance().get(splashWeaponId))
+        if (!wd->displayName.empty()) splashWeaponDisplay = wd->displayName;
+
+    const uint32_t contactTick = targetTick != 0 ? targetTick : tick;
+
     for (auto& entry : players)
     {
         ServerPlayer& victim = entry.second;
         if (victim.dead)
             continue;
-        // Team-based friendly fire filtering: skip friendly players in explosion splash
-        {
-            auto ownerIt = players.find(projectile.ownerPlayerId);
-            if (!serverFriendlyFireEnabled() && ownerIt != players.end() && ownerIt->second.matchTeam >= 0 &&
-                victim.matchTeam >= 0 && ownerIt->second.matchTeam == victim.matchTeam &&
-                victim.id != projectile.ownerPlayerId)
-                continue;
-        }
 
         glm::vec3 historicalPos = victim.pos;
         float historicalYaw = victim.yaw;
@@ -965,14 +895,10 @@ void explodeProjectile(SOCKET sock,
         if (dist >= projectile.splashRadius)
             continue;
 
-        if (projectile.splashLineOfSight)
-        {
-            glm::vec3 target;
-            splashNearestPlayerBodyPoint(victim, position, target,
-                                         &historicalPos, &historicalYaw);
-            if (!splashHasLineOfSight(world, position, target))
-                continue; // wall/cover between blast and the victim's nearest body part → no hit
-        }
+        glm::vec3 targetPoint = center;
+        nearestServerActorBodyPoint(players, npcs, victim.id,
+                                    ServerActorKind::Player, position,
+                                    contactTick, targetPoint);
 
         const glm::vec3 dir = dist > 0.001f
             ? toVictim / dist
@@ -1002,33 +928,60 @@ void explodeProjectile(SOCKET sock,
                isSelfDamage ? projectile.selfDamageMultiplier : 1.0f,
                finalDamage);
 
-        ServerDamageResult damage = applyServerDamage(
-            players, victim, projectile.ownerPlayerId, finalDamage,
-            knockback, source);
-        if (damage.applied)
+        ServerContactRequest contact;
+        contact.attacker = attackerRef;
+        contact.victimId = victim.id;
+        contact.victimKind = ServerActorKind::Player;
+        contact.victimGeneration = victim.spawnGeneration;
+        contact.kind = ServerContactKind::Explosion;
+        contact.origin = position;
+        contact.point = targetPoint;
+        contact.normal = dir;
+        contact.damage = finalDamage;
+        contact.knockback = knockback;
+        contact.source = source;
+        contact.weaponId = splashWeaponId;
+        contact.weaponDisplayName = splashWeaponDisplay;
+        contact.serverTick = tick;
+        contact.contactTick = contactTick;
+        contact.maxContactAgeTicks = 600;
+        contact.eventId = packet.eventId;
+        contact.contactId = projectile.id;
+        contact.maxDistance = projectile.splashRadius;
+        contact.hitTolerance = 0.35f;
+        contact.validateHitVolume = true;
+        contact.requireWorldLineOfSight = projectile.splashLineOfSight;
+        contact.world = &world;
+        contact.dedupe = true;
+        contact.allowSelfDamage = isSelfDamage;
+
+        const ServerContactResult contactResult =
+            resolveServerContact(players, npcs, contact);
+        const ServerDamageResult& damage = contactResult.damage;
+        if (!contactResult.accepted)
+        {
+            printf("%s [EXPLOSION CONTACT REJECT] projectileId=%u victimPlayerId=%u "
+                   "reason=%s\n", serverTimestamp(), projectile.id, victim.id,
+                   contactResult.rejectionReason.c_str());
+            continue;
+        }
+
         {
             MovementLifecycleIdentity lifecycle{
                 victim.spawnGeneration,
                 static_cast<uint32_t>(victim.transformEpoch)};
-            MovementContact contact = makeExplosionMovementContact(
-                packet.eventId, projectile.ownerPlayerId, tick,
-                lifecycle, position, glm::length(knockback));
-            victim.movement.contactHistory.recordStable(contact);
-            // NPC-owned splash counts as recent NPC damage so a later ownerless
-            // or self-inflicted killing blow is still attributed to the NPC.
-            if (projectile.ownerNpcId != 0)
-            {
-                victim.lastNpcDamageSourceId = projectile.ownerNpcId;
-                victim.lastNpcDamageTick = tick;
-            }
+            MovementContact movementContact = makeExplosionMovementContact(
+                packet.eventId, ownerId, tick, lifecycle, position,
+                glm::length(knockback));
+            victim.movement.contactHistory.recordStable(movementContact);
         }
         queueServerDamageConfirmedEvent(
             sock, players, tick, totalPacketsOut, projectile.ownerPlayerId, victim,
             finalDamage, damage, center, dir, knockback, source,
             projectile.weaponType, projectile.fireSerial, projectile.id,
-            projectile.ownerNpcId, std::string());
+            projectile.ownerNpcId, splashWeaponId);
 
-        if (packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS && damage.applied)
+        if (packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS)
         {
             ProjectileDamageResultPacket& out = packet.victims[packet.victimCount++];
             out.victimPlayerId = victim.id;
@@ -1063,10 +1016,6 @@ void explodeProjectile(SOCKET sock,
         if (projectile.ownerNpcId != 0 &&
             !NpcDifficultyConfig::instance().settings().damageOtherNpcs)
             continue;
-        if (projectile.ownerNpcId == 0 && serverFriendlyFireBlocks(
-                projectile.ownerPlayerId, false, npc.entityId, true,
-                players, npcs, "projectile-splash-player-to-npc", tick))
-            continue;
 
         glm::vec3 historicalNpcPos = npc.pos;
         float historicalNpcYaw = npc.yaw;
@@ -1079,13 +1028,10 @@ void explodeProjectile(SOCKET sock,
         if (dist >= projectile.splashRadius)
             continue;
 
-        if (projectile.splashLineOfSight)
-        {
-            glm::vec3 target;
-            splashNearestNpcBodyPoint(npc, position, target, targetTick);
-            if (!splashHasLineOfSight(world, position, target))
-                continue; // wall/cover between blast and the NPC's nearest body part → no hit
-        }
+        glm::vec3 targetPoint = npcCenter;
+        nearestServerActorBodyPoint(players, npcs, npc.entityId,
+                                    ServerActorKind::Npc, position,
+                                    contactTick, targetPoint);
 
         const glm::vec3 dir = dist > 0.001f
             ? toNpc / dist
@@ -1100,23 +1046,53 @@ void explodeProjectile(SOCKET sock,
         const glm::vec3 knockback =
             dir * projectile.knockbackStrength * knockScale;
 
-        npc.health -= finalDamage;
-        npc.knockbackImpulse += knockback;
-        const bool killed = npc.health <= 0;
+        ServerContactRequest contact;
+        contact.attacker = attackerRef;
+        contact.victimId = npc.entityId;
+        contact.victimKind = ServerActorKind::Npc;
+        contact.victimGeneration = npc.transformEpoch;
+        contact.kind = ServerContactKind::Explosion;
+        contact.origin = position;
+        contact.point = targetPoint;
+        contact.normal = dir;
+        contact.damage = finalDamage;
+        contact.knockback = knockback;
+        contact.source = source;
+        contact.weaponId = splashWeaponId;
+        contact.weaponDisplayName = splashWeaponDisplay;
+        contact.serverTick = tick;
+        contact.contactTick = contactTick;
+        contact.maxContactAgeTicks = 600;
+        contact.eventId = packet.eventId;
+        contact.contactId = projectile.id;
+        contact.maxDistance = projectile.splashRadius;
+        contact.hitTolerance = 0.35f;
+        contact.validateHitVolume = true;
+        contact.requireWorldLineOfSight = projectile.splashLineOfSight;
+        contact.world = &world;
+        contact.dedupe = true;
+
+        const ServerContactResult contactResult =
+            resolveServerContact(players, npcs, contact);
+        const ServerDamageResult& damage = contactResult.damage;
+        if (!contactResult.accepted)
+        {
+            printf("%s [EXPLOSION NPC CONTACT REJECT] projectileId=%u npcId=%u "
+                   "reason=%s\n", serverTimestamp(), projectile.id, npc.entityId,
+                   contactResult.rejectionReason.c_str());
+            continue;
+        }
+
+        const bool killed = damage.killed;
         if (killed)
         {
-            npc.health = 0;
-            const char* killWeaponId = networkWeaponTypeName(projectile.weaponType);
-            std::string killWeaponDisplay = killWeaponId;
-            if (const WeaponDefinition* wd = WeaponRegistry::instance().get(killWeaponId))
-                if (!wd->displayName.empty()) killWeaponDisplay = wd->displayName;
             glm::vec3 killerPos = position;
             auto killerIt = players.find(ownerId);
             if (killerIt != players.end()) killerPos = killerIt->second.pos;
             serverGamemodeRecordKill(sock, players, &npcs,
                 ownerId, ownerKind,
                 npc.entityId, ENTITY_NPC,
-                killWeaponId, killWeaponDisplay, projectile.fireSerial,
+                splashWeaponId.c_str(), splashWeaponDisplay, projectile.fireSerial,
                 killerPos, npc.pos, tick, totalPacketsOut);
         }
 
@@ -1128,9 +1104,8 @@ void explodeProjectile(SOCKET sock,
         printf("%s [EXPLOSION NPC DAMAGE] projectileId=%u ownerPlayerId=%u "
                "npcId=%u distance=%.2f damage=%d healthAfter=%d killed=%d\n",
                serverTimestamp(), projectile.id, projectile.ownerPlayerId,
-               npc.entityId, dist, finalDamage, npc.health, (int)killed);
+               npc.entityId, dist, finalDamage, damage.healthAfter, (int)killed);
     }
-
     printf("%s [PROJECTILE SERVER IMPACT] projectileId=%u weapon=%s "
            "impactType=%s position=(%.2f,%.2f,%.2f) directTargetId=%u\n",
            serverTimestamp(), projectile.id,
@@ -1605,6 +1580,8 @@ void tickServerProjectiles(SOCKET sock,
                         contact.victimKind = victimRef.kind;
                         contact.victimGeneration = victimRef.kind == ServerActorKind::Npc
                             ? victimRef.npc->transformEpoch : victimRef.player->spawnGeneration;
+                        contact.kind = ServerContactKind::Deathball;
+                        contact.origin = center;
                         contact.point = center;
                         contact.normal = step.hitNormal;
                         contact.damage = damage;
@@ -1613,7 +1590,13 @@ void tickServerProjectiles(SOCKET sock,
                         contact.weaponId = stepDef->id;
                         contact.weaponDisplayName = stepDef->displayName;
                         contact.serverTick = stepTick;
+                        contact.contactTick = stepTick;
+                        contact.maxContactAgeTicks = 2;
                         contact.contactId = projectile.id;
+                        contact.maxDistance = radius + PLAYER_RADIUS + 0.5f;
+                        contact.hitTolerance = radius + 0.5f;
+                        contact.validateHitVolume = true;
+                        contact.dedupe = true;
                         const ServerContactResult contactResult =
                             resolveServerContact(players, npcs, contact);
                         const auto& result = contactResult.damage;

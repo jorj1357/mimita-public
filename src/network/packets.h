@@ -1582,6 +1582,13 @@ struct SpyKnifeContact
     uint8_t targetIsNpc = 0;
     uint8_t isBackstab = 0;
     uint16_t reserved = 0;
+    // Client-side action phase elapsed when this contact was detected. The
+    // server uses the same phase for damage/rev resolution even when its own
+    // action start tick is a few ticks later than the client's.
+    uint16_t actionElapsedTicks = 0;
+    // Index into the client's move-set action list. 0xffff = use the server's
+    // current/retained action id.
+    uint16_t actionIndex = 0xffff;
     float impactSpeed = 0.0f;
     float impactForce = 0.0f;
     float impactDirectness = 0.0f;

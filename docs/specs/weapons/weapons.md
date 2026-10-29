@@ -2465,3 +2465,23 @@ slot `0` instead of restoring the last saved hotbar slot.
 Respawns may preserve the previous equipped item when it is still owned and
 allowed, then fall back to the role's documented starting weapon. NPC loadouts
 keep their own `startingWeapon` path.
+## Explosion shockwave render configuration (2026-10-29)
+
+The rocket/grenade explosion shockwave is configured per weapon in
+`config/weapons/<weapon>/config.json` under `render.explosion`:
+
+- `shockwaveModel`: authored model path used when no texture is configured.
+- `shockwaveTexture`: custom relative PNG path. When non-empty, this PNG is
+  rendered as a surface-aligned quad and takes precedence over the model.
+- `shockwaveLifetimeSeconds`: effect lifetime.
+- `shockwaveStartRotationDeg` / `shockwaveEndRotationDeg`: start/end rotation
+  around the surface normal.
+- `shockwaveStartScale` / `shockwaveEndScale`: start/end size.
+- `shockwaveStartAlpha` / `shockwaveEndAlpha`: start/end opacity.
+- `shockwaveRandomRotationMinDeg` / `shockwaveRandomRotationMaxDeg`: when the
+  range is positive, each spawned shockwave gets an independent random start
+  and end rotation within the range.
+
+The legacy `shockwaveScale` value remains the fallback when start/end scale are
+omitted. The renderer logs one `explosion.shockwave.spawn` event per spawned
+shockwave with the resolved texture/model, rotation, scale, alpha, and lifetime.

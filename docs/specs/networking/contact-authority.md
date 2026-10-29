@@ -132,6 +132,16 @@ only in how damage is resolved from config and contact data.
   server must use the exact same authored `weaponcollisions.json` box
 - when false, both use the same model-derived attachment capsule
 - damage: one shared melee contact resolver
+- target pose: the client samples the target's interpolation buffer at the
+  claimed contact tick, so claim geometry uses the same pose the server rewinds
+- action identity: the claim carries the client's action index and elapsed ticks
+- late claims: the server retains the last started melee action ID so a claim
+  that arrives just after the server action timeline ends still resolves the
+  authored damage/rev profile
+- animation-only actions are not rejected by the server cooldown gate; the
+  client owns the action cadence
+- feedback: melee HP, hitmarker, blood, and damage numbers are server-confirmed
+  only; no speculative melee damage is shown
 - same team: bounce/contact only, no damage, no hitmarker
 
 ### Melee percent/knockback
@@ -175,6 +185,13 @@ tick.
 
 The server must evaluate the target at the contact tick from bounded history.
 If the tick is outside the history window, reject with an explicit reason.
+
+The client render clock can be ahead of the newest server snapshot. Melee claims
+must clamp the sent contact tick to the newest usable server tick, and the server
+must tolerate a bounded future claim by evaluating it at the current server tick.
+The current bound is `120` ticks; claims beyond that are rejected as
+`future_contact`, and claims older than `600` ticks are rejected as
+`stale_contact`.
 
 ## Move-set identity
 
@@ -275,8 +292,9 @@ final server outcome matches the client prediction.
 - The target is long-term and is measured across the full actor/weapon/network
   matrix, not from a single run.
 
-A predicted damaging contact is the denominator. Weapon-clash bounces and
-same-team contacts that correctly produce no damage are excluded.
+A predicted damaging contact is the denominator. Weapon-clash bounces,
+same-team contacts that correctly produce no damage, and predictions suppressed
+because the authoritative target life already advanced are excluded.
 
 ## Late contact policy
 
@@ -327,20 +345,31 @@ offline gameplay simulation with different contact, damage, or validation rules.
 10. accuracy measurement and playtesting
 ## Implementation status (2026-10-29)
 
-`src/network/server-contact.h/.cpp` now provides
-`resolveServerContact(...)`, the shared victim lookup, generation/lifecycle/team
-check, and `applyActorDamage` path.
+`src/network/server-contact.h/.cpp` provides the single server contact entry
+point, `resolveServerContact(...)`. It owns victim lookup, generation/lifecycle
+checks, contact-tick age, team/friendly-fire policy, shared body-volume
+validation, reach, world occlusion, duplicate suppression, and
+`applyActorDamage`.
 
 Migrated to it:
 
-- hitscan player targets
-- hitscan NPC targets
-- projectile-rifle direct player targets
-- projectile-rifle direct NPC targets
+- hitscan player and NPC targets
+- projectile-rifle direct player and NPC targets
+- projectile explosion player and NPC splash
 - deathball player/NPC tick contacts
+- godball hit claims (server damage is recomputed from `ballSpeed`)
+- generic melee claims
+- physical-contact melee player/NPC contacts
+- spy-knife player/NPC contacts
 
-Still pending migration:
+Shared geometry fields on `ServerContactRequest`:
 
-- projectile explosion player/NPC splash loops
-- godball claim application
-- full shared geometry validation for every family
+- `kind`, `origin`, `point`, `contactTick`, `maxContactAgeTicks`
+- `maxDistance`, `hitTolerance`
+- `validateHitVolume` against the same body-part boxes/capsule fallback used by
+  hitscan and splash
+- `requireWorldLineOfSight` + `world`
+- `dedupe` + `contactId`
+
+Runtime evidence: `devscripts/scenarios/explosion_smoke_v1.json` passed and
+proved rocket splash reaches `server.damage.applied` through the shared resolver.

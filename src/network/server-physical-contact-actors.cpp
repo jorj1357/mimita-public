@@ -2,6 +2,7 @@
 // profiles provide a fixed-tick pose; rendering and contact share attachment
 // geometry, and every actor pair submits the same typed damage request.
 #include "network/server.h"
+#include "network/server-contact.h"
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "network/packets.h"
@@ -630,7 +631,27 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     request.source = ServerDamageSource::PhysicalContact; request.weaponId = def->id;
                     request.weaponDisplayName = def->displayName; request.serverTick = tick;
                     request.eventId = episode.serial; request.correlationId = episode.serial;
-                    const auto result = applyActorDamage(players, npcs, request);
+
+                    ServerContactRequest contact;
+                    contact.attacker = attacker.ref;
+                    contact.victimId = target.ref.id;
+                    contact.victimKind = target.ref.kind;
+                    contact.victimGeneration = target.generation;
+                    contact.kind = ServerContactKind::Melee;
+                    contact.origin = attacker.position;
+                    contact.point = hit.hitPosition;
+                    contact.normal = hit.normal;
+                    contact.damage = damage;
+                    contact.knockback = impulse;
+                    contact.source = ServerDamageSource::PhysicalContact;
+                    contact.weaponId = def->id;
+                    contact.weaponDisplayName = def->displayName;
+                    contact.serverTick = tick;
+                    contact.contactTick = tick;
+                    contact.contactId = episode.serial;
+                    contact.hitTolerance = 0.5f;
+                    contact.validateHitVolume = true;
+                    const auto result = resolveServerContact(players, npcs, contact).damage;
                     if (ScenarioServerPlayback::instance().active()) {
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::Weapons,
