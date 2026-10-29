@@ -104,3 +104,35 @@ as a failed scenario; there is no snap-back path. A checked-in template is
 Schema 1 recordings remain input-only playable scenarios. Run playback on the
 same map, mode, weapon set, and local dev server; with schema 1, NPC and
 remote-player state can still differ.
+
+## Separate client and server journals
+
+A scenario journal is owned by one client. The server writes its own journal.
+Do not accept a live journal containing more than one server owner or more than
+one client under the same identity.
+
+Evidence must name:
+
+- the client journal path
+- the server journal path, when authority evidence is required
+- `run_id`, `server_instance_id`, and `client_instance_id`
+- the exact client build
+- the exact server build
+
+Server events that the client received may appear in the client journal tagged
+`source:"server"`. They are not a substitute for the server journal when
+investigating server-only decisions.
+
+## Actor and weapon matrix
+
+A melee, hitscan, projectile, or deathball change is not accepted from one
+human-versus-NPC run alone. The validation matrix must cover:
+
+- NPC vs NPC
+- NPC vs player
+- player vs NPC
+- player vs player
+
+and the configured weapon families under local and bad-connection profiles.
+Each client records its own journal. The scenario passes only when every client
+and the server agree on the authoritative outcome.

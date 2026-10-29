@@ -2428,3 +2428,31 @@ the dry-fire crosshair feedback specified in `docs/specs/gui/guiv2.md`.
 Successful actions and wider gameplay/input gates do not report a weapon
 readiness rejection. This is client presentation; it does not alter attack
 requests or server authority.
+
+## Contact and projectile shape roadmap (2026-10-29)
+
+All weapons share the contact/damage contract in
+`docs/specs/networking/contact-authority.md`.
+
+Current geometry:
+
+- hitscan: ray or swept beam vs body-part boxes/capsule
+- projectile: swept sphere/capsule vs world triangles and actor capsules
+- melee: capsule or authored OBB vs target body volume
+- deathball: swept sphere with actor/world pass-through
+
+Future geometry:
+
+A projectile may become an arbitrary `.glb` mesh. The intended path is:
+
+- `projectile_shape: "mesh"`
+- transformed projectile triangles cached once per tick
+- BVH broadphase against world and actor collision meshes
+- swept triangle-vs-triangle narrowphase
+- contact point/normal fed into the shared `ContactCandidate`
+- no per-query allocations in the fixed 60 Hz path
+- opt-in per weapon because mesh collision is expensive
+
+Melee may use the same mesh-vs-mesh path later. Until then, authored boxes and
+capsules are the supported melee damage geometry. Mesh collision must not create
+a new damage formula or a second authority path.

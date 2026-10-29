@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "id": "actor-weapon-network-matrix",
+  "description": "Required contact validation matrix. This file is consumed by the multi-client matrix runner; it is not a single-client scenario.",
+  "server": {
+    "launch_mode": "1",
+    "profiles": ["local", "latency-50", "latency-150", "badconn-loss-reorder-jitter"]
+  },
+  "actor_pairings": [
+    {"id": "npc-vs-npc", "attacker": "npc", "target": "npc"},
+    {"id": "npc-vs-player", "attacker": "npc", "target": "player"},
+    {"id": "player-vs-npc", "attacker": "player", "target": "npc"},
+    {"id": "player-vs-player", "attacker": "player", "target": "player"}
+  ],
+  "weapons": [
+    "mace",
+    "swordsword",
+    "chainsaw",
+    "revolver",
+    "rocket_launcher",
+    "deathball"
+  ],
+  "assertions": [
+    "one damage result per target per tick",
+    "no duplicate damage or death",
+    "friendly-fire policy respected",
+    "no wall penetration",
+    "client prediction and server confirmation converge",
+    "contact and damage events carry actor identity and teams",
+    "each client journal is separate"
+  ]
+}

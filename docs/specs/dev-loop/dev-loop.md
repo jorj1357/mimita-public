@@ -2265,3 +2265,14 @@ Recordings are local-only under `devscripts/scenarios/user/*.jsonl`. A scenario
 may use a first-class `input_playback` step; the runner reads the recording
 header, launches the recorded map/weapon set, and waits for
 `scenario.playback.completed`.
+
+## Quality gates and multi-client matrix
+
+The standing development checks and the one-server/N-client matrix contract are
+defined in `docs/specs/dev-loop/quality-gates.md`.
+
+Repository tooling lives under `devscripts/quality/`. It is report-only until a
+baseline is recorded, then becomes blocking for changed files and eventually for
+the full tree. The matrix runner is a separate tool from the normal
+single-client scenario runner; it keeps one journal per client and one server
+journal, linked by run/session IDs.

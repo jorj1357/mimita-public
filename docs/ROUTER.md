@@ -73,7 +73,7 @@ systems first. Use this default order:
 | Documentation | `docs/doc-review-09-03-2026.md`, the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
-| Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md` |
+| Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md`, `docs/specs/networking/contact-authority.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
 | Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |
@@ -84,7 +84,8 @@ systems first. Use this default order:
 | Logging or diagnostics | `docs/specs/debug-logging/debug-logging.md`, `docs/skills/logging-checker-v1.md` |
 | Performance | `docs/specs/performance/performance.md`, `docs/skills/efficiency-checker-v1.md` |
 | Terminal commands | `docs/architecture/terminal-commands/terminal-commands.md`, `docs/skills/terminal-command-checker-v1.md` |
-| Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
+| Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/dev-loop/quality-gates.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
+| Quality gates, lint, dead/duplicate code, multi-client matrix | `docs/specs/dev-loop/quality-gates.md`, `docs/specs/dev-loop/dev-loop.md` |
 | In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |
 | Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |

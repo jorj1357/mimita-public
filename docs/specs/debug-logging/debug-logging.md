@@ -1722,3 +1722,23 @@ The contract is in `docs/specs/dev-loop/scenario-input-recording.md`.
 `scenario.playback.snap` records a >=5 m drift correction to the next recorded
 position. `scenario.playback.equipment` records a per-tick recorded weapon
 change applied during playback.
+
+## Journal ownership and multi-client recording (2026-10-29)
+
+A live journal has exactly one process owner.
+
+- The client writes the client journal.
+- The server writes the server journal.
+- A scenario journal is owned by the client that recorded it.
+- Server-authoritative events included in a client scenario are events that
+  client received, tagged `source:"server"`.
+- The server must not write directly into a client scenario file.
+- Client and server files are linked by `run_id`, `server_instance_id`,
+  `client_instance_id`, `session_id`, and tick.
+- Multiple clients may record at the same time; each has a unique client ID and
+  path.
+- A diagnostic merge tool may combine files for analysis, but the live files
+  stay separate.
+
+No journal may contain two server owners or two clients under one identity.
+`scenario.startrecord` must reject a recording when ownership is ambiguous.

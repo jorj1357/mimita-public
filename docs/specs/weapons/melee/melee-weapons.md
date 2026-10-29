@@ -1426,3 +1426,21 @@ damage or knockback fields.
   revision/hash agreement.
 - The masterlist is the source of truth for field presence. Edit per-weapon
   values, then run `--sync`, `--reorder`, and `--check`.
+
+### Canonical client/server melee shape
+
+The client and server must test the same damage geometry.
+
+- When `use_weapon_collision_hitbox` is `true`, both use the authored
+  `weaponcollisions.json` OBB.
+- When `false`, both use the same model-derived attachment capsule.
+- The server must not validate a different shape than the client claimed.
+- The claim carries the authored box/OBB and the per-target render tick.
+- Same-team melee is a contact/bounce only: no damage, no hitmarker, no damage
+  number.
+- Client prediction deduplicates to the same one-result-per-target/tick rule as
+  the server.
+
+The full contact contract is
+`docs/specs/networking/contact-authority.md`. Do not add another melee-specific
+networking path or a second melee damage formula.

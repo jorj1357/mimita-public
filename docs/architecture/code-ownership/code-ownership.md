@@ -306,3 +306,29 @@ systems, including animation and gameplay actions. Do not generalize for its
 own sake: each abstraction must have a clear owner, contract, and real reuse
 case. See [`../vision-mentality/vision.md`](../vision-mentality/vision.md) for
 the wider project direction.
+
+## Spec-first and authority enforcement
+
+For gameplay, networking, collision, damage, or lifecycle behavior:
+
+1. Write or update the specification first.
+2. Update the authoritative function map in
+   [`../../specs/networking/contact-authority.md`](../../specs/networking/contact-authority.md)
+   or the relevant owning specification.
+3. Implement code to match the specification.
+4. Prove it through the runtime scenario matrix.
+5. Record the result in the changelog and regression history.
+
+The specification is the desired behavior. Code is wrong when it disagrees
+until a human changes the specification.
+
+There is one authoritative owner per behavior. Do not add a parallel local,
+online, client, server, host, replay, hitscan, projectile, or melee damage path.
+Weapon-specific behavior belongs in configuration and small geometry query
+adapters, not in weapon-ID branches inside shared resolution code.
+
+Combat damage must use the shared damage sink. Direct health, death, or
+authoritative knockback mutation outside that sink is forbidden except in
+spawn/reset/lifecycle code, tests, and explicitly documented migration code.
+The repository enforces this with the scripts described in
+[`../../specs/dev-loop/quality-gates.md`](../../specs/dev-loop/quality-gates.md).

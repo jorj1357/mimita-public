@@ -4909,4 +4909,24 @@ opposing team can damage a player, and a same-team NPC remains blocked.
 The `server.damage.applied` and `server.damage.rejected` journal events must
 carry attacker ID/type/team and target ID/team so a rejected hit can be traced
 to the responsible actor and policy decision.
-
+
+## Contact authority (2026-10-29)
+
+All hitscan, projectile, explosion, melee, deathball, and weapon-collision
+contact now has one target contract:
+
+- `docs/specs/networking/contact-authority.md`
+
+The normative rule is one geometry query -> one `ContactCandidate` -> one shared
+validation/damage resolver -> `applyActorDamage`. Weapon-specific code owns only
+how geometry is found. It does not own final health, death, team policy, rewind
+policy, duplicate policy, or a second damage formula.
+
+Melee move-set identity is content-hash based. Process-local revision counters
+are diagnostic only. A melee contact claim must send the per-target render tick
+used for the hit, not `latestServerTick`.
+
+The server and client journals are separate. A scenario journal is owned by one
+client and records what that client observed plus server events it received.
+The server writes its own audit journal. They are linked by run, server, and
+client IDs, never silently merged.

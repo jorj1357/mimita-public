@@ -261,3 +261,45 @@ Each tick records `equipped_weapon` and `equipped_slot`. Playback applies the
 recorded weapon result when it changes, rather than replaying raw slot edges.
 This is required for recordings that switch between nothing, revolver, shotgun,
 and other weapons.
+
+## Schema 3: client-owned scenario journals (2026-10-29)
+
+Schema 3 makes the scenario file client-owned.
+
+Header additions:
+
+```json
+"journal_owner": "client",
+"client_instance_id": "client-1",
+"server_instance_id": "server-1",
+"server_journal_path": "logs/YYYY-MM-DD/run/server.jsonl"
+```
+
+Rules:
+
+- Only the recording client writes the scenario file.
+- The server writes its own `server.jsonl`.
+- Server-authoritative data included in the scenario file is data the client
+  received, tagged `source:"server"`.
+- The client and server files are linked by the run/server/client IDs and ticks.
+- The client no longer merges a server sidecar into its scenario file.
+- Multiple clients can record at the same time with unique
+  `scenario-YYYYMMDD_HHMMSS-client-<id>.jsonl` paths.
+- Schema 1 and schema 2 remain readable for existing recordings.
+
+A separate merge/compare command may join files for analysis, but it must not
+replace the separate live journals.
+
+## Multi-client matrix
+
+The dev-loop must support one server and N clients. Each client has its own:
+
+- command queue
+- scenario/role
+- assertions
+- journal
+- network profile
+
+The runner waits for all clients to become ready, synchronizes start, and
+collects per-client and server results separately. Matrix scenarios live under
+`devscripts/scenarios/matrix/`.
