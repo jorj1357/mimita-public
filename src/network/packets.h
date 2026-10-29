@@ -1578,6 +1578,7 @@ struct SpyKnifeContact
     uint32_t targetId = 0;
     uint32_t contactTick = 0;
     uint32_t contactId = 0;
+    uint32_t targetGeneration = 0;
     uint8_t targetIsNpc = 0;
     uint8_t isBackstab = 0;
     uint16_t reserved = 0;
@@ -1661,6 +1662,7 @@ struct AttackRequestPacket
     float claimedHitX = 0, claimedHitY = 0, claimedHitZ = 0;
     uint8_t claimedBodyPart = 0; // 0=none 1=head 2=torso 3=leg
     uint8_t reservedAttack[2] = {};
+    uint32_t movesetHash = 0;
 };
 
 struct AttackResultPacket

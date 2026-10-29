@@ -1,9 +1,9 @@
 # Client Prediction and Server Authority Disagreement
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T17:35:00Z`
+Time last updated: `2026-10-29T18:10:00Z`
 
-Status: UNRESOLVED
+Status: ATTEMPTED FIX (1)
 
 Related specifications:
 
@@ -190,9 +190,47 @@ The project had parallel melee contact owners, process-local move-set identity,
 client prediction without server team/tick/geometry policy, and one mixed
 client/server journal.
 
-### Attempted Fix
+### Attempted Fix 1
 
-None yet. This record is the baseline for the deletion and consolidation work.
+Time:
+`2026-10-29T18:05:00Z`
+
+Change:
+
+- AttackRequest now carries the melee move-set content hash; the server compares
+  hash instead of process-local revision.
+- Melee claims carry target generation and use the per-target rendered server
+  tick instead of `latestServerTick`.
+- Client prediction deduplicates per target/tick before applying damage/effects.
+- Server claim validation now tests the claimed hit point and the claimed OBB
+  against a lenient multi-height target volume, and computes reach from the
+  claimed hit point.
+- The hardcoded `1..500` damage sink cap is replaced by
+  `combat.max_authoritative_damage` with a huge default; mace `250` is no longer
+  at risk of a low artificial cap.
+- Shared `computeMeleeContactDamage`/`computeMeleeContactKnockback` now used by
+  client prediction, server claim, and server animated contact.
+- Client prediction skips same-team targets when the active gamemode disables
+  friendly fire.
+
+Result:
+
+- Build `3718` succeeded.
+- `command_proof_smoke_v1` passed.
+- A mace attack on weapon set 29 produced `melee.action.start` and an accepted
+  `weapon.attack.result` with no hash/revision mismatch.
+- A contact-claim smoke did not produce a claim because the spawned NPC was not
+  in range; it is not accepted as contact proof.
+- Build `3722` succeeded after the shared formula/team-filter changes; the
+  weapon-set-29 mace attack smoke still passed.
+
+Remaining:
+
+- client team/friendly-fire parity
+- shared melee damage/knockback resolver
+- shared contact pipeline for hitscan/projectile/deathball
+- N-client matrix
+- human PvP acceptance
 
 ### Corrected Code
 

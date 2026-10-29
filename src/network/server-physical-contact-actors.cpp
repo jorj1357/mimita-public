@@ -579,17 +579,15 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                             revMultiplier = 1.0f + (revMax - 1.0f) * (1.0f - t);
                         }
                     }
-                    minDamage *= actionMultiplier * revMultiplier;
-                    maxDamage *= actionMultiplier * revMultiplier;
-                    if (!damaging) {
-                        minDamage = 0.0f;
-                        maxDamage = 0.0f;
-                    }
                     const int damage = damaging
-                        ? std::max(1, (int)std::lround(glm::mix(minDamage, maxDamage, force)))
+                        ? WeaponExecution::computeMeleeContactDamage(
+                              minDamage, maxDamage, force, actionMultiplier,
+                              revMultiplier, def->meleeContact.damageScale)
                         : 0;
-                    const glm::vec3 impulse = hit.normal * glm::mix(
-                        minKnockback, maxKnockback, force);
+                    const glm::vec3 impulse =
+                        WeaponExecution::computeMeleeContactKnockback(
+                            hit.normal, minKnockback, maxKnockback, force,
+                            def->meleeContact.forceScale);
 
                     if (blocksMeleeContact(target, tick, relative, hit)) {
                         const float blockForce = std::max(1.5f, force * 12.0f);

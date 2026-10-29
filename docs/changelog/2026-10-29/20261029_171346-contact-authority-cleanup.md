@@ -1,7 +1,7 @@
 # Contact Authority Documentation, Quality Gates, and Inert Deletion
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T17:40:00Z`
+Time last updated: `2026-10-29T18:10:00Z`
 
 ## Summary
 
@@ -129,3 +129,58 @@ Human acceptance:
 - add full one-server/N-client matrix launching
 - make quality gates blocking after the baseline is clean
 - update the regression record with fix evidence
+
+
+## Follow-up implementation pass
+
+Implemented the first correctness fixes after the deletion stop:
+
+- `AttackRequestPacket` carries `movesetHash`.
+- Client sends `MeleeMoveSet::hash`; server compares content hash and logs
+  `melee.attack.hash_mismatch` instead of rejecting process-local revisions.
+- Melee claims carry `targetGeneration`.
+- Melee claims use the per-target rendered server tick.
+- Client prediction deduplicates per target/tick.
+- Server claim validation uses the claimed hit point and OBB against a lenient
+  multi-height target volume; reach is computed from the claimed hit point.
+- Added `combat.max_authoritative_damage` with a huge default
+  (`999999999999999`) and removed the hardcoded `1..500` damage sink clamp.
+- Added the RTT/accuracy targets, late-contact policy, no-offline rule, and
+  dev-loop package split to the specs.
+
+Evidence:
+
+- build `3718` succeeded
+- `command_proof_smoke_v1` passed
+- weapon-set-29 mace smoke passed with `melee.action.start` and accepted
+  `weapon.attack.result`
+- no `melee.attack.hash_mismatch` or revision-mismatch event in that run
+- contact-claim smoke did not reach an NPC and is not accepted as contact proof
+
+Not yet implemented:
+
+- client team/friendly-fire prediction parity
+- shared melee damage/knockback resolver
+- shared contact pipeline for hitscan/projectile/deathball
+- full N-client launcher and matrix execution
+- server-view overlay
+- human PvP acceptance
+## Shared melee formula and client team parity
+
+Added shared melee HP damage/knockback helpers in `WeaponExecution` and routed
+the client prediction, server claim, and server animated-contact paths through
+them. This removes the `force_scale`/`damage_scale` drift between those paths.
+
+Client prediction now skips same-team targets when the active gamemode has
+friendly fire disabled. This is prediction parity only; the server remains the
+final authority.
+
+Build `3722` succeeded. Weapon-set-29 mace smoke passed with `melee.action.start`
+and accepted `weapon.attack.result`; no hash/revision mismatch was emitted.
+
+Still pending:
+
+- shared contact pipeline for hitscan/projectile/deathball
+- full N-client matrix runner
+- server-view overlay
+- PvP and bad-connection accuracy measurement

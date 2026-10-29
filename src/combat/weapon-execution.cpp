@@ -165,6 +165,26 @@ float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& body
     return 1.0f;
 }
 
+int computeMeleeContactDamage(float minDamage, float maxDamage, float force,
+                              float actionMultiplier, float revMultiplier,
+                              float damageScale)
+{
+    const float value = glm::mix(minDamage, maxDamage,
+                                 glm::clamp(force, 0.0f, 1.0f)) *
+                        std::max(0.0f, actionMultiplier) *
+                        std::max(0.0f, revMultiplier) *
+                        std::max(0.0f, damageScale);
+    return value <= 0.0f ? 0 : std::max(1, (int)std::lround(value));
+}
+
+glm::vec3 computeMeleeContactKnockback(const glm::vec3& direction,
+                                       float minKnockback, float maxKnockback,
+                                       float force, float forceScale)
+{
+    return direction * glm::mix(minKnockback, maxKnockback,
+                                glm::clamp(force, 0.0f, 1.0f)) *
+           std::max(0.0f, forceScale);
+}
 int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
                          float distance, float angleFactor)
 {

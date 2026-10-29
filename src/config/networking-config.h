@@ -462,6 +462,11 @@ struct NetworkPredictionConfig
 struct NetworkCombatConfig
 {
     bool beamContinueAfterHit = true;
+    // Representation/safety bound only. Gameplay damage is owned by the
+    // weapon/action configuration and must not be silently truncated by a low
+    // global cap. The default is intentionally huge; int damage fields are the
+    // only practical representation limit.
+    double maxAuthoritativeDamage = 999999999999999.0;
 };
 
 struct RemoteProjectileInterpolationConfig

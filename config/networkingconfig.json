@@ -153,7 +153,8 @@
 
   "combat": {
     "comment": "beam_continue_after_hit: when true the bullet/beam tracer keeps going to the weapon's max range past whatever it first hits (a hit effect still plays at the first contact). When false the tracer stops at the hit point.",
-    "beam_continue_after_hit": false
+    "beam_continue_after_hit": false,
+    "max_authoritative_damage": 999999999999999
     // "beam_continue_after_hit": true
   },
 

@@ -364,6 +364,7 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
             const SpyKnifeHitResult& hit = state.pendingRemoteHits[i];
             auto& out = batch.contacts[i];
             out.targetId = hit.targetId;
+            out.targetGeneration = 0;
             out.contactTick = hit.contactTick;
             out.contactId = hit.contactId;
             out.targetIsNpc = hit.targetIsNpc ? 1 : 0;

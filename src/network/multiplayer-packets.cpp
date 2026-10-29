@@ -634,7 +634,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint32_t claimedTargetId,
     const glm::vec3& claimedHit,
     uint8_t claimedBodyPart,
-    uint16_t movesetRevision)
+    uint16_t movesetRevision,
+    uint32_t movesetHash)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -684,6 +685,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     // two unused reserved bytes so the packet size does not change.
     req.reservedAttack[0] = (uint8_t)(movesetRevision & 0xff);
     req.reservedAttack[1] = (uint8_t)((movesetRevision >> 8) & 0xff);
+    req.movesetHash = movesetHash;
 
     mpSendPacket(ctx, &req, sizeof(req));
 
@@ -701,6 +703,7 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.deterministicSeed = req.deterministicSeed;
     pending.attackVariant = req.attackVariant;
     pending.movesetRevision = movesetRevision;
+    pending.movesetHash = movesetHash;
     pending.claimedTargetId = claimedTargetId;
     pending.claimedHit = claimedHit;
     pending.claimedBodyPart = claimedBodyPart;

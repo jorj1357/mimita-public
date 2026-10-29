@@ -668,6 +668,7 @@ struct MultiplayerContext
         uint32_t deterministicSeed = 0;
         uint8_t attackVariant = 0;
         uint16_t movesetRevision = 0;
+        uint32_t movesetHash = 0;
         uint32_t claimedTargetId = 0;
         glm::vec3 claimedHit{0.0f};
         uint8_t claimedBodyPart = 0;
@@ -956,7 +957,8 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     uint32_t claimedTargetId = 0,
     const glm::vec3& claimedHit = glm::vec3(0.0f),
     uint8_t claimedBodyPart = 0,
-    uint16_t movesetRevision = 0);
+    uint16_t movesetRevision = 0,
+    uint32_t movesetHash = 0);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

@@ -1,4 +1,4 @@
-﻿2026 10 20 1932
+2026 10 20 1932
 
 countdown
 need to be lik epeioritt
@@ -4930,3 +4930,14 @@ The server and client journals are separate. A scenario journal is owned by one
 client and records what that client observed plus server events it received.
 The server writes its own audit journal. They are linked by run, server, and
 client IDs, never silently merged.
+### Melee prediction accuracy targets (2026-10-29)
+
+- RTT below `100 ms`: `99.99%` claim acceptance and exact damage match.
+- RTT `100 ms` or more: `99%` claim acceptance and exact damage match.
+- The target is measured across NPC/NPC, NPC/player, player/NPC, and
+  player/player for every configured melee weapon and network profile.
+- Late plausible contacts are accepted inside the bounded history/tolerance
+  window. Only impossible, invalid, stale, duplicate, team-blocked, or
+  wall-blocked contacts reject.
+- There is no low artificial damage cap. `combat.max_authoritative_damage` is a
+  representation/safety bound; weapon/action configuration owns gameplay damage.

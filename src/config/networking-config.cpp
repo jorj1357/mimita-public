@@ -678,6 +678,9 @@ bool NetworkingConfig::loadFromFile(const std::string& path,
         NetworkCombatConfig& c = next.combat;
         c.beamContinueAfterHit = readBool(r, "beam_continue_after_hit",
                                           c.beamContinueAfterHit);
+        c.maxAuthoritativeDamage = clampMin(
+            readDouble(r, "max_authoritative_damage", c.maxAuthoritativeDamage),
+            1.0);
     }
 
     // ── remote_projectile_interpolation ────────────────────────────────

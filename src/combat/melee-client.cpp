@@ -25,6 +25,8 @@
 #include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
 #include "physics/config.h"
+#include "gamemode/gamemode.h"
+#include "terminal/terminal-state.h"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +34,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -98,6 +101,7 @@ bool g_primaryHeld = false, g_secondaryHeld = false;
 // the claimed blade is within a lenient radius of the rewound target.
 struct PendingMeleeClaim {
     uint32_t targetId = 0;
+    uint32_t targetGeneration = 0;
     bool targetIsNpc = false;
     uint32_t contactTick = 0;
     uint32_t contactId = 0;
@@ -118,6 +122,7 @@ std::string g_lastClientMeleeWeapon;
 uint32_t g_nextMeleeContactId = 1;
 uint32_t g_lastMeleeContactSimTick = 0;
 uint32_t g_lastMeleeClaimFlushTick = 0;
+std::unordered_set<uint64_t> g_predictedMeleeTargetTicks;
 
 bool isClaimMeleeWeapon(const WeaponDefinition& def)
 {
@@ -268,18 +273,16 @@ float clientContactDamage(const WeaponDefinition& def,
 {
     float minDamage = WeaponExecution::paramOr(def, "contactMinDamage", 1.0f);
     float maxDamage = WeaponExecution::paramOr(def, "contactMaxDamage", (float)def.damage);
+    float actionMultiplier = 1.0f;
     if (action && actionActive)
     {
         if (action->contactMinDamage >= 0.0f) minDamage = action->contactMinDamage;
         if (action->contactMaxDamage >= 0.0f) maxDamage = action->contactMaxDamage;
-        minDamage *= std::max(0.0f, action->contactDamageMultiplier);
-        maxDamage *= std::max(0.0f, action->contactDamageMultiplier);
+        actionMultiplier = std::max(0.0f, action->contactDamageMultiplier);
     }
-    minDamage *= revMultiplier;
-    maxDamage *= revMultiplier;
-    return std::max(1.0f, std::round(glm::mix(minDamage, maxDamage,
-        glm::clamp(force, 0.0f, 1.0f)) *
-        std::max(0.0f, def.meleeContact.damageScale)));
+    return (float)WeaponExecution::computeMeleeContactDamage(
+        minDamage, maxDamage, force, actionMultiplier, revMultiplier,
+        def.meleeContact.damageScale);
 }
 
 void flushMeleeContactClaims(MimitaNet::MultiplayerContext& ctx)
@@ -301,6 +304,7 @@ void flushMeleeContactClaims(MimitaNet::MultiplayerContext& ctx)
             const PendingMeleeClaim& claim = g_pendingMeleeClaims[i];
             auto& out = batch.contacts[i];
             out.targetId = claim.targetId;
+            out.targetGeneration = claim.targetGeneration;
             out.contactTick = claim.contactTick;
             out.contactId = claim.contactId;
             out.targetIsNpc = claim.targetIsNpc ? 1 : 0;
@@ -357,6 +361,7 @@ void tickClientMeleeContactClaims(Player& player,
     if (simTick == g_lastMeleeContactSimTick)
         return;
     g_lastMeleeContactSimTick = simTick;
+    g_predictedMeleeTargetTicks.clear();
 
     const MeleeAction* action = g_state.active ? &g_state.actionSnapshot : nullptr;
     WeaponExecution::PhysicalContactShape shape;
@@ -407,6 +412,16 @@ void tickClientMeleeContactClaims(Player& player,
 
     auto tryTarget = [&](const Player& remote, uint32_t id, bool npc, uint32_t generation) {
         if (remote.dead || remote.currentHp <= 0)
+            return;
+        if (!ACTIVE_GAME_MODE.empty() &&
+            player.matchTeam >= 0 && remote.matchTeam >= 0 &&
+            player.matchTeam == remote.matchTeam &&
+            !GamemodeRegistry::instance().get(ACTIVE_GAME_MODE).friendlyFire)
+            return;
+        const uint32_t contactTick =
+            MimitaNet::mpFireRenderTickForTarget(ctx, id, ctx.latestLocalSnapshotTick);
+        const uint64_t claimKey = ((uint64_t)id << 32) | contactTick;
+        if (g_predictedMeleeTargetTicks.count(claimKey))
             return;
         Player& mutableRemote = const_cast<Player&>(remote);
         if (!mutableRemote.physicalBody.parts.empty())
@@ -527,9 +542,9 @@ void tickClientMeleeContactClaims(Player& player,
 
         PendingMeleeClaim claim;
         claim.targetId = id;
+        claim.targetGeneration = target.spawnGeneration;
         claim.targetIsNpc = npc;
-        claim.contactTick = ctx.latestServerTick != 0
-            ? ctx.latestServerTick : ctx.latestLocalSnapshotTick;
+        claim.contactTick = contactTick;
         claim.contactId = g_nextMeleeContactId++;
         claim.hitPosition = hit.hitPosition;
         claim.direction = normal;
@@ -543,6 +558,7 @@ void tickClientMeleeContactClaims(Player& player,
         claim.impactDirectness = directness;
         claim.flags = damageBoxes.empty() ? 0 : 1;
         g_pendingMeleeClaims.push_back(claim);
+        g_predictedMeleeTargetTicks.insert(claimKey);
 
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Weapons, StructuredLevel::Important,
@@ -598,6 +614,7 @@ void resetClientMeleeClaims()
     g_lastClientDamageBoxWeapon.clear();
     g_lastMeleeContactSimTick = 0;
     g_lastMeleeClaimFlushTick = 0;
+    g_predictedMeleeTargetTicks.clear();
 }
 
 int actionRequestSlot(const WeaponDefinition& def, const MimitaNet::MultiplayerContext& ctx)
@@ -783,14 +800,17 @@ void startAction(Player& player,
     // revision so the server can align revisions before accepting the action.
     const uint16_t netId = MimitaNet::weaponDefNetworkIdFor(def.id);
     uint16_t revision = 0;
-    if (const MeleeMoveSet* ms = WeaponData::MeleeMoveSetRegistry::instance().get(def.id))
+    uint32_t movesetHash = 0;
+    if (const MeleeMoveSet* ms = WeaponData::MeleeMoveSetRegistry::instance().get(def.id)) {
         revision = (uint16_t)(ms->revision & 0xffff);
+        movesetHash = ms->hash;
+    }
     if (netId != 0) {
         MimitaNet::mpSendAttackRequest(
             ctx, netId, (int16_t)actionRequestSlot(def, ctx),
             player.pos, g_state.forward, player.pos,
             (uint8_t)std::clamp(actionIndex, 0, 255),
-            0u, glm::vec3(0.0f), 0, revision);
+            0u, glm::vec3(0.0f), 0, revision, movesetHash);
     }
 
     // Action start sound plays at action tick 0 and cuts the prior Melee sound.
@@ -818,13 +838,16 @@ void cancelAction(Player& player, MimitaNet::MultiplayerContext& ctx,
     const uint16_t netId = def ? MimitaNet::weaponDefNetworkIdFor(def->id) : 0;
     if (ctx.active && ctx.gameplayActive && def && netId != 0) {
         uint16_t revision = 0;
+        uint32_t movesetHash = 0;
         if (const MeleeMoveSet* moveSet =
-                WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
+                WeaponData::MeleeMoveSetRegistry::instance().get(def->id)) {
             revision = (uint16_t)(moveSet->revision & 0xffff);
+            movesetHash = moveSet->hash;
+        }
         MimitaNet::mpSendAttackRequest(ctx, netId,
             (int16_t)actionRequestSlot(*def, ctx), player.pos,
             glm::vec3(1.0f, 0.0f, 0.0f), player.pos,
-            255, 0u, glm::vec3(0.0f), 0, revision);
+            255, 0u, glm::vec3(0.0f), 0, revision, movesetHash);
     }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Weapons, StructuredLevel::Important,
@@ -1133,7 +1156,8 @@ void clientTick(Player& player,
         if (def && moveSet->animationOnly && ctx.active && ctx.gameplayActive)
             MimitaNet::mpSendAttackRequest(ctx, MimitaNet::weaponDefNetworkIdFor(def->id),
                 (int16_t)actionRequestSlot(*def, ctx), player.pos, camera.front, player.pos,
-                255, 0u, glm::vec3(0), 0, (uint16_t)(moveSet->revision & 0xffff));
+                255, 0u, glm::vec3(0), 0, (uint16_t)(moveSet->revision & 0xffff),
+                moveSet->hash);
         endAction(player);
         return;
     }

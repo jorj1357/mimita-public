@@ -171,12 +171,17 @@ Weapon families:
 - rocket/projectile
 - deathball
 
-Network profiles:
+Network profiles are RTT-based:
 
 - local
-- 50 ms
-- 150 ms
+- RTT below 100 ms
+- RTT 100 ms or more
 - packet loss/reorder/jitter preset
+
+Accuracy targets:
+
+- RTT below 100 ms: 99.99% claim acceptance and exact damage match
+- RTT 100 ms or more: 99% claim acceptance and exact damage match
 
 Assertions:
 
@@ -187,6 +192,28 @@ Assertions:
 - client prediction and server confirmation converge
 - contact and damage events carry attacker/victim identity and teams
 - each client journal proves what that client saw
+
+## Dev-loop module split
+
+`devscripts/dev-loop.py` remains the only main entry point. The implementation
+is split into a package so the runner is readable and testable:
+
+```text
+devscripts/dev-loop.py
+devscripts/dev_loop/
+  cli.py
+  build.py
+  launch.py
+  control.py
+  status.py
+  state.py
+  scenario.py
+  matrix.py
+  runtime.py
+```
+
+The entry command, flags, and scenario behavior remain compatible. The package
+split is a refactor, not a second launcher.
 
 ## Baseline and rollout
 

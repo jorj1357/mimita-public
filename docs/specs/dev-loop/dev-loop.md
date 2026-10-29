@@ -2276,3 +2276,14 @@ baseline is recorded, then becomes blocking for changed files and eventually for
 the full tree. The matrix runner is a separate tool from the normal
 single-client scenario runner; it keeps one journal per client and one server
 journal, linked by run/session IDs.
+## Dev-loop module split (2026-10-29)
+
+`devscripts/dev-loop.py` remains the main entry point. The implementation moves
+into `devscripts/dev_loop/` modules for build, launch, control, status, state,
+scenario, matrix, and runtime. The split is for readability and testability; it
+does not add a second launcher or change the public command surface.
+
+The N-client matrix runner is part of this package. It starts one server and N
+clients, each with its own command queue, journal, scenario, assertions, and
+bad-connection profile. Client journals remain separate and linked by run,
+server, and client IDs.

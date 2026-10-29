@@ -173,6 +173,14 @@ float hitscanPartMultiplier(const WeaponDefinition& def, const std::string& body
 // allowed body parts and exactly 0 for a disallowed body part.
 int computeHitscanDamage(const WeaponDefinition& def, const std::string& bodyPart,
                          float distance, float angleFactor);
+// Shared melee HP damage/knockback formula. Callers resolve the action/config
+// ranges first; this function owns the common force mix and scaling.
+int computeMeleeContactDamage(float minDamage, float maxDamage, float force,
+                              float actionMultiplier, float revMultiplier,
+                              float damageScale);
+glm::vec3 computeMeleeContactKnockback(const glm::vec3& direction,
+                                       float minKnockback, float maxKnockback,
+                                       float force, float forceScale);
 int buildPelletDirections(const WeaponDefinition& def, const glm::vec3& aimDirection,
                           uint32_t seed, glm::vec3* outDirections, int capacity);
 bool rayPlayerTarget(const glm::vec3& origin, const glm::vec3& direction,

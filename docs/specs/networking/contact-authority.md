@@ -200,10 +200,10 @@ additional hitmarkers or damage numbers that the server will not confirm.
 | Target eligibility | shared policy | `serverFriendlyFireBlocks` + lifecycle/generation checks |
 | Contact query | weapon geometry adapters | hitscan/projectile/melee/explosion query |
 | Contact validation | shared contact resolver | single `resolveContact` entry point |
-| HP damage/knockback | shared damage resolver | `resolveContactDamage` |
+| HP damage/knockback | shared damage resolver | `resolveContactDamage`, `computeMeleeContactDamage`, `computeMeleeContactKnockback` |
 | Melee percent | melee resource resolver | `resolveMeleePercent` |
 | Explosion/splash | shared splash resolver | one server/client/offline formula |
-| Damage application | server damage owner | `applyActorDamage` |
+| Damage application | server damage owner | `applyActorDamage` with `combat.max_authoritative_damage` safety bound |
 | Death | server damage/lifecycle owner | `applyActorDamage` + lifecycle transition |
 | Contact event publication | shared event owner | one contact/damage event per result |
 | Weapon collision bounce | physics collision owner | `collectBodyWeaponContacts`/response owner |
@@ -265,3 +265,63 @@ The following must exist in the repository:
 
 Rules are report-only until the baseline is clean. Changed-file gates become
 blocking after the deletion and consolidation work.
+## Accuracy targets (2026-10-29)
+
+Accuracy is measured as the percentage of predicted damaging contacts whose
+final server outcome matches the client prediction.
+
+- RTT below `100 ms`: `99.99%` claim acceptance and exact damage match.
+- RTT `100 ms` or more: `99%` claim acceptance and exact damage match.
+- The target is long-term and is measured across the full actor/weapon/network
+  matrix, not from a single run.
+
+A predicted damaging contact is the denominator. Weapon-clash bounces and
+same-team contacts that correctly produce no damage are excluded.
+
+## Late contact policy
+
+A late but plausible contact is accepted within the bounded history and
+tolerance window. Reject only when the contact is impossible or invalid:
+
+- missing/dead/inactive actor
+- generation mismatch
+- friendly fire/team block
+- stale or outside-history tick
+- outside the claimed target volume
+- beyond the claimed reach
+- clearly world-occluded
+- duplicate/stale contact
+- malformed impact data
+
+Playtesting may tune the tolerance/history window, but it must not introduce a
+weapon-specific shortcut.
+
+## Damage cap policy
+
+There is no low artificial damage cap. A weapon configured to deal `250` must
+be able to deal `250`.
+
+`applyActorDamage` and `applyServerDamage` use the config value
+`config/networkingconfig.json -> combat.max_authoritative_damage` as a
+representation/safety bound, not as a gameplay balance cap. The default is
+intentionally huge (`999999999999999`). Weapon/action configuration remains the
+gameplay damage authority.
+
+## No offline-only gameplay
+
+Local play is still a client connected to a local server. There is no separate
+offline gameplay simulation with different contact, damage, or validation rules.
+`weapon-contact-local.cpp` is migration debt, not a target architecture.
+
+## Implementation phases
+
+1. content-hash move-set identity
+2. per-target render tick and target generation in claims
+3. client prediction dedupe and team parity
+4. shared target volume and reach validation
+5. one shared melee damage/knockback resolver
+6. one shared contact resolver for all weapon families
+7. `applyActorDamage` as the only combat damage sink
+8. client-owned journals and N-client matrix runner
+9. server-view debug overlay
+10. accuracy measurement and playtesting

@@ -1219,15 +1219,27 @@ void handleAttackRequest(
         else if (const WeaponData::MeleeMoveSet* meleeSet =
                      WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
         {
-            // Referee: reject an illegal revision or action index before starting.
-            // The client and server must agree on the move-set revision.
+            // Referee: compare content identity, not a process-local counter.
+            // Revision remains diagnostic because each process loads move sets
+            // independently and its counter is not stable across processes.
             const uint16_t clientRevision =
                 (uint16_t)(req->reservedAttack[0] | (req->reservedAttack[1] << 8));
             const uint16_t serverRevision = (uint16_t)(meleeSet->revision & 0xffff);
-            if (clientRevision != 0 && clientRevision != serverRevision) {
+            const uint32_t clientHash = req->movesetHash;
+            if (clientHash != 0 && clientHash != meleeSet->hash) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Important,
+                    "melee.attack.hash_mismatch", std::to_string(shooter.id),
+                    "client and server melee move-set content differ", tick,
+                    nlohmann::json{{"request_id", req->requestId},
+                                   {"weapon", def->id},
+                                   {"client_hash", clientHash},
+                                   {"server_hash", meleeSet->hash},
+                                   {"client_revision", clientRevision},
+                                   {"server_revision", serverRevision}});
                 emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                                     shooter, req->requestId,
-                                    "melee move-set revision mismatch");
+                                    "melee move-set hash mismatch");
                 return;
             }
             if (req->attackVariant == 255) {
