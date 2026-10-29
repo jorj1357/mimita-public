@@ -1,3 +1,25 @@
+2026 10 29 1115
+
+deepseek v4.1 flash thnaks 
+
+enabled — turns on client contact claims. Misses with no authoritative damage: ensure true. Set false only to fall back to the older server scan.
+
+use_weapon_collision_hitbox — true uses the config/weaponcollisions.json box as the damage volume and sweeps it through the target. Thin/visual mismatches: use true or enlarge the box. Phantom hits: use false or shrink the box.
+
+claim_tolerance_m — extra lag/pose allowance. Too many outside_claim_radius rejects: raise by 0.25 steps. Hits landing visibly beside the target: lower toward 0.25–0.5.
+
+target_radius_m — lenient historical target body radius. Limb/edge hits missed: raise toward 1.1–1.3. Near-misses counting: lower toward 0.6–0.8.
+
+max_reach_m — explicit server reach cap; 0 derives it from the box/blade size. Valid long swings rejected as out_of_reach: set/raise it. Remote hits accepted: lower toward visible reach.
+
+claim_batch_ticks — how often claims are sent; detection is still 60 Hz. Damage feels delayed: lower toward 2–3. Packet volume: raise toward 6–12.
+
+occlusion — rejects claims blocked by world geometry. Legitimate corner/limb hits rejected as world_occluded: investigate geometry first; false is the permissive fallback. Hits through walls: keep true.
+
+damage_scale — multiplies authoritative damage after normal damage/action/impact calculations. Too little health loss: raise above 1.0. Too much: lower below 1.0.
+
+force_scale — multiplies authoritative knockback. Barely moves: raise. Launches too far: lower. It does not change damage.
+
 9 6 2026 
 
 - End goal  

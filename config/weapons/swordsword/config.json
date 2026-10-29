@@ -23,7 +23,7 @@
           "double_click_action": "slash_two",
           "animation_clip_id": "mimita_sizing_6_attack1slash_001",
           "weapon_pose": {
-            "rotation_degrees": [0.0, 0.0, 0.0],
+            "rotation_degrees": [0.0, 0.0, 40.0],
             "offset": [0.0, 0.0, 0.0]
           },
           "hitboxes": [],
@@ -121,7 +121,15 @@
 "headshot_multiplier": 1.5,
 "hitscan": false,
 "magazine_size": 0,
-"melee_contact": {"enabled": true, "use_weapon_collision_hitbox": true, "claim_tolerance_m": 0.75, "target_radius_m": 0.9, "max_reach_m": 0.0, "claim_batch_ticks": 6, "occlusion": true, "damage_scale": 1.0, "force_scale": 1.0},
+"melee_contact": {"enabled": true,
+"use_weapon_collision_hitbox": true, 
+"claim_tolerance_m": 0.75, 
+"target_radius_m": 0.9,
+ "max_reach_m": 0.0,
+  "claim_batch_ticks": 6,
+   "occlusion": true,
+    "damage_scale": 1.0, 
+    "force_scale": 1.0},
 "model": {
     "path": "assets/objects/weapons/mimita-swordsword-v2.glb"
   },
@@ -163,14 +171,14 @@
 "viewmodel": {
     "enabled": true,
     "position": [
-      0.0,
-      0.0,
-      0
+     0.0,
+    0.0,
+    -0.5
     ],
     "rotation_degrees": [
-      100.0,
       0.0,
-      0.0
+      150.0,
+      90.0
     ],
     "scale": [
       1.0,

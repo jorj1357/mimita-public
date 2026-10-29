@@ -1,5 +1,5 @@
 {
-    "firstBootComplete": true,
+    "firstBootComplete": false,
     "musicEnabled": false,
     "musicVolume": 0.0,
     "playbackSpeed": 1.0

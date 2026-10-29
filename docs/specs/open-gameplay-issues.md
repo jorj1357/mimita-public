@@ -1,3 +1,38 @@
+﻿2026 10 29 1121 npcs are pahsing into the ground  after eth solid checking fixes 
+oon dust2cyberiav4 map
+no phaseing no no no no hpasing 
+theres 2 whole npcs that are just stck in the grund on teh map rigt now i saw 
+
+2026 10 29 1054
+melee hit rexogntion nees more work
+we need to make it like
+melee
+if i get a hit claim then i do it but idk 
+
+then it does dmaage to them
+but 
+i wish it was just hitbox actual hitbox to hit the melee idk 
+
+also, we need to make it so like we keep doing more 
+master json lists
+e.g. behavior profiles and roles nad stuff
+those are confusing to em right now
+so i want to do taht 
+
+2026 10 29 0911 
+need mega chainsaw
+or chainsaw 
+for chasinaw boss
+bc chainsaw boss is epic but needs a bigger one
+
+also final boss for zombie tower isssss?
+idk
+ i want like 10 bosses
+ idk ill make some ove itme 
+ matbe 
+
+madness ocmbat mode 
+
 2026 10 28 0958 jorj  ok smallest thing ever but the +1 in tdm mode  iti is not aligend right, 
 and also my team keeps winnign all the time idk why
 evne when i do  nothing

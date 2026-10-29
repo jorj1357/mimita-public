@@ -179,6 +179,86 @@ heres all the mosnters for v1
 anims: idle, walk, attack, hurt
 sometimes new attacks
 
+2026 10 29 1049 zombies list
+boomer 
+stabber
+crawler
+griever
+brute
+nromal zombie
+chainsaw boss
+charger
+
+2026 10 29 1049 now we need to put attacks to them
+
+i think we need 1 single mosnter attack ? reuse like
+godball logic maybe
+
+also i think all monsters if u are touched by them, min dmg 1 max dmg 3 and min knockback like 3 max like 10 
+1 tick cooldonw, u can do it like
+literallt u can take 1 * 60 = 60 
+3 * 60 = 180
+ur likely to die if u are being touched by a monster for 1 full second
+let alone the actual attack u need to avoid that 
+
+but godball means
+
+this sphere, its size is json controlled, so u acn update it live
+as well as its offset, position etc
+size
+for big monsters u have big 
+small u have small sizes
+so 1. baseline is the whole monster model if u touch it like client sided touching the model like, ur client sees u touch the monster's actual bod parts = u get damaged, not the capsule i think?
+idk bro
+
+cuz capusle sucks
+big wide monster has just invisible hitboxes
+so 
+it hink we might need a new mode
+for like
+actor vs actor collisions or actor vs actor dmaage
+npcs vs npcs = server, cpausel vs capsule
+plauer vs plauer collision = their collisions are both calc with each individual's client 
+and then server converges them both to like an average between what the both calcualted 
+hmm
+matbe?
+or capsule idk 
+
+plauer vs npc colision = new mode, 
+so it sliek 
+client gets my own limbs positions
+and then gets my client's version of the npc's limbs
+then i collide with those and then server validates and sees like whats reasnable whats not etc
+
+each monster needs its own like hitboxes offsets? 
+its alwas acitve, u touching them = doing damagae based on how close u are to the center of the dmaage volume, how fast u approach or how fast  
+like
+it shoudl be like
+monster at 1  m/s , u are at 100 m/s = u have big big damage and knockback bc u are going fast
+mosnter at 100 m/s , u at 1 m/s = same big damge and knoackback
+both at 1 m/s = small dmg small kockback
+both at 100 m/s = big dmg big knockback, prob the mosnter doesnt get a lot of knockback tho idk 
+or damage
+idk 
+
+each arm needs its own offset? i dont want to do that tho 
+is there an autoamtic thingw erhe u get 
+the end of the limb automaticallt has the hitbox
+idk bro
+
+basicallt 
+the animaiotn setc
+
+ALSO UEAH 
+MONSTERS
+the active phase = the active damage phase
+but chasinsawboss uses the mega chainsaw
+theres no mega chasinaw yet
+hmm
+idk bro 
+
+
+
 ### boomer:
 - anims
 1. idle
@@ -264,7 +344,10 @@ sometimes new attacks
 4. hurt
 - attack
 1. swings chainsaw at u , spyknife touch = damage logic , scale with force
+todo reuse cahinsaw anims and mega chainsaw make that 
 2. dashes forward, reuse cahrger logic? special anim: touched while charging = damage and knockback, if touching chainsaw then damaegd there too
+
+no dash forward for nnow 2026 10 29 1010 becasue i want to platest and get npc behavior good first then anims on top 
 
 ### charger 
 - anims
@@ -274,6 +357,10 @@ sometimes new attacks
 4. hurt
 - attack
 1. chargres forward, big knockback and some dmaage: spyknief logic, touch = dmg , sclae with force 
+
+### 2026 10 29 1048 now anims are done now what
+
+
 
 2026 10 24 2122 jorj here is the attacks anims for each
 idle, walk, attack, hurt

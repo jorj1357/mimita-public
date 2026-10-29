@@ -1,3 +1,78 @@
+2026 10 29 0915
+
+detro chan volcanic chan
+this game was hacked by volcnic chan Hahhaahaheheheheheeahhahehehahaaha
+and then 
+ues
+
+characters i think of 
+
+red guy
+pro
+detro chan
+chudly
+default guy
+abusive boy
+abusive girl
+
+badclown
+chainsawboss? has voice? idk 
+rag is like the god of th universe but might not even need a god theres no  god its just what u make up 
+
+rag = suffering 
+marked = idk 
+i had this so clear i n m head
+like
+rag is animal textures from a skinned animal in peta video
+if u have unnecessar suffering
+or thoguht patterns uou are following when u dont need to 
+about suffering and stuf f
+then 
+its like 
+
+some things u do are miniscule suffering to u
+e.g.
+not holding the door open fo romsoene bc u are in arush
+or 
+ill text them later i dotn need to repspond right now
+
+in a differnet usniverse there is a ver rare chance that 
+what is so insigniifcatn to u is
+
+universe 1 = ours
+obervable universe
+
+universe 2 = 
+each 
+strange quark 
+smallest pieces possible
+is
+our entire universe 1 
+a single unievrse 2 quark = our entire observable universe
+universe 2 is size of our universe 1 
+but fits that much atoms and mass inside of each quark 
+
+imagine eachh quark in universe 2 , each atom inisde of each quark is worth 1 trillion yeaers of the worst 
+horrible
+hell suffering
+limbs ripping
+fire death
+freezingdeath
+eueballs ripped out
+tongeu cut off
+skewererd 
+etc
+
+sometimes u do somethign insignificant to you but 
+it causes thsi much suffering 
+for anotheruniverse 
+
+therefoer etc fill in make better
+u haev to go thru each singular qurk atom by atom
+andn rag finds you and takes you to that suffering dimension
+
+and so it means  be nice  i hthink 
+
 2026 10 21 1537
 
 big gross clown wthat t takls with OTT compressed voice

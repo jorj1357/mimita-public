@@ -1,6 +1,6 @@
 {
   "duration_ticks": 120,
-  "enabled": false,
+  "enabled": true,
   "messages": [
     "2026 10 26 NOTHING IS IMPOSSIBLLBLELELEEEE ",
     "2026 10 26 ITS DOABLE ITS  DOABLE ",
@@ -15,10 +15,11 @@
     "TODO 2026 10 26: avatar editor better ",
     "TODO 2026 10 26: survive the disastersss",
     "TODO 2026 10 26: npc animations better niceer smoother",
-    "TODO 2026 10 26: zombie tower plzzzz full"
+    "TODO 2026 10 26: zombie tower plzzzz full",
+    "done 2026 10 28: 240 fps whole play session, !!"
   ],
   "mode": "repeat",
-  "repeat_message": "TODO 2026 10 28: 240 fps whole play session, all mosnter anims, 100 floor zomb tower!!!",
+  "repeat_message": "TODO 2026 10 29: all mosnters fight me and work, 100 floor zomb tower!!!",
   "text_format": "{seconds}s — {message}",
   "title": "TIME PLAYED"
 }
