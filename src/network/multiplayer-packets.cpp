@@ -389,7 +389,6 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     // Preserve monotonically increasing serials (NEVER reset):
     //   nextLocalProjectileFireSerial
     //   nextLocalShotSerial
-    //   nextLocalMeleeAttackSerial
     //   nextLocalDashSerial, nextLocalGroundJumpSerial, etc.
     //   nextLocalRespawnSerial
 
@@ -530,7 +529,6 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
     ctx.nextLocalProjectileFireSerial = 1;
-    ctx.nextLocalMeleeAttackSerial = 1;
     ctx.lastPingSentMs = 0;
     ctx.localPingMs = 0;
     ctx.lastHeardServerMs = 0;
@@ -1432,7 +1430,6 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.lastReceivedShotSerial.clear();
     ctx.nextLocalShotSerial = 1;
     ctx.nextLocalProjectileFireSerial = 1;
-    ctx.nextLocalMeleeAttackSerial = 1;
     ctx.lastPingSentMs = 0;
     ctx.localPingMs = 0;
     ctx.lastHeardServerMs = 0;

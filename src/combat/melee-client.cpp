@@ -940,12 +940,6 @@ void clientTick(Player& player,
     input.secondaryPressed = input.secondaryPressed || g_pendingInput.secondaryPressed;
     input.secondaryHeld = input.secondaryHeld || g_secondaryHeld;
     g_pendingInput = ClientInput{};
-    if (!g_pendingMeleeClaims.empty() &&
-        simTick - g_lastMeleeClaimFlushTick >= 6)
-    {
-        g_lastMeleeClaimFlushTick = simTick;
-        flushMeleeContactClaims(ctx);
-    }
     const MeleeMoveSet* moveSet = equippedMoveSet(player, weapons);
     if (!moveSet || player.dead) {
         if (g_state.active)

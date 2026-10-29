@@ -1215,9 +1215,8 @@ RevolverShotResult WeaponSystem::fireSwordsword(
     result.end = player.pos + player.aimDirection * weaponParamOr(*def, "bladeLength", 4.0f);
     result.hitNormal = -player.aimDirection;
 
-    // In online mode, result.fired triggers mpSendMeleeHitRequest from the
-    // caller (weapon-commands.cpp). The client no longer selects a target.
-    // Attack type 1 = slash.
+    // Online attack intent travels through the generic attack request. The
+    // client no longer selects a target or sends a sword-specific hit packet.
     if (remotePlayers) {
         result.targetIsRemotePlayer = false;
     }

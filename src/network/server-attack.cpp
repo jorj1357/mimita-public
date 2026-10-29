@@ -50,39 +50,6 @@ static uint64_t cooldownTickFor(const WeaponDefinition& def, uint32_t tick)
     return (uint64_t)tick + (uint64_t)std::ceil(def.fireDelay * SERVER_TICK_RATE);
 }
 
-static void startServerSwordAttack(ServerPlayer& attacker,
-                                   const WeaponDefinition& def,
-                                   uint8_t attackVariant)
-{
-    const bool lunge = attackVariant == 2;
-    const float slashWindup = WeaponExecution::paramOr(def, "slashWindupTime", 0.08f);
-    const float slashActive = WeaponExecution::paramOr(def, "slashActiveTime", 0.15f);
-    const float slashRecover = WeaponExecution::paramOr(def, "slashRecoverTime", 0.10f);
-    const float lungeWindup = WeaponExecution::paramOr(def, "lungeWindupTime", 0.10f);
-    const float lungeActive = WeaponExecution::paramOr(def, "lungeActiveTime", 0.20f);
-    const float lungeRecover = WeaponExecution::paramOr(def, "lungeRecoverTime", 0.12f);
-    const float fallbackCooldown = lunge
-        ? lungeWindup + lungeActive + lungeRecover + 0.05f
-        : slashWindup + slashActive + slashRecover + 0.05f;
-    const float cooldown = lunge
-        ? WeaponExecution::paramOr(def, "lungeCooldown", fallbackCooldown)
-        : WeaponExecution::paramOr(def, "slashCooldown", fallbackCooldown);
-
-    attacker.swordswordState = SwordswordState{};
-    attacker.swordswordState.state = lunge
-        ? SwordswordState::AttackState::LungeWindup
-        : SwordswordState::AttackState::SlashWindup;
-    attacker.swordswordState.stateTimer = 0.0f;
-    attacker.swordswordState.animTimer = 0.0f;
-    attacker.physicalAttackIsLunge = lunge;
-    attacker.physicalAttackTimeline.start(
-        (uint32_t)std::ceil((lunge ? lungeWindup : slashWindup) * SERVER_TICK_RATE),
-        (uint32_t)std::ceil((lunge ? lungeActive : slashActive) * SERVER_TICK_RATE),
-        (uint32_t)std::ceil((lunge ? lungeRecover : slashRecover) * SERVER_TICK_RATE));
-    attacker.meleeCooldownTimer = std::max(0.0f, cooldown);
-    attacker.hasLastPhysicalWeaponShape = false;
-}
-
 // Build a target's body-part AABBs for hit validation. When the target has an
 // active replicated limb pose (ragdoll / physical / hybrid), use its
 // owner-computed hitboxes — the exact shapes the shooter rendered. Otherwise
@@ -1213,17 +1180,14 @@ void handleAttackRequest(
         if (def->behaviorType == WeaponBehaviorType::Swordsword &&
             !WeaponData::MeleeMoveSetRegistry::instance().get(def->id))
         {
-            if (shooter.meleeCooldownTimer > 0.0f)
-            {
-                sendAttackResult(sock, shooter, req, tick, false, 1, 0,
-                                 rt.magazineAmmo, rt.reserveAmmo,
-                                 rt.nextAllowedFireTick, rt.stateRevision);
-                return;
-            }
-            shooter.lastMeleeAttackSerial = req->requestId;
-            startServerSwordAttack(shooter, *def, req->attackVariant);
+            emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
+                                shooter, req->requestId,
+                                "melee move set missing");
+            sendAttackResult(sock, shooter, req, tick, false, 7, 0,
+                             -1, -1, 0, 0);
+            return;
         }
-        else if (def->behaviorType == WeaponBehaviorType::QuickHit)
+        if (def->behaviorType == WeaponBehaviorType::QuickHit)
         {
             // Start server-side quick hit attack
             shooter.physicalAttackIsLunge = false;

@@ -1,7 +1,7 @@
 # Client Prediction and Server Authority Disagreement
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T17:13:46Z`
+Time last updated: `2026-10-29T17:35:00Z`
 
 Status: UNRESOLVED
 
@@ -234,23 +234,22 @@ player/player, including bad-connection profiles.
 This section is the append-only deletion and rejection record. It exists so a
 future change does not reintroduce the same parallel owners.
 
-### Delete Now — Inert or No Callers
+### Deleted 2026-10-29 — Inert or No Callers
 
 | Item | Evidence | Replacement |
 |---|---|---|
-| `server-melee.cpp` legacy file path | `handleMeleeHitRequest` returns at `:135`; `tickServerSwordCombat` has no caller | shared contact pipeline |
+| `server-melee.cpp` legacy file | handler returned at `:135`; `tickServerSwordCombat` had no caller | shared contact pipeline |
 | `handleMeleeHitRequest` | only reached by dead `PACKET_MELEE_HIT_REQUEST` route | `handleAttackRequest` + shared contact |
-| `tickServerSwordCombat` | no caller; declaration only in `server.h:1181` | `tickServerMeleeActions` / shared contact |
-| `computeBladeCapsule`, `computeHitDamage`, local `sweptSphereOverlap` | only used by the inert functions above | shared contact geometry/damage |
+| `tickServerSwordCombat` | no caller; declaration only | `tickServerMeleeActions` / shared contact |
+| `computeBladeCapsule`, `computeHitDamage`, local `sweptSphereOverlap` | only used by inert functions | shared contact geometry/damage |
 | `mpSendMeleeHitRequest` | no call sites | `mpSendAttackRequest` |
-| `MeleeHitRequestPacket` | sender is dead; receiver is no-op | `AttackRequestPacket` / contact claim |
-| `PACKET_MELEE_HIT_REQUEST` route | routes only to no-op | remove with packet |
-| `startServerSwordAttack` + branch | guarded by absence of move set; shipped sword family has move sets | `serverMeleeStartAction` |
-| `projectileConfig(uint8_t)` | only `#if 0` | `projectileConfigFromDefinition` |
-| `handleProjectileFireRequest` | disabled stub | `handleGenericProjectileAttack` |
+| `MeleeHitRequestPacket` | sender dead; receiver no-op | `AttackRequestPacket` / contact claim |
+| `PACKET_MELEE_HIT_REQUEST` route | routed only to no-op | removed with packet |
+| `startServerSwordAttack` + branch | unreachable for shipped sword family | `serverMeleeStartAction`; missing move set now rejects |
 | `mpSendProjectileFireRequest` | dead stub | `mpSendAttackRequest` |
-| `WeaponSwordsword` legacy update path | `update()` returns at `:465` for animation-profile weapons | server melee action/contact |
-| duplicate flush gate in `melee-client.cpp:943-948` | hard-coded `6`; configured flush exists at `:582-589` | configured `claimBatchTicks` owner |
+| `handleProjectileFireRequest` + `ProjectileFireRequestPacket` + `PACKET_PROJECTILE_FIRE_REQUEST` | handler only rejected legacy direct packets; no live sender | `handleGenericProjectileAttack` |
+| `projectileConfig(uint8_t)` | only inside deleted `#if 0` block | `projectileConfigFromDefinition` |
+| duplicate flush gate in `melee-client.cpp` | hard-coded `6`; configured flush already exists | configured `claimBatchTicks` owner |
 
 ### Delete After Replacement — Conditional
 
@@ -265,7 +264,8 @@ future change does not reintroduce the same parallel owners.
 | `collectCapsuleRecoveryContacts` | legacy collision callers removed | superseded recovery contacts |
 | `applyServerDamage` | all callers use `applyActorDamage` | compatibility wrapper |
 | `MeleeHitEventPacket` | weapon-clash presentation moves to shared contact event | presentation-only packet |
-
+| `WeaponSwordsword` legacy update internals | `update()` returns early for animation-profile weapons, but `SwordswordState` still drives local/remote presentation | needs a dedicated presentation-state migration |
+| `ProjectileFireResultPacket` + `pendingFireRequests` | no server sender remains after the legacy request handler deletion; client path still exists | remove after client pending-fire migration |
 ### Do Not Reintroduce
 
 - separate melee fallback and claim damage formulas

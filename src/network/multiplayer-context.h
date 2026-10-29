@@ -507,7 +507,6 @@ struct MultiplayerContext
     std::unordered_set<uint64_t> processedChatMessageIds;
     uint32_t nextLocalShotSerial = 1;
     uint32_t nextLocalProjectileFireSerial = 1;
-    uint32_t nextLocalMeleeAttackSerial = 1;
     uint32_t nextActionRequestId = 1;  // monotonic, shared across all action types
     uint32_t latestServerTick = 0;
     // Newest server tick the monotonic render clock was anchored to. If the
@@ -972,11 +971,6 @@ uint32_t mpSendShotEvent(
     const glm::vec3& direction,
     const glm::vec3& normal,
     const glm::vec3& knockbackImpulse = glm::vec3(0.0f));
-uint32_t mpSendProjectileFireRequest(
-    MultiplayerContext& ctx,
-    uint8_t weapon,
-    const glm::vec3& origin,
-    const glm::vec3& direction);
 uint32_t mpPredictProjectileAttack(
     MultiplayerContext& ctx,
     uint32_t requestId,
@@ -1008,16 +1002,6 @@ IceConnectStatus mpIceConnectPoll();
 bool mpIceConnectActive();
 void mpIceConnectCancel();
 void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& status);
-uint32_t mpSendMeleeHitRequest(
-    MultiplayerContext& ctx,
-    uint32_t targetPlayerId,
-    int damage,
-    uint8_t weapon,
-    uint8_t attackType,
-    const glm::vec3& hit,
-    const glm::vec3& normal,
-    const glm::vec3& knockback,
-    float weaponSpeed);
 bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes);
 void mpAvatarNetworkTick(MultiplayerContext& ctx);
 void mpProcessAvatarManifestPacket(MultiplayerContext& ctx,

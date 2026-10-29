@@ -105,12 +105,10 @@ enum PacketType : uint8_t
     PACKET_RECONNECT_ACCEPT = 24,
     PACKET_DISAGREEMENT = 25,
     PACKET_CLIENT_MAP_READY = 26,
-    PACKET_PROJECTILE_FIRE_REQUEST = 27,
     PACKET_PROJECTILE_SPAWN_EVENT = 28,
     PACKET_PROJECTILE_STATE_EVENT = 29,
     PACKET_PROJECTILE_EXPLODE_EVENT = 30,
     PACKET_PROJECTILE_DESPAWN_EVENT = 31,
-    PACKET_MELEE_HIT_REQUEST = 32,
     PACKET_MELEE_HIT_EVENT = 33,
     PACKET_PELLET_BLAST_REQUEST = 34,
     PACKET_PELLET_BLAST_EVENT = 35,
@@ -754,21 +752,6 @@ struct ProjectileDamageResultPacket
     uint32_t targetSpawnGeneration = 0;
 };
 
-struct ProjectileFireRequestPacket
-{
-    PacketHeader header;
-    uint32_t fireSerial = 0;
-    uint32_t lastServerTick = 0;
-    uint8_t weapon = NETWORK_WEAPON_NONE;
-    uint8_t reserved[3] = {};
-    float originX = 0.0f;
-    float originY = 0.0f;
-    float originZ = 0.0f;
-    float dirX = 0.0f;
-    float dirY = 0.0f;
-    float dirZ = 0.0f;
-};
-
 struct ProjectileSpawnEventPacket
 {
     PacketHeader header;
@@ -891,28 +874,6 @@ struct DamageConfirmedEventPacket
     float knockY = 0.0f;
     float knockZ = 0.0f;
     float contactForce = -1.0f; // shared physical-impact feedback
-};
-
-struct MeleeHitRequestPacket
-{
-    PacketHeader header;
-    uint32_t attackSerial = 0;
-    uint32_t lastServerTick = 0;
-    uint32_t targetPlayerId = 0;
-    int32_t damage = 0;
-    uint8_t weapon = NETWORK_WEAPON_NONE;
-    uint8_t attackType = 0;
-    uint8_t reserved[2] = {};
-    float hitX = 0.0f;
-    float hitY = 0.0f;
-    float hitZ = 0.0f;
-    float normalX = 0.0f;
-    float normalY = 0.0f;
-    float normalZ = 0.0f;
-    float knockX = 0.0f;
-    float knockY = 0.0f;
-    float knockZ = 0.0f;
-    float weaponSpeed = 0.0f;
 };
 
 struct MeleeHitEventPacket
@@ -1861,12 +1822,10 @@ struct BombTagPassEventPacket
 static_assert(sizeof(SnapshotPacket) < MAX_RECEIVE_PACKET_BYTES, "SnapshotPacket exceeds client receive buffer");
 static_assert(sizeof(ShotRequestPacket) <= 132, "ShotRequestPacket is too large");
 static_assert(sizeof(ShotEventPacket) <= 160, "ShotEventPacket is too large");
-static_assert(sizeof(ProjectileFireRequestPacket) <= 80, "ProjectileFireRequestPacket is too large");
 static_assert(sizeof(ProjectileSpawnEventPacket) <= 128, "ProjectileSpawnEventPacket is too large");
 static_assert(sizeof(ProjectileStateEventPacket) <= 112, "ProjectileStateEventPacket is too large");
 static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
-static_assert(sizeof(MeleeHitRequestPacket) <= 96, "MeleeHitRequestPacket is too large");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
 static_assert(sizeof(DamageConfirmedEventPacket) <= 112, "DamageConfirmedEventPacket is too large");
 static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");

@@ -965,7 +965,6 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
     p.lastProjectileFireSerial = 0;
-    p.lastMeleeAttackSerial = 0;
     p.projectileFireCooldown = 0.0f;
     const char* rawName = reinterpret_cast<const HelloPacket*>(buffer)->name;
     p.name = uniquePlayerName(players, rawName, id);
@@ -1779,7 +1778,6 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     p.lastHeardMs = nowMs();
     p.lastShotSerial = 0;
     p.lastProjectileFireSerial = 0;
-    p.lastMeleeAttackSerial = 0;
     p.projectileFireCooldown = 0.0f;
     p.joinToken = joinTokenStr;
     p.joinTokenValidated = true;
@@ -2224,24 +2222,11 @@ ServerPacketProcessResult processServerPacket(
                                  totalPacketsOut, retransmitState);
         result.handled = true;
     }
-    else if (header->type == PACKET_PROJECTILE_FIRE_REQUEST)
-    {
-        handleProjectileFireRequest(sock, from, buffer, bytes, players,
-                                    projectiles, nextProjectileId, world, tick,
-                                    totalPacketsOut);
-        result.handled = true;
-    }
     else if (header->type == PACKET_ATTACK_REQUEST)
     {
         handleAttackRequest(sock, from, buffer, bytes, players, npcs, projectiles,
                             nextProjectileId, world, tick, totalPacketsOut,
                             retransmitState);
-        result.handled = true;
-    }
-    else if (header->type == PACKET_MELEE_HIT_REQUEST)
-    {
-        handleMeleeHitRequest(sock, from, buffer, bytes, players, tick,
-                              totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_CHAT_MESSAGE)

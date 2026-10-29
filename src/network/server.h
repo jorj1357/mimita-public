@@ -23,7 +23,6 @@
 #include "entities/avatar-rig.h"
 #include "combat/weapon-execution.h"
 #include "combat/attack-timeline.h"
-#include "combat/weapon-swordsword.h"
 #include "combat/weapon-quick-hit.h"
 #include "combat/weapon-spyknife.h"
 #include "vip/vip-appearance.h"
@@ -388,7 +387,6 @@ struct ServerPlayer
     };
     CachedFireResult cachedFireResults[MAX_CACHED_FIRE_RESULTS] = {};
     uint8_t nextCachedFireResultSlot = 0;
-    uint32_t lastMeleeAttackSerial = 0;
     float projectileFireCooldown = 0.0f;
     uint64_t nextProjectileFireTick = 0; // tick-based cooldown for projectiles
 
@@ -439,12 +437,10 @@ struct ServerPlayer
     ServerInput input;
     std::unique_ptr<IGameTransport> transport;
     std::string iceSessionId;
-    SwordswordState swordswordState;
     QuickHitState quickHitState;
     SpyKnifeState spyKnifeState;
     AttackTimeline physicalAttackTimeline;
     bool physicalAttackIsLunge = false;
-    float meleeCooldownTimer = 0.0f;
 
     // ── Melee action state (Captain Falcon move set) ───────────────────
     // One active Melee action per fighter. The shared move-set data
@@ -1140,12 +1136,6 @@ void handleAttackRequest(SOCKET sock, const sockaddr_in& from, const char* buffe
                          const HeadlessWorld& world,
                          uint32_t tick, uint64_t& totalPacketsOut,
                          DisagreementRetransmitState* retransmitState = nullptr);
-void handleProjectileFireRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                                 std::unordered_map<uint32_t, ServerPlayer>& players,
-                                 std::unordered_map<uint32_t, ServerProjectile>& projectiles,
-                                 uint32_t& nextProjectileId,
-                                 const HeadlessWorld& world,
-                                 uint32_t tick, uint64_t& totalPacketsOut);
 ServerProjectileAttackResult handleGenericProjectileAttack(
     SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1175,13 +1165,6 @@ void cancelDeadNpcProjectiles(
     std::unordered_map<uint32_t, ServerProjectile>& projectiles,
     uint32_t tick,
     uint64_t& totalPacketsOut);
-void handleMeleeHitRequest(SOCKET sock, const sockaddr_in& from, const char* buffer, int bytes,
-                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                           uint32_t tick, uint64_t& totalPacketsOut);
-void tickServerSwordCombat(SOCKET sock,
-                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                           const HeadlessWorld& world,
-                           float dt, uint32_t tick, uint64_t& totalPacketsOut);
 void tickServerPhysicalContactWeapons(SOCKET sock,
                                       std::unordered_map<uint32_t, ServerPlayer>& players,
                                       std::unordered_map<uint32_t, ServerNpc>& npcs,

@@ -807,9 +807,6 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.nextProjectileFireTick = 0;
     player.lastShotSerial = 0;
     player.lastProjectileFireSerial = 0;
-    player.lastMeleeAttackSerial = 0;
-    player.swordswordState = SwordswordState{};
-    player.meleeCooldownTimer = 0.0f;
     player.meleeNextAllowedTick = 0;
     player.meleeClaimedTargetTicks.clear();
     player.meleeClaimedTargetTickOrder.clear();

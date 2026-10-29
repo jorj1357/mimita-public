@@ -553,20 +553,6 @@ bool mpAcceptReliableEventOnce(MultiplayerContext& ctx, uint32_t eventId, uint32
     return acceptReliableEventOnce(ctx, eventId, eventSessionId);
 }
 
-uint32_t mpSendProjectileFireRequest(
-    MultiplayerContext& ctx,
-    uint8_t weapon,
-    const glm::vec3& origin,
-    const glm::vec3& direction)
-{
-    (void)ctx;
-    (void)weapon;
-    (void)origin;
-    (void)direction;
-    printf("[PROJECTILE FIRE REQUEST SEND] accepted=0 reason=legacy-direct-packet-disabled\n");
-    return 0;
-}
-
 uint32_t mpPredictProjectileAttack(
     MultiplayerContext& ctx,
     uint32_t requestId,
@@ -680,52 +666,6 @@ void mpCancelPredictedProjectileAttack(MultiplayerContext& ctx,
                                        uint32_t requestId)
 {
     removePredictedProjectileForRequest(ctx, requestId);
-}
-
-uint32_t mpSendMeleeHitRequest(
-    MultiplayerContext& ctx,
-    uint32_t targetPlayerId,
-    int damage,
-    uint8_t weapon,
-    uint8_t attackType,
-    const glm::vec3& hit,
-    const glm::vec3& normal,
-    const glm::vec3& knockback,
-    float weaponSpeed)
-{
-    if (!ctx.active || !ctx.localPlayerId || targetPlayerId == 0 ||
-        weapon != NETWORK_WEAPON_SWORDSWORD)
-        return 0;
-
-    MeleeHitRequestPacket packet{};
-    packet.header.type = PACKET_MELEE_HIT_REQUEST;
-    packet.header.tick = ctx.tick;
-    packet.header.playerId = ctx.localPlayerId;
-    packet.attackSerial = ctx.nextLocalMeleeAttackSerial++;
-    if (ctx.nextLocalMeleeAttackSerial == 0)
-        ctx.nextLocalMeleeAttackSerial = 1;
-    packet.lastServerTick = mpFireRenderTick(ctx, ctx.latestServerTick);
-    packet.targetPlayerId = targetPlayerId;
-    packet.damage = std::clamp(damage, 1, 200);
-    packet.weapon = weapon;
-    packet.attackType = attackType;
-    packet.hitX = hit.x;
-    packet.hitY = hit.y;
-    packet.hitZ = hit.z;
-    packet.normalX = normal.x;
-    packet.normalY = normal.y;
-    packet.normalZ = normal.z;
-    packet.knockX = knockback.x;
-    packet.knockY = knockback.y;
-    packet.knockZ = knockback.z;
-    packet.weaponSpeed = weaponSpeed;
-    mpSendPacket(ctx, &packet, sizeof(packet));
-    printf("[SWORD HIT REQUEST SEND] attackerId=%u targetId=%u attackSerial=%u "
-           "damage=%d hit=(%.2f,%.2f,%.2f) knockback=(%.2f,%.2f,%.2f)\n",
-           ctx.localPlayerId, targetPlayerId, packet.attackSerial,
-           packet.damage, hit.x, hit.y, hit.z,
-           knockback.x, knockback.y, knockback.z);
-    return packet.attackSerial;
 }
 
 void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const ProjectileSpawnEventPacket* event)
