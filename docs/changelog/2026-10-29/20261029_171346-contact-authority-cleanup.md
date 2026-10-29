@@ -1,7 +1,7 @@
 # Contact Authority Documentation, Quality Gates, and Inert Deletion
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T17:35:00Z`
+Time last updated: `2026-10-29T17:40:00Z`
 
 ## Summary
 
@@ -102,7 +102,7 @@ instead of the removed fallback timeline.
 Source and docs:
 
 - docs/tooling commit: `413d701` (`docs: define contact authority and quality gates`)
-- deletion commit: pending at changelog creation time
+- deletion commit: `6c488994` (`refactor: remove inert legacy contact networking`)
 
 Build:
 
