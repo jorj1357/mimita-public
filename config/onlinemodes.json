@@ -34,6 +34,15 @@
       "max_players": 2
     },
     {
+      "id": "rocket_duel",
+      "gamemode_id": "rocket_duel",
+      "name": "Rocket Launcher Duel",
+      "description": "Rocket-only 1v1 against a player or NPC.",
+      "teams": 2,
+      "score_limit": 20,
+      "max_players": 2
+    },
+    {
       "id": "bomb_tag",
       "gamemode_id": "bombtag",
       "name": "Bomb Tag",
@@ -80,6 +89,15 @@
       "description": "Sixteen fast Fighters versus two slow, powerful Juggernauts. One life.",
       "teams": 2,
       "score_limit": 0
+    },
+    {
+      "id": "jugger_horde",
+      "gamemode_id": "jugger_horde",
+      "name": "Juggernaut Horde",
+      "description": "Four Juggernauts survive five minutes against respawning Fighters.",
+      "teams": 2,
+      "score_limit": 0,
+      "max_players": 64
     },
     {
       "id": "juggernaut_duel",

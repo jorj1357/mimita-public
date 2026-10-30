@@ -5,7 +5,9 @@ replay, edit, and export it.
 **Audience:** simulation, networking, animation, audio, effects, rendering, and
 creator-tool contributors.
 **Status:** active desired behavior; implementation is partial and runtime
-acceptance is incomplete.
+acceptance is incomplete. Recorder, player, editor, and export code already
+exist in the repository; this document does not claim that every workflow is
+currently reliable.
 **Does not:** promise deterministic simulation across different machines,
 replace live gameplay, or define a separate video-editing application.
 
@@ -30,6 +32,10 @@ The user can start and stop a recording through a discoverable in-game action.
 The recent-clip action remains a fast path; its current key binding and clip
 duration must be read from the active configuration rather than duplicated in
 this specification.
+
+An earlier user report described P as saving the last 15 seconds. Verify that
+binding and duration against the active configuration before treating them as
+current behavior.
 
 Replay data records the events and state required by the existing replay and
 effects contracts. It must preserve event order, simulation tick identity,

@@ -270,8 +270,6 @@ remains outstanding; see
 
 ## General NPC intent contract (objective / focus / patrol)
 
-## General NPC intent contract (objective / focus / patrol)
-
 A gamemode does not own NPC artificial intelligence. It selects roles, presets,
 and behavior profiles; the shared NPC brain turns those into intent. To keep the
 brain mode-agnostic, every mode NPC intent reduces to one of three general

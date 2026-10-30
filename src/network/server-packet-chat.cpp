@@ -1355,7 +1355,7 @@ void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,
             emitPvPKillPersistenceEvent(players, 0, kv.second.id, "environment", 0,
                                        kv.second.pos, kv.second.pos);
             kv.second.respawnSeconds = serverPlayerRespawnsEnabled(kv.second.id)
-                ? serverMatchRespawnSeconds() : -1.0f;
+                ? serverActorRespawnSeconds(kv.second.id) : -1.0f;
             kv.second.vel = glm::vec3(0.0f);
             printf("%s [SERVER VOID DEATH] playerId=%u name=%s z=%.1f killZ=%.1f\n",
                    serverTimestamp(), kv.second.id, kv.second.name.c_str(),

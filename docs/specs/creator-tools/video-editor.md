@@ -45,9 +45,9 @@ Projects should report missing media clearly and let the user relink it.
   preview. Undo and redo cover edits to the current project.
 - Let users select, move, and keyframe replay cameras and supported effects
   without changing the recorded gameplay.
-- Keep presets editable. List all effects included with MiMITA and disclose
-  any external dependency or cost before the effect is applied or exported.
-  The initial MiMITA effect set is free to use.
+- Keep presets editable. The built-in MiMITA effects and exports are free to
+  use. List included effects and disclose any external dependency or cost
+  before the effect is applied or exported.
 - Make subtitle timing and speaker-label visibility independently adjustable.
 
 ## Replay and media integration

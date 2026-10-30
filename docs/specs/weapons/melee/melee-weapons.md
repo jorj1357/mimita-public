@@ -157,7 +157,14 @@ DamagePlayer()
 
 A player may also walk directly into an already-held melee weapon and cause contact without the attacker clicking.
 
-## **No Artificial Melee Cooldown**
+## **Mode 1 — Continuous Physical Contact: No Artificial Melee Cooldown**
+
+This rule applies to **Mode 1**, where the equipped melee weapon physically
+contacts another actor and contact can happen without an attack click. Actor
+damage may occur at most once per victim, per weapon, per 60 Hz simulation
+tick, with no additional generic actor-damage cooldown. Weapon-versus-weapon
+clash feedback and its knockback are a separate response and do have a
+cooldown; see “Weapon-versus-weapon clash cooldown” below.
 
 There is intentionally **no generic melee hit cooldown**.
 
@@ -177,7 +184,7 @@ or:
 60 hits/second
 ```
 
-This is intentional.
+This is intentional for Mode 1 across all melee weapons.
 
 Do NOT "fix" this by adding:
 
@@ -192,7 +199,37 @@ one hit per click
 
 unless a specific future weapon explicitly defines such behavior.
 
-Extremely fast repeated melee contact is allowed and encouraged.
+Extremely fast repeated melee contact is allowed and encouraged in Mode 1.
+
+### Weapon-versus-weapon clash cooldown
+
+Two melee weapons touching each other may produce a clash response: opposing
+knockback, a spark effect, and metal ricochet audio. This response is separate
+from weapon-to-actor damage. Apply one clash response per weapon pair, then
+wait at least **6 simulation ticks (100 ms)** before producing another while
+the pair remains in contact. The cooldown gates clash knockback and clash
+presentation together; it must not suppress a valid weapon-to-actor damage
+contact at the same time. Separation does not cancel an already-running
+cooldown; a later clash can respond when the six ticks have elapsed.
+
+The six-tick interval matches the current direct blade-to-blade server path
+and is the initial tuning target. All weapon clash paths, including block
+contacts, must use the same pair-scoped policy.
+
+### Mode 2 — Click-triggered active hitbox (TODO)
+
+Mode 2 is the click-triggered attack model: clicking starts an attack
+animation and its authored active hitbox, similar to Super Smash Bros. Melee.
+This mode has **not been implemented as of 2026-10-29 23:16
+America/New_York**. TODO: update this section when Mode 2 is implemented,
+including its contact cadence, per-activation/per-victim hit policy, and any
+intentional limits. Do not assume Mode 1's continuous-contact rule defines
+Mode 2's hit policy until that decision is recorded.
+
+Initial development priority is fast, responsive melee play. Build and tune
+those styles first; add slower, more deliberate fighting styles (potentially
+Dark Souls-like) later. Mode 2 is a contact-generation model and is not itself
+a requirement that attacks be slow.
 
 ---
 

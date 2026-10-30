@@ -410,8 +410,8 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
             {
                 n.body.currentHp = 0;
                 n.body.dead = true;
-                n.body.respawnTimer = serverMatchRespawnsEnabled()
-                    ? serverMatchRespawnSeconds() : -1.0f;
+                n.body.respawnTimer = serverActorRespawnsEnabled(n.id)
+                    ? serverActorRespawnSeconds(n.id) : -1.0f;
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::NpcCombat, StructuredLevel::Important,
                     "npc.death", std::to_string(n.id), "health_depleted",
@@ -1843,8 +1843,8 @@ void simulateSharedNpcs(SOCKET sock,
                         victim.health = 0;
                         nearestNpc->body.currentHp = 0;
                         nearestNpc->body.dead = true;
-                        nearestNpc->body.respawnTimer = serverMatchRespawnsEnabled()
-                            ? serverMatchRespawnSeconds() : -1.0f;
+                        nearestNpc->body.respawnTimer = serverActorRespawnsEnabled(nearestNpc->id)
+                            ? serverActorRespawnSeconds(nearestNpc->id) : -1.0f;
                         serverGamemodeRecordKill(sock, players, &npcs,
                             n.id, ENTITY_NPC, nearestNpc->id, ENTITY_NPC,
                             wId, wDisp, tick,
@@ -1937,13 +1937,12 @@ void simulateSharedNpcs(SOCKET sock,
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
     // One-life modes never revive: the dead body stays Spectating for the round.
-    const bool npcRespawns = serverMatchRespawnsEnabled();
     const bool npcWaveMode = serverGamemodeState().npcWaves;
     for (Npc& n : npcSystem.all())
     {
         if (n.replayControlled) continue;
         if (!n.body.dead) continue;
-        if (!npcRespawns) continue;
+        if (!serverActorRespawnsEnabled(n.id)) continue;
         // NPC Waves actors are one-life per wave. Reviving them makes the wave
         // clear condition unreachable even when every spawned NPC is killed.
         if (npcWaveMode) continue;

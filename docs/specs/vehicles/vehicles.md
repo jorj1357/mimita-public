@@ -128,7 +128,7 @@ Constraints are first-class records, not per-feature code. Minimum surface:
 Constraint
 {
     id
-    type            Point | Hinge | Slider | Motor
+    type            Fixed | Point | Hinge | Slider | Motor
     entityA
     entityB         (0 = world / static anchor)
     localAnchorA
@@ -151,6 +151,10 @@ Constraint
 
 Required behavior:
 
+- **Fixed (weld)**: preserve the authored relative transform between two
+  bodies, constraining all three translation and all three rotation axes.
+  Optional break force/torque allows a weld to become detached through the
+  shared constraint owner.
 - **Point**: two anchors coincide; linear only.
 - **Hinge**: anchors coincide; relative rotation is free about the hinge axis and
   locked on the other two axes. Optional angular limits and motor.
@@ -382,7 +386,7 @@ Weapon aim, fire, and reload stay available.
 No locomotion and no driving input. Look, weapon aim/fire, `G` to ragdoll
 (unseats), and `F` to leave.
 
-### 11.4 Mode-selected control profiles
+#### Mode-selected control profiles
 
 Vehicle physics is shared, while the active gamemode selects a named control
 profile through its mode data. The profile maps device inputs to generic
@@ -397,7 +401,7 @@ template or adding mode-ID branches to the vehicle system.
 The first trick-vehicle profile is shared by skateboard and BMX: W accelerates,
 S brakes and then reverses, A/D steer and lean, and holding Space while
 grounded charges a crouch/jump that releases into a higher jump. Airborne A/D
-controls rotation about world up. Board and bike templates tune balance,
+controls rotation about world Z (up). Board and bike templates tune balance,
 traction, gravity, and jump response independently. Trick scoring and any
 temporary Need for Madness boost belong to mode rules, not the shared vehicle
 physics owner.

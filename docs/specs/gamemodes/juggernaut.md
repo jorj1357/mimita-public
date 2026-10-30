@@ -752,3 +752,25 @@ Acceptance for this fix: an enemy Juggernaut hit reduces Fighter health and
 replicates confirmed damage with the NPC identity; a same-team NPC hit remains
 blocked. The live journal must show attacker ID, actor kind, attacker team,
 victim team, and applied/rejected result.
+
+## Juggernaut Horde variant
+
+`jugger_horde` is a separate selectable mode. It fills the normal
+Juggernaut Fighter team to its current 64-actor capacity and fields four
+Juggernauts. Humans join Fighters; NPCs fill open Fighter slots and all four
+Juggernaut slots. A Fighter respawns on the next fixed update after death;
+a dead Juggernaut stays out until the next match. Each Juggernaut kill of a
+Fighter restores 100% of the Juggernaut's role maximum HP, capped at maximum,
+for both human and NPC Juggernauts. Fighter kills grant no kill healing.
+
+Fighters win when every Juggernaut is eliminated. Juggernauts win if at least
+one survives until the authoritative active-match deadline at 300 seconds,
+which is 18,000 ticks at 60 Hz. Elimination is evaluated before timeout on
+the same tick, so a final Juggernaut death on the deadline wins for Fighters.
+The mode reuses the shared team roster, actor lifecycle, kill credit, health,
+and results owners. Team respawn delay, team kill-heal percentage, and a
+configured timeout winner are general mode data rather than Horde-only logic.
+The match HUD shows the authoritative time remaining at the top, starting at
+`5:00` and counting down to `0:00`. Every match uses the shared visible
+`3 → 2 → 1 → GO!` countdown. Results name the winning team, then the next
+intermission and countdown start automatically. This cycle repeats indefinitely.

@@ -119,15 +119,15 @@
     // Downward acceleration.
     //
     // Matches the fast Source preset.
-    // "gravity": -40.0,
-    "gravity": -70.0,
+    "gravity": -40.0,
+    // "gravity": -70.0,
 
     // Upward velocity applied when jumping.
     //
     // Matches the fast Source preset.
-    // "jump_velocity": 15.1,
+    "jump_velocity": 15.1,
     // "jump_velocity": 23.1,
-    "jump_velocity": 20.1,
+    // "jump_velocity": 20.1,
     // "jump_velocity": 10.0,
 
     // Add the jump impulse to the current vertical velocity. This preserves
@@ -296,8 +296,8 @@
     // "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
-    // "speed_limit": 50.0,
-    "speed_limit": 20.0,
+    "speed_limit": 50.0,
+    // "speed_limit": 20.0,
 
     // "fixed" = acceleration/impulses are prevented from exceeding the limit.
     // "clamp" = final horizontal velocity is clamped after movement.

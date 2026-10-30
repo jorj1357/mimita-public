@@ -16,11 +16,12 @@
       "arm_ragdoll": {
         "enabled": true,
         "extend_strength": 500.0,
-        "extend_max_speed": 25.0,
+        "extend_max_speed": 253.0,
         "max_stretch": 0.25,
         "stretch_force": 50.0,
         "weak_look_strength": 0.1,
-        "angular_damping": 2.5,
+        "angular_damping": 22.5,
+        // "angular_damping": 10.0,
         "gravity_scale": 2.0,
         "world_collision": true,
         "self_collision": true,
@@ -184,15 +185,34 @@
       -90.0
     ],
     "attachment": {
+      // "position": [
+      //   0.25,
+      //   // 0.5,
+      //   // -0.05,
+      //   // -0.5,
+      //   -1.5,
+      //   // -0.25
+      //   -2.0
+      // ],
       "position": [
         0.25,
+        // 0.5,
         -0.05,
+        // -0.5,
+        // -1.5,
         -0.25
+        // -2.0
       ],
       "rotation_degrees": [
-        90.0,
-        10.0,
-        -25.0
+        // 90.0,
+        0.0,
+        // 10.0,
+        // 90.0,
+        0.0,
+        // -25.0
+        // -90.0
+        90.0
+        // 0.0
       ]
     },
     "scale": [

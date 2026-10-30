@@ -296,6 +296,29 @@ triangles. The GLB remains the base map. The dedicated server applies the same
 blocks to its headless world so player and NPC collision/navigation see them.
 Arbitrary baked GLB triangles are not individually editable in v1.
 
+### Authored surface behavior — design intake, not implemented
+
+The editor needs a future surface-properties slice for authored blocks and
+supported loaded map objects. The requested controls are:
+
+- **Step-up / climbable:** allow walking forward up very steep authored faces,
+  including an 89-degree example. Whether the option can climb vertical or
+  overhanging faces (90 degrees or greater), and whether it is per object, per
+  face, or both, remains undecided.
+- **Pass-through:** let selected authored objects permit actors or other
+  gameplay objects through them. This is a gameplay-collision property and
+  remains independent from visible alpha.
+- **Visual alpha:** use `1.0` for fully opaque and `0.0` for fully transparent.
+  This concerns rendered geometry/materials; it is independent from collision.
+
+These are desired editor capabilities, not current runtime behavior. Existing
+`block_wire_alpha` only controls editor wireframe presentation. Keep the global
+movement step-up and slope rules in the movement spec as the default behavior;
+define any per-surface override there and in the collision contract before
+implementation. Client and server behavior must match. The related design
+questions and initial acceptance cases are tracked in
+[`open-gameplay-issues.md`](../open-gameplay-issues.md#new-intake--2026-10-29-authored-climbable-pass-through-and-transparent-surfaces).
+
 ### Payload route authoring
 
 The editor can author ordered route points and a cart origin in map JSON:
@@ -790,10 +813,10 @@ For a placed object, the properties panel should support:
 - stable selection and an undoable transform/property edit.
 
 Creators should be able to select multiple objects and connect them with a
-shared physical constraint, including a rigid welded attachment when supported
-by the constraint system. Connections have stable IDs and can be inspected,
-edited, or removed from the editor. The editor must not implement its own
-physics or attachment solver.
+shared physical constraint. A rigid welded attachment uses the shared
+`Fixed` constraint. Connections have stable IDs and can be inspected, edited,
+or removed from the editor. The editor must not implement its own physics or
+attachment solver.
 
 The map save stores asset references, per-instance physical overrides, and
 constraint records. On reload, the editor reports a missing asset or

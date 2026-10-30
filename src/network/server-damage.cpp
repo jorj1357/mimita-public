@@ -254,7 +254,7 @@ static ServerDamageResult applyPlayerDamageLegacy(
         // negative timer so the respawn pump never revives the actor and the
         // match state advances it to Spectating.
         const bool respawnAllowed = serverPlayerRespawnsEnabled(target.id);
-        target.respawnSeconds = respawnAllowed ? serverMatchRespawnSeconds() : -1.0f;
+        target.respawnSeconds = respawnAllowed ? serverActorRespawnSeconds(target.id) : -1.0f;
         target.vel = glm::vec3(0.0f);
         target.movement.movementEnabled = false;
         target.movement.baseVelocity = glm::vec3(0.0f);

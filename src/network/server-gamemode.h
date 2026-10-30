@@ -195,6 +195,9 @@ struct ServerGamemodeState
     // respawn; dead actors become Spectating), >0 = respawn delay.
     float respawnSeconds = -1.0f;
     bool killHeals = true;
+    float teamRespawnSeconds[2] = {-1.0f, -1.0f};
+    float teamKillHealPercent[2] = {-1.0f, -1.0f};
+    int timeLimitWinnerTeam = -1;
     // Active gamemode policy: false means same-team actors cannot damage one
     // another. Loaded from Gamemode::friendlyFire at mode start.
     bool friendlyFireEnabled = false;
@@ -408,6 +411,7 @@ ServerGamemodeState& serverGamemodeState();
 // serverMatchRespawnsEnabled: false => one-life; dead actors become Spectating.
 bool serverMatchRespawnsEnabled();
 bool serverPlayerRespawnsEnabled(uint32_t playerId);
+bool serverActorRespawnsEnabled(uint32_t actorId);
 bool serverFriendlyFireEnabled();
 bool serverFriendlyFireBlocks(
     uint32_t attackerId, bool attackerNpc,
@@ -425,6 +429,7 @@ bool serverMeleeConsumeStock(uint32_t actorId);
 bool serverMeleeActorHasStocks(uint32_t actorId);
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();
+float serverActorRespawnSeconds(uint32_t actorId);
 
 // Role-resolved spawn data for one authoritative actor. Values are 0/empty when
 // the actor has no role or the role does not override that field, so callers

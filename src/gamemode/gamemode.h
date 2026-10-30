@@ -52,6 +52,8 @@ struct GamemodeTeam {
     std::string id;
     std::string displayName;
     int capacity = 0;
+    float respawnSeconds = -1.0f;  // -1 inherits the mode rule
+    float killHealPercent = -1.0f; // -1 inherits kill_heals
     std::string role;
     std::string spawnGroup;
     // Optional map-node name filters for this team's spawn group. Matching is
@@ -271,6 +273,7 @@ struct Gamemode {
     int goalValue = 20;
     int weaponSetId = 1;
     int timeLimitSeconds = 0;
+    std::string timeLimitWinnerTeam;
     // Outcome when a timed match expires before its score goal is reached.
     // "high_score" preserves the shared default; "stalemate" leaves no winner.
     std::string timeLimitOutcome = "high_score";

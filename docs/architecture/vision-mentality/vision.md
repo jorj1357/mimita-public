@@ -71,7 +71,8 @@ them meaningful control over what they use and contribute.
 Creation tools belong inside the MiMITA application as integrated workspaces,
 not as a collection of separate MiMITA-branded products. A player should be
 able to move from playing to editing a map, replay, video, or eventually music
-without installing a separate MiMITA Studio, DAW, or video-editor application.
+inside the same desktop `mimita.exe`, without installing a separate MiMITA
+Studio, DAW, or video-editor application.
 Platform builds may adapt their controls and capabilities; this direction is
 not a promise that every platform is supported today.
 

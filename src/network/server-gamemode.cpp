@@ -154,6 +154,18 @@ bool serverMatchRespawnsEnabled()
     return d.respawnSeconds != 0.0f;  // 0 == one-life
 }
 
+bool serverActorRespawnsEnabled(uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || d.warmup) return true;
+    const auto team = d.matchTeams.find(actorId);
+    if (team != d.matchTeams.end() && team->second >= 0 && team->second < 2) {
+        const float overrideSeconds = d.teamRespawnSeconds[team->second];
+        if (overrideSeconds >= 0.0f) return overrideSeconds > 0.0f;
+    }
+    return serverMatchRespawnsEnabled();
+}
+
 bool serverPlayerRespawnsEnabled(uint32_t playerId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
@@ -167,7 +179,7 @@ bool serverPlayerRespawnsEnabled(uint32_t playerId)
     // Melee: a fighter respawns only while it still has stocks.
     if (d.matchMode == "melee")
         return serverMeleeActorHasStocks(playerId);
-    return serverMatchRespawnsEnabled();
+    return serverActorRespawnsEnabled(playerId);
 }
 
 bool serverMeleeActorHasStocks(uint32_t actorId)
@@ -282,6 +294,17 @@ float serverMatchRespawnSeconds()
     const ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return 0.01f;
     return std::max(0.01f, d.respawnSeconds >= 0.0f ? d.respawnSeconds : 0.01f);
+}
+
+float serverActorRespawnSeconds(uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    const auto team = d.matchTeams.find(actorId);
+    if (team != d.matchTeams.end() && team->second >= 0 && team->second < 2) {
+        const float overrideSeconds = d.teamRespawnSeconds[team->second];
+        if (overrideSeconds >= 0.0f) return std::max(0.01f, overrideSeconds);
+    }
+    return serverMatchRespawnSeconds();
 }
 
 ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
@@ -744,6 +767,9 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.timeLimitSeconds = rules.timeLimitSeconds;
     d.respawnSeconds = rules.respawnSeconds;
     d.killHeals = rules.killHeals;
+    d.teamRespawnSeconds[0] = d.teamRespawnSeconds[1] = -1.0f;
+    d.teamKillHealPercent[0] = d.teamKillHealPercent[1] = -1.0f;
+    d.timeLimitWinnerTeam = -1;
     d.friendlyFireEnabled = false;
     d.winCondition = rules.winCondition;
     d.ffaKills.clear();
@@ -1086,7 +1112,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // started without needing the server console.
     nlohmann::json teamCapacities = nlohmann::json::array();
     for (const GamemodeTeam& team : gm.teams)
-        teamCapacities.push_back({{"id", team.id}, {"capacity", team.capacity}});
+        teamCapacities.push_back({{"id", team.id}, {"capacity", team.capacity},
+                                  {"respawn_seconds", team.respawnSeconds},
+                                  {"kill_heal_percent", team.killHealPercent}});
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
         "gamemode.match.configured", resolvedGamemodeId,
@@ -1097,6 +1125,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                        {"win_condition", gm.winCondition},
                        {"goal_value", gm.goalValue},
                        {"time_limit_seconds", gm.timeLimitSeconds},
+                       {"time_limit_winner_team", gm.timeLimitWinnerTeam},
                        {"time_limit_outcome", gm.timeLimitOutcome},
                        {"countdown_seconds", gm.countdownSeconds},
                        {"go_seconds", gm.goSeconds},
@@ -1116,6 +1145,15 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.timeLimitSeconds = gm.timeLimitSeconds;
     d.respawnSeconds = gm.respawnSeconds;
     d.killHeals = gm.killHeals;
+    d.teamRespawnSeconds[0] = d.teamRespawnSeconds[1] = -1.0f;
+    d.teamKillHealPercent[0] = d.teamKillHealPercent[1] = -1.0f;
+    d.timeLimitWinnerTeam = -1;
+    for (size_t team = 0; team < std::min<size_t>(2, gm.teams.size()); ++team) {
+        d.teamRespawnSeconds[team] = gm.teams[team].respawnSeconds;
+        d.teamKillHealPercent[team] = gm.teams[team].killHealPercent;
+        if (gm.teams[team].id == gm.timeLimitWinnerTeam && !gm.timeLimitWinnerTeam.empty())
+            d.timeLimitWinnerTeam = (int)team;
+    }
     d.friendlyFireEnabled = gm.friendlyFire;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
@@ -3894,15 +3932,25 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
     const size_t teamCount = std::min<size_t>(2, gm.teams.size());
     if (teamCount == 0) return;
     int humanCounts[2] = {0, 0};
+    const bool restrictHumanTeams = std::any_of(gm.teams.begin(), gm.teams.begin() + teamCount,
+        [](const GamemodeTeam& team) { return team.players; });
     for (auto& entry : players) {
         ServerPlayer& player = entry.second;
         if (player.spawnState != ServerPlayer::Active) continue;
         int team = player.matchTeam;
         if (team < 0 || team >= (int)teamCount ||
+            (restrictHumanTeams && !gm.teams[(size_t)team].players) ||
             (gm.teams[(size_t)team].capacity > 0 &&
              humanCounts[team] >= gm.teams[(size_t)team].capacity)) {
-            team = humanCounts[0] <= humanCounts[1] ? 0 : 1;
-            if (team >= (int)teamCount) team = 0;
+            team = -1;
+            for (size_t candidate = 0; candidate < teamCount; ++candidate) {
+                if (restrictHumanTeams && !gm.teams[candidate].players) continue;
+                if (gm.teams[candidate].capacity > 0 &&
+                    humanCounts[candidate] >= gm.teams[candidate].capacity) continue;
+                if (team < 0 || humanCounts[candidate] < humanCounts[team])
+                    team = (int)candidate;
+            }
+            if (team < 0) continue;
         }
         player.matchTeam = team;
         d.matchTeams[entry.first] = team;
@@ -4071,7 +4119,7 @@ void updateActorStates(ServerGamemodeState& d, SOCKET sock,
         const bool respawns = desc.controller == ActorController::Human
             ? serverPlayerRespawnsEnabled(kv.first)
             : (d.matchMode == "melee" ? serverMeleeActorHasStocks(kv.first)
-                                      : serverMatchRespawnsEnabled());
+                                      : serverActorRespawnsEnabled(kv.first));
 
         desc.state = downed ? ActorState::Downed
                             : nextActorState(before, dead, respawns);
@@ -4096,6 +4144,19 @@ void updateActorStates(ServerGamemodeState& d, SOCKET sock,
                 "[ACTOR STATE] id=%u role=%s team=%d %s -> %s\n",
                 kv.first, desc.roleId.empty() ? "none" : desc.roleId.c_str(),
                 desc.teamId, nameOf(before), nameOf(desc.state));
+            if (desc.teamId >= 0 && desc.teamId < 2 &&
+                d.teamRespawnSeconds[desc.teamId] >= 0.0f) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "gamemode.actor-life", std::to_string(kv.first),
+                    "team respawn policy applied to actor state", tick,
+                    nlohmann::json{{"mode", d.matchMode}, {"actor", kv.first},
+                                   {"controller", desc.controller == ActorController::Npc ? "npc" : "human"},
+                                   {"team", desc.teamId}, {"role", desc.roleId},
+                                   {"before", nameOf(before)}, {"after", nameOf(desc.state)},
+                                   {"respawn_allowed", respawns},
+                                   {"respawn_seconds", d.teamRespawnSeconds[desc.teamId]}});
+            }
         }
     }
 }
@@ -5278,7 +5339,9 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
     event.victoryType = d.victoryType == 0 ? "score_limit" : "time_limit";
     event.redScore = d.redTeamKills;
     event.blueScore = d.blueTeamKills;
-    event.winnerTeam = d.winnerTeam == 0 ? "red" : "blue";
+    const Gamemode& mode = GamemodeRegistry::instance().get(d.matchMode);
+    event.winnerTeam = d.winnerTeam >= 0 && d.winnerTeam < (int)mode.teams.size()
+        ? mode.teams[(size_t)d.winnerTeam].id : "";
     event.winnerPlayerId = (int64_t)d.winnerPlayerId;
 
     for (auto& kv : players) {
@@ -5287,7 +5350,9 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
         p.userId = kv.second.accountId > 0 ? (int64_t)kv.second.accountId : 0;
         p.username = kv.second.name;
         auto teamIt = d.matchTeams.find(kv.first);
-        p.team = (teamIt != d.matchTeams.end() && teamIt->second == 0) ? "red" : "blue";
+        const int teamIndex = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+        p.team = teamIndex >= 0 && teamIndex < (int)mode.teams.size()
+            ? mode.teams[(size_t)teamIndex].id : "";
         p.kills = kv.second.kills;
         p.deaths = kv.second.deaths;
 
@@ -5304,7 +5369,8 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
             p.deaths = deathIt != d.ffaDeaths.end() ? deathIt->second : 0;
             p.won = (p.team == event.winnerTeam);
         } else {
-            p.won = (kv.first == d.winnerPlayerId);
+            p.won = d.winnerTeam >= 0 ? teamIndex == d.winnerTeam
+                                       : kv.first == d.winnerPlayerId;
         }
         event.participants.push_back(std::move(p));
     }
@@ -5417,6 +5483,12 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
             ++d.stateVersion;
             broadcastDuelState(sock, d, players, totalPacketsOut);
             emitGamemodeMatchPersistence(d, tick, players);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.match.team-eliminated", d.matchMode,
+                "all actors on one team left play", tick,
+                nlohmann::json{{"mode", d.matchMode}, {"winner_team", winnerTeam},
+                               {"winner_actor", winnerActor}, {"alive_actors", aliveActors}});
             Debug::warn(Debug::Category::Duel,
                 "[ELIMINATION] last_team_standing winnerTeam=%d winnerActor=%u "
                 "aliveActors=%d mode=%s\n",
@@ -5469,7 +5541,18 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
         d.phaseTimer = d.resultsSeconds;
-        if (GamemodeRegistry::instance().get(d.matchMode).timeLimitOutcome == "stalemate") {
+        if (d.timeLimitWinnerTeam >= 0) {
+            d.winnerTeam = d.timeLimitWinnerTeam;
+            d.winnerPlayerId = 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.match.time-survival-win", d.matchMode,
+                "configured team survived to time limit", tick,
+                nlohmann::json{{"mode", d.matchMode}, {"winner_team", d.winnerTeam},
+                               {"match_start_tick", d.matchStartTick},
+                               {"time_limit_tick", d.matchTimeLimitTick}});
+            emitGamemodeMatchPersistence(d, tick, players);
+        } else if (GamemodeRegistry::instance().get(d.matchMode).timeLimitOutcome == "stalemate") {
             d.winnerPlayerId = 0;
             d.winnerTeam = -1;
             StructuredLogger::instance().writeEvent(
@@ -6394,6 +6477,33 @@ void serverGamemodeTick(SOCKET sock,
         d.pendingKillerIsNpc = event.killerEntityType == ENTITY_NPC;
         d.pendingVictimIsNpc = event.victimEntityType == ENTITY_NPC;
         d.hasPendingKill = true;
+        // NPC kills of players can arrive from server-damage without an NPC
+        // map pointer. Resolve their team heal here, where the authoritative
+        // NPC registry is available for every kill source.
+        if (d.pendingKillerIsNpc && event.killerId != event.victimId) {
+            const auto team = d.matchTeams.find(event.killerId);
+            if (team != d.matchTeams.end() && team->second >= 0 && team->second < 2) {
+                const float percent = d.teamKillHealPercent[team->second];
+                auto killer = npcs.find(event.killerId);
+                if (percent > 0.0f && killer != npcs.end() && killer->second.health > 0) {
+                    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(event.killerId);
+                    const int maxHp = profile.health > 0 ? profile.health : 100;
+                    const int beforeHp = killer->second.health;
+                    killer->second.health = std::min(maxHp, beforeHp +
+                        (int)std::lround(maxHp * percent / 100.0f));
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Important,
+                        "gamemode.kill-heal", std::to_string(event.killerId),
+                        "npc team heal resolved after confirmed kill", tick,
+                        nlohmann::json{{"mode", d.matchMode}, {"killer", event.killerId},
+                                       {"killer_type", ENTITY_NPC}, {"team", team->second},
+                                       {"victim", event.victimId}, {"heal_percent", percent},
+                                       {"health_before", beforeHp},
+                                       {"health_after", killer->second.health},
+                                       {"max_health", maxHp}});
+                }
+            }
+        }
         Debug::log(Debug::Category::Duel,
             "[GAMEMODE KILL QUEUE] event=%u killer=%s kind=%u victim=%s kind=%u remaining=%zu tick=%u\n",
             event.eventId, event.killerName.c_str(), (unsigned)event.killerEntityType,
@@ -7904,24 +8014,44 @@ void serverGamemodeRecordKill(
     uint32_t tick,
     uint64_t& totalPacketsOut)
 {
-    // Credit the kill. Heal the player killer only when the active gamemode
-    // rule allows it (kill_heals); one-life / tactical modes set false.
-    if (killerEntityType == ENTITY_PLAYER && killerId != 0 && killerId != victimId)
-    {
-        auto attacker = players.find(killerId);
-        if (attacker != players.end())
-        {
-            attacker->second.kills += 1;
-            const ServerGamemodeState& rules = serverGamemodeState();
-            if (matchKillHeals(rules.enabled, rules.killHeals)) {
-                // Heal to the actor's role-resolved life maximum, not a flat 100.
-                attacker->second.health = attacker->second.maxHealth > 0
+    // The mode's boolean heal remains the default. A team's percentage may
+    // refine it for both player and NPC killers without a second damage path.
+    if (killerId != 0 && killerId != victimId) {
+        const ServerGamemodeState& rules = serverGamemodeState();
+        float healPercent = matchKillHeals(rules.enabled, rules.killHeals) ? 100.0f : 0.0f;
+        const auto team = rules.matchTeams.find(killerId);
+        const bool teamHealOverride = team != rules.matchTeams.end() &&
+            team->second >= 0 && team->second < 2 &&
+            rules.teamKillHealPercent[team->second] >= 0.0f;
+        if (teamHealOverride)
+            healPercent = rules.teamKillHealPercent[team->second];
+
+        int healthBefore = -1;
+        int healthAfter = -1;
+        int maxHp = 0;
+        if (killerEntityType == ENTITY_PLAYER) {
+            auto attacker = players.find(killerId);
+            if (attacker != players.end()) {
+                attacker->second.kills += 1;
+                maxHp = attacker->second.maxHealth > 0
                     ? attacker->second.maxHealth : serverMaxHp();
+                healthBefore = attacker->second.health;
+                if (healPercent > 0.0f && healthBefore > 0)
+                    attacker->second.health = std::min(maxHp, healthBefore +
+                        (int)std::lround(maxHp * healPercent / 100.0f));
+                healthAfter = attacker->second.health;
             }
-            Debug::log(Debug::Category::Duel,
-                "[KILL HEAL] killer=%u mode=%s kill_heals=%d healed=%d\n",
-                killerId, rules.matchMode.c_str(), (int)rules.killHeals,
-                (int)matchKillHeals(rules.enabled, rules.killHeals));
+        }
+        if (healthBefore >= 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.kill-heal", std::to_string(killerId),
+                "kill credited and team heal resolved", tick,
+                nlohmann::json{{"mode", rules.matchMode}, {"killer", killerId},
+                               {"killer_type", killerEntityType}, {"team", team == rules.matchTeams.end() ? -1 : team->second},
+                               {"victim", victimId}, {"heal_percent", healPercent},
+                               {"health_before", healthBefore}, {"health_after", healthAfter},
+                               {"max_health", maxHp}});
         }
     }
 
@@ -8347,7 +8477,7 @@ void serverBombTagTick(SOCKET sock,
                 victimIt->second.dead = true;
                 serverConsumeNpcWaveLife(victimIt->second.id);
                 victimIt->second.respawnSeconds = serverPlayerRespawnsEnabled(victimIt->second.id)
-                    ? serverMatchRespawnSeconds() : -1.0f;
+                    ? serverActorRespawnSeconds(victimIt->second.id) : -1.0f;
                 ++victimIt->second.deaths;
 
                 // Credit kill to a random other player (explosion is environment)

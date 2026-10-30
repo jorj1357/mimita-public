@@ -31,6 +31,10 @@ Use the shared gamemode lifecycle. Starting targets for tuning are:
 7. Play ten rounds, then show match results, restore destructible map state,
    and start a new 30-second intermission.
 
+Each round selects one disaster at random from the enabled, valid roster for
+the current map. Invalid or unavailable entries are skipped with a reason;
+they must not strand the lifecycle between rounds.
+
 Times and round count are defaults for playtesting and remain mode data, not
 hard-coded lifecycle branches. Gameplay timers use the fixed simulation tick;
 the shared match lifecycle retains its documented countdown timing behavior.

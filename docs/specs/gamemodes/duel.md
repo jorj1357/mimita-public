@@ -8,8 +8,8 @@ setup, and the decisions that remain open after the initial implementation.
 
 ## Does not
 
-- Define the later Rocket Launcher-only, Melee, or Revolver-and-Shotgun Duel
-  variants. Each variant needs its own authored rules and preset references.
+- Define the later Melee or Revolver-and-Shotgun Duel variants. Each variant
+  needs its own authored rules and preset references.
 - Define rocket movement tuning. `config/movement/movement-source-rocket.json`
   is a candidate to improve for a later Rocket Launcher-only Duel; its values
   must not silently change standard Duel.
@@ -58,6 +58,17 @@ setup, and the decisions that remain open after the initial implementation.
 - Duel forces every player and NPC to use `monstertest1`. The preset allow list
   permits that avatar and has no denied patterns; each team role marks the
   avatar forced so personal avatar selection cannot replace it.
+
+## Rocket Launcher Duel variant
+
+`rocket_duel` is a separate selectable one-versus-one mode. One local human
+plays against one NPC when no second human joins. Both actors have only the
+Rocket Launcher from weapon set ID `3`; the mode's team roles must not supply
+another weapon set. It retains standard Duel's shared spawn, 20-kill goal,
+three-minute stalemate timeout, immediate respawn, phases, camera, and avatar.
+The new mode uses the shared roster, loadout, score, and respawn owners. The
+Rocket Launcher movement preset remains a separate tuning decision and is not
+required for this initial variant.
 
 ## Round phases
 

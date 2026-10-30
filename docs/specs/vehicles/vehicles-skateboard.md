@@ -25,7 +25,7 @@ traction, gravity, steering, and jump tuning.
 |---|---|---|
 | W | Accelerate forward | Maintain or influence forward drive as tuned |
 | S | Brake; continue input to reverse | Brake/air control as tuned |
-| A / D | Steer and lean left/right | Rotate about world up |
+| A / D | Steer and lean left/right | Rotate about world Z (up) |
 | Space held | Crouch/compress and charge a jump | No extra action in the first profile |
 | Space released | Jump; a longer grounded hold produces a higher jump | No extra action in the first profile |
 

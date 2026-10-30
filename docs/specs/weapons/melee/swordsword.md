@@ -127,7 +127,12 @@ active window is open.
 When two melee weapon contact shapes meet, both attackers receive an opposing
 impulse based on contact force. The contact plays a spark effect and a random
 metal ricochet sound. More force means more knockback and more force
-transferred to both actors.
+transferred to both actors. This clash response has a separate pair-scoped
+cooldown: at least 6 simulation ticks (100 ms) between repeated clash
+responses while the same weapon pair stays in contact. The cooldown gates the
+clash impulse, spark, and ricochet together; it does not throttle damage when
+a weapon also contacts an actor. Start with fast, responsive weapon styles;
+slower, deliberate styles can be added later.
 
 The exact force curve, damage and knockback bounds, pitch and volume ranges,
 and double-click window are tuning values, not settled numbers in this spec.

@@ -1110,7 +1110,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
         if (p.instantRespawnRequested)
         {
             p.instantRespawnRequested = false;
-            p.respawnSeconds = serverMatchRespawnSeconds();
+            p.respawnSeconds = serverActorRespawnSeconds(p.id);
             printf("%s [SERVER RESPAWN INSTANT] playerId=%u trigger=instantRespawnRequested\n",
                    serverTimestamp(), p.id);
         }

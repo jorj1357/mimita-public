@@ -385,6 +385,22 @@
       "require_client_connection": true,
       "require_mode_start": true,
       "ice_force_relay": true
+    },
+    "43": {
+      "name": "rocket launcher duel",
+      "server_args": ["--mode", "rocket_duel", "--gamemode", "rocket_duel", "--no-npcs"],
+      "client_args": [],
+      "map": "funworld3",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "44": {
+      "name": "juggernaut horde",
+      "server_args": ["--mode", "jugger_horde", "--gamemode", "jugger_horde", "--no-npcs"],
+      "client_args": [],
+      "map": "dust2cyberiav4",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

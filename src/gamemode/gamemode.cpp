@@ -428,6 +428,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.goalValue = std::max(1, optInt(root, "goal_value", next.goalValue));
         next.weaponSetId = std::max(1, optInt(root, "weapon_set_id", next.weaponSetId));
         next.timeLimitSeconds = std::max(0, optInt(root, "time_limit_seconds", next.timeLimitSeconds));
+        next.timeLimitWinnerTeam = optString(root, "time_limit_winner_team", "");
         next.timeLimitOutcome = optString(root, "time_limit_outcome", next.timeLimitOutcome);
         next.respawnSeconds = std::max(0.0f, optFloat(root, "respawn_seconds", next.respawnSeconds));
         next.killHeals = optBool(root, "kill_heals", next.killHeals);
@@ -453,6 +454,10 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 team.id = optString(t, "id", "");
                 team.displayName = optString(t, "display_name", "");
                 team.capacity = std::max(0, optInt(t, "capacity", 0));
+                if (t.contains("respawn_seconds") && t["respawn_seconds"].is_number())
+                    team.respawnSeconds = t["respawn_seconds"].get<float>();
+                if (t.contains("kill_heal_percent") && t["kill_heal_percent"].is_number())
+                    team.killHealPercent = t["kill_heal_percent"].get<float>();
                 team.role = optString(t, "role", "");
                 team.spawnGroup = optString(t, "spawn_group", "");
                 team.spawnTagContains = optString(t, "spawn_tag_contains", "");
@@ -473,6 +478,14 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 next.teamNames.clear();
                 for (const auto& team : next.teams)
                     next.teamNames.push_back(team.displayName);
+            }
+        }
+        if (!next.timeLimitWinnerTeam.empty()) {
+            const bool knownTeam = std::any_of(next.teams.begin(), next.teams.end(),
+                [&](const GamemodeTeam& team) { return team.id == next.timeLimitWinnerTeam; });
+            if (!knownTeam || next.timeLimitSeconds == 0) {
+                reportInvalidFile(path, {"time_limit_winner_team: requires a matching team id and positive time_limit_seconds"});
+                return false;
             }
         }
 

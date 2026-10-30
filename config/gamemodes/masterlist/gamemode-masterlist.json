@@ -63,6 +63,12 @@
       "min": 0,
       "description": "Match time limit. 0 means mode-defined/no limit."
     },
+    "time_limit_winner_team": {
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Team ID awarded a win at the active match time limit; empty preserves the mode's usual timeout outcome."
+    },
     "time_limit_outcome": {
       "type": "string",
       "required": false,
@@ -188,6 +194,23 @@
             "required": false,
             "default": 0,
             "min": 0
+          },
+          "respawn_seconds": {
+            "type": "number",
+            "required": false,
+            "default": null,
+            "nullable": true,
+            "min": 0.0,
+            "description": "Team respawn delay; 0 means one life, null inherits the mode delay."
+          },
+          "kill_heal_percent": {
+            "type": "number",
+            "required": false,
+            "default": null,
+            "nullable": true,
+            "min": 0.0,
+            "max": 100.0,
+            "description": "Percent of max HP restored on a kill; null inherits the mode kill_heals rule."
           },
           "role": {
             "type": "string",

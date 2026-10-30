@@ -9,6 +9,7 @@
   "goal_value": 20,
   "weapon_set_id": 1,
   "time_limit_seconds": 300,
+  "time_limit_winner_team": "",
   "time_limit_outcome": "high_score",
   "respawn_seconds": 0.01,
   "kill_heals": true,

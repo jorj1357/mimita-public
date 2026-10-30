@@ -1,4 +1,191 @@
-﻿2026 10 29 — regression: Juggernaut Fighter revolver RMB aim points backward
+﻿2026 10 29 2343
+i want 
+no anti aliasing
+o
+
+how ocme  juggernauts win 
+gi
+fighters win  in the horde mode  its smooth
+i wnat it to be  choppy and eugh
+and ugly 
+not uglt like  bad
+but 
+old and not smooth
+i liekt that a lot 
+
+## New intake — 2026-10-30: Rocket Launcher Duel and Juggernaut Horde
+
+### Rocket Launcher-only Duel
+
+Create a separate Duel variant for the local player and the opposing NPC. Both
+competitors use only the Rocket Launcher and follow the shared Duel lifecycle
+and match rules. The existing weapon-set registry already defines selectable
+set ID `3` as Rocket Launcher only, so the starting loadout appears data-ready.
+Keep this separate from standard Duel; any role or preset assignment must make
+
+sure the NPC receives the same restricted lo
+adout as the player.
+
+### Juggernaut Horde
+
+Create a separate continuous team mode with four Juggernauts against the normal
+Juggernaut Fighter team. Fighters respawn immediately after each death and are
+never eliminated for the match. Juggernauts do not respawn after death. A
+Juggernaut kill of a Fighter restores the Juggernaut to 100% of its role
+maximum HP (for example, from 20/3500 back to 3500/3500).
+
+Fighters win by eliminating all four Juggernauts. Juggernauts win by surviving
+for five minutes. Measure the duration on the authoritative fixed server tick;
+at the current 60 Hz tick rate, five minutes is 18,000 ticks. The round should
+then end with the Juggernaut team as winner. The intended play feel is a
+continuous horde fight.
+
+### Current owner and implementation questions
+
+- `config/weaponsets.json` already has weapon set ID `3` (`Rocket Launcher`),
+  and `config/gamemodes/duel.json` selects a weapon set by ID. This likely lets
+  the Rocket Duel start through a new mode JSON plus the correct shared roles;
+  confirm role-level loadout precedence before authoring it.
+- `src/network/server-gamemode.cpp` already heals a player killer to their
+  role-resolved maximum HP when `kill_heals` is true, and its generic
+  `last_team_standing` condition ends a match when a team has no actors alive
+  or respawning. These are useful shared pieces for Horde. The inspected
+  `creditKill` path applies this heal only to player killers; Juggernaut NPCs
+  would need the equivalent shared NPC-health update if they can earn the heal.
+- Current `config/gamemodes/juggernaut.json` has `respawn_seconds: 0`,
+  `kill_heals: false`, `time_limit_seconds: 0`, and `win_condition: ""`.
+  Existing rules do not yet express the split policy where Fighters respawn
+  continuously while Juggernauts remain eliminated, plus a timeout that
+  specifically awards the Juggernauts a win.
+- The current generic `kill_heals` setting is boolean and means a full
+  role-maximum heal. The requested initial 100% behavior fits that rule; a
+  configurable partial percentage would need an additional mode field and
+  shared consumption only if the user later wants a value below 100%.
+- Confirm the initial roster details during implementation: whether the local
+  player must always be a Fighter, how many Fighter NPCs fill out that team,
+  and which Juggernaut actors are human-controlled versus NPCs. The request
+  establishes four Juggernauts but does not specify total Fighter count.
+
+This is a proposal and implementation handoff, not authorization to change
+runtime code. Expected first implementation review: trace the shared roster,
+respawn, kill-heal, elimination, and active-round timeout paths. Add a focused
+generic rule only if existing mode data cannot express the split team policy
+and Juggernaut-on-timeout result. Runtime and human play acceptance remain
+required after implementation.
+
+## New intake — 2026-10-29: authored climbable, pass-through, and transparent surfaces
+
+The player wants map-authored faces/objects (including authored blocks and
+loaded GLB objects where supported) to expose editable surface behavior:
+
+- A per-object or per-face step-up/climbable option should let an actor walk
+  forward up a very steep surface, such as an 89-degree ramp, as though it were
+  stairs. The player is also interested in applying this to surfaces at or
+  beyond 90 degrees; whether that means climbing vertical/overhanging geometry
+  or only overriding slope classification needs a precise acceptance rule.
+- Some objects should allow actors to pass through them. This must be defined
+  independently from rendering transparency so invisible collision and visible
+  non-colliding surfaces can be chosen intentionally.
+- Editable visual alpha should use the familiar range: `1.0` fully opaque and
+  `0.0` fully transparent. The current `block_wire_alpha` is only an editor
+  wireframe presentation setting and does not define authored geometry
+  materials or gameplay collision.
+
+The Map Entity Editor spec already covers authored box blocks, GLB node
+overrides, and saving map data; the movement spec keeps global step-up enabled
+with an initial maximum step height around `0.25 m` and a shared walkable-slope
+classification. No current spec defines per-object/per-face climbability,
+steep-surface step-up overrides, authored pass-through, or geometry alpha.
+Existing collision architecture also requires client and server semantics to
+match. Treat this as a design request, not a decision to change the global
+walkable-slope threshold or to make transparent objects non-solid.
+
+Before implementation, extend the Map Entity Editor contract (and route to the
+movement/collision spec) to decide: which authorable kinds support these
+properties; whether properties attach per object, per face, or both; how
+step-up/climbable behaves on vertical and overhanging faces; whether pass-through
+applies to players, NPCs, weapons, and projectiles; how visual alpha/material
+blending is authored and replicated; and what the editor previews. Preserve the
+fixed-tick collision path, cached broadphase, and identical client/server
+gameplay semantics. Define focused acceptance cases for an 89-degree enabled
+ramp, disabled steep ramp, vertical/overhanging enabled face, solid transparent
+object, and visible pass-through object. This intake does not authorize runtime
+changes.
+
+## New intake — 2026-10-29: repeatable validation and evolving project priorities
+
+### Collision configuration and repeatable checks
+
+The player wants to inspect existing collision-configuration self-tests and
+unit/component coverage, then add missing repeatable checks so behavior can be
+reproduced and compared instead of relying on one-off manual attempts. Source
+inventory during intake found:
+
+- `devscripts/config_selftest.py` validates several repository-owned JSON
+  families (including weapons, animations, avatars, and gamemodes), but has no
+  validation for `config/collision.json`.
+- `mimita.exe --collision-selftest` already runs `collisionStressSelfTest`,
+  which is collision-algorithm coverage; its name does not mean collision JSON
+  parsing, defaults, invalid-value handling, or hot reload are covered.
+- Other focused executable self-tests exist around actor-triangle solving and
+  collision subgrids; inventory their exact assertions before adding another
+  overlapping test entry.
+
+Review the current `CollisionConfig` fields and loader. Define a focused,
+repeatable config check for defaults, valid values, bounds/clamping, malformed
+input retaining safe prior values, and live reload where specified. Keep
+configuration parsing checks, isolated algorithm checks, scenario-runner
+assertions, live `events.jsonl` evidence, and human gameplay acceptance as
+separate evidence. For user-visible behavior, real executable scenarios and
+their journal remain required; a count of passing self-tests alone does not
+prove gameplay.
+
+### Provisional project direction
+
+This is the player's current rough ordering, not an approved release plan or a
+claim that any milestone is complete:
+
+1. Make Zombie Tower fully work as a playable mode.
+2. Build vehicle and destructible-world engine capabilities, then use them in
+   vehicle modes such as Need for Madness, highway chase, and a more open-world
+   GTA-like experience with exploration, shooting, car chases, collisions, and
+   destructible environments. Mode scope and the smallest engine milestone
+   remain open.
+3. Consider Survive the Disasters after that foundation.
+4. Improve the Map Editor and make creating additional modes easier; promotion
+   and distribution may follow when there is a strong playable product.
+5. Gather community feedback and refine the game while keeping room for unusual
+   directions. The user wants future priorities to consider personal interest,
+   people's needs, the wider world, and long-term goals; the process for
+   weighing those factors remains open.
+
+The existing [In-App Video Editor spec](creator-tools/video-editor.md) already
+defines the product direction. The player wants it to become a smooth,
+repeatable content-creation workspace that can absorb personal scripts/workflows
+and let people easily add their own effects and images. The longer-term goal is
+to create complete videos inside the MiMITA executable using game assets,
+overlays/text, transitions, and possibly music and sound effects, with lower
+choppiness and resource cost than the current external editing workflow. Treat
+“everything inside the EXE” as a direction to scope, not a settled packaging or
+asset-loading contract; preserve the existing editor's non-destructive and
+local-first goals.
+
+Replay export remains a separate blocker: on 2026-10-29 the player said it is
+still not working and wants the crash/subprocess failure resolved. The existing
+2026-10-27 screenshot records an exit-code-3 export failure, but the cause is
+still unknown. Reproduce the current failure with the exact build, request,
+subprocess output, journal, and resulting artifact before assigning a cause.
+
+The player also raised “self-spreading MiMITA EXE” as a possible longer-term
+priority. Clarify whether this means an easy-to-share self-contained build or
+automatic propagation between devices/users; no automatic copying, network
+propagation, or update behavior is specified. Controller support and an
+Android/mobile bridge are accessibility/platform ideas for later exploration;
+console feasibility, platform scope, and required controls remain open.
+Promotion, community growth, monetization, mobile/console work, and which
+technical challenge would most strengthen the engine need further discussion.
+
+2026 10 29 — regression: Juggernaut Fighter revolver RMB aim points backward
 
 In Juggernaut mode, when playing as a Fighter with the revolver equipped,
 holding RMB to aim makes the physical right arm / revolver point backward
@@ -1937,7 +2124,10 @@ fix.
 The following are roadmap ideas and priorities from the player, not approved
 feature contracts or claims that existing behavior has been verified. Keep
 them in the issue tracker until each effort has an owner spec, a small first
-milestone, and acceptance scenarios.
+milestone, and acceptance scenarios. The 2026-10-29 provisional project
+direction above is the newer sequencing input and supersedes this older list
+where their suggested order conflicts; the ideas below remain useful scope
+background, not a fixed schedule.
 
 - **Build a reusable animation library for monsters and actors:** The player
   would like to spend a dedicated stretch of time creating a broad set of
