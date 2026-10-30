@@ -1,4 +1,58 @@
-﻿2026 10 29 1630 open design decision: what should Sandbox read?
+﻿2026 10 29 — regression: Juggernaut Fighter revolver RMB aim points backward
+
+In Juggernaut mode, when playing as a Fighter with the revolver equipped,
+holding RMB to aim makes the physical right arm / revolver point backward
+behind the player instead of forward along the camera aim direction. The
+Rocket Launcher and Shotgun work correctly for the same Fighter in the same
+mode, so record them as comparison controls. The issue is currently reported
+
+
+for the revolver arm pose while aiming; do not assume the shot direction is
+
+
+
+2026 10 29 2226
+ned
+rockeet launcher to 
+
+
+we need a totallt  rocket launcher vs rocket launcher onlt mode
+soldier vs soldier tf2 mge mode
+and scout
+shotgunand revovler vs shotgunanr revovler
+as well as melee duels
+we need a lot of duels i love duels 1v1 duels its so sick 
+
+
+also wrong until it is
+ checked separately.
+
+Regression lead: commit `56fd83d3` changed global `config/gameplay.json`
+`aim_mode` from `crosshair` to `physical`, added Juggernaut aim overrides in
+`config/gamemodes/juggernaut.json` (`mode: physical`, `body_mode: hybrid`,
+`body_enabled: true`), and substantially changed right-arm/ragdoll handling in
+`src/ragdoll/ragdoll-mode.cpp`. The commit did not change revolver, shotgun,
+or LMG weapon implementation files. This makes the aim-mode/body-pose path the
+primary regression area to investigate, while the working Rocket Launcher and
+Shotgun help isolate any revolver-specific pose/configuration difference.
+
+Repro/acceptance record:
+
+1. Start Juggernaut mode as a Fighter and equip the revolver.
+2. Hold RMB and move the camera through forward, left/right, and up/down aim.
+3. Observe the right arm and revolver model: they should point forward with the
+   camera, not behind the player.
+4. Repeat with the Rocket Launcher and Shotgun as working controls.
+5. Check the Large Machine Gun and Heavy Shotgun from the Juggernaut loadout
+   separately; their behavior has not yet been reported or confirmed.
+6. Record arm/barrel orientation and actual shot direction independently, on
+   the same build and avatar, so a visual pose error is not conflated with a
+   firing-direction error.
+
+Status: reported regression; cause and fix not confirmed. Preserve this case
+as a regression check when changing weapon-specific arm aim or physical aim.
+
+2026 10 29 1630 open design decision: what should Sandbox read?
 
 Sandbox currently reads the raw shared JSON files for gameplay, aimbody,
 impact decals, hitfx, and movement, plus the non-null presentation values in

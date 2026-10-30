@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "melee_mace_probe_v1",
-  "description": "Start Melee on cramped with weapon set 29, equip the mace, and exercise the per-weapon arm-ragdoll LMB motor through the shared input boundary.",
+  "description": "Use the sandbox weapon set 29, equip the mace, and exercise the per-weapon arm-ragdoll LMB motor through the shared input boundary.",
   "launch": {
     "profile": "npc-navigation",
     "launch_mode": "1",
@@ -14,7 +14,6 @@
     {"id": "tank", "command": "healthme", "args": ["999999"], "delay_ms_after": 1000}
   ],
   "steps": [
-    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 5000},
     {"id": "equip_mace", "command": "equipweapon", "args": ["mace"], "delay_ms_after": 1000},
     {"id": "hold_primary", "command": "agent.holdprimary", "args": ["180"], "delay_ms_after": 3000},
     {"id": "snapshot_end", "command": "agent.snapshot", "args": ["mace_probe_end"], "delay_ms_after": 1000}

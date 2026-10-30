@@ -15,20 +15,23 @@
       "animation_only": true,
       "arm_ragdoll": {
         "enabled": true,
-        "weak_look_strength": 10.1,
-        "lmb_torque_gain": 0.01,
-        "lmb_max_angular_speed": 999.0,
+        "extend_strength": 500.0,
+        "extend_max_speed": 253.0,
+        "max_stretch": 0.25,
+        "stretch_force": 50.0,
+        "weak_look_strength": 0.1,
         "angular_damping": 22.5,
-        "gravity_scale": 1.0,
-        "shoulder_max_stretch": 0.0,
-        // "world_collision": true,
-        "world_collision": false,
+        "gravity_scale": 2.0,
+        "world_collision": true,
+        // "world_collision": false,
         "self_collision": true,
-        "capsule_radius": 0.208,
-        "capsule_half_height": 0.592,
+        // "self_collision": false,
+        // "capsule_radius": 0.208,
+        "capsule_radius": 1.208,
+        // "capsule_half_height": 0.592,
+        "capsule_half_height": 1.592,
         "capsule_offset": [0.0, 0.0, 0.0],
-        "aim_rotation_degrees": [0.0, 0.0, 0.0],
-        "arm_max_swing_deg": 180.0
+        "aim_rotation_degrees": [0.0, 0.0, 0.0]
       },
       "actions": {
         "slash_one": {
@@ -194,7 +197,8 @@
     ],
     "rotation_degrees": [
       0.0,
-      150.0,
+      // 40.0,
+      0.0,
       90.0
     ],
     "scale": [

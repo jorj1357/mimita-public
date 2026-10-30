@@ -252,3 +252,39 @@ searches lifts plus horizontal rings. An authored spawn point that fails
 validation is not used raw; the server derives a standing position or refuses
 the spawn. This prevents spawning inside ramps or walls and falling through the
 map at spawn.
+# Reusable spatial queries and mode collision policies
+
+Gameplay features repeatedly need to ask whether an actor, object, or point is
+inside a region. Reuse a small shared query vocabulary rather than adding a
+separate overlap helper for every checkpoint, trick hoop, disaster, spawn
+volume, editor selection, or interaction.
+
+The initial authored query shapes are:
+
+- axis-aligned or oriented box;
+- sphere;
+- vertical or oriented capsule.
+
+Shared operations should cover point containment, shape overlap, raycast, and
+swept movement where the owning system needs them. A gameplay owner supplies
+the query shape and filter; the collision/spatial owner supplies candidate
+gathering and the geometric predicate. Existing paths must be inventoried and
+reused before adding a new query or shape representation.
+
+All gameplay collision, damage, and physics remain on the fixed 60-Hz tick.
+Hot queries must preserve cached broadphase gathering and reuse scratch
+storage; do not allocate a fresh candidate vector per query.
+
+Gamemodes may select a shared actor-contact policy for close-space movement.
+The desired soft mode lets an actor slide along small edges and fit through a
+gap when the actor's configured squeeze allowance permits it. It must still
+block when the opening is too small, preserve world containment, and avoid
+teleporting or tunneling. A mode policy changes tolerances and response through
+the shared collision owner; it does not create a second collision solver.
+Exact fit limits and geometry are a per-mode tuning decision to be validated
+in the mode's authored spaces.
+
+Candidate use cases include checkpoint and trick-hoop triggers, disaster and
+monster spawn regions, payload stop zones, editor picking, and map boundaries.
+This list is a reuse guide, not proof that one existing implementation already
+covers every shape or operation.

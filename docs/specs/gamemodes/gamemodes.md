@@ -1,25 +1,31 @@
-9 6 2026
+# Gamemodes
 
-todo this not good but move tothis version more  more general things  for gamemodes
-i want to literally be able to support 100 trillion different gamemodes at the very aboslute least super ultra scalable bc other people i  act as if they aregonna make their own gamemdoes so we need ways to diffrentiate between two modes 
+**Purpose:** define shared match behavior and how mode-specific rules are
+selected and consumed.
+**Audience:** gamemode, UI, networking, actor, and content contributors.
+**Does not:** require a fixed maximum number of modes or give each mode a
+separate copy of the match lifecycle.
 
-can we make it so it doesnt need else if? it doestn care if thre is 5 modes or 500,000 , it just  works for any mode u give it  according to that mode's json setings and stuff
+## General design
 
-like we dotn  do it with  f, or t, or b
-no else if  match mode  being a sepcific thing that seems like it would break super ez, we should do like 
+Gamemodes have stable IDs and data-defined rules. The shared runtime owns
+match phases, participants, spawns, scoring, results, maps, and inventory.
+Adding a mode should use those shared services instead of branching on a
+mode's name, first letter, or a dedicated manager.
 
-the json alreadt defines an id bombtag  
-like this C:\mimita-priv-v8\config\gamemodes\bombtag.json 
+Mode data may request generic presentation such as timers, health bars, and
+world text. The shared UI and presentation owners render those elements from
+the declared state. The aspiration to support a very large community of
+distinct modes is a direction, not a literal capacity guarantee.
 
-so just check wahtever that  id is and look for the data from  that json and use that as the intermisison and countdown and game start etc 
+## Mode specifications
 
-so we shoudl achnge the  underling logic underneath , the code should not do hardcoded things like if the name of the mode starts with this specific letter like that is  very fragile and if files move or things are renamed it will break, it should work  based on the id in the json for now, and not require  exact letters matching 
-
-also, somehow  to change from bombtagmanager, this is too specific, m ake it like
-gamemodemanager
-
-BombTagManager::renderHud() — renders bomb holder text and timer from replicated state
-BombTagManager::renderBombVisual() — renders bomb sphere and world timer - like all this, just change it to be a general function that ahndles all the hud and stuff, that the json requests u to render. so this should work for not onl a  bomb with a world timer, but maybe, a boss with a healthbar above their head, a car with a healthbar u need to destroy, a npc that is telling u something with world text visually, etc. super general 
+- [Skatepark](skatepark.md)
+- [Survive the Disasters](survive-the-disasters.md)
+- [Need for Madness](need-for-madness.md)
+- [Cops vs. Robbers / Police Chase](vehicles/police-chase.md)
+- [SWAT](swat.md) and [Bodycam](bodycam.md)
+- [Zombie Tower](zombie-tower/zombie-tower.md)
 
 ## General gamemode runtime — authoritative as of 2026-09-09
 
@@ -264,6 +270,8 @@ remains outstanding; see
 
 ## General NPC intent contract (objective / focus / patrol)
 
+## General NPC intent contract (objective / focus / patrol)
+
 A gamemode does not own NPC artificial intelligence. It selects roles, presets,
 and behavior profiles; the shared NPC brain turns those into intent. To keep the
 brain mode-agnostic, every mode NPC intent reduces to one of three general
@@ -290,6 +298,32 @@ Rules:
   shared perception owner to report a visible target.
 - Adding a new team mode that needs a swarm must require only configuration and
   behavior-profile data, not a new NPC subsystem.
+
+## Shared vehicle and world-physics policy
+
+Gamemode data may select shared physical behavior without introducing a
+gamemode-specific physics owner:
+
+- `vehicle.control_profile` selects the input-to-action profile for occupied
+  vehicles. The default car profile is manual transmission; skateboard, BMX,
+  and arcade race modes can select the shared arcade trick profile.
+- `features.destructible_world` is a nullable mode override. An absent or
+  null value inherits the global destructible-world setting, whose desired
+  default is enabled. A mode may explicitly set it to false when its design
+  or performance budget requires intact world geometry.
+- A mode may select a shared actor-contact profile, including the proposed
+  close-space soft-fit behavior. It tunes the shared collision owner and may
+  not bypass world collision or allow tunneling.
+
+World-geometry destruction and physical contact are separate. Disabling
+destructible world geometry does not disable ordinary collision between
+actors, vehicles, weapons, or props. Vehicle damage is controlled by the
+shared damage and physical-object rules.
+
+These are desired mode-data interfaces; the current gamemode JSON schema and
+runtime do not yet implement all of them. Add schema validation and runtime
+consumption together when implementation begins, and retain safe inheritance
+for modes with no override.
 
 9 2 2026
 

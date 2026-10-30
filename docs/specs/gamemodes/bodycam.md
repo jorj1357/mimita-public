@@ -1,67 +1,46 @@
-2026 10 28 0957 jorj todo explain 
-i think we shoul d do this like
-ready or not
-this needs like
-i think the major code things is like presetnation
-just
-the body cam and 
-slower ovement
-moevment andlike
-weapon colisions difrent
-and idk 
+# Bodycam Presentation
 
-need slower moemvent
-and 
-bod cam visuals to be super duper good and actuallt accurate to bod cam
-make a motel map that is scaled to actual size 
-matbe like 
-per gamemode collisions? like wepaon collisions on /off anda then matbe off for htis mode? 
-or design with it in mind
+**Purpose:** define a reusable body-worn camera presentation profile for
+tactical and other compatible modes.
+**Audience:** camera, movement, weapon, audio, effects, and gamemode
+contributors.
+**Status:** desired behavior; existing settings and human visual acceptance
+need review.
+**Does not:** define a separate combat mode, replace shared camera ownership,
+or claim documentary accuracy.
 
-but the nice thing ab tthhis mode would be like
-aiming the phsical actual gun at the target i think is super cool 
-so 
-we shoudl do that
-and combo with swat  C:\mimita-v9\docs\specs\gamemodes\swat.md
-here 
-and sutff ok im done 
+## Presentation goal
 
+The view should feel like a body-worn camera through framing, movement,
+exposure, and readable camera motion. It should remain legible and responsive
+rather than adding effects that hide threats or make input feel delayed.
 
-2026 10 19 1717 jotj todo explain
+The profile may select slower movement tuning and physical weapon aiming for
+the associated mode. These are mode rules and shared system settings, not
+camera-only effects.
 
-like we n 
-liek we TOTAlly need to do this
-we have bodcam cmaera settings but its not super good
-so if we define the camera better hten we can do like 
-much ebtter
-presentation
-but we alreadt half there
-like with the phsical arm moveing its super sick 
-we just need mor tweaking and plautesting 
-like for smashhow i need o do more plautestign its not super godo right now ok so whatst the deal
-also thsi si so  sick having depssek opencode sub liek 10 usd a month as of 2026 10 19 1718 its  crazt
-its doing  like  fixes thatare issues in the smash melee spec right now  just autonomslt
-i knwwwwww i knowwwwwww i dotn knwo the syntax no i couldnt do it without AI
-i mean  i could  i dont want to do that
-i dont want to do logn division when i can just divide it 
-i dotn wnat to use a torch wehn i can just flashlight
-i dont want to walk when i can just drive
-etc etc
+## Shared behavior
 
-ok anways
+- Use the shared replay-aware camera and effects paths so recordings and
+  exports reproduce the same presentation.
+- Let the mode choose its weapon collision policy independently from physical
+  aim. The initial tactical profile keeps physical aim available; contact
+  behavior must be deliberately selected and playtested.
+- Use shared accessibility settings for motion reduction, flashes, contrast,
+  text size, audio levels, and visual injury intensity.
+- Keep gameplay collision, weapon damage, and movement at the fixed tick.
+  Camera shake and visual effects do not apply gameplay forces.
 
+## Acceptance
 
-2026 10 06 1755 jorj todo -
+Review the profile in live play and replay on a representative map. Verify that
+camera movement communicates body motion without obscuring aim, reducing
+control accuracy, or causing a performance regression. Check reduced-motion
+settings, weapon aiming, weapon contact, sound, and replay export separately.
 
-explain like
+## Related specifications
 
-ok recent smi77y made a vdieo like "We shouldn't have played BODYCAM..."
-
-make 
-taht game
-in  here
-like 
-its  so sick
-do htat here
-literall just do that 
-its so aweomse 
+- [SWAT close-quarters mode](swat.md)
+- [Replay](../replay/replay.md)
+- [Effects](../effects/effects.md)
+- [Accessibility and portability](../../architecture/accessibility/accessibility.md)

@@ -73,6 +73,9 @@ systems first. Use this default order:
 | Documentation | `docs/doc-review-09-03-2026.md`, the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
+| Vehicles, skateboards, BMX, and vehicle controls | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/gamemodes/gamemodes.md` |
+| Replay, in-game video creation, or distribution | `docs/specs/replay/replay.md`, `docs/specs/creator-tools/video-editor.md`, `docs/specs/distribution/distribution.md`, `docs/specs/performance/performance.md` |
+| Generated character speech or voice chat | `docs/specs/live-voice-generation/live-voice-generation.md`, `docs/specs/ingame-chat/voice-chat.md`, `docs/specs/moderation/moderation.md` |
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md`, `docs/specs/networking/contact-authority.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
@@ -93,6 +96,7 @@ systems first. Use this default order:
 | Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md`, `docs/architecture/live-development/live-development.md` |
 | Live code, hot reload, or replaceable game modules | `docs/features/live-code-development/live-code-development.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
 | Entity, component, or ECS migration | `docs/architecture/ecs-entity-etc/ecs.md`, `docs/architecture/ecs-entity-etc/ecs-migration.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/player-npc-systems/player-npc-systems.md` |
+| Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |
 | Persistent progression, rewards, profiles, leaderboards | `docs/specs/data-saving/data-saving.md`, `docs/operations/vps-audit.md`, `docs/operations/persistence-recovery.md` |
 

@@ -6029,3 +6029,16 @@ bc thas more fun
 here 
 u can pick fov and forced first or third
 we need that 
+
+## Future local mode points
+
+After the first playable tower run is complete, a full successful run may award
+1,000 local Zombie Tower points. This is a separate mode-only value, not
+account gold or XP, and is stored locally as unverified progress. It does not
+change the accepted first-playable run contract above. Future upgrades may use
+example prices of 10 or 50 points, but the upgrade catalog and balance must be
+specified before purchases are implemented.
+
+Follow the local mode-points contract in
+[`data-saving.md`](../../data-saving/data-saving.md). Do not publish or sync
+these points until an integrity and trust model is designed.

@@ -1,110 +1,122 @@
-2026 10 28 0859 make videos jorj explain 
-C:\mimita-v9\docs\specs\distribution\distribution.md
-relates here
-but thsi doc current repla doc not detaield enough and neither is distruution 
+# Replay Recording, Editing, and Export
 
-2026 10 25 1107 there is a  list of songs i want to do edits to in the mimta plan i think v38
+**Purpose:** specify how MiMITA records gameplay and lets people inspect,
+replay, edit, and export it.
+**Audience:** simulation, networking, animation, audio, effects, rendering, and
+creator-tool contributors.
+**Status:** active desired behavior; implementation is partial and runtime
+acceptance is incomplete.
+**Does not:** promise deterministic simulation across different machines,
+replace live gameplay, or define a separate video-editing application.
 
-btu
-guerlain also
+## Goals
 
-and absoltuelt do  edits 
-to sngs
-in thsi  game
-like it lokos so feraking sick
-and we can do like
-tick perfect tihngs
-its not even an actual fight well
-i think it should be as good as an actual fight
-but
-ok wahtever 
+- Record a short recent segment or a deliberately started and stopped session.
+- Review a match, jump through time, and select useful moments.
+- Combine ranges from multiple replay files into one creator project.
+- Edit camera position and movement, field of view, playback speed, transitions,
+  captions, audio, and supported effects.
+- Export locally, with clear progress and failure information.
+- Preserve a per-tick input-and-state recording for future tool-assisted
+  playback and authored scenes.
 
-2026 10 19 1800 JORJ TODO - 
+The replay editor is part of MiMITA's in-game creator workspace. The broader
+timeline, imported media, titles, and export workflow are specified in the
+[Video Editor](../creator-tools/video-editor.md) document.
 
-REPLAY
-I
-IKE EDITOR
-RPLA ECITOR
-ED
-REPLAY EDITOR
-STRONG LIEK AFTER EFFECTS
-QUICK LIKE  NOTHING
-LIKE GET AFTER EFFECTS LEVEL VISUALS ON LIKE 240FPS ONA BAD DEVICE BC I SWEAR ITS POSSIBLE IDK WHY VISUAL THINGS ARE SO OSLOWWWWWW 
-LIEK EDITOR SOFTWEARE WE CAN DO IT BETTERRRRRR 
-WE CNA DO LIKE COOL FRAG MOVIES
-AND STUFF
-AND SHADERS Hmmmmmm
-ne
-OMG
-POST FX PRESETS AND LOAD THEM OMG OMG OMGOMGMOGOM GOMGMO GOM GOMGMO OGM OMGMOG OMGO OM G
-FOR BODYCAM I WANAN DO BODYCAM MODE omgeorindof
+## Recording and project data
 
-2026 10 08 1259 jorj todo explain - 
+The user can start and stop a recording through a discoverable in-game action.
+The recent-clip action remains a fast path; its current key binding and clip
+duration must be read from the active configuration rather than duplicated in
+this specification.
 
-repla means
+Replay data records the events and state required by the existing replay and
+effects contracts. It must preserve event order, simulation tick identity,
+actor state, relevant inputs, sounds, animation, and effect events. Use the
+shared gameplay and presentation paths during playback rather than replay-only
+implementations.
 
-record the whole match u just played
-save to a readable format liek .json
+Long recordings must be written and read incrementally so duration is not
+limited by holding the entire recording in memory. A project may refer to
+multiple replay files and ranges without copying each source into a duplicate
+large file. Missing or incompatible sources must be reported clearly.
 
-read it in the game, with a in game replay editor WHIHC EXISTS RIGHT NOW BTW 
+## Editing behavior
 
-u also should be able to start/stop recording in the game
-so that 
-idk
-the commands idk the commands but 
+- Scrub and play at normal, slowed, and accelerated speed.
+- Select an interval, trim it, and arrange ranges from multiple replays.
+- Place and animate replay cameras, including position, orientation, and field
+  of view.
+- Control supported effects, transitions, motion blur, and audio levels.
+- Choose whether playback includes captions and relevant chat presentation.
+- Save edits as a separate project; never rewrite the original replay when
+  trimming or arranging a movie.
+- Undo and redo project edits.
 
-start/stop
-and u can save it like
-can be  30 sec, 1 sec
-can be 30 min
-30 hours
-30 da ys
-we shoudl be able to make it handle antthing like any size 
+Simulation-tick timing is authoritative for recorded events. Rendered output
+may use another frame rate by sampling replay time; output frame rate must not
+alter gameplay or event order.
 
-but u should be able to make frag movies like skrudge
-with sounds and smoothing
-and 
-motion blur
-FOV changes
-u can set where the camera is
+## Fidelity and tool-assisted playback
 
-ALSO
-TAS STUFF
-RECORD THE ENTIRE ALL UR INPUTS AND POSITIONS
-AND U CAN EDIT EACH SINGULAR TICK
-AND MKAE 
-SUPER ULTRA OVERPOWERED FIGHT SCENES LIKE HITTING THE CRAZIEST MOST  UNLIKLIEST MOVEMENT PATH ok 
+The first correctness target is playback fidelity for the same replay data and
+compatible game content. Replays must identify incompatible content or
+configuration rather than silently presenting a materially different result.
+Ragdoll state, sound retriggering, animation, and effects each require separate
+acceptance; a successful export does not prove those details are correct.
 
-but u sh yea
-like coooooool frag movies
-mw2 quickscope montages
-or trickshot motnages
+Future tool-assisted playback may replay recorded inputs through the normal
+simulation and compare the resulting state against recorded checkpoints. Exact
+replay on the same build, configuration, assets, seed, and fixed-tick sequence
+is a staged engineering target.
 
-right now P = save last 15 sec of footage and export automaticallt
-thats good but has some issues like ragdoll not good, sounds dotn retrigger, as of 2026 10 08 1302 etc other bugs too
+The long-term vision is for an NPC to reproduce a long recorded performance
+across machines with negligible positional error, with an aspirational
+one-hour position error below 0.00001 world units. This is a research goal
+only; it is not a current acceptance requirement or implementation milestone.
+Cross-machine determinism must not be claimed until measured across supported
+hardware, builds, configurations, and content.
 
-but the big idea is
-replay record any length not just 15 sec
-replay edit like mkae cool movies like source filmmaker u shoudl bea ble to do it in here as well
-replay export
-combo multiple replays togethr into 1 replay editor rpoject file
+## Export and performance
 
-todo figure out commands exact commands and what they do
-todo figure out  data saving how u can roll like 50 replay separate files into 1 bigger movie file with a lot of replays in it etc 
+Interactive and headless export use the same render path and report
+equivalent final status. Interactive export shows progress at least once per
+60 source simulation ticks and reports completion or failure. Export must not
+require every frame to be displayed in a visible window.
 
-todo add the google doc  replay editor spec cuz i wrote a bunch about it 
+Editing input remains responsive while final frames are rendered. Measure
+preview frame time, export throughput, memory use, and frame pacing on named
+hardware. A 240-FPS export on a low-end device remains an aspiration to measure,
+not a universal guarantee. Follow the fixed 60-Hz gameplay simulation rule;
+do not raise the simulation tick to meet an export frame-rate target.
 
-## Export execution and progress
+## Reported problems to verify
 
-Replay export should be available in headless operation as well as from the
-interactive replay editor, using the same export path and result reporting.
-The interactive game should show export progress at least once per 60 source
-simulation ticks, plus a clear completion or failure result; headless runs
-should expose equivalent progress and final status through the existing
-diagnostic/output path. Progress reporting must not require rendering every
-exported frame in a visible window. This is a desired behavior; supported
-headless export and current export reliability remain to be verified.
+Earlier user notes reported missing ragdoll fidelity, sounds not retriggering,
+and export failures. These are investigation targets, not proof of current
+behavior. The 2026-10-27 export screenshot records an exit-code-3 failure with
+unknown cause; retain its evidence and diagnose from the exact export request,
+subprocess output, and live journal before assigning an owner.
 
-Ragdoll state and sound retrigger behavior are separate replay fidelity
-requirements. An export completing does not establish that either has been
-captured and replayed correctly.
+## Acceptance scenarios
+
+1. Start and stop a recording, reopen it, and verify actors, audio, animation,
+   effects, and tick positions.
+2. Export a recent clip and a long recording without unbounded memory growth.
+3. Build one project from ranges in multiple replay files and preserve the
+   source files.
+4. Edit a replay camera, field of view, audio, and an effect, then confirm the
+   export matches the project.
+5. Interrupt or fail export and show a useful status while leaving the
+   project and source replay recoverable.
+6. Compare same-build input replay against recorded checkpoints; report
+   cross-machine results separately.
+
+## Related specifications
+
+- [Video Editor](../creator-tools/video-editor.md)
+- [Distribution](../distribution/distribution.md)
+- [Effects and replay fidelity](../effects/effects.md)
+- [Performance](../performance/performance.md)
+- [Accessibility and portability](../../architecture/accessibility/accessibility.md)

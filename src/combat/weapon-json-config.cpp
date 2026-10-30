@@ -503,8 +503,6 @@ void applyWeaponArmRagdollJson(WeaponDefinition& def, const json& root)
         arm.value("max_stretch", cfg.maxStretch), 0.0f, 3.0f);
     cfg.stretchForce = std::clamp(
         arm.value("stretch_force", cfg.stretchForce), 0.0f, 10000.0f);
-    cfg.bodyPull = std::clamp(
-        arm.value("body_pull", cfg.bodyPull), 0.0f, 1000.0f);
     cfg.weakLookStrength = std::clamp(
         arm.value("weak_look_strength", cfg.weakLookStrength), 0.0f, 1000.0f);
     cfg.angularDamping = std::clamp(
@@ -750,13 +748,9 @@ bool reloadBuiltinWeaponsIfChanged()
         return false;
 
     registerBuiltinWeapons();
-    if (!ActorPresetWeapons::activePresetId().empty()) {
-        if (const MatchRoleDefinition* preset =
-                MatchRoleRegistry::instance().getActorPreset(
-                    ActorPresetWeapons::activePresetId())) {
-            ActorPresetWeapons::apply(*preset);
-        }
-    }
+    // Refresh the effective registry overlay (actor preset or mode presentation)
+    // so live edits are not hidden behind stale active-definition copies.
+    ActorPresetWeapons::refresh();
     Debug::log(Debug::Category::Weapons,
         "[WEAPON] hot reloaded %s%s", weaponConfigPath().c_str(),
         animationLibraryWasChanged ? " after animation library edit" : "");

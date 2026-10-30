@@ -198,7 +198,11 @@ bool apply(const MatchRoleDefinition& preset)
 
 bool refresh()
 {
-    if (gActivePreset.empty()) return false;
+    if (gActivePreset.empty()) {
+        if (!gModePresentation) return false;
+        applyModePresentationToRegistry();
+        return true;
+    }
     const MatchRoleDefinition* preset =
         MatchRoleRegistry::instance().getActorPreset(gActivePreset);
     return preset ? apply(*preset) : false;

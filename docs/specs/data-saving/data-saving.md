@@ -1672,3 +1672,27 @@ an isolated restore must succeed before declaring the backup recoverable.
 Production deployment still requires the reviewed branch/commit and the
 existing VPS deployment procedure. Source tests are not proof of the live
 two-client acceptance sequence in section 49.
+
+# 56. Local mode points (future casual progression)
+
+Some modes may award points that belong only to that mode. These points are
+separate from account-level gold, XP, kills, deaths, and playtime defined
+above. The first use is casual and local:
+
+- Surviving a Survive the Disasters round awards 100 local mode points.
+- Completing the full Zombie Tower run awards 1,000 local mode points when
+  that future progression slice is implemented.
+- Example future upgrade prices are 10 or 50 points; each mode must define its
+  actual upgrade catalog and balance before purchases are implemented.
+
+Keep these values on the player's device and label them as local, unverified
+progress. Do not sync, expose on public profiles, or use them for competitive
+leaderboards until a trust and integrity design is approved. A local save can
+be changed or lost; it is not anti-cheat evidence and must not affect the
+server-authoritative account totals in this document.
+
+The existing authenticated database path remains the authority for the
+account-level statistics above. Local mode points are a deliberate,
+unranked carve-out, not a migration of those statistics away from the
+database. Multi-device synchronization and distributed storage are future
+design work.

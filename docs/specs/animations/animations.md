@@ -1081,11 +1081,13 @@ hitbox attachments still need human runtime verification.
 
 A Melee weapon may opt into `components.melee.arm_ragdoll`. In that mode the
 right-arm node is owned by the shared ragdoll solver instead of the authored
-clip; every other limb continues to sample the authored/procedural pose. The
-solver runs at the fixed 60 Hz tick, writes only the right-arm skeleton node,
-and then the normal model-world-transform update supplies the weapon attachment
-and hitboxes. The authored action timeline and fixed swing animation are
-bypassed for that weapon; contact remains the shared physical-melee path.
+clip; every other limb continues to sample the authored/procedural pose. LMB
+uses the same ragdoll arm-extend motor as ragdoll mode rather than a separate
+weapon motor. The solver runs at the fixed 60 Hz tick, writes only the right-arm
+skeleton node, and then the normal model-world-transform update supplies the
+weapon attachment and hitboxes. The authored action timeline and fixed swing
+animation are bypassed for that weapon; contact remains the shared
+physical-melee path.
 
 ## Runtime contract
 

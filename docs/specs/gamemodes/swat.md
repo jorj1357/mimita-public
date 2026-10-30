@@ -1,108 +1,75 @@
-2026 10 19 1720 jorj  more ideas
+# SWAT: Close-Quarters Tactical Mode
 
-like
-a school for example
-and so
-this game is on roblox iddont have the link but this  i tihnk is literallt real 
-buttttttt
+**Purpose:** capture the direction for a tense, close-range tactical mode with
+shared physical movement, weapons, and world interactions.
+**Audience:** gamemode, movement, collision, weapon, audio, presentation, and
+map contributors.
+**Status:** concept specification; scenario, teams, and win condition are not
+yet decided.
+**Does not:** establish a real-world law-enforcement simulator, choose a
+school/public-shooter setting, or define a separate weapon/collision engine.
 
-idk 
-i want all poeple to have guns
-so not like hiding in school but thats not super accurate
-THIS RELATES TO PHSICAL OBJECT SPEC
-HOLLLTTT CRAP
-phsical object 
-+ 
-destructible objects
-+ 
-vehciles 
-+ 
-explosions and stuff all work and all replacites across network
-this mod gets MUCH more ridonkulous 
+## Intended experience
 
- but i envision mannn idk
- relate to  C:\mimita-v9\docs\specs\gamemodes\bodycam.md as well
+The mode should feel slower and more attentive than standard arena combat.
+Players listen for threats, check corners, use cover, and physically aim their
+weapons. The setting should feel believable without pursuing realism for its
+own sake.
 
-like
-corner cehcking
-do this ULTRA ULTRA realistic
-sounds
-visuals
-well
-nto super duper realsisic
-but u are listneing SO hard
-for sounds
-where is the enemy at
-where is the hostages etc
-but its like
-25 swat
-and hten like 5 terrorist
-and then the eterrorist are supposed to oooo idk
-idk what even gonna do 
+The original ideas include a tactical team searching a building, defending a
+location, and surviving until an evacuation helicopter arrives. Other notes
+describe opposing teams entering a site and later barricading. Those are
+different match structures; this document preserves them as candidates instead
+of treating either as an agreed rule.
 
-i feeeeeeeel like its not 
-relly
-good
-to do liek na actual school shooter mode
-like  i 
-or public shooter mode
-although i do see how that wouldl be fun i dont know it feels like kinda  i idk
-even this 
-liek a school setting idk 
-but
-a mall or liek movei theater or idk 
-stuff 
+## Shared systems
 
-2026 10 07 1316 jorj todo eplain better but - 
+- Use shared movement and collision with a mode-selected close-quarters
+  contact policy. The policy should let an actor slide along small edges and
+  pass through gaps that fit the configured squeeze allowance, while still
+  blocking genuinely impassable openings.
+- Preserve server authority and the shared weapon aim, damage, and replay
+  paths.
+- Weapon collision may be enabled or disabled through mode data. Physical
+  aiming and collision are separate choices; a mode can keep physical aiming
+  while selecting the appropriate weapon-contact behavior.
+- Sound, camera, blood, and injury presentation use existing audio, camera,
+  effects, and accessibility owners.
+- Destruction is enabled by the shared default unless this mode explicitly
+  opts out. Any destructive breach behavior uses the common destructible-world
+  rules.
 
-ihad an idea of 
+## Presentation direction
 
-its a realistic ish public place like its kinda messed up
-like a  mall or a therater or a neightbohood or a house
+Support careful listening, readable spatial audio, restrained movement, and
+close camera framing. Blood and injury effects may be part of the presentation,
+but their intensity is presentation-only and must not affect damage rules.
+Accessibility controls must allow reduced visual effects and clear non-audio
+information.
 
-but
+## Decisions before a playable contract
 
-there is like a group of super powerful enemies or hostiles or whatever
-and 
-u have to defend the place ur at and not die until like the enemy helicopter comes to air lift u out of there
-and so once ur in the helicopter u can even get shot int eh helicotper bc its a phsical object moving but 
-thats like the exit
-then when helicpter is like  250 meters away or so then enemies win
+- Choose the scenario structure: search/clear, defend until evacuation, or a
+  defined combination.
+- Define teams, actor counts, respawn/downing behavior, and win conditions.
+- Select the first fictional map setting. Earlier notes mention a motel, home,
+  mall, theater, airport, and neighborhood, and record discomfort with a
+  school-shooter framing; do not assume one setting is selected.
+- Set movement pace, weapon-contact defaults, and visual injury intensity
+  through mode and player presentation settings.
 
-BUT
+## Acceptance direction
 
-swat team
-is
-like huge
-an haas like pistols and rifles and explosives and etc this and that and the other 
+Once those decisions are made, validate narrow corridors, corners, doors,
+cover, physical aiming, weapon contact, spatial audio, the selected objective,
+and connected-client agreement. Human review must confirm that the setting and
+presentation match the intended tone.
 
-and so
+## Related specifications
 
-imagine its like 4 enemies in a house with a bunch of
-grenades and rifels and revovler etc
-and u have to baarricade and defend and wait for evacuation
-while swat is breaking down barriers and shooting greandes into the room and flashbangs/darkbagn adn firegrenades
-its like idk 
-
-that would be iskc
-
-or even in like a library like it is kinda messed up or a school
-u have to idk elimiante the Super evil corrupt principal and then the evil schoolpolicehave to try and  elimiate you 
-or idk
-IDK THE LORE but what i want it to be like is
-
-4 ppl go into  like an airport or something like no russian and then u have to search for and kill 1 guy
-and THENNnnnn ou have to barricade somewhere and wait for evacuation to come which is helicopter
-so the entire time the police are trying to find out who it even is and then once the do find out they are trying to break into the barricade and grenades and 
-
-maybe shootingholes in walls?
-idk
-that sucks tho 
-
-or could just be survive according to a timer
-
-this is from retrograd kinda like the zombie mode
-like infection
-once u die u are a zombie and u are trying to get into the 1 final dude's barricade room 
-
-idk need s more thought 
+- [Bodycam presentation](bodycam.md)
+- [Gamemode runtime](gamemodes.md)
+- [Movement](../movement/movement.md)
+- [Collision architecture](../../architecture/collision/collision.md)
+- [Destructible World](../destructible-world/destructible-world.md)
+- [Accessibility and portability](../../architecture/accessibility/accessibility.md)

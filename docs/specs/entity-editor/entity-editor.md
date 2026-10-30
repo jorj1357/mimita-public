@@ -772,3 +772,38 @@ entity_list
 Keep IDs stable, edit only the active map file, and validate JSON before a
 multiplayer test. Build success does not prove that the command, reload,
 server activation, or visible marker was observed in a live session.
+
+## Reusable Blender object library and assemblies
+
+The editor should let a creator place objects from the shared runtime library
+under `assets/objects/library/<asset-id>/`. Asset packaging and provenance are
+defined by the [Asset Management](../../operations/asset-management/asset-management.md)
+specification. A map stores an asset ID and instance settings; it does not
+copy the mesh into map JSON.
+
+For a placed object, the properties panel should support:
+
+- position, rotation, and scale;
+- static or dynamic physical behavior;
+- collision enabled/disabled and the asset's supported collision choices;
+- mass or material density using the shared physical-object rules;
+- stable selection and an undoable transform/property edit.
+
+Creators should be able to select multiple objects and connect them with a
+shared physical constraint, including a rigid welded attachment when supported
+by the constraint system. Connections have stable IDs and can be inspected,
+edited, or removed from the editor. The editor must not implement its own
+physics or attachment solver.
+
+The map save stores asset references, per-instance physical overrides, and
+constraint records. On reload, the editor reports a missing asset or
+constraint reference and preserves the authored data for repair rather than
+silently deleting it. Server-owned live map changes use the existing
+authorized editor request path; writing a client's local JSON alone does not
+modify a remote server's map.
+
+This capability is a later editor slice. The current viewport's displayed
+GLB scale/rotation values are not evidence that those overrides can already be
+edited or saved. Acceptance requires placing an asset, editing its transform
+and physical properties, attaching it to another object, saving/reloading,
+and confirming the same assembly is used by the live server.

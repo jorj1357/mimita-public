@@ -1,160 +1,89 @@
-2026 10 28 0859 jorj explain cotnent
-hmmm
-like
-uoutbe vidoes
-do uoutube vidoes me as jorj 
-i thikn thats good idea
-bc it woudlb e fun 
-and u can do them in the engine with repla editor we need to get that to be super good first tho 
-but then it jsut its good 
-and then u can use it for making vidoes finally
-i fw that a lot 
+# Creation, Sharing, and Distribution
 
-2026 10 06 1708 jorj todo - 
+**Purpose:** define how people can create, save, share, and discover MiMITA
+experiences without requiring a central service or pressuring people to post.
+**Audience:** game, creator-tool, networking, and community contributors.
+**Status:** product direction and staged specification.
+**Does not:** promise a social network, automatic posting, monetization, or a
+federated storage system in the first release.
 
-explainnnnnnnnnnnnnnnnnnnnnnn
+## Product intent
 
-ok
+MiMITA should be enjoyable alone and become more social when other people join.
+Sharing should follow from making something a person likes, not from login
+streaks, view-count rewards, referrals, or pressure to publish. The project
+should remain usable when its central website or database is unavailable.
 
-assume 
+The game should eventually let a player host or join a session using the
+networking already inside MiMITA, then make a replay or video from that
+experience. A newcomer should be able to get from opening the game to a
+shareable creation quickly; the initial usability target is a five-minute path
+for a simple replay clip, subject to measurement with new users.
 
-i have no cetnralized database
-i have no money
-no one knows mimita exists
+## Near-term creation and sharing
 
-how do we make it so mimita still gets users NOT BEACUSE OF 
-LIKE
+- Keep replay capture, editing, and export inside the MiMITA application. See
+  [Replay](../replay/replay.md) and the future
+  [Video Editor](../creator-tools/video-editor.md) specification.
+- Let users save and export locally without signing in, connecting to a
+  website, or uploading anything.
+- Make external sharing an explicit user action. Show what will be exported
+  and where it will go before opening an external site or upload flow.
+- Keep publishing optional. Do not add automatic room-code posts, automatic
+  livestreams, recurring upload reminders, view-count rewards, or login
+  rewards as default behavior.
+- Make costs, licenses, required services, and export limitations visible
+  before a user commits to an effect or export.
 
-Log in or uou dont get the login reward!!!!
+## Longer-term discovery and distribution
 
-LIKE NO 
-no pressure
-no nothing
-nothing lame and silly like that 
+Possible future work includes user-published replay or game pages, searchable
+community-made content, portable room invitations, federated discovery, and
+volunteer-hosted sessions or storage. These are separate capabilities with
+their own privacy, abuse, moderation, availability, and licensing
+requirements. They are not prerequisites for local creation or direct
+connection by room code.
 
-what i DO want isssss
+No cryptocurrency, tradable hosting reward, or real-world-value token is
+approved by this document. Any such proposal requires a separate public
+decision covering legal, financial, abuse, and sustainability consequences.
 
-need for madenss i love that game
-but theres no networking :/ why
-bc its not inside of the game
+## Ownership and dependencies
 
-so, mimtia has networking inside the game
-techincally u dont need the centarlized database to find others, just share teh code
+- Replay recording and export own replay data and render fidelity.
+- Creator tools own local editing projects and export settings.
+- Networking owns sessions and room discovery.
+- Moderation owns conduct reporting and enforcement for public spaces.
+- Distribution owns user-controlled publication and content discovery.
 
-BUT
+Do not couple a basic local export to a central account, database, or social
+network. Do not move credentials, browser profiles, or platform tokens into
+game configuration or shared content.
 
-imagine no one else isplaying
-how do i get other humans to play with me?
-assume all i have is mimita, and 5 minutes
+## Accessibility and quality
 
-well
+The sharing flow must be usable with keyboard and controller navigation where
+the platform allows it. Important export status must be readable without
+sound, color alone, or a high frame rate. Export runs must not freeze gameplay
+or editing input.
 
-one, replay export
-right now
-so u can upload replays and cool moments and etc 
-as well as make ur own videos using the engine
-bc i believe  vidoes will 
-like , playable media  and interactive media
+Measure the time and errors for a first-time user to select a replay, make a
+simple edit, export it, and understand the resulting file. Treat missed
+controls, unclear export failures, and unexplained costs as usability defects.
+Do not optimize the flow for views or posting frequency.
 
-two
-mimita becomes a operaintg system
-so we have  social media, distrivution
-kinda like roblox , how u just post it  to a mimita thing BUT
-NOT 
-ABOUT
-MOENY
-DONT  EVER MAKE IT  MONEY AS THE #1 PRIORITY 
-AND MAKE IT SO 
-hmmmm
-i tihnkfun 
-fun is the #1 priroity 
-AS WELL AS
-we should have  gre y prioirties
-do not simplify just to get more moeny
-that sucks
+## Future sync and storage
 
-money is a lagging indicator of waht we really actually want
-which
-do u like this game
-do u like playing it 
-does it bring u joy
-would u spend the 1 hour u get before school playing mimita and be thinking about it all th etime and cant wait to playit ocneu get home
-bc if u DO...
-that means i think its going in the rigth direction 
-WITHOUT
-Gambling
-or
-login rewards
-or 
-etc
+Local files are the first durable copy of personal creations. Multi-device
+sync, federated storage, volunteer hosting, and content discovery need a
+separate design for identity, ownership, moderation, integrity, and recovery.
+Until then, local scores and edits are not globally verified or ranked.
 
-three
-how to make it so 
-i opemn mimita and start a server = 
-it logs to other social media networks
-e.g.
-mimita  on like
-youtube?
-24/7 livestream showing who is online and playing
-twitter
-every new room gets a tweet? with a rate limit of like maybe 1 per minute? idk? batch them all
-instagram, maybe a  new story post ofhow much people is online? automaticaly? idk
-tiktok: live for who is online? idk 
-just, 
-me on the mimita gthing = i auto post the room codes  to other platofrms, so juts by that  we have automatic  distribution
+## Related specifications
 
-four
-volunteers, federated or fediverse
-u volunteer  computer for it to be the server and data storage
-and for all the verified  hours u are  having it be online and serving
-then u get rewards likeeeeeeeeeeeeeeee
-special  idk relates to 
-some kinda bitcoin or crptocurrecny? NO SCAM NO  SCAMMING THAT IS LAME 
-but smth u can trade for like in real life value
-you can buy a burger using this coin that u got for hosting mimita servrers
-u can pay rent over and over and over becasue u ahve a server online for mimita 
-todo even  like 
-i dont even understand how we could do that but its whatver 
-i believe there is a path mkay so we can do it 
-
-five 
-word of mouth?
-that serems liek so far to be the biggest
-it is slow, but, wordo f mouth i believe is like
-maybe strongest?n
-no paying for dumb stuid bullshit ass advertisign
-i dont wnat eo even do that br
-like maybe
-but i never seen a roblox ad
-i dont think i bouthgt nothing frmo a ad
-i dont know why we evne do ads its just frustraingt an dno one  evne has  everuone has adblock bro 
-i want touse ur thing because hmmmm why
-because it scool and good and i used it for free and had a lot of value for free then i want to purhcase mroe of the free thing bc  naturally using it for free  cost money theni pay mone to  get more of that thing excpet it sbetter 
-
-wahts the ideal behavior Wellllllllll
-
-imagine i die
-and
-its the year
-3081
-and 
-jim the alien on mars 
-unearths a old freakin
-game
-aclled mimita
-wowwwwww ts is soooooo old wtffff
-
-jim the alien
-boots up mimita 
-starts up a server
-and 
-whatever social media
-distribution network
-how to learn things exist  
-mimtia is auto connected to that 
-and auto distibuttes the message like Heyyyy guyyysssss
-jim the alien is available to play
-
-so, not onl can jim have fun just solo, bc the solo game like just u,
-its full of  sauce and fun to play solo there is no need for other poeple BUT
-when u get more poeple, its just, liek way more fun and awesome and sick 
+- [MiMITA vision and principles](../../architecture/vision-mentality/vision.md)
+- [Accessibility and portability](../../architecture/accessibility/accessibility.md)
+- [Replay](../replay/replay.md)
+- [Video Editor](../creator-tools/video-editor.md)
+- [Live voice generation](../live-voice-generation/live-voice-generation.md)
+- [Persistent data and rewards](../data-saving/data-saving.md)

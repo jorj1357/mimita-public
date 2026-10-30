@@ -59,6 +59,23 @@ The original wishlist that motivated this work is preserved in section 19.
 - Full destruction in the first slice. Hooks ship first; CSG deformation and
   detached wheels follow.
 
+## 3.1 External physics library decision
+
+Do not add an external rigid-body engine for the current vehicle work. The
+existing physical-entity system, fixed-tick simulation, cached collision
+broadphase, constraint layer, and destructible-world owner are intended to be
+the shared physics foundation. A second engine would need to share contacts,
+authority, prediction, and replay with those systems; using it only for
+vehicles would split the world and complicate collisions with players, maps,
+weapons, and debris.
+
+Reconsider this decision only if measured vehicle requirements cannot be met
+by extending the shared owners. Any reconsideration begins with a bounded
+technical comparison of the missing capability, integration cost,
+determinism, networking, performance, and migration effect on other physics
+users. A library is not adopted based on vehicle feel alone or as an
+unmeasured shortcut.
+
 ---
 
 ## 4. General library rule
@@ -365,6 +382,26 @@ Weapon aim, fire, and reload stay available.
 No locomotion and no driving input. Look, weapon aim/fire, `G` to ragdoll
 (unseats), and `F` to leave.
 
+### 11.4 Mode-selected control profiles
+
+Vehicle physics is shared, while the active gamemode selects a named control
+profile through its mode data. The profile maps device inputs to generic
+vehicle actions such as throttle, brake, steer, lean, jump, and trick. It does
+not select a separate physics implementation.
+
+The standard car profile starts in manual transmission, matching the desired
+simulation-style default. Automatic transmission remains an explicit option.
+Modes may select an arcade profile for a vehicle without changing its physical
+template or adding mode-ID branches to the vehicle system.
+
+The first trick-vehicle profile is shared by skateboard and BMX: W accelerates,
+S brakes and then reverses, A/D steer and lean, and holding Space while
+grounded charges a crouch/jump that releases into a higher jump. Airborne A/D
+controls rotation about world up. Board and bike templates tune balance,
+traction, gravity, and jump response independently. Trick scoring and any
+temporary Need for Madness boost belong to mode rules, not the shared vehicle
+physics owner.
+
 ### 11.4 Modes
 
 - **Automatic:** `W` forward, `S` brake then reverse, automatic gear selection.
@@ -528,8 +565,8 @@ The original notes that motivated this work:
 - Drivable vehicles and fully simulated wheels/suspension were previously listed
   as out of scope for Payload v1 and remain future work.
 
-See also `docs/specs/vehicles/vehicles-skateboard.md` for the trick-vehicle
-direction.
+See also `docs/specs/vehicles/vehicles-skateboard.md` for skateboard and BMX
+controls, tuning, and trick-vehicle acceptance.
 
 ---
 

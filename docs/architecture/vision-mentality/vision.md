@@ -68,6 +68,19 @@ the value they experience, not because they are pressured by referral rewards
 or growth tricks. The project should help people create and connect, and give
 them meaningful control over what they use and contribute.
 
+Creation tools belong inside the MiMITA application as integrated workspaces,
+not as a collection of separate MiMITA-branded products. A player should be
+able to move from playing to editing a map, replay, video, or eventually music
+without installing a separate MiMITA Studio, DAW, or video-editor application.
+Platform builds may adapt their controls and capabilities; this direction is
+not a promise that every platform is supported today.
+
+Reward the satisfaction of making something a person likes. Do not make
+publishing, views, daily attendance, referrals, or account creation the price
+of enjoying a feature. Show costs, licenses, and limitations before a person
+chooses an asset, effect, export, or service. Sharing should remain optional
+and user-directed.
+
 The owner is concerned about economic pressure and platform enshittification.
 If MiMITA gains attention, users, or commercial offers, the project should
 lead by example and keep its core values rather than changing direction simply
@@ -155,3 +168,9 @@ visual identity. It can guide architecture proposals and help choose
 experiments. Each feature still needs its own owner, behavior specification,
 technical design, and acceptance evidence. Revisit this vision with the
 community as MiMITA and its users grow.
+
+See [Distribution](../../specs/distribution/distribution.md) for local-first,
+user-directed sharing; [Replay](../../specs/replay/replay.md) and the
+[Video Editor](../../specs/creator-tools/video-editor.md) for creation
+workflows; and [Accessibility and Portability](../accessibility/accessibility.md)
+for platform and resource requirements.

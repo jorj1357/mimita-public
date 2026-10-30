@@ -133,7 +133,6 @@ struct ArmRagdollConfig {
     float extendMaxSpeed = 100.0f;
     float maxStretch = 0.25f;
     float stretchForce = 50.0f;
-    float bodyPull = 0.0f;
     // Multiplier on extendStrength for the released-arm follow motor.
     float weakLookStrength = 0.1f;
     float angularDamping = 2.5f;

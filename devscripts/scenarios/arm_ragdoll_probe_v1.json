@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "arm_ragdoll_probe_v1",
-  "description": "Equip the mace, hold primary fire through the shared input boundary, and verify the per-weapon right-arm ragdoll motor reaches the fixed tick and produces motion samples.",
+  "description": "Equip the mace from the sandbox weapon set, hold primary fire through the shared input boundary, and verify the per-weapon right-arm ragdoll motor reaches the fixed tick and produces motion samples.",
   "launch": {
     "profile": "npc-navigation",
     "launch_mode": "1",
@@ -14,7 +14,6 @@
     {"id": "tank", "command": "healthme", "args": ["999999"], "delay_ms_after": 1000}
   ],
   "steps": [
-    {"id": "start_melee", "command": "startmelee", "args": [], "delay_ms_after": 4000},
     {"id": "equip_mace", "command": "equipweapon", "args": ["mace"], "delay_ms_after": 1000},
     {"id": "hold_primary", "command": "agent.holdprimary", "args": ["120"], "delay_ms_after": 2200},
     {"id": "snapshot_after_hold", "command": "agent.snapshot", "args": ["arm_ragdoll_after_hold"], "delay_ms_after": 500}

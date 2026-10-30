@@ -1,11 +1,3 @@
-2026 10 21 1533
-accessibiltiy  ummm developer too
-editing json dont need editing 5 difrent files
-just make a cmd like
-config_preset_list
-config_preset_load N
-
-
 // 09 06 2026, 00 00
 /* purpose
 * define accessibility and portability goals for MiMITA
@@ -38,6 +30,26 @@ RAM, a new device, or a fast and reliable internet connection. MiMITA should
 remain responsive and useful on low-power devices and poor or unstable
 connections, while scaling up on stronger systems. Optional detail and
 nonessential work should yield before core gameplay and essential information.
+
+MiMITA is one application with integrated gameplay, map, replay, video, and
+future music-creation workspaces. This is a product-architecture direction,
+not a promise that all platforms build the same interface today. Mobile and
+console workspaces should use platform-appropriate input, navigation, storage,
+and export paths while reusing portable project data where practical.
+
+## Creator-tool accessibility
+
+Creation workflows must have a quick path for common tasks and a discoverable
+route to advanced controls. Selection feedback must make it clear which item
+will be changed; clicking one timeline clip or property must not silently edit
+its neighbor. Provide keyboard navigation, controller navigation where
+supported, scalable readable text, visible focus, undo/redo, and clear save and
+export status.
+
+Video preview and export must degrade gracefully on lower-capability devices.
+An export can take longer, but it must not make the editor appear frozen or
+lose the project. Measure frame time, export throughput, memory, and storage
+use rather than promising a universal frame rate.
 
 ## Input access
 
@@ -113,3 +125,13 @@ Every new UI, input, audio, or rendering feature should answer:
 4. Can its behavior be tested through terminal commands or a deterministic
    harness?
 5. Does it degrade safely on lower-capability platforms?
+
+Developer workflows are part of accessibility too. Common configuration
+preset operations should be discoverable and should not require manually
+editing several unrelated JSON files. A future shared preset interface may
+provide list and load actions, but its exact commands belong to the terminal
+command specification after the underlying preset ownership is established.
+
+See the [Video Editor](../../specs/creator-tools/video-editor.md),
+[Replay](../../specs/replay/replay.md), and
+[Distribution](../../specs/distribution/distribution.md) specifications.

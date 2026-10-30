@@ -10,11 +10,38 @@
 
 * `assets/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into `assets/music/ingame/`.
 
-# assets that DO get tracked 
+# Reusable Blender-authored object assets
 
-maps get tracked by git assets\maps\
+Reusable object assets live under `assets/objects/library/<asset-id>/`.
+Each package has one stable asset ID and a manifest named `asset.json`.
+The runtime model is exported as `model.glb`; an editable Blender source
+file may be included as `source.blend` when the author intends to share it.
+Textures and other required runtime files stay inside the package or use
+existing tracked shared-asset paths.
 
-9 2 2026 expand, because, we should add a folder of 
+The manifest identifies the asset, its origin/pivot, render model, collision
+representation, default physical material and density, and any authored
+attachment points. Maps store a reference to the stable asset ID plus an
+instance transform and allowed per-instance overrides; they do not duplicate
+the mesh into map JSON.
+
+Blender export/import must preserve the expected units and axis convention,
+report missing textures, and validate that collision metadata is usable before
+the object is placed in a map. An asset package contains data only: importing
+it must not execute scripts. Record author and license/provenance so creators
+can tell whether they may reuse or redistribute it.
+
+The existing `assets/objects/` tree remains the runtime object root for
+weapons and game objects. The library is a new organized area beneath that
+root, not a second asset loader. Map assets remain tracked under
+`assets/maps/`.
+
+## Creator source and generated content
+
+Do not commit secrets, account credentials, browser profiles, user-local
+exports, or temporary renders. User-created map content and video projects
+remain user data unless explicitly packaged for distribution. Music production
+files remain subject to the existing exclusion rules above.
 
 ---
 

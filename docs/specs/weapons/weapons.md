@@ -2495,13 +2495,17 @@ When enabled:
 
 - only the right arm is physically simulated; the other limbs keep their
   authored/procedural animation pose;
-- LMB released applies a weak camera-forward torque
-  (`weak_look_strength`, default `0.1`) plus gravity, damping, shoulder
-  constraints, and world collision. The weak torque falls off at high angular
-  speed so follow-through is preserved;
-- LMB held adds `lmb_torque_gain` toward camera forward every fixed tick. There
-  is no hardcoded tap duration: a short press leaves angular momentum after
-  release, and holding settles the arm forward;
+- LMB held drives the same shared ragdoll arm-extend motor used by ragdoll
+  mode (`config/ragdoll.json` `arms`): the arm steers its actual
+  shoulder-to-hand axis toward camera forward using `extend_strength` and
+  `extend_max_speed`, and may telescope using `max_stretch` and
+  `stretch_force`;
+- LMB released keeps a weak camera-forward follow scaled by
+  `weak_look_strength`; the weak motor falls off at high angular speed so
+  follow-through is preserved;
+- the right-arm rotation limits come from `config/ragdoll.json`
+  `attachments.rightArm.rotation_limit_deg`, as in ragdoll mode. Limits are
+  skipped while the arm is actively extending and applied after release;
 - the fixed melee action animation and cooldown do not start; damage comes from
   the same continuous weapon-contact claim path used by physical melee;
 - the weapon model, weapon collision capsule, and damage geometry follow the
@@ -2509,16 +2513,18 @@ When enabled:
 - chainsaw LMB hold also drives rev decay; release lets the rev multiplier
   decay using `revDecayTicks`.
 
-Tunable fields:
+Tunable fields use the same names and meanings as the ragdoll arm motor:
 
-- `weak_look_strength`, `lmb_torque_gain`, `lmb_max_angular_speed`
+- `extend_strength`, `extend_max_speed`
+- `max_stretch`, `stretch_force`
+- `weak_look_strength`
 - `angular_damping`, `gravity_scale`
-- `shoulder_max_stretch`
 - `world_collision`, `self_collision`
 - `capsule_radius`, `capsule_half_height`, `capsule_offset`
-- `aim_rotation_degrees` corrects the hand-to-camera mapping; `arm_max_swing_deg`
-  limits the aim target (not the physical rotation), so a released arm can spin
-  through multiple turns
+- `aim_rotation_degrees` rotates the extend target direction
+
+Saving any of these fields hot-reloads the per-weapon arm configuration and
+re-applies it to the active right arm without a rebuild or respawn.
 
 The right-arm pose is replicated with
 `RAGDOLL_NET_ARM_RAGDOLL` so remote clients and the authoritative server use

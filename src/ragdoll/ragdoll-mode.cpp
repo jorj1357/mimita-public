@@ -65,7 +65,6 @@ static bool sameArmRagdollConfig(const ArmRagdollConfig& a,
         a.extendMaxSpeed == b.extendMaxSpeed &&
         a.maxStretch == b.maxStretch &&
         a.stretchForce == b.stretchForce &&
-        a.bodyPull == b.bodyPull &&
         a.weakLookStrength == b.weakLookStrength &&
         a.angularDamping == b.angularDamping &&
         a.gravityScale == b.gravityScale &&
@@ -653,7 +652,6 @@ void RagdollModeSystem::activateArmRagdollBody(Player& player,
          {"extend_max_speed", config.extendMaxSpeed},
          {"max_stretch", config.maxStretch},
          {"stretch_force", config.stretchForce},
-         {"body_pull", config.bodyPull},
          {"weak_look_strength", config.weakLookStrength},
          {"angular_damping", config.angularDamping},
          {"gravity_scale", config.gravityScale},
@@ -700,6 +698,9 @@ void RagdollModeSystem::updateArmRagdoll(float dt, const World& world,
                                          const ArmRagdollConfig& config)
 {
     if (!config.enabled)
+        return;
+    if (player.perfectPoseSkeleton.nodes.empty() ||
+        player.physicalBody.parts.empty())
         return;
     const uint64_t generation =
         RagdollModeConfig::instance().data().generation;
@@ -791,7 +792,8 @@ void RagdollModeSystem::stepArmRagdoll(float dt, const World& world,
     const float weakStrength = baseStrength * std::max(0.0f, cfg.weakLookStrength);
     const float motorStrength = primaryHeld ? baseStrength : weakStrength;
     if (motorStrength > 0.0f && cfg.extendMaxSpeed > 0.0f) {
-        glm::vec3 targetDir = glm::normalize(camForward);
+        glm::vec3 targetDir = glm::length(camForward) > 1e-5f
+            ? glm::normalize(camForward) : glm::vec3(0.0f, 1.0f, 0.0f);
         if (glm::length(cfg.aimRotationDegrees) > 1e-5f)
             targetDir = glm::normalize(glm::quat(glm::radians(
                 cfg.aimRotationDegrees)) * targetDir);
@@ -802,11 +804,10 @@ void RagdollModeSystem::stepArmRagdoll(float dt, const World& world,
         tuning.allowStretch = primaryHeld;
         if (primaryHeld) {
             tuning.stretchForce = cfg.stretchForce;
-            tuning.bodyPull = cfg.bodyPull;
         } else {
             tuning.speedFalloffRef = std::max(1.0f, cfg.extendMaxSpeed * 0.1f);
         }
-        extendArm(b, b.rightArmIndex, targetDir, tuning);
+        extendArm(b, b.rightArmIndex, targetDir, tuning, dt);
     }
 
     const auto& ragdollCfg = RagdollModeConfig::instance().data();
@@ -1458,6 +1459,11 @@ void RagdollModeSystem::updateNpcAim(float dt, const World& world, Npc& npc,
         clearNpcAim(npc.id);
         return;
     }
+    if (npc.body.perfectPoseSkeleton.nodes.empty() ||
+        npc.body.physicalBody.parts.empty()) {
+        clearNpcAim(npc.id);
+        return;
+    }
 
     auto& body = mNpcAimBodies[npc.id];
     const std::string avatar = npc.body.avatarName();
@@ -1465,8 +1471,13 @@ void RagdollModeSystem::updateNpcAim(float dt, const World& world, Npc& npc,
     const bool avatarChanged = knownAvatar == mNpcAimAvatarNames.end() ||
                                knownAvatar->second != avatar;
     const bool armNow = armRagdoll && armRagdoll->enabled;
+    const bool armConfigChanged = armNow &&
+        (!sameArmRagdollConfig(body.armRagdollConfig, *armRagdoll) ||
+         body.armRagdollConfigGeneration !=
+             RagdollModeConfig::instance().data().generation);
     if (body.parts.empty() || avatarChanged ||
         (armNow && body.armRagdollWeaponId != npc.body.equippedWeaponId) ||
+        armConfigChanged ||
         (!armNow && body.armRagdollActive)) {
         if (armNow)
             activateArmRagdollBody(npc.body, body, npc.body.equippedWeaponId,
@@ -2141,7 +2152,7 @@ void RagdollModeSystem::solveJoints(int iterations, bool positionPass, RagdollBo
             // about its center. Otherwise the joint is rigid too.
             float stretch = 0.0f;
             if (b.armRagdollActive && pi == b.rightArmIndex) {
-                stretch = part.maxStretch;
+                stretch = b.rightArmExtending ? part.maxStretch : 0.0f;
             } else if (part.maxStretch > 0.0f) {
                 const bool isLeft = (pi == b.leftArmIndex);
                 const bool isRight = (pi == b.rightArmIndex);
@@ -2211,14 +2222,16 @@ void RagdollModeSystem::solveRotationLimits(float betaOverride, RagdollBody& b)
         glm::vec3 rejected = rv - clamped;
         if (glm::length(rejected) < 1e-6f) continue;
 
-        float invA = child.invInertia;
-        float invB = parent.invInertia;
+        float invA = child.staticBody ? 0.0f : child.invInertia;
+        float invB = parent.staticBody ? 0.0f : parent.invInertia;
         float total = invA + invB;
         if (total < 1e-8f) continue;
 
         glm::vec3 worldCorrection = parent.orientation * (-rejected);
-        rotateBody(child,  worldCorrection * (kBeta * invA / total));
-        rotateBody(parent, -worldCorrection * (kBeta * invB / total));
+        if (!child.staticBody)
+            rotateBody(child,  worldCorrection * (kBeta * invA / total));
+        if (!parent.staticBody)
+            rotateBody(parent, -worldCorrection * (kBeta * invB / total));
     }
 }
 
@@ -2290,7 +2303,6 @@ void RagdollModeSystem::processGrab(const InputState& input, const Camera& camer
 
 void RagdollModeSystem::processExtend(const InputState& input, const Camera& camera, float dt, RagdollBody& b)
 {
-    (void)dt;
     const auto& cfg = RagdollModeConfig::instance().data();
     glm::vec3 targetDir = glm::normalize(camera.front);
 
@@ -2304,13 +2316,13 @@ void RagdollModeSystem::processExtend(const InputState& input, const Camera& cam
     tuning.bodyPull = cfg.armBodyPull;
     tuning.blendRate = 12.0f;
 
-    if (b.leftArmExtending) extendArm(b, b.leftArmIndex, targetDir, tuning);
-    if (b.rightArmExtending) extendArm(b, b.rightArmIndex, targetDir, tuning);
+    if (b.leftArmExtending) extendArm(b, b.leftArmIndex, targetDir, tuning, dt);
+    if (b.rightArmExtending) extendArm(b, b.rightArmIndex, targetDir, tuning, dt);
 }
 
 void RagdollModeSystem::extendArm(RagdollBody& b, int armIndex,
                                   const glm::vec3& targetDir,
-                                  const ArmExtendTuning& tuning)
+                                  const ArmExtendTuning& tuning, float dt)
 {
     if (armIndex < 0 || armIndex >= (int)b.parts.size()) return;
     if (glm::length(targetDir) < 1e-5f) return;
@@ -2337,7 +2349,7 @@ void RagdollModeSystem::extendArm(RagdollBody& b, int armIndex,
     float desiredSpeed = glm::clamp(angle * tuning.strength,
                                     -tuning.maxSpeed, tuning.maxSpeed);
     float currentSpeed = glm::dot(arm.angularVelocity, axis);
-    float blend = glm::clamp(tuning.blendRate, 0.0f, 1000.0f) / 60.0f;
+    float blend = glm::clamp(dt * tuning.blendRate, 0.0f, 1.0f);
     if (tuning.speedFalloffRef > 0.0f) {
         const float speed = glm::length(arm.angularVelocity);
         blend /= 1.0f + speed / tuning.speedFalloffRef;
@@ -2356,11 +2368,11 @@ void RagdollModeSystem::extendArm(RagdollBody& b, int armIndex,
         float sep = glm::length(shoulder - parentAnchor);
         float maxSep = part.restLength + part.maxStretch;
         if (sep < maxSep) {
-            arm.linearVelocity += dir * (tuning.stretchForce / 60.0f
+            arm.linearVelocity += dir * (tuning.stretchForce * dt
                                          / std::max(arm.mass, 0.001f));
         } else if (tuning.bodyPull > 0.0f && b.torsoIndex >= 0) {
             RigidBody& torso = b.parts[b.torsoIndex].body;
-            torso.linearVelocity += dir * (tuning.bodyPull / 60.0f
+            torso.linearVelocity += dir * (tuning.bodyPull * dt
                                            / std::max(torso.mass, 0.001f));
         }
     }

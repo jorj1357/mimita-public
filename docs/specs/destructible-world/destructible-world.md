@@ -9,7 +9,7 @@ this should relate to the  spec for phsical objects here C:\mimita-priv-v8\docs\
 
 **Created:** 2026-09-09  
 **Status:** Specification / architecture  
-**Primary config:** `C:\mimita-priv-v8\config\destructible-world.json`
+**Primary config:** `config/destructible-world.json`
 
 **Related specifications:**
 
@@ -19,6 +19,7 @@ this should relate to the  spec for phsical objects here C:\mimita-priv-v8\docs\
 - networking specification
 - effects specification
 - player/body physics and future biological destruction specifications
+- [Gamemode runtime](../gamemodes/gamemodes.md)
 
 ---
 
@@ -62,6 +63,30 @@ The intended long-term engine property is:
 > Extreme results come from extreme inputs to ordinary rules.
 
 A sufficiently energetic physical object can therefore destroy a structure even if no developer explicitly programmed that specific interaction.
+
+## Gamemode defaults and map reset
+
+World geometry destruction is desired to be enabled by default in
+`config/destructible-world.json` under `world.enabled`. A gamemode may
+explicitly disable it through its mode data when intact geometry is part of its
+design or when its measured performance budget requires that choice. The
+shared gamemode specification owns how mode overrides inherit the global
+setting.
+
+Disabling world-geometry destruction does not disable ordinary physical
+collision, vehicle damage, or actor contact. These are separate shared
+behaviors.
+
+Destructible-world state must support restoring a map to its authored baseline
+at a mode-defined lifecycle boundary. Survive the Disasters keeps damage
+through its ten-round match and restores the baseline between matches. The
+reset operation belongs to the destructible-world owner; a gamemode requests
+the reset and does not regenerate collision meshes itself.
+
+The active configuration currently has cut batching, fracture, and physical
+object settings, but no explicit global world-destruction enable switch. The
+mode default and override described here are desired behavior; implementing
+them requires adding the config/schema and runtime owner together.
 
 ---
 
