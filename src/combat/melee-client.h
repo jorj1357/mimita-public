@@ -25,6 +25,7 @@ namespace MimitaMelee {
 
 struct ClientInput {
     bool primaryPressed = false;   // LMB edge this frame
+    bool primaryHeld = false;      // LMB held this frame (arm-ragdoll motor)
     bool secondaryPressed = false; // RMB edge this frame
     bool secondaryHeld = false;
     bool grabPressed = false;      // E edge this frame

@@ -430,7 +430,7 @@ void tickClientMeleeContactClaims(Player& player,
 
     const bool actionActive = action && g_state.currentPhaseIndex == 1;
     float revMultiplier = 1.0f;
-    if (def->id == "chainsaw" && action)
+    if (def->id == "chainsaw")
     {
         const float revMax = WeaponExecution::paramOr(*def, "revDamageMultiplier", 1.0f);
         const float revDecay = WeaponExecution::paramOr(*def, "revDecayTicks", 1.0f);
@@ -1054,6 +1054,11 @@ void clientTick(Player& player,
     // authored `crouch` state clip on the grounded fighter.
     player.crouching = input.crouchHeld || g_debugCrouch;
 
+    const WeaponDefinition* equippedNow = weapons.getCurrentDef(player);
+    const bool armRagdoll = equippedNow && equippedNow->armRagdoll.enabled;
+    if (armRagdoll && equippedNow->id == "chainsaw" && input.primaryHeld)
+        g_lastChainsawRevTick = simTick;
+
     if (const WeaponDefinition* equipped = weapons.getCurrentDef(player)) {
         if (equipped->id == "chainsaw") {
             float rev = 1.0f;
@@ -1079,6 +1084,20 @@ void clientTick(Player& player,
     const MeleeModifier modifier = moveSet->animationOnly ? MeleeModifier::None : input.crouchHeld
         ? MeleeModifier::Crouch
         : (input.jumpHeld ? MeleeModifier::Jump : MeleeModifier::None);
+
+    // Per-weapon arm ragdoll replaces the fixed swing with continuous physical
+    // contact. The right-arm solver consumes LMB; no authored action starts.
+    if (armRagdoll) {
+        if (g_state.active)
+            endAction(player);
+        g_state = ClientActionState{};
+        if (equippedNow->id == "chainsaw")
+            g_state.startSimTick = g_lastChainsawRevTick;
+        player.weaponPoseActionState.clear();
+        player.proceduralMeleePoseActive = false;
+        tickClientMeleeContactClaims(player, weapons, ctx, *moveSet, simTick);
+        return;
+    }
 
     // A held shield suppresses attacks until released (Phase 5 owns the shield).
     const bool wantsAttack = !g_shieldHeld &&

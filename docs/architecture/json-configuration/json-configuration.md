@@ -163,6 +163,113 @@ do not make an unread field take effect:
   `player_visuals.config.rejected`, `player_visuals.outline`, and
   `player_visuals.trail` in the current `events.jsonl`.
 
+## Gamemode runtime configuration resolution (2026-10-29)
+
+`GamemodeRegistry` loads and validates mode data. It is not the runtime
+application owner. One resolver produces the effective per-match values and is
+the only place that applies or clears them.
+
+### One resolver, one snapshot
+
+`GamemodeRuntimeResolver` produces an immutable `GamemodeRuntimeSnapshot` for
+the active mode. The snapshot contains effective values, not raw JSON:
+
+- mode id, teams, roster, round/objective rules;
+- movement preset and its precedence result;
+- actor preset, camera FOV, first-person policy;
+- healthbar policy;
+- presentation policy (hit effects, outlines, trails, blood, hit flinch, victim
+  blood feedback);
+- death policy;
+- NPC policy (behavior profile, targeting, travel, avatar);
+- aim policy (`aim.mode`, `aim.body_mode`, `aim.body_enabled`).
+
+Both the client and server consume that one resolver. The client applies it at
+the community-match state boundary and clears it when the match state is reset.
+The server applies it when a mode starts and refreshes it only when
+`GamemodeRegistry::pollReload()` installs a new valid mode revision. Feature
+systems must not keep their own per-mode enable flags or re-read the registry
+every tick when the snapshot already carries the resolved value.
+
+### Resolution order
+
+Resolve in this order and document the winner where a field has more than one
+source:
+
+```text
+validated per-mode JSON value
+> actor-preset or replicated refinement
+> base config JSON value
+> compiled default
+```
+
+`null` or an absent nullable field means “inherit the next source”. A concrete
+`true`/`false` or number in the mode JSON wins. This matches the existing
+presentation/trail contract and keeps `config/gameplay.json`,
+`config/aimbody.json`, `config/impact_decals.json`, and `config/hitfx.json` as
+the shared base values rather than alternate mode stores.
+
+### Per-mode aim and victim-feedback overrides
+
+The gamemode masterlist owns the schema for these nullable fields; each mode
+file owns its values:
+
+- `aim.mode` — replaces `config/gameplay.json` `aim_mode`
+  (`crosshair`, `world_hit`, `farpoint`, `camforward`, `physical`).
+- `aim.body_mode` — replaces `config/aimbody.json` `mode`
+  (`default`, `smooth`, `physical`, `hybrid`).
+- `aim.body_enabled` — replaces `config/aimbody.json` `enabled`.
+- `presentation.blood_client_feedback` — replaces
+  `config/impact_decals.json` `blood.clientFeedback.enabled`. It is separate
+  from `presentation.blood`, which remains the all-blood switch.
+- `presentation.hit_flinch` — already exists and remains the hit-flinch switch.
+
+These values are client-side presentation/firing policy. The dedicated server
+does not load `gameplay.json`, `aimbody.json`, `impact_decals.json`, or
+`hitfx.json`; if a server-side consumer ever needs the same aim value, it must
+resolve it through this same resolver instead of assuming the client base file.
+
+### Sandbox configuration sources
+
+Sandbox is an ordinary mode file loaded by `GamemodeRegistry`. It currently
+reads the raw shared JSON files for gameplay, aimbody, impact decals, hitfx,
+and movement, plus the non-null presentation values in
+`config/gamemodes/sandbox.json`. There is no merged Sandbox preset and no
+Sandbox-specific override block.
+
+This is the observed current behavior, not a settled design decision. Whether
+Sandbox should continue to expose the raw user JSON values or should gain an
+explicit configurable preset is tracked as an open decision in
+`docs/specs/open-gameplay-issues.md`.
+
+### Consolidation status
+
+The resolver facade lands first. It replaces the scattered apply blocks in
+`src/network/community-match-client.cpp` and the three server mode-start paths.
+Deleting the per-singleton mode flags (`CamConfig`, `HealthbarConfig`,
+`PlayerVisualsConfig`, `RagdollDeathConfig`, `ImpactDecalsConfig`,
+`KillfeedManager`, `ActorPresetWeapons`) and the remaining per-tick registry
+re-reads is a follow-up after runtime evidence proves the resolved values.
+
+### Known duplicate owners (cleanup backlog)
+
+| Area | Current owners | Cleanup |
+|---|---|---|
+| Client apply | `CommunityMatchClient::onState` / `reset` | Folded into the resolver; keep the client as the call boundary only. |
+| Server apply | `serverCommunityStartMatch`, `serverStartMode`, `serverBombTagStartMatch` | One resolver apply path. |
+| Server reads | `ServerGamemodeState` plus per-tick `GamemodeRegistry::get` re-reads | Refresh the snapshot only on registry revision change. |
+| Hit/visual policy | `GamemodePresentation`, `ActorPresetWeapons` cache, `HitEffects`, `WeaponHitFxConfig`, `ActorPresetPresentation`, `PlayerVisualsConfig` | One resolved policy handed to each consumer. |
+| Hit flinch | `CamConfig::mHitFlinchOverride` | Resolver owns the value; remove the singleton flag. |
+| Blood | `presentation.blood`, top-level `blood_enabled`, `ImpactDecalsConfig` | Keep one canonical mode field; migrate the legacy alias. |
+| Healthbars | `HealthbarConfig` mode flags | Three flags have no reader; implement or delete. |
+| Movement | mode `movement_preset`, actor preset, role preset | Choose one precedence; client and server currently disagree. |
+| Camera | registry fields, packet fields, actor preset | One resolved camera policy. |
+| Death | `death_presentation`, `ragdoll_enabled`, `blood_enabled` | One death policy plus a separate blood policy. |
+| Whole-file backup | `SettingsBackup` in the mode reset path | Delete; runtime overrides are memory-only. |
+| Mode ids | `bombtag` vs `bomb_tag` | Normalize to the registry id. |
+| `onlinemodes.json` | `score_limit`, `teams` | Delete; `goal_value` and mode `teams` are authoritative. |
+| Dead mode fields | `spawn_groups`, `teams[].spawn_group`, objective timing, `payload.class_pool`, `npc_travel.explore_bias`, unused `features.*`, `spawn_tracer_seconds`, `allow_rematch` | Delete after updating the masterlist and self-tests. |
+
 ## Configuration families
 
 These are the hot-reload families that are already heavily used or should be

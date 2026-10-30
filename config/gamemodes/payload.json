@@ -23,7 +23,6 @@
   "allow_rematch": true,
   "spawn_offset_radius": 0.5,
   "spawn_strategy": "team_shared",
-  // "intermission_seconds": 30,
   "intermission_seconds": 1,
   "results_seconds": 8,
   "maps": [
@@ -98,7 +97,6 @@
     "round_seconds": 300,
     "freeze_seconds": 0,
     "countdown_seconds": 3,
-    // "intermission_seconds": 30,
     "intermission_seconds": 1,
     "results_seconds": 8
   },
@@ -112,13 +110,9 @@
     "attacker_team": "attackers",
     "defender_team": "defenders",
     "overtime_seconds": 10,
-    // "push_meters_per_second_per_attacker": 0.2,
     "push_meters_per_second_per_attacker": 10.0,
-    // "push_meters_per_second_per_attacker": 1.0,
-    // "push_meters_per_second_per_attacker": 0.5,
     "max_push_attackers": 6,
     "unattended_rollback_delay_seconds": 30,
-    // "rollback_meters_per_second": 0.2,
     "rollback_meters_per_second": 5.0,
     "heal_hp_per_10_ticks": 1,
     "heal_defenders": false,
@@ -145,6 +139,7 @@
     "hit_sounds": true,
     "hit_flinch": true,
     "blood": true,
+    "blood_client_feedback": null,
     "killfeed": true,
     "ragdolls": true,
     "enemy_healthbars": null,
@@ -214,6 +209,7 @@
   "force_first_person": false,
   "hide_healthbars": false,
   "ragdoll_enabled": true,
+  "death_presentation": "auto",
   "blood_enabled": true,
   "roles": {},
   "actor_preset": "",
@@ -239,6 +235,11 @@
       "duration": 0.5,
       "easing": "ease_in_out"
     }
+  },
+  "aim": {
+    "mode": null,
+    "body_mode": null,
+    "body_enabled": null
   },
   "bomb_timer_ticks": 900,
   "inactive_ticks": 60,

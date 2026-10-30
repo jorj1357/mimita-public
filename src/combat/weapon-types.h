@@ -122,6 +122,31 @@ struct MeleeContactConfig {
     float forceScale = 1.0f;
 };
 
+struct ArmRagdollConfig {
+    // Per-weapon right-arm-only physical mode. When enabled, the fixed melee
+    // animation does not own the right arm. LMB drives the same shared ragdoll
+    // arm-extend motor used by ragdoll mode; the arm carries momentum through
+    // the shared ragdoll joint/collision solver.
+    bool enabled = false;
+    // Ragdoll arm motor values, using the same names as ragdoll.json "arms".
+    float extendStrength = 500.0f;
+    float extendMaxSpeed = 100.0f;
+    float maxStretch = 0.25f;
+    float stretchForce = 50.0f;
+    float bodyPull = 0.0f;
+    // Multiplier on extendStrength for the released-arm follow motor.
+    float weakLookStrength = 0.1f;
+    float angularDamping = 2.5f;
+    float gravityScale = 2.0f;
+    bool worldCollision = true;
+    bool selfCollision = true;
+    // Negative = derive from the avatar collider.
+    float capsuleRadius = -1.0f;
+    float capsuleHalfHeight = -1.0f;
+    glm::vec3 capsuleOffset{0.0f};
+    glm::vec3 aimRotationDegrees{0.0f};
+};
+
 struct WeaponDefinition {    std::string id;
     std::string displayName;
     int slot = 0;
@@ -258,6 +283,7 @@ struct WeaponDefinition {    std::string id;
 
     std::unordered_map<std::string, float> customParams;
     MeleeContactConfig meleeContact;
+    ArmRagdollConfig armRagdoll;
 
     bool validate() const;
 };

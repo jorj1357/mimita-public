@@ -133,13 +133,14 @@
     "ammoColorReload": { "type": "text", "x": 0, "y": 0, "text": "", "fontSize": 0.28, "textColor": [0.3, 0.6, 1, 1] },
     "dryFireIndicator": {
       "type": "text",
-      "text": "!",
+      "text": "!!!!!!",
       "visible": true,
       "x": 8,
       "y": -10,
       "fontSize": 0.5,
       "textColor": [1.0, 0.15, 0.15, 1.0],
-      "fadeTicks": 5
+      // "fadeTicks": 5
+      "fadeTicks": 30
     },
     "reloadText": {
       "type": "text",

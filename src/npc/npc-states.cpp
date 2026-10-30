@@ -33,9 +33,29 @@ void computeStateMovement(Npc& npc, glm::vec3& outMoveDir, bool& outJump, bool& 
         const float predictionSeconds = std::min(npc.targetMemory.ageSeconds, 1.5f);
         rememberedTarget += npc.targetMemory.lastKnownVelocity * predictionSeconds;
     }
-    glm::vec3 toTarget = sensors.hasTarget
-        ? sensors.predictedTarget - npc.body.pos
-        : (hasRememberedTarget ? rememberedTarget - npc.body.pos : glm::vec3{0.0f});
+    glm::vec3 movementTarget = sensors.hasTarget ? sensors.predictedTarget
+                                                 : rememberedTarget;
+    // Target-relative approach sector: stage toward the assigned side while
+    // still far away, then close normally. Aim target is never changed.
+    if (sensors.hasTarget && npc.utilityContext.squadApproachKnown) {
+        const glm::vec3& dir = npc.utilityContext.squadApproachDir;
+        if (glm::length(dir) > 0.001f) {
+            float hold = (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+                ? npc.behavior.preferredRange
+                : std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
+            if (npc.behavior.active && npc.behavior.approachDistanceMeters > 0.0f)
+                hold = npc.behavior.approachDistanceMeters;
+            hold = std::max(hold, 3.0f);
+            if (sensors.targetDistance > hold + 0.5f)
+                movementTarget = sensors.targetPos + dir * hold;
+            else
+                movementTarget = sensors.targetPos;
+        }
+    }
+    const bool hasMovementTarget = sensors.hasTarget || hasRememberedTarget;
+    glm::vec3 toTarget = hasMovementTarget
+        ? movementTarget - npc.body.pos
+        : glm::vec3{0.0f};
     toTarget.z = 0.0f;
     float toTargetLen = glm::length(toTarget);
     glm::vec3 chaseDir = toTargetLen > 0.001f ? toTarget / toTargetLen : glm::vec3{1.0f, 0.0f, 0.0f};

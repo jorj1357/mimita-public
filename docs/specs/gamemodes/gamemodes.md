@@ -130,6 +130,44 @@ healthbar is controlled separately by `config/healthbar.json`. Payload enables
 friendly healthbars explicitly so its map can show teammate health without
 requiring an enemy-healthbar change.
 
+## Per-mode aim, body, and victim feedback (2026-10-29)
+
+The gamemode masterlist defines a nullable `aim` block and one additional
+presentation flag. Values live in each `config/gamemodes/*.json`; `null` or an
+absent value inherits the shared base file.
+
+| Mode field | Inherits from | Meaning |
+|---|---|---|
+| `aim.mode` | `config/gameplay.json` `aim_mode` | Client firing solution: `crosshair`, `world_hit`, `farpoint`, `camforward`, or `physical`. |
+| `aim.body_mode` | `config/aimbody.json` `mode` | Body simulation: `default`, `smooth`, `physical`, or `hybrid`. |
+| `aim.body_enabled` | `config/aimbody.json` `enabled` | Enables or disables the aim body. |
+| `presentation.hit_flinch` | `config/camconfig.json` `hitFlinch.enabled` | Camera punch when the local player is hit. |
+| `presentation.blood_client_feedback` | `config/impact_decals.json` `blood.clientFeedback.enabled` | Camera-locked blood particles when the local player is hit. |
+
+`presentation.blood` stays the all-blood switch: it controls world blood,
+decals, spray, and the client feedback together. `blood_client_feedback` only
+controls the victim-screen particles and does not turn world blood back on.
+
+Example for Juggernaut:
+
+```jsonc
+"aim": {
+  "mode": "physical",
+  "body_mode": "hybrid",
+  "body_enabled": true
+},
+"presentation": {
+  "hit_flinch": true,
+  "blood_client_feedback": true
+}
+```
+
+These fields are resolved and applied by the single
+`GamemodeRuntimeResolver` described in
+`docs/architecture/json-configuration/json-configuration.md`. A mode must not
+require editing `gameplay.json`, `aimbody.json`, or `impact_decals.json` to
+change its own aim or victim-feedback behavior.
+
 ## Authored map spawnpoint consumption
 
 `MapConfigRegistry` owns authored map entities. The Entity Editor owns how a

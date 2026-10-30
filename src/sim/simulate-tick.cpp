@@ -30,6 +30,7 @@
 #include "combat/weapon-hit.h"
 #include "combat/death-system.h"
 #include "combat/weapon-contact-local.h"
+#include "combat/weapon-registry.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
 #include "ragdoll/ragdoll-mode.h"
@@ -201,15 +202,28 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 sim.player->inputWishMove = glm::vec2(0.0f);
             }
             InputState seatedInput = inputStateFromFrame(tickFrame);
-            if (AimBodyConfig::instance().bodyPhysicsMode() &&
-                !sim.player->usesMeleeAuthoredPose()) {
+            const WeaponDefinition* seatedDef = WeaponRegistry::instance().get(
+                sim.player->equippedWeaponId);
+            const bool seatedArmRagdoll = seatedDef &&
+                seatedDef->armRagdoll.enabled;
+            if ((AimBodyConfig::instance().bodyPhysicsMode() ||
+                 seatedArmRagdoll) &&
+                (!sim.player->usesMeleeAuthoredPose() || seatedArmRagdoll)) {
                 MIMITA_PERF_SCOPE("SeatedAimBodyUpdate");
-                if (!ragdoll.aimActive())
-                    ragdoll.activateAim(*sim.player);
-                ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
-                                  seatedInput.camForward,
-                                  THE_CAMERA.pos,
-                                  frame.extendRightMouse);
+                if (seatedArmRagdoll) {
+                    ragdoll.updateArmRagdoll(
+                        TICK_DT, *sim.world, *sim.player, seatedInput.camForward,
+                        frame.primaryHeld, seatedDef->id, seatedDef->armRagdoll);
+                } else {
+                    if (!ragdoll.aimActive())
+                        ragdoll.activateAim(*sim.player);
+                    ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
+                                      seatedInput.camForward,
+                                      THE_CAMERA.pos,
+                                      frame.extendRightMouse);
+                }
+            } else if (ragdoll.armRagdollActive()) {
+                ragdoll.deactivateArmRagdoll(*sim.player);
             } else if (ragdoll.aimActive()) {
                 ragdoll.deactivateAim(*sim.player);
             }
@@ -224,16 +238,31 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             // "hybrid"). Runs after normal movement/animation so it owns the
             // rendered pose and the client hitboxes for this tick. Melee exclusive
             // authored pose disables it so limb momentum/head tilt cannot alter
-            // the authored Captain Falcon pose.
-            if (AimBodyConfig::instance().bodyPhysicsMode() &&
-                !sim.player->usesMeleeAuthoredPose()) {
+            // the authored Captain Falcon pose. Per-weapon arm ragdoll is the
+            // exception: it replaces only the right arm and leaves the authored
+            // pose on every other limb.
+            const WeaponDefinition* equippedDef = WeaponRegistry::instance().get(
+                sim.player->equippedWeaponId);
+            const bool armRagdoll = equippedDef &&
+                equippedDef->armRagdoll.enabled;
+            if ((AimBodyConfig::instance().bodyPhysicsMode() || armRagdoll) &&
+                (!sim.player->usesMeleeAuthoredPose() || armRagdoll)) {
                 MIMITA_PERF_SCOPE("AimBodyUpdate");
-                if (!ragdoll.aimActive())
-                    ragdoll.activateAim(*sim.player);
-                ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
-                                  normalInput.camForward,
-                                  THE_CAMERA.pos,
-                                  frame.extendRightMouse);
+                if (armRagdoll) {
+                    ragdoll.updateArmRagdoll(
+                        TICK_DT, *sim.world, *sim.player, normalInput.camForward,
+                        frame.primaryHeld, equippedDef->id,
+                        equippedDef->armRagdoll);
+                } else {
+                    if (!ragdoll.aimActive())
+                        ragdoll.activateAim(*sim.player);
+                    ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
+                                      normalInput.camForward,
+                                      THE_CAMERA.pos,
+                                      frame.extendRightMouse);
+                }
+            } else if (ragdoll.armRagdollActive()) {
+                ragdoll.deactivateArmRagdoll(*sim.player);
             } else if (ragdoll.aimActive()) {
                 ragdoll.deactivateAim(*sim.player);
             }

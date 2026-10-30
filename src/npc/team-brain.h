@@ -77,6 +77,8 @@ struct SquadMember
 {
     uint32_t id = 0;
     glm::vec3 pos{0.0f};
+    // Humans do not consume approach sectors; only NPC members are balanced.
+    bool isNpc = false;
 };
 
 // Per-team group tuning resolved from the members' behavior profiles.
@@ -89,6 +91,11 @@ struct SquadTuning
     int maxAttackersPerTarget = 6;
     float rallyDistanceMeters = 8.0f;
     std::string approachStyle = "arc";
+    // Target-relative approach sectors. 0/1 disables.
+    int approachDirections = 0;
+    int approachReassignTicks = 300;
+    float approachDistanceMeters = -1.0f;
+    float slotStickiness = 0.8f;
 };
 
 // Current shared squad state. Focus is a travel target, never an aim target.
@@ -116,8 +123,15 @@ struct TeamBrainState
     // General squad state and per-actor slots (group behavior).
     SquadState squad;
     std::vector<std::pair<uint32_t, glm::vec3>> squadSlots;
+    // Target-relative approach sectors, stable until the reassignment interval.
+    std::vector<std::pair<uint32_t, uint8_t>> squadApproachSectors;
+    uint32_t squadApproachEpoch = 0;
+    uint32_t squadApproachAssignedTick = 0;
+    uint32_t squadApproachFocusActor = 0;
+    uint8_t squadApproachCount = 0;
     // Change-edge reporting memory (set by the caller; avoids per-tick spam).
     int reportedSquadMode = -1;
+    uint32_t reportedSquadApproachEpoch = 0;
     bool hasReportedFocus = false;
     glm::vec3 reportedFocusPos{0.0f};
 };
@@ -159,11 +173,17 @@ public:
     // team's living members; `focusActive`/`focusPos` come from the team's best
     // enemy report. Deterministic for a given input. Produces suggestions only.
     void updateSquad(const std::vector<SquadMember>& living,
-                     const glm::vec3& focusPos, bool focusActive,
-                     const SquadTuning& tuning, uint32_t focusActorId = 0);
+                     const glm::vec3& focusPos, const glm::vec3& focusForward,
+                     bool focusActive, const SquadTuning& tuning,
+                     uint32_t focusActorId = 0, uint32_t tick = 0);
     // Slot + anchor for an actor. False when the actor has no squad slot.
     bool squadSlotFor(uint32_t actorId, glm::vec3& outSlot,
                       glm::vec3& outAnchor) const;
+    // Assigned target-relative sector for an actor, or -1 when none.
+    int squadApproachSectorFor(uint32_t actorId) const;
+    // Planar unit direction for a sector relative to the focus look direction.
+    static glm::vec3 approachDirection(const glm::vec3& focusForward,
+                                       int sector, int sectorCount);
     const SquadState& squad() const { return mState.squad; }
 
     // Objective position this actor should move to right now. `actorId` and

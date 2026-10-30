@@ -114,6 +114,8 @@ public:
     int lastLoggedUtilityGoal = -1;
     int lastLoggedUtilityAction = -1;
     bool hasLoggedPursuitState = false;
+    // One bounded dash record per life for runtime evidence.
+    bool hasLoggedDash = false;
     uint32_t lastLoggedPursuitTarget = 0;
     bool lastLoggedPursuitVisible = false;
     bool lastLoggedPursuitRemembered = false;

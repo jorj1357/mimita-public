@@ -684,6 +684,42 @@ runtime-loaded configuration must be verified before edits.
 - Heavy weapon audio, tracer size, knockback, and penetration feel correct.
 - Multiplayer behavior remains stable with simultaneous automatic fire.
 
+## Per-mode aim, feedback, and NPC combat (2026-10-29)
+
+Juggernaut owns its aim and victim-feedback policy in
+`config/gamemodes/juggernaut.json` through the nullable masterlist fields
+described in `docs/specs/gamemodes/gamemodes.md`. The intended values are:
+
+- `aim.mode: "physical"` — bullets follow the weapon barrel.
+- `aim.body_mode: "hybrid"`, `aim.body_enabled: true` — the body is physically
+  simulated while limbs follow the procedural animation pose.
+- `presentation.hit_flinch: true` — the local victim camera punches when hit.
+- `presentation.blood_client_feedback: true` — camera-locked blood appears when
+  the local player is hit, independently of world blood.
+
+The mode must not require editing `config/gameplay.json`,
+`config/aimbody.json`, or `config/impact_decals.json` for these values, and
+other modes that leave the fields `null` keep the shared base behavior.
+
+### Hostile Fighter NPCs
+
+The human Juggernaut fights the Fighter team, so Fighter NPCs are the primary
+combat opponents. They must:
+
+- use every attack-capable weapon in the `juggernaut_fighter` role loadout, not
+  only the revolver, through an authored behavior-profile weapon cycle;
+- dash when the shared movement and dash rules allow it instead of staying on
+  the roster's hardcoded low difficulty;
+- keep pursuing a target after line of sight is lost instead of forgetting it;
+- approach from different sides relative to the target's look direction when
+  the profile opts into sector approach, so the squad does not collapse into
+  one point.
+
+These are shared NPC behavior-profile and TeamBrain rules, not a
+Juggernaut-only NPC implementation. The exact profile fields and acceptance
+criteria are in `docs/specs/npc-behavior/npc-behavior.md` and
+`docs/architecture/player-npc-systems/npc-movement.md`.
+
 ## Related documents
 
 - `docs/specs/gamemodes/gamemodes.md`

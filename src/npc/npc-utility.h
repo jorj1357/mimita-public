@@ -91,6 +91,11 @@ struct UtilityContext {
     glm::vec3 squadAnchor{0.0f};
     bool swarm = false;             // take firing slots around the focus
     bool atSquadSlot = false;       // already within the slot tolerance
+    // Target-relative approach sector. Movement-only: never changes the aim
+    // target position. Known only when the profile opts into sectors.
+    bool squadApproachKnown = false;
+    glm::vec3 squadApproachDir{0.0f};
+    int squadApproachSector = -1;
 };
 
 // Per-goal score breakdown, kept for inspection and tests.

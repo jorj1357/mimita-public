@@ -19,6 +19,7 @@
 
   "revolver": {
     "enabled": true,
+    // "enabled": false,
     // "visible": true,
     "visible": false,
     "collision_skin": 0.05,

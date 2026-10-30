@@ -2275,7 +2275,16 @@ bool handleGameCLI(int argc, char** argv)
                tdm.teams.size() > 0 ? tdm.teams[0].role.c_str() : "-",
                tdm.teams.size() > 1 ? tdm.teams[1].role.c_str() : "-",
                tdm.npcSpawnPolicy.c_str());
-        const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk && tdmOk;
+        const Gamemode& jug = registry.get("juggernaut");
+        const bool jugAimOk = jug.aim.hasMode && jug.aim.mode == "physical" &&
+            jug.aim.hasBodyMode && jug.aim.bodyMode == "hybrid" &&
+            jug.aim.hasBodyEnabled && jug.aim.bodyEnabled;
+        printf("[GAMEMODE SELFTEST] juggernaut aim=%s body=%s enabled=%d\n",
+               jug.aim.hasMode ? jug.aim.mode.c_str() : "inherit",
+               jug.aim.hasBodyMode ? jug.aim.bodyMode.c_str() : "inherit",
+               (int)(jug.aim.hasBodyEnabled && jug.aim.bodyEnabled));
+        const bool ok = teamsOk && rolesOk && roundsOk && objOk && visualOk &&
+            tdmOk && jugAimOk;
         printf("[GAMEMODE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }

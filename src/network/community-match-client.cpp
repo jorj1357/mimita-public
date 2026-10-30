@@ -18,8 +18,11 @@
 #include "config/impact-decals-config.h"
 #include "config/player-visuals-config.h"
 #include "config/camera-config.h"
+#include "config/gameplay-config.h"
+#include "entities/aimbody-config.h"
 #include "camera.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/gamemode-runtime-resolver.h"
 #include "gamemode/match-roles.h"
 #include "config/player-settings.h"
 #include "config/movement-config.h"
@@ -133,8 +136,7 @@ std::string CommunityMatchClient::teamName(int team) const
 
 void CommunityMatchClient::reset()
 {
-    ActorPresetWeapons::clearModePresentationOverride();
-    CamConfig::instance().clearHitFlinchOverride();
+    GamemodeRuntimeResolver::clearClient();
     resetActorPreset();
     if (mModeMovementPresetApplied) {
         MovementJsonConfig::instance().applyRuntimeConfig(
@@ -223,16 +225,8 @@ void CommunityMatchClient::reset()
     mPresentationFingerprint.clear();
     mCameraFov = 0.0f;
     mForceFirstPerson = false;
-    HealthbarConfig::instance().setModeVisibilityOverride(false);
-    HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
-    HealthbarConfig::instance().clearModeFriendlyVisibilityOverride();
-    HealthbarConfig::instance().setModePercentAboveHead(false);
     RagdollDeathConfig::instance().clearRuntimeOverride();
     ImpactDecalsConfig::instance().clearRuntimeBloodOverride();
-    PlayerVisualsConfig::instance().clearPlayerOutlinesOverride();
-    PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
-    PlayerVisualsConfig::instance().clearEnemyOutlineAlphaOverride();
-    KillfeedManager::instance().clearModeEnabledOverride();
     if (mFirstPersonApplied) {
         THE_CAMERA.thirdPerson = mPreviousThirdPerson;
         mFirstPersonApplied = false;
@@ -439,79 +433,6 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
             }
             MovementJsonConfig::instance().applyRuntimeConfig(movement, modeConfig.movementPreset);
             mModeMovementPresetApplied = true;
-        }
-    }
-    HealthbarConfig::instance().setModeVisibilityOverride(modeConfig.hideHealthbars);
-    if (modeConfig.presentation.hasEnemyHealthbars)
-        HealthbarConfig::instance().setModeEnemyVisibilityOverride(
-            modeConfig.presentation.enemyHealthbars);
-    else
-        HealthbarConfig::instance().clearModeEnemyVisibilityOverride();
-    if (modeConfig.presentation.hasFriendlyHealthbars)
-        HealthbarConfig::instance().setModeFriendlyVisibilityOverride(
-            modeConfig.presentation.friendlyHealthbars);
-    else
-        HealthbarConfig::instance().clearModeFriendlyVisibilityOverride();
-    // Melee-style modes show each fighter's percent above the head instead of
-    // the ordinary healthbar (data-driven per mode).
-    HealthbarConfig::instance().setModePercentAboveHead(modeConfig.features.percentAboveHead);
-    // During a community match, outlines require explicit permission in mode JSON.
-    PlayerVisualsConfig::instance().setPlayerOutlinesEnabled(
-        modeConfig.presentation.hasPlayerOutlines && modeConfig.presentation.playerOutlines);
-    PlayerVisualsConfig::instance().setFriendlyOutlinesEnabled(
-        modeConfig.presentation.hasFriendlyOutlines && modeConfig.presentation.friendlyOutlines);
-    if (modeConfig.presentation.hasPlayerWireframes)
-        PlayerVisualsConfig::instance().setPlayerWireframesEnabled(
-            modeConfig.presentation.playerWireframes);
-    else
-        PlayerVisualsConfig::instance().clearPlayerWireframesOverride();
-    PlayerVisualsConfig::instance().setFriendlyWireframesEnabled(
-        modeConfig.presentation.hasFriendlyWireframes && modeConfig.presentation.friendlyWireframes);
-    if (modeConfig.presentation.hasHitFlinch)
-        CamConfig::instance().setHitFlinchOverride(modeConfig.presentation.hitFlinch);
-    else
-        CamConfig::instance().clearHitFlinchOverride();
-    if (modeConfig.presentation.hasTeamOutlineColors)
-        PlayerVisualsConfig::instance().setTeamOutlineColors(
-            modeConfig.presentation.friendlyOutlineColor,
-            modeConfig.presentation.enemyOutlineColor);
-    else
-        PlayerVisualsConfig::instance().clearTeamOutlineColorsOverride();
-    if (modeConfig.presentation.hasTeamWireframeColors)
-        PlayerVisualsConfig::instance().setTeamWireframeColors(
-            modeConfig.presentation.friendlyWireframeColor,
-            modeConfig.presentation.enemyWireframeColor);
-    else
-        PlayerVisualsConfig::instance().clearTeamWireframeColorsOverride();
-    if (modeConfig.presentation.hasEnemyOutlineAlpha)
-        PlayerVisualsConfig::instance().setEnemyOutlineAlpha(modeConfig.presentation.enemyOutlineAlpha);
-    else
-        PlayerVisualsConfig::instance().clearEnemyOutlineAlphaOverride();
-    {
-        auto applyTrail = [](const GamemodeTrailSettings& src,
-                             PlayerTrailSettings& dst) {
-            dst.enabled = src.enabled;
-            dst.minSpeed = src.minSpeed;
-            dst.sampleIntervalSeconds = src.sampleIntervalSeconds;
-            dst.lifetimeSeconds = src.lifetimeSeconds;
-            dst.maxSamples = src.maxSamples;
-            dst.alpha = src.alpha;
-            dst.width = src.width;
-            dst.color = src.color;
-        };
-        if (modeConfig.presentation.hasEnemyTrail) {
-            PlayerTrailSettings trail;
-            applyTrail(modeConfig.presentation.enemyTrail, trail);
-            PlayerVisualsConfig::instance().setEnemyTrailOverride(trail);
-        } else {
-            PlayerVisualsConfig::instance().clearEnemyTrailOverride();
-        }
-        if (modeConfig.presentation.hasTeammateTrail) {
-            PlayerTrailSettings trail;
-            applyTrail(modeConfig.presentation.teammateTrail, trail);
-            PlayerVisualsConfig::instance().setTeammateTrailOverride(trail);
-        } else {
-            PlayerVisualsConfig::instance().clearTeammateTrailOverride();
         }
     }
     if (mForceFirstPerson && !mFirstPersonApplied) {
@@ -822,13 +743,10 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         break;
     }
 
-    // Match-wide presentation must be applied after local role selection,
-    // because applying a role rebuilds the active weapon presentation.
-    ActorPresetWeapons::setModePresentationOverride(modeConfig.presentation);
-    if (modeConfig.presentation.hasKillfeed)
-        KillfeedManager::instance().setModeEnabledOverride(modeConfig.presentation.killfeed);
-    else
-        KillfeedManager::instance().clearModeEnabledOverride();
+    // Match-wide config must be applied after local role selection, because
+    // applying a role rebuilds the active weapon presentation. One resolver
+    // owns every mode value; feature singletons keep only their base JSON.
+    GamemodeRuntimeResolver::applyClient(modeConfig);
 
     const auto& p = modeConfig.presentation;
     const std::string presentationFingerprint = nlohmann::json{
@@ -845,6 +763,14 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         {"hit_sounds", p.hasHitSounds ? nlohmann::json(p.hitSounds) : nlohmann::json(nullptr)},
         {"hit_flinch", p.hasHitFlinch ? nlohmann::json(p.hitFlinch) : nlohmann::json(nullptr)},
         {"blood", p.hasBlood ? nlohmann::json(p.blood) : nlohmann::json(nullptr)},
+        {"blood_client_feedback", p.hasBloodClientFeedback ? nlohmann::json(p.bloodClientFeedback) : nlohmann::json(nullptr)},
+        {"aim_mode", modeConfig.aim.hasMode ? nlohmann::json(modeConfig.aim.mode) : nlohmann::json(nullptr)},
+        {"aim_body_mode", modeConfig.aim.hasBodyMode ? nlohmann::json(modeConfig.aim.bodyMode) : nlohmann::json(nullptr)},
+        {"aim_body_enabled", modeConfig.aim.hasBodyEnabled ? nlohmann::json(modeConfig.aim.bodyEnabled) : nlohmann::json(nullptr)},
+        {"effective_aim_mode", GameplayConfig::instance().aimModeName()},
+        {"effective_aim_body_mode", AimBodyConfig::instance().mode()},
+        {"effective_aim_body_enabled", AimBodyConfig::instance().enabled()},
+        {"effective_blood_client_feedback", ImpactDecalsConfig::instance().data().blood.clientFeedback.enabled},
         {"blood_scale", p.bloodScale},
         {"blood_lifetime_scale", p.bloodLifetimeScale},
         {"world_impact_decal_scale", p.worldImpactDecalScale},

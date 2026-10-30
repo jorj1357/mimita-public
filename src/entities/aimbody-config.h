@@ -28,16 +28,26 @@ public:
     bool reload();
     bool pollReload();
 
-    bool enabled() const { return mEnabled; }
+    // Per-match overrides owned by GamemodeRuntimeResolver. The authored JSON
+    // values remain the base and save() always round-trips them unchanged.
+    void setEnabledOverride(bool on) { mHasEnabledOverride = true; mEnabledOverride = on; }
+    void clearEnabledOverride() { mHasEnabledOverride = false; }
+    void setModeOverride(const std::string& mode) {
+        mModeOverride = mode;
+        mHasModeOverride = true;
+    }
+    void clearModeOverride() { mHasModeOverride = false; }
+
+    bool enabled() const { return mHasEnabledOverride ? mEnabledOverride : mEnabled; }
     void setEnabled(bool on) { mEnabled = on; }
-    bool smoothMode() const { return mMode == "smooth"; }
+    bool smoothMode() const { return mode() == "smooth"; }
     // Experimental bodily-momentum mode: the normal-play body is physically
     // simulated and the camera look is a wished orientation (torque, not snap).
-    bool physicalMode() const { return mMode == "physical"; }
+    bool physicalMode() const { return mode() == "physical"; }
     // Hybrid: the body is physically simulated but limbs are also sprung toward
     // the procedural animation pose, so it follows animations and weapons while
     // still carrying momentum and colliding.
-    bool hybridMode() const { return mMode == "hybrid"; }
+    bool hybridMode() const { return mode() == "hybrid"; }
     // In hybrid body mode, choose whether the arms keep the physical hybrid
     // target or are driven toward their normal default aimbody pose.
     bool armsDefaultMode() const { return mArmsMode == "default"; }
@@ -74,7 +84,9 @@ public:
     const std::string& rightArmPointingFovEasing() const { return mRightArmPointingFovEasing; }
     float updateRightArmPointingFovBlend(bool held, float dt);
     bool bodyPhysicsMode() const { return physicalMode() || hybridMode(); }
-    const std::string& mode() const { return mMode; }
+    const std::string& mode() const {
+        return mHasModeOverride ? mModeOverride : mMode;
+    }
     float smoothingFactor() const { return mSmoothingFactor; }
     float normalMovementArmAimResponseMultiplier() const {
         return mNormalMovementArmAimResponseMultiplier;
@@ -104,7 +116,11 @@ private:
     AimBodyConfig() = default;
 
     bool mEnabled = true;
+    bool mHasEnabledOverride = false;
+    bool mEnabledOverride = true;
     std::string mMode = "default";
+    std::string mModeOverride;
+    bool mHasModeOverride = false;
     std::string mArmsMode = "hybrid";
     std::string mRightArmPointingMode = "off";
     glm::vec3 mRightArmPointingCenterOffset{0.2f, 0.0f, 0.4f};

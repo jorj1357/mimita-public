@@ -149,6 +149,7 @@ struct GamemodePresentation {
     bool hasHitSounds = false;           bool hitSounds = true;
     bool hasHitFlinch = false;            bool hitFlinch = true;
     bool hasBlood = false;               bool blood = true;
+    bool hasBloodClientFeedback = false; bool bloodClientFeedback = true;
     bool hasKillfeed = false;            bool killfeed = true;
     bool hasRagdolls = false;            bool ragdolls = true;
     bool hasEnemyHealthbars = false;     bool enemyHealthbars = true;
@@ -207,6 +208,18 @@ struct GamemodeAimFov {
     float multiplier = 0.5f;
     float duration = 0.5f;
     std::string easing = "ease_in_out";
+};
+
+// Optional mode-level aim policy. Each field is nullable in the masterlist;
+// has* stays false when the mode inherits the shared config/gameplay.json or
+// config/aimbody.json value.
+struct GamemodeAimPolicy {
+    bool hasMode = false;
+    std::string mode;          // gameplay.json aim_mode
+    bool hasBodyMode = false;
+    std::string bodyMode;      // aimbody.json mode
+    bool hasBodyEnabled = false;
+    bool bodyEnabled = true;   // aimbody.json enabled
 };
 
 // Optional mode-wide avatar policy. Role and actor-preset policies still refine
@@ -322,6 +335,7 @@ struct Gamemode {
     GamemodeNpcTargeting npcTargeting;
     GamemodeNpcTravel npcTravel;
     GamemodeAimFov aimFov;
+    GamemodeAimPolicy aim;
     GamemodeAvatarPolicy avatar;
     GamemodeNpcAvatarPolicy npcAvatar;
     GamemodePayload payload;

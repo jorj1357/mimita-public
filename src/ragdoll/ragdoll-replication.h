@@ -32,6 +32,9 @@ enum RagdollReplicationMode : uint8_t {
     RAGDOLL_NET_RAGDOLL = 1,
     RAGDOLL_NET_PHYSICAL = 2,
     RAGDOLL_NET_HYBRID = 3,
+    // Only rightArm is physically simulated; the other limb slots carry the
+    // current animation pose for body-volume validation.
+    RAGDOLL_NET_ARM_RAGDOLL = 4,
 };
 
 struct RagdollLimbState {

@@ -141,6 +141,10 @@ public:
     bool pollReload();
     void setRuntimeBloodEnabled(bool enabled);
     void clearRuntimeBloodOverride();
+    // Victim-screen blood particles only. Independent of blood.enabled, which
+    // remains the all-blood switch.
+    void setRuntimeClientFeedbackEnabled(bool enabled);
+    void clearRuntimeClientFeedbackOverride();
 
     const ImpactDecalsData& data() const { return mData; }
 
@@ -152,4 +156,6 @@ private:
     std::filesystem::file_time_type mLastWrite{};
     bool mRuntimeBloodOverride = false;
     bool mRuntimeBloodEnabled = true;
+    bool mRuntimeClientFeedbackOverride = false;
+    bool mRuntimeClientFeedbackEnabled = true;
 };

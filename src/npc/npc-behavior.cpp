@@ -203,11 +203,11 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.predictionErrorMeters = 0.4f;
         out.targetStickiness = 0.1f;
         out.targetSwitchThreshold = 0.5f;
-        out.pursuitMode = "forget_when_hidden";
-        out.continueThroughCover = false;
-        out.pursueLastKnownPosition = false;
-        out.afterReachingLastKnown = "patrol";
-        out.informationMode = "none";
+        out.pursuitMode = "persistent";
+        out.continueThroughCover = true;
+        out.pursueLastKnownPosition = true;
+        out.afterReachingLastKnown = "look_around";
+        out.informationMode = "memory";
         out.focusEnabled = false;
         out.swarm = false;
         out.navigationBackend = "custom";
@@ -225,11 +225,11 @@ void applySkillTier(const std::string& tierId, BehaviorProfileDefinition& out)
         out.predictionErrorMeters = 0.6f;
         out.targetStickiness = 0.0f;
         out.targetSwitchThreshold = 1.0f;
-        out.pursuitMode = "forget_when_hidden";
-        out.continueThroughCover = false;
-        out.pursueLastKnownPosition = false;
-        out.afterReachingLastKnown = "stop";
-        out.informationMode = "none";
+        out.pursuitMode = "persistent";
+        out.continueThroughCover = true;
+        out.pursueLastKnownPosition = true;
+        out.afterReachingLastKnown = "look_around";
+        out.informationMode = "memory";
         out.focusEnabled = false;
         out.swarm = false;
         out.navigationBackend = "custom";
@@ -242,6 +242,8 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.id = j.value("id", fallbackId);
     if (j.contains("skill_tier") && j["skill_tier"].is_string())
         applySkillTier(j["skill_tier"].get<std::string>(), out);
+    out.difficulty = clampWarn(
+        j, "difficulty", 0.0f, 10.0f, out.difficulty, out.id);
     out.aimErrorDeg = j.value("aim_error_deg", out.aimErrorDeg);
     out.reactionDelay = j.value("reaction_delay", out.reactionDelay);
     out.fireCadenceMultiplier = j.value("fire_cadence_multiplier", out.fireCadenceMultiplier);
@@ -391,6 +393,13 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.spreadRadiusMeters = clampWarn(
         j, "spread_radius_meters", 1.0f, 40.0f, out.spreadRadiusMeters, out.id);
     out.approachStyle = j.value("approach_style", out.approachStyle);
+    out.approachDirections = std::clamp(
+        j.value("approach_directions", out.approachDirections), 0, 8);
+    out.approachReassignTicks = std::clamp(
+        j.value("approach_reassign_ticks", out.approachReassignTicks), 1, 3600);
+    out.approachDistanceMeters = clampWarn(
+        j, "approach_distance_meters", 1.0f, 40.0f,
+        out.approachDistanceMeters, out.id);
     out.maxAttackersPerTarget =
         j.value("max_attackers_per_target", out.maxAttackersPerTarget);
     out.rallyDistanceMeters = clampWarn(
@@ -510,6 +519,7 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
 
     out.active = true;
     out.skillTier = def->skillTier;
+    out.difficulty = def->difficulty;
     out.aimErrorDeg = def->aimErrorDeg;
     out.reactionDelay = std::max(0.0f, def->reactionDelay);
     out.fireCadenceMultiplier = std::max(0.1f, def->fireCadenceMultiplier);
@@ -579,6 +589,9 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.cohesion = std::clamp(def->cohesion, 0.0f, 1.0f);
     out.spreadRadiusMeters = std::max(1.0f, def->spreadRadiusMeters);
     out.approachStyle = def->approachStyle;
+    out.approachDirections = std::clamp(def->approachDirections, 0, 8);
+    out.approachReassignTicks = std::clamp(def->approachReassignTicks, 1, 3600);
+    out.approachDistanceMeters = def->approachDistanceMeters;
     out.maxAttackersPerTarget = std::max(1, def->maxAttackersPerTarget);
     out.rallyDistanceMeters = std::max(1.0f, def->rallyDistanceMeters);
     out.focusReacquireSeconds = std::max(0.0f, def->focusReacquireSeconds);

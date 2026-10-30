@@ -264,6 +264,23 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
+        "agent.holdprimary", "Hold primary fire for bounded input frames",
+        "agent.holdprimary <frames>",
+        [](const std::vector<std::string>& args) {
+            int frames = 60;
+            if (!args.empty()) {
+                try { frames = std::stoi(args[0]); } catch (...) { frames = 60; }
+            }
+            scheduleTerminalPrimaryHold(std::max(0, frames));
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.holdprimary accepted",
+                {{"command", "agent.holdprimary"}, {"frames", frames},
+                 {"player", gpPlayer ? gpPlayer->username : std::string()}});
+
+        }, "2026-10-29", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
         "agent.snapshot", "Record player, camera, avatar, and posed body transforms",
         "agent.snapshot <label>",
         [](const std::vector<std::string>& args) {

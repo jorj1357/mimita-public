@@ -92,6 +92,15 @@ struct RagdollBody {
     // Normal-play only: held RMB gives the right arm a camera-forward motor.
     bool rightArmPointing = false;
     float rightArmPointingBlend = 0.0f;
+    // Per-weapon arm-ragdoll mode: only rightArm is dynamic; every other part
+    // is pinned to the current animation pose.
+    bool armRagdollActive = false;
+    bool armRagdollPrimaryHeld = false;
+    bool armRagdollInitialized = false;
+    std::string armRagdollWeaponId;
+    uint64_t armRagdollLastLogTick = 0;
+    ArmRagdollConfig armRagdollConfig;
+    uint64_t armRagdollConfigGeneration = 0;
     float activationTime = 0.0f;
 };
 
@@ -127,11 +136,21 @@ public:
     void updateAim(float dt, const World& world, Player& player,
                    const glm::vec3& camForward, const glm::vec3& camPosition,
                    bool rightMouseHeld);
+    // Per-weapon right-arm-only physical mode. The caller supplies the equipped
+    // weapon config and whether primary fire is held.
+    void updateArmRagdoll(float dt, const World& world, Player& player,
+                          const glm::vec3& camForward, bool primaryHeld,
+                          const std::string& weaponId,
+                          const ArmRagdollConfig& config);
+    void deactivateArmRagdoll(Player& player);
+    bool armRagdollActive() const { return mAimActive && mAim.armRagdollActive; }
     // NPCs use the same AimBody hybrid solver as players.  The caller supplies
     // an authoritative aim direction/point; no camera or input state is used.
     void updateNpcAim(float dt, const World& world, Npc& npc,
                       const glm::vec3& aimForward,
-                      const glm::vec3& aimPoint);
+                      const glm::vec3& aimPoint,
+                      bool primaryHeld = false,
+                      const ArmRagdollConfig* armRagdoll = nullptr);
     void clearNpcAim(uint32_t npcId);
     bool aimActive() const { return mAimActive; }
     // Avatar model reloads replace the skeleton and physical body without
@@ -220,6 +239,18 @@ private:
     void solveGrabs(int iterations, RagdollBody& b);
     void processGrab(const InputState& input, const Camera& camera, const World& world, RagdollBody& b);
     void processExtend(const InputState& input, const Camera& camera, float dt, RagdollBody& b);
+    struct ArmExtendTuning {
+        float strength = 0.0f;
+        float maxSpeed = 0.0f;
+        float stretchForce = 0.0f;
+        float bodyPull = 0.0f;
+        float blendRate = 12.0f;
+        // >0 preserves momentum by fading the motor as the arm spins.
+        float speedFalloffRef = 0.0f;
+        bool allowStretch = true;
+    };
+    void extendArm(RagdollBody& b, int armIndex, const glm::vec3& targetDir,
+                   const ArmExtendTuning& tuning, float dt);
     void selfCollision(RagdollBody& b);
     void syncToPlayer(Player& player, RagdollBody& b);
     void syncAimToPlayer(Player& player, RagdollBody& b);
@@ -236,6 +267,15 @@ private:
     void stepAimBody(float dt, const World& world, Player& player,
                      RagdollBody& body, const glm::vec3& aimForward,
                      const glm::vec3& aimPosition, bool pointingWanted);
+    void activateArmRagdoll(Player& player, const std::string& weaponId,
+                            const ArmRagdollConfig& config);
+    void activateArmRagdollBody(Player& player, RagdollBody& body,
+                                const std::string& weaponId,
+                                const ArmRagdollConfig& config);
+    void stepArmRagdoll(float dt, const World& world, Player& player,
+                        RagdollBody& body, const glm::vec3& camForward,
+                        bool primaryHeld);
+    void syncArmToPlayer(Player& player, RagdollBody& body);
     void clampAimRanges(const Player& player, RagdollBody& b, float beta);
     void cacheReplicatedPose(const Player& player, const RagdollBody& b,
                              uint8_t mode, uint32_t sourceTick);

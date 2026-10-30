@@ -40,5 +40,9 @@ bool consumeScheduledTerminalMove(float& moveX, float& moveY,
 bool advanceScheduledTerminalMoveFixedTick(bool* justStarted = nullptr,
                                            bool* justEnded = nullptr);
 bool consumeScheduledTerminalMoveForNetwork(float& moveX, float& moveY);
+// Test/dev: hold primary fire through the shared input boundary for a bounded
+// number of buildInputFrame calls. Used by runtime scenarios to exercise the
+// per-weapon arm-ragdoll motor without a live mouse.
+void scheduleTerminalPrimaryHold(int durationFrames);
 int scheduledTerminalMoveTotalTicks();
 const std::string& scheduledTerminalMoveRequestId();

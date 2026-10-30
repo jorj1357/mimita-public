@@ -482,6 +482,44 @@ void applyWeaponMeleeJson(WeaponDefinition& def, const json& root)
         MeleeMoveSetRegistry::instance().set(std::move(moveSet));
 }
 
+void applyWeaponArmRagdollJson(WeaponDefinition& def, const json& root)
+{
+    if (!root.contains("components") || !root["components"].is_object())
+        return;
+    const json& components = root["components"];
+    if (!components.contains("melee") || !components["melee"].is_object())
+        return;
+    const json& melee = components["melee"];
+    if (!melee.contains("arm_ragdoll") || !melee["arm_ragdoll"].is_object())
+        return;
+    const json& arm = melee["arm_ragdoll"];
+    ArmRagdollConfig& cfg = def.armRagdoll;
+    cfg.enabled = arm.value("enabled", false);
+    cfg.extendStrength = std::clamp(
+        arm.value("extend_strength", cfg.extendStrength), 0.0f, 10000.0f);
+    cfg.extendMaxSpeed = std::clamp(
+        arm.value("extend_max_speed", cfg.extendMaxSpeed), 0.0f, 2000.0f);
+    cfg.maxStretch = std::clamp(
+        arm.value("max_stretch", cfg.maxStretch), 0.0f, 3.0f);
+    cfg.stretchForce = std::clamp(
+        arm.value("stretch_force", cfg.stretchForce), 0.0f, 10000.0f);
+    cfg.bodyPull = std::clamp(
+        arm.value("body_pull", cfg.bodyPull), 0.0f, 1000.0f);
+    cfg.weakLookStrength = std::clamp(
+        arm.value("weak_look_strength", cfg.weakLookStrength), 0.0f, 1000.0f);
+    cfg.angularDamping = std::clamp(
+        arm.value("angular_damping", cfg.angularDamping), 0.0f, 1000.0f);
+    cfg.gravityScale = std::clamp(
+        arm.value("gravity_scale", cfg.gravityScale), 0.0f, 10.0f);
+
+    cfg.worldCollision = arm.value("world_collision", cfg.worldCollision);
+    cfg.selfCollision = arm.value("self_collision", cfg.selfCollision);
+    cfg.capsuleRadius = arm.value("capsule_radius", cfg.capsuleRadius);
+    cfg.capsuleHalfHeight = arm.value("capsule_half_height", cfg.capsuleHalfHeight);
+    weaponJsonVec3(arm, "capsule_offset", cfg.capsuleOffset);
+    weaponJsonVec3(arm, "aim_rotation_degrees", cfg.aimRotationDegrees);
+}
+
 void applyWeaponMeleeContactJson(WeaponDefinition& def, const json& root)
 {
     if (!root.contains("melee_contact") || !root["melee_contact"].is_object())
@@ -519,6 +557,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root){
     applyWeaponProjectileImpactJson(def, root);
     applyWeaponRenderJson(def, root);
     applyWeaponMeleeJson(def, root);
+    applyWeaponArmRagdollJson(def, root);
     applyWeaponMeleeContactJson(def, root);
 
 }

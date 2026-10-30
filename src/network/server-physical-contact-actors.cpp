@@ -12,6 +12,7 @@
 #include "combat/weapon-config.h"
 #include "entities/player-avatar-animations.h"
 #include "entities/player.h"
+#include "ragdoll/ragdoll-mode.h"
 #include "debug/structured-log.h"
 #include "devtools/scenario-server-playback.h"
 #include "physics/movement/movement-step.h"
@@ -269,6 +270,19 @@ bool preparePose(ActorView& actor, const std::string& avatar, uint32_t tick)
     }
     pose.updateProceduralAnimation(SERVER_DT, actor.aim, actor.position, glm::length(actor.velocity) > 0.1f);
 
+    const RagdollReplicationPose* replicatedPose = nullptr;
+    bool armRagdollPose = false;
+    if (actor.ref.player && actor.ref.player->hasRagdollPose &&
+        !actor.ref.player->ragdollHistory.empty()) {
+        replicatedPose = &actor.ref.player->ragdollHistory.back().pose;
+        armRagdollPose = replicatedPose->active &&
+            replicatedPose->mode == RAGDOLL_NET_ARM_RAGDOLL;
+        if (armRagdollPose) {
+            RagdollModeSystem::instance().applyReplicatedPose(
+                pose, actor.ref.id, *replicatedPose);
+        }
+    }
+
     auto& target = runtime.target;
     target.playerId = actor.ref.id; target.spawnGeneration = actor.generation;
     target.position = actor.position; target.dead = false;
@@ -292,12 +306,11 @@ bool preparePose(ActorView& actor, const std::string& avatar, uint32_t tick)
         }
         return !target.bodyParts.empty();
     }
-    if (actor.ref.player && actor.ref.player->hasRagdollPose &&
-        !actor.ref.player->ragdollHistory.empty() && !pose.usesMeleeAuthoredPose()) {
-        const auto& replicated = actor.ref.player->ragdollHistory.back().pose;
-        for (int i = 0; i < replicated.count && i < kRagdollLimbCount; ++i)
-            if (glm::length(replicated.limbs[i].hitHalf) > 0.00001f)
-                append(replicated.limbs[i].hitCenter, replicated.limbs[i].hitHalf);
+    if (replicatedPose && (armRagdollPose || !pose.usesMeleeAuthoredPose())) {
+        for (int i = 0; i < replicatedPose->count && i < kRagdollLimbCount; ++i)
+            if (glm::length(replicatedPose->limbs[i].hitHalf) > 0.00001f)
+                append(replicatedPose->limbs[i].hitCenter,
+                       replicatedPose->limbs[i].hitHalf);
     }
     if (target.bodyParts.empty()) for (const auto& part : pose.physicalBody.parts) {
         glm::vec3 low(std::numeric_limits<float>::max()), high = -low;

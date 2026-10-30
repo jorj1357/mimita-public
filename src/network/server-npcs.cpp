@@ -344,6 +344,7 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                     n.avatarName = profile.avatarName;
                 n.behaviorProfileId = profile.behaviorProfileId;
                 n.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+                npcApplyBehaviorDifficulty(n);
                 if (n.behavior.active && n.behavior.aggression >= 0.0f)
                     n.tuning.aggression = n.behavior.aggression;
                 if (!profile.weapons.empty())
@@ -521,6 +522,7 @@ static void respawnServerNpc(Npc& npc, const World& world)
     npc.lastLoggedUtilityGoal = -1;
     npc.lastLoggedUtilityAction = -1;
     npc.hasLoggedPursuitState = false;
+    npc.hasLoggedDash = false;
     npc.lastLoggedPursuitTarget = 0;
     npc.lastLoggedPursuitVisible = false;
     npc.lastLoggedPursuitRemembered = false;
@@ -537,6 +539,7 @@ static void respawnServerNpc(Npc& npc, const World& world)
     // Reapply the role behavior profile for the new life.
     npc.behaviorProfileId = profile.behaviorProfileId;
     npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+    npcApplyBehaviorDifficulty(npc);
     if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
         npc.tuning.aggression = npc.behavior.aggression;
     if (!profile.weapons.empty())
@@ -1450,6 +1453,7 @@ void simulateSharedNpcs(SOCKET sock,
                 continue;
             n.behaviorProfileId = modeProfileId;
             n.behavior = resolveNpcBehavior(modeProfileId);
+            npcApplyBehaviorDifficulty(n);
             modeProfileChanged = true;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,

@@ -28,6 +28,10 @@
       "focus_enabled": true,
       "swarm": true,
       "navigation_backend": "recast",
+      "approach_style": "sectors",
+      "approach_directions": 4,
+      "approach_reassign_ticks": 300,
+      "approach_distance_meters": 6.0,
       // Weapon visits: fire this many accepted attacks, then switch.
       "weapon_cycle": [
         "shotgun", "revolver", "rocket_launcher", "swordsword",
@@ -429,9 +433,11 @@
       "after_reaching_last_known": "look_around"
     },
     {
-      // Juggernauts are dangerous when they see a target, but should not have
-      // persistent target information through cover in the first playable slice.
+      // Juggernauts are dangerous when they see a target and keep pursuing it
+      // after line of sight is lost. Difficulty is data-driven so shared dash
+      // and movement rules are not suppressed by a hardcoded roster value.
       "id": "juggernaut_limited",
+      "difficulty": 6.0,
       "aim_error_deg": 10.0,
       "reaction_delay": 0.55,
       "fire_cadence_multiplier": 3.125,
@@ -440,12 +446,19 @@
       "weapon_range_bias": 1.0,
       "weapon_damage_bias": 1.0,
       "weapon_safety_bias": 0.2,
-      "information_mode": "none",
-      "pursuit_mode": "last_known_position",
-      "continue_through_cover": false,
-      "pursue_last_known_position": false,
-      "after_reaching_last_known": "stop",
-      "pursuit_search_ticks": 90,
+      "weapon_cycle": ["heavy_shotgun", "large_machine_gun", "force_punch"],
+      "weapon_visit_shots": {
+        "heavy_shotgun": 2,
+        "large_machine_gun": 12,
+        "force_punch": 1
+      },
+      "weapon_cycle_include_melee": true,
+      "information_mode": "memory",
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "after_reaching_last_known": "look_around",
+      "pursuit_search_ticks": 600,
       "radar_memory_mode": "normal",
       "radar_memory_ticks": 90,
       "repath_interval_seconds": 1.5,
@@ -544,14 +557,14 @@
       "weapon_damage_bias": 0.2,
       "weapon_safety_bias": 1.2,
       "weapon_switch_threshold": 0.03,
-      "pursuit_mode": "forget_when_hidden",
-      "continue_through_cover": false,
-      "pursue_last_known_position": false,
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
       "pursuit_search_ticks": 600,
-      "after_reaching_last_known": "patrol"
+      "after_reaching_last_known": "look_around"
     },
     {
-      // Cautious profile: losing sight cancels pursuit and returns to patrol.
+      // Cautious profile: keeps pursuing after losing sight instead of forgetting.
       // 2026 10 11 2230 jorj todo making a  npc that doesnt move really
       "id": "nervousbad",
       // Movement replanning + commitment defaults (documented in `balanced`).
@@ -586,11 +599,11 @@
       "weapon_damage_bias": 0.2,
       "weapon_safety_bias": 1.2,
       "weapon_switch_threshold": 0.03,
-      "pursuit_mode": "forget_when_hidden",
-      "continue_through_cover": false,
-      "pursue_last_known_position": false,
-      "pursuit_search_ticks": 1,
-      "after_reaching_last_known": "patrol"
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "pursuit_search_ticks": 600,
+      "after_reaching_last_known": "look_around"
     },
     {
       // Juggernaut Fighter: fast, aggressive, and focused on the hostile team.
@@ -606,12 +619,16 @@
       "swarm": true,
       "cohesion": 0.35,
       "spread_radius_meters": 6.0,
-      "approach_style": "arc",
+      "approach_style": "sectors",
+      "approach_directions": 4,
+      "approach_reassign_ticks": 300,
+      "approach_distance_meters": 6.0,
       "max_attackers_per_target": 8,
       "rally_distance_meters": 8.0,
       "focus_reacquire_seconds": 4.0,
       "slot_stickiness": 0.8,
       // ── Combat and movement tuning ──────────────────────────────────────
+      "difficulty": 8.0,
       "repath_interval_seconds": 0.9,
       "goal_move_threshold_meters": 2.5,
       "movement_commitment": {
@@ -643,6 +660,14 @@
       "weapon_damage_bias": 1.0,
       "weapon_safety_bias": 0.1,
       "weapon_switch_threshold": 0.01,
+      "weapon_cycle": ["shotgun", "revolver", "rocket_launcher", "spyknife"],
+      "weapon_visit_shots": {
+        "shotgun": 2,
+        "revolver": 6,
+        "rocket_launcher": 1,
+        "spyknife": 1
+      },
+      "weapon_cycle_include_melee": true,
       "pursuit_mode": "persistent",
       "continue_through_cover": true,
       "pursue_last_known_position": true,
@@ -664,12 +689,16 @@
       "swarm": true,
       "cohesion": 0.35,
       "spread_radius_meters": 6.0,
-      "approach_style": "arc",
+      "approach_style": "sectors",
+      "approach_directions": 4,
+      "approach_reassign_ticks": 300,
+      "approach_distance_meters": 6.0,
       "max_attackers_per_target": 888,
       "rally_distance_meters": 8.0,
       "focus_reacquire_seconds": 0.01,
       "slot_stickiness": 0.8,
       // ── Combat and movement tuning ──────────────────────────────────────
+      "difficulty": 8.0,
       "repath_interval_seconds": 0.9,
       "goal_move_threshold_meters": 2.5,
       "movement_commitment": {

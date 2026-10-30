@@ -152,6 +152,7 @@
     "hit_sounds": false,
     "hit_flinch": true,
     "blood": null,
+    "blood_client_feedback": null,
     "killfeed": true,
     "ragdolls": null,
     "enemy_healthbars": null,
@@ -221,6 +222,7 @@
   "force_first_person": false,
   "hide_healthbars": true,
   "ragdoll_enabled": true,
+  "death_presentation": "auto",
   "blood_enabled": true,
   "roles": {},
   "actor_preset": "counter_strike",
@@ -246,6 +248,11 @@
       "duration": 0.5,
       "easing": "ease_in_out"
     }
+  },
+  "aim": {
+    "mode": null,
+    "body_mode": null,
+    "body_enabled": null
   },
   "bomb_timer_ticks": 900,
   "inactive_ticks": 60,

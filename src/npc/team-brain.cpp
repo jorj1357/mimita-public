@@ -184,8 +184,9 @@ TeamAssignment TeamBrain::assignmentFor(uint32_t actorId) const
 }
 
 void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
-                            const glm::vec3& focusPos, bool focusActive,
-                            const SquadTuning& tuning, uint32_t focusActorId)
+                            const glm::vec3& focusPos, const glm::vec3& focusForward,
+                            bool focusActive, const SquadTuning& tuning,
+                            uint32_t focusActorId, uint32_t tick)
 {
     mState.squadSlots.clear();
     SquadState& sq = mState.squad;
@@ -239,6 +240,84 @@ void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
         ? (anchorToFocus <= standoff * 1.25f ? 2 : 1)
         : 1;
 
+    // ── Target-relative approach sectors ───────────────────────────────
+    // Opt-in: only group-focus profiles that explicitly request sectors use
+    // this. TeamBrain owns assignment; movement only consumes the direction.
+    const int sectorCount = std::clamp(tuning.approachDirections, 0, 8);
+    const bool sectorMode = hasFocus && tuning.swarm && sectorCount >= 2 &&
+        tuning.approachStyle == "sectors";
+    mState.squadApproachCount = sectorMode ? (uint8_t)sectorCount : 0;
+    if (!sectorMode) {
+        mState.squadApproachSectors.clear();
+        mState.squadApproachFocusActor = 0;
+    } else {
+        std::vector<SquadMember> npcMembers;
+        for (const SquadMember& m : ordered)
+            if (m.isNpc) npcMembers.push_back(m);
+
+        auto hash32 = [](uint32_t x) {
+            x ^= x >> 16; x *= 0x7feb352du;
+            x ^= x >> 15; x *= 0x846ca68bu;
+            x ^= x >> 16; return x;
+        };
+        auto previousSector = [&](uint32_t id) -> int {
+            for (const auto& e : mState.squadApproachSectors)
+                if (e.first == id) return (int)e.second;
+            return -1;
+        };
+        auto hasSector = [&](uint32_t id) {
+            return previousSector(id) >= 0;
+        };
+        bool membershipChanged = false;
+        for (const SquadMember& m : npcMembers)
+            if (!hasSector(m.id)) { membershipChanged = true; break; }
+        if (!membershipChanged &&
+            mState.squadApproachSectors.size() != npcMembers.size())
+            membershipChanged = true;
+
+        const uint32_t interval = (uint32_t)std::max(1, tuning.approachReassignTicks);
+        const bool intervalElapsed =
+            tick >= mState.squadApproachAssignedTick + interval;
+        const bool configChanged =
+            mState.squadApproachCount != (uint8_t)sectorCount;
+        const bool focusChanged = mState.squadApproachFocusActor != focusActorId;
+        const bool redraw = mState.squadApproachSectors.empty() ||
+            membershipChanged || intervalElapsed || configChanged || focusChanged;
+
+        if (redraw) {
+            std::vector<std::pair<uint32_t, uint8_t>> next;
+            next.reserve(npcMembers.size());
+            int counts[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+            for (const SquadMember& m : npcMembers) {
+                const uint32_t h = hash32(m.id ^
+                    (mState.squadApproachEpoch * 2654435761u));
+                const int previous = previousSector(m.id);
+                const float keepRoll =
+                    (float)(h & 0xffffu) / 65535.0f;
+                int sector = -1;
+                if (previous >= 0 && previous < sectorCount &&
+                    keepRoll < tuning.slotStickiness) {
+                    // Hit-by-hit stickiness keeps a member on its side.
+                    sector = previous;
+                } else {
+                    const int start = (int)(h % (uint32_t)sectorCount);
+                    int best = (start + 0) % sectorCount;
+                    for (int k = 0; k < sectorCount; ++k) {
+                        const int s = (start + k) % sectorCount;
+                        if (counts[s] < counts[best]) best = s;
+                    }
+                    sector = best;
+                }
+                next.push_back({m.id, (uint8_t)sector});
+                ++counts[sector];
+            }
+            mState.squadApproachSectors = std::move(next);
+            ++mState.squadApproachEpoch;
+            mState.squadApproachAssignedTick = tick;
+            mState.squadApproachFocusActor = focusActorId;
+        }
+    }
+
     const int count = (int)ordered.size();
     const int attackers = hasFocus
         ? std::min(count, std::max(1, tuning.maxAttackersPerTarget)) : 0;
@@ -291,6 +370,26 @@ bool TeamBrain::squadSlotFor(uint32_t actorId, glm::vec3& outSlot,
         }
     }
     return false;
+}
+
+int TeamBrain::squadApproachSectorFor(uint32_t actorId) const
+{
+    for (const auto& entry : mState.squadApproachSectors)
+        if (entry.first == actorId) return (int)entry.second;
+    return -1;
+}
+
+glm::vec3 TeamBrain::approachDirection(const glm::vec3& focusForward,
+                                       int sector, int sectorCount)
+{
+    if (sectorCount < 2) return glm::vec3(0.0f);
+    glm::vec3 fwd(focusForward.x, focusForward.y, 0.0f);
+    if (glm::length(fwd) < 0.001f) fwd = glm::vec3(1.0f, 0.0f, 0.0f);
+    fwd = glm::normalize(fwd);
+    const glm::vec3 right(fwd.y, -fwd.x, 0.0f);
+    const float theta = 6.2831853f * (float)(sector % sectorCount) /
+        (float)sectorCount;
+    return fwd * std::cos(theta) + right * std::sin(theta);
 }
 
 bool TeamBrain::nearestSitePosition(const glm::vec3& from, glm::vec3& out) const
@@ -453,13 +552,47 @@ bool teamBrainSelfTest(std::string& report)
         tuning.swarm = true;
         std::vector<SquadMember> members = {
             {1, glm::vec3(0, 0, 0)}, {2, glm::vec3(2, 0, 0)}};
-        brain.updateSquad(members, focus, true, tuning, focusId);
+        brain.updateSquad(members, focus, glm::vec3(1, 0, 0), true, tuning,
+                          focusId, 0);
         if (brain.squad().focusActorId != focusId)
             fail("squad focus actor id should be recorded");
         glm::vec3 slot, anchor;
         if (!brain.squadSlotFor(1, slot, anchor))
             fail("squad members should receive slots");
         report += "focus_select=ok\n";
+    }
+
+    // Target-relative sectors: balanced assignment and correct direction math.
+    {
+        TeamBrain brain(0);
+        SquadTuning tuning;
+        tuning.enabled = true;
+        tuning.swarm = true;
+        tuning.approachStyle = "sectors";
+        tuning.approachDirections = 4;
+        tuning.approachReassignTicks = 60;
+        tuning.slotStickiness = 0.0f;
+        std::vector<SquadMember> members;
+        for (uint32_t i = 1; i <= 8; ++i)
+            members.push_back({i, glm::vec3((float)i, 0.0f, 0.0f), true});
+        const glm::vec3 focusFwd(1.0f, 0.0f, 0.0f);
+        brain.updateSquad(members, glm::vec3(0.0f), focusFwd, true,
+                          tuning, 99, 0);
+        int counts[4] = {0, 0, 0, 0};
+        for (uint32_t i = 1; i <= 8; ++i) {
+            const int s = brain.squadApproachSectorFor(i);
+            if (s < 0 || s >= 4) fail("sector should be assigned");
+            else ++counts[s];
+        }
+        for (int s = 0; s < 4; ++s)
+            if (counts[s] < 1) fail("sectors should be balanced");
+        const glm::vec3 front =
+            TeamBrain::approachDirection(focusFwd, 0, 4);
+        const glm::vec3 right =
+            TeamBrain::approachDirection(focusFwd, 1, 4);
+        if (front.x < 0.99f) fail("sector 0 should be the target front");
+        if (right.y > -0.99f) fail("sector 1 should be the target right");
+        report += "approach_sectors=ok\n";
     }
 
     // A bomb-carrying Terrorist is sent to a site, not to its own position.

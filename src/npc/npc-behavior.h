@@ -25,6 +25,8 @@ struct BehaviorProfileDefinition
     // knob before explicit JSON fields override it. Empty = legacy profile that
     // only uses the values written in JSON.
     std::string skillTier;
+    // Shared-movement difficulty (0-10). <0 = keep the actor's current value.
+    float difficulty = -1.0f;
     float aimErrorDeg = -1.0f;           // <0 = no override
     float reactionDelay = -1.0f;         // <0 = no override
     float fireCadenceMultiplier = 1.0f;  // >1 = faster, <1 = slower
@@ -107,7 +109,11 @@ struct BehaviorProfileDefinition
     bool swarm = false;                      // take firing slots around the focus
     float cohesion = 0.0f;                   // pull toward squad anchor [0,1]
     float spreadRadiusMeters = 6.0f;         // distance between slots
-    std::string approachStyle = "arc";       // direct | arc | flank
+    std::string approachStyle = "arc";       // direct | arc | flank | sectors
+    // Target-relative sectors: 0/1 disables; 4 = front/right/back/left.
+    int approachDirections = 0;
+    int approachReassignTicks = 300;
+    float approachDistanceMeters = -1.0f;    // <0 = use spreadRadiusMeters
     int maxAttackersPerTarget = 6;           // cap committed to one focus actor
     float rallyDistanceMeters = 8.0f;        // regroup threshold
     float focusReacquireSeconds = 5.0f;      // decay before focus is area-only
@@ -124,6 +130,7 @@ struct NpcBehaviorTuning
 {
     bool active = false;
     std::string skillTier;
+    float difficulty = -1.0f;
     float aimErrorDeg = -1.0f;
     float reactionDelay = 0.0f;
     float fireCadenceMultiplier = 1.0f;
@@ -190,6 +197,9 @@ struct NpcBehaviorTuning
     float cohesion = 0.0f;
     float spreadRadiusMeters = 6.0f;
     std::string approachStyle = "arc";
+    int approachDirections = 0;
+    int approachReassignTicks = 300;
+    float approachDistanceMeters = -1.0f;
     int maxAttackersPerTarget = 6;
     float rallyDistanceMeters = 8.0f;
     float focusReacquireSeconds = 5.0f;

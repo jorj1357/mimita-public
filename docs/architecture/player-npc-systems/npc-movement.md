@@ -1773,6 +1773,13 @@ spread squad.
 
 Do not force every actor to use one identical shortest path.
 
+The target-relative approach-sector behavior in
+`docs/specs/npc-behavior/npc-behavior.md` section 11 is the current owner of
+“spread squad” and “flank”. TeamBrain chooses a balanced sector relative to the
+target's look direction; the navigator still owns the route and the shared
+movement executor still owns local steering. Do not add a second flank or
+surround steering owner.
+
 71. Route cost
 
 Future route cost may include more than distance.
@@ -1981,6 +1988,11 @@ Simple target:
 same general objective
 +
 different local positions/routes
+
+The target-relative sector assignment in
+`docs/specs/npc-behavior/npc-behavior.md` section 11 provides the initial
+“different local positions” behavior for group-focus profiles. It is opt-in and
+does not require formations.
 
 84. NPC collision
 

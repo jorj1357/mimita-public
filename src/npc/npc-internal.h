@@ -16,6 +16,10 @@ glm::vec3 randomPlanarDirection(unsigned int& state);
 // server ticks in JSON and converted to the shared cooldown's seconds here.
 float npcSpawnFireDelaySeconds(Npc& npc);
 
+// Apply the behavior profile's data-driven difficulty (0-10) to the actor so
+// shared movement/dash rules are not suppressed by a hardcoded roster value.
+void npcApplyBehaviorDifficulty(Npc& npc);
+
 // The actor-preset movement policy for this NPC, resolved live from
 // MatchRoleRegistry by npc.actorPresetId. Returns nullptr when the NPC has no
 // preset policy (legacy brain) or the configured flag is unset.

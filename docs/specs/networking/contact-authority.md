@@ -142,6 +142,9 @@ only in how damage is resolved from config and contact data.
   client owns the action cadence
 - feedback: melee HP, hitmarker, blood, and damage numbers are server-confirmed
   only; no speculative melee damage is shown
+- arm-ragdoll weapons replicate the physical right-arm pose with
+  `RAGDOLL_NET_ARM_RAGDOLL`; the server merges that limb with the animated body
+  boxes so contact validation sees the same weapon pose the client rendered
 - same team: bounce/contact only, no damage, no hitmarker
 
 ### Melee percent/knockback

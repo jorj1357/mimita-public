@@ -487,3 +487,75 @@ melee weapons count as usable without a magazine. Their visit is consumed when
 the shared server action starts or completes, not by a hitscan `fired` result.
 Payload keeps its class-specific role loadouts. Non-attack items are skipped;
 the `npc.weapon-cycle` journal record names the reason for any skip.
+
+## 9. Persistent target pursuit (2026-10-29)
+
+All NPCs keep a target and pursue it after line of sight is lost. Forgetting a
+target immediately when it leaves view makes ranged NPCs appear passive and
+lets them stand still while the player repositions.
+
+The intended profile defaults are:
+
+- `information_mode: "memory"`;
+- `pursuit_mode: "persistent"` or `"last_known_position"` with
+  `continue_through_cover: true`;
+- `pursue_last_known_position: true`;
+- `after_reaching_last_known` continues the search instead of stopping;
+- a meaningful `pursuit_search_ticks` window.
+
+Profiles such as `juggernaut_limited`, `nervous`, and `nervousbad` currently
+opt out of memory or pursuit. They must be brought in line so the default
+experience is retention. A profile may still opt out explicitly, but “forget
+the moment the player breaks line of sight” is no longer the default. Target
+selection itself stays nearest-target; this section changes retention, not
+which candidate is preferred.
+
+## 10. Role weapon cycle and dash (2026-10-29)
+
+Every combat role with more than one attack-capable weapon must use its full
+role loadout through the behavior-profile `weapon_cycle` and
+`weapon_visit_shots`, not only its `starting_weapon`.
+
+The Juggernaut Fighter role (`juggernaut_fighter`) must cycle through
+revolver, shotgun, rocket launcher, and spy knife. The Juggernaut role
+(`juggernaut_mode`) must cycle its heavy shotgun, large machine gun, and force
+punch. The weapon cycle remains a shared NPC rule and respects the resolved
+role loadout, ammo, and reload rules.
+
+Roster NPCs must not be hardcoded to a low difficulty that suppresses shared
+movement abilities. Dash use follows the shared dash rules and a data-driven
+difficulty or dash tuning value from the role/behavior profile. The acceptance
+case is a live Juggernaut round where hostile Fighters dash and visibly use
+more than one weapon from the role set.
+
+## 11. Target-relative approach sectors (2026-10-29)
+
+Group-focused NPCs should approach from different sides instead of occupying
+the same point. The behavior profile opts in; existing profiles keep their
+current behavior.
+
+Profile fields:
+
+```jsonc
+"approach_style": "sectors",
+"approach_directions": 4,          // 0/1 disables sectors
+"approach_reassign_ticks": 300,    // 60 Hz ticks between re-draws
+"approach_distance_meters": 6.0,   // optional; defaults to spread radius
+"slot_stickiness": 0.8             // keep the previous sector sometimes
+```
+
+`approach_directions: 4` means front, right, back, left relative to the
+target's planar look direction. Assignment is deterministic for a given actor
+id and epoch, but distributed across sectors so a group does not all pick the
+same side. A group with eight NPCs and four directions distributes roughly
+evenly, and re-randomizes every `approach_reassign_ticks` with per-actor
+staggering and stickiness.
+
+TeamBrain owns the assignment. It receives the focus actor's look direction
+(`ServerPlayer.input.camForward` or `ServerNpc.aim`), produces a balanced sector
+map, and publishes a movement-only approach direction to `UtilityContext`. The
+navigator and combat movement consume that direction as a staging point; they
+never change the aim target position. This is the same “why / where / how”
+split required by
+`docs/architecture/player-npc-systems/npc-movement.md`: TeamBrain chooses the
+side, the navigator finds the route, and shared movement executes it.

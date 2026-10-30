@@ -506,6 +506,22 @@ NpcGoal makeNavGoal(const Npc& npc)
     switch (npc.utility.currentGoal) {
         case UtilityGoalKind::KillTarget:
             if (npc.sensors.hasTarget) {
+                const glm::vec3& approach = npc.utilityContext.squadApproachDir;
+                if (npc.utilityContext.squadApproachKnown &&
+                    glm::length(approach) > 0.001f) {
+                    float hold =
+                        (npc.behavior.active && npc.behavior.preferredRange > 0.0f)
+                            ? npc.behavior.preferredRange
+                            : std::clamp(weaponEffectiveRange(npc) * 0.6f, 5.0f, 25.0f);
+                    if (npc.behavior.active &&
+                        npc.behavior.approachDistanceMeters > 0.0f)
+                        hold = npc.behavior.approachDistanceMeters;
+                    hold = std::max(hold, 3.0f);
+                    goal.kind = NpcGoalKind::ReachPosition;
+                    goal.targetPos = npc.sensors.targetPos + approach * hold;
+                    goal.tolerance = 2.0f;
+                    return goal;
+                }
                 goal.kind = NpcGoalKind::FollowActor;
                 return goal;
             }
@@ -1215,6 +1231,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         const uint64_t revision = profiles.revision();
         if (!npc.behaviorProfileId.empty() && npc.behaviorRevision != revision) {
             npc.behavior = resolveNpcBehavior(npc.behaviorProfileId);
+            npcApplyBehaviorDifficulty(npc);
             npc.behaviorRevision = revision;
             npc.cycleWeapon.clear();
             npc.cycleVisitShotsRemaining = 0;
@@ -2544,8 +2561,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             aimPoint = npc.sensors.predictedTarget;
             aimForward = aimPoint - npc.body.pos;
         }
+        const WeaponDefinition* npcWeaponDef =
+            WeaponRegistry::instance().get(npc.body.equippedWeaponId);
+        const ArmRagdollConfig* npcArmRagdoll = npcWeaponDef &&
+            npcWeaponDef->armRagdoll.enabled ? &npcWeaponDef->armRagdoll : nullptr;
         RagdollModeSystem::instance().updateNpcAim(
-            safeDt, world, npc, aimForward, aimPoint);
+            safeDt, world, npc, aimForward, aimPoint, attack, npcArmRagdoll);
 
         clearCollisionEntityContext();
 
@@ -2591,6 +2612,21 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     {
         npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
         EffectPartSystem::instance().spawnDash(npc.body.pos);
+        if (!npc.hasLoggedDash) {
+            npc.hasLoggedDash = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.dash", std::to_string(npc.id), "shared_dash",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"difficulty", npc.difficulty},
+                    {"target_distance", npc.sensors.targetDistance},
+                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)

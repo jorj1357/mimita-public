@@ -96,6 +96,12 @@ static bool equipNpcWeapon(Npc& npc, const std::string& weaponId, int slot = 1)
     return true;
 }
 
+void npcApplyBehaviorDifficulty(Npc& npc)
+{
+    if (npc.behavior.active && npc.behavior.difficulty >= 0.0f)
+        npc.difficulty = std::clamp(npc.behavior.difficulty, 0.0f, 10.0f);
+}
+
 void npcInitLoadout(Npc& npc)
 {
     const auto& cfg = NpcDifficultyConfig::instance().settings();

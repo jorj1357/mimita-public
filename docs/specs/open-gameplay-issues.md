@@ -1,4 +1,22 @@
-﻿2026 10 29 1558 jojr  zomb tower needs its own  movement mode faster than tpical 
+﻿2026 10 29 1630 open design decision: what should Sandbox read?
+
+Sandbox currently reads the raw shared JSON files for gameplay, aimbody,
+impact decals, hitfx, and movement, plus the non-null presentation values in
+`config/gamemodes/sandbox.json`. It has no merged preset and no Sandbox-specific
+override block.
+
+That is the observed behavior, not a settled decision. Options:
+
+- keep sandbox on the raw user JSON values so it stays the free-form test mode;
+- add an explicit Sandbox preset that resolves the same fields as other modes;
+- support both and let a sandbox flag choose raw versus preset.
+
+Until this is decided, document the raw-JSON behavior and do not claim that
+Sandbox has a dedicated configuration preset. Owner docs:
+`docs/architecture/json-configuration/json-configuration.md`,
+`docs/specs/gamemodes/gamemodes.md`, `config/gamemodes/sandbox.json`.
+
+2026 10 29 1558 jojr  zomb tower needs its own  movement mode faster than tpical
 
 2026 1 029 1346 also need to maek ti so u can pla offline
 like

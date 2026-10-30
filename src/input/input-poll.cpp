@@ -14,6 +14,7 @@
 #include "combat/melee-client.h"
 #include "debug/structured-log.h"
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
 #include "camera.h"
 #include "interaction/interaction-system.h"
@@ -21,6 +22,7 @@
 
 static bool gInputInitialized = false;
 InputFrame gTerminalInputOverride;
+static int gTerminalPrimaryHoldFrames = 0;
 
 namespace {
 int gScheduledMoveTicks = 0;
@@ -106,6 +108,11 @@ bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
     if (justStarted)
         *justStarted = (gScheduledMoveTicks == gScheduledMoveTotal);
     return true;
+}
+
+void scheduleTerminalPrimaryHold(int durationFrames)
+{
+    gTerminalPrimaryHoldFrames = std::max(0, durationFrames);
 }
 
 void consumeTerminalInputOverride() {
@@ -336,7 +343,10 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.camForward = cam.front;
 
     frame.primaryHeld =
-        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ||
+        gTerminalPrimaryHoldFrames > 0;
+    if (gTerminalPrimaryHoldFrames > 0)
+        --gTerminalPrimaryHoldFrames;
     frame.secondaryHeld =
         glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     frame.shieldHeld = glfwGetKey(win, GLFW_KEY_Q) == GLFW_PRESS;

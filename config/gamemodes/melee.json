@@ -69,6 +69,7 @@
     "hit_sounds": null,
     "hit_flinch": null,
     "blood": null,
+    "blood_client_feedback": null,
     "killfeed": null,
     "ragdolls": null,
     "enemy_healthbars": null,
@@ -138,6 +139,7 @@
   "force_first_person": false,
   "hide_healthbars": false,
   "ragdoll_enabled": false,
+  "death_presentation": "auto",
   "blood_enabled": null,
   "roles": {
     "falcon": 2
@@ -165,6 +167,11 @@
       "duration": 0.5,
       "easing": "ease_in_out"
     }
+  },
+  "aim": {
+    "mode": null,
+    "body_mode": null,
+    "body_enabled": null
   },
   "bomb_timer_ticks": 900,
   "inactive_ticks": 60,

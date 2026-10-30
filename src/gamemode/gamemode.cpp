@@ -637,6 +637,9 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             readFlag("hit_sounds", next.presentation.hasHitSounds, next.presentation.hitSounds);
             readFlag("hit_flinch", next.presentation.hasHitFlinch, next.presentation.hitFlinch);
             readFlag("blood", next.presentation.hasBlood, next.presentation.blood);
+            readFlag("blood_client_feedback",
+                     next.presentation.hasBloodClientFeedback,
+                     next.presentation.bloodClientFeedback);
             readFlag("killfeed", next.presentation.hasKillfeed, next.presentation.killfeed);
             readFlag("ragdolls", next.presentation.hasRagdolls, next.presentation.ragdolls);
             readFlag("enemy_healthbars", next.presentation.hasEnemyHealthbars, next.presentation.enemyHealthbars);
@@ -847,6 +850,38 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.aimFov.duration = std::clamp(
                 optFloat(f, "duration", next.aimFov.duration), 0.01f, 10.0f);
             next.aimFov.easing = optString(f, "easing", next.aimFov.easing);
+        }
+
+        // ── Mode-level aim / aim-body policy (optional) ────────────
+        // These override the shared config/gameplay.json and
+        // config/aimbody.json values for this mode only. null inherits.
+        if (root.contains("aim") && root["aim"].is_object()) {
+            const auto& a = root["aim"];
+            auto readAimString = [&a](const char* key, std::string& out) {
+                if (!a.contains(key) || !a[key].is_string()) return false;
+                out = a[key].get<std::string>();
+                return true;
+            };
+            std::string value;
+            if (readAimString("mode", value)) {
+                if (value == "crosshair" || value == "world_hit" ||
+                    value == "farpoint" || value == "camforward" ||
+                    value == "physical") {
+                    next.aim.mode = value;
+                    next.aim.hasMode = true;
+                }
+            }
+            if (readAimString("body_mode", value)) {
+                if (value == "default" || value == "smooth" ||
+                    value == "physical" || value == "hybrid") {
+                    next.aim.bodyMode = value;
+                    next.aim.hasBodyMode = true;
+                }
+            }
+            if (a.contains("body_enabled") && a["body_enabled"].is_boolean()) {
+                next.aim.bodyEnabled = a["body_enabled"].get<bool>();
+                next.aim.hasBodyEnabled = true;
+            }
         }
         next.waveStartCount = std::max(1, optInt(root, "wave_start_count", next.waveStartCount));
         next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));

@@ -594,6 +594,13 @@
           "default": null,
           "nullable": true
         },
+        "blood_client_feedback": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "Victim-screen blood particles. null inherits config/impact_decals.json blood.clientFeedback.enabled. Does not control world blood."
+        },
         "killfeed": {
           "type": "boolean",
           "required": false,
@@ -1124,6 +1131,46 @@
               "default": "ease_in_out"
             }
           }
+        }
+      }
+    },
+    "aim": {
+      "type": "object",
+      "required": false,
+      "fields": {
+        "mode": {
+          "type": "string",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "enum": [
+            "crosshair",
+            "world_hit",
+            "farpoint",
+            "camforward",
+            "physical"
+          ],
+          "description": "Overrides config/gameplay.json aim_mode for this mode. null inherits the shared value."
+        },
+        "body_mode": {
+          "type": "string",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "enum": [
+            "default",
+            "smooth",
+            "physical",
+            "hybrid"
+          ],
+          "description": "Overrides config/aimbody.json mode for this mode. null inherits the shared value."
+        },
+        "body_enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "Overrides config/aimbody.json enabled for this mode. null inherits the shared value."
         }
       }
     },

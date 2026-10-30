@@ -373,6 +373,7 @@ void engineTickCombat(Engine& engine, float dt)
             const bool grabDown =
                 ScenarioInput::keyDown(engine.window(), GLFW_KEY_E);
             meleeInput.primaryPressed = meleePrimaryPressed;
+            meleeInput.primaryHeld = mouseDown;
             meleeInput.secondaryPressed = meleeSecondaryPressed;
             meleeInput.secondaryHeld = rightMouseDown;
             meleeInput.grabPressed = grabDown && !grabPrev;

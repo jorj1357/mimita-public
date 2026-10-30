@@ -2485,3 +2485,42 @@ The rocket/grenade explosion shockwave is configured per weapon in
 The legacy `shockwaveScale` value remains the fallback when start/end scale are
 omitted. The renderer logs one `explosion.shockwave.spawn` event per spawned
 shockwave with the resolved texture/model, rotation, scale, alpha, and lifetime.
+## Per-weapon right-arm ragdoll melee mode (2026-10-30)
+
+Melee weapons may opt into a right-arm-only physical mode under
+`components.melee.arm_ragdoll` in `config/weapons/<weapon>/config.json`.
+It is off by default and does not change other weapons.
+
+When enabled:
+
+- only the right arm is physically simulated; the other limbs keep their
+  authored/procedural animation pose;
+- LMB released applies a weak camera-forward torque
+  (`weak_look_strength`, default `0.1`) plus gravity, damping, shoulder
+  constraints, and world collision. The weak torque falls off at high angular
+  speed so follow-through is preserved;
+- LMB held adds `lmb_torque_gain` toward camera forward every fixed tick. There
+  is no hardcoded tap duration: a short press leaves angular momentum after
+  release, and holding settles the arm forward;
+- the fixed melee action animation and cooldown do not start; damage comes from
+  the same continuous weapon-contact claim path used by physical melee;
+- the weapon model, weapon collision capsule, and damage geometry follow the
+  physical right-arm skeleton transform;
+- chainsaw LMB hold also drives rev decay; release lets the rev multiplier
+  decay using `revDecayTicks`.
+
+Tunable fields:
+
+- `weak_look_strength`, `lmb_torque_gain`, `lmb_max_angular_speed`
+- `angular_damping`, `gravity_scale`
+- `shoulder_max_stretch`
+- `world_collision`, `self_collision`
+- `capsule_radius`, `capsule_half_height`, `capsule_offset`
+- `aim_rotation_degrees` corrects the hand-to-camera mapping; `arm_max_swing_deg`
+  limits the aim target (not the physical rotation), so a released arm can spin
+  through multiple turns
+
+The right-arm pose is replicated with
+`RAGDOLL_NET_ARM_RAGDOLL` so remote clients and the authoritative server use
+the same limb pose for contact. Server damage remains owned by the shared
+contact resolver; this mode does not add a second damage path.

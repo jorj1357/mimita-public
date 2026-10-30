@@ -4162,6 +4162,7 @@ void resetGamemodeActorsAtMapSpawn(
             // Resolve the role behavior profile once for this life.
             npc.behaviorProfileId = profile.behaviorProfileId;
             npc.behavior = resolveNpcBehavior(profile.behaviorProfileId);
+            npcApplyBehaviorDifficulty(npc);
             if (npc.behavior.active && npc.behavior.aggression >= 0.0f)
                 npc.tuning.aggression = npc.behavior.aggression;
             Debug::log(Debug::Category::NpcCombat,
@@ -5743,6 +5744,28 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     for (const auto& kv : npcs)
         if (kv.second.health > 0) livingPos[kv.first] = kv.second.pos;
 
+    // Planar look direction per living actor. Players use the replicated
+    // camera forward; NPCs use their facing. Facing drives approach sectors.
+    std::unordered_map<uint32_t, glm::vec3> livingFacing;
+    for (const auto& kv : players) {
+        if (kv.second.dead) continue;
+        glm::vec3 f = kv.second.input.camForward;
+        f.z = 0.0f;
+        if (glm::length(f) < 0.001f)
+            f = glm::vec3(std::cos(glm::radians(kv.second.yaw)),
+                          std::sin(glm::radians(kv.second.yaw)), 0.0f);
+        livingFacing[kv.first] = f;
+    }
+    for (const auto& kv : npcs) {
+        if (kv.second.health <= 0) continue;
+        glm::vec3 f = kv.second.aim;
+        f.z = 0.0f;
+        if (glm::length(f) < 0.001f)
+            f = glm::vec3(std::cos(glm::radians(kv.second.yaw)),
+                          std::sin(glm::radians(kv.second.yaw)), 0.0f);
+        livingFacing[kv.first] = f;
+    }
+
     SquadTuning tuningA, tuningB;
     bool tuningASet = false, tuningBSet = false;
     for (const Npc& npc : npcSystem.all()) {
@@ -5759,13 +5782,18 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         tun.maxAttackersPerTarget = npc.behavior.maxAttackersPerTarget;
         tun.rallyDistanceMeters = npc.behavior.rallyDistanceMeters;
         tun.approachStyle = npc.behavior.approachStyle;
+        tun.approachDirections = npc.behavior.approachDirections;
+        tun.approachReassignTicks = npc.behavior.approachReassignTicks;
+        tun.approachDistanceMeters = npc.behavior.approachDistanceMeters;
+        tun.slotStickiness = npc.behavior.slotStickiness;
         set = true;
     }
     auto gatherMembers = [&](int team, std::vector<SquadMember>& out) {
         for (const auto& e : living) {
             if (e.second != team) continue;
             auto it = livingPos.find(e.first);
-            if (it != livingPos.end()) out.push_back({e.first, it->second});
+            if (it != livingPos.end())
+                out.push_back({e.first, it->second, npcs.find(e.first) != npcs.end()});
         }
     };
     std::vector<SquadMember> membersA, membersB;
@@ -5789,8 +5817,28 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         centroidA, focusA, focusActorA, focusConfA);
     const bool hasFocusB = d.teamBrainB.selectFocus(
         centroidB, focusB, focusActorB, focusConfB);
-    d.teamBrainA.updateSquad(membersA, focusA, hasFocusA, tuningA, focusActorA);
-    d.teamBrainB.updateSquad(membersB, focusB, hasFocusB, tuningB, focusActorB);
+
+    auto focusForwardFor = [&](bool hasFocus, uint32_t focusActor,
+                               const glm::vec3& focusPos,
+                               const glm::vec3& centroid) {
+        if (hasFocus) {
+            auto it = livingFacing.find(focusActor);
+            if (it != livingFacing.end()) return it->second;
+        }
+        glm::vec3 fallback = focusPos - centroid;
+        fallback.z = 0.0f;
+        if (glm::length(fallback) < 0.001f) return glm::vec3(1.0f, 0.0f, 0.0f);
+        return glm::normalize(fallback);
+    };
+    const glm::vec3 focusForwardA =
+        focusForwardFor(hasFocusA, focusActorA, focusA, centroidA);
+    const glm::vec3 focusForwardB =
+        focusForwardFor(hasFocusB, focusActorB, focusB, centroidB);
+
+    d.teamBrainA.updateSquad(membersA, focusA, focusForwardA, hasFocusA,
+                             tuningA, focusActorA, tick);
+    d.teamBrainB.updateSquad(membersB, focusB, focusForwardB, hasFocusB,
+                             tuningB, focusActorB, tick);
 
     // Bounded, change-edge focus/squad diagnostics.
     auto reportSquad = [&](TeamBrain& brain) {
@@ -5805,6 +5853,23 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                                {"members", sq.memberCount},
                                {"anchor", {sq.anchor.x, sq.anchor.y, sq.anchor.z}},
                                {"focus", {sq.focusPos.x, sq.focusPos.y, sq.focusPos.z}}});
+        }
+        const uint32_t sectorEpoch = brain.state().squadApproachEpoch;
+        if (sectorEpoch != 0 &&
+            sectorEpoch != brain.state().reportedSquadApproachEpoch) {
+            brain.state().reportedSquadApproachEpoch = sectorEpoch;
+            nlohmann::json counts = nlohmann::json::object();
+            for (const auto& entry : brain.state().squadApproachSectors)
+                counts[std::to_string((int)entry.second)] =
+                    counts.value(std::to_string((int)entry.second), 0) + 1;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.squad-sector-assigned", std::to_string(brain.team()),
+                "approach_sectors", tick,
+                nlohmann::json{{"team", brain.team()},
+                               {"sector_count", (int)brain.state().squadApproachCount},
+                               {"focus_actor", brain.state().squadApproachFocusActor},
+                               {"assignments", std::move(counts)}});
         }
         const bool focusMoved = !brain.state().hasReportedFocus ||
             glm::length(sq.focusPos - brain.state().reportedFocusPos) > 5.0f;
@@ -5840,6 +5905,19 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             const float dx = slot.x - npc.body.pos.x;
             const float dy = slot.y - npc.body.pos.y;
             ctx.atSquadSlot = std::sqrt(dx * dx + dy * dy) <= 3.0f;
+        }
+        // Movement-only target-relative sector. Aim target stays untouched.
+        ctx.squadApproachKnown = false;
+        ctx.squadApproachSector = -1;
+        ctx.squadApproachDir = glm::vec3(0.0f);
+        const int sector = brain.squadApproachSectorFor(npc.id);
+        const int sectorCount = (int)brain.state().squadApproachCount;
+        if (sector >= 0 && sectorCount >= 2) {
+            const glm::vec3& focusForward = (team == 0) ? focusForwardA : focusForwardB;
+            ctx.squadApproachDir = TeamBrain::approachDirection(
+                focusForward, sector, sectorCount);
+            ctx.squadApproachSector = sector;
+            ctx.squadApproachKnown = true;
         }
     }
 

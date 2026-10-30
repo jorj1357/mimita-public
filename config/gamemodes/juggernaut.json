@@ -122,8 +122,9 @@
     "hit_markers": false,
     "dry_fire_indicator": null,
     "hit_sounds": false,
-    "hit_flinch": false,
+    "hit_flinch": true,
     "blood": true,
+    "blood_client_feedback": true,
     "killfeed": true,
     "ragdolls": true,
     "enemy_healthbars": false,
@@ -193,6 +194,7 @@
   "force_first_person": false,
   "hide_healthbars": true,
   "ragdoll_enabled": true,
+  "death_presentation": "auto",
   "blood_enabled": true,
   "roles": {},
   "actor_preset": "juggernaut_arcade",
@@ -218,6 +220,11 @@
       "duration": 0.5,
       "easing": "ease_in_out"
     }
+  },
+  "aim": {
+    "mode": "physical",
+    "body_mode": "hybrid",
+    "body_enabled": true
   },
   "bomb_timer_ticks": 900,
   "inactive_ticks": 60,

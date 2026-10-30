@@ -1,7 +1,7 @@
 # Contact Authority Documentation, Quality Gates, and Inert Deletion
 
 Time created: `2026-10-29T17:13:46Z`
-Time last updated: `2026-10-29T23:12:00Z`
+Time last updated: `2026-10-30T00:22:00Z`
 
 ## Summary
 
@@ -558,3 +558,41 @@ The supplied recording predates these changes and playback still fails before
 frames due to start-position/NPC-collision readiness. A fresh recording on build
 `3778` is required to measure the final acceptance percentage. By construction,
 every displayed melee damage event is now server-authoritative.
+## Per-weapon right-arm ragdoll melee mode (2026-10-30)
+
+Implemented the requested per-weapon right-arm physical melee mode.
+
+- Added `ArmRagdollConfig` to `WeaponDefinition` and parsed
+  `components.melee.arm_ragdoll` from each weapon config.
+- Enabled it on mace, chainsaw, and swordsword; spyknife remains unchanged.
+- Added a right-arm-only path to `RagdollModeSystem`: only `rightArm` is
+  dynamic, other limbs are pinned to the current animation pose, and only the
+  right-arm node is written back.
+- LMB released applies weak camera-forward torque; LMB held adds the configured
+  torque. No tap duration is hardcoded; momentum is emergent.
+- Fixed melee action start is bypassed for these weapons. Continuous weapon
+  contact claims and the shared server damage resolver remain in use.
+- Chainsaw LMB hold drives rev decay through the existing rev multiplier path.
+- Added `RAGDOLL_NET_ARM_RAGDOLL`; remote clients apply only the right arm, and
+  the server merges the replicated arm with animated body boxes for contact.
+- Added bounded `armragdoll.activate` and `armragdoll.motor` diagnostics.
+- Added `agent.holdprimary <frames>` as a dev/scenario input hook and
+  `arm_ragdoll_probe_v1.json`; updated `melee_mace_probe_v1.json` for the new
+  mode and moved `melee_attack_identity_v1.json` to the non-arm-ragdoll
+  Captain Falcon move set.
+
+Validation evidence:
+
+- build `3800` succeeded
+- `arm_ragdoll_probe_v1` passed on run `20261030_003731`
+- `melee_attack_identity_v1` passed on run `20261030_003845`
+- `melee_mace_probe_v1` passed on run `20261030_003822`
+- runtime motor samples show `primary_held=true`, arm speed reaching the
+  configured cap, and the arm settling after release.
+
+Still requires human visual acceptance for feel, swing weight, and weapon
+collision against walls. Remote two-client visual verification remains pending.
+Skill review: `docs/skills/spec-behavior-review-v1.md` applied. The requested
+behavior is a new opt-in mode; no existing weapon was silently converted except
+the three explicitly enabled definitions. No unresolved spec-code conflict was
+found. Human visual acceptance and a remote two-client run remain open.

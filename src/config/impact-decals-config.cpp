@@ -225,6 +225,21 @@ void ImpactDecalsConfig::clearRuntimeBloodOverride()
     load(mPath);
 }
 
+void ImpactDecalsConfig::setRuntimeClientFeedbackEnabled(bool enabled)
+{
+    mRuntimeClientFeedbackOverride = true;
+    mRuntimeClientFeedbackEnabled = enabled;
+    mData.blood.clientFeedback.enabled = enabled;
+}
+
+void ImpactDecalsConfig::clearRuntimeClientFeedbackOverride()
+{
+    if (!mRuntimeClientFeedbackOverride) return;
+    mRuntimeClientFeedbackOverride = false;
+    // Re-read so the authored impact_decals.json value is authoritative again.
+    load(mPath);
+}
+
 bool ImpactDecalsConfig::load(const std::string& path)
 {
     if (mPath != path)
@@ -267,6 +282,8 @@ bool ImpactDecalsConfig::load(const std::string& path)
         mData = data;
         if (mRuntimeBloodOverride)
             mData.blood.enabled = mRuntimeBloodEnabled;
+        if (mRuntimeClientFeedbackOverride)
+            mData.blood.clientFeedback.enabled = mRuntimeClientFeedbackEnabled;
         mLastWrite = writeTime;
         Debug::warn(Debug::Category::Weapons,
             "[IMPACT DECALS] Loaded: %s (blood=%d bulletHoles=%d worldCracks=%d)\n",

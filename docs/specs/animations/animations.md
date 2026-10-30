@@ -1077,6 +1077,16 @@ weapon, dash, and freeze pose layers for Melee authored poses. It adds AimBody
 unless the selected clip sets `aimLayer: false`. Matching rendered limbs and
 hitbox attachments still need human runtime verification.
 
+### Per-weapon right-arm physical pose
+
+A Melee weapon may opt into `components.melee.arm_ragdoll`. In that mode the
+right-arm node is owned by the shared ragdoll solver instead of the authored
+clip; every other limb continues to sample the authored/procedural pose. The
+solver runs at the fixed 60 Hz tick, writes only the right-arm skeleton node,
+and then the normal model-world-transform update supplies the weapon attachment
+and hitboxes. The authored action timeline and fixed swing animation are
+bypassed for that weapon; contact remains the shared physical-melee path.
+
 ## Runtime contract
 
 - Evaluate once per fixed simulation tick (60 Hz), never per render frame.
