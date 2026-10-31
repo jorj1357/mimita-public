@@ -76,11 +76,17 @@ void gatherHeadlessTrianglesForAABB(
     float expansion,
     std::vector<int>& out)
 {
+    const auto isHidden = [&world](int index) {
+        return index >= 0 && (size_t)index < world.solidIds.size() &&
+            world.solidIds[(size_t)index] == UINT32_MAX;
+    };
     if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f)
     {
         // Fallback: scan all triangles (no acceleration structure)
         for (int i = 0; i < (int)world.triangles.size(); ++i)
         {
+            if (isHidden(i))
+                continue;
             AABB tb = makeTriangleAABB(world.triangles[i]);
             tb.min -= glm::vec3(expansion);
             tb.max += glm::vec3(expansion);
@@ -118,6 +124,8 @@ void gatherHeadlessTrianglesForAABB(
 
     auto visitTri = [&](int triIdx) {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+            return;
+        if (isHidden(triIdx))
             return;
         if (s_gen[triIdx] == s_curGen)
             return;
@@ -176,6 +184,8 @@ void gatherHeadlessTrianglesForAABB(
     for (int triIdx : world.collisionLargeTriangles)
     {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size())
+            continue;
+        if (isHidden(triIdx))
             continue;
         if (s_gen[triIdx] == s_curGen)
             continue;

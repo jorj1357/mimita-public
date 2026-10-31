@@ -741,6 +741,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                         for (int triIdx : scIt->second)
                         {
                             if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                            if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
                             if (s_triGen.size() <= (size_t)triIdx)
                                 s_triGen.resize((size_t)triIdx + 1, 0);
                             if (s_triGen[triIdx] == s_gen) continue;
@@ -765,6 +766,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                 for (int triIdx : it->second)
                 {
                     if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                    if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
                     if (s_triGen.size() <= (size_t)triIdx)
                         s_triGen.resize((size_t)triIdx + 1, 0);
                     if (s_triGen[triIdx] == s_gen) continue;
@@ -808,6 +810,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
     for (int triIdx : world.collisionLargeTriangles)
     {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
         if (s_triGen.size() <= (size_t)triIdx)
             s_triGen.resize((size_t)triIdx + 1, 0);
         if (s_triGen[triIdx] == s_gen) continue;
@@ -949,6 +952,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
                     for (int triIdx : scIt->second)
                     {
                         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
                         if (s_triGen.size() <= (size_t)triIdx)
                             s_triGen.resize((size_t)triIdx + 1, 0);
                         if (s_triGen[triIdx] == s_gen) continue;
@@ -972,6 +976,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
             for (int triIdx : it->second)
             {
                 if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+                if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
                 if (s_triGen.size() <= (size_t)triIdx)
                     s_triGen.resize((size_t)triIdx + 1, 0);
                 if (s_triGen[triIdx] == s_gen) continue;
@@ -993,6 +998,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
     for (int triIdx : world.collisionLargeTriangles)
     {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
+        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
         if (s_triGen.size() <= (size_t)triIdx)
             s_triGen.resize((size_t)triIdx + 1, 0);
         if (s_triGen[triIdx] == s_gen) continue;

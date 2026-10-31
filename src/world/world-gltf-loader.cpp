@@ -12,6 +12,7 @@
 #include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
+#include "impact/destructible-mesh-loader.h"
 #include "config/collision-lod-config.h"
 #include "combat/weapon-model-cache.h"
 #include "debug/debug-log.h"
@@ -212,6 +213,7 @@ bool loadWorldFromGLB(World& world, const char* path)
                              world.collisionMesh.boundsMax.y,
                              world.collisionMesh.boundsMax.z}}},
         __FILE__, __LINE__, __FUNCTION__);
+    MimitaImpact::preloadDestructibleGLB(resolvedPath);
     return true;
 }
 

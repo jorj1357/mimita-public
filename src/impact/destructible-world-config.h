@@ -34,6 +34,14 @@ public:
     {
         return mExplosionMaxNodesPerEvent;
     }
+    uint32_t maxActivationsPerFlush() const
+    {
+        return mMaxActivationsPerFlush;
+    }
+    bool npcCollisionRebuildOnWorldCut() const
+    {
+        return mNpcCollisionRebuildOnWorldCut;
+    }
 
     uint32_t cutBatchIntervalTicks() const { return mCutBatchIntervalTicks; }
     uint32_t cutBatchMax() const { return mCutBatchMax; }
@@ -96,6 +104,8 @@ private:
 
     bool mWorldEnabled = true;
     uint32_t mExplosionMaxNodesPerEvent = 8;
+    uint32_t mMaxActivationsPerFlush = 4;
+    bool mNpcCollisionRebuildOnWorldCut = false;
     uint32_t mCutBatchIntervalTicks = 8;
     uint32_t mCutBatchMax = 64;
     float mCutBudgetMsPerTick = 2.0f;

@@ -37,4 +37,8 @@ struct DestructibleMeshLoad
 // cached too, and the reason is returned instead of being sent into gameplay.
 DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path);
 
+// Parses and caches the GLB document once so the first map-node activation does
+// not repeat the file parse. Intended for the map-load boundary.
+bool preloadDestructibleGLB(const std::string& path);
+
 } // namespace MimitaImpact

@@ -11,6 +11,14 @@
     // Maximum map solids one explosion may submit cut intents for. The nearest
     // solids win; the rest are skipped so one blast cannot activate the map.
     "explosionMaxNodesPerEvent": 8,
+    // Maximum first-time map-solid activations processed in one server flush.
+    // Additional impacts wait for the next fixed tick instead of blocking the
+    // tick on many GLB/model/entity initializations.
+    "maxActivationsPerFlush": 4,
+    // Rebuilding the whole NPC collision/navigation snapshot on every cut can
+    // stall the server for ~1s on large maps. Off by default for frame-time
+    // safety; enable when NPCs must immediately navigate through new holes.
+    "npcCollisionRebuildOnWorldCut": false,
     // Aggregate-then-batch: cut intents are COLLECTED as they arrive; an object
     // is only reworked once this many fixed ticks have passed since its last
     // batch, then ALL of its queued cuts are applied in one boolean op. Larger
@@ -23,7 +31,9 @@
     "cutBatchMax": 4,
     // Wall-clock cap (ms) for the whole destruction flush per fixed tick.
     // Remaining work waits for later ticks so a burst cannot blow a frame.
-    "cutBudgetMsPerTick": 2.0,
+    // Kept below a 240 FPS frame share; a single entity rebuild can still
+    // exceed it, but the next entity waits for the next tick.
+    "cutBudgetMsPerTick": 0.75,
     // Hard cap on generated collision/render triangles per object. A cut that
     // would exceed this is rejected (the object keeps its previous surface and
     // the boolean session stays valid, so the next cut is still incremental).

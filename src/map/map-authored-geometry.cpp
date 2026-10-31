@@ -2,6 +2,7 @@
 #include "map/map-authored-geometry.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -465,6 +466,25 @@ bool authoredMapGeometrySelfTest(std::string& report)
     return ok;
 }
 
+namespace {
+
+void setNodeCollisionHidden(World& world, const MapGLBObject& object,
+                            bool hidden)
+{
+    if (object.collisionSolidId == 0)
+        return;
+    CollisionMeshCache& collision = world.collisionMesh;
+    if (collision.hidden.size() != collision.triangles.size())
+        collision.hidden.assign(collision.triangles.size(), 0);
+    const uint8_t value = hidden ? 1 : 0;
+    for (size_t i = 0; i < collision.solidIds.size() && i < collision.hidden.size();
+         ++i)
+        if (collision.solidIds[i] == object.collisionSolidId)
+            collision.hidden[i] = value;
+}
+
+} // namespace
+
 bool hideDestructibleMapNode(World& world, int nodeIndex,
                             unsigned int* textureHandle)
 {
@@ -483,36 +503,41 @@ bool hideDestructibleMapNode(World& world, int nodeIndex,
                 *textureHandle = batch.texture;
                 break;
             }
-    if (world.destructibleNodeBaseline.count(nodeIndex))
+    if (object->hidden)
         return true;
-    const auto first = world.mesh.verts.begin() + object->vertexFirst;
-    const auto last = first + object->vertexCount;
-    world.destructibleNodeBaseline.emplace(nodeIndex,
-        std::vector<Vertex>(first, last));
-    for (auto it = first; it != last; ++it)
-        it->pos = object->boundsMin;
-    ++world.renderRevision;
-    redecimateCollision(world);
+    const auto start = std::chrono::steady_clock::now();
+    object->hidden = true;
+    setNodeCollisionHidden(world, *object, true);
+    const double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Verbose,
+        "world.destructible-map-hide", std::to_string(nodeIndex),
+        "authored map node hidden without a full-map rebuild", 0,
+        {{"node", nodeIndex}, {"solid", object->collisionSolidId},
+         {"hidden_triangles", world.collisionMesh.hidden.size()},
+         {"ms", ms}});
     return true;
 }
 
 bool restoreDestructibleMapNode(World& world, int nodeIndex)
 {
-    const auto stored = world.destructibleNodeBaseline.find(nodeIndex);
-    if (stored == world.destructibleNodeBaseline.end())
-        return false;
     const auto object = std::find_if(world.mesh.objects.begin(),
         world.mesh.objects.end(), [nodeIndex](const MapGLBObject& candidate) {
             return candidate.nodeIndex == nodeIndex;
         });
-    if (object == world.mesh.objects.end() ||
-        object->vertexCount != stored->second.size() ||
-        object->vertexFirst + object->vertexCount > world.mesh.verts.size())
+    if (object == world.mesh.objects.end() || !object->hidden)
         return false;
-    std::copy(stored->second.begin(), stored->second.end(),
-              world.mesh.verts.begin() + object->vertexFirst);
-    world.destructibleNodeBaseline.erase(stored);
-    ++world.renderRevision;
-    redecimateCollision(world);
+    const auto start = std::chrono::steady_clock::now();
+    object->hidden = false;
+    setNodeCollisionHidden(world, *object, false);
+    const double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Verbose,
+        "world.destructible-map-restore", std::to_string(nodeIndex),
+        "authored map node restored without a full-map rebuild", 0,
+        {{"node", nodeIndex}, {"solid", object->collisionSolidId},
+         {"ms", ms}});
     return true;
 }

@@ -89,7 +89,7 @@ void buildCollisionMeshFromRenderMesh(World& world)
 
     std::vector<uint32_t> vertexSolidIds(world.mesh.verts.size(), 0);
     uint32_t nextSolidId = 1;
-    const auto assignObjectRange = [&](const MapGLBObject& object) {
+    const auto assignObjectRange = [&](MapGLBObject& object) {
         const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
         const size_t last = std::min(object.vertexFirst + object.vertexCount,
                                       world.mesh.verts.size());
@@ -108,12 +108,13 @@ void buildCollisionMeshFromRenderMesh(World& world)
         if (!isClosedSolidTriangleRange(objectTriangles, 0, objectTriangles.size()))
             return;
         const uint32_t solidId = nextSolidId++;
+        object.collisionSolidId = solidId;
         for (size_t vi = first; vi < last; ++vi)
             vertexSolidIds[vi] = solidId;
     };
-    for (const MapGLBObject& object : world.mesh.objects)
+    for (MapGLBObject& object : world.mesh.objects)
         assignObjectRange(object);
-    for (const MapGLBObject& object : world.authoredObjects)
+    for (MapGLBObject& object : world.authoredObjects)
         assignObjectRange(object);
 
     for (size_t i = 0; i + 2 < world.mesh.verts.size(); i += 3)
@@ -198,6 +199,18 @@ void buildCollisionMeshFromRenderMesh(World& world)
         printf("[WORLD GLB WARNING] Suspiciously large collision bounds size=(%.1f %.1f %.1f) — "
                "may contain extreme triangles\n",
                size.x, size.y, size.z);
+    }
+
+    // A rebuild must preserve active map-node hiding. The render hidden flag is
+    // the source of truth; the collision solid id maps it to the rebuilt mesh.
+    world.collisionMesh.hidden.assign(world.collisionMesh.triangles.size(), 0);
+    for (const MapGLBObject& object : world.mesh.objects)
+    {
+        if (!object.hidden || object.collisionSolidId == 0)
+            continue;
+        for (size_t i = 0; i < world.collisionMesh.solidIds.size(); ++i)
+            if (world.collisionMesh.solidIds[i] == object.collisionSolidId)
+                world.collisionMesh.hidden[i] = 1;
     }
 }
 

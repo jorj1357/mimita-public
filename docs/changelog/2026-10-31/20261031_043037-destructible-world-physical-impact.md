@@ -148,29 +148,53 @@ Confirmed on the real executable:
 - Juggernaut loaded `atdm` and activated atdm solids, for example
   `node:35` concrete with `mesh_tris=960`; radial explosion submitted 3 solids.
 
-### Performance
+### Performance follow-up (same session)
 
-The 240 FPS acceptance target is **not yet proven** and the measured debug run
-did not meet it:
+The first performance pass replaced the expensive per-activation rebuilds with
+incremental work and moved client cut geometry off the render thread:
 
-- Juggernaut/Dust2 debug run with 64 actors: average FPS ~112-152, max frame
-  ~19-21 ms, frames over the 240 FPS budget = 100% in the captured windows.
-- Destruction main-thread average was ~0.001 ms; the dominant cost in that run
-  was outside destruction (engine tick/render/networking with many actors).
-- First activation per solid loaded in ~100-750 ms in the observed journal;
-  this is a hitch risk and must be prewarmed or budgeted.
+- GLB documents are parsed once and cached (`preloadDestructibleGLB`); map
+  activation load dropped from ~100-750 ms to ~0.16-0.30 ms.
+- Client map-node hide/restore no longer rebuilds the map mesh or collision
+  broadphase. Render batches skip hidden node ranges; collision queries skip a
+  parallel hidden flag. Measured hide time was ~0.003-0.05 ms.
+- Server activation no longer rebuilds the headless collision grid or the NPC
+  snapshot per cut. Flush total dropped from ~1.0-1.2 s to ~0.28-0.55 ms.
+  NPC snapshot rebuild on world cut is now explicit config
+  (`npcCollisionRebuildOnWorldCut`, default false).
+- First-time activations are budgeted (`maxActivationsPerFlush`, default 4) and
+  deferred FIFO to the next tick.
+- Replicated client cuts are applied by an off-thread Boolean worker. Main-thread
+  install measured ~0.008-0.18 ms; worker time (2-129 ms) no longer blocks the
+  receive frame. The worker runs at below-normal priority.
+- Network receive dispatch is budgeted (0.8 ms / 128 packets per frame) with a
+  FIFO backlog (`network.rx-budget`); slow single packets are logged
+  (`network.packet-slow`).
+- Client destruction flush budget reduced to 0.75 ms per fixed tick.
+
+Measured TDM/Dust2 debug run (10 actors, verbose diagnostics, build 3971):
+
+- average frame ~2.6-3.3 ms (~300+ FPS), p95 ~4.5 ms;
+- occasional maxima 4.5-9.8 ms remain, so the strict "no frame below 240 FPS"
+  target is still **not met**;
+- the remaining tail is outside the async cut install: engine tick, rendering,
+  config polling, replay, and worker CPU contention;
+- a release-build measurement was attempted, but the release build failed in the
+  current mixed working tree (unrelated concurrent edits); debug evidence only.
 
 Therefore build success, gameplay activation/cut/reset, and the 240 FPS target
-are separate claims. The first two have runtime evidence; the FPS target does
-not yet.
+are separate claims. The first two have runtime evidence; the strict zero-dip
+FPS target does not yet.
 
 ## Open work
 
-- Meet the 240 FPS target: incremental map-node hide/restore, background or
-  budgeted remesh, activation prewarm, and no full-map GPU/collision rebuild on
-  activation.
+- Finish the 240 FPS zero-dip goal: profile and budget the remaining engine
+  tick/render/config-poll/replay tail, and run a release-build reference
+  scenario on the target machine.
 - Add local shooter prediction for map solids; current map cuts are
   server-authoritative causes applied by clients.
+- Client async cut results do not yet reproduce fracture children; server
+  fragment spawns currently own that case.
 - Finish the Map Editor material assignment UI (the JSON/per-node data layer is
   implemented).
 - Verify the Survive the Disasters reset boundary under its actual ten-round

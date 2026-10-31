@@ -229,6 +229,13 @@ public:
     //  -1  cut(s) were skipped because the triangle budget was exceeded.
     int flushQueuedCuts(DestructibleGeometry& geometry, uint32_t maxCutsThisFlush = 0);
 
+    // Installs a surface produced outside this owner (client async cut worker).
+    // The caller has already appended the cuts to the authoritative history and
+    // guarantees the result corresponds to that exact cut count.
+    void applyExternalMesh(DestructibleGeometry& geometry, BooleanMesh mesh,
+                           float remainingVolume, uint32_t shellCount,
+                           uint32_t componentCount);
+
     // Rebuilds the surface from the stored cuts (used after bulk changes).
     int rebuildAll(DestructibleGeometry& geometry);
 

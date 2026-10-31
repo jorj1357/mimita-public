@@ -584,6 +584,26 @@ int DestructibleGeometrySystem::addCut(DestructibleGeometry& geometry,
     return 1;
 }
 
+void DestructibleGeometrySystem::applyExternalMesh(
+    DestructibleGeometry& geometry, BooleanMesh mesh, float remainingVolume,
+    uint32_t shellCount, uint32_t componentCount)
+{
+    if (!geometry.enabled)
+        return;
+    fillSurface(geometry, mesh);
+    const MeshMassProperties mass =
+        applyMassFromTriangles(geometry, geometry.collisionTriangles);
+    geometry.remainingVolume =
+        mass.valid ? mass.volume : std::max(0.0f, remainingVolume);
+    geometry.shellCount = shellCount;
+    geometry.componentCount = componentCount;
+    geometry.lastError = BooleanError::None;
+    geometry.pendingCutCount = 0;
+    geometry.massFromMesh = true;
+    ++geometry.geometryRevision;
+    computeRestAxes(geometry);
+}
+
 int DestructibleGeometrySystem::rebuildAll(DestructibleGeometry& geometry)
 {
     if (!geometry.enabled)

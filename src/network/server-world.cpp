@@ -2,6 +2,7 @@
 #include "utils/path_utils.h"
 #include "tinygltf/tiny_gltf.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "impact/destructible-mesh-loader.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
 #include "config/collision-lod-config.h"
@@ -352,6 +353,8 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
             {"bounds_min", {world.boundsMin.x, world.boundsMin.y, world.boundsMin.z}},
             {"bounds_max", {world.boundsMax.x, world.boundsMax.y, world.boundsMax.z}}},
         __FILE__, __LINE__, __FUNCTION__);
+    if (usable)
+        MimitaImpact::preloadDestructibleGLB(resolved);
     return usable;
 }
 

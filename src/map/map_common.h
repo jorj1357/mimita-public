@@ -2,6 +2,7 @@
 
 #pragma once
 // make this cross platform happy friendly
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
@@ -33,6 +34,11 @@ struct MapGLBObject {
     // Optional Map Editor material override. Empty means the destructible
     // material heuristic decides.
     std::string materialName;
+    // Hidden while this node is represented by a destructible physical entity.
+    // Renderer skips its vertex range; collision queries skip its solid id.
+    bool hidden = false;
+    // Stable local collision solid identity assigned by the collision builder.
+    uint32_t collisionSolidId = 0;
     size_t vertexFirst = 0;
     size_t vertexCount = 0;
 };

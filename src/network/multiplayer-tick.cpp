@@ -33,6 +33,7 @@
 #include "gui/hud/chat-bubble.h"
 #include "world/world.h"
 #include "entities/player.h"
+#include "impact/destructible-async-cut.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "notifications/notifications.h"
 #include "gui/hud/reward-popup.h"
@@ -43,6 +44,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iterator>
+#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -970,6 +973,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 {
     MIMITA_PERF_SCOPE("Network::MpTick");
     ctx.activeWorld = &world;
+    // Install any completed off-thread mirror cut surface before prediction and
+    // rendering read collision geometry this frame.
+    MimitaImpact::DestructibleAsyncCutWorker::instance().drainAndApply();
     // Network gameplay prediction advances on the same fixed 60 Hz clock as
     // server collision/damage. Render FPS and a bad connection must not change
     // how many projectile collision steps are simulated.
@@ -2296,6 +2302,65 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     // ── Poll ICE transport (if available) ──
     {
     MIMITA_PERF_SCOPE("Network::ReceivePoll");
+    // Incoming reliable cut/spawn bursts can otherwise spend several ms in one
+    // render frame. Process a bounded batch and keep the rest FIFO for the next
+    // frame; reliable events are still deduplicated/acked by the server.
+    static thread_local std::vector<ReceivedPacket> pendingPackets;
+    const auto pollStart = std::chrono::steady_clock::now();
+    constexpr size_t kMaxPacketsPerFrame = 128;
+    constexpr double kReceiveBudgetMs = 0.8;
+    size_t processedPackets = 0;
+    auto processReceived = [&](const ReceivedPacket& rp)
+    {
+        if (rp.bytes.size() < (int)sizeof(PacketHeader))
+            return;
+        if (rp.bytes.size() > sizeof(buffer))
+            return;
+        const uint8_t packetType =
+            reinterpret_cast<const PacketHeader*>(rp.bytes.data())->type;
+        const auto packetStart = std::chrono::steady_clock::now();
+        memcpy(buffer, rp.bytes.data(), rp.bytes.size());
+        processPacket((int)rp.bytes.size());
+        const double packetMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - packetStart).count();
+        ++processedPackets;
+        if (packetMs >= 0.4)
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Verbose,
+                "network.packet-slow", "receive",
+                "single packet exceeded the receive budget", ctx.tick,
+                {{"type", packetType},
+                 {"bytes", rp.bytes.size()},
+                 {"ms", packetMs}});
+    };
+    auto processList = [&](std::vector<ReceivedPacket>& list)
+    {
+        size_t index = 0;
+        for (; index < list.size(); ++index)
+        {
+            if (index >= kMaxPacketsPerFrame)
+                break;
+            const double elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - pollStart).count();
+            if (elapsed >= kReceiveBudgetMs)
+                break;
+            processReceived(list[index]);
+        }
+        if (index < list.size())
+        {
+            pendingPackets.insert(pendingPackets.end(),
+                std::make_move_iterator(list.begin() + index),
+                std::make_move_iterator(list.end()));
+        }
+    };
+
+    if (!pendingPackets.empty())
+    {
+        std::vector<ReceivedPacket> pending;
+        pending.swap(pendingPackets);
+        processList(pending);
+    }
+
     if (ctx.transport)
     {
         // Persistent receive buffer: transport poll reuses packet byte
@@ -2303,18 +2368,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         static thread_local std::vector<ReceivedPacket> pkts;
         ctx.transport->poll(pkts);
         badconn::processIncoming(pkts);
-        for (const ReceivedPacket& rp : pkts)
-        {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader))
-                continue;
-            if (rp.bytes.size() > sizeof(buffer))
-                continue;
-            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
-            int packetBytes = (int)rp.bytes.size();
-            processPacket(packetBytes);
-        }
+        processList(pkts);
+        pkts.clear();
     }
-
     else
     {
         // ── Raw UDP recv loop ──
@@ -2358,15 +2414,22 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
         rawPkts.resize(rawUsed);
         badconn::processIncoming(rawPkts);
-        for (const ReceivedPacket& rp : rawPkts)
-        {
-            if (rp.bytes.size() < (int)sizeof(PacketHeader))
-                continue;
-            if (rp.bytes.size() > sizeof(buffer))
-                continue;
-            memcpy(buffer, rp.bytes.data(), rp.bytes.size());
-            processPacket((int)rp.bytes.size());
-        }
+        processList(rawPkts);
+    }
+
+    if (processedPackets > 0 || !pendingPackets.empty())
+    {
+        const double elapsed = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - pollStart).count();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Verbose,
+            "network.rx-budget", "receive",
+            "bounded packet receive batch", ctx.tick,
+            {{"processed", processedPackets},
+             {"deferred", pendingPackets.size()},
+             {"ms", elapsed},
+             {"budget_ms", kReceiveBudgetMs},
+             {"max_packets", kMaxPacketsPerFrame}});
     }
     }
 

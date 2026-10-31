@@ -91,6 +91,16 @@ void appendChunkTrianglesForAABB(
         treeQuery.min -= glm::vec3(expansion);
         treeQuery.max += glm::vec3(expansion);
         world.collisionTree.query(treeQuery, out);
+        if (world.collisionMesh.hidden.size() ==
+            world.collisionMesh.triangles.size())
+        {
+            out.erase(std::remove_if(out.begin(), out.end(),
+                [&world](int index) {
+                    return index >= 0 &&
+                        index < (int)world.collisionMesh.hidden.size() &&
+                        world.collisionMesh.hidden[(size_t)index] != 0;
+                }), out.end());
+        }
 
         auto t1 = std::chrono::steady_clock::now();
         float ms = std::chrono::duration<float, std::milli>(t1 - t0).count();
@@ -110,6 +120,8 @@ void appendChunkTrianglesForAABB(
     {
         for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
         {
+            if (world.collisionMesh.isHidden((size_t)i))
+                continue;
             AABB triBounds = collisionTriangleAABB(world.collisionMesh, i);
             triBounds.min -= glm::vec3(expansion);
             triBounds.max += glm::vec3(expansion);
@@ -182,6 +194,8 @@ void appendChunkTrianglesForAABB(
     auto visitTriangle = [&](int triIndex) -> bool {
         if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
             return false;
+        if (world.collisionMesh.isHidden((size_t)triIndex))
+            return false;
         if (s_triGen[triIndex] == s_gen)
             return false;
         s_triGen[triIndex] = s_gen;
@@ -213,6 +227,8 @@ void appendChunkTrianglesForAABB(
     {
         auto visitLarge = [&](int triIndex) {
             if (triIndex < 0 || triIndex >= (int)world.collisionMesh.triangles.size())
+                return;
+            if (world.collisionMesh.isHidden((size_t)triIndex))
                 return;
             if (s_triGen[triIndex] == s_gen)
                 return;

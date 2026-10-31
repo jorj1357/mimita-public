@@ -74,6 +74,14 @@ bool DestructibleWorldConfig::load(const std::string& path)
             destruction["explosionMaxNodesPerEvent"].is_number_unsigned())
             mExplosionMaxNodesPerEvent = std::max(
                 1u, destruction["explosionMaxNodesPerEvent"].get<uint32_t>());
+        if (destruction.contains("maxActivationsPerFlush") &&
+            destruction["maxActivationsPerFlush"].is_number_unsigned())
+            mMaxActivationsPerFlush = std::max(
+                1u, destruction["maxActivationsPerFlush"].get<uint32_t>());
+        if (destruction.contains("npcCollisionRebuildOnWorldCut") &&
+            destruction["npcCollisionRebuildOnWorldCut"].is_boolean())
+            mNpcCollisionRebuildOnWorldCut =
+                destruction["npcCollisionRebuildOnWorldCut"].get<bool>();
 
         if (fragments.contains("minFragmentVolume") &&
             fragments["minFragmentVolume"].is_number())

@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 
@@ -20,6 +21,7 @@
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "impact/destructible-async-cut.h"
 #include "impact/destructible-mesh-loader.h"
 #include "impact/impact-system.h"
 #include "map/map-authored-geometry.h"
@@ -39,6 +41,7 @@ bool allFinite(const glm::vec3& v)
 void mpProcessPhysicalEntitySpawnEventPacket(
     MultiplayerContext& ctx, const PhysicalEntitySpawnEventPacket* event)
 {
+    const auto spawnStart = std::chrono::steady_clock::now();
     const glm::vec3 halfExtents(event->halfExtents[0], event->halfExtents[1],
                                 event->halfExtents[2]);
 
@@ -148,18 +151,34 @@ void mpProcessPhysicalEntitySpawnEventPacket(
 
     const std::string modelPath(event->modelPath);
     const size_t marker = modelPath.rfind("#node:");
+    double mapHideMs = 0.0;
     if (haveMeshBase && ctx.activeWorld && marker != std::string::npos)
     {
         try {
             const int nodeIndex = std::stoi(modelPath.substr(marker + 6));
+            const auto hideStart = std::chrono::steady_clock::now();
             hideDestructibleMapNode(*ctx.activeWorld, nodeIndex,
                                     &e->renderTextureHandle);
+            mapHideMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - hideStart).count();
         } catch (const std::exception&) {
             Debug::warn(Debug::Category::Networking,
                         "[PHYS CLIENT] invalid map node path=%s\n", event->modelPath);
         }
     }
 
+    const double spawnMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - spawnStart).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Verbose,
+        "physical_entity.spawn-step", std::to_string(event->networkId),
+        "client finished a replicated destructible spawn", 0,
+        {{"network_id", event->networkId},
+         {"local_id", localId},
+         {"source_kind", event->sourceKind},
+         {"spawn_ms", spawnMs},
+         {"map_hide_ms", mapHideMs},
+         {"triangles", e->localTriangles.size()}});
     printf("[PHYS CLIENT] spawn networkId=%u localId=%u tris=%zu half=(%.2f %.2f %.2f)\n",
            event->networkId, localId, e->localTriangles.size(),
            halfExtents.x, halfExtents.y, halfExtents.z);
@@ -178,6 +197,8 @@ void mpProcessPhysicalEntityDespawnEventPacket(
                     std::stoi(entity->modelPath.substr(marker + 6)));
             } catch (const std::exception&) { }
     }
+    MimitaImpact::DestructibleAsyncCutWorker::instance().forget(
+        event->networkId);
     if (PhysicalEntitySystem::instance().removeByNetworkId(event->networkId))
         printf("[PHYS CLIENT] despawn networkId=%u\n", event->networkId);
 }
@@ -270,41 +291,31 @@ void mpProcessEntityCutEventPacket(MultiplayerContext&,
     cut.sourceEntityId = event->sourceEntityId;
     cut.predictionKey = event->predictionKey;
 
-    if (MimitaImpact::DestructibleGeometrySystem::instance().addCut(
-            e->destructible, cut) == 0)
-    {
-        printf("[PHYS CLIENT] cut rejected networkId=%u cutId=%u err=%u\n",
-               event->networkId, event->cutId, (unsigned)e->destructible.lastError);
-        return;
-    }
-
-    e->localTriangles = e->destructible.collisionTriangles;
+    const auto enqueueStart = std::chrono::steady_clock::now();
+    if (cut.cutId == 0)
+        cut.cutId = e->destructible.nextCutId++;
+    e->destructible.cuts.push_back(cut);
     e->destructible.health =
         std::max(0.0f, e->destructible.health - event->damage);
-    refreshEntityMassProperties(*e);
 
-    // Reproduce the server's fracture decision deterministically. The pieces,
-    // their order, and their network ids all derive from the same base + ordered
-    // cuts, so no extra packet is needed. Children are serverDriven mirrors.
-    size_t fragmentCount = 0;
-    if (e->destructible.lastFractureReason != MimitaImpact::FractureReason::None)
-    {
-        MimitaImpact::ImpactResult fractureResult;
-        const std::vector<uint32_t> fragments =
-            MimitaImpact::ImpactSystem::instance().applyFracture(
-                *e, fractureResult, true);
-        fragmentCount = fragments.size();
-        // applyFracture may have reallocated entity storage; re-resolve.
-        e = PhysicalEntitySystem::instance().findByNetworkId(event->networkId);
-    }
-    if (fragmentCount > 0)
-        printf("[PHYS CLIENT] fracture networkId=%u pieces=%zu\n",
-               event->networkId, fragmentCount + 1);
+    std::vector<MimitaImpact::BooleanCutter> cutters;
+    cutters.reserve(e->destructible.cuts.size());
+    for (const MimitaImpact::DestructionCut& stored : e->destructible.cuts)
+        cutters.push_back(stored.cutter);
+    const uint64_t cutCount = e->destructible.cuts.size();
+    MimitaImpact::DestructibleAsyncCutWorker::instance().submit(
+        e->networkId, e->destructible.baseMesh, std::move(cutters), cutCount);
 
-    if (e)
-        printf("[PHYS CLIENT] cut networkId=%u cutId=%u tris=%zu vol=%.4f\n",
-               event->networkId, event->cutId, e->localTriangles.size(),
-               e->destructible.remainingVolume);
+    const double enqueueMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - enqueueStart).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Verbose,
+        "physical_entity.cut-queued", std::to_string(event->networkId),
+        "client queued a replicated cut for the async geometry worker", 0,
+        {{"network_id", event->networkId},
+         {"cut_id", event->cutId},
+         {"cut_count", cutCount},
+         {"enqueue_ms", enqueueMs}});
 }
 
 } // namespace MimitaNet

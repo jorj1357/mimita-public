@@ -11,6 +11,7 @@
 
 #include <cfloat>
 #include <cmath>
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -187,8 +188,29 @@ bool recenterToAabb(BooleanMesh& mesh, glm::vec3& outHalfExtents,
 
 std::mutex gCacheMutex;
 std::unordered_map<std::string, DestructibleMeshLoad> gCache;
+// Parsing the 8-86 MB map GLB once per activated node was the dominant
+// first-hit hitch. Keep the parsed model and only extract the selected node.
+std::unordered_map<std::string, std::shared_ptr<tinygltf::Model>> gModelCache;
 
 } // namespace
+
+bool preloadDestructibleGLB(const std::string& path)
+{
+    if (path.empty())
+        return false;
+    std::lock_guard<std::mutex> lock(gCacheMutex);
+    const std::string resolved = resolveAssetPath(path);
+    if (gModelCache.count(resolved) != 0)
+        return true;
+    auto model = std::make_shared<tinygltf::Model>();
+    tinygltf::TinyGLTF loader;
+    std::string errors;
+    std::string warnings;
+    if (!loader.LoadBinaryFromFile(model.get(), &errors, &warnings, resolved))
+        return false;
+    gModelCache[resolved] = std::move(model);
+    return true;
+}
 
 DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
 {
@@ -227,16 +249,28 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     if (cached != gCache.end())
         return cached->second;
 
-    tinygltf::TinyGLTF loader;
-    tinygltf::Model model;
-    std::string errors;
-    std::string warnings;
-    if (!loader.LoadBinaryFromFile(&model, &errors, &warnings, resolved))
+    std::shared_ptr<tinygltf::Model> modelPtr;
+    const auto modelIt = gModelCache.find(resolved);
+    if (modelIt != gModelCache.end())
     {
-        result.error = errors.empty() ? "GLB parse failed" : errors;
-        gCache[cacheKey] = result;
-        return result;
+        modelPtr = modelIt->second;
     }
+    else
+    {
+        auto parsed = std::make_shared<tinygltf::Model>();
+        tinygltf::TinyGLTF loader;
+        std::string errors;
+        std::string warnings;
+        if (!loader.LoadBinaryFromFile(parsed.get(), &errors, &warnings, resolved))
+        {
+            result.error = errors.empty() ? "GLB parse failed" : errors;
+            gCache[cacheKey] = result;
+            return result;
+        }
+        gModelCache[resolved] = parsed;
+        modelPtr = std::move(parsed);
+    }
+    const tinygltf::Model& model = *modelPtr;
 
     BooleanMesh mesh;
     const int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;

@@ -84,6 +84,8 @@ void ClientCollisionWorldView::queryTrianglesSwept(
             {
                 if (triIdx < 0 || triIdx >= (int)mesh.triangles.size())
                     continue;
+                if (mesh.isHidden((size_t)triIdx))
+                    continue;
                 if (s_gen[triIdx] == s_curGen)
                     continue;
                 s_gen[triIdx] = s_curGen;
@@ -105,6 +107,8 @@ void ClientCollisionWorldView::queryTrianglesSwept(
         for (int triIdx : *mCollisionLargeTriangles)
         {
             if (triIdx < 0 || triIdx >= (int)mesh.triangles.size())
+                continue;
+            if (mesh.isHidden((size_t)triIdx))
                 continue;
             if (s_gen[triIdx] == s_curGen)
                 continue;

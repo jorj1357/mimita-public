@@ -159,6 +159,9 @@ struct CollisionMeshCache
     // that came from one authored solid so static hidden-face removal can avoid
     // comparing faces belonging to the same object. Zero means unknown.
     std::vector<uint32_t> solidIds;
+    // Parallel visibility for map nodes replaced by a destructible entity.
+    // Empty or size-mismatched means every triangle is visible.
+    std::vector<uint8_t> hidden;
     // Cached per-triangle AABB, parallel to `triangles`. Built once when the
     // world collision mesh/chunks are built so the actor narrowphase never
     // recomputes a world triangle's bounds inside a per-pair loop.
@@ -174,10 +177,15 @@ struct CollisionMeshCache
     glm::vec3 boundsMax{0.0f};
 
     bool empty() const { return triangles.empty(); }
+    bool isHidden(size_t index) const
+    {
+        return hidden.size() == triangles.size() && hidden[index] != 0;
+    }
     void clear()
     {
         triangles.clear();
         solidIds.clear();
+        hidden.clear();
         triangleAABBs.clear();
         triangleOBBs.clear();
         smoothEdgeIndex.clear();

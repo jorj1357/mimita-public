@@ -13,7 +13,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -95,6 +97,11 @@ struct ExplosionCandidate
     glm::vec3 point{0.0f};
     glm::vec3 normal{0.0f, 0.0f, 1.0f};
 };
+
+// Impacts that could not activate their solid within this tick's activation
+// budget. They retain their original order and are merged first next tick.
+std::unordered_map<const HeadlessWorld*, std::vector<MimitaImpact::ImpactEvent>>
+    gDeferredWorldImpacts;
 
 } // namespace
 
@@ -252,15 +259,36 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
 
     std::vector<MimitaImpact::ImpactEvent> impacts =
         MimitaImpact::ImpactSystem::instance().takeWorldImpacts();
+    auto& deferred = gDeferredWorldImpacts[&world];
+    if (!impacts.empty() && !deferred.empty())
+    {
+        impacts.insert(impacts.begin(),
+            std::make_move_iterator(deferred.begin()),
+            std::make_move_iterator(deferred.end()));
+        deferred.clear();
+    }
+    else if (impacts.empty() && !deferred.empty())
+    {
+        impacts.swap(deferred);
+        deferred.clear();
+    }
     if (impacts.empty())
         return;
+
+    const auto flushStart = std::chrono::steady_clock::now();
+    const size_t impactCount = impacts.size();
+    const uint32_t maxActivations =
+        MimitaImpact::DestructibleWorldConfig::instance().maxActivationsPerFlush();
+    uint32_t activated = 0;
+    uint32_t submitted = 0;
 
     if (MimitaImpact::MaterialConfig::instance().revision() == 0)
         MimitaImpact::MaterialConfig::instance().load();
 
     bool collisionChanged = false;
-    for (MimitaImpact::ImpactEvent& impact : impacts)
+    for (size_t impactIndex = 0; impactIndex < impacts.size(); ++impactIndex)
     {
+        MimitaImpact::ImpactEvent& impact = impacts[impactIndex];
         const uint32_t solidId = nearestSolid(world, impact);
         if (solidId == 0)
             continue;
@@ -282,6 +310,13 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
             entityId = active->second;
         else
         {
+            if (activated >= maxActivations)
+            {
+                deferred.insert(deferred.end(),
+                    std::make_move_iterator(impacts.begin() + impactIndex),
+                    std::make_move_iterator(impacts.end()));
+                break;
+            }
             const auto loadStart = std::chrono::steady_clock::now();
             const std::string model = "assets/maps/" + mapId + ".glb#node:" +
                                       std::to_string(object->nodeIndex);
@@ -309,6 +344,7 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                 : object->materialName;
             const uint32_t materialId =
                 MimitaImpact::materialIdForName(materialName);
+            const auto initStart = std::chrono::steady_clock::now();
             glm::mat4 transform = glm::translate(glm::mat4(1.0f),
                                                   mesh.sourceCenter);
             entityId = PhysicalEntitySystem::instance().add(
@@ -322,6 +358,8 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                                   .find(materialId).density;
             MimitaImpact::ImpactSystem::instance().initializeEntityFromMesh(
                 *entity, std::move(mesh.mesh), entity->halfExtents, materialId);
+            const double initMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - initStart).count();
             if (world.destructionBaselineSolidIds.empty())
                 world.destructionBaselineSolidIds = world.solidIds;
             world.activeDestructibleNodes.emplace(object->nodeIndex, entityId);
@@ -329,6 +367,7 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                 if (id == solidId)
                     id = UINT32_MAX;
             collisionChanged = true;
+            ++activated;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::World, StructuredLevel::Important,
                 "world.destructible-activated", object->id,
@@ -337,7 +376,7 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                  {"solid", solidId}, {"entity", entityId},
                  {"material", materialName},
                  {"mesh_tris", entity->localTriangles.size()},
-                 {"load_ms", loadMs}});
+                 {"load_ms", loadMs}, {"init_ms", initMs}});
         }
         impact.target = MimitaImpact::ImpactTarget::PhysicalEntity;
         impact.targetEntityId = entityId;
@@ -356,6 +395,7 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
              {"radius_m", impact.radius},
              {"bore_m", impact.boreLength}});
         MimitaImpact::ImpactSystem::instance().submit(impact);
+        ++submitted;
     }
     uint64_t revision = world.activeDestructibleNodes.size();
     for (const auto& active : world.activeDestructibleNodes)
@@ -366,17 +406,49 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
             revision += entity->destructible.geometryRevision *
                 (uint64_t)(active.first + 1);
     }
-    if (collisionChanged)
-        buildHeadlessCollisionChunks(world);
-    if (collisionChanged || revision != world.lastNpcDestructionRevision)
+    // Hidden map triangles stay in the broadphase but are skipped by the
+    // query paths, so activation never pays a full headless collision rebuild.
+    // The NPC snapshot is separate and much more expensive; rebuild it only
+    // when the mode/config explicitly asks for immediate NPC navigation.
+    double collisionMs = 0.0;
+    double npcMs = 0.0;
+    if ((collisionChanged || revision != world.lastNpcDestructionRevision) &&
+        MimitaImpact::DestructibleWorldConfig::instance()
+            .npcCollisionRebuildOnWorldCut())
     {
+        const auto npcStart = std::chrono::steady_clock::now();
         buildNpcWorldCollision(npcWorld, world);
+        npcMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcStart).count();
         world.lastNpcDestructionRevision = revision;
+    }
+    else if (revision != world.lastNpcDestructionRevision)
+    {
+        world.lastNpcDestructionRevision = revision;
+    }
+    const double totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - flushStart).count();
+    if (activated > 0 || submitted > 0 || totalMs > 1.0)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Verbose,
+            "world.destructible-flush", "map",
+            "world impact flush completed", tick,
+            {{"impacts", impactCount},
+             {"activated", activated},
+             {"submitted", submitted},
+             {"collision_ms", collisionMs},
+             {"npc_collision_ms", npcMs},
+             {"total_ms", totalMs},
+             {"deferred", deferred.size()},
+             {"max_activations", maxActivations},
+             {"active_nodes", world.activeDestructibleNodes.size()}});
     }
 }
 
 void clearServerWorldDestruction(HeadlessWorld& world)
 {
+    gDeferredWorldImpacts.erase(&world);
     for (const auto& item : world.activeDestructibleNodes)
         PhysicalEntitySystem::instance().remove(item.second);
     world.activeDestructibleNodes.clear();
@@ -395,6 +467,7 @@ void clearServerWorldDestruction(HeadlessWorld& world)
 void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
                                  uint32_t tick)
 {
+    gDeferredWorldImpacts.erase(&world);
     if (world.destructionBaselineSolidIds.empty())
         return;
     world.solidIds = world.destructionBaselineSolidIds;

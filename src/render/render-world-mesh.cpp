@@ -1,8 +1,11 @@
 #include "render-world.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cmath>
 #include <limits>
+#include <utility>
+#include <vector>
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -297,6 +300,36 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
     renderPerf.worldBackfaceCulling = gRenderBackfaces ? 0u : 1u;
 
+    // Destructible map nodes are hidden without touching the VBO. Build the
+    // merged hidden vertex ranges once per frame and split affected batches.
+    static thread_local std::vector<std::pair<size_t, size_t>> hiddenRanges;
+    hiddenRanges.clear();
+    for (const MapGLBObject& object : mesh.objects)
+    {
+        if (!object.hidden || object.vertexCount == 0)
+            continue;
+        const size_t first = object.vertexFirst;
+        const size_t last = std::min(object.vertexFirst + object.vertexCount,
+                                     mesh.verts.size());
+        if (first < last)
+            hiddenRanges.emplace_back(first, last);
+    }
+    std::sort(hiddenRanges.begin(), hiddenRanges.end());
+    size_t merged = 0;
+    for (size_t i = 0; i < hiddenRanges.size(); ++i)
+    {
+        if (merged > 0 && hiddenRanges[i].first <= hiddenRanges[merged - 1].second)
+        {
+            hiddenRanges[merged - 1].second =
+                std::max(hiddenRanges[merged - 1].second, hiddenRanges[i].second);
+        }
+        else
+        {
+            hiddenRanges[merged++] = hiddenRanges[i];
+        }
+    }
+    hiddenRanges.resize(merged);
+
     // Ensure texture unit 0 is active before binding world textures
     glActiveTexture(GL_TEXTURE0);
 
@@ -322,17 +355,43 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
         const bool temporarilyDisableCulling = !gRenderBackfaces && batch.doubleSided;
         if (temporarilyDisableCulling)
             glDisable(GL_CULL_FACE);
+
+        const size_t batchEnd = batch.first + batch.count;
+        size_t cursor = batch.first;
+        size_t segments = 0;
+        auto drawRange = [&](size_t first, size_t count)
         {
+            if (count == 0)
+                return;
             MIMITA_PERF_SCOPE("Rendering::World::DrawCall");
-            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count));
+            ++drawCalls;
+            ++segments;
+            renderPerf.worldSubmittedBatches++;
+            renderPerf.worldDrawCalls++;
+            renderPerf.worldVertices += static_cast<uint64_t>(count);
+            renderPerf.worldTriangles += static_cast<uint64_t>(count / 3);
+        };
+        for (const auto& range : hiddenRanges)
+        {
+            if (range.second <= cursor)
+                continue;
+            if (range.first >= batchEnd)
+                break;
+            if (range.first > cursor)
+                drawRange(cursor, std::min(range.first, batchEnd) - cursor);
+            cursor = std::max(cursor, std::min(range.second, batchEnd));
+            if (cursor >= batchEnd)
+                break;
         }
+        if (cursor < batchEnd)
+            drawRange(cursor, batchEnd - cursor);
+
+        if (segments == 0)
+            renderPerf.worldSkippedBatches++;
+
         if (temporarilyDisableCulling)
             glEnable(GL_CULL_FACE);
-        ++drawCalls;
-        renderPerf.worldSubmittedBatches++;
-        renderPerf.worldDrawCalls++;
-        renderPerf.worldVertices += static_cast<uint64_t>(batch.count);
-        renderPerf.worldTriangles += static_cast<uint64_t>(batch.count / 3);
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 }

@@ -613,6 +613,8 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
     const auto start = std::chrono::steady_clock::now();
     uint32_t flushedCuts = 0;
     uint32_t processedEntities = 0;
+    double booleanTotalMs = 0.0;
+    double fractureTotalMs = 0.0;
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
 
@@ -684,6 +686,7 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
                                                            batchMax);
         const float booleanMs = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - booleanStart).count();
+        booleanTotalMs += booleanMs;
         if (flushed > 0)
         {
             flushedCuts += (uint32_t)flushed;
@@ -726,8 +729,11 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
                 entity->destructible.lastFractureTick = tick;
                 entity->destructible.hasFractured = true;
                 ImpactResult fractureResult;
+                const auto fractureStart = std::chrono::steady_clock::now();
                 const std::vector<uint32_t> fragments =
-                    applyFracture(*entity, fractureResult, false);
+                    applyFracture(*entity, fractureResult, entity->serverDriven);
+                fractureTotalMs += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - fractureStart).count();
                 if (fragments.empty())
                 {
                     // Nothing detached (e.g. the piece was below the minimum):
@@ -795,6 +801,8 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
              {"processed_entities", processedEntities},
              {"pending_cuts", leftover},
              {"flush_ms", elapsedMs},
+             {"boolean_ms", booleanTotalMs},
+             {"fracture_ms", fractureTotalMs},
              {"budget_ms", budgetMs},
              {"max_cuts_per_entity", maxCutsPerEntity}});
     }

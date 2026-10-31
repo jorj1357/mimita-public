@@ -178,9 +178,6 @@ struct World {
     // capture the base so an editor rebuild removes only its own tail.
     bool authoredGeometryApplied = false;
     std::vector<MapGLBObject> authoredObjects;
-    // Only touched imported nodes are copied; these original vertices restore
-    // the map when their replicated destructible entity is despawned.
-    std::unordered_map<int, std::vector<Vertex>> destructibleNodeBaseline;
     size_t authoredBaseVertexCount = 0;
     size_t authoredBaseBatchCount = 0;
 
