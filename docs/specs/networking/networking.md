@@ -4951,6 +4951,12 @@ presentation-only and does not change gameplay or authority.
 
 ## World destruction authority (2026-10-30)
 
+**Current status (2026-10-31): disabled by default** through
+`config/destructible-world.json` `world.enabled: false`. The authority and
+replication rules below are the re-enable contract. Actor damage, projectile
+replication, and physical props continue normally. See
+`docs/specs/destructible-world/destructible-world.md` section 72.
+
 World-geometry destruction is a separate target contract from actor damage.
 Actor-victim damage remains owned by `contact-authority.md`. World destruction is
 owned by `docs/specs/destructible-world/destructible-world.md` section 71.

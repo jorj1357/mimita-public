@@ -3,9 +3,12 @@
 // allowed. Malformed JSON keeps the previous valid values.
 {
   "world": {
-    // Global default for imported-map and object world destruction. A gamemode
-    // may override it through features.destructible_world; null inherits this.
-    "enabled": true
+    // Global default for imported-map world destruction. A gamemode may
+    // override it through features.destructible_world; null inherits this.
+    // DISABLED 2026-10-31: static map geometry is the default. This switch
+    // affects map geometry only; crates/props keep their own destruction.
+    // See docs/specs/destructible-world/destructible-world.md section 72.
+    "enabled": false
   },
   "destruction": {
     // Maximum map solids one explosion may submit cut intents for. The nearest

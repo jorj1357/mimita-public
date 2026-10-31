@@ -2537,6 +2537,12 @@ contact resolver; this mode does not add a second damage path.
 
 ## Shared world-impact and explosion profiles (2026-10-30)
 
+**Current status (2026-10-31): map destruction is disabled by default**
+(`config/destructible-world.json` `world.enabled: false`). These profiles remain
+the re-enable contract for world geometry; weapon damage, knockback, and
+projectile behavior continue to work normally. See
+`docs/specs/destructible-world/destructible-world.md` section 72.
+
 Every damaging weapon participates in world destruction through the single
 persistent entry point in
 `docs/specs/destructible-world/destructible-world.md` section 71. There is no

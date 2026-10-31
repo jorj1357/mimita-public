@@ -272,64 +272,58 @@ rotation/scale overrides require storing base vertex positions and a delta
 transform, and are the next slice. The old override matrix path remains intact
 for loading existing files.
 
-### GLB material assignment (2026-10-30)
+### GLB material assignment (future; data layer exists)
 
-Destructible map materials are authored without editing the source GLB in
-Blender. The Map Editor extends the GLB override layer with a material
-assignment.
+Map destruction is currently disabled by default; see
+`docs/specs/destructible-world/destructible-world.md` section 72. This section
+records the Map Editor work needed before it is re-enabled.
 
-The properties panel gains a material selector for the selected GLB node(s).
-Selecting multiple rows in the outliner and choosing a material applies it to
-the whole selection through the same undo/autosave path as position edits.
+Destructible map materials must be authored without editing the source GLB in
+Blender. The Map Editor extends the existing GLB override layer with material
+and walkability assignment.
 
-Persisted map JSON:
+Current data layer:
 
-```json
-"glb_materials": {
-  "node:12": "concrete",
-  "node:45": "foundation"
-},
-"material_rules": [
-  {
-    "material": "foundation",
-    "match": { "horizontal": true, "max_bottom_z": 2340.0 }
-  },
-  {
-    "material": "concrete",
-    "match": { "vertical": true }
-  }
-]
-```
+- `MapGLBObject.materialName` exists.
+- `MapGLBObjectOverride.material` exists and `config/maps/<mapId>.json`
+  `glb_objects[].material` is parsed and applied.
+- The editor does not yet expose material in its properties panel.
+- The editor save path does not yet write `glb_objects[].material`.
+- The editor does not yet classify or visually mark walkable floors/slopes.
+
+Desired editor behavior:
+
+- material selector for selected GLB nodes,
+- multi-select apply from the outliner,
+- persist `glb_objects[].material` through the same undo/autosave path as
+  position edits,
+- preserve material when a node is moved,
+- "mark selected as walkable floor/slope/foundation" action,
+- material/walkability colors (for example foundation green, concrete gray),
+- bulk filters: horizontal, vertical, walkable surface, bottom-height range,
+  size range, name contains, current material, spatial bounds,
+- later: orthographic top/front/side views, marquee/box selection, user folders,
+  and "select all similar".
 
 Resolution order:
 
 ```text
-per-node glb_materials entry
-    -> first matching material_rule
+per-node glb_objects[].material
+    -> optional future material_rules
     -> destructible-world default heuristic
 ```
+
+Floor and slope classification must reuse the shared walkable-slope rule
+(`config/collision.json` `walkableSlopeDot`) so the editor and runtime agree on
+what counts as walkable ground. Walkable floors and ramps default to
+`foundation`; explicit per-node material wins.
 
 The client and dedicated server resolve the same material from the same map
 JSON. Removing an override restores the next resolution level.
 
-Bulk selectors may include:
-
-```text
-horizontal / vertical
-bottom height range
-size range
-name contains
-current material
-spatial bounds
-```
-
-Orthographic top/front/side views with marquee/box selection, user-created
-folders/collections, and "select all similar" are later UI slices. Until then,
-the outliner search/multi-select plus rule-based assignment is the practical
-bulk path, especially for maps whose GLB node names are generic.
-
-Destructible map rules, material profiles, and reset behavior are owned by
-`docs/specs/destructible-world/destructible-world.md` section 71.
+Map destruction rules, material profiles, foundation values, and reset behavior
+are owned by `docs/specs/destructible-world/destructible-world.md` sections 71
+and 72.
 
 ### Authored blocks
 

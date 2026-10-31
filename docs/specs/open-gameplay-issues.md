@@ -1,4 +1,47 @@
-﻿2026 10 30 1901 bug
+﻿## New intake — 2026-10-31: Destructible world disabled by default
+
+**Decision:** world-geometry destruction is disabled by default through
+`config/destructible-world.json` `world.enabled: false`. Static authored map
+geometry is the default again. TDM/Juggernaut/Jugger Horde inherit it with
+`features.destructible_world: null`. The switch affects map geometry only;
+crates/props keep their own destruction.
+
+**What worked:** the shared impact path, map-solid activation, cut/fragment
+replication, client convergence, radial explosions, and TDM/Juggernaut reset all
+worked. The 2026-10-31 changelog and runtime journals contain the evidence. This
+was real engine progress, not wasted work.
+
+**Why disabled:** in TDM it was not fun enough. Destroying floors and slopes made
+the walkable world inconsistent; it became unclear which surfaces were safe to
+step on. That is a design/priority lesson, not a claim that the implementation
+is broken.
+
+**Known gaps before re-enabling** (full checklist in
+`docs/specs/destructible-world/destructible-world.md` section 72):
+
+- Map Editor material assignment and visual walkable/floor/slope marking.
+- Floor/slope classification using the shared walkable-slope rule; slopes
+  currently fall back to concrete and get cut.
+- Foundation is finite but extremely strong (`cutThresholdJ 1.0e16`); keep the
+  value and document it.
+- Small floating fragments: `fragmentInstantDeleteMaxDimMeters` controls the
+  immediate bounds cutoff; the desired re-enable value is `0.1`.
+- NPC hitscan (`revolver`, `shotgun`) does not submit a world impact, so it can
+  visibly enter a wall without cutting it.
+- NPC collision/navigation uses a separate snapshot; holes are currently ignored
+  because the snapshot is not rebuilt on cuts.
+- Unsupported detached pieces should eventually fall; not implemented.
+
+**Priority:** **not a priority for TDM now.** Revisit when destruction supports
+a mode where the fantasy depends on it (vehicle/Need for Madness/open-world
+experiences, or a mode designed around destructible cover). The static world is
+the safer default.
+
+**Retrospective:** `docs/gold/2026-10-31-destructible-world-retrospective.md`.
+
+---
+
+2026 10 30 1901 bug
 npcs are just n 
 disappearing
 into walls
@@ -2325,3 +2368,50 @@ should one global policy apply to all weapons? The per-weapon implementation
 serves the current mace request; changing the policy's scope needs a later
 human decision. Compare both mace actions in live play before deciding whether
 the physical slam needs additional tuning or control options.
+
+## Intake — 2026-10-31: Dust 2 ramp seam snag and collision evidence
+
+The player reports getting caught on a ramp going up on `dust2cyberiav4` and
+does not want to be caught at all. A local client recording,
+`devscripts/scenarios/user/scenario-20261031_034240-dustcoll.jsonl`, shows the
+player apparently frozen at one position for about ten fixed ticks while forward
+input is held (recorded ticks 2678-2687), with vertical velocity continuing. The
+recording is schema 2 on the Dust 2 map, `sandbox`, networked, with
+`client_input` and `client_actors` tracks only; `tracks_complete` is false. It
+does not contain collision contacts, and replay was rejected when no server was
+available (`server_required_for_schema_2`).
+
+Offline analysis correction: the 2678-2687 window begins with the recorded
+freeze input (`freeze_pressed` at 2678, `freeze_held` through 2681), and the
+player was not grounded. The apparent horizontal stop is therefore not
+established as a collision stall. The same recording contains airborne
+horizontal-pinned windows at frames 1328-1347 and 2131-2138, but no sustained
+grounded input-held/no-progress window. A fresh recording with the new
+`client_collision` track is required to distinguish wall pinning from a ramp
+seam or lip.
+
+Current implementation evidence:
+
+- the actor-triangle solver owns the active world collision path
+  (`config/collision.json` `actorTriangleSolver: true`);
+- the triangle owner now has a bounded grounded low-lip step-up probe, validated
+  by `mimita.exe --actor-triangle-solve-selftest`; it is not yet validated on the
+  reported Dust 2 route;
+- ramp seam smoothing is governed by `smoothSeamDot`, `edgeTouchTolerance`, and
+  the fixed `MOVEMENT_FEATURE_SMOOTHNESS`; the current config uses
+  `smoothSeamDot: 0.9999` and `edgeTouchTolerance: 0.0`.
+
+Desired result: a grounded actor moving along connected walkable geometry must
+not lose all horizontal progress on a low seam or ramp lip. A genuine wall may
+still block. Runtime evidence must show the first blocking contact and whether
+the failure is a physical seam, missing step-up, or map geometry.
+
+Validation: record the same Dust 2 route, analyze it offline, then replay it on
+a dev-loop-owned server. Acceptance requires no long input-held/no-progress
+window and continued forward progress over the ramp, with jump/fall behavior
+unchanged.
+
+Future tooling note: the dev loop should eventually support arbitrary named
+launch lanes so a stable play build can run while an AI builds/tests another
+build; see `docs/specs/dev-loop/dev-loop.md`. That lane work is not part of this
+collision fix.

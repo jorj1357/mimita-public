@@ -306,9 +306,13 @@ gamemode-specific physics owner:
   vehicles. The default car profile is manual transmission; skateboard, BMX,
   and arcade race modes can select the shared arcade trick profile.
 - `features.destructible_world` is a nullable mode override. An absent or
-  null value inherits the global destructible-world setting, whose desired
-  default is enabled. A mode may explicitly set it to false when its design
-  or performance budget requires intact world geometry.
+  null value inherits the global destructible-world setting. **Current default
+  (2026-10-31): disabled** (`config/destructible-world.json` `world.enabled:
+  false`). The long-term desired default may be revisited; until then, static
+  map geometry is the default and modes inherit it. A mode may explicitly set
+  it to false when its design or performance budget requires intact world
+  geometry, and may force true only when the re-enable checklist in
+  `docs/specs/destructible-world/destructible-world.md` section 72 is met.
 - `features.destructible_world_reset` is a nullable reset policy:
   `"match"` restores the authored map at each match boundary, `"round"`
   restores it at each round boundary, and `"never"` preserves world damage

@@ -48,16 +48,18 @@ queries for spawn regions, safe zones, hoops, and triggers. Disasters must
 declare their duration, affected region, cleanup behavior, and whether damage
 to the world persists into later rounds.
 
-Destructible world is enabled by the shared default. This mode preserves
-damage and destruction across its ten rounds and restores the map to its
-authored baseline between matches. The reset is owned by the destructible
-world system, not a disaster-specific mesh rebuild.
+Destructible world is **disabled by the global default as of 2026-10-31**; see
+`docs/specs/destructible-world/destructible-world.md` section 72. If it is
+re-enabled, this mode preserves damage and destruction across its ten rounds and
+restores the map to its authored baseline between matches. The reset is owned by
+the destructible world system, not a disaster-specific mesh rebuild.
 
 Mode data records this as `features.destructible_world_reset: "match"` with
-`features.destructible_world: null` (inherit the global enabled setting).
-Round boundaries within the ten-round match do not restore the map; only the
-match boundary does. This is the explicit exception to the per-round reset used
-by TDM and Juggernaut.
+`features.destructible_world: null` (inherit the global setting). While the
+global setting is `false`, this mode remains static. If re-enabled, round
+boundaries within the ten-round match do not restore the map; only the match
+boundary does. This is the explicit exception to the per-round reset used by TDM
+and Juggernaut.
 
 ## Community-created disaster packs
 

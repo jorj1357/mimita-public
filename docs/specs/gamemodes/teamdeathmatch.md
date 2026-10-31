@@ -67,6 +67,12 @@ Human confirmation is required for visible phase and result presentation.
 
 ## Destructible map lifecycle (2026-10-30)
 
+**Current status (2026-10-31): disabled by default.** `world.enabled` is
+`false` and TDM inherits it with `destructible_world: null`; static authored
+geometry is the TDM default. The lifecycle below is the re-enable contract, not
+current behavior. See `docs/specs/destructible-world/destructible-world.md`
+section 72.
+
 TDM uses the shared imported-map destruction rules in
 `docs/specs/destructible-world/destructible-world.md` section 71.
 

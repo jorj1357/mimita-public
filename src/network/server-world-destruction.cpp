@@ -244,8 +244,16 @@ void submitExplosionWorldImpacts(const HeadlessWorld& world,
 void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                              const std::string& mapId, uint32_t tick)
 {
-    const bool globalEnabled =
-        MimitaImpact::DestructibleWorldConfig::instance().worldEnabled();
+    // The dedicated server does not run the client's config-polling pass. Load
+    // and hot-reload the destruction switch here so global JSON changes take
+    // effect without a restart.
+    MimitaImpact::DestructibleWorldConfig& destructionConfig =
+        MimitaImpact::DestructibleWorldConfig::instance();
+    if (destructionConfig.revision() == 0)
+        destructionConfig.load();
+    else
+        destructionConfig.pollReload();
+    const bool globalEnabled = destructionConfig.worldEnabled();
     const Gamemode& gamemode =
         GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
     const bool enabled = gamemode.features.destructibleWorld < 0

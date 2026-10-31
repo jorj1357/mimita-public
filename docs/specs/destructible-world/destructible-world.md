@@ -65,27 +65,26 @@ A sufficiently energetic physical object can therefore destroy a structure even 
 
 ## Gamemode defaults and map reset
 
-World geometry destruction is desired to be enabled by default in
-`config/destructible-world.json` under `world.enabled`. A gamemode may
-explicitly disable it through its mode data when intact geometry is part of its
-design or when its measured performance budget requires that choice. The
-shared gamemode specification owns how mode overrides inherit the global
-setting.
+World geometry destruction is controlled by
+`config/destructible-world.json` under `world.enabled`. A gamemode may override
+it through `features.destructible_world`: `null` inherits the global value,
+`true` forces it on, and `false` forces it off.
 
-Disabling world-geometry destruction does not disable ordinary physical
-collision, vehicle damage, or actor contact. These are separate shared
-behaviors.
+**Current status (2026-10-31): disabled by default.** `world.enabled` is
+`false`, and TDM/Juggernaut/Jugger Horde inherit it with a `null` override.
+Static authored map geometry is the default again. See section 72 for the
+decision, lessons, and re-enable checklist.
+
+This switch affects **map geometry only**. Disabling it does not disable
+ordinary physical collision, vehicle damage, actor contact, or destruction of
+separate crates/props. Those remain governed by their own physical-object
+configuration.
 
 Destructible-world state must support restoring a map to its authored baseline
 at a mode-defined lifecycle boundary. Survive the Disasters keeps damage
 through its ten-round match and restores the baseline between matches. The
 reset operation belongs to the destructible-world owner; a gamemode requests
 the reset and does not regenerate collision meshes itself.
-
-The active configuration currently has cut batching, fracture, and physical
-object settings, but no explicit global world-destruction enable switch. The
-mode default and override described here are desired behavior; implementing
-them requires adding the config/schema and runtime owner together.
 
 ---
 
@@ -2884,3 +2883,214 @@ See:
 docs/specs/visuals/blood-bulletholes-viscera.md
 section 52 of this document
 ```
+
+---
+
+# 72. Current status: disabled by default (2026-10-31)
+
+## 72.1 Decision
+
+World-geometry destruction is **disabled by default** while the rest of the game
+continues to use static authored map geometry.
+
+The authoritative switch is:
+
+```json
+// config/destructible-world.json
+"world": {
+  "enabled": false
+}
+```
+
+Mode data inherits it with:
+
+```json
+"features": {
+  "destructible_world": null
+}
+```
+
+`null` inherits the global value; `true` forces map destruction on for that
+mode; `false` forces it off. TDM, Juggernaut, and Jugger Horde currently use
+`null` so the global `false` applies.
+
+This switch affects **map geometry only**. Crates, props, vehicles, actor
+contact, and ordinary collision are separate systems and remain as configured.
+
+## 72.2 Why this is disabled now
+
+The technical slice worked: closed map solids activated on impact, shared
+hitscan/projectile/melee/explosion impacts produced cuts, detached pieces
+became physical bodies, clients converged on replicated cuts, and TDM/Juggernaut
+restored the authored map at match/round boundaries.
+
+The user-facing result was not good enough for TDM. Destroying floors and slopes
+made the walkable world inconsistent: it became unclear which surfaces were safe
+to step on, and the game felt less fun. This is a design and priority decision,
+not a claim that the implementation is unusable or that the work was wasted.
+
+The lesson is recorded in:
+
+```text
+docs/specs/open-gameplay-issues.md
+docs/gold/2026-10-31-destructible-world-retrospective.md
+```
+
+## 72.3 What worked
+
+- One persistent world-impact entry point for hitscan, projectile, melee,
+  explosion, and actor sources.
+- Exact imported-solid identity, sparse activation, authored-map client
+  hide/restore, replication of cut causes, and match-boundary reset.
+- Radial explosion impacts with falloff, occlusion, and a bounded node count.
+- Physical fragments through the shared physical-entity/fracture owner.
+- Diagnostics and performance work:
+  - cached GLB parse/prewarm,
+  - incremental render/collision hiding instead of full-map rebuilds,
+  - server activation budget/deferred queue,
+  - network receive budget,
+  - off-thread client cut geometry worker.
+
+The complete evidence is in the 2026-10-31 changelog and runtime journals.
+
+## 72.4 Re-enable checklist
+
+Do not simply flip `world.enabled` to `true`. The following must be addressed
+first, otherwise the same floor/slope and NPC inconsistencies return.
+
+### A. Map Editor material assignment
+
+The data layer already accepts `glb_objects[].material`, but the editor UI and
+save path need to own it:
+
+- material selector for selected GLB nodes,
+- multi-select apply,
+- persist `glb_objects[].material`,
+- preserve material when position changes,
+- visualize material/walkability (for example foundation green, concrete gray),
+- bulk filters: horizontal, vertical, walkable surface, size range,
+- "mark selected as floor/slope/foundation" action.
+
+See `docs/specs/entity-editor/entity-editor.md`.
+
+### B. Floor and slope classification
+
+The current automatic heuristic in `src/network/server-world-destruction.cpp`
+only tags thin horizontal slabs as `foundation`. Slopes fall back to `concrete`
+and get cut. A re-enable must classify walkable ground surfaces:
+
+- reuse the shared walkable-slope rule (`config/collision.json`
+  `walkableSlopeDot`, currently `0.80`),
+- treat upward-facing floor slabs and walkable ramps as walkable ground,
+- assign `foundation` to walkable ground by default,
+- allow an explicit Map Editor material override to win,
+- keep walls/ceilings destructible unless explicitly overridden.
+
+### C. Foundation material and material formula truth
+
+`config/materials.json` currently defines foundation with:
+
+```text
+strength            1000000000
+cutResistance       1000000
+cutThresholdJ       1.0e16
+fractureThreshold   1000000000
+surfaceHardness     1000000
+holeEnergyScale     0.001
+maxCutRadius        0.1
+density             1000000
+```
+
+The `1.0e16 J` threshold is intentionally finite but extreme. It is kept for
+now; a future re-enable may tune it, but it is not an "infinite" hardcode.
+
+Important current limitation: the cut path uses `holeEnergyScale`,
+`maxCutRadius`, `cutThresholdJ`, `density`, and `strength`. It does **not**
+currently use `cutResistance`, `surfaceHardness`, or `fractureThreshold`,
+although those fields are parsed. Tuning those fields will not change cuts until
+the formula is extended. The current concrete behavior is driven by
+`holeEnergyScale = 0.45` and `maxCutRadius = 1.5`.
+
+Weapon input is defined in:
+
+```text
+config/weapons/masterlist/weapon-masterlist.json   (world_impact_profiles/defaults)
+config/weapons/<weapon>/config.json                (damage, mass, speed, radius, profile ref)
+```
+
+The cut formula lives in `src/impact/impact-system.cpp`.
+
+### D. Small fragments
+
+Floating tiny pieces should be removed by the existing fragment cleanup:
+
+```json
+// config/destructible-world.json -> fragments
+"fragmentInstantDeleteMaxDimMeters": 0.15
+```
+
+`src/physics/physical-entity.cpp` deletes a fragment immediately when its largest
+AABB dimension is below this value. For the desired "bounds smaller than 0.1 m
+are deleted" behavior, set it to `0.1`. Keep the idle/lifetime/volume thresholds
+as the secondary cleanup policy.
+
+### E. NPC hitscan must damage the world
+
+NPC projectiles and NPC melee already use the server impact paths. NPC hitscan
+(`revolver`, `shotgun`) currently uses `WeaponFire::tryFireHitscanDir` inside
+`NpcCombat::tryFire` and does **not** submit an `ImpactSystem` world impact.
+Even when the shot visibly enters a wall, no cut is created.
+
+A re-enable needs a server-only NPC hitscan impact adapter, for example in the
+NPC shot broadcast path using:
+
+```text
+n.lastShotHitWorld
+n.lastShotEnd / n.lastShotNormal
+n.pelletResults[] for multi-pellet weapons
+```
+
+It must use the same shared world-impact profile and map-solid resolution as the
+player path. Do not add an NPC-only wall-damage formula.
+
+### F. NPCs must respect holes
+
+The NPC collision/navigation world is a separate snapshot. Rebuilding it on
+every cut costs roughly a second on large maps, so
+`destruction.npcCollisionRebuildOnWorldCut` is currently `false`. NPCs therefore
+keep colliding with the old floor/wall after a cut.
+
+A re-enable must refresh NPC collision and navigation after geometry changes
+without stalling the tick:
+
+- asynchronous or budgeted collision/nav rebuild,
+- or incremental hidden-node plus destructible-entity surfaces for NPC queries,
+- verification that NPCs path around/through new holes and do not stand on
+  removed ground.
+
+### G. Unsupported pieces
+
+Detached pieces should eventually fall when their structural island is no longer
+supported. The support/connectivity architecture exists in sections 21-25, but
+the map slice does not yet drive unsupported-piece falling. This remains future
+work, not part of the disabled default.
+
+### H. Performance and evidence
+
+The 240 FPS zero-dip target was not fully met in the debug runs; the remaining
+tail was outside the async cut install. A re-enable should run the reference
+stress scenario on a release build on the target machine. See the 2026-10-31
+changelog for measured results and the remaining work.
+
+## 72.5 Re-enable conditions
+
+Before turning map destruction back on for a mode:
+
+1. Map Editor material assignment and walkable floor/slope classification are
+   working.
+2. Foundation is finite, extremely strong, and verified against the sustained
+   highest-energy weapon scenario.
+3. NPC hitscan world impacts and NPC hole navigation are verified.
+4. Small-piece cleanup matches the desired threshold.
+5. The 240 FPS zero-dip reference scenario passes on the target machine.
+6. Human review confirms the mode is fun and the walkable world remains clear.
