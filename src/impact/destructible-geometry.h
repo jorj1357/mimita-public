@@ -18,6 +18,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -117,6 +118,9 @@ struct DestructibleGeometry
     uint64_t geometryRevision = 0;
     uint64_t nextCutId = 1;
     uint32_t materialId = 0;
+    // Sparse contact-cell fatigue. Durable map matter still records impacts
+    // without forcing a Boolean rebuild for every sub-threshold hit.
+    std::unordered_map<uint64_t, double> storedImpactEnergyJ;
 
     // Cuts accepted into the authoritative history but not yet applied to the
     // surface. ImpactSystem enqueues here so a rapid burst becomes one batched

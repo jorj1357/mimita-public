@@ -17,6 +17,7 @@
     "cut_energy_scale",
     "cut_radius_scale",
     "damage",
+    "damage_animation_mode",
     "damage_scale",
     "enemy_impulse_multiplier",
     "fire_delay",
@@ -139,6 +140,13 @@
         "number"
       ],
       "nullable": true
+    },
+    "damage_animation_mode": {
+      "types": [
+        "number"
+      ],
+      "nullable": true,
+      "required": false
     },
     "damage_scale": {
       "types": [

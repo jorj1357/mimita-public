@@ -134,11 +134,13 @@ clash impulse, spark, and ricochet together; it does not throttle damage when
 a weapon also contacts an actor. Start with fast, responsive weapon styles;
 slower, deliberate styles can be added later.
 
-The exact force curve, damage and knockback bounds, pitch and volume ranges,
-and double-click window are tuning values, not settled numbers in this spec.
-Keep them owned by the weapon/action configuration that already owns the
-relevant behavior. Do not invent a second source of truth or treat placeholder
-values as approved balance.
+The clash tolerance, cooldown, knockback curve, and effect enables are owned by
+`config/collision.json` under `weapon_vs_weapon`; they are not a second copy in
+weapon/action configuration. Actor damage and weapon-to-actor knockback remain
+owned by the weapon/action configuration. The exact weapon damage bounds, pitch
+and volume ranges, and double-click window are tuning values, not settled
+numbers in this spec. Do not invent a second source of truth or treat
+placeholder values as approved balance.
 
 ## Authority and feedback
 

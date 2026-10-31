@@ -246,6 +246,7 @@ void CommunityMatchClient::reset()
     mDisasterResolveSource = 0;
 
     mActors.clear();
+    mLastLocalIdentityFingerprint.clear();
     mProcedural = ProceduralWorldNetworkState{};
     // Forget the client-side door handle so a map change cannot leave it
     // pointing at a reused physical-entity id.
@@ -411,7 +412,23 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     if (replicatedPresetId.empty()) replicatedPresetId = modeConfig.actorPresetId;
     const MatchRoleDefinition* actorPreset =
         MatchRoleRegistry::instance().getActorPreset(replicatedPresetId);
-    if (actorPreset && mActorPresetId != actorPreset->id) {
+    bool sharedPresetIsOverriddenByLocalRole = false;
+    for (const auto& actor : mActors) {
+        if (actor.actorId != MP_CONTEXT.localPlayerId || actor.roleIndex == 0)
+            continue;
+        const std::string& roleId =
+            MatchRoleRegistry::instance().idForIndex(actor.roleIndex);
+        const MatchRoleDefinition* role = MatchRoleRegistry::instance().get(roleId);
+        const std::string rolePresetId = role
+            ? (role->actorPresetId.empty() && role->actorPreset
+                ? role->id : role->actorPresetId)
+            : std::string();
+        sharedPresetIsOverriddenByLocalRole = !rolePresetId.empty() &&
+            mActorPresetId == rolePresetId;
+        break;
+    }
+    if (actorPreset && !sharedPresetIsOverriddenByLocalRole &&
+        mActorPresetId != actorPreset->id) {
         applyActorPreset(*actorPreset);
     } else if (!actorPreset && mActorPresetApplied && mActorPresetId == modeConfig.actorPresetId) {
         resetActorPreset();
@@ -678,6 +695,45 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         identity.actorPresetIndex = packet.participantActorPresets[i];
         mActors.push_back(identity);
     }
+    {
+        const auto local = std::find_if(mActors.begin(), mActors.end(),
+            [](const ReplicatedActorIdentity& actor) {
+                return actor.actorId == MP_CONTEXT.localPlayerId;
+            });
+        const bool found = local != mActors.end();
+        const std::string roleId = found
+            ? MatchRoleRegistry::instance().idForIndex(local->roleIndex)
+            : std::string();
+        const MatchRoleDefinition* role = roleId.empty()
+            ? nullptr : MatchRoleRegistry::instance().get(roleId);
+        const std::string presetId = role
+            ? (role->actorPresetId.empty() && role->actorPreset
+                ? role->id : role->actorPresetId)
+            : std::string();
+        const std::string fingerprint = mMode + ":" +
+            std::to_string(MP_CONTEXT.localPlayerId) + ":" +
+            (found ? std::to_string(local->team) : "missing") + ":" +
+            (found ? std::to_string(local->roleIndex) : "missing") + ":" + presetId;
+        if (fingerprint != mLastLocalIdentityFingerprint) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "client.gamemode.local-actor-identity",
+                std::to_string(MP_CONTEXT.localPlayerId),
+                found ? "resolved local actor identity from the match packet"
+                      : "local actor is absent from the match packet identity window",
+                packet.serverTick,
+                nlohmann::json{{"mode", mMode},
+                               {"local_player_id", MP_CONTEXT.localPlayerId},
+                               {"participant_count", packet.participantCount},
+                               {"found", found},
+                               {"team", found ? (int)local->team : -1},
+                               {"role_index", found ? (int)local->roleIndex : 0},
+                               {"role", role ? role->id : std::string()},
+                               {"actor_preset", presetId}},
+                __FILE__, __LINE__, __FUNCTION__);
+            mLastLocalIdentityFingerprint = fingerprint;
+        }
+    }
 
     if (mMode == "juggernaut") {
         const uint8_t resolvedLocalTeam = localTeam(MP_CONTEXT.localPlayerId);
@@ -705,27 +761,40 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         }
     }
 
-    // The mode preset supplies shared arcade presentation. Role-specific
-    // camera and movement values are selected after replicated actor identity
-    // arrives, so Fighters and Juggernauts do not inherit one another's FOV.
-    if (mMode == "juggernaut") {
-        const uint8_t team = localTeam(MP_CONTEXT.localPlayerId);
-        const char* localPresetId = team == 1 ? "juggernaut_arcade" :
-                                     team == 0 ? "juggernaut_fighter" : nullptr;
-        if (localPresetId) {
-            const MatchRoleDefinition* localPreset =
-                MatchRoleRegistry::instance().getActorPreset(localPresetId);
-            if (localPreset && mActorPresetId != localPreset->id) {
-                // The mode packet is applied before replicated team identity,
-                // so it may have temporarily applied the shared Juggernaut
-                // first-person preset. Restore the user's camera choice at
-                // this role boundary before applying the local role preset.
-                if (mActorPresetApplied)
-                    resetActorPreset();
-                applyActorPreset(*localPreset);
+    // A shared mode preset is only the fallback. The replicated role owns the
+    // local actor's presentation and movement in every role-based mode.
+    for (const auto& actor : mActors) {
+        if (actor.actorId != MP_CONTEXT.localPlayerId || actor.roleIndex == 0)
+            continue;
+        const std::string& roleId =
+            MatchRoleRegistry::instance().idForIndex(actor.roleIndex);
+        const MatchRoleDefinition* role = MatchRoleRegistry::instance().get(roleId);
+        const std::string rolePresetId = role
+            ? (role->actorPresetId.empty() && role->actorPreset
+                ? role->id : role->actorPresetId)
+            : std::string();
+        const MatchRoleDefinition* rolePreset = rolePresetId.empty()
+            ? nullptr : MatchRoleRegistry::instance().getActorPreset(rolePresetId);
+        if (rolePreset) {
+            if (mActorPresetId != rolePreset->id) {
+                if (mActorPresetApplied) resetActorPreset();
+                applyActorPreset(*rolePreset);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "client.gamemode.local-role-preset", std::to_string(actor.actorId),
+                    "applied actor preset referenced by the replicated local role",
+                    packet.serverTick,
+                    nlohmann::json{{"mode", mMode}, {"team", actor.team},
+                                   {"role", role->id},
+                                   {"actor_preset", rolePreset->id},
+                                   {"fov", rolePreset->cameraFov},
+                                   {"force_fov", rolePreset->forceFov},
+                                   {"movement_preset", rolePreset->movementPreset}},
+                    __FILE__, __LINE__, __FUNCTION__);
             }
-            if (localPreset) actorPreset = localPreset;
+            actorPreset = rolePreset;
         }
+        break;
     }
 
     // A per-actor server preset takes precedence over the mode's shared preset
@@ -808,7 +877,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     // The shared mode packet carries the arcade presentation preset for every
     // client. In Juggernaut mode, the resolved local team preset owns the
     // camera policy, so Fighters can undo the Juggernaut first-person policy.
-    if (mMode == "juggernaut" && actorPreset) {
+    if (actorPreset) {
         mForceFirstPerson = actorPreset->forceFirstPerson;
     } else {
         mForceFirstPerson = modeConfig.forceFirstPerson || packet.forceFirstPerson != 0 ||
@@ -817,7 +886,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     // ── Apply gamemode visual overrides ────────────────────────────
     float newFov = packet.cameraFov;
-    if (mMode == "juggernaut" && actorPreset && actorPreset->forceFov)
+    if (actorPreset && actorPreset->forceFov)
         newFov = actorPreset->cameraFov;
     const uint8_t newRagdoll = packet.ragdollEnabled;
     const uint8_t newBlood = packet.bloodEnabled;

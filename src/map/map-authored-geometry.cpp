@@ -460,3 +460,55 @@ bool authoredMapGeometrySelfTest(std::string& report)
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;
 }
+
+bool hideDestructibleMapNode(World& world, int nodeIndex,
+                            unsigned int* textureHandle)
+{
+    const auto object = std::find_if(world.mesh.objects.begin(),
+        world.mesh.objects.end(), [nodeIndex](const MapGLBObject& candidate) {
+            return candidate.nodeIndex == nodeIndex;
+        });
+    if (object == world.mesh.objects.end() || object->vertexCount == 0 ||
+        object->vertexFirst + object->vertexCount > world.mesh.verts.size())
+        return false;
+    if (textureHandle)
+        for (const Mesh::Batch& batch : world.mesh.batches)
+            if (batch.first <= object->vertexFirst &&
+                batch.first + batch.count > object->vertexFirst)
+            {
+                *textureHandle = batch.texture;
+                break;
+            }
+    if (world.destructibleNodeBaseline.count(nodeIndex))
+        return true;
+    const auto first = world.mesh.verts.begin() + object->vertexFirst;
+    const auto last = first + object->vertexCount;
+    world.destructibleNodeBaseline.emplace(nodeIndex,
+        std::vector<Vertex>(first, last));
+    for (auto it = first; it != last; ++it)
+        it->pos = object->boundsMin;
+    ++world.renderRevision;
+    redecimateCollision(world);
+    return true;
+}
+
+bool restoreDestructibleMapNode(World& world, int nodeIndex)
+{
+    const auto stored = world.destructibleNodeBaseline.find(nodeIndex);
+    if (stored == world.destructibleNodeBaseline.end())
+        return false;
+    const auto object = std::find_if(world.mesh.objects.begin(),
+        world.mesh.objects.end(), [nodeIndex](const MapGLBObject& candidate) {
+            return candidate.nodeIndex == nodeIndex;
+        });
+    if (object == world.mesh.objects.end() ||
+        object->vertexCount != stored->second.size() ||
+        object->vertexFirst + object->vertexCount > world.mesh.verts.size())
+        return false;
+    std::copy(stored->second.begin(), stored->second.end(),
+              world.mesh.verts.begin() + object->vertexFirst);
+    world.destructibleNodeBaseline.erase(stored);
+    ++world.renderRevision;
+    redecimateCollision(world);
+    return true;
+}

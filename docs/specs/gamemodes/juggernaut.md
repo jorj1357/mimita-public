@@ -691,8 +691,10 @@ Juggernaut owns its aim and victim-feedback policy in
 described in `docs/specs/gamemodes/gamemodes.md`. The intended values are:
 
 - `aim.mode: "physical"` — bullets follow the weapon barrel.
-- `aim.body_mode: "hybrid"`, `aim.body_enabled: true` — the body is physically
-  simulated while limbs follow the procedural animation pose.
+- `aim.body_mode: "default"`, `aim.body_enabled: true` — use the same default
+  arm aiming path as Sandbox. The previous hybrid body path made Revolver RMB
+  aim point backward in Juggernaut-style modes; physical weapon firing remains
+  enabled and follows the weapon barrel.
 - `presentation.hit_flinch: true` — the local victim camera punches when hit.
 - `presentation.blood_client_feedback: true` — camera-locked blood appears when
   the local player is hit, independently of world blood.
@@ -767,6 +769,10 @@ Fighters win when every Juggernaut is eliminated. Juggernauts win if at least
 one survives until the authoritative active-match deadline at 300 seconds,
 which is 18,000 ticks at 60 Hz. Elimination is evaluated before timeout on
 the same tick, so a final Juggernaut death on the deadline wins for Fighters.
+Horde Fighters reuse the Juggernaut Fighter role and actor preset: fast
+`retrograd_fast` movement and forced 100-degree FOV. Juggernauts reuse the
+Juggernaut mode role and `juggernaut_arcade` preset: `juggernaut` movement and
+forced 50-degree FOV.
 The mode reuses the shared team roster, actor lifecycle, kill credit, health,
 and results owners. Team respawn delay, team kill-heal percentage, and a
 configured timeout winner are general mode data rather than Horde-only logic.

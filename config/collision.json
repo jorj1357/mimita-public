@@ -38,6 +38,30 @@
     // and log a structured diff (collision.narrowphase.compare). Leave false in
     // normal play; it roughly doubles actor narrowphase cost while enabled.
     "actorCollisionComparison": false,
+    // Shared weapon-versus-weapon clash policy for every weapon pair.
+    // Contact qualifies when the two weapon radii plus distance_tolerance_m
+    // overlap. Clash impulse uses:
+    //   force = clamp(relative_speed / reference_speed_mps, 0, 1)
+    //   impulse = min_speed_mps + force * (max_speed_mps - min_speed_mps)
+    // cooldown_ticks gates clash knockback and effects for one actor pair; it
+    // never throttles a valid weapon-to-actor damage contact. Reloads are
+    // validated as a whole and applied at the next fixed tick; an invalid save
+    // keeps the last valid values. Effects toggle the replicated spark and
+    // ricochet presentation for accepted clashes.
+    "weapon_vs_weapon": {
+        "distance_tolerance_m": 0.12,
+        // "cooldown_ticks": 6,
+        "cooldown_ticks": 60,
+        "effects": {
+            "spark": true,
+            "ricochet": true
+        },
+        "knockback": {
+            "min_speed_mps": 8.0,
+            "max_speed_mps": 63.0,
+            "reference_speed_mps": 25.0
+        }
+    },
     "bounce": {
         "enabled": true,
         // "enabled": false,

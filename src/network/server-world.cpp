@@ -160,6 +160,7 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
             const size_t count = world.triangles.size() - firstTriangle;
             HeadlessGLBObject object;
             object.id = "node:" + std::to_string(nodeIndex);
+            object.nodeIndex = nodeIndex;
             object.name = node.name.empty() ? object.id : node.name;
             object.triangleFirst = firstTriangle;
             object.triangleCount = count;
@@ -170,6 +171,7 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
                     world.triangles, firstTriangle, world.triangles.size()))
             {
                 const uint32_t solidId = world.nextSolidId++;
+                world.glbObjects.back().solidId = solidId;
                 world.solidIds.insert(world.solidIds.end(), count, solidId);
             }
             else
@@ -350,6 +352,9 @@ void buildHeadlessCollisionChunks(HeadlessWorld& world)
 
     for (int i = 0; i < (int)world.triangles.size(); ++i)
     {
+        if (i < (int)world.solidIds.size() &&
+            world.solidIds[i] == UINT32_MAX)
+            continue;
         AABB tb = makeTriangleAABB(world.triangles[i]);
         glm::ivec3 c0 = collisionChunkCoord(tb.min, CS);
         glm::ivec3 c1 = collisionChunkCoord(tb.max, CS);

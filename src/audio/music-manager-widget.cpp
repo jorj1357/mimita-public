@@ -168,6 +168,27 @@ void MusicManager::drawMusicWidget()
                 setMuted(!mMuted);
         }
     }
+    UIRect orderRect = {panelX + 100.0f, y, 82.0f, 24.0f};
+    {
+        const GuiElement* orderEl = mLayout.get("musicOrder");
+        if (orderEl) {
+            GuiElement tmp = *orderEl;
+            tmp.text = playlistMode() == PlaylistMode::Shuffle ? "SHUFFLE" : "LINEAR";
+            if (drawGuiElement(win, tmp, nullptr, &orderRect).clicked)
+                setPlaylistMode(playlistMode() == PlaylistMode::Shuffle
+                    ? PlaylistMode::Linear : PlaylistMode::Shuffle);
+        }
+    }
+    UIRect personalRect = {panelX + 190.0f, y, 98.0f, 24.0f};
+    {
+        const GuiElement* personalEl = mLayout.get("musicPersonal");
+        if (personalEl) {
+            GuiElement tmp = *personalEl;
+            tmp.text = personalMusicOverride() ? "PERSONAL" : "MODE MUSIC";
+            if (drawGuiElement(win, tmp, nullptr, &personalRect).clicked)
+                setPersonalMusicOverride(!personalMusicOverride());
+        }
+    }
     y += 30.0f;
 
     // Speed controls

@@ -32,6 +32,8 @@
 #include "combat/weapon-swordsword.h"
 #include "network/game-transport.h"
 
+struct World;
+
 namespace MimitaNet {
 
 struct RemoteAvatarAsset
@@ -341,6 +343,7 @@ struct EntityInterpolationState
 struct MultiplayerContext
 {
     bool active = false;
+    ::World* activeWorld = nullptr; // current mpTick map for replicated cuts
     SOCKET sock = INVALID_SOCKET;
     std::unique_ptr<IGameTransport> transport;
     sockaddr_in serverAddr{};
@@ -906,7 +909,7 @@ const char* disconnectPolicyName(DisconnectPolicy policy);
 void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy);
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const class World& world);
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, ::World& world);
 void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt);
 void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacket* spawn);
 

@@ -14,6 +14,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 class Camera;
 class Player;
@@ -77,6 +78,8 @@ void requestButton(bool secondary, bool held);
 
 // Read-only scenario/diagnostic view of the local action instance.
 bool currentActionActive();
+bool currentActionUsesPhysicalArm(const std::string& definitionId);
+bool currentActionPhysicalDriveActive(const std::string& definitionId);
 const std::string& currentActionDefinitionId();
 const std::string& currentActionId();
 uint32_t currentActionStartTick();

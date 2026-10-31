@@ -14,7 +14,8 @@
     "melee": {
       "animation_only": true,
       "arm_ragdoll": {
-        "enabled": true,
+        // "enabled": true,
+        "enabled": false,
         "extend_strength": 500.0,
         "extend_max_speed": 253.0,
         "max_stretch": 0.25,
@@ -128,6 +129,7 @@
 "cut_energy_scale": null,
 "cut_radius_scale": null,
 "damage": 15.0,
+"damage_animation_mode": null,
 "damage_scale": null,
 "enemy_impulse_multiplier": null,
 "fire_delay": 0.0,
@@ -147,7 +149,7 @@
 "projectile_base_radius": null,
 "projectile_density": null,
 "projectile_lifetime": 0.0,
-"projectile_mass": null,
+"projectile_mass": 20.0,
 "projectile_radius": 0.0,
 "projectile_shape": null,
 "projectile_speed": 0.0,

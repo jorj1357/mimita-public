@@ -56,7 +56,8 @@ glm::mat4 nodeLocalMatrix(const tinygltf::Node& node)
 }
 
 void appendNode(const tinygltf::Model& model, int nodeIndex,
-                const glm::mat4& parent, BooleanMesh& out, int depth)
+                const glm::mat4& parent, BooleanMesh& out, int depth,
+                int selectedNode)
 {
     if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size() ||
         depth > kMaxNodeDepth)
@@ -65,7 +66,8 @@ void appendNode(const tinygltf::Model& model, int nodeIndex,
     const tinygltf::Node& node = model.nodes[nodeIndex];
     const glm::mat4 world = parent * nodeLocalMatrix(node);
 
-    if (node.mesh >= 0 && node.mesh < (int)model.meshes.size())
+    if ((selectedNode < 0 || selectedNode == nodeIndex) &&
+        node.mesh >= 0 && node.mesh < (int)model.meshes.size())
     {
         const tinygltf::Mesh& mesh = model.meshes[node.mesh];
         for (const tinygltf::Primitive& prim : mesh.primitives)
@@ -139,7 +141,7 @@ void appendNode(const tinygltf::Model& model, int nodeIndex,
     }
 
     for (int child : node.children)
-        appendNode(model, child, world, out, depth + 1);
+        appendNode(model, child, world, out, depth + 1, selectedNode);
 }
 
 double signedVolume(const BooleanMesh& mesh)
@@ -163,7 +165,8 @@ void flipWinding(BooleanMesh& mesh)
         v.normal = -v.normal;
 }
 
-bool recenterToAabb(BooleanMesh& mesh, glm::vec3& outHalfExtents)
+bool recenterToAabb(BooleanMesh& mesh, glm::vec3& outHalfExtents,
+                    glm::vec3& outCenter)
 {
     if (mesh.vertices.empty())
         return false;
@@ -175,6 +178,7 @@ bool recenterToAabb(BooleanMesh& mesh, glm::vec3& outHalfExtents)
         mx = glm::max(mx, v.position);
     }
     const glm::vec3 center = (mn + mx) * 0.5f;
+    outCenter = center;
     for (BooleanMeshVertex& v : mesh.vertices)
         v.position -= center;
     outHalfExtents = glm::max((mx - mn) * 0.5f, glm::vec3(1e-3f));
@@ -196,8 +200,30 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     }
 
     std::lock_guard<std::mutex> lock(gCacheMutex);
-    const std::string resolved = resolveAssetPath(path);
-    const auto cached = gCache.find(resolved);
+    // Map nodes share one GLB but must remain independent closed solids. The
+    // suffix is an identity selector, never part of the filesystem path.
+    int selectedNode = -1;
+    std::string assetPath = path;
+    const size_t selector = path.rfind("#node:");
+    if (selector != std::string::npos)
+    {
+        assetPath = path.substr(0, selector);
+        const std::string index = path.substr(selector + 6);
+        if (index.empty() || index.find_first_not_of("0123456789") != std::string::npos)
+        {
+            result.error = "invalid map node selector";
+            return result;
+        }
+        try { selectedNode = std::stoi(index); }
+        catch (const std::exception&) {
+            result.error = "invalid map node selector";
+            return result;
+        }
+    }
+    const std::string resolved = resolveAssetPath(assetPath);
+    const std::string cacheKey = resolved + (selectedNode >= 0
+        ? "#node:" + std::to_string(selectedNode) : "");
+    const auto cached = gCache.find(cacheKey);
     if (cached != gCache.end())
         return cached->second;
 
@@ -208,7 +234,7 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     if (!loader.LoadBinaryFromFile(&model, &errors, &warnings, resolved))
     {
         result.error = errors.empty() ? "GLB parse failed" : errors;
-        gCache[resolved] = result;
+        gCache[cacheKey] = result;
         return result;
     }
 
@@ -217,18 +243,18 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
     {
         for (int node : model.scenes[sceneIndex].nodes)
-            appendNode(model, node, glm::mat4(1.0f), mesh, 0);
+            appendNode(model, node, glm::mat4(1.0f), mesh, 0, selectedNode);
     }
     else
     {
         for (int i = 0; i < (int)model.nodes.size(); ++i)
-            appendNode(model, i, glm::mat4(1.0f), mesh, 0);
+            appendNode(model, i, glm::mat4(1.0f), mesh, 0, selectedNode);
     }
 
     if (mesh.indices.empty())
     {
         result.error = "GLB contains no triangles";
-        gCache[resolved] = result;
+        gCache[cacheKey] = result;
         return result;
     }
 
@@ -237,10 +263,10 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     if (signedVolume(mesh) < 0.0)
         flipWinding(mesh);
 
-    if (!recenterToAabb(mesh, result.halfExtents))
+    if (!recenterToAabb(mesh, result.halfExtents, result.sourceCenter))
     {
         result.error = "GLB mesh has no vertices";
-        gCache[resolved] = result;
+        gCache[cacheKey] = result;
         return result;
     }
 
@@ -249,13 +275,13 @@ DestructibleMeshLoad loadDestructibleMeshFromGLB(const std::string& path)
     if (valid != BooleanError::None)
     {
         result.error = "not a closed manifold (" + reason + ")";
-        gCache[resolved] = result;
+        gCache[cacheKey] = result;
         return result;
     }
 
     result.success = true;
     result.mesh = std::move(mesh);
-    gCache[resolved] = result;
+    gCache[cacheKey] = result;
     return result;
 }
 

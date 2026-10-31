@@ -1751,25 +1751,43 @@ void mpProcessMeleeHitEventPacket(MultiplayerContext& ctx, const MeleeHitEventPa
         const float force01 = glm::clamp(glm::length(knock) / 60.0f, 0.0f, 1.0f);
         const glm::vec3 clashNormal = glm::length(knock) > 0.001f
             ? glm::normalize(knock) : glm::vec3(0.0f, 0.0f, 1.0f);
-        HitEffects::spawnMeleeContact(hit, clashNormal, force01,
-                                      (float)event->header.tick);
-        for (int i = 0; i < 15; ++i) {
-            glm::vec3 dir(
-                ((float)rand() / (float)RAND_MAX - 0.5f),
-                ((float)rand() / (float)RAND_MAX - 0.5f),
-                ((float)rand() / (float)RAND_MAX - 0.5f));
-            if (glm::length(dir) < 0.001f) dir = glm::vec3(0.0f, 0.0f, 1.0f);
-            dir = glm::normalize(dir);
-            EffectPartSystem::instance().spawnBodyContactSpark(
-                hit, hit, dir * (6.0f + force01 * 14.0f), 0.06f);
-        }
+        const bool spark = (event->clashFlags & MELEE_CLASH_FX_SPARK) != 0;
+        const bool ricochet = (event->clashFlags & MELEE_CLASH_FX_RICOCHET) != 0;
         static const char* kMetalSounds[] = {
             "weapon/general/metalricochet",
             "weapon/general/metalricochet2",
             "weapon/general/metalricochet3"
         };
-        playWorldSound(kMetalSounds[rand() % 3], hit,
-            0.45f + force01 * 0.85f, 1.25f - force01 * 0.55f, 45.0f);
+        const int soundIndex = ricochet ? rand() % 3 : -1;
+        if (spark) {
+            HitEffects::spawnMeleeContact(hit, clashNormal, force01,
+                                          (float)event->header.tick);
+            for (int i = 0; i < 15; ++i) {
+                glm::vec3 dir(
+                    ((float)rand() / (float)RAND_MAX - 0.5f),
+                    ((float)rand() / (float)RAND_MAX - 0.5f),
+                    ((float)rand() / (float)RAND_MAX - 0.5f));
+                if (glm::length(dir) < 0.001f) dir = glm::vec3(0.0f, 0.0f, 1.0f);
+                dir = glm::normalize(dir);
+                EffectPartSystem::instance().spawnBodyContactSpark(
+                    hit, hit, dir * (6.0f + force01 * 14.0f), 0.06f);
+            }
+        }
+        if (ricochet) {
+            playWorldSound(kMetalSounds[soundIndex], hit,
+                0.45f + force01 * 0.85f, 1.25f - force01 * 0.55f, 45.0f);
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "weapon.clash.fx", std::to_string(event->attackerPlayerId),
+            "client displayed replicated weapon clash presentation",
+            event->header.tick,
+            {{"attacker", event->attackerPlayerId},
+             {"spark", spark},
+             {"ricochet", ricochet},
+             {"force", force01},
+             {"position", {hit.x, hit.y, hit.z}},
+             {"sound", soundIndex >= 0 ? kMetalSounds[soundIndex] : ""}});
         return;
     }
 
@@ -2119,7 +2137,6 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
 if (step.type == ProjectileCollisionType::EntityImpact &&
         projectile.predicted &&
         projectile.ownerPlayerId == ctx.localPlayerId &&
-        projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
         // Never predict a cut on a server mirror: the reliable server cut event
         // owns that geometry.
         !(PhysicalEntitySystem::instance().find(step.hitEntityId) &&

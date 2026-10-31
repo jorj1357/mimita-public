@@ -21,6 +21,7 @@
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/physical-entity.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
@@ -593,8 +594,11 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
 
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
-                         glm::vec3& outHitPos, glm::vec3& outNormal)
+                         glm::vec3& outHitPos, glm::vec3& outNormal,
+                         uint32_t* outPhysicalEntityId)
 {
+    if (outPhysicalEntityId)
+        *outPhysicalEntityId = 0;
     if (glm::dot(direction, direction) < 0.000001f)
     {
         outHitPos = origin;
@@ -615,6 +619,32 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                 closest = d;
                 outNormal = tri.normal;
                 hit = true;
+            }
+        }
+        for (const auto& active : world.activeDestructibleNodes)
+        {
+            const PhysicalEntity* entity =
+                PhysicalEntitySystem::instance().find(active.second);
+            if (!entity) continue;
+            const EntitySurfaceCacheView surface = cachedEntitySurface(*entity);
+            if (!surface.meshCache || !surface.tree) continue;
+            static thread_local std::vector<int> candidates;
+            candidates.clear();
+            surface.tree->query(AABB{glm::min(origin, origin + direction * closest),
+                                     glm::max(origin, origin + direction * closest)},
+                                candidates);
+            for (int index : candidates)
+            {
+                const CollisionTriangle& tri = surface.meshCache->triangles[index];
+                float d;
+                if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) &&
+                    d < closest)
+                {
+                    closest = d;
+                    outNormal = tri.normal;
+                    hit = true;
+                    if (outPhysicalEntityId) *outPhysicalEntityId = entity->id;
+                }
             }
         }
         if (hit) outHitPos = origin + direction * closest;
@@ -774,6 +804,32 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
         }
     }
 
+    for (const auto& active : world.activeDestructibleNodes)
+    {
+        const PhysicalEntity* entity =
+            PhysicalEntitySystem::instance().find(active.second);
+        if (!entity) continue;
+        const EntitySurfaceCacheView surface = cachedEntitySurface(*entity);
+        if (!surface.meshCache || !surface.tree) continue;
+        static thread_local std::vector<int> candidates;
+        candidates.clear();
+        surface.tree->query(AABB{glm::min(origin, origin + direction * closest),
+                                 glm::max(origin, origin + direction * closest)},
+                            candidates);
+        for (int index : candidates)
+        {
+            const CollisionTriangle& tri = surface.meshCache->triangles[index];
+            float d;
+            if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) &&
+                d < closest)
+            {
+                closest = d;
+                bestN = tri.normal;
+                hit = true;
+                if (outPhysicalEntityId) *outPhysicalEntityId = entity->id;
+            }
+        }
+    }
     if (hit) outHitPos = origin + direction * closest;
     outNormal = bestN;
     return hit;

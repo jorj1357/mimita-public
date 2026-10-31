@@ -973,8 +973,14 @@ void tickServerMeleeActions(SOCKET sock,
         if (!attacker.meleeActionActive)
             continue;
 
+        // Physical-arm actions are steered by movement while their timeline runs.
+        const auto movementSnap = g_meleeActionSnapshots.find(attacker.id);
+        const WeaponData::MeleeAction* movementAction =
+            movementSnap != g_meleeActionSnapshots.end() ? &movementSnap->second
+            : moveSet ? moveSet->find(attacker.meleeActionId) : nullptr;
         const std::string currentMovementState = playerMovementState(attacker);
-        if (!attacker.meleeActionMovementState.empty() &&
+        if ((!movementAction || !movementAction->armPhysics) &&
+            !attacker.meleeActionMovementState.empty() &&
             currentMovementState != attacker.meleeActionMovementState) {
             const std::string interruptedAction = attacker.meleeActionId;
             const std::string previousState = attacker.meleeActionMovementState;
@@ -1181,8 +1187,13 @@ void tickServerMeleeActions(SOCKET sock,
             }
 
             if (st.active) {
+                const auto movementSnap = g_meleeActionSnapshots.find(npc.entityId);
+                const WeaponData::MeleeAction* movementAction =
+                    movementSnap != g_meleeActionSnapshots.end() ? &movementSnap->second
+                    : ms ? ms->find(st.actionId) : nullptr;
                 const std::string nextMovementState = npcMovementState(npc);
-                if (!st.movementState.empty() && nextMovementState != st.movementState) {
+                if ((!movementAction || !movementAction->armPhysics) &&
+                    !st.movementState.empty() && nextMovementState != st.movementState) {
                     const std::string interruptedAction = st.actionId;
                     st.active = false;
                     st.actionId.clear();

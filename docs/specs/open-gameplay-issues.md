@@ -1,4 +1,54 @@
-﻿2026 10 29 2343
+﻿2026 10 30 1901 bug
+npcs are just n 
+disappearing
+into walls
+on dus2 cberia map
+in tdm
+and im getting mad
+bc im like how are  we at 16 the are at 18 o 19
+
+so 
+more objective 
+that is good
+i liek tdm ads the objective with score visible
+that maeks it more fin and smoetmhgi to work toward 
+
+tdm is ufn 
+i like it 
+just killgin over and over
+that is aweomse
+vs npcs
+need 
+ned much bettter melee hit detection
+and more fair
+like
+
+mace need to nto have its dmg interrupted
+and 
+the 
+weapon colisiosn being off is cool
+but i think we need to add
+destructible world and building? 
+matbe?
+idk
+cuz i want weapon collsiions
+but
+the mace 
+just 
+eats the world
+its ver ver dense
+and then just cuts chunks out of thw wall
+reset per round
+so its like 
+u destruc tthe world frmo all the shootinga nd hitting u do
+and u go
+dont get caught on the doors in dust 
+with the huge mace
+keep wepaon colisiosn on 
+but make it so the cut hunks 
+chunks out of the world 
+
+2026 10 29 2343
 i want 
 no anti aliasing
 o
@@ -2261,3 +2311,17 @@ Desired direction:
 - make the mode data-driven/config-owned, not a melee-only hardcoded branch;
 - document how it interacts with authored melee poses, remote actors, and
   reconciliation.
+
+## Open decision — damage animation policy scope (2026-10-30)
+
+The first implementation uses `damage_animation_mode` on each weapon. Mode 1
+keeps an active attack animation visible through incoming damage; Mode 2 lets
+hurt animation interrupt it. Mace selects Mode 1. The mace also keeps its
+fixed primary swing and adds a secondary physical-arm slam whose movement
+steers the shared arm solver and whose actual contact speed determines force.
+
+**OPEN DECISION:** Should damage interruption remain selectable per weapon, or
+should one global policy apply to all weapons? The per-weapon implementation
+serves the current mace request; changing the policy's scope needs a later
+human decision. Compare both mace actions in live play before deciding whether
+the physical slam needs additional tuning or control options.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "melee_mace_probe_v1",
-  "description": "Use the sandbox weapon set 29, equip the mace, and exercise the per-weapon arm-ragdoll LMB motor through the shared input boundary.",
+  "description": "Compare the mace's fixed primary swing with its physical secondary slam and exercise the damage-preserving animation mode.",
   "launch": {
     "profile": "npc-navigation",
     "launch_mode": "1",
@@ -15,10 +15,18 @@
   ],
   "steps": [
     {"id": "equip_mace", "command": "equipweapon", "args": ["mace"], "delay_ms_after": 1000},
-    {"id": "hold_primary", "command": "agent.holdprimary", "args": ["180"], "delay_ms_after": 3000},
+    {"id": "fixed_press", "command": "agent.weaponbutton", "args": ["primary", "1"], "delay_ms_after": 100},
+    {"id": "fixed_release", "command": "agent.weaponbutton", "args": ["primary", "0"], "delay_ms_after": 100},
+    {"id": "damage_during_fixed", "command": "agent.hurt", "args": ["8"], "delay_ms_after": 1100},
+    {"id": "move_into_slam", "command": "agent.move", "args": ["1", "0", "60"], "delay_ms_after": 100},
+    {"id": "physics_press", "command": "agent.weaponbutton", "args": ["secondary", "1"], "delay_ms_after": 100},
+    {"id": "physics_release", "command": "agent.weaponbutton", "args": ["secondary", "0"], "delay_ms_after": 100},
+    {"id": "slam_end", "command": "agent.snapshot", "args": ["mace_slam_end"], "delay_ms_after": 1100},
     {"id": "snapshot_end", "command": "agent.snapshot", "args": ["mace_probe_end"], "delay_ms_after": 1000}
   ],
   "assertions": [
+    {"type": "event_present", "event": "melee.client.action"},
+    {"type": "event_present", "event": "melee.client.phase"},
     {"type": "event_present", "event": "armragdoll.activate"},
     {"type": "event_present", "event": "armragdoll.motor"}
   ],

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <unordered_set>
 
 #include <glm/glm.hpp>
 
@@ -110,10 +111,14 @@ void serverReplicatePhysicalEntities(SOCKET sock,
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
 
     std::vector<const PhysicalEntity*> replicable;
+    std::unordered_set<uint32_t> liveNetworkIds;
     for (const PhysicalEntity& e : system.entities())
     {
         if (entityIsReplicable(e))
+        {
             replicable.push_back(&e);
+            liveNetworkIds.insert(e.networkId);
+        }
     }
 
     uint32_t spawnCount = 0;
@@ -156,8 +161,7 @@ void serverReplicatePhysicalEntities(SOCKET sock,
         // Despawn anything this player knows about that no longer replicates.
         for (auto it = known.begin(); it != known.end(); )
         {
-            const PhysicalEntity* live = system.find(it->first);
-            if (live && entityIsReplicable(*live))
+            if (liveNetworkIds.count(it->first) != 0)
             {
                 ++it;
                 continue;

@@ -865,6 +865,8 @@ void startAction(Player& player,
          {"windup_ticks", action.windup.ticks},
          {"active_ticks", action.active.ticks},
          {"recovery_ticks", action.recovery.ticks},
+         {"arm_physics", action.armPhysics},
+         {"damage_animation_mode", def.damageAnimationMode},
          {"movement_state", animationMovementStateName(g_state.startMovementState)}});
     logMeleeLimbPose(player, action, "melee.client.limb", "start", simTick);
 
@@ -893,6 +895,16 @@ void startAction(Player& player,
 
 void endAction(Player& player)
 {
+    const WeaponDefinition* def = WeaponRegistry::instance().get(g_state.definitionId);
+    if (g_state.active && def && def->damageAnimationMode == 1 &&
+        (player.currentHp < g_state.startHp ||
+         player.percent > g_state.startPercent + 0.001f)) {
+        // A hit in the final action tick must not become a late hurt pose.
+        player.pendingHurtTier = 0;
+        player.hurtTimer = 0.0f;
+        player.animPrevHp = player.currentHp;
+        player.animPrevPercent = player.percent;
+    }
     g_state.active = false;
     g_state.actionId.clear();
     player.weaponPoseActionState.clear();
@@ -1055,7 +1067,8 @@ void clientTick(Player& player,
     player.crouching = input.crouchHeld || g_debugCrouch;
 
     const WeaponDefinition* equippedNow = weapons.getCurrentDef(player);
-    const bool armRagdoll = equippedNow && equippedNow->armRagdoll.enabled;
+    const bool armRagdoll = equippedNow && equippedNow->armRagdoll.enabled &&
+        !equippedNow->armRagdoll.actionScoped;
     if (armRagdoll && equippedNow->id == "chainsaw" && input.primaryHeld)
         g_lastChainsawRevTick = simTick;
 
@@ -1189,14 +1202,17 @@ void clientTick(Player& player,
 
     if (g_state.active) {
         const AnimationMovementState currentState = movementState(player, input.movementPressed);
+        const bool preserveAttackOnDamage = equippedNow &&
+            equippedNow->damageAnimationMode == 1;
         const char* reason = nullptr;
         const char* nextState = animationMovementStateName(currentState);
         if (player.dead || player.authoredDeathActive) {
             reason = "death";
             nextState = "death";
-        } else if (player.currentHp < g_state.startHp ||
+        } else if (!preserveAttackOnDamage &&
+                   (player.currentHp < g_state.startHp ||
                    player.percent > g_state.startPercent + 0.001f ||
-                   (player.hurtTimer > g_state.startHurtTimer + 0.02f)) {
+                   (player.hurtTimer > g_state.startHurtTimer + 0.02f))) {
             reason = "hurt";
             nextState = "hurt";
         } else if (player.dashAnimTimer > g_state.startDashTimer + 0.02f ||
@@ -1211,7 +1227,8 @@ void clientTick(Player& player,
                    player.freeze.didFreeze) {
             reason = "freeze";
             nextState = "freeze";
-        } else if (player.knockbackAnimTimer > g_state.startKnockbackTimer + 0.02f) {
+        } else if (!preserveAttackOnDamage &&
+                   player.knockbackAnimTimer > g_state.startKnockbackTimer + 0.02f) {
             reason = "knockback";
             nextState = "knockback";
         } else if (player.respawnAnimTimer > g_state.startRespawnTimer + 0.02f) {
@@ -1220,7 +1237,8 @@ void clientTick(Player& player,
         } else if (player.jump.didGroundJump || player.jump.didAirJump) {
             reason = "jump";
             nextState = "jump";
-        } else if (input.movementPressed && !g_state.startMovementPressed) {
+        } else if (!g_state.actionSnapshot.armPhysics &&
+                   input.movementPressed && !g_state.startMovementPressed) {
             // A new movement input cancels the attack. Continuing movement that
             // was already held when the attack started, or crossing a walk/run
             // speed threshold, must not overwrite the swing mid-action.
@@ -1334,7 +1352,8 @@ void clientTick(Player& player,
             nlohmann::json phaseData = {
                 {"action", action->id}, {"phase", phaseName},
                 {"phase_index", phaseIndex}, {"phase_tick", phaseTick},
-                {"phase_ticks", phaseTicks}, {"clip", clip}};
+                {"phase_ticks", phaseTicks}, {"clip", clip},
+                {"arm_physics", action->armPhysics}};
             if (!action->animationClipId.empty()) {
                 const int sourceStart = action->animationSourceTicks[phaseIndex];
                 const int sourceEnd = action->animationSourceTicks[phaseIndex + 1];
@@ -1388,6 +1407,18 @@ void clientTick(Player& player,
 bool currentActionActive()
 {
     return g_state.active;
+}
+
+bool currentActionUsesPhysicalArm(const std::string& definitionId)
+{
+    return g_state.active && g_state.definitionId == definitionId &&
+        g_state.actionSnapshot.armPhysics;
+}
+
+bool currentActionPhysicalDriveActive(const std::string& definitionId)
+{
+    return currentActionUsesPhysicalArm(definitionId) &&
+        g_state.currentPhaseIndex == 1;
 }
 
 const std::string& currentActionDefinitionId()

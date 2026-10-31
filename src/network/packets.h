@@ -25,7 +25,8 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 43: snapshots carry stable equipped identity and generic weapon action state.
 // 44: DuelStatePacket replicates each participant's actor-preset index.
 // 45: DuelStatePacket appends Payload cart, overtime, and progress HUD state.
-constexpr uint16_t PROTOCOL_VERSION = 45;
+// 46: MeleeHitEventPacket carries replicated weapon-clash effect flags.
+constexpr uint16_t PROTOCOL_VERSION = 46;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -876,6 +877,10 @@ struct DamageConfirmedEventPacket
     float contactForce = -1.0f; // shared physical-impact feedback
 };
 
+// attackType 3 (weapon clash) presentation flags replicated by the server.
+constexpr uint8_t MELEE_CLASH_FX_SPARK = 1 << 0;
+constexpr uint8_t MELEE_CLASH_FX_RICOCHET = 1 << 1;
+
 struct MeleeHitEventPacket
 {
     PacketHeader header;
@@ -888,6 +893,7 @@ struct MeleeHitEventPacket
     uint8_t attackType = 0;
     uint8_t killed = 0;
     uint8_t damageConfirmed = 0;
+    uint8_t clashFlags = 0;
     float hitX = 0.0f;
     float hitY = 0.0f;
     float hitZ = 0.0f;

@@ -149,6 +149,8 @@ struct MeleeAction {
     // New-format actions use one clip whose markers define these phase lengths.
     // Empty means this action still uses the explicit legacy phases during migration.
     std::string animationClipId;
+    // The shared physical arm replaces the clip's right-arm pose for this action.
+    bool armPhysics = false;
     // Blender-authored boundaries used to report the phase retiming mapping.
     std::array<int, 4> animationSourceTicks{{0, 0, 0, 0}};
 

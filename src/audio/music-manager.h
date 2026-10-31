@@ -6,12 +6,15 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "miniaudio.h"
 
 class MusicManager {
 public:
+    enum class PlaylistMode { Linear, Shuffle };
+
     static MusicManager& instance();
 
     void init();
@@ -31,6 +34,10 @@ public:
     void resume();
     void skip();
     void previous();
+    void setPlaylistMode(PlaylistMode mode);
+    PlaylistMode playlistMode() const { return mPlaylistMode; }
+    void setPersonalMusicOverride(bool enabled);
+    bool personalMusicOverride() const { return mPersonalMusicOverride; }
     void stop();
     void reload();
 
@@ -71,12 +78,18 @@ private:
     void scanFolder(const std::string& dir, std::vector<TrackEntry>& out);
     void loadCredits(const std::string& path);
     std::string displayName(const std::string& filename) const;
-    bool startTrack(const std::string& path);
+    bool startTrack(const std::string& path, bool addToHistory = true);
     std::string resolvePlaybackPath(const std::string& path);
     void playNextIngame();
+    void startIngamePlaylist();
+    void rebuildIngamePlaylist(bool preserveCurrent);
+    bool playHistoryTrack(size_t index);
+    void rememberTrack(const std::string& path);
+    void logMusicEvent(const std::string& eventName, const std::string& path,
+                       const std::string& reason) const;
     void pickMenuTrack();
-    void startOpusPredecode();
-    void stopOpusPredecode();
+    void startMusicPredecode();
+    void stopMusicPredecode();
     void applyVolume();
     void applyPlaybackSpeed();
     void uninitSound();
@@ -85,10 +98,16 @@ private:
     std::vector<TrackEntry> mIngameTracks;
     std::vector<TrackEntry> mPlaylist;
     size_t mPlaylistIndex = 0;
+    std::vector<std::string> mTrackHistory;
+    size_t mTrackHistoryIndex = 0;
+    bool mHasTrackHistoryIndex = false;
+    std::unordered_set<std::string> mLoggedLoadFailures;
+    PlaylistMode mPlaylistMode = PlaylistMode::Shuffle;
+    bool mPersonalMusicOverride = false;
 
     std::unordered_map<std::string, std::pair<std::string, std::string>> mCredits;
-    std::thread mOpusPredecodeThread;
-    std::atomic<bool> mOpusPredecodeStop{false};
+    std::thread mMusicPredecodeThread;
+    std::atomic<bool> mMusicPredecodeStop{false};
 
     ma_engine* mEngine = nullptr;
     ma_sound* mCurrentSound = nullptr;
@@ -107,6 +126,8 @@ private:
     bool mTrackJustChanged = false;
     bool mTrackEnded = false;
     bool mModeTrackMode = false;
+    std::string mModeTrackPath;
+    bool mNoPlayableTracksReported = false;
     float mTrackRetryTimer = 0.0f;
     float mTimeSinceTrackChange = 0.0f;
     float mPopupAlpha = 0.0f;

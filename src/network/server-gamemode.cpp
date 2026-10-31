@@ -1816,9 +1816,50 @@ void broadcastDuelState(SOCKET sock,
     for (const auto& kv : players) {
         if (kv.second.spawnState != ServerPlayer::Active)
             continue;
+        DuelStatePacket recipientPacket = pkt;
+        bool localActorIncluded = false;
+        for (uint8_t i = 0; i < recipientPacket.participantCount; ++i) {
+            if (recipientPacket.participantIds[i] == kv.second.id) {
+                localActorIncluded = true;
+                break;
+            }
+        }
+        // The fixed packet identity list holds 64 actors, while team rosters
+        // may exceed that. Keep the full shared roster window, but guarantee
+        // that this recipient always receives its own role/preset identity.
+        if (!localActorIncluded && recipientPacket.participantCount > 0) {
+            const uint8_t i = (uint8_t)(recipientPacket.participantCount - 1);
+            const uint32_t actorId = kv.second.id;
+            recipientPacket.participantIds[i] = actorId;
+            auto teamIt = d.matchTeams.find(actorId);
+            recipientPacket.participantTeams[i] = teamIt != d.matchTeams.end()
+                ? (uint8_t)teamIt->second : 0xFF;
+            auto actorIt = d.matchActors.find(actorId);
+            recipientPacket.participantRoles[i] = actorIt != d.matchActors.end()
+                ? (uint8_t)MatchRoleRegistry::instance().indexOf(actorIt->second.roleId)
+                : 0;
+            recipientPacket.participantStates[i] = actorIt != d.matchActors.end()
+                ? (uint8_t)actorIt->second.state : (uint8_t)ActorState::Alive;
+            recipientPacket.participantActorPresets[i] = 0;
+            if (actorIt != d.matchActors.end()) {
+                const auto applied = d.actorPresetAppliedByActorId.find(actorId);
+                if (applied != d.actorPresetAppliedByActorId.end()) {
+                    for (size_t presetIndex = 0;
+                         presetIndex < actorPresets.size() && presetIndex < 255;
+                         ++presetIndex) {
+                        if (actorPresets[presetIndex]->id == applied->second) {
+                            recipientPacket.participantActorPresets[i] =
+                                (uint8_t)(presetIndex + 1);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
         const uint32_t eventId = nextReliableGameplayEventId();
         const ReliableGameplayEventQueueResult result = queueReliableGameplayEventToPlayer(
-            sock, const_cast<ServerPlayer&>(kv.second), &pkt, sizeof(pkt), eventId,
+            sock, const_cast<ServerPlayer&>(kv.second), &recipientPacket,
+            sizeof(recipientPacket), eventId,
             reliableGameplayEventSessionForPlayer(const_cast<ServerPlayer&>(kv.second)), totalPacketsOut);
         const bool sent = result == ReliableGameplayEventQueueResult::Queued;
         Debug::log(Debug::Category::Duel,

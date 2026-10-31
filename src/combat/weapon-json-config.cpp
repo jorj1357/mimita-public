@@ -269,6 +269,7 @@ void applyWeaponIdentityJson(WeaponDefinition& def, const json& root)
 
 void applyWeaponStatsJson(WeaponDefinition& def, const json& root)
 {
+    weaponJsonInt(root, "damage_animation_mode", def.damageAnimationMode);
     weaponJsonFloat(root, "damage", def.damage);
     weaponJsonFloat(root, "damage_scale", def.damageScale);
     weaponJsonFloat(root, "headshot_multiplier", def.headshotMultiplier);
@@ -495,6 +496,11 @@ void applyWeaponArmRagdollJson(WeaponDefinition& def, const json& root)
     const json& arm = melee["arm_ragdoll"];
     ArmRagdollConfig& cfg = def.armRagdoll;
     cfg.enabled = arm.value("enabled", false);
+    cfg.actionScoped = arm.value("action_scoped", false);
+    cfg.movementSteer = std::clamp(
+        arm.value("movement_steer", 0.0f), 0.0f, 1.0f);
+    cfg.downwardBias = std::clamp(
+        arm.value("downward_bias", 0.0f), 0.0f, 2.0f);
     cfg.extendStrength = std::clamp(
         arm.value("extend_strength", cfg.extendStrength), 0.0f, 10000.0f);
     cfg.extendMaxSpeed = std::clamp(
@@ -629,13 +635,23 @@ nlohmann::json readWeaponDefinitionRoot()
         if (!definition.contains("id") || !definition["id"].is_string() ||
             definition["id"].get<std::string>() != id)
             throw std::runtime_error(file.string() + " id must match its directory");
+        if (definition.contains("damage_animation_mode") &&
+            !definition["damage_animation_mode"].is_null() &&
+            (!definition["damage_animation_mode"].is_number_integer() ||
+             (definition["damage_animation_mode"] != 1 &&
+              definition["damage_animation_mode"] != 2)))
+            throw std::runtime_error(file.string() +
+                " damage_animation_mode must be 1, 2, or null");
         if (fields.is_array()) {
             for (const auto& field : fields) {
                 const std::string name = field.get<std::string>();
-                if (!definition.contains(name))
-                    throw std::runtime_error(file.string() + " missing masterlist field: " + name);
-                const json& value = definition[name];
                 const json& rule = rules.at(name);
+                if (!definition.contains(name)) {
+                    if (rule.value("required", true))
+                        throw std::runtime_error(file.string() + " missing masterlist field: " + name);
+                    continue;
+                }
+                const json& value = definition[name];
                 if (value.is_null()) {
                     if (!rule.value("nullable", false))
                         throw std::runtime_error(file.string() + " field cannot be null: " + name);

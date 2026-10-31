@@ -61,6 +61,9 @@ static bool sameArmRagdollConfig(const ArmRagdollConfig& a,
                                  const ArmRagdollConfig& b)
 {
     return a.enabled == b.enabled &&
+        a.actionScoped == b.actionScoped &&
+        a.movementSteer == b.movementSteer &&
+        a.downwardBias == b.downwardBias &&
         a.extendStrength == b.extendStrength &&
         a.extendMaxSpeed == b.extendMaxSpeed &&
         a.maxStretch == b.maxStretch &&
@@ -797,6 +800,17 @@ void RagdollModeSystem::stepArmRagdoll(float dt, const World& world,
         if (glm::length(cfg.aimRotationDegrees) > 1e-5f)
             targetDir = glm::normalize(glm::quat(glm::radians(
                 cfg.aimRotationDegrees)) * targetDir);
+        if (cfg.downwardBias > 0.0f)
+            targetDir = glm::normalize(targetDir +
+                glm::vec3(0.0f, 0.0f, -cfg.downwardBias));
+        if (cfg.movementSteer > 0.0f &&
+            glm::dot(player.inputWishMove, player.inputWishMove) > 1e-4f) {
+            const glm::vec2 wish = glm::normalize(player.inputWishMove);
+            const glm::vec3 steered = targetDir +
+                cfg.movementSteer * glm::vec3(wish.x, wish.y, 0.0f);
+            if (glm::length(steered) > 1e-5f)
+                targetDir = glm::normalize(steered);
+        }
 
         ArmExtendTuning tuning;
         tuning.strength = motorStrength;
@@ -856,9 +870,15 @@ void RagdollModeSystem::stepArmRagdoll(float dt, const World& world,
              {"arm_position", vec3Json(arm.body.position)},
              {"arm_angular_velocity", vec3Json(arm.body.angularVelocity)},
              {"arm_speed", glm::length(arm.body.angularVelocity)},
+             {"arm_linear_velocity", vec3Json(arm.body.linearVelocity)},
+             {"arm_linear_speed", glm::length(arm.body.linearVelocity)},
+             {"actor_velocity", vec3Json(player.vel)},
              {"hand_axis_world", vec3Json(handAxisWorld)},
              {"hand_axis_camera_dot", glm::dot(handAxisWorld, camDir)},
              {"extend_strength", cfg.extendStrength},
+             {"movement_steer", cfg.movementSteer},
+             {"downward_bias", cfg.downwardBias},
+             {"movement_wish", {player.inputWishMove.x, player.inputWishMove.y}},
              {"extend_max_speed", cfg.extendMaxSpeed},
              {"weak_look_strength", cfg.weakLookStrength},
              {"angular_damping", cfg.angularDamping},

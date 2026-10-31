@@ -230,7 +230,7 @@
   },
   "aim": {
     "mode": "physical",
-    "body_mode": "hybrid",
+    "body_mode": "default",
     "body_enabled": true
   },
   "bomb_timer_ticks": 900,

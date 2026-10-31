@@ -27,6 +27,7 @@ struct DestructibleMeshLoad
 
     // Local AABB half size after recentering.
     glm::vec3 halfExtents{0.5f};
+    glm::vec3 sourceCenter{0.0f};
 
     // Human-readable reason when `success` is false.
     std::string error;

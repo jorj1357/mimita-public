@@ -328,6 +328,15 @@ bool parseAction(const std::string& actionId, const json& j, MeleeAction& out)
     }
     if (j.contains("double_click_action") && j["double_click_action"].is_string())
         out.doubleClickAction = j["double_click_action"].get<std::string>();
+    if (j.contains("arm_physics")) {
+        if (!j["arm_physics"].is_boolean()) {
+            Debug::warn(Debug::Category::Weapons,
+                "[MELEE] action '%s' arm_physics must be a boolean; skipped\n",
+                out.id.c_str());
+            return false;
+        }
+        out.armPhysics = j["arm_physics"].get<bool>();
+    }
 
     if (j.contains("animation_clip_id") && !j["animation_clip_id"].is_string()) {
         Debug::warn(Debug::Category::Weapons,
@@ -594,6 +603,18 @@ bool parseMeleeMoveSet(const std::string& definitionId,
 
     if (parsed.actions.empty())
         return false;
+
+    for (const MeleeAction& action : parsed.actions) {
+        if (!action.armPhysics) continue;
+        const json& arm = melee.value("arm_ragdoll", json::object());
+        if (!arm.is_object() || !arm.value("enabled", false) ||
+            !arm.value("action_scoped", false)) {
+            Debug::warn(Debug::Category::Weapons,
+                "[MELEE] action '%s' requires enabled, action-scoped arm_ragdoll\n",
+                action.id.c_str());
+            return false;
+        }
+    }
 
     parsed.hash = (uint32_t)std::hash<std::string>{}(melee.dump());
     out = std::move(parsed);

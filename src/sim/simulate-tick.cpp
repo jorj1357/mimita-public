@@ -31,6 +31,7 @@
 #include "combat/death-system.h"
 #include "combat/weapon-contact-local.h"
 #include "combat/weapon-registry.h"
+#include "combat/melee-client.h"
 #include "effects/hit-effects.h"
 #include "void-death/void-death.h"
 #include "ragdoll/ragdoll-mode.h"
@@ -205,7 +206,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             const WeaponDefinition* seatedDef = WeaponRegistry::instance().get(
                 sim.player->equippedWeaponId);
             const bool seatedArmRagdoll = seatedDef &&
-                seatedDef->armRagdoll.enabled;
+                seatedDef->armRagdoll.enabled &&
+                (!seatedDef->armRagdoll.actionScoped ||
+                 MimitaMelee::currentActionUsesPhysicalArm(seatedDef->id));
             if ((AimBodyConfig::instance().bodyPhysicsMode() ||
                  seatedArmRagdoll) &&
                 (!sim.player->usesMeleeAuthoredPose() || seatedArmRagdoll)) {
@@ -213,7 +216,10 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 if (seatedArmRagdoll) {
                     ragdoll.updateArmRagdoll(
                         TICK_DT, *sim.world, *sim.player, seatedInput.camForward,
-                        frame.primaryHeld, seatedDef->id, seatedDef->armRagdoll);
+                        seatedDef->armRagdoll.actionScoped
+                            ? MimitaMelee::currentActionPhysicalDriveActive(seatedDef->id)
+                            : frame.primaryHeld,
+                        seatedDef->id, seatedDef->armRagdoll);
                 } else {
                     if (!ragdoll.aimActive())
                         ragdoll.activateAim(*sim.player);
@@ -244,14 +250,19 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             const WeaponDefinition* equippedDef = WeaponRegistry::instance().get(
                 sim.player->equippedWeaponId);
             const bool armRagdoll = equippedDef &&
-                equippedDef->armRagdoll.enabled;
+                equippedDef->armRagdoll.enabled &&
+                (!equippedDef->armRagdoll.actionScoped ||
+                 MimitaMelee::currentActionUsesPhysicalArm(equippedDef->id));
             if ((AimBodyConfig::instance().bodyPhysicsMode() || armRagdoll) &&
                 (!sim.player->usesMeleeAuthoredPose() || armRagdoll)) {
                 MIMITA_PERF_SCOPE("AimBodyUpdate");
                 if (armRagdoll) {
                     ragdoll.updateArmRagdoll(
                         TICK_DT, *sim.world, *sim.player, normalInput.camForward,
-                        frame.primaryHeld, equippedDef->id,
+                        equippedDef->armRagdoll.actionScoped
+                            ? MimitaMelee::currentActionPhysicalDriveActive(equippedDef->id)
+                            : frame.primaryHeld,
+                        equippedDef->id,
                         equippedDef->armRagdoll);
                 } else {
                     if (!ragdoll.aimActive())

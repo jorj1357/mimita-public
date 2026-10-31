@@ -8,16 +8,33 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <string>
+
+// Shared weapon-versus-weapon clash policy. One value set applies to every
+// melee weapon pair in this version.
+struct WeaponVsWeaponSettings {
+    float distanceToleranceM = 0.12f;
+    int cooldownTicks = 6;
+    bool sparkEnabled = true;
+    bool ricochetEnabled = true;
+    float knockbackMinSpeedMps = 8.0f;
+    float knockbackMaxSpeedMps = 63.0f;
+    float knockbackReferenceSpeedMps = 25.0f;
+
+    float impulseForRelativeSpeed(float relativeSpeedMps) const;
+};
 
 class CollisionConfig {
 public:
     static CollisionConfig& instance();
 
-    bool load(const std::string& path = "config/collision.json");
+    bool load(const std::string& path = "config/collision.json",
+              std::uint32_t tick = 0);
     // Returns true when the file changed and settings were re-loaded.
-    bool pollHotReload();
+    bool pollHotReload(std::uint32_t tick = 0);
 
     bool bounceEnabled() const { return mBounceEnabled; }
     float bounceStrength() const { return mBounceStrength; }
@@ -73,6 +90,10 @@ public:
     // velocity cannot explode the per-tick solve.
     int maxSubSteps() const { return mMaxSubSteps; }
 
+    // A consistent copy for one fixed tick. The server reads this snapshot at
+    // the start of contact evaluation so a reload cannot change a live tick.
+    WeaponVsWeaponSettings weaponVsWeapon() const;
+
 private:
     CollisionConfig();
 
@@ -93,6 +114,9 @@ private:
     float mSmoothSeamDot = 0.9999f;
     float mMaxSubStepDistance = 0.35f;
     int mMaxSubSteps = 128;
+
+    WeaponVsWeaponSettings mWeaponVsWeapon{};
+    mutable std::mutex mWeaponVsWeaponMutex;
 
     std::string mPath;
     std::filesystem::file_time_type mLastWrite{};

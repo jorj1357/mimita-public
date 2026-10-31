@@ -148,6 +148,8 @@ struct HeadlessGLBObject
 {
     std::string id;
     std::string name;
+    int nodeIndex = -1;
+    uint32_t solidId = 0;
     glm::vec3 basePosition{0.0f};
     glm::vec3 position{0.0f};
     size_t triangleFirst = 0;
@@ -158,6 +160,10 @@ struct HeadlessWorld
 {
     std::vector<CollisionTriangle> triangles;
     std::vector<uint32_t> solidIds;
+    std::vector<uint32_t> destructionBaselineSolidIds;
+    std::unordered_map<int, uint32_t> activeDestructibleNodes;
+    uint32_t lastDestructionMatchId = 0;
+    uint64_t lastNpcDestructionRevision = 0;
     std::vector<HeadlessGLBObject> glbObjects;
     uint32_t nextSolidId = 1;
     glm::vec3 boundsMin{0.0f};
@@ -931,6 +937,10 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world);
 // Rebuilds the HeadlessWorld collision broadphase (chunks + sub-grids) from its
 // current triangle list. Shared by map load and procedural room appends.
 void buildHeadlessCollisionChunks(HeadlessWorld& world);
+void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
+                             const std::string& mapId, uint32_t tick);
+void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
+                                 uint32_t tick);
 
 // Appends a transformed copy of a template's collision triangles to an existing
 // HeadlessWorld and rebuilds its broadphase and bounds. Used by the server to
@@ -1064,7 +1074,8 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
                        float& outDist);
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
-                         glm::vec3& outHitPos, glm::vec3& outNormal);
+                         glm::vec3& outHitPos, glm::vec3& outNormal,
+                         uint32_t* outPhysicalEntityId = nullptr);
 // Swept-sphere world trace for thick-beam hitscan (same contract as
 // serverRaycastWorld but the beam has `radius` so walls block it correctly).
 bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
@@ -1180,7 +1191,8 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
 void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick, uint64_t& totalPacketsOut,
-    std::vector<ServerPhysicalContactResult>* localResults = nullptr);
+    std::vector<ServerPhysicalContactResult>* localResults = nullptr,
+    const HeadlessWorld* world = nullptr);
 void tickServerWeaponAnimationActions(std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick);
 

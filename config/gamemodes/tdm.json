@@ -9,9 +9,11 @@
     "RED",
     "BLUE"
   ],
-  "goal_value": 50,
+  // "goal_value": 50,
+  "goal_value": 99999,
   "weapon_set_id": 29,
-  "time_limit_seconds": 180,
+  // "time_limit_seconds": 180,
+  "time_limit_seconds": 99999,
   "time_limit_winner_team": "",
   "time_limit_outcome": "stalemate",
   "respawn_seconds": 0.01,
@@ -29,7 +31,8 @@
   "maps": [
     "mimita-duels-map-v3",
     "atdm",
-    "funworld"
+    "funworld",
+    "dust2cyberiav4"
   ],
   "teams": [
     {

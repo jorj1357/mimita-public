@@ -107,7 +107,8 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
     setUniforms(gRenderer->shaderProgram, camera.pos);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gTextures.getPath(entity.texturePath));
+    glBindTexture(GL_TEXTURE_2D, entity.renderTextureHandle != 0
+        ? entity.renderTextureHandle : gTextures.getPath(entity.texturePath));
 
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);

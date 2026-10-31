@@ -31,6 +31,7 @@
 #include "npc/npc-avatar.h"
 #include "entities/player.h"
 #include "world/world.h"
+#include "physics/physical-entity.h"
 #include "map/map-loader-collision.h"
 #include "config/spawn-velocity-config.h"
 #include "config/actor-collision-config.h"
@@ -171,7 +172,25 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     // The headless world is already decimated, unioned, and face-cleaned by the
     // map loader. Re-decimating that output collapses union vertices and can
     // create open seams/T-junctions that the client never sees. Reuse it as-is.
-    npcWorld.collisionMesh.triangles = hw.triangles;
+    npcWorld.collisionMesh.triangles.clear();
+    npcWorld.collisionMesh.triangles.reserve(hw.triangles.size());
+    for (size_t i = 0; i < hw.triangles.size(); ++i)
+        if (i >= hw.solidIds.size() || hw.solidIds[i] != UINT32_MAX)
+            npcWorld.collisionMesh.triangles.push_back(hw.triangles[i]);
+    for (const auto& active : hw.activeDestructibleNodes)
+    {
+        const PhysicalEntity* entity =
+            PhysicalEntitySystem::instance().find(active.second);
+        if (!entity)
+            continue;
+        const EntitySurfaceCacheView surface = cachedEntitySurface(*entity);
+        if (!surface.meshCache)
+            continue;
+        const auto& triangles = surface.meshCache->triangles;
+        npcWorld.collisionMesh.triangles.insert(
+            npcWorld.collisionMesh.triangles.end(), triangles.begin(),
+            triangles.end());
+    }
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
 
     // Build the same acceleration grids the client builds: chunk cells PLUS

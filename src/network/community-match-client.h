@@ -300,6 +300,7 @@ private:
     MovementConfig mModeMovementPrevious;
     std::string mModeMovementPreviousName;
     std::vector<ReplicatedActorIdentity> mActors;
+    std::string mLastLocalIdentityFingerprint;
     uint8_t mLastOutlineLocalTeam = 0xFF;
     uint8_t mLastOutlineParticipantCount = 0;
     std::string mPresentationFingerprint;

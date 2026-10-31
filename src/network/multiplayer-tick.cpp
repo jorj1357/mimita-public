@@ -966,9 +966,10 @@ bool mpLocalGameplaySimulationReady(const MultiplayerContext& ctx,
     return localGameplaySimulationReady(view);
 }
 
-void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, const World& world)
+void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, World& world)
 {
     MIMITA_PERF_SCOPE("Network::MpTick");
+    ctx.activeWorld = &world;
     // Network gameplay prediction advances on the same fixed 60 Hz clock as
     // server collision/damage. Render FPS and a bad connection must not change
     // how many projectile collision steps are simulated.

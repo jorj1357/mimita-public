@@ -12,15 +12,21 @@
 "behavior_type": "swordsword",
 "components": {
     "melee": {
-      "animation_only": true,
+      // "animation_only": true,
+      "animation_only": false,
       "arm_ragdoll": {
+        // "enabled": false,
         "enabled": true,
+        "action_scoped": true,
+        // "action_scoped": false,
+        "movement_steer": 0.75,
+        "downward_bias": 0.8,
         "extend_strength": 500.0,
-        "extend_max_speed": 25.0,
+        "extend_max_speed": 253.0,
         "max_stretch": 0.25,
         "stretch_force": 50.0,
         "weak_look_strength": 0.1,
-        "angular_damping": 2.5,
+        "angular_damping": 22.5,
         "gravity_scale": 2.0,
         "world_collision": true,
         "self_collision": true,
@@ -52,9 +58,32 @@
           "weapon_pose": {
             // "rotation_degrees": [0.0, 0.0, 90.0],
             // "rotation_degrees": [0.0, 0.0, 50.0],
-            "rotation_degrees": [0.0, 0.0, 10.0],
+            // "rotation_degrees": [0.0, 0.0, 10.0],
+            "rotation_degrees": [0.0, -30.0, 50.0],
             "offset": [1.0, 0.0, 0.0]
           },
+          "animation_clip_id": "mimita_sizing_6_attackslam_002"
+        },
+        "mace_physics_slam": {
+          "input": {
+            "button": "secondary",
+            "tap_count": 1
+          },
+          "arm_physics": false,
+          "contact_min_damage": 25.0,
+          "contact_max_damage": 250.0,
+          "contact_min_knockback": 30.0,
+          "contact_max_knockback": 300.0,
+          "hitboxes": [],
+          "impulses": [],
+          "audio": {
+            "on_start": {
+              "sound_id": "weapon/hafs/hafsswing",
+              "pitch": 0.6,
+              "volume": 1.5
+            }
+          },
+          "cooldown_ticks": 1,
           "animation_clip_id": "mimita_sizing_6_attackslam_002"
         }
       }
@@ -90,6 +119,7 @@
 "cut_energy_scale": null,
 "cut_radius_scale": null,
 "damage": 5.0,
+"damage_animation_mode": 1,
 "damage_scale": null,
 "enemy_impulse_multiplier": null,
 "fire_delay": 0.0,
@@ -117,7 +147,7 @@
 "projectile_base_radius": null,
 "projectile_density": null,
 "projectile_lifetime": 0.0,
-"projectile_mass": null,
+"projectile_mass": 10000.0,
 "projectile_radius": 0.0,
 "projectile_shape": null,
 "projectile_speed": 0.0,
@@ -159,14 +189,18 @@
     ],
     "attachment": {
       "position": [
-        0.25,
+        // 0.25,
+        1.0,
         -0.05,
         -0.25
       ],
       "rotation_degrees": [
         90.0,
+        // 0.0,
         10.0,
+        // -70.0,
         -25.0
+        // 0.0
       ]
     },
     "scale": [

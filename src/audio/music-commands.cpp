@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <algorithm>
+#include <cctype>
 #include <string>
 #include <vector>
 #include "devtools/terminal.h"
@@ -17,6 +19,51 @@ void registerMusicCommands()
         "music_prev", "Go to previous music track", "music_prev",
         [](const std::vector<std::string>&) { MusicManager::instance().previous(); },
         "2026-06-14", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_order", "Set in-game playlist order", "music_order <linear|shuffle>",
+        [](const std::vector<std::string>& args) {
+            auto& mm = MusicManager::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog(mm.playlistMode() == MusicManager::PlaylistMode::Shuffle
+                    ? "[MUSIC] order=shuffle" : "[MUSIC] order=linear");
+                return;
+            }
+            std::string value = args[0];
+            std::transform(value.begin(), value.end(), value.begin(),
+                [](unsigned char c) { return (char)std::tolower(c); });
+            if (value == "linear")
+                mm.setPlaylistMode(MusicManager::PlaylistMode::Linear);
+            else if (value == "shuffle")
+                mm.setPlaylistMode(MusicManager::PlaylistMode::Shuffle);
+            else {
+                Terminal::instance().addLog("[MUSIC] usage: music_order <linear|shuffle>");
+                return;
+            }
+            Terminal::instance().addLog("[MUSIC] order=" + value);
+        },
+        "2026-10-30", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "music_personal", "Use local music instead of a mode soundtrack", "music_personal [0|1]",
+        [](const std::vector<std::string>& args) {
+            auto& mm = MusicManager::instance();
+            if (args.empty()) {
+                Terminal::instance().addLog(mm.personalMusicOverride()
+                    ? "[MUSIC] personal playlist=on" : "[MUSIC] personal playlist=off");
+                return;
+            }
+            const std::string value = args[0];
+            if (value != "0" && value != "1" && value != "on" && value != "off") {
+                Terminal::instance().addLog("[MUSIC] usage: music_personal <0|1>");
+                return;
+            }
+            const bool enabled = value == "1" || value == "on";
+            mm.setPersonalMusicOverride(enabled);
+            Terminal::instance().addLog(enabled
+                ? "[MUSIC] personal playlist=on" : "[MUSIC] personal playlist=off");
+        },
+        "2026-10-30", CommandCategory::Debug
     });
     Terminal::instance().registerCommand({
         "music_pause", "Pause music playback", "music_pause",
@@ -100,7 +147,7 @@ void registerMusicCommands()
         "music_debug", "Show music config state", "music_debug",
         [](const std::vector<std::string>&) {
             auto& mm = MusicManager::instance();
-            char buf[256];
+            char buf[384];
             snprintf(buf, sizeof(buf),
                 "musicEnabled=%d\nmusicVolume=%.2f\nmusicSpeed=%.2f\nconfigLoaded=1\nconfigPath=config/audio/music-settings.json",
                 (int)!mm.muted(), mm.volume(), mm.playbackSpeed());
@@ -176,11 +223,12 @@ void registerMusicCommands()
         "music_status", "Show current music state", "music_status",
         [](const std::vector<std::string>&) {
             auto& mm = MusicManager::instance();
-            char buf[256];
+            char buf[384];
             snprintf(buf, sizeof(buf),
-                "Volume: %.2f\nMuted: %d\nSpeed: %.2fx\nPlaying: %d\nTrack: %s",
+                "Volume: %.2f\nMuted: %d\nSpeed: %.2fx\nOrder: %s\nPersonal: %d\nPlaying: %d\nTrack: %s",
                 mm.volume(), (int)mm.muted(), mm.playbackSpeed(),
-                (int)mm.isPlaying(), mm.currentTrackInfo().c_str());
+                mm.playlistMode() == MusicManager::PlaylistMode::Shuffle ? "shuffle" : "linear",
+                (int)mm.personalMusicOverride(), (int)mm.isPlaying(), mm.currentTrackInfo().c_str());
             Terminal::instance().addLog(buf);
         }
     });

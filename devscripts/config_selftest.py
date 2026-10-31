@@ -322,9 +322,63 @@ def validate_gamemode_configs(errors):
     return count
 
 
+def validate_collision(errors):
+    path = ROOT / "config/collision.json"
+    root = load_json(path, errors)
+    if not isinstance(root, dict):
+        errors.append("config/collision.json: root must be an object")
+        return None
+    block = root.get("weapon_vs_weapon")
+    if not isinstance(block, dict):
+        errors.append("config/collision.json: weapon_vs_weapon must be an object")
+        return None
+
+    def number(name, value, low, high, source):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            errors.append(f"{source}.{name}: must be a number")
+            return None
+        if value < low or value > high:
+            errors.append(f"{source}.{name}: must be in [{low}, {high}]")
+            return None
+        return value
+
+    source = "config/collision.json: weapon_vs_weapon"
+    tolerance = number("distance_tolerance_m",
+                       block.get("distance_tolerance_m"), 0.0, 2.0, source)
+    cooldown = block.get("cooldown_ticks")
+    if (isinstance(cooldown, bool) or not isinstance(cooldown, int) or
+            cooldown < 0 or cooldown > 600):
+        errors.append(f"{source}.cooldown_ticks: must be an integer in [0, 600]")
+
+    effects = block.get("effects")
+    if not isinstance(effects, dict):
+        errors.append(f"{source}.effects: must be an object")
+    else:
+        for key in ("spark", "ricochet"):
+            if not isinstance(effects.get(key), bool):
+                errors.append(f"{source}.effects.{key}: must be a boolean")
+
+    knockback = block.get("knockback")
+    if not isinstance(knockback, dict):
+        errors.append(f"{source}.knockback: must be an object")
+        return block
+    knock_source = f"{source}.knockback"
+    minimum = number("min_speed_mps", knockback.get("min_speed_mps"),
+                     0.0, 500.0, knock_source)
+    maximum = number("max_speed_mps", knockback.get("max_speed_mps"),
+                     0.0, 1000.0, knock_source)
+    number("reference_speed_mps", knockback.get("reference_speed_mps"),
+           0.1, 1000.0, knock_source)
+    if minimum is not None and maximum is not None and maximum < minimum:
+        errors.append(
+            f"{knock_source}.max_speed_mps: must be >= min_speed_mps")
+    return block
+
+
 def main():
     errors = []
     validate_procedural(errors)
+    validate_collision(errors)
     weapon_count = validate_weapons(errors)
     clip_count, weapon_anim_count = validate_animations(errors)
     avatar_count = validate_avatars(errors)
@@ -352,6 +406,7 @@ def main():
         errors.append(f"gamemode canonical check failed: {exc}")
 
     print("[CONFIG SELFTEST] weapons:", weapon_count)
+    print("[CONFIG SELFTEST] collision weapon_vs_weapon: checked")
     print("[CONFIG SELFTEST] animation clips:", clip_count)
     print("[CONFIG SELFTEST] animated weapons:", weapon_anim_count)
     print("[CONFIG SELFTEST] avatars:", avatar_count)

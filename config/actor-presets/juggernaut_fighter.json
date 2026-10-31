@@ -7,8 +7,8 @@
     "force_fov": true,
     // "perspective": "third_person",
     "perspective": "first_person",
-    // "force_perspective": false
-    "force_perspective": true
+    "force_perspective": false
+    // "force_perspective": true
   },
   "movement_preset": "source",
   "avatar": {

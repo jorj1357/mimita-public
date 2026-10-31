@@ -68,6 +68,7 @@
 "cut_energy_scale": 1.0,
 "cut_radius_scale": 1.0,
 "damage": 250.0,
+"damage_animation_mode": null,
 "damage_scale": null,
 "enemy_impulse_multiplier": 1.0,
 "fire_delay": 0.01,

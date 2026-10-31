@@ -29,6 +29,27 @@
       "surfaceHardness": 2.5,
       "holeEnergyScale": 0.35,
       "maxCutRadius": 0.8
+    },
+    "concrete": {
+      "id": "concrete",
+      "density": 2400.0,
+      "strength": 600.0,
+      "cutResistance": 4.0,
+      "fractureThreshold": 1800.0,
+      "surfaceHardness": 3.0,
+      "holeEnergyScale": 0.45,
+      "maxCutRadius": 1.5
+    },
+    "foundation": {
+      "id": "foundation",
+      "density": 1000000.0,
+      "strength": 1000000000.0,
+      "cutResistance": 1000000.0,
+      "cutThresholdJ": 1.0e16,
+      "fractureThreshold": 1000000000.0,
+      "surfaceHardness": 1000000.0,
+      "holeEnergyScale": 0.001,
+      "maxCutRadius": 0.1
     }
   }
 }

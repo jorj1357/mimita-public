@@ -206,15 +206,30 @@ Extremely fast repeated melee contact is allowed and encouraged in Mode 1.
 Two melee weapons touching each other may produce a clash response: opposing
 knockback, a spark effect, and metal ricochet audio. This response is separate
 from weapon-to-actor damage. Apply one clash response per weapon pair, then
-wait at least **6 simulation ticks (100 ms)** before producing another while
-the pair remains in contact. The cooldown gates clash knockback and clash
-presentation together; it must not suppress a valid weapon-to-actor damage
-contact at the same time. Separation does not cancel an already-running
-cooldown; a later clash can respond when the six ticks have elapsed.
+wait for the configured cooldown while the pair remains in contact. The
+cooldown gates clash knockback and clash presentation together; it must not
+suppress a valid weapon-to-actor damage contact at the same time. Separation
+does not cancel an already-running cooldown; a later clash can respond when the
+cooldown expires.
 
-The six-tick interval matches the current direct blade-to-blade server path
-and is the initial tuning target. All weapon clash paths, including block
-contacts, must use the same pair-scoped policy.
+The policy is owned by `config/collision.json` under `weapon_vs_weapon`. One
+shared value set applies to every weapon pair in this version:
+
+- contact qualifies when the two weapon radii plus
+  `distance_tolerance_m` overlap; the initial value is `0.12 m`;
+- `cooldown_ticks` is the pair-scoped cooldown; the initial value is `6`
+  simulation ticks (100 ms);
+- knockback uses the deterministic curve
+  `force = clamp(relative_speed / reference_speed_mps, 0, 1)` and
+  `impulse = min_speed_mps + force * (max_speed_mps - min_speed_mps)`, with
+  initial values `8`, `63`, and `25 m/s`;
+- `effects.spark` and `effects.ricochet` gate the replicated clash
+  presentation. Accepted clashes trigger the enabled effects; there is no
+  random spark probability.
+
+Reloads are validated as a whole and published at a fixed-tick boundary.
+Malformed or out-of-range edits keep the last valid values. All weapon clash
+paths, including block contacts, use the same pair-scoped policy.
 
 ### Mode 2 — Click-triggered active hitbox (TODO)
 
@@ -230,6 +245,34 @@ Initial development priority is fast, responsive melee play. Build and tune
 those styles first; add slower, more deliberate fighting styles (potentially
 Dark Souls-like) later. Mode 2 is a contact-generation model and is not itself
 a requirement that attacks be slow.
+
+### Damage animation mode (separate from melee contact mode)
+
+Each weapon may select `damage_animation_mode` in
+`config/weapons/<weapon-id>/config.json`. This setting controls only whether
+damage interrupts the weapon's active attack animation; it does not change
+contact generation, damage, health, hit effects, or knockback. Its numbering is
+independent of the physical-contact and click-triggered melee modes above:
+
+- **Damage animation mode 1:** damage does not overwrite or restart an active
+  attack animation. Damage received during that animation does not trigger a
+  delayed hurt animation after the attack finishes. When no attack animation is
+  active, damage may select the normal hurt animation.
+- **Damage animation mode 2:** damage may overwrite an active attack animation
+  with the normal hurt animation, according to animation-state priority. This
+  is the default when the setting is absent, preserving existing behavior.
+
+Either melee contact mode may use either damage animation mode. Death keeps
+its higher ownership; in Mode 2 damage releases the active attack clip for the
+hurt reaction. The mace's
+requested non-interrupting behavior corresponds to damage animation mode 1.
+
+The mace keeps its primary fixed `mace_swing` and offers a secondary
+`mace_physics_slam`. Both use the same clip markers for action timing. The
+physics slam replaces only the right-arm pose with the existing arm ragdoll
+solver during that action; movement direction steers its motor, and physical
+arm/weapon velocity drives the shared contact damage rule. No additional
+movement-speed damage multiplier or button sequence is part of this action.
 
 ---
 

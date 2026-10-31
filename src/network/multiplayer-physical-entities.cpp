@@ -22,6 +22,7 @@
 #include "debug/structured-log.h"
 #include "impact/destructible-mesh-loader.h"
 #include "impact/impact-system.h"
+#include "map/map-authored-geometry.h"
 #include "network/packets.h"
 #include "physics/physical-entity.h"
 
@@ -36,7 +37,7 @@ bool allFinite(const glm::vec3& v)
 } // namespace
 
 void mpProcessPhysicalEntitySpawnEventPacket(
-    MultiplayerContext&, const PhysicalEntitySpawnEventPacket* event)
+    MultiplayerContext& ctx, const PhysicalEntitySpawnEventPacket* event)
 {
     const glm::vec3 halfExtents(event->halfExtents[0], event->halfExtents[1],
                                 event->halfExtents[2]);
@@ -145,14 +146,38 @@ void mpProcessPhysicalEntitySpawnEventPacket(
         MimitaImpact::ImpactSystem::instance().initializeEntity(*e, event->materialId,
                                                                 halfExtents);
 
+    const std::string modelPath(event->modelPath);
+    const size_t marker = modelPath.rfind("#node:");
+    if (haveMeshBase && ctx.activeWorld && marker != std::string::npos)
+    {
+        try {
+            const int nodeIndex = std::stoi(modelPath.substr(marker + 6));
+            hideDestructibleMapNode(*ctx.activeWorld, nodeIndex,
+                                    &e->renderTextureHandle);
+        } catch (const std::exception&) {
+            Debug::warn(Debug::Category::Networking,
+                        "[PHYS CLIENT] invalid map node path=%s\n", event->modelPath);
+        }
+    }
+
     printf("[PHYS CLIENT] spawn networkId=%u localId=%u tris=%zu half=(%.2f %.2f %.2f)\n",
            event->networkId, localId, e->localTriangles.size(),
            halfExtents.x, halfExtents.y, halfExtents.z);
 }
 
 void mpProcessPhysicalEntityDespawnEventPacket(
-    MultiplayerContext&, const PhysicalEntityDespawnEventPacket* event)
+    MultiplayerContext& ctx, const PhysicalEntityDespawnEventPacket* event)
 {
+    if (PhysicalEntity* entity =
+            PhysicalEntitySystem::instance().findByNetworkId(event->networkId))
+    {
+        const size_t marker = entity->modelPath.rfind("#node:");
+        if (ctx.activeWorld && marker != std::string::npos)
+            try {
+                restoreDestructibleMapNode(*ctx.activeWorld,
+                    std::stoi(entity->modelPath.substr(marker + 6)));
+            } catch (const std::exception&) { }
+    }
     if (PhysicalEntitySystem::instance().removeByNetworkId(event->networkId))
         printf("[PHYS CLIENT] despawn networkId=%u\n", event->networkId);
 }

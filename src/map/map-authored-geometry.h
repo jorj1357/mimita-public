@@ -35,6 +35,12 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
 // Applies authored blocks to a headless server world (initial load only).
 bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId);
 
+// A replicated map solid supplies its own rendered/collidable surface after
+// activation. Save and hide only that GLB node's source triangle range.
+bool hideDestructibleMapNode(World& world, int nodeIndex,
+                            unsigned int* textureHandle = nullptr);
+bool restoreDestructibleMapNode(World& world, int nodeIndex);
+
 // Removes authored geometry from a World and restores the GLB base counts.
 void clearAuthoredMapGeometry(World& world);
 

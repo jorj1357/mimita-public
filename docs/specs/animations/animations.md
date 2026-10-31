@@ -268,7 +268,8 @@ An avatar profile selects one with `"set": "<set-id>"`; the set is merged before
 the avatar's own `include` and inline `states`, so avatar values still win.
 `general_set_1` is the ordered set of every imported `mimita_sizing_6` clip.
 
-`config/animations/settings.json` is hot-reloaded and owns runtime policy:- `statePriorities`: integer priority per state. Higher wins. Defaults keep
+`config/animations/settings.json` is hot-reloaded and owns runtime policy:
+- `statePriorities`: integer priority per state. Higher wins. Defaults keep
   landing below locomotion, hurt above locomotion/landing, and death highest.
 - `hurtTierMode`: `1` uses percent of max HP at hit time, `2` uses fixed damage.
 - `hurtPercent` / `hurtFixed`: small/normal thresholds. The next tier is large.
@@ -516,6 +517,34 @@ states more often:
 These scores only choose among automatic candidates. In particular, raising
 `hurt` above `attack` can beat an equip pose, but it still cannot break a locked
 Melee attack clip.
+
+### Damage animation modes during weapon attacks
+
+The weapon's `config/weapons/<id>/config.json` owns
+`damage_animation_mode`; it is not a damage, health, knockback, or contact
+setting. It governs animation selection only while that weapon has an active
+attack animation:
+
+- **Mode 1 — preserve attack:** incoming damage does not replace or restart the
+  active attack animation. Damage, health changes, hit effects, and knockback
+  still apply normally. Damage received during the attack does not queue a
+  delayed hurt animation for after the attack finishes. Damage received when no
+  attack animation is active may select the normal hurt animation.
+- **Mode 2 — damage interrupts:** incoming damage may select the hurt animation
+  according to the normal hurt-state priority and interrupt the active attack
+  animation. This is the compatibility default when the field is absent.
+
+This damage-animation policy is separate from the melee contact-generation
+modes: a physical-contact weapon or a click-triggered hitbox weapon may choose
+either damage animation mode. Death and unrelated explicitly locked clips retain
+their existing higher ownership rules; Mode 2 releases an active attack clip
+when damage selects a hurt reaction.
+
+`damage_animation_mode` is a top-level weapon field. Every per-weapon JSON
+definition carries the field under the weapon masterlist contract; `null`
+selects the Mode 2 compatibility default. A valid edit is picked up by the
+weapon-definition reload path. Invalid values are rejected with the previous
+valid definitions retained.
 
 ### Locomotion clips should interrupt one another
 
@@ -1085,9 +1114,18 @@ clip; every other limb continues to sample the authored/procedural pose. LMB
 uses the same ragdoll arm-extend motor as ragdoll mode rather than a separate
 weapon motor. The solver runs at the fixed 60 Hz tick, writes only the right-arm
 skeleton node, and then the normal model-world-transform update supplies the
-weapon attachment and hitboxes. The authored action timeline and fixed swing
-animation are bypassed for that weapon; contact remains the shared
-physical-melee path.
+weapon attachment and hitboxes. With `action_scoped` absent or false, the
+authored action timeline and fixed swing animation are bypassed for that
+weapon; contact remains the shared physical-melee path.
+
+When `arm_ragdoll.action_scoped` is true, only an action with `arm_physics: true`
+activates that solver. The action still uses its clip for timing and every
+other part, while the right arm and attached weapon follow physical joints,
+the world, and the motor. The motor drives during the action's active phase;
+`movement_steer` adds the actor's movement direction to its target and
+`downward_bias` aims the slam toward the ground. The actual arm/weapon contact
+velocity, not a movement-speed damage bonus, feeds the existing physical
+contact resolver. An action without `arm_physics` keeps its fixed clip.
 
 ## Runtime contract
 

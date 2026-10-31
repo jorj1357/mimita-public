@@ -6,6 +6,7 @@
 #include "network/server-gamemode.h"
 #include "network/network-weapons.h"
 #include "network/packets.h"
+#include "config/collision-config.h"
 #include "combat/weapon-attachment.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-melee-config.h"
@@ -14,6 +15,7 @@
 #include "entities/player.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "debug/structured-log.h"
+#include "impact/impact-system.h"
 #include "devtools/scenario-server-playback.h"
 #include "physics/movement/movement-step.h"
 #include "utils/path_utils.h"
@@ -126,7 +128,8 @@ static float segmentSegmentDistance(const glm::vec3& a0, const glm::vec3& a1,
 
 static bool blocksMeleeContact(const ActorView& target, uint32_t tick,
                                const WeaponExecution::PhysicalContactShape& attackerShape,
-                               const WeaponExecution::PhysicalContactHit& hit)
+                               const WeaponExecution::PhysicalContactHit& hit,
+                               float distanceTolerance, float* outDistance = nullptr)
 {
     const char* phase = nullptr;
     const WeaponData::MeleeAction* action =
@@ -157,16 +160,67 @@ static bool blocksMeleeContact(const ActorView& target, uint32_t tick,
     const float distance = segmentSegmentDistance(
         attackerShape.currentA, attackerShape.currentB,
         targetShape.currentA, targetShape.currentB);
-    return distance <= attackerShape.radius + targetShape.radius + 0.12f;
+    if (outDistance) *outDistance = distance;
+    return distance <= attackerShape.radius + targetShape.radius + distanceTolerance;
+}
+
+struct WeaponClashResult {
+    bool accepted = false;
+    float relativeSpeed = 0.0f;
+    float force = 0.0f;
+    float impulse = 0.0f;
+};
+
+// One pair-scoped cooldown entry, owned by the lower actor key so both
+// evaluation directions and block contacts see the same state.
+static WeaponClashResult claimWeaponClash(
+    ActorContactRuntime& attackerRuntime, uint64_t attackerKey,
+    ActorContactRuntime& targetRuntime, uint64_t targetKey,
+    const WeaponExecution::PhysicalContactShape& attackerShape,
+    const WeaponExecution::PhysicalContactShape& targetShape,
+    uint32_t tick, const WeaponVsWeaponSettings& settings)
+{
+    ActorContactRuntime& owner =
+        attackerKey < targetKey ? attackerRuntime : targetRuntime;
+    const uint64_t otherKey =
+        attackerKey < targetKey ? targetKey : attackerKey;
+    uint32_t& lastClash = owner.lastClashTick[otherKey];
+    const bool ready = settings.cooldownTicks <= 0 || lastClash == 0 ||
+        tick - lastClash >= static_cast<uint32_t>(settings.cooldownTicks);
+    if (!ready)
+        return {};
+    lastClash = tick;
+
+    const glm::vec3 attackerBladeVelocity =
+        (attackerShape.currentB - attackerShape.previousB) / SERVER_DT;
+    const glm::vec3 targetBladeVelocity =
+        (targetShape.currentB - targetShape.previousB) / SERVER_DT;
+    const float relativeSpeed =
+        glm::length(attackerBladeVelocity - targetBladeVelocity);
+    const float force = settings.knockbackReferenceSpeedMps > 0.0f
+        ? glm::clamp(relativeSpeed / settings.knockbackReferenceSpeedMps,
+                     0.0f, 1.0f)
+        : 0.0f;
+    return {true, relativeSpeed, force,
+        settings.impulseForRelativeSpeed(relativeSpeed)};
+}
+
+static uint8_t weaponClashEffectFlags(const WeaponVsWeaponSettings& settings)
+{
+    uint8_t flags = 0;
+    if (settings.sparkEnabled) flags |= MELEE_CLASH_FX_SPARK;
+    if (settings.ricochetEnabled) flags |= MELEE_CLASH_FX_RICOCHET;
+    return flags;
 }
 
 static void broadcastWeaponClash(
     SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& players,
     const ServerActorRef& attacker, const glm::vec3& hit, const glm::vec3& normal,
-    float force, uint64_t& packets)
+    float force, uint8_t clashFlags, uint64_t& packets, uint32_t tick)
 {
     MeleeHitEventPacket event{};
     event.header.type = PACKET_MELEE_HIT_EVENT;
+    event.header.tick = tick;
     event.header.playerId = attacker.id;
     event.attackerPlayerId = attacker.id;
     event.targetPlayerId = 0;
@@ -177,6 +231,7 @@ static void broadcastWeaponClash(
     event.knockX = normal.x * force; event.knockY = normal.y * force;
     event.knockZ = normal.z * force;
     event.weapon = NETWORK_WEAPON_SWORDSWORD;
+    event.clashFlags = clashFlags;
     for (auto& entry : players) {
         ServerPlayer& p = entry.second;
         if (p.transport) {
@@ -383,7 +438,8 @@ void flushPending(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& playe
 void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs, uint32_t tick, uint64_t& packets,
-    std::vector<ServerPhysicalContactResult>* localResults)
+    std::vector<ServerPhysicalContactResult>* localResults,
+    const HeadlessWorld* world)
 {
     actors.clear();
     auto configured = [](const std::string& id) {
@@ -399,6 +455,9 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
     }
     WeaponConfig::instance().pollHotReload();
     AvatarAnimationRegistry::instance().pollReload(tick);
+    const WeaponVsWeaponSettings clashSettings =
+        CollisionConfig::instance().weaponVsWeapon();
+    const uint8_t clashFlags = weaponClashEffectFlags(clashSettings);
     auto add = [&](ServerActorRef ref, const std::string& avatar, const std::string& weaponId,
         const glm::vec3& position, const glm::vec3& velocity, const glm::vec3& aim, float yaw,
         float scale, uint32_t generation, bool actionActive, const std::string& actionId, uint32_t start) {
@@ -408,7 +467,8 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
         if (state.generation != generation || state.epoch != epoch ||
             state.lastTick > tick || state.definition != weaponId) {
             flushPending(sock, players, npcs, key, state, tick, packets);
-            state.previousValid = false; state.positionHistoryValid = false; state.episodes.clear();
+            state.previousValid = false; state.positionHistoryValid = false;
+            state.episodes.clear();
             state.generation = generation; state.epoch = epoch; state.definition = weaponId;
         }
         state.lastTick = tick;
@@ -493,6 +553,45 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
         } else if (attacker.ref.player) {
             attacker.ref.player->lastPhysicalWeaponShape = shape;
             attacker.ref.player->hasLastPhysicalWeaponShape = true;
+        }
+        if (damaging && world)
+        {
+            const glm::vec3 travel = shape.currentB - shape.previousB;
+            const float distance = glm::length(travel);
+            const float speed = distance / SERVER_DT;
+            if (speed > 0.5f)
+            {
+                const glm::vec3 direction = travel / distance;
+                glm::vec3 hitPoint, hitNormal;
+                uint32_t physicalId = 0;
+                if (serverRaycastWorld(shape.previousB, direction,
+                                       distance + shape.radius, *world,
+                                       hitPoint, hitNormal, &physicalId))
+                {
+                    MimitaImpact::ImpactEvent impact;
+                    impact.simulationTick = tick;
+                    impact.source = MimitaImpact::ImpactSource::Melee;
+                    impact.target = physicalId != 0
+                        ? MimitaImpact::ImpactTarget::PhysicalEntity
+                        : MimitaImpact::ImpactTarget::WorldGeometry;
+                    impact.sourceEntityId = attacker.ref.id;
+                    impact.eventId = (attacker.key << 32) | tick;
+                    impact.targetEntityId = physicalId;
+                    impact.worldPoint = hitPoint;
+                    impact.worldNormal = hitNormal;
+                    impact.worldDirection = direction;
+                    impact.speed = speed;
+                    impact.mass = def->projectileMass;
+                    impact.density = def->projectileDensity;
+                    impact.radius = shape.radius;
+                    impact.sizeScale = def->cutRadiusScale;
+                    impact.boreLength = std::max(0.0f, def->penetrationScale) *
+                        std::max(shape.radius, 0.05f) * 2.0f;
+                    impact.cutScale = def->cutEnergyScale;
+                    impact.damage = def->damage;
+                    MimitaImpact::ImpactSystem::instance().submit(impact);
+                }
+            }
         }
         if (tick - state.lastDiagnostic >= 60) {
             state.lastDiagnostic = tick;
@@ -603,23 +702,48 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                             hit.normal, minKnockback, maxKnockback, force,
                             def->meleeContact.forceScale);
 
-                    if (blocksMeleeContact(target, tick, relative, hit)) {
-                        const float blockForce = std::max(1.5f, force * 12.0f);
-                        const glm::vec3 blockImpulse = -hit.normal * blockForce;
-                        if (attacker.ref.player) {
-                            attacker.ref.player->vel += blockImpulse;
-                            recordServerMovementExternalImpulse(*attacker.ref.player, blockImpulse);
-                        } else if (attacker.ref.npc) {
-                            attacker.ref.npc->knockbackImpulse += blockImpulse;
+                    float blockDistance = 0.0f;
+                    if (blocksMeleeContact(target, tick, relative, hit,
+                            clashSettings.distanceToleranceM, &blockDistance)) {
+                        const WeaponClashResult clash = claimWeaponClash(
+                            state, attacker.key, *target.runtime, target.key,
+                            shape, target.runtime->shape, tick, clashSettings);
+                        const float blockThreshold = relative.radius +
+                            target.runtime->shape.radius +
+                            clashSettings.distanceToleranceM;
+                        if (clash.accepted) {
+                            const glm::vec3 blockImpulse =
+                                -hit.normal * clash.impulse;
+                            if (attacker.ref.player) {
+                                attacker.ref.player->vel += blockImpulse;
+                                recordServerMovementExternalImpulse(
+                                    *attacker.ref.player, blockImpulse);
+                            } else if (attacker.ref.npc) {
+                                attacker.ref.npc->knockbackImpulse += blockImpulse;
+                            }
+                            broadcastWeaponClash(sock, players, attacker.ref,
+                                hit.hitPosition, hit.normal, clash.impulse,
+                                clashFlags, packets, tick);
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Weapons,
+                                StructuredLevel::Important, "weapon.block",
+                                std::to_string(attacker.ref.id),
+                                "front-arc melee block stopped contact", tick,
+                                {{"attacker", attacker.ref.id},
+                                 {"target", target.ref.id},
+                                 {"weapon", def->id},
+                                 {"target_weapon", target.weapon
+                                     ? target.weapon->id : ""},
+                                 {"distance", blockDistance},
+                                 {"threshold", blockThreshold},
+                                 {"distance_tolerance_m",
+                                  clashSettings.distanceToleranceM},
+                                 {"cooldown_ticks", clashSettings.cooldownTicks},
+                                 {"relative_speed", clash.relativeSpeed},
+                                 {"force", clash.force},
+                                 {"impulse", clash.impulse},
+                                 {"effect_mask", (int)clashFlags}});
                         }
-                        broadcastWeaponClash(sock, players, attacker.ref, hit.hitPosition,
-                            hit.normal, blockForce, packets);
-                        StructuredLogger::instance().writeEvent(StructuredCategory::Weapons,
-                            StructuredLevel::Important, "weapon.block", std::to_string(attacker.ref.id),
-                            "front-arc melee block stopped contact", tick,
-                            {{"attacker", attacker.ref.id}, {"target", target.ref.id},
-                             {"weapon", def->id}, {"target_weapon", target.weapon ? target.weapon->id : ""},
-                             {"force", force}});
                         if (episodeIt != state.episodes.end()) {
                             confirm(sock, players, attacker, target, episodeIt->second, tick, packets);
                             state.episodes.erase(episodeIt);
@@ -636,7 +760,8 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                         }
                         if (beginning)
                             broadcastWeaponClash(sock, players, attacker.ref,
-                                hit.hitPosition, hit.normal, glm::length(impulse), packets);
+                                hit.hitPosition, hit.normal, glm::length(impulse),
+                                clashFlags, packets, tick);
                     } else {
                     ServerActorDamageRequest request;
                     request.attacker = attacker.ref; request.victim = target.ref;
@@ -734,25 +859,32 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                 const float weaponDistance = segmentSegmentDistance(
                     shape.currentA, shape.currentB,
                     target.runtime->shape.currentA, target.runtime->shape.currentB);
-                if (weaponDistance <= shape.radius + target.runtime->shape.radius + 0.12f) {
-                    uint32_t& lastClash = state.lastClashTick[target.key];
-                    if (lastClash == 0 || tick - lastClash >= 6) {
-                        lastClash = tick;
-                        const glm::vec3 attackerBladeVelocity =
-                            (shape.currentB - shape.previousB) / SERVER_DT;
-                        const glm::vec3 targetBladeVelocity =
-                            (target.runtime->shape.currentB -
-                             target.runtime->shape.previousB) / SERVER_DT;
-                        const float relativeSpeed = glm::length(
-                            attackerBladeVelocity - targetBladeVelocity);
+                const float threshold = shape.radius +
+                    target.runtime->shape.radius +
+                    clashSettings.distanceToleranceM;
+                if (weaponDistance <= threshold) {
+                    // A blocking actor does not initiate a direct clash; the
+                    // opposing actor resolves the block so the shared cooldown
+                    // is claimed by the defensive response instead of an
+                    // order-dependent duplicate.
+                    const WeaponData::MeleeAction* ownAction =
+                        currentAction(attacker, tick, nullptr, nullptr, nullptr);
+                    const bool attackerBlocking =
+                        ownAction && ownAction->blocksMelee;
+                    const WeaponClashResult clash = attackerBlocking
+                        ? WeaponClashResult{}
+                        : claimWeaponClash(state, attacker.key,
+                              *target.runtime, target.key, shape,
+                              target.runtime->shape, tick, clashSettings);
+                    if (clash.accepted) {
                         glm::vec3 normal = target.position - attacker.position;
                         if (glm::length(normal) < 0.001f)
                             normal = glm::vec3(0.0f, 0.0f, 1.0f);
                         normal = glm::normalize(normal);
-                        const float force = glm::clamp(relativeSpeed / 25.0f, 0.0f, 1.0f);
-                        const float strength = 8.0f + force * 55.0f;
-                        const glm::vec3 attackerImpulse = -normal * strength;
-                        const glm::vec3 targetImpulse = normal * strength;
+                        const glm::vec3 attackerImpulse =
+                            -normal * clash.impulse;
+                        const glm::vec3 targetImpulse =
+                            normal * clash.impulse;
                         if (attacker.ref.player) {
                             attacker.ref.player->vel += attackerImpulse;
                             recordServerMovementExternalImpulse(*attacker.ref.player, attackerImpulse);
@@ -768,7 +900,7 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                         const glm::vec3 contactPoint = glm::mix(shape.currentB,
                             target.runtime->shape.currentB, 0.5f);
                         broadcastWeaponClash(sock, players, attacker.ref, contactPoint,
-                            normal, strength, packets);
+                            normal, clash.impulse, clashFlags, packets, tick);
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::Weapons, StructuredLevel::Important,
                             "weapon.clash", std::to_string(attacker.ref.id),
@@ -779,9 +911,14 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                              {"target_type", (int)target.ref.kind},
                              {"attacker_weapon", def->id},
                              {"target_weapon", target.weapon->id},
-                             {"relative_speed", relativeSpeed},
-                             {"force", force},
-                             {"impulse", strength},
+                             {"distance", weaponDistance},
+                             {"threshold", threshold},
+                             {"distance_tolerance_m", clashSettings.distanceToleranceM},
+                             {"cooldown_ticks", clashSettings.cooldownTicks},
+                             {"relative_speed", clash.relativeSpeed},
+                             {"force", clash.force},
+                             {"impulse", clash.impulse},
+                             {"effect_mask", (int)clashFlags},
                              {"contact", {contactPoint.x, contactPoint.y, contactPoint.z}}});
                         if (ScenarioServerPlayback::instance().active()) {
                             StructuredLogger::instance().writeEvent(
@@ -796,14 +933,15 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                                     {"attacker_weapon", def->id},
                                     {"target_weapon", target.weapon->id},
                                     {"distance", weaponDistance},
-                                    {"threshold", shape.radius +
-                                        target.runtime->shape.radius + 0.12f},
-                                    {"relative_speed", relativeSpeed},
-                                    {"force", force},
-                                    {"impulse", strength},
+                                    {"threshold", threshold},
+                                    {"distance_tolerance_m", clashSettings.distanceToleranceM},
+                                    {"cooldown_ticks", clashSettings.cooldownTicks},
+                                    {"relative_speed", clash.relativeSpeed},
+                                    {"force", clash.force},
+                                    {"impulse", clash.impulse},
+                                    {"effect_mask", (int)clashFlags},
                                     {"contact", {contactPoint.x, contactPoint.y,
-                                                 contactPoint.z}},
-                                    {"throttle_ticks", 6}},
+                                                 contactPoint.z}}},
                                 __FILE__, __LINE__, __FUNCTION__);
                         }
                     }

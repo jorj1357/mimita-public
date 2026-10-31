@@ -398,6 +398,12 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
 
     const WeaponDefinition* animationWeapon = hasValidWeapon
         ? WeaponRegistry::instance().get(equippedWeaponId) : nullptr;
+    const bool weaponAttackPoseActive = !weaponPoseActionState.empty() ||
+        (!lockedClip.empty() &&
+         (lockedClipPhaseTicks > 0 || lockedClipSampleTick >= 0));
+    const bool preserveAttackOnDamage = animationWeapon &&
+        animationWeapon->damageAnimationMode == 1 &&
+        weaponAttackPoseActive;
     // NPC-only opt-in: one authored clip tick per fixed simulation tick,
     // independent of movement speed and per-clip playback multipliers.
     const bool npcTickLocked = isNpcActor && animationSet && animationSet->valid &&
@@ -604,8 +610,20 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
     if (percent > animPrevPercent + 0.5f)
         pendingHurtTier = std::max(pendingHurtTier, 2);
     animPrevPercent = percent;
+    if (!preserveAttackOnDamage && animationWeapon &&
+        animationWeapon->damageAnimationMode == 2 &&
+        pendingHurtTier > 0 && weaponAttackPoseActive &&
+        !lockedClip.empty() && !dead) {
+        // The hurt clip must replace a locked attack on the damage tick.
+        // The action owner will cancel its timeline on the next fixed tick.
+        clearOneShot();
+    }
     std::string activeHurtClip;
-    if (sm && pendingHurtTier > 0) {
+    if (preserveAttackOnDamage) {
+        // Consume damage reactions during this attack; never replay one after it ends.
+        pendingHurtTier = 0;
+        hurtTimer = 0.0f;
+    } else if (sm && pendingHurtTier > 0) {
         if (pendingHurtTier == 1) activeHurtClip = sm->hurtSmall;
         else if (pendingHurtTier == 2) activeHurtClip = sm->hurtNormal;
         else activeHurtClip = sm->hurtLarge;
@@ -1235,7 +1253,11 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                  {"on_ground", ground.onGround},
                  {"stable_on_ground", ground.stableOnGround},
                  {"velocity", {vel.x, vel.y, vel.z}},
-                 {"hitbox_action_active", !lockedClip.empty()}},
+                 {"hitbox_action_active", !lockedClip.empty()},
+                 {"damage_animation_mode", animationWeapon
+                    ? animationWeapon->damageAnimationMode : 2},
+                 {"pending_hurt_tier", pendingHurtTier},
+                 {"hurt_timer", hurtTimer}, {"hp", currentHp}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }

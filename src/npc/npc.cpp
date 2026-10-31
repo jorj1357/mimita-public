@@ -2564,7 +2564,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         const WeaponDefinition* npcWeaponDef =
             WeaponRegistry::instance().get(npc.body.equippedWeaponId);
         const ArmRagdollConfig* npcArmRagdoll = npcWeaponDef &&
-            npcWeaponDef->armRagdoll.enabled ? &npcWeaponDef->armRagdoll : nullptr;
+            npcWeaponDef->armRagdoll.enabled &&
+            !npcWeaponDef->armRagdoll.actionScoped
+            ? &npcWeaponDef->armRagdoll : nullptr;
         RagdollModeSystem::instance().updateNpcAim(
             safeDt, world, npc, aimForward, aimPoint, attack, npcArmRagdoll);
 

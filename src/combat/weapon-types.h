@@ -128,6 +128,11 @@ struct ArmRagdollConfig {
     // arm-extend motor used by ragdoll mode; the arm carries momentum through
     // the shared ragdoll joint/collision solver.
     bool enabled = false;
+    // If true, only an action marked arm_physics activates this solver.
+    bool actionScoped = false;
+    // World-space movement intent steers the arm motor without changing damage.
+    float movementSteer = 0.0f;
+    float downwardBias = 0.0f;
     // Ragdoll arm motor values, using the same names as ragdoll.json "arms".
     float extendStrength = 500.0f;
     float extendMaxSpeed = 100.0f;
@@ -149,6 +154,8 @@ struct ArmRagdollConfig {
 struct WeaponDefinition {    std::string id;
     std::string displayName;
     int slot = 0;
+    // 1 preserves an active attack animation on damage; 2 allows hurt to interrupt.
+    int damageAnimationMode = 2;
 
     std::string modelPath;
     // Optional projectile appearance block from render.projectile. Kept

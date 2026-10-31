@@ -102,6 +102,7 @@ struct MaterialDefinition
     float surfaceHardness = 1.0f;    // scales glancing resistance
     float holeEnergyScale = 1.0f;    // scales effective cut energy
     float maxCutRadius = 1.5f;       // clamp on a single cut radius
+    double cutThresholdJ = 0.0;       // energy accumulated at one contact cell before matter yields
 };
 
 } // namespace MimitaImpact

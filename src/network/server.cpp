@@ -35,6 +35,7 @@
 #include "map/map-authored-geometry.h"
 #include "config/networking-config.h"
 #include "config/movement-config.h"
+#include "config/collision-config.h"
 #include "config/spawn-velocity-config.h"
 #include "physics/runtime-objects.h"
 #include "debug/debug-log.h"
@@ -868,6 +869,10 @@ int runServer(const LaunchOptions& options)
         // server's movement-validation tolerances match the client's live tuning.
         MovementJsonConfig::instance().pollReload();
 
+        // Validate and publish collision-clash settings on this fixed tick so
+        // the dedicated server cannot keep stale weapon_vs_weapon values.
+        CollisionConfig::instance().pollHotReload(tick);
+
         // Refresh cached role movement presets whose files changed on disk.
         RoleMovementCache::instance().pollReload();
 
@@ -1001,6 +1006,7 @@ int runServer(const LaunchOptions& options)
             const auto contactWeaponStart = std::chrono::steady_clock::now();
             tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
+            flushServerWorldImpacts(world, npcWorld, serverGamemodeState().mapId, tick);
             const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
 
             if (!options.proceduralMode.empty() &&
@@ -1053,6 +1059,12 @@ int runServer(const LaunchOptions& options)
             const auto gamemodeStart = std::chrono::steady_clock::now();
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
+            if (serverGamemodeState().matchMode == "tdm" &&
+                world.lastDestructionMatchId != serverGamemodeState().duelId)
+            {
+                resetServerWorldDestruction(world, npcWorld, tick);
+                world.lastDestructionMatchId = serverGamemodeState().duelId;
+            }
             const uint64_t gamemodeUs = elapsedMicroseconds(gamemodeStart);
             tickServerProgression(sock, players, true, totalPacketsOut);
 
@@ -1583,6 +1595,8 @@ static void simulateOneServerTick(ListenServerState& state)
         tickServerPhysicalContactWeapons(state.sock, state.players, state.npcs,
                                          state.world, SERVER_DT, state.tick,
                                          state.totalPacketsOut);
+        flushServerWorldImpacts(state.world, *state.npcWorld,
+                                serverGamemodeState().mapId, state.tick);
 
 
         // Skip ICE coordinator for local-only servers
@@ -1613,6 +1627,12 @@ static void simulateOneServerTick(ListenServerState& state)
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
+        if (serverGamemodeState().matchMode == "tdm" &&
+            state.world.lastDestructionMatchId != serverGamemodeState().duelId)
+        {
+            resetServerWorldDestruction(state.world, *state.npcWorld, state.tick);
+            state.world.lastDestructionMatchId = serverGamemodeState().duelId;
+        }
 
         tickServerProgression(state.sock, state.players, true, state.totalPacketsOut);
 

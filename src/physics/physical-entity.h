@@ -111,6 +111,7 @@ struct PhysicalEntity {
     uint32_t materialId = 0;
     std::string modelPath;
     std::string texturePath;
+    unsigned int renderTextureHandle = 0; // client-owned GLB material texture
     bool collidesWithActors = true;
 };
 

@@ -1352,8 +1352,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
 }
 
 // Builds and submits the generalized impact event for a projectile that hit a
-// physical entity (destructible-crate first slice). Only the projectile rifle
-// creates cuts in this slice; other projectiles still explode normally.
+// physical entity. Every projectile uses its configured physical profile.
 void submitEntityImpact(const ServerProjectile& projectile,
                         const ProjectileStepResult& step,
                         uint32_t tick)
@@ -1362,7 +1361,10 @@ void submitEntityImpact(const ServerProjectile& projectile,
     if (!entity)
         return;
 
-    const WeaponDefinition* def = WeaponRegistry::instance().get("projectile_rifle");
+    const std::string* weaponId =
+        weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+    const WeaponDefinition* def = weaponId
+        ? WeaponRegistry::instance().get(*weaponId) : nullptr;
 
     MimitaImpact::ImpactEvent impact;
     impact.simulationTick = tick;
@@ -1400,6 +1402,38 @@ void submitEntityImpact(const ServerProjectile& projectile,
     }
     impact.materialId = entity->materialId;
 
+    MimitaImpact::ImpactSystem::instance().submit(impact);
+}
+
+void submitWorldImpact(const ServerProjectile& projectile,
+                       const ProjectileStepResult& step, uint32_t tick)
+{
+    const std::string* weaponId =
+        weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+    const WeaponDefinition* def = weaponId
+        ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+    MimitaImpact::ImpactEvent impact;
+    impact.simulationTick = tick;
+    impact.source = projectile.splashRadius > 0.0f
+        ? MimitaImpact::ImpactSource::Explosion
+        : MimitaImpact::ImpactSource::Projectile;
+    impact.target = MimitaImpact::ImpactTarget::WorldGeometry;
+    impact.sourceEntityId = projectile.id;
+    impact.targetEntityId = step.hitWorldTriangleIndex >= 0
+        ? (uint32_t)step.hitWorldTriangleIndex + 1u : 0u;
+    impact.worldPoint = step.hitPosition;
+    impact.worldNormal = step.hitNormal;
+    impact.worldDirection = step.hitDirection;
+    impact.speed = std::max(0.0f, step.impactSpeed);
+    impact.mass = def ? def->projectileMass : 0.02f;
+    impact.density = def ? def->projectileDensity : 7800.0f;
+    impact.radius = def ? std::max(def->projectileRadius,
+                                  def->projectileBaseRadius) : 0.01f;
+    impact.sizeScale = def ? def->cutRadiusScale : 1.0f;
+    impact.boreLength = def ? std::max(0.0f, def->penetrationScale) *
+        std::max(impact.radius, 0.05f) * 2.0f : 0.0f;
+    impact.cutScale = def ? def->cutEnergyScale : 1.0f;
+    impact.damage = def ? def->damage : projectile.splashDamage;
     MimitaImpact::ImpactSystem::instance().submit(impact);
 }
 
@@ -1696,14 +1730,14 @@ void tickServerProjectiles(SOCKET sock,
                 }
                 else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
                 {
+                    submitWorldImpact(projectile, step, stepTick);
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                       step.hitNormal,
                                       "world", 0, tick, stepTick, totalPacketsOut);
                 }
                 else if (step.type == ProjectileCollisionType::EntityImpact && projectile.explodeOnWorldImpact)
                 {
-                    if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE)
-                        submitEntityImpact(projectile, step, stepTick);
+                    submitEntityImpact(projectile, step, stepTick);
 
                     // Penetration: a bolt with penetrations left cuts this
                     // surface and continues past it instead of stopping, so one

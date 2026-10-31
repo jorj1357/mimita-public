@@ -23,6 +23,7 @@
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "impact/impact-system.h"
 #include "persistence/persistence-emit.h"
 
 #include <cmath>
@@ -534,6 +535,7 @@ void handleAttackRequest(
         const float beamWorldThickness = std::max(0.0f, def->beamWorldThickness);
         glm::vec3 worldHit;
         glm::vec3 worldNormal;
+        uint32_t worldEntityId = 0;
         float worldBlockDistance = maxRange;
         if (beamWorldThickness > 0.0f)
         {
@@ -551,7 +553,8 @@ void handleAttackRequest(
         {
             // Thin world rays (default): precise aim, so a shotgun pellet
             // pattern at the aim direction is never clipped by wall edges.
-            if (serverRaycastWorld(origin, direction, maxRange, world, worldHit, worldNormal))
+            if (serverRaycastWorld(origin, direction, maxRange, world,
+                                   worldHit, worldNormal, &worldEntityId))
                 worldBlockDistance = glm::length(worldHit - origin);
         }
 
@@ -911,6 +914,39 @@ void handleAttackRequest(
             shooter.id, req->requestId, def->id.c_str(), trace.pelletCount,
             trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
             rt.stateRevision);
+
+        if (worldBlockDistance < maxRange - 0.01f)
+        {
+            for (int pellet = 0; pellet < trace.pelletCount; ++pellet)
+            {
+                if (trace.pellets[pellet].hit)
+                    continue;
+                MimitaImpact::ImpactEvent impact;
+                impact.simulationTick = tick;
+                impact.source = MimitaImpact::ImpactSource::Hitscan;
+                impact.target = worldEntityId != 0
+                    ? MimitaImpact::ImpactTarget::PhysicalEntity
+                    : MimitaImpact::ImpactTarget::WorldGeometry;
+                impact.sourceEntityId = shooter.id;
+                impact.eventId = ((uint64_t)shooter.id << 32) |
+                    ((uint64_t)req->requestId << 5) | (uint64_t)pellet;
+                impact.targetEntityId = worldEntityId;
+                impact.worldPoint = worldHit;
+                impact.worldNormal = worldNormal;
+                impact.worldDirection = trace.pellets[pellet].direction;
+                impact.speed = def->projectileSpeed > 0.0f
+                    ? def->projectileSpeed : 350.0f;
+                impact.mass = def->projectileMass;
+                impact.density = def->projectileDensity;
+                impact.radius = def->projectileBaseRadius;
+                impact.sizeScale = def->cutRadiusScale;
+                impact.boreLength = std::max(0.0f, def->penetrationScale) *
+                    std::max(impact.radius, 0.05f) * 2.0f;
+                impact.cutScale = def->cutEnergyScale;
+                impact.damage = def->damage;
+                MimitaImpact::ImpactSystem::instance().submit(impact);
+            }
+        }
 
         Debug::logThrottled(Debug::Category::Weapons, "attack-rewind", 1.0,
             "[ATTACK REWIND] playerId=%u requestId=%u fireSnapshotTick=%u "

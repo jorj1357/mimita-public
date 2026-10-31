@@ -592,6 +592,7 @@ ProjectileStepResult simulateProjectileTick(
                         state.position = proposedPos;
                         result.travelDistance += glm::length(step) * (1.0f - earliestT);
                         result.type = ProjectileCollisionType::WorldPassThrough;
+                        result.hitWorldTriangleIndex = best.triIdx;
                         result.hitPosition = earliestHitPos;
                         result.hitNormal = earliestNormal;
                         result.impactSpeed = intoSpeed;
@@ -603,6 +604,7 @@ ProjectileStepResult simulateProjectileTick(
                                     earliestNormal, config.restitution, config.friction,
                                     state.bounceCount);
                         result.type = ProjectileCollisionType::WorldBounce;
+                        result.hitWorldTriangleIndex = best.triIdx;
                         result.hitPosition = earliestHitPos;
                         result.hitNormal = earliestNormal;
                         result.impactSpeed = intoSpeed;
@@ -613,6 +615,9 @@ ProjectileStepResult simulateProjectileTick(
                         state.angularVelocity = glm::vec3(0.0f);
                         state.sleeping = true;
                         result.type = ProjectileCollisionType::WorldImpact;
+                        result.hitWorldTriangleIndex = best.triIdx;
+                        result.hitDirection = glm::length(state.velocity) > 0.001f
+                            ? glm::normalize(state.velocity) : -earliestNormal;
                         result.hitPosition = earliestHitPos;
                         result.hitNormal = earliestNormal;
                         result.impactSpeed = intoSpeed;

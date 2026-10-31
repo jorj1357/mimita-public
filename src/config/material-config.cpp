@@ -7,7 +7,9 @@
 
 #include "config/material-config.h"
 
+#include <cmath>
 #include <fstream>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
@@ -93,6 +95,10 @@ bool MaterialConfig::load(const std::string& path)
                 def.surfaceHardness = readFloat(m, "surfaceHardness", def.surfaceHardness);
                 def.holeEnergyScale = readFloat(m, "holeEnergyScale", def.holeEnergyScale);
                 def.maxCutRadius = readFloat(m, "maxCutRadius", def.maxCutRadius);
+                if (m.contains("cutThresholdJ") && m["cutThresholdJ"].is_number())
+                    def.cutThresholdJ = m["cutThresholdJ"].get<double>();
+                if (!std::isfinite(def.cutThresholdJ) || def.cutThresholdJ < 0.0)
+                    throw std::runtime_error("invalid cutThresholdJ for " + def.id);
                 nextById[materialIdForName(def.id)] = def;
             }
         }

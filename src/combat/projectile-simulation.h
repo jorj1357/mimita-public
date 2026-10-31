@@ -92,11 +92,13 @@ struct ProjectileStepResult
     ProjectileCollisionType type = ProjectileCollisionType::None;
     glm::vec3 hitPosition{0.0f};
     glm::vec3 hitNormal{0.0f, 0.0f, 1.0f};
+    glm::vec3 hitDirection{0.0f};
     float impactSpeed = 0.0f;
     float travelDistance = 0.0f;
     uint32_t hitPlayerId = 0;
     uint32_t hitPlayerSpawnGeneration = 0;
     uint32_t hitEntityId = 0;
+    int hitWorldTriangleIndex = -1;
     uint32_t triangleQueryCount = 0;
     uint32_t triangleCandidateTotal = 0;
     uint32_t triangleCandidateMax = 0;

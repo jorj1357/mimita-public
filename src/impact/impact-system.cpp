@@ -334,6 +334,13 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
 {
     ImpactResult result;
 
+    if (event.target == ImpactTarget::WorldGeometry)
+    {
+        if (finiteImpactEvent(event))
+            mWorldImpacts.push_back(event);
+        return result;
+    }
+
     if (event.target != ImpactTarget::PhysicalEntity)
     {
         if ((mIgnoredLogCounter++ % 240u) == 0u)
@@ -396,6 +403,26 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     const glm::mat4 inverse = glm::inverse(entity->transform);
     const glm::vec3 localPoint =
         glm::vec3(inverse * glm::vec4(resolved.worldPoint, 1.0f));
+
+    if (material.cutThresholdJ > 0.0)
+    {
+        // Energy is retained only near the impacted point. Shots elsewhere on
+        // a large floor cannot combine to open a distant hole.
+        const glm::ivec3 cell = glm::ivec3(glm::floor(localPoint * 4.0f));
+        const uint64_t mask = (1ull << 21) - 1ull;
+        const uint64_t key = ((uint64_t)cell.x & mask) |
+            (((uint64_t)cell.y & mask) << 21) |
+            (((uint64_t)cell.z & mask) << 42);
+        double& stored = entity->destructible.storedImpactEnergyJ[key];
+        stored += std::max(0.0f, effectiveEnergy);
+        if (stored < material.cutThresholdJ)
+        {
+            result.applied = true;
+            result.damage = damage;
+            return result;
+        }
+        stored -= material.cutThresholdJ;
+    }
 
     DestructionCut cut;
     cut.cutter.radius = radius;
@@ -479,6 +506,7 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
             const float matchRadius =
                 0.25f * std::max(existing.cutter.radius, cut.cutter.radius);
             const bool sameSpot =
+                (cut.predictionKey == 0 || existing.predictionKey == 0) &&
                 glm::length(existing.cutter.localCenter - cut.cutter.localCenter) <=
                 std::max(matchRadius, 0.01f);
             if (sameKey || sameSpot)
@@ -557,6 +585,13 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     result.fragmentCount = 0;
     result.error = BooleanError::None;
     return result;
+}
+
+std::vector<ImpactEvent> ImpactSystem::takeWorldImpacts()
+{
+    std::vector<ImpactEvent> events;
+    events.swap(mWorldImpacts);
+    return events;
 }
 
 void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)

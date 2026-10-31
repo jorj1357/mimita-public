@@ -56,7 +56,8 @@
       "display_name": "Juggernauts",
       "capacity": 4,
       "respawn_seconds": 0.0,
-      "kill_heal_percent": 100.0,
+      // "kill_heal_percent": 100.0,
+      "kill_heal_percent": 10.0,
       "role": "juggernaut_mode_juggernaut",
       "npc_role": "",
       "spawn_group": "juggernauts_spawn",
@@ -212,7 +213,7 @@
   },
   "aim": {
     "mode": "physical",
-    "body_mode": "hybrid",
+    "body_mode": "default",
     "body_enabled": true
   },
   "bomb_timer_ticks": 900,

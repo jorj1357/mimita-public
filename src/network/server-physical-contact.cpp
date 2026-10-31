@@ -530,9 +530,8 @@ void tickServerPhysicalContactWeapons(SOCKET sock,
                                       float dt, uint32_t tick,
                                       uint64_t& totalPacketsOut)
 {
-    (void)world;
-
-    tickServerAnimatedPhysicalContactWeapons(sock, players, npcs, tick, totalPacketsOut);
+    tickServerAnimatedPhysicalContactWeapons(sock, players, npcs, tick,
+                                             totalPacketsOut, nullptr, &world);
 
     for (auto& attackerEntry : players)
     {

@@ -62,6 +62,11 @@ public:
     // Applies one impact. Returns what happened; safe to call every hit.
     ImpactResult submit(const ImpactEvent& event);
 
+    // World geometry is resolved by the owning map collision system after all
+    // contacts for a fixed tick have been collected. This keeps the impact
+    // formula shared while letting the map owner identify its closed solid.
+    std::vector<ImpactEvent> takeWorldImpacts();
+
     // Applies queued cuts to every destructible entity, batched: one rebuild
     // per entity regardless of how many cuts are queued. `maxCutsPerEntity` > 0
     // caps how many queued cuts are applied this call so a burst cannot blow the
@@ -105,6 +110,7 @@ private:
     uint64_t mNextEventId = 1;
     uint32_t mIgnoredLogCounter = 0;
     uint32_t mCutLogCounter = 0;
+    std::vector<ImpactEvent> mWorldImpacts;
 };
 
 // Deterministic self-test for the destructible-impact slice. Returns true when
