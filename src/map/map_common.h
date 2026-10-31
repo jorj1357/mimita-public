@@ -30,6 +30,9 @@ struct MapGLBObject {
     glm::vec3 basePosition{0.0f};   // original GLB translation before editor overrides
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
+    // Optional Map Editor material override. Empty means the destructible
+    // material heuristic decides.
+    std::string materialName;
     size_t vertexFirst = 0;
     size_t vertexCount = 0;
 };

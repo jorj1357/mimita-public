@@ -657,6 +657,25 @@ void explodeProjectile(SOCKET sock,
     const bool directBullet = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
     packet.radius = directBullet ? 0.0f : projectile.splashRadius;
 
+    if (!directBullet && projectile.splashRadius > 0.0f)
+    {
+        const std::string* weaponId =
+            weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+        const WeaponDefinition* def = weaponId
+            ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+        const float mass = def ? def->resolvedWorldImpactMassKg() : 0.02f;
+        const float speed = def
+            ? std::max(glm::length(projectile.velocity),
+                       def->resolvedWorldImpactSpeedMps())
+            : glm::length(projectile.velocity);
+        const float energy = 0.5f * mass * speed * speed;
+        submitExplosionWorldImpacts(
+            world, position, projectile.splashRadius, energy, mass,
+            def ? def->resolvedWorldImpactRadiusM() : 0.01f,
+            def ? def->resolvedWorldImpactPenetrationM() : 0.0f,
+            projectile.id, tick);
+    }
+
     // The projectile rifle uses the same direct damage/knockback contract as
     // revolver and shotgun hitscan, but keeps the projectile's travel and
     // fixed-tick collision. It is a bullet terminal, not an explosion.
@@ -1368,7 +1387,9 @@ void submitEntityImpact(const ServerProjectile& projectile,
 
     MimitaImpact::ImpactEvent impact;
     impact.simulationTick = tick;
-    impact.source = MimitaImpact::ImpactSource::Projectile;
+    impact.source = projectile.splashRadius > 0.0f
+        ? MimitaImpact::ImpactSource::Explosion
+        : MimitaImpact::ImpactSource::Projectile;
     impact.target = MimitaImpact::ImpactTarget::PhysicalEntity;
     impact.sourceEntityId = projectile.id;
     impact.targetEntityId = entity->id;
@@ -1377,22 +1398,17 @@ void submitEntityImpact(const ServerProjectile& projectile,
     impact.worldDirection = glm::length(projectile.velocity) > 0.001f
         ? glm::normalize(projectile.velocity)
         : glm::vec3(0.0f, 1.0f, 0.0f);
-    impact.speed = glm::length(projectile.velocity);
+    impact.speed = def
+        ? std::max(glm::length(projectile.velocity),
+                   def->resolvedWorldImpactSpeedMps())
+        : glm::length(projectile.velocity);
     if (def)
     {
-        impact.mass = def->projectileMass;
-        impact.density = def->projectileDensity;
-        // Use the projectile's real cross-section (its swept radius), not just
-        // the tiny base radius, so the hole matches the visible projectile. The
-        // weapon's cutRadiusScale decides how strongly size feeds the hole.
-        impact.radius = std::max(def->projectileRadius, def->projectileBaseRadius);
-        impact.sizeScale = def->cutRadiusScale;
-        // Bore a tunnel segment per shot; penetration_scale is the length in
-        // metres the cutter advances past the surface.
-        impact.boreLength = std::max(0.0f, def->penetrationScale) *
-                            std::max(impact.radius, 0.05f) * 2.0f;
+        impact.mass = def->resolvedWorldImpactMassKg();
+        impact.density = def->resolvedWorldImpactDensityKgM3();
+        impact.radius = def->resolvedWorldImpactRadiusM();
+        impact.boreLength = def->resolvedWorldImpactPenetrationM();
         impact.shapeId = def->projectileShapeId;
-        impact.cutScale = def->cutEnergyScale;
         impact.damage = def->damage;
     }
     else
@@ -1405,7 +1421,8 @@ void submitEntityImpact(const ServerProjectile& projectile,
     MimitaImpact::ImpactSystem::instance().submit(impact);
 }
 
-void submitWorldImpact(const ServerProjectile& projectile,
+void submitWorldImpact(const HeadlessWorld& world,
+                       const ServerProjectile& projectile,
                        const ProjectileStepResult& step, uint32_t tick)
 {
     const std::string* weaponId =
@@ -1421,18 +1438,18 @@ void submitWorldImpact(const ServerProjectile& projectile,
     impact.sourceEntityId = projectile.id;
     impact.targetEntityId = step.hitWorldTriangleIndex >= 0
         ? (uint32_t)step.hitWorldTriangleIndex + 1u : 0u;
+    impact.worldSolidId = step.hitWorldTriangleIndex >= 0
+        ? serverWorldSolidIdAtTriangle(world, (size_t)step.hitWorldTriangleIndex)
+        : 0u;
     impact.worldPoint = step.hitPosition;
     impact.worldNormal = step.hitNormal;
     impact.worldDirection = step.hitDirection;
-    impact.speed = std::max(0.0f, step.impactSpeed);
-    impact.mass = def ? def->projectileMass : 0.02f;
-    impact.density = def ? def->projectileDensity : 7800.0f;
-    impact.radius = def ? std::max(def->projectileRadius,
-                                  def->projectileBaseRadius) : 0.01f;
-    impact.sizeScale = def ? def->cutRadiusScale : 1.0f;
-    impact.boreLength = def ? std::max(0.0f, def->penetrationScale) *
-        std::max(impact.radius, 0.05f) * 2.0f : 0.0f;
-    impact.cutScale = def ? def->cutEnergyScale : 1.0f;
+    impact.speed = std::max(step.impactSpeed,
+                            def ? def->resolvedWorldImpactSpeedMps() : 0.0f);
+    impact.mass = def ? def->resolvedWorldImpactMassKg() : 0.02f;
+    impact.density = def ? def->resolvedWorldImpactDensityKgM3() : 7800.0f;
+    impact.radius = def ? def->resolvedWorldImpactRadiusM() : 0.01f;
+    impact.boreLength = def ? def->resolvedWorldImpactPenetrationM() : 0.0f;
     impact.damage = def ? def->damage : projectile.splashDamage;
     MimitaImpact::ImpactSystem::instance().submit(impact);
 }
@@ -1730,7 +1747,7 @@ void tickServerProjectiles(SOCKET sock,
                 }
                 else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
                 {
-                    submitWorldImpact(projectile, step, stepTick);
+                    submitWorldImpact(world, projectile, step, stepTick);
                     explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
                                       step.hitNormal,
                                       "world", 0, tick, stepTick, totalPacketsOut);

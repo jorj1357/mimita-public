@@ -56,7 +56,6 @@
       "display_name": "Juggernauts",
       "capacity": 4,
       "respawn_seconds": 0.0,
-      // "kill_heal_percent": 100.0,
       "kill_heal_percent": 10.0,
       "role": "juggernaut_mode_juggernaut",
       "npc_role": "",
@@ -178,7 +177,9 @@
     "rain": false,
     "torch_lighting": false,
     "freeze_during_countdown": false,
-    "freeze_during_go": true
+    "freeze_during_go": true,
+    "destructible_world": true,
+    "destructible_world_reset": "round"
   },
   "camera_fov": 0.0,
   "force_first_person": false,

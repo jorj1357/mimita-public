@@ -65,8 +65,6 @@
     "impactAlphaStage3": 0.4,
     "impactStage3Ticks": 20.0
   },
-"cut_energy_scale": 1.0,
-"cut_radius_scale": 1.0,
 "damage": 250.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -131,5 +129,7 @@
       0.0,
       0.0
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "projectile_rifle"
 }

@@ -309,6 +309,17 @@ gamemode-specific physics owner:
   null value inherits the global destructible-world setting, whose desired
   default is enabled. A mode may explicitly set it to false when its design
   or performance budget requires intact world geometry.
+- `features.destructible_world_reset` is a nullable reset policy:
+  `"match"` restores the authored map at each match boundary, `"round"`
+  restores it at each round boundary, and `"never"` preserves world damage
+  until a map change. Null inherits the mode's lifecycle default. TDM uses
+  `"match"` for its 3-minute match boundary, Juggernaut uses `"round"`, and
+  Survive the Disasters uses `"match"` so damage persists across its ten
+  rounds.
+- The global default lives in `config/destructible-world.json` under
+  `world.enabled`. The mode override and reset policy are validated by the
+  gamemode masterlist and resolved by the shared runtime resolver; they are
+  not read ad hoc by weapon or collision code.
 - A mode may select a shared actor-contact profile, including the proposed
   close-space soft-fit behavior. It tunes the shared collision owner and may
   not bypass world collision or allow tunneling.

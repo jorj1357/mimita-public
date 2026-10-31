@@ -135,6 +135,7 @@ struct MapGLBObjectOverride
     std::string id;
     std::string name;
     glm::vec3 position{0.0f};
+    std::string material;
 };
 
 struct MapObjectiveConfig

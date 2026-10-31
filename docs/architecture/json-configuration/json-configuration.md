@@ -364,3 +364,63 @@ For authored animation JSON, the owning feature contract is in
 `docs/specs/animations/animations.md`: poll while actors update, apply valid
 clip edits on the next fixed tick, preserve the last valid set on a bad save,
 and make already-running actors use the updated set without a rebuild.
+
+## Weapon masterlist and world-impact profiles (2026-10-30)
+
+`config/weapons/masterlist/weapon-masterlist.json` remains the single contract
+for every file in `config/weapons/*/config.json`. It defines the supported keys,
+canonical field order, types, nullable fields, defaults, and validation rules.
+
+### Shared profiles
+
+The same masterlist owns shared physical world-impact data:
+
+```text
+world_impact_defaults
+world_impact_profiles
+```
+
+A weapon config references a named profile and overrides only its unique values:
+
+```json
+{
+  "world_impact_profile": "bullet_pistol",
+  "world_impact": {
+    "mass_kg": 0.008,
+    "diameter_m": 0.009
+  }
+}
+```
+
+Resolution order:
+
+```text
+built-in source defaults
+    < master world_impact_defaults
+    < named world_impact_profile
+    < weapon world_impact override
+    < melee action world_impact override
+```
+
+This is how a very large community weapon library can share physical behavior
+without copying values into every weapon. Physical profiles contain physical
+units only: mass, density, size, speed, penetration, and shape. They do not
+contain arcade energy/radius multipliers.
+
+### Validation and synchronization
+
+- Add every new top-level weapon field to the masterlist `fields` and `rules`
+  before a weapon config can use it.
+- The runtime loader validates every weapon file against the masterlist.
+- `python devscripts/weapon_json_sync.py --write` adds missing fields in
+  canonical order while preserving existing values and JSONC comments.
+- `python devscripts/weapon_json_sync.py --check` is the completeness/order
+  gate.
+- `python devscripts/config_selftest.py` runs the offline configuration checks.
+- A field listed in the masterlist but ignored by the loader is a contract
+  violation.
+- Invalid profile data keeps the last valid configuration; it never partially
+  installs a mixed profile.
+
+The `cut_energy_scale` and `cut_radius_scale` fields were removed in the
+2026-10-30 physical-impact migration. New content uses the physical profile.

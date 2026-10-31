@@ -42,6 +42,11 @@ struct GamemodeFeatures {
     bool torchLighting = false;
     bool freezeDuringCountdown = false;
     bool freezeDuringGo = true;
+    // -1 inherits the global config/destructible-world.json world.enabled
+    // value, 0 disables world destruction, 1 enables it.
+    int destructibleWorld = -1;
+    // "match", "round", or "never"; empty inherits the mode lifecycle default.
+    std::string destructibleWorldReset;
 };
 
 // One ordered team in a mode's roster. Team index (0-based) is the

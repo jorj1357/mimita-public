@@ -29,6 +29,12 @@ public:
     // Destruction work is aggregated: cuts are collected and applied in one
     // batch, and an entity is only reworked when this many fixed ticks have
     // passed since its last batch (or its queue reaches cutBatchMax first).
+    bool worldEnabled() const { return mWorldEnabled; }
+    uint32_t explosionMaxNodesPerEvent() const
+    {
+        return mExplosionMaxNodesPerEvent;
+    }
+
     uint32_t cutBatchIntervalTicks() const { return mCutBatchIntervalTicks; }
     uint32_t cutBatchMax() const { return mCutBatchMax; }
     float cutBudgetMsPerTick() const { return mCutBudgetMsPerTick; }
@@ -88,6 +94,8 @@ public:
 private:
     DestructibleWorldConfig() = default;
 
+    bool mWorldEnabled = true;
+    uint32_t mExplosionMaxNodesPerEvent = 8;
     uint32_t mCutBatchIntervalTicks = 8;
     uint32_t mCutBatchMax = 64;
     float mCutBudgetMsPerTick = 2.0f;

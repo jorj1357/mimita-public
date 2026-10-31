@@ -4948,3 +4948,34 @@ authoritative-position ghost. While enabled, the overlay renders raw server
 target positions and suppresses the local predicted capsule/replica capsules, so
 the observer can compare the client view with the server view. This is
 presentation-only and does not change gameplay or authority.
+
+## World destruction authority (2026-10-30)
+
+World-geometry destruction is a separate target contract from actor damage.
+Actor-victim damage remains owned by `contact-authority.md`. World destruction is
+owned by `docs/specs/destructible-world/destructible-world.md` section 71.
+
+Normative rules:
+
+- The server is authoritative for map-geometry cuts and fracture results.
+- Clients replicate causes, not meshes. No map mesh or generated vertex list is
+  sent for a cut.
+- A cut cause carries target identity, ordered cut id, cutter shape, center,
+  direction, radius, length, material, source identity, tick, and prediction key
+  where applicable.
+- The local shooter predicts immediately. The server validates and publishes the
+  authoritative cause. Peers apply the same deterministic cut as soon as the
+  cause arrives.
+- Large cuts may show an immediate visual hole/decal and commit the
+  collision/render geometry when the budgeted or asynchronous remesh completes.
+  The authoritative cut result is identical; the immediate visual is only a
+  latency bridge.
+- Spawn, cut, and despawn order is reliable and ordered per target. A cut must
+  not be applied before the target's spawn event.
+- Match reset and map change despawn active map-derived entities and fragments;
+  clients restore the authored map from the same data.
+- If a client misses or rejects a cause, it must reconcile to the server's
+  ordered cut history rather than inventing a divergent local history.
+
+The 240 FPS and diagnostics requirements in the destructible-world spec apply to
+the client receive/apply path as well as the server publisher.

@@ -2071,8 +2071,12 @@ fuse duration = 180 ticks
 At server tick 1181:
 current tick - spawn tick >= fuse duration
 The server creates an authoritative explosion event.
-Todo can we fit explosions into their own system? Or, within a bigger system?
-Like explosions are just knockback + damage, knockback is just force, etc
+Explosions use the shared physical impact/damage owners rather than a separate
+weapon-specific path. Actor damage and knockback are resolved by the shared
+contact/damage resolver; world destruction is resolved by the single persistent
+destructible-world entry point. See
+`docs/specs/destructible-world/destructible-world.md` section 71.5 and
+`## Shared world-impact and explosion profiles` below.
 ExplosionEvent explosion =
     explosionSystem.createExplosion(
         projectile.position,
@@ -2530,3 +2534,80 @@ The right-arm pose is replicated with
 `RAGDOLL_NET_ARM_RAGDOLL` so remote clients and the authoritative server use
 the same limb pose for contact. Server damage remains owned by the shared
 contact resolver; this mode does not add a second damage path.
+
+## Shared world-impact and explosion profiles (2026-10-30)
+
+Every damaging weapon participates in world destruction through the single
+persistent entry point in
+`docs/specs/destructible-world/destructible-world.md` section 71. There is no
+weapon-specific wall-damage path.
+
+Physical values only:
+
+```text
+mass_kg
+density_kg_m3
+diameter_m / radius_m
+speed_mps
+penetration_m
+shape
+```
+
+No arcade energy/radius multiplier is used. Extreme behavior comes from extreme
+physical values. An apple-sized object with 100,000 times ordinary density has a
+correspondingly enormous mass, and the ordinary physics produces the result.
+
+The `cut_energy_scale` and `cut_radius_scale` fields are removed. They are
+replaced by the physical profile.
+
+### Inheritance
+
+Shared defaults and named profiles live in
+`config/weapons/masterlist/weapon-masterlist.json`:
+
+```text
+world_impact_defaults
+world_impact_profiles
+```
+
+Resolution order:
+
+```text
+built-in source defaults
+    < master world_impact_defaults
+    < named world_impact_profile
+    < weapon world_impact override
+    < melee action world_impact override
+```
+
+A weapon references a profile and overrides only its unique values. This is the
+scalable path for a very large community weapon library.
+
+### Sources
+
+- Hitscan resolves one physical impact per pellet.
+- Projectile uses its configured mass/density/size/speed/penetration.
+- Melee uses measured weapon-shape speed plus the weapon/action physical mass.
+  A world-impact cooldown prevents a caught weapon from cutting every tick.
+- Explosion uses explosive energy/mass plus a radial contribution with distance
+  falloff, occlusion, and a bounded number of map solids per blast.
+
+The actor damage/knockback rules remain the shared contact/damage resolver. The
+physical profile drives world destruction; creators who want physically
+consistent actor knockback should align the contact/knockback values with the
+same mass and speed.
+
+### Tuning examples
+
+```text
+weak knife        -> low mass, low speed, small radius, small penetration
+revolver          -> small fast bullet, small hole
+shotgun           -> many small pellets, many small holes
+rocket            -> heavy fast projectile + large explosive energy + radial blast
+mace              -> deliberately huge mass/density so it cuts easily
+foundation floor  -> extreme material threshold/resistance
+```
+
+The only legitimate way to make a weapon "arcade heavy" is to author heavy
+physical values. The only legitimate way to make a material tough is to author
+tough material values.

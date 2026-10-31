@@ -175,7 +175,7 @@ uint32_t makeCrate(PhysicalEntitySystem& system, glm::vec3 position, float half)
 ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
                          const glm::vec3& normal, const glm::vec3& direction,
                          float mass, float speed, float radius,
-                         float sizeScale = 0.0f, float boreLength = 0.0f)
+                         float boreLength = 0.0f)
 {
     ImpactEvent ev;
     ev.source = ImpactSource::Projectile;
@@ -187,9 +187,7 @@ ImpactResult submitRifle(uint32_t targetId, const glm::vec3& point,
     ev.mass = mass;
     ev.speed = speed;
     ev.radius = radius;
-    ev.sizeScale = sizeScale;
     ev.boreLength = boreLength;
-    ev.cutScale = 1.0f;
     ev.energy = ImpactSystem::kineticEnergy(mass, speed);
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     const size_t entitiesBefore = system.entities().size();
@@ -852,7 +850,6 @@ bool destructibleSelfTest(std::string* outSummary)
         base.worldDirection = glm::vec3(0, 0, -1);
         base.worldNormal = glm::vec3(0, 0, 1);
         base.radius = 0.3f;
-        base.cutScale = 1.0f;
 
         // Force: identical size, more energy -> bigger hole.
         ImpactEvent slow = base, fast = base;
@@ -866,19 +863,10 @@ bool destructibleSelfTest(std::string* outSummary)
         ImpactEvent small = base, big = base;
         small.radius = 0.1f;
         big.radius = 0.8f;
-        small.sizeScale = big.sizeScale = 1.0f;
         small.energy = big.energy = ImpactSystem::kineticEnergy(0.02f, 400.0f);
         const float smallR = ImpactSystem::calculateCutRadius(small, mat);
         const float bigR = ImpactSystem::calculateCutRadius(big, mat);
         check(bigR > smallR, "a bigger projectile cuts a bigger hole at equal force");
-
-        // Size scale 0 == force only, so a huge projectile can be neutralized.
-        ImpactEvent noSize = base;
-        noSize.radius = 0.8f;
-        noSize.sizeScale = 0.0f;
-        noSize.energy = ImpactSystem::kineticEnergy(0.02f, 400.0f);
-        check(ImpactSystem::calculateCutRadius(noSize, mat) < bigR,
-              "cut_radius_scale=0 removes the projectile-size contribution");
     }
 
     // 20. One shot makes a real hole; every shot does, not just occasionally.
@@ -1028,7 +1016,7 @@ bool destructibleSelfTest(std::string* outSummary)
             // Match the production rifle: a bore segment of ~2x the radius.
             const glm::vec3 cutPoint = step.hitPosition;
             const ImpactResult r = submitRifle(id, cutPoint, -dir, dir,
-                                               0.02f, 100.0f, 0.6f, 1.0f, 1.2f);
+                                               0.02f, 100.0f, 0.6f, 1.2f);
             crate = system.find(id);
             if (!crate)
                 break;
@@ -1127,8 +1115,6 @@ bool destructionStressSelfTest(std::string* outSummary)
         ev.mass = 0.02f;
         ev.speed = 100.0f;
         ev.radius = 0.6f;
-        ev.sizeScale = 1.0f;
-        ev.cutScale = 1.0f;
         ev.boreLength = 1.2f;
         ev.energy = ImpactSystem::kineticEnergy(ev.mass, ev.speed);
         return ev;

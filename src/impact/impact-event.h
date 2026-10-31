@@ -54,6 +54,10 @@ struct ImpactEvent
     // actor id); targetEntityId identifies the hit PhysicalEntity.
     uint32_t sourceEntityId = 0;
     uint32_t targetEntityId = 0;
+    // Exact imported-map solid identity for WorldGeometry targets. Sources set
+    // this from the geometry query so the map owner never guesses from a chunk
+    // cell. 0 means "resolve from targetEntityId or the fallback query".
+    uint32_t worldSolidId = 0;
 
     glm::vec3 worldPoint{0.0f};
     glm::vec3 worldNormal{0.0f, 0.0f, 1.0f};
@@ -67,11 +71,6 @@ struct ImpactEvent
     float damage = 0.0f;         // source-declared nominal damage
     float penetration = 0.0f;    // reserved: penetration depth
 
-    // Source-declared scale on the hole-size contribution from `radius`. A
-    // large projectile with small force cuts a small hole; a small projectile
-    // with huge force cuts a big hole. 0 = size does not influence the hole.
-    float sizeScale = 1.0f;
-
     // How far the cutter bores along `worldDirection` past the hit point. 0
     // means a single sphere at the surface; > 0 makes the cut a swept capsule,
     // so a shot carves a tunnel segment and repeated shots on one gap deepen
@@ -80,10 +79,6 @@ struct ImpactEvent
 
     uint32_t materialId = 0;     // target material (resolved by the target)
     uint32_t shapeId = 0;        // ImpactShape
-
-    // Source-declared gameplay scale on destructive energy (any source may set
-    // it; 1.0 = no scale). Not a crate-specific field.
-    float cutScale = 1.0f;
 
     // Reserved for deterministic seeded irregularity (destructible-world §9).
     uint32_t seed = 0;

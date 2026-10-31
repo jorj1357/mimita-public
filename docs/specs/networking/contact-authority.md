@@ -13,6 +13,14 @@ another projectile damage formula, another melee special case, or another
 direct health writer. The code must match this document. If the code cannot
 express this contract, update the specification first and explain why.
 
+## Scope boundary
+
+This document governs **actor-victim** contact and damage. World-geometry
+destruction is a separate target contract owned by
+`docs/specs/destructible-world/destructible-world.md` section 71. A source may
+feed both owners from the same physical inputs, but it must not create a second
+world-destruction path or a second actor-damage path.
+
 ## Core rule
 
 Every damaging interaction follows the same pipeline:

@@ -989,6 +989,19 @@
           "type": "boolean",
           "required": false,
           "default": true
+        },
+        "destructible_world": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true
+        },
+        "destructible_world_reset": {
+          "type": "string",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "enum": ["match", "round", "never"]
         }
       }
     },

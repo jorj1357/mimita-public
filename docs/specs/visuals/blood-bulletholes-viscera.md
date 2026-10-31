@@ -1987,3 +1987,33 @@ The renderer and simulator should only pay for the tiny fraction of that history
 23. World truth, simulation, representation, and rendering are separate.
 24. Physical consequences should persist even when their expensive representation does not.
 25. The desired end state is effectively unlimited persistent visual/world complexity with cost proportional to what currently matters.
+
+---
+
+# Actor body holes and organs (future destructible actor parts)
+
+This is a future slice linked to
+`docs/specs/destructible-world/destructible-world.md` section 71.10.
+
+The long-term target is for actor bodies to expose the same physical-impact
+inputs as map solids so that a sufficiently energetic hit can remove part of a
+body, expose organs, or leave a visible hole through the body in a realistic
+mode.
+
+Required direction:
+
+- Actor hits consume the same physical inputs: mass, density, speed, contact
+  direction/normal, material, and hit region.
+- Each visible body part owns hidden part health and material data.
+- A future actor-part destructible owner may apply the same boolean/cut model to
+  rigged part meshes that the world uses for map solids.
+- Blood, organs, viscera, bone, and meat are material/effect layers, not a
+  separate gore engine.
+- The existing part-health/limb-destruction work remains the first layer; body
+  holes and through-body visibility are a later fidelity step.
+- The hook must not introduce a second actor-damage or world-destruction path.
+- Realistic-mode presentation is a mode/presentation policy; authoritative
+  damage remains owned by the shared contact/damage resolver.
+
+This is not implemented by the imported-map destruction slice. It is recorded
+here so the actor hook is not lost and the same physical model is reused later.

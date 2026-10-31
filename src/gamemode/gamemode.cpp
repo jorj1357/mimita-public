@@ -772,6 +772,18 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 optBool(f, "freeze_during_countdown", next.features.freezeDuringCountdown);
             next.features.freezeDuringGo =
                 optBool(f, "freeze_during_go", next.features.freezeDuringGo);
+            if (f.contains("destructible_world")) {
+                if (f["destructible_world"].is_null())
+                    next.features.destructibleWorld = -1;
+                else if (f["destructible_world"].is_boolean())
+                    next.features.destructibleWorld =
+                        f["destructible_world"].get<bool>() ? 1 : 0;
+            }
+            next.features.destructibleWorldReset.clear();
+            if (f.contains("destructible_world_reset") &&
+                f["destructible_world_reset"].is_string())
+                next.features.destructibleWorldReset =
+                    f["destructible_world_reset"].get<std::string>();
         }
 
         // ── Visual/settings overrides ───────────────────────────────

@@ -172,7 +172,9 @@
     "rain": false,
     "torch_lighting": false,
     "freeze_during_countdown": false,
-    "freeze_during_go": true
+    "freeze_during_go": true,
+    "destructible_world": null,
+    "destructible_world_reset": null
   },
   "camera_fov": 0.0,
   "force_first_person": false,

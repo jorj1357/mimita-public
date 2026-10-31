@@ -192,6 +192,7 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
             triangles.end());
     }
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
+    ++npcWorld.renderRevision;
 
     // Build the same acceleration grids the client builds: chunk cells PLUS
     // the coarse large-triangle grid + sub-grids. Reusing the client builder

@@ -14,6 +14,7 @@
 #include <cstring>
 #include <ctime>
 #include <functional>
+#include <limits>
 #include <unordered_map>
 
 namespace MimitaNet {
@@ -166,6 +167,14 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
             object.triangleCount = count;
             object.basePosition = glm::vec3(transform[3]);
             object.position = object.basePosition;
+            object.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+            object.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+            for (size_t i = firstTriangle; i < firstTriangle + count; ++i)
+            {
+                const CollisionTriangle& tri = world.triangles[i];
+                object.boundsMin = glm::min(object.boundsMin, glm::min(tri.a, glm::min(tri.b, tri.c)));
+                object.boundsMax = glm::max(object.boundsMax, glm::max(tri.a, glm::max(tri.b, tri.c)));
+            }
             world.glbObjects.push_back(std::move(object));
             if (isClosedSolidTriangleRange(
                     world.triangles, firstTriangle, world.triangles.size()))
@@ -242,6 +251,11 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     world.triangles.clear();
     world.solidIds.clear();
     world.glbObjects.clear();
+    world.destructionBaselineSolidIds.clear();
+    world.activeDestructibleNodes.clear();
+    world.rejectedDestructibleNodes.clear();
+    world.lastDestructionMatchId = 0;
+    world.lastNpcDestructionRevision = 0;
     world.nextSolidId = 1;
     world.boundsMin = glm::vec3(0.0f);
     world.boundsMax = glm::vec3(0.0f);

@@ -2155,20 +2155,17 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                 impact.worldDirection = glm::length(projectile.velocity) > 0.001f
                     ? glm::normalize(projectile.velocity)
                     : glm::vec3(0.0f, 0.0f, 1.0f);
-                impact.speed = std::max(step.impactSpeed,
-                                        glm::length(projectile.velocity));
-                impact.mass = def ? def->projectileMass : 0.02f;
-                impact.density = def ? def->projectileDensity : 7800.0f;
-                impact.radius = def
-                    ? std::max(def->projectileRadius, def->projectileBaseRadius)
-                    : 0.01f;
-                impact.sizeScale = def ? def->cutRadiusScale : 0.0f;
-                impact.boreLength = def
-                    ? std::max(0.0f, def->penetrationScale) *
-                          std::max(impact.radius, 0.05f) * 2.0f
-                    : 0.0f;
+                impact.speed = def
+                    ? std::max(step.impactSpeed,
+                               std::max(glm::length(projectile.velocity),
+                                        def->resolvedWorldImpactSpeedMps()))
+                    : std::max(step.impactSpeed,
+                               glm::length(projectile.velocity));
+                impact.mass = def ? def->resolvedWorldImpactMassKg() : 0.02f;
+                impact.density = def ? def->resolvedWorldImpactDensityKgM3() : 7800.0f;
+                impact.radius = def ? def->resolvedWorldImpactRadiusM() : 0.01f;
+                impact.boreLength = def ? def->resolvedWorldImpactPenetrationM() : 0.0f;
                 impact.shapeId = def ? def->projectileShapeId : 0;
-                impact.cutScale = def ? def->cutEnergyScale : 1.0f;
                 MimitaImpact::ImpactSystem::instance().submit(impact);
             }
             if (state.sleeping || step.type == ProjectileCollisionType::WorldBounce ||

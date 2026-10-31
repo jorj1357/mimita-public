@@ -1840,8 +1840,6 @@ bool physicalEntitySelfTest(std::string* outSummary)
         ev.mass = 0.05f;
         ev.speed = 400.0f;
         ev.radius = 0.1f;
-        ev.sizeScale = 1.0f;
-        ev.cutScale = 1.0f;
         ev.energy = MimitaImpact::ImpactSystem::kineticEnergy(ev.mass, ev.speed);
         MimitaImpact::ImpactSystem::instance().submit(ev);
 

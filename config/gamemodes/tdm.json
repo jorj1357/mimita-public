@@ -9,10 +9,8 @@
     "RED",
     "BLUE"
   ],
-  // "goal_value": 50,
   "goal_value": 99999,
   "weapon_set_id": 29,
-  // "time_limit_seconds": 180,
   "time_limit_seconds": 99999,
   "time_limit_winner_team": "",
   "time_limit_outcome": "stalemate",
@@ -187,7 +185,9 @@
     "rain": false,
     "torch_lighting": false,
     "freeze_during_countdown": true,
-    "freeze_during_go": false
+    "freeze_during_go": false,
+    "destructible_world": true,
+    "destructible_world_reset": "match"
   },
   "camera_fov": 0.0,
   "force_first_person": false,

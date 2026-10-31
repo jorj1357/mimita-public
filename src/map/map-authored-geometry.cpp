@@ -142,6 +142,8 @@ void applyGLBObjectOverrides(World& world,
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
                 target = override.position;
+                if (!override.material.empty())
+                    object.materialName = override.material;
                 break;
             }
         }
@@ -167,6 +169,8 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
                 target = override.position;
+                if (!override.material.empty())
+                    object.materialName = override.material;
                 break;
             }
         }

@@ -64,6 +64,16 @@ bool DestructibleWorldConfig::load(const std::string& path)
         const json& fragments =
             root.contains("fragments") && root["fragments"].is_object()
                 ? root["fragments"] : json::object();
+        const json& world =
+            root.contains("world") && root["world"].is_object()
+                ? root["world"] : json::object();
+
+        if (world.contains("enabled") && world["enabled"].is_boolean())
+            mWorldEnabled = world["enabled"].get<bool>();
+        if (destruction.contains("explosionMaxNodesPerEvent") &&
+            destruction["explosionMaxNodesPerEvent"].is_number_unsigned())
+            mExplosionMaxNodesPerEvent = std::max(
+                1u, destruction["explosionMaxNodesPerEvent"].get<uint32_t>());
 
         if (fragments.contains("minFragmentVolume") &&
             fragments["minFragmentVolume"].is_number())

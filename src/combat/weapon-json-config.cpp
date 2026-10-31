@@ -354,8 +354,6 @@ void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
     readFloatKey("projectile_mass", def.projectileMass);
     readFloatKey("projectile_density", def.projectileDensity);
     readFloatKey("projectile_base_radius", def.projectileBaseRadius);
-    readFloatKey("cut_energy_scale", def.cutEnergyScale);
-    readFloatKey("cut_radius_scale", def.cutRadiusScale);
     readFloatKey("penetration_scale", def.penetrationScale);
     float penetration = (float)def.penetrationCount;
     readFloatKey("penetration_count", penetration);
@@ -363,6 +361,45 @@ void applyWeaponProjectileImpactJson(WeaponDefinition& def, const json& root)
     float shape = (float)def.projectileShapeId;
     readFloatKey("projectile_shape", shape);
     def.projectileShapeId = (uint32_t)std::max(0.0f, shape);
+
+    // Shared physical world-impact profile. The masterlist resolver merges
+    // defaults + named profile + weapon override into this object before this
+    // parser runs. Mass is derived from density and volume when the profile
+    // does not author it.
+    if (root.contains("world_impact") && root["world_impact"].is_object())
+    {
+        const json& wi = root["world_impact"];
+        const auto readProfileFloat = [&wi](const char* key, float& out) {
+            if (wi.contains(key) && wi[key].is_number())
+                out = wi[key].get<float>();
+        };
+        float mass = -1.0f;
+        float density = -1.0f;
+        float diameter = -1.0f;
+        float radius = -1.0f;
+        float speed = -1.0f;
+        float penetrationM = -1.0f;
+        readProfileFloat("mass_kg", mass);
+        readProfileFloat("density_kg_m3", density);
+        readProfileFloat("diameter_m", diameter);
+        readProfileFloat("radius_m", radius);
+        readProfileFloat("speed_mps", speed);
+        readProfileFloat("penetration_m", penetrationM);
+        if (radius < 0.0f && diameter > 0.0f)
+            radius = diameter * 0.5f;
+        if (mass < 0.0f && density > 0.0f && radius > 0.0f)
+            mass = density * (4.0f / 3.0f) * 3.14159265358979323846f *
+                   radius * radius * radius;
+        if (mass >= 0.0f) def.worldImpactMassKg = mass;
+        if (density >= 0.0f) def.worldImpactDensityKgM3 = density;
+        if (radius >= 0.0f) def.worldImpactRadiusM = radius;
+        if (speed >= 0.0f) def.worldImpactSpeedMps = speed;
+        if (penetrationM >= 0.0f) def.worldImpactPenetrationM = penetrationM;
+        float profileShape = -1.0f;
+        readProfileFloat("shape", profileShape);
+        if (profileShape >= 0.0f)
+            def.projectileShapeId = (uint32_t)profileShape;
+    }
 }
 
 void applyWeaponKnockbackJson(WeaponDefinition& def, const json& root)
@@ -610,10 +647,18 @@ nlohmann::json readWeaponDefinitionRoot()
     const auto masterPath = dir / "masterlist" / "weapon-masterlist.json";
     json fields;
     json rules;
+    json impactDefaults = json::object();
+    json impactProfiles = json::object();
     if (std::ifstream master(masterPath); master.is_open()) {
         const json spec = json::parse(master, nullptr, true, true);
         fields = spec.at("fields");
         rules = spec.at("rules");
+        if (spec.contains("world_impact_defaults") &&
+            spec["world_impact_defaults"].is_object())
+            impactDefaults = spec["world_impact_defaults"];
+        if (spec.contains("world_impact_profiles") &&
+            spec["world_impact_profiles"].is_object())
+            impactProfiles = spec["world_impact_profiles"];
         if (!fields.is_array())
             throw std::runtime_error("weapon masterlist fields must be an array");
     } else {
@@ -635,6 +680,36 @@ nlohmann::json readWeaponDefinitionRoot()
         if (!definition.contains("id") || !definition["id"].is_string() ||
             definition["id"].get<std::string>() != id)
             throw std::runtime_error(file.string() + " id must match its directory");
+
+        // Resolve the shared physical world-impact profile before validation so
+        // the parser sees one merged object. Precedence:
+        // master defaults < named profile < weapon world_impact override.
+        {
+            json resolved = impactDefaults;
+            if (definition.contains("world_impact_profile") &&
+                !definition["world_impact_profile"].is_null())
+            {
+                if (!definition["world_impact_profile"].is_string())
+                    throw std::runtime_error(file.string() +
+                        " world_impact_profile must be a string or null");
+                const std::string profileName =
+                    definition["world_impact_profile"].get<std::string>();
+                const auto profile = impactProfiles.find(profileName);
+                if (profile == impactProfiles.end() || !profile->is_object())
+                    throw std::runtime_error(file.string() +
+                        " unknown world_impact_profile: " + profileName);
+                for (auto it = profile->begin(); it != profile->end(); ++it)
+                    resolved[it.key()] = it.value();
+            }
+            if (definition.contains("world_impact") &&
+                definition["world_impact"].is_object())
+                for (auto it = definition["world_impact"].begin();
+                     it != definition["world_impact"].end(); ++it)
+                    resolved[it.key()] = it.value();
+            if (!resolved.empty())
+                definition["world_impact"] = resolved;
+        }
+
         if (definition.contains("damage_animation_mode") &&
             !definition["damage_animation_mode"].is_null() &&
             (!definition["damage_animation_mode"].is_number_integer() ||

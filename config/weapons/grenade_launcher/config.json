@@ -114,8 +114,6 @@
     "sparkEndColorB": 0.0,
     "sparkEndColorA": 0.0
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 0.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -179,5 +177,7 @@
       0.4,
       0.4
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "rocket_heavy"
 }

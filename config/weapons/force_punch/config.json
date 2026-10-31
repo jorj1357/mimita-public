@@ -35,8 +35,6 @@
     "damageTickInterval": 0.0166667,
     "targetBodyRadius": 0.65
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 0.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -81,5 +79,7 @@
 "victim_knockback_vertical_fraction": null,
 "viewmodel": {
     "enabled": false
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "melee_heavy"
 }

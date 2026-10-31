@@ -2,7 +2,15 @@
 // Hot-reloadable: edit and save; the next tick picks it up. Comments are
 // allowed. Malformed JSON keeps the previous valid values.
 {
+  "world": {
+    // Global default for imported-map and object world destruction. A gamemode
+    // may override it through features.destructible_world; null inherits this.
+    "enabled": true
+  },
   "destruction": {
+    // Maximum map solids one explosion may submit cut intents for. The nearest
+    // solids win; the rest are skipped so one blast cannot activate the map.
+    "explosionMaxNodesPerEvent": 8,
     // Aggregate-then-batch: cut intents are COLLECTED as they arrive; an object
     // is only reworked once this many fixed ticks have passed since its last
     // batch, then ALL of its queued cuts are applied in one boolean op. Larger

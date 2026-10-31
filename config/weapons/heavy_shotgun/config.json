@@ -18,8 +18,6 @@
     "shootPoseTime": 0.18,
     "equipPoseTime": 0.28
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 255.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -123,5 +121,7 @@
       0.8,
       1.0
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "buckshot_pellet"
 }

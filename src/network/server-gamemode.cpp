@@ -2423,6 +2423,11 @@ void clearHeadlessWorld(HeadlessWorld& world)
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
     world.collisionSubGrids.clear();
+    world.destructionBaselineSolidIds.clear();
+    world.activeDestructibleNodes.clear();
+    world.rejectedDestructibleNodes.clear();
+    world.lastDestructionMatchId = 0;
+    world.lastNpcDestructionRevision = 0;
 }
 
 void broadcastMapChange(SOCKET sock,
@@ -2505,6 +2510,7 @@ void commitGamemodeMap(ServerGamemodeState& d, HeadlessWorld& world, World& npcW
                    HeadlessWorld& tmp, const std::string& mapId)
 {
     payloadRemoveCart(d);
+    clearServerWorldDestruction(world);
     clearHeadlessWorld(world);
     world = std::move(tmp);
     buildNpcWorldCollision(npcWorld, world);

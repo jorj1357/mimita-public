@@ -152,6 +152,9 @@ struct HeadlessGLBObject
     uint32_t solidId = 0;
     glm::vec3 basePosition{0.0f};
     glm::vec3 position{0.0f};
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    std::string materialName;
     size_t triangleFirst = 0;
     size_t triangleCount = 0;
 };
@@ -162,6 +165,7 @@ struct HeadlessWorld
     std::vector<uint32_t> solidIds;
     std::vector<uint32_t> destructionBaselineSolidIds;
     std::unordered_map<int, uint32_t> activeDestructibleNodes;
+    std::unordered_set<int> rejectedDestructibleNodes;
     uint32_t lastDestructionMatchId = 0;
     uint64_t lastNpcDestructionRevision = 0;
     std::vector<HeadlessGLBObject> glbObjects;
@@ -939,6 +943,12 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world);
 void buildHeadlessCollisionChunks(HeadlessWorld& world);
 void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                              const std::string& mapId, uint32_t tick);
+void submitExplosionWorldImpacts(const HeadlessWorld& world,
+                                 const glm::vec3& center, float radius,
+                                 float energyJ, float sourceMassKg,
+                                 float sourceRadiusM, float penetrationM,
+                                 uint32_t sourceEntityId, uint32_t tick);
+void clearServerWorldDestruction(HeadlessWorld& world);
 void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
                                  uint32_t tick);
 
@@ -1075,7 +1085,11 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
                          glm::vec3& outHitPos, glm::vec3& outNormal,
-                         uint32_t* outPhysicalEntityId = nullptr);
+                         uint32_t* outPhysicalEntityId = nullptr,
+                         uint32_t* outWorldSolidId = nullptr);
+// Resolves a map triangle index to its stable imported solid id, including the
+// authored baseline after that solid has been hidden by activation.
+uint32_t serverWorldSolidIdAtTriangle(const HeadlessWorld& world, size_t index);
 // Swept-sphere world trace for thick-beam hitscan (same contract as
 // serverRaycastWorld but the beam has `radius` so walls block it correctly).
 bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,

@@ -21,8 +21,6 @@
     "fixedPatternCycle": 12.0,
     "equipPoseTime": 0.28
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 35.0,
 "damage_animation_mode": null,
 "damage_scale": 1.0,
@@ -115,5 +113,7 @@
       80.0,
       -20.0
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "bullet_rifle"
 }

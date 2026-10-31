@@ -2482,3 +2482,405 @@ time
 The system should become more accurate primarily by improving these generalized foundations rather than accumulating special cases.
 
 **Unknown behavior should become known by refining the underlying model, not by hardcoding every observed outcome.**
+
+---
+
+# 71. Imported map destruction and universal damage sources (v1)
+
+## 71.1 Scope
+
+This section defines the first playable imported-map destruction slice. It applies
+to every imported map, not only Dust2. Dust2 is the first validation map because
+it is already in rotation and its collision solids are mostly closed manifold
+GLB nodes.
+
+The slice applies to every damaging source:
+
+```text
+hitscan
+projectile
+melee
+explosion
+player source
+NPC source
+```
+
+The slice applies to TDM and Juggernaut first. Other modes inherit the global
+destructible-world setting and may override or disable it through mode data.
+
+Actor body holes, organs, viscera, and realistic actor destruction are a later
+slice. This section defines the hook they will consume.
+
+## 71.2 Permanent single destruction entry point
+
+There is exactly one persistent world-destruction entry point. Every source
+adapts into it. It survives map changes, mode changes, and match resets.
+
+The entry point owns:
+
+```text
+impact validation
+physical source profile resolution
+material resolution
+energy and impulse computation
+cut/fracture acceptance
+authoritative destruction result
+networked cut-cause identity
+```
+
+It is not permitted to add a later per-weapon, per-map, per-mode, or
+per-replication wall-damage path. Weapon code owns how geometry is found and
+which physical profile is selected; it does not own a second destruction
+formula.
+
+This is an architectural invariant, not an implementation detail. A future
+feature that cannot express its behavior through this entry point must update
+this specification first and explain why.
+
+## 71.3 Accuracy-first physical model
+
+The authoritative model uses SI quantities and physically meaningful formulas.
+The goal is not "realistic enough to look fine"; the goal is a model that remains
+valid as mass, speed, scale, and energy increase.
+
+Primary quantities:
+
+```text
+mass          kg
+density       kg/m^3
+length        m
+speed         m/s
+momentum      kg*m/s
+energy        J
+impulse       N*s
+force         N
+pressure      Pa
+```
+
+The default relationship is:
+
+```text
+mass = density * volume
+kinetic energy = 0.5 * mass * speed^2
+```
+
+An explicitly authored mass wins. Otherwise mass is derived from the authored
+density and shape volume. This permits physically extreme but internally
+consistent content, such as an apple-sized object with 100,000 times the density
+of ordinary matter: it has an enormous mass, so the ordinary rules produce an
+enormous physical result.
+
+### 71.3.1 No hidden arcade multiplier
+
+The authoritative path must not contain an arbitrary "wall damage" or "energy
+scale" multiplier. Arcade behavior is produced by choosing physical values —
+mass, density, size, speed, penetration, material resistance — and by
+presentation. It is not produced by a hidden second formula.
+
+The former `cut_energy_scale` and `cut_radius_scale` fields are removed by this
+slice. They are not retained as fallbacks.
+
+### 71.3.2 Accuracy before optimization
+
+Accuracy comes first. Performance work must not silently change the physical
+meaning of the inputs.
+
+The intended order is:
+
+```text
+1. correct physical quantities and conservative formulas
+2. deterministic, verifiable results
+3. measured performance optimization
+4. gameplay tuning through physical values and presentation
+```
+
+The model must be replaceable behind the same entry point:
+
+```text
+v1 approximations
+    -> stress/strain and fracture mechanics
+    -> high-energy and high-velocity regimes
+    -> relativistic and astrophysical regimes where the game eventually needs them
+```
+
+No design decision in this slice may assume that the current approximations are
+the permanent ceiling. Numerical precision, coordinate representation, and units
+must remain extensible for extreme scale, as described in the units, determinism,
+numerical-precision, and future-relativity sections.
+
+## 71.4 Weapon master profiles
+
+Shared physical defaults and named profiles live in the weapon master config:
+
+```text
+config/weapons/masterlist/weapon-masterlist.json
+```
+
+The master config contains:
+
+```text
+world_impact_defaults
+world_impact_profiles
+```
+
+Resolution order:
+
+```text
+built-in source defaults
+    < master world_impact_defaults
+    < named world_impact_profile
+    < weapon world_impact override
+    < melee action world_impact override
+```
+
+Every damaging weapon resolves a profile. Missing fields fall back to the next
+level. A damaging weapon must not silently do nothing to the world.
+
+Physical profile fields:
+
+```text
+mass_kg
+density_kg_m3
+diameter_m or radius_m
+speed_mps              (measured speed wins when a source has one)
+penetration_m
+shape
+```
+
+This is the single big shared JSON that supports a very large community weapon
+library. A creator references an existing profile and overrides only what makes
+their weapon unique.
+
+The legacy `cut_energy_scale` and `cut_radius_scale` fields are deleted from:
+
+```text
+config/weapons/masterlist/weapon-masterlist.json
+config/weapons/*/config.json
+src/combat/weapon-types.h
+src/combat/weapon-json-config.cpp
+src/impact/impact-event.h
+src/impact/impact-system.cpp
+src/network source adapters
+src/impact/destructible-selftest.cpp
+documentation references
+```
+
+The removal is recorded in the changelog together with the baseline commit and
+the physical profiles that replace the old values.
+
+## 71.5 All sources
+
+### Hitscan
+
+Each pellet submits its own physical impact. Shotgun pellets are not collapsed
+into one central wall hit.
+
+### Projectile
+
+Uses the projectile's configured mass, density, size, speed, and penetration.
+The direct hit and the explosion are separate physical contributions.
+
+### Melee
+
+Uses the measured weapon-shape speed and the weapon/action physical mass. A
+world-impact cooldown prevents a weapon that is caught on geometry from cutting
+every fixed tick.
+
+A physically heavy mace is achieved by authoring heavy mass/density, not by a
+hidden multiplier. A light weapon is achieved by authoring low mass.
+
+### Explosion
+
+An explosion has a direct contact contribution plus a radial contribution to
+nearby closed map solids. The radial contribution uses distance falloff and an
+occlusion query so a blast does not cut through a wall into the room behind it.
+The number of solids affected by one blast is bounded.
+
+### Players and NPCs
+
+Players and NPCs use the same entry point and the same source profiles. A
+player-caused and NPC-caused impact with the same physical inputs produces the
+same cut.
+
+## 71.6 Materials and assignment
+
+Automatic defaults:
+
+```text
+horizontal ground slab -> foundation
+everything else        -> concrete
+```
+
+Resolution order:
+
+```text
+config/maps/<mapId>.json per-node override
+    -> config/maps/<mapId>.json material rule
+    -> default heuristic
+```
+
+Explicit per-node overrides and bulk rules are persisted in the map JSON. The
+server and every client resolve the same material from the same data.
+
+The Map Editor owns material assignment. It does not require editing the source
+GLB in Blender.
+
+The Map Editor selection workflow is:
+
+```text
+select GLB nodes in the outliner or viewport
+apply a material to the selection
+persist the override in config/maps/<mapId>.json
+```
+
+Bulk selectors may include:
+
+```text
+horizontal / vertical
+bottom height range
+size range
+name contains
+current material
+spatial bounds
+```
+
+Orthographic top/front/side views, marquee/box selection, user folders, and
+"select all similar" are later UI slices. Rule-based assignment may be authored
+or edited before the full UI exists.
+
+## 71.7 Replication, latency, and reset
+
+Replicate causes, not meshes. A cut cause carries:
+
+```text
+target identity
+cut id and order
+cutter shape
+center / direction / radius / length
+material
+source identity
+tick
+prediction key where applicable
+```
+
+All clients apply the same deterministic cut in the same order.
+
+Latency contract:
+
+```text
+local shooter: predict immediately
+server: validate and publish the authoritative cause immediately
+peers: apply on receipt
+```
+
+Large cuts use an immediate visual hole/decal and commit the collision/render
+geometry when the budgeted or asynchronous remesh completes. The authoritative
+cut result is identical; the decal is only the immediate visual bridge. This is
+required to keep the same cut on every client without blocking a 240 FPS frame.
+
+Reset policy is mode-defined:
+
+```text
+TDM:                    reset at each 3-minute match/round start
+Juggernaut:             reset at each round start
+Survive the Disasters:  preserve across its ten rounds; reset between matches
+map change:             always clear active world destruction
+```
+
+The global setting lives in `config/destructible-world.json` under `world.enabled`
+and defaults to enabled. A mode may override it:
+
+```text
+features.destructible_world          nullable bool; null inherits global
+features.destructible_world_reset    "match" | "round" | "never" | null
+```
+
+## 71.8 Performance, latency, and diagnostics
+
+Reference-hardware acceptance target:
+
+```text
+no frame below 240 FPS during the defined destruction stress scenario
+```
+
+At 240 FPS the frame budget is about 4.16 ms. Destruction must not consume an
+unbounded main-thread share.
+
+Required performance rules:
+
+```text
+cut work is queued and budgeted
+boolean/remesh work runs off-thread where safe
+cut results install at a safe synchronization point
+map-node hide/restore is incremental
+no full-map GPU or collision rebuild on every activation/restore
+active destrutible nodes and fragments are bounded
+distant/cosmetic work degrades before authoritative gameplay
+```
+
+Diagnostics are part of the feature, not an afterthought. Add them before
+tuning:
+
+| Event | Purpose | Key fields |
+|---|---|---|
+| `world.destructible-impact` | every accepted world impact | tick, source, actor kind/id, weapon, target, material, mass, density, speed, energy, angle, radius, penetration |
+| `world.destructible-cut` | every accepted cut | tick, cut_id, target, revision, cutter, center, radius, length, energy, queue depth, rebuild ms, apply ms |
+| `world.destructible-activation` | first hit on a map solid | map, node, solid, entity, material, mesh tris, load ms, validate ms, collision ms |
+| `world.destructible-rejected` | unsupported node, once | map, node, reason |
+| `world.destructible-explosion` | each radial blast | source, weapon, radius, candidates, submitted, capped, occluded, energy |
+| `world.destructible-reset` | mode boundary or map change | mode, match/round id, removed nodes/fragments, collision ms |
+| `world.destructible-replication` | spawn/cut/despawn cause | direction, target, cut_id, tick, latency, apply ms |
+| `world.destructible-budget` | periodic and on spike | frame ms, p99, max, destruction ms, pending/applied/deferred cuts, active nodes, fragments |
+| `world.destructible-reconcile` | prediction mismatch | target, predicted cut, authoritative cut, difference, action |
+| `world.destructible-material` | material resolution | map, node, material, source (override/rule/default) |
+| `npc.navmesh.rebuild` | after geometry change | reason, triangles, build ms, version |
+
+Logging must be categorized, rate-limited, and aggregated. It must not become a
+new source of frame-time spikes.
+
+Existing `PerfTimes.destruction` and frame-spike reporting must include
+activation, cut apply, fracture, map hide/restore, and client cut-apply scopes.
+
+## 71.9 Acceptance
+
+The slice is successful when:
+
+- every imported map in rotation uses the same rules;
+- Dust2 and at least one other TDM map are validated;
+- hitscan, projectile, melee, and explosion all cut concrete walls;
+- player and NPC sources produce the same result for the same inputs;
+- every client converges on the same cut;
+- detached pieces collide and move as physical objects;
+- the foundation resists sustained highest-energy TDM fire;
+- TDM resets at each 3-minute match/round start;
+- Juggernaut resets at each round start;
+- Survive the Disasters keeps damage across its ten rounds and resets between matches;
+- no frame falls below 240 FPS in the defined stress scenario;
+- the required diagnostics are present and usable.
+
+Build evidence, runtime-journal evidence, and human visual/multiplayer acceptance
+are reported separately.
+
+## 71.10 Actor body holes and viscera (future)
+
+Actor hits already carry the same physical inputs. A future actor-part
+destructible owner will consume them for:
+
+```text
+body holes
+organs
+viscera
+limb destruction
+realistic damage modes
+```
+
+That owner requires rigged per-part destructible geometry and is not part of this
+slice. The hook must not invent a second damage or impact path; it consumes the
+same physical inputs.
+
+See:
+
+```text
+docs/specs/visuals/blood-bulletholes-viscera.md
+section 52 of this document
+```

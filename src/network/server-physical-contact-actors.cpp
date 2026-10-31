@@ -45,6 +45,7 @@ struct ActorContactRuntime {
     std::unique_ptr<Player> pose;
     std::string avatar, definition;
     uint32_t generation = 0, epoch = 0, lastTick = 0, nextSerial = 1, lastDiagnostic = 0;
+    uint32_t lastWorldImpactTick = 0;
     bool previousValid = false;
     bool positionHistoryValid = false;
     glm::vec3 previousPosition{0};
@@ -559,14 +560,15 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
             const glm::vec3 travel = shape.currentB - shape.previousB;
             const float distance = glm::length(travel);
             const float speed = distance / SERVER_DT;
-            if (speed > 0.5f)
+            if (speed > 0.5f && tick - state.lastWorldImpactTick >= 6)
             {
                 const glm::vec3 direction = travel / distance;
                 glm::vec3 hitPoint, hitNormal;
                 uint32_t physicalId = 0;
+                uint32_t solidId = 0;
                 if (serverRaycastWorld(shape.previousB, direction,
                                        distance + shape.radius, *world,
-                                       hitPoint, hitNormal, &physicalId))
+                                       hitPoint, hitNormal, &physicalId, &solidId))
                 {
                     MimitaImpact::ImpactEvent impact;
                     impact.simulationTick = tick;
@@ -577,19 +579,19 @@ void tickServerAnimatedPhysicalContactWeapons(SOCKET sock,
                     impact.sourceEntityId = attacker.ref.id;
                     impact.eventId = (attacker.key << 32) | tick;
                     impact.targetEntityId = physicalId;
+                    impact.worldSolidId = solidId;
                     impact.worldPoint = hitPoint;
                     impact.worldNormal = hitNormal;
                     impact.worldDirection = direction;
                     impact.speed = speed;
-                    impact.mass = def->projectileMass;
-                    impact.density = def->projectileDensity;
-                    impact.radius = shape.radius;
-                    impact.sizeScale = def->cutRadiusScale;
-                    impact.boreLength = std::max(0.0f, def->penetrationScale) *
-                        std::max(shape.radius, 0.05f) * 2.0f;
-                    impact.cutScale = def->cutEnergyScale;
+                    impact.mass = def->resolvedWorldImpactMassKg();
+                    impact.density = def->resolvedWorldImpactDensityKgM3();
+                    impact.radius = std::max(shape.radius,
+                                             def->resolvedWorldImpactRadiusM());
+                    impact.boreLength = def->resolvedWorldImpactPenetrationM();
                     impact.damage = def->damage;
                     MimitaImpact::ImpactSystem::instance().submit(impact);
+                    state.lastWorldImpactTick = tick;
                 }
             }
         }

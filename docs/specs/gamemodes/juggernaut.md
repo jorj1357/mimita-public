@@ -780,3 +780,27 @@ The match HUD shows the authoritative time remaining at the top, starting at
 `5:00` and counting down to `0:00`. Every match uses the shared visible
 `3 → 2 → 1 → GO!` countdown. Results name the winning team, then the next
 intermission and countdown start automatically. This cycle repeats indefinitely.
+
+## Destructible map lifecycle (2026-10-30)
+
+Juggernaut and Juggernaut Horde use the shared imported-map destruction rules in
+`docs/specs/destructible-world/destructible-world.md` section 71.
+
+- Every map in the configured rotation uses the same rules; there is no
+  Juggernaut-specific wall-damage path.
+- Hitscan, projectile, melee, and explosion sources damage the world through the
+  single persistent destruction entry point. Players and NPCs use the same path.
+- The map resets to its authored baseline at each round start. Damage from the
+  previous round must not carry into the next round.
+- Reset removes map-derived fragments and restores authored rendered and
+  collision geometry.
+- `features.destructible_world` is nullable and inherits the global
+  `config/destructible-world.json` `world.enabled` value.
+- Juggernaut sets its reset policy to `round`.
+- Physical chunks from a round collide and move normally, then are removed by
+  the next round reset.
+- The runtime must remain at or above 240 FPS in the defined destruction stress
+  scenario.
+
+Human visual acceptance is still required for round reset readability and for
+cuts made by both Fighter and Juggernaut sources.

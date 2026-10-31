@@ -4,20 +4,27 @@
 * solid becomes one static PhysicalEntity only when first hit, so the existing
 * Boolean, fragment, and replication owners handle subsequent cuts.
 * The headless map retains its authored triangles for round restoration.
+* All sources feed this one persistent entry point; no weapon-specific wall
+* damage path exists.
 */
 
 #include "network/server.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "impact/destructible-world-config.h"
 #include "config/material-config.h"
 #include "debug/structured-log.h"
+#include "gamemode/gamemode.h"
 #include "impact/destructible-mesh-loader.h"
 #include "impact/impact-system.h"
+#include "network/server-gamemode.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaNet {
@@ -26,6 +33,9 @@ namespace {
 uint32_t nearestSolid(const HeadlessWorld& world,
                       const MimitaImpact::ImpactEvent& impact)
 {
+    if (impact.worldSolidId != 0)
+        return impact.worldSolidId;
+
     if (impact.targetEntityId != 0 &&
         impact.targetEntityId <= world.solidIds.size())
     {
@@ -78,13 +88,176 @@ uint32_t nearestSolid(const HeadlessWorld& world,
     return solid;
 }
 
+struct ExplosionCandidate
+{
+    const HeadlessGLBObject* object = nullptr;
+    float distance = 0.0f;
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+};
+
 } // namespace
+
+uint32_t serverWorldSolidIdAtTriangle(const HeadlessWorld& world, size_t index)
+{
+    if (index >= world.solidIds.size())
+        return 0;
+    uint32_t id = world.solidIds[index];
+    if (id == UINT32_MAX && index < world.destructionBaselineSolidIds.size())
+        id = world.destructionBaselineSolidIds[index];
+    return id == UINT32_MAX ? 0u : id;
+}
+
+void submitExplosionWorldImpacts(const HeadlessWorld& world,
+                                 const glm::vec3& center, float radius,
+                                 float energyJ, float sourceMassKg,
+                                 float sourceRadiusM, float penetrationM,
+                                 uint32_t sourceEntityId, uint32_t tick)
+{
+    if (radius <= 0.0f || energyJ <= 0.0f || sourceMassKg <= 0.0f)
+        return;
+
+    std::vector<ExplosionCandidate> candidates;
+    candidates.reserve(world.glbObjects.size());
+    for (const HeadlessGLBObject& object : world.glbObjects)
+    {
+        if (object.solidId == 0 || object.nodeIndex < 0)
+            continue;
+        if (world.rejectedDestructibleNodes.count(object.nodeIndex) != 0)
+            continue;
+        const glm::vec3 point =
+            glm::clamp(center, object.boundsMin, object.boundsMax);
+        const glm::vec3 delta = point - center;
+        const float distance = glm::length(delta);
+        if (distance > radius)
+            continue;
+        glm::vec3 normal = distance > 1e-4f ? delta / distance
+                                            : glm::vec3(0.0f, 0.0f, 1.0f);
+        if (distance <= 1e-4f)
+        {
+            const glm::vec3 mid = (object.boundsMin + object.boundsMax) * 0.5f;
+            normal = mid - center;
+            if (glm::length(normal) < 1e-4f)
+                normal = glm::vec3(0.0f, 0.0f, 1.0f);
+            normal = glm::normalize(normal);
+        }
+        candidates.push_back({&object, distance, point, normal});
+    }
+
+    std::sort(candidates.begin(), candidates.end(),
+              [](const ExplosionCandidate& a, const ExplosionCandidate& b) {
+                  return a.distance < b.distance;
+              });
+    const uint32_t maxNodes =
+        MimitaImpact::DestructibleWorldConfig::instance().explosionMaxNodesPerEvent();
+    const bool capped = candidates.size() > maxNodes;
+    if (capped)
+        candidates.resize(maxNodes);
+
+    uint32_t submitted = 0;
+    uint32_t occluded = 0;
+    for (const ExplosionCandidate& candidate : candidates)
+    {
+        if (!candidate.object)
+            continue;
+        if (candidate.distance > 0.05f)
+        {
+            glm::vec3 hitPos;
+            glm::vec3 hitNormal;
+            uint32_t hitEntityId = 0;
+            uint32_t hitSolidId = 0;
+            if (serverRaycastWorld(center, candidate.normal, candidate.distance,
+                                   world, hitPos, hitNormal, &hitEntityId,
+                                   &hitSolidId))
+            {
+                const float hitDistance = glm::length(hitPos - center);
+                if (hitEntityId == 0 &&
+                    hitSolidId != candidate.object->solidId &&
+                    hitDistance < candidate.distance - 0.05f)
+                {
+                    ++occluded;
+                    continue;
+                }
+            }
+        }
+
+        const float falloff =
+            glm::clamp(1.0f - candidate.distance / radius, 0.0f, 1.0f);
+        const float impactEnergy = energyJ * falloff * falloff;
+        if (impactEnergy <= 1e-4f)
+            continue;
+        const float speed =
+            std::sqrt(2.0f * impactEnergy / std::max(sourceMassKg, 1e-6f));
+
+        uint32_t activeEntityId = 0;
+        const auto active =
+            world.activeDestructibleNodes.find(candidate.object->nodeIndex);
+        if (active != world.activeDestructibleNodes.end())
+            activeEntityId = active->second;
+
+        MimitaImpact::ImpactEvent impact;
+        impact.simulationTick = tick;
+        impact.source = MimitaImpact::ImpactSource::Explosion;
+        impact.target = activeEntityId != 0
+            ? MimitaImpact::ImpactTarget::PhysicalEntity
+            : MimitaImpact::ImpactTarget::WorldGeometry;
+        impact.sourceEntityId = sourceEntityId;
+        impact.eventId = (uint64_t(sourceEntityId) << 32) ^
+            (uint64_t(tick) * 1000003ull + candidate.object->solidId);
+        impact.targetEntityId = activeEntityId;
+        impact.worldSolidId = candidate.object->solidId;
+        impact.worldPoint = candidate.point;
+        impact.worldNormal = candidate.normal;
+        impact.worldDirection = candidate.normal;
+        impact.speed = speed;
+        impact.mass = sourceMassKg;
+        impact.radius = sourceRadiusM;
+        impact.boreLength = penetrationM;
+        MimitaImpact::ImpactSystem::instance().submit(impact);
+        ++submitted;
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "world.destructible-explosion", std::to_string(sourceEntityId),
+        "radial explosion submitted map-solid impacts", tick,
+        nlohmann::json{
+            {"source_entity", sourceEntityId},
+            {"radius", radius},
+            {"energy_j", energyJ},
+            {"source_mass_kg", sourceMassKg},
+            {"candidates", candidates.size()},
+            {"submitted", submitted},
+            {"occluded", occluded},
+            {"capped", capped},
+            {"max_nodes", maxNodes},
+            {"center", {center.x, center.y, center.z}}});
+}
 
 void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                              const std::string& mapId, uint32_t tick)
 {
+    const bool globalEnabled =
+        MimitaImpact::DestructibleWorldConfig::instance().worldEnabled();
+    const Gamemode& gamemode =
+        GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
+    const bool enabled = gamemode.features.destructibleWorld < 0
+        ? globalEnabled
+        : gamemode.features.destructibleWorld != 0;
+    if (!enabled)
+    {
+        MimitaImpact::ImpactSystem::instance().takeWorldImpacts();
+        return;
+    }
+
     std::vector<MimitaImpact::ImpactEvent> impacts =
         MimitaImpact::ImpactSystem::instance().takeWorldImpacts();
+    if (impacts.empty())
+        return;
+
+    if (MimitaImpact::MaterialConfig::instance().revision() == 0)
+        MimitaImpact::MaterialConfig::instance().load();
+
     bool collisionChanged = false;
     for (MimitaImpact::ImpactEvent& impact : impacts)
     {
@@ -100,6 +273,8 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
             }
         if (!object || object->nodeIndex < 0)
             continue;
+        if (world.rejectedDestructibleNodes.count(object->nodeIndex) != 0)
+            continue;
 
         uint32_t entityId = 0;
         const auto active = world.activeDestructibleNodes.find(object->nodeIndex);
@@ -107,27 +282,33 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
             entityId = active->second;
         else
         {
+            const auto loadStart = std::chrono::steady_clock::now();
             const std::string model = "assets/maps/" + mapId + ".glb#node:" +
                                       std::to_string(object->nodeIndex);
             MimitaImpact::DestructibleMeshLoad mesh =
                 MimitaImpact::loadDestructibleMeshFromGLB(model);
+            const double loadMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - loadStart).count();
             if (!mesh.success)
             {
+                world.rejectedDestructibleNodes.insert(object->nodeIndex);
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::World, StructuredLevel::Important,
                     "world.destructible-rejected", object->id,
                     mesh.error, tick,
-                    {{"map", mapId}, {"node", object->nodeIndex}});
+                    {{"map", mapId}, {"node", object->nodeIndex},
+                     {"load_ms", loadMs}});
                 continue;
             }
-            if (MimitaImpact::MaterialConfig::instance().revision() == 0)
-                MimitaImpact::MaterialConfig::instance().load();
             const bool floor = mesh.halfExtents.x >= 1.0f &&
                                mesh.halfExtents.y >= 1.0f &&
                                mesh.halfExtents.z * 4.0f <
                                    std::min(mesh.halfExtents.x, mesh.halfExtents.y);
-            const uint32_t materialId = MimitaImpact::materialIdForName(
-                floor ? "foundation" : "concrete");
+            const std::string materialName = object->materialName.empty()
+                ? (floor ? "foundation" : "concrete")
+                : object->materialName;
+            const uint32_t materialId =
+                MimitaImpact::materialIdForName(materialName);
             glm::mat4 transform = glm::translate(glm::mat4(1.0f),
                                                   mesh.sourceCenter);
             entityId = PhysicalEntitySystem::instance().add(
@@ -153,10 +334,27 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                 "world.destructible-activated", object->id,
                 "closed map solid moved to shared destruction owner", tick,
                 {{"map", mapId}, {"node", object->nodeIndex},
-                 {"entity", entityId}, {"material", floor ? "foundation" : "concrete"}});
+                 {"solid", solidId}, {"entity", entityId},
+                 {"material", materialName},
+                 {"mesh_tris", entity->localTriangles.size()},
+                 {"load_ms", loadMs}});
         }
         impact.target = MimitaImpact::ImpactTarget::PhysicalEntity;
         impact.targetEntityId = entityId;
+        impact.worldSolidId = solidId;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Verbose,
+            "world.destructible-impact", std::to_string(impact.sourceEntityId),
+            "world impact accepted by map destruction owner", tick,
+            {{"source", (int)impact.source},
+             {"source_entity", impact.sourceEntityId},
+             {"target_entity", entityId},
+             {"solid", solidId},
+             {"mass_kg", impact.mass},
+             {"density_kg_m3", impact.density},
+             {"speed_mps", impact.speed},
+             {"radius_m", impact.radius},
+             {"bore_m", impact.boreLength}});
         MimitaImpact::ImpactSystem::instance().submit(impact);
     }
     uint64_t revision = world.activeDestructibleNodes.size();
@@ -177,15 +375,37 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
     }
 }
 
+void clearServerWorldDestruction(HeadlessWorld& world)
+{
+    for (const auto& item : world.activeDestructibleNodes)
+        PhysicalEntitySystem::instance().remove(item.second);
+    world.activeDestructibleNodes.clear();
+    world.destructionBaselineSolidIds.clear();
+    world.rejectedDestructibleNodes.clear();
+    world.lastDestructionMatchId = 0;
+    world.lastNpcDestructionRevision = 0;
+    std::vector<uint32_t> fragments;
+    for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
+        if (entity.isFragment)
+            fragments.push_back(entity.id);
+    for (uint32_t id : fragments)
+        PhysicalEntitySystem::instance().remove(id);
+}
+
 void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
                                  uint32_t tick)
 {
     if (world.destructionBaselineSolidIds.empty())
         return;
-    world.solidIds = std::move(world.destructionBaselineSolidIds);
+    world.solidIds = world.destructionBaselineSolidIds;
+    size_t removedNodes = 0;
     for (const auto& item : world.activeDestructibleNodes)
-        PhysicalEntitySystem::instance().remove(item.second);
+    {
+        if (PhysicalEntitySystem::instance().remove(item.second))
+            ++removedNodes;
+    }
     world.activeDestructibleNodes.clear();
+    world.rejectedDestructibleNodes.clear();
     world.lastNpcDestructionRevision = 0;
     std::vector<uint32_t> fragments;
     for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
@@ -198,7 +418,8 @@ void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "world.destructible-reset", "match", "authored map solids restored", tick,
-        {{"removed_fragments", fragments.size()}});
+        {{"removed_nodes", removedNodes},
+         {"removed_fragments", fragments.size()}});
 }
 
 } // namespace MimitaNet

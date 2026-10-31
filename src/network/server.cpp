@@ -1059,7 +1059,18 @@ int runServer(const LaunchOptions& options)
             const auto gamemodeStart = std::chrono::steady_clock::now();
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
-            if (serverGamemodeState().matchMode == "tdm" &&
+            const std::string& destructionMode =
+                serverGamemodeState().matchMode;
+            const Gamemode& destructionGamemode =
+                GamemodeRegistry::instance().get(destructionMode);
+            const std::string& resetPolicy =
+                destructionGamemode.features.destructibleWorldReset;
+            const bool resetsWorldDestruction =
+                resetPolicy == "match" || resetPolicy == "round" ||
+                (resetPolicy.empty() &&
+                 (destructionMode == "tdm" || destructionMode == "juggernaut" ||
+                  destructionMode == "jugger_horde"));
+            if (resetsWorldDestruction &&
                 world.lastDestructionMatchId != serverGamemodeState().duelId)
             {
                 resetServerWorldDestruction(world, npcWorld, tick);
@@ -1627,7 +1638,17 @@ static void simulateOneServerTick(ListenServerState& state)
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
-        if (serverGamemodeState().matchMode == "tdm" &&
+        const std::string& destructionMode = serverGamemodeState().matchMode;
+        const Gamemode& destructionGamemode =
+            GamemodeRegistry::instance().get(destructionMode);
+        const std::string& resetPolicy =
+            destructionGamemode.features.destructibleWorldReset;
+        const bool resetsWorldDestruction =
+            resetPolicy == "match" || resetPolicy == "round" ||
+            (resetPolicy.empty() &&
+             (destructionMode == "tdm" || destructionMode == "juggernaut" ||
+              destructionMode == "jugger_horde"));
+        if (resetsWorldDestruction &&
             state.world.lastDestructionMatchId != serverGamemodeState().duelId)
         {
             resetServerWorldDestruction(state.world, *state.npcWorld, state.tick);

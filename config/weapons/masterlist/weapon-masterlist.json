@@ -2,6 +2,58 @@
   "version": 1,
   "description": "Canonical top-level fields for every tool definition. Null means this definition does not use the field.",
   "sync_contract": "Every config/weapons/<id>/config.json must contain exactly these top-level fields. Keep fields with null when unused. Nested objects have capability-specific contents and are not expanded by this version of the masterlist.",
+  "world_impact_defaults": {
+    "density_kg_m3": 7800.0,
+    "diameter_m": 0.02,
+    "penetration_m": 0.0
+  },
+  "world_impact_profiles": {
+    "bullet_pistol": {
+      "mass_kg": 0.008,
+      "density_kg_m3": 11340.0,
+      "diameter_m": 0.009,
+      "speed_mps": 350.0,
+      "penetration_m": 0.06
+    },
+    "bullet_rifle": {
+      "mass_kg": 0.012,
+      "density_kg_m3": 11340.0,
+      "diameter_m": 0.00762,
+      "speed_mps": 900.0,
+      "penetration_m": 0.18
+    },
+    "buckshot_pellet": {
+      "mass_kg": 0.003,
+      "density_kg_m3": 11340.0,
+      "diameter_m": 0.008,
+      "speed_mps": 400.0,
+      "penetration_m": 0.03
+    },
+    "projectile_rifle": {
+      "mass_kg": 0.02,
+      "density_kg_m3": 7800.0,
+      "diameter_m": 0.02,
+      "speed_mps": 180.0,
+      "penetration_m": 0.25
+    },
+    "rocket_heavy": {
+      "mass_kg": 5.0,
+      "density_kg_m3": 1600.0,
+      "diameter_m": 1.4,
+      "speed_mps": 45.0,
+      "penetration_m": 0.8
+    },
+    "melee_light": {
+      "mass_kg": 0.8,
+      "diameter_m": 0.08,
+      "penetration_m": 0.05
+    },
+    "melee_heavy": {
+      "mass_kg": 40.0,
+      "diameter_m": 0.3,
+      "penetration_m": 0.25
+    }
+  },
   "fields": [
     "id",
     "display_name",
@@ -14,8 +66,6 @@
     "behavior_type",
     "components",
     "custom_params",
-    "cut_energy_scale",
-    "cut_radius_scale",
     "damage",
     "damage_animation_mode",
     "damage_scale",
@@ -54,7 +104,9 @@
     "victim_knockback",
     "victim_knockback_per_damage",
     "victim_knockback_vertical_fraction",
-    "viewmodel"
+    "viewmodel",
+    "world_impact",
+    "world_impact_profile"
   ],
   "rules": {
     "id": {
@@ -120,18 +172,6 @@
     "custom_params": {
       "types": [
         "object"
-      ],
-      "nullable": true
-    },
-    "cut_energy_scale": {
-      "types": [
-        "number"
-      ],
-      "nullable": true
-    },
-    "cut_radius_scale": {
-      "types": [
-        "number"
       ],
       "nullable": true
     },
@@ -380,6 +420,20 @@
         "damage_scale": 1.0,
         "force_scale": 1.0
       }
+    },
+    "world_impact": {
+      "types": [
+        "object"
+      ],
+      "nullable": true,
+      "required": false
+    },
+    "world_impact_profile": {
+      "types": [
+        "string"
+      ],
+      "nullable": true,
+      "required": false
     }
   }
 }

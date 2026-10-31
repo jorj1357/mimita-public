@@ -53,6 +53,12 @@ damage and destruction across its ten rounds and restores the map to its
 authored baseline between matches. The reset is owned by the destructible
 world system, not a disaster-specific mesh rebuild.
 
+Mode data records this as `features.destructible_world_reset: "match"` with
+`features.destructible_world: null` (inherit the global enabled setting).
+Round boundaries within the ten-round match do not restore the map; only the
+match boundary does. This is the explicit exception to the per-round reset used
+by TDM and Juggernaut.
+
 ## Community-created disaster packs
 
 The long-term goal is to let creators publish disaster packs containing a

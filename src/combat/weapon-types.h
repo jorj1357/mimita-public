@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -214,18 +215,47 @@ struct WeaponDefinition {    std::string id;
     float projectileDensity = 7800.0f;   // kg/m^3
     uint32_t projectileShapeId = 0;      // MimitaImpact::ImpactShape (0 = sphere)
     float projectileBaseRadius = 0.01f;  // m; floor of a generated cut radius
-    float cutEnergyScale = 1.0f;         // scales effective cut energy
-    // Scales the cut radius contribution from projectile size relative to its
-    // force (kinetic energy). The generated hole radius is
-    //   cutEnergyScale * forceRadius + projectileBaseRadius
-    // scaled by an explicit size term, so a small fast projectile can still cut
-    // a big hole while a big slow one cuts a small hole. 0 = force only.
-    float cutRadiusScale = 1.0f;
+    // Resolved physical world-impact profile. Negative means "not authored";
+    // the resolved helper falls back to the projectile fields above. Physical
+    // values only: extreme behavior comes from extreme mass/density/size/speed,
+    // never from an arcade energy/radius multiplier.
+    float worldImpactMassKg = -1.0f;
+    float worldImpactDensityKgM3 = -1.0f;
+    float worldImpactRadiusM = -1.0f;
+    float worldImpactSpeedMps = -1.0f;
+    float worldImpactPenetrationM = -1.0f;
     // How many separate surfaces a projectile can cut through before it stops.
     // 1 = current single-surface behavior; higher lets a rifle bolt bore a
     // tunnel through several walls in one shot (destructible-world 17/19).
     int penetrationCount = 1;
-    float penetrationScale = 1.0f;       // reserved: scales penetration depth
+    float penetrationScale = 1.0f;       // legacy fallback for bore length
+
+    float resolvedWorldImpactMassKg() const
+    {
+        return worldImpactMassKg > 0.0f ? worldImpactMassKg : projectileMass;
+    }
+    float resolvedWorldImpactDensityKgM3() const
+    {
+        return worldImpactDensityKgM3 > 0.0f ? worldImpactDensityKgM3
+                                             : projectileDensity;
+    }
+    float resolvedWorldImpactRadiusM() const
+    {
+        return worldImpactRadiusM > 0.0f
+            ? worldImpactRadiusM
+            : std::max(projectileRadius, projectileBaseRadius);
+    }
+    float resolvedWorldImpactSpeedMps() const
+    {
+        return worldImpactSpeedMps > 0.0f ? worldImpactSpeedMps : projectileSpeed;
+    }
+    float resolvedWorldImpactPenetrationM() const
+    {
+        if (worldImpactPenetrationM >= 0.0f)
+            return worldImpactPenetrationM;
+        return std::max(0.0f, penetrationScale) *
+               std::max(resolvedWorldImpactRadiusM(), 0.05f) * 2.0f;
+    }
 
     // ── Impulse / knockback (Source/TF2-style, hot reloadable) ───────────
     // Self-push (recoil impulse) on fire. 0 = fall back to the player setting.

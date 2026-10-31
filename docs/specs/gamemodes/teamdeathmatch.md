@@ -64,3 +64,28 @@ requires a fresh executable and journal evidence for a ten-actor roster, one
 point per opposing-team kill, countdown freeze and GO release, score-limit
 victory, time-limit stalemate, five-second results, and repeated intermission.
 Human confirmation is required for visible phase and result presentation.
+
+## Destructible map lifecycle (2026-10-30)
+
+TDM uses the shared imported-map destruction rules in
+`docs/specs/destructible-world/destructible-world.md` section 71.
+
+- Every map in the configured TDM rotation uses the same rules. Dust2 is the
+  first validation map, not a special case.
+- Hitscan, projectile, melee, and explosion sources all damage the world through
+  the single persistent destruction entry point.
+- Player and NPC sources use the same physical path.
+- The map is reset to its authored baseline at each 3-minute match/round start.
+  Damage from one match must not carry into the next.
+- Reset removes map-derived fragments. It does not disable destruction for the
+  next match; cutting resumes from the restored baseline.
+- The `features.destructible_world` mode override is nullable and inherits the
+  global `config/destructible-world.json` `world.enabled` value.
+- TDM sets its reset policy to `match`.
+- The foundation material must resist sustained highest-energy TDM fire, while
+  concrete walls, doorways, and corners cut normally.
+- Clients must converge on the same cut, and the runtime must stay at or above
+  240 FPS in the defined destruction stress scenario.
+
+Human visual acceptance is still required for wall/door/corner cuts, physical
+chunks, and reset readability.

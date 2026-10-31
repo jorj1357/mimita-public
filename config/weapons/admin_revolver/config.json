@@ -45,8 +45,6 @@
     "shootPoseTime": 0.08,
     "equipPoseTime": 0.18
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 50.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -110,5 +108,7 @@
       1.0,
       1.0
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "bullet_rifle"
 }

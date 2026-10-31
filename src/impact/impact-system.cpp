@@ -21,6 +21,7 @@
 #include "config/material-config.h"
 #include "debug/crash-handler.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "perf/perf.h"
 #include "impact/destructible-geometry.h"
 #include "impact/destructible-world-config.h"
@@ -88,8 +89,7 @@ bool finiteImpactEvent(const ImpactEvent& e)
            allFinite(e.worldDirection) &&
            std::isfinite(e.mass) && std::isfinite(e.speed) &&
            std::isfinite(e.radius) && std::isfinite(e.energy) &&
-           std::isfinite(e.sizeScale) && std::isfinite(e.boreLength) &&
-           std::isfinite(e.cutScale) && std::isfinite(e.penetration);
+           std::isfinite(e.boreLength) && std::isfinite(e.penetration);
 }
 
 // Deterministic network id for fracture fragment `pieceIndex` (1-based) of a
@@ -277,21 +277,16 @@ float ImpactSystem::calculateCutRadius(const ImpactEvent& impact,
     const float effectiveEnergy =
         impact.energy *
         impactAngleFactor(impact.worldDirection, impact.worldNormal) *
-        impact.cutScale *
         material.holeEnergyScale;
 
-    // The hole is driven by two independent, config-controlled terms:
-    //   force: how much kinetic energy reaches the material (cbrt-compressed so
-    //          the radius grows sensibly across a huge energy range), and
-    //   size:  the source cross-section scaled by the weapon's `sizeScale`.
-    // A small projectile with huge force still cuts a big hole; a large
-    // projectile with little force cuts a small one. The projectile radius is
-    // the floor, so a hole is never thinner than the thing that made it.
+    // The hole is driven by the physical energy reaching the material and the
+    // source's real cross-section. The projectile radius is the floor, so a
+    // hole is never thinner than the thing that made it. There is no arcade
+    // size/energy multiplier: extreme holes come from extreme mass/speed/size.
     const float sourceRadius = std::max(impact.radius, 0.0f);
     const float forceRadius =
         std::cbrt(std::max(effectiveEnergy, 0.0f)) * kCutRadiusEnergyScale;
-    const float sizeRadius = sourceRadius * std::max(impact.sizeScale, 0.0f);
-    const float radius = sourceRadius + forceRadius + sizeRadius;
+    const float radius = sourceRadius + forceRadius;
 
     return glm::clamp(radius, sourceRadius,
                       std::max(sourceRadius, material.maxCutRadius));
@@ -395,7 +390,7 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     const float angle =
         impactAngleFactor(resolved.worldDirection, resolved.worldNormal);
     const float effectiveEnergy =
-        resolved.energy * angle * resolved.cutScale * material.holeEnergyScale;
+        resolved.energy * angle * material.holeEnergyScale;
     const float damage = effectiveEnergy * kDamagePerEnergy;
     const float radius = calculateCutRadius(resolved, material);
 
@@ -525,6 +520,21 @@ ImpactResult ImpactSystem::submit(const ImpactEvent& event)
     // O(triangle) rebuild per shot on the main thread.
     const uint64_t cutId = DestructibleGeometrySystem::instance().enqueueCut(
         entity->destructible, cut);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Verbose,
+        "world.destructible-cut", std::to_string(entity->id),
+        "cut accepted into the authoritative history", event.simulationTick,
+        {{"target_entity", entity->id},
+         {"cut_id", cutId},
+         {"source_entity", cut.sourceEntityId},
+         {"source", (int)event.source},
+         {"material", material.id},
+         {"energy_j", effectiveEnergy},
+         {"radius_m", radius},
+         {"bore_m", resolved.boreLength},
+         {"world_solid", event.worldSolidId},
+         {"local_center", {cut.cutter.localCenter.x, cut.cutter.localCenter.y,
+                           cut.cutter.localCenter.z}}});
 
     // Authoritative rigid-body response: transfer the projectile's momentum to
     // the entity at the real hit point, so it translates and torques instead of
@@ -601,6 +611,8 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
     // show what shooting holes actually costs.
     Perf::ScopedTimer destructionTimer("Destruction");
     const auto start = std::chrono::steady_clock::now();
+    uint32_t flushedCuts = 0;
+    uint32_t processedEntities = 0;
     PhysicalEntitySystem& system = PhysicalEntitySystem::instance();
     DestructibleGeometrySystem& geometrySystem = DestructibleGeometrySystem::instance();
 
@@ -672,6 +684,11 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
                                                            batchMax);
         const float booleanMs = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - booleanStart).count();
+        if (flushed > 0)
+        {
+            flushedCuts += (uint32_t)flushed;
+            ++processedEntities;
+        }
 
         if (flushed < 0)
         {
@@ -759,14 +776,27 @@ void ImpactSystem::flushPendingCuts(uint32_t maxCutsPerEntity, float budgetMs)
 
     // Report geometry still catching up after a burst so it is visible that the
     // queue is draining across frames rather than stalling.
-    if ((mCutLogCounter % 8u) == 0u)
+    uint32_t leftover = 0;
+    for (const PhysicalEntity& e : system.entities())
+        leftover += e.destructible.pendingCutCount;
+    if (leftover > 0 && (mCutLogCounter % 8u) == 0u)
+        Debug::logThrottled(Debug::Category::General, "destruction-queue", 0.5f,
+            "[DESTRUCTION QUEUE] %u cut(s) still pending after flush\n", leftover);
+
+    if (processedEntities > 0 || leftover > 0)
     {
-        uint32_t leftover = 0;
-        for (const PhysicalEntity& e : system.entities())
-            leftover += e.destructible.pendingCutCount;
-        if (leftover > 0)
-            Debug::logThrottled(Debug::Category::General, "destruction-queue", 0.5f,
-                "[DESTRUCTION QUEUE] %u cut(s) still pending after flush\n", leftover);
+        const float elapsedMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - start).count();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Verbose,
+            "world.destructible-budget", "destruction-flush",
+            "destruction flush budget report", system.simulationTick(),
+            {{"flushed_cuts", flushedCuts},
+             {"processed_entities", processedEntities},
+             {"pending_cuts", leftover},
+             {"flush_ms", elapsedMs},
+             {"budget_ms", budgetMs},
+             {"max_cuts_per_entity", maxCutsPerEntity}});
     }
 }
 

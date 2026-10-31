@@ -30,7 +30,6 @@ This is the map for the project documentation.
 - `docs/features/`: stable feature records linking goals, owners, tests, logs,
   changelogs, regressions, and human acceptance.
 - `docs/gold/`: examples of complete evidence and changelog quality.
-- `docs/doc-review-09-03-2026.md`: current documentation review notes.
 
 The specification describes the desired behavior. If code disagrees with it,
 the code is wrong unless a human changes the specification first. Quote the
@@ -70,13 +69,14 @@ systems first. Use this default order:
 
 | Task type | Read first |
 |---|---|
-| Documentation | `docs/doc-review-09-03-2026.md`, the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
+| Documentation | the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
 | Vehicles, skateboards, BMX, and vehicle controls | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Replay, in-game video creation, or distribution | `docs/specs/replay/replay.md`, `docs/specs/creator-tools/video-editor.md`, `docs/specs/distribution/distribution.md`, `docs/specs/performance/performance.md` |
 | Generated character speech or voice chat | `docs/specs/live-voice-generation/live-voice-generation.md`, `docs/specs/ingame-chat/voice-chat.md`, `docs/specs/moderation/moderation.md` |
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md`, `docs/specs/networking/contact-authority.md` |
+| Destructible world, map cuts, physical fragments, map reset | `docs/specs/destructible-world/destructible-world.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/networking/networking.md` |
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
 | Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |

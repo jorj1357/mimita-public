@@ -244,6 +244,7 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 object.id = item.value("id", std::string{});
                 if (object.id.empty()) continue;
                 object.name = item.value("name", std::string{});
+                object.material = item.value("material", std::string{});
                 if (item.contains("position") && item["position"].is_array() &&
                     item["position"].size() >= 3) {
                     object.position = glm::vec3(

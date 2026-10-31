@@ -68,8 +68,6 @@
     "projectileFillG": 1.0,
     "projectileFillB": 1.0
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 0.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -133,5 +131,7 @@
       0.8,
       0.8
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "projectile_rifle"
 }

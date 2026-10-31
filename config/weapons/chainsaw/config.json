@@ -126,8 +126,6 @@
     "revColorBaseB": 0.02,
     "npcGuardTicks": 60.0
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 15.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -222,5 +220,7 @@
       1.0,
       2.0
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "melee_light"
 }

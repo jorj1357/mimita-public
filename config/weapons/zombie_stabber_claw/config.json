@@ -44,8 +44,6 @@
     "altPoseDurationTicks": 1.0,
     "damageTickInterval": 0.12
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 1.0,
 "damage_animation_mode": null,
 "damage_scale": null,
@@ -87,5 +85,7 @@
 "victim_knockback": null,
 "victim_knockback_per_damage": null,
 "victim_knockback_vertical_fraction": null,
-"viewmodel": null
+"viewmodel": null,
+"world_impact": null,
+"world_impact_profile": "melee_light"
 }

@@ -21,6 +21,7 @@
 #include "physics/movement/movement-conversion.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/collision-aabb-tree.h"
 #include "physics/physical-entity.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-types.h"
@@ -595,10 +596,13 @@ bool serverRayTriangle(const glm::vec3& origin, const glm::vec3& direction,
 bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                          float maxDist, const HeadlessWorld& world,
                          glm::vec3& outHitPos, glm::vec3& outNormal,
-                         uint32_t* outPhysicalEntityId)
+                         uint32_t* outPhysicalEntityId,
+                         uint32_t* outWorldSolidId)
 {
     if (outPhysicalEntityId)
         *outPhysicalEntityId = 0;
+    if (outWorldSolidId)
+        *outWorldSolidId = 0;
     if (glm::dot(direction, direction) < 0.000001f)
     {
         outHitPos = origin;
@@ -611,14 +615,20 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
     {
         float closest = maxDist;
         bool hit = false;
-        for (const CollisionTriangle& tri : world.triangles)
+        int bestWorldTriangle = -1;
+        for (size_t i = 0; i < world.triangles.size(); ++i)
         {
+            if (i < world.solidIds.size() && world.solidIds[i] == UINT32_MAX)
+                continue;
+            const CollisionTriangle& tri = world.triangles[i];
             float d;
             if (serverRayTriangle(origin, direction, tri.a, tri.b, tri.c, d) && d < closest)
             {
                 closest = d;
                 outNormal = tri.normal;
                 hit = true;
+                bestWorldTriangle = (int)i;
+                if (outPhysicalEntityId) *outPhysicalEntityId = 0;
             }
         }
         for (const auto& active : world.activeDestructibleNodes)
@@ -643,11 +653,15 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                     closest = d;
                     outNormal = tri.normal;
                     hit = true;
+                    bestWorldTriangle = -1;
                     if (outPhysicalEntityId) *outPhysicalEntityId = entity->id;
                 }
             }
         }
         if (hit) outHitPos = origin + direction * closest;
+        if (outWorldSolidId && bestWorldTriangle >= 0)
+            *outWorldSolidId =
+                serverWorldSolidIdAtTriangle(world, (size_t)bestWorldTriangle);
         return hit;
     }
 
@@ -692,6 +706,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
     float closest = maxDist;
     glm::vec3 bestN(0.0f);
     bool hit = false;
+    int bestWorldTriangle = -1;
 
     while (true)
     {
@@ -738,6 +753,8 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                                 closest = d;
                                 bestN = world.triangles[triIdx].normal;
                                 hit = true;
+                                bestWorldTriangle = triIdx;
+                        if (outPhysicalEntityId) *outPhysicalEntityId = 0;
                             }
                         }
                     }
@@ -760,6 +777,8 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                         closest = d;
                         bestN = world.triangles[triIdx].normal;
                         hit = true;
+                        bestWorldTriangle = triIdx;
+                        if (outPhysicalEntityId) *outPhysicalEntityId = 0;
                     }
                 }
             }
@@ -801,6 +820,8 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
             closest = d;
             bestN = world.triangles[triIdx].normal;
             hit = true;
+            bestWorldTriangle = triIdx;
+                        if (outPhysicalEntityId) *outPhysicalEntityId = 0;
         }
     }
 
@@ -826,11 +847,15 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                 closest = d;
                 bestN = tri.normal;
                 hit = true;
+                bestWorldTriangle = -1;
                 if (outPhysicalEntityId) *outPhysicalEntityId = entity->id;
             }
         }
     }
     if (hit) outHitPos = origin + direction * closest;
+    if (outWorldSolidId && bestWorldTriangle >= 0)
+        *outWorldSolidId =
+            serverWorldSolidIdAtTriangle(world, (size_t)bestWorldTriangle);
     outNormal = bestN;
     return hit;
 }

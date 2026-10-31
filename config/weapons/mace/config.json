@@ -116,8 +116,6 @@
     "damageTickInterval": 0.01,
     "npcGuardTicks": 60.0
   },
-"cut_energy_scale": null,
-"cut_radius_scale": null,
 "damage": 5.0,
 "damage_animation_mode": 1,
 "damage_scale": null,
@@ -208,5 +206,7 @@
       1.5,
       1.5
     ]
-  }
+  },
+"world_impact": null,
+"world_impact_profile": "melee_heavy"
 }

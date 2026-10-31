@@ -272,6 +272,65 @@ rotation/scale overrides require storing base vertex positions and a delta
 transform, and are the next slice. The old override matrix path remains intact
 for loading existing files.
 
+### GLB material assignment (2026-10-30)
+
+Destructible map materials are authored without editing the source GLB in
+Blender. The Map Editor extends the GLB override layer with a material
+assignment.
+
+The properties panel gains a material selector for the selected GLB node(s).
+Selecting multiple rows in the outliner and choosing a material applies it to
+the whole selection through the same undo/autosave path as position edits.
+
+Persisted map JSON:
+
+```json
+"glb_materials": {
+  "node:12": "concrete",
+  "node:45": "foundation"
+},
+"material_rules": [
+  {
+    "material": "foundation",
+    "match": { "horizontal": true, "max_bottom_z": 2340.0 }
+  },
+  {
+    "material": "concrete",
+    "match": { "vertical": true }
+  }
+]
+```
+
+Resolution order:
+
+```text
+per-node glb_materials entry
+    -> first matching material_rule
+    -> destructible-world default heuristic
+```
+
+The client and dedicated server resolve the same material from the same map
+JSON. Removing an override restores the next resolution level.
+
+Bulk selectors may include:
+
+```text
+horizontal / vertical
+bottom height range
+size range
+name contains
+current material
+spatial bounds
+```
+
+Orthographic top/front/side views with marquee/box selection, user-created
+folders/collections, and "select all similar" are later UI slices. Until then,
+the outliner search/multi-select plus rule-based assignment is the practical
+bulk path, especially for maps whose GLB node names are generic.
+
+Destructible map rules, material profiles, and reset behavior are owned by
+`docs/specs/destructible-world/destructible-world.md` section 71.
+
 ### Authored blocks
 
 The viewport editor authors static box blocks in the same map JSON:

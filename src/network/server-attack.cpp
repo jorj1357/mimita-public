@@ -915,37 +915,40 @@ void handleAttackRequest(
             trace.aggregates.size(), rt.magazineAmmo, rt.reserveAmmo,
             rt.stateRevision);
 
-        if (worldBlockDistance < maxRange - 0.01f)
+        for (int pellet = 0; pellet < trace.pelletCount; ++pellet)
         {
-            for (int pellet = 0; pellet < trace.pelletCount; ++pellet)
-            {
-                if (trace.pellets[pellet].hit)
-                    continue;
-                MimitaImpact::ImpactEvent impact;
-                impact.simulationTick = tick;
-                impact.source = MimitaImpact::ImpactSource::Hitscan;
-                impact.target = worldEntityId != 0
-                    ? MimitaImpact::ImpactTarget::PhysicalEntity
-                    : MimitaImpact::ImpactTarget::WorldGeometry;
-                impact.sourceEntityId = shooter.id;
-                impact.eventId = ((uint64_t)shooter.id << 32) |
-                    ((uint64_t)req->requestId << 5) | (uint64_t)pellet;
-                impact.targetEntityId = worldEntityId;
-                impact.worldPoint = worldHit;
-                impact.worldNormal = worldNormal;
-                impact.worldDirection = trace.pellets[pellet].direction;
-                impact.speed = def->projectileSpeed > 0.0f
-                    ? def->projectileSpeed : 350.0f;
-                impact.mass = def->projectileMass;
-                impact.density = def->projectileDensity;
-                impact.radius = def->projectileBaseRadius;
-                impact.sizeScale = def->cutRadiusScale;
-                impact.boreLength = std::max(0.0f, def->penetrationScale) *
-                    std::max(impact.radius, 0.05f) * 2.0f;
-                impact.cutScale = def->cutEnergyScale;
-                impact.damage = def->damage;
-                MimitaImpact::ImpactSystem::instance().submit(impact);
-            }
+            if (trace.pellets[pellet].hit)
+                continue;
+            glm::vec3 pelletHit;
+            glm::vec3 pelletNormal;
+            uint32_t pelletEntityId = 0;
+            uint32_t pelletSolidId = 0;
+            if (!serverRaycastWorld(origin, trace.pellets[pellet].direction,
+                                    maxRange, world, pelletHit, pelletNormal,
+                                    &pelletEntityId, &pelletSolidId))
+                continue;
+            MimitaImpact::ImpactEvent impact;
+            impact.simulationTick = tick;
+            impact.source = MimitaImpact::ImpactSource::Hitscan;
+            impact.target = pelletEntityId != 0
+                ? MimitaImpact::ImpactTarget::PhysicalEntity
+                : MimitaImpact::ImpactTarget::WorldGeometry;
+            impact.sourceEntityId = shooter.id;
+            impact.eventId = ((uint64_t)shooter.id << 32) |
+                ((uint64_t)req->requestId << 5) | (uint64_t)pellet;
+            impact.targetEntityId = pelletEntityId;
+            impact.worldSolidId = pelletSolidId;
+            impact.worldPoint = pelletHit;
+            impact.worldNormal = pelletNormal;
+            impact.worldDirection = trace.pellets[pellet].direction;
+            impact.speed = def->resolvedWorldImpactSpeedMps() > 0.0f
+                ? def->resolvedWorldImpactSpeedMps() : 350.0f;
+            impact.mass = def->resolvedWorldImpactMassKg();
+            impact.density = def->resolvedWorldImpactDensityKgM3();
+            impact.radius = def->resolvedWorldImpactRadiusM();
+            impact.boreLength = def->resolvedWorldImpactPenetrationM();
+            impact.damage = def->damage;
+            MimitaImpact::ImpactSystem::instance().submit(impact);
         }
 
         Debug::logThrottled(Debug::Category::Weapons, "attack-rewind", 1.0,
