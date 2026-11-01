@@ -89,6 +89,7 @@
       }
     }
   },
+"grenade_effect": null,
 "custom_params": {
     // "bladeLength": 10.0,
     // "bladeLength": 100.0,

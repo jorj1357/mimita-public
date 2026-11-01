@@ -19,7 +19,7 @@
       "file_output": false
     },
     "audio": {
-      "level": "off",
+      "level": "important",
       "file_output": false
     },
     "physics": { "level": "important", "file_output": false },

@@ -1,15 +1,14 @@
 // 10 02 2026
 /* purpose
-* Load generic grenade/tool definitions from config/grenades.json. Each entry
-* maps a grenade id to a weapon id plus the area effect it leaves behind
-* (fire/smoke/dark-bang) and its throw/impact policy.
-* Reuses the shared weapon registry for the thrown projectile; this registry
-* only owns the grenade-to-area-effect mapping.
+* Publish grenade/tool effect definitions from the shared weapon registry.
+* Per-weapon config owns the grenade_effect block; this registry only adapts it
+* to the area-effect system (fire/smoke/dark-bang) and throw policy.
+* Reuses the shared weapon registry for the thrown projectile.
 * Does NOT own projectiles, damage application, or rendering.
 */
 #pragma once
 
-#include <filesystem>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -34,6 +33,7 @@ struct GrenadeDefinition
     float maxEffectDistance = 20.0f;
     float notLookingMultiplier = 0.5f;
     float noLineOfSightMultiplier = 0.05f;
+    std::string audioOnApply;
 };
 
 class GrenadeRegistry
@@ -41,7 +41,10 @@ class GrenadeRegistry
 public:
     static GrenadeRegistry& instance();
 
-    bool load(const std::string& path = "config/grenades.json");
+    // Rebuild from the currently published weapon definitions. Called whenever
+    // the weapon registry reloads; hot reload therefore follows the same atomic
+    // weapon-config snapshot.
+    bool rebuildFromWeapons();
     bool pollReload();
 
     const GrenadeDefinition* get(const std::string& id) const;
@@ -49,11 +52,9 @@ public:
 
 private:
     GrenadeRegistry() = default;
-    std::string resolvePath(const std::string& path) const;
 
     std::unordered_map<std::string, GrenadeDefinition> mDefs;
-    std::filesystem::file_time_type mLastWrite{};
-    std::string mPath = "config/grenades.json";
+    uint64_t mWeaponRevision = 0;
 };
 
 // World-independent selftest for grenade definition loading + area mapping.

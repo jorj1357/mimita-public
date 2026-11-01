@@ -455,6 +455,38 @@ void applyWeaponCustomParamsJson(WeaponDefinition& def, const json& root)
     }
 }
 
+void applyWeaponGrenadeEffectJson(WeaponDefinition& def, const json& root)
+{
+    if (!root.contains("grenade_effect") || !root["grenade_effect"].is_object())
+        return;
+    const json& effect = root["grenade_effect"];
+    WeaponGrenadeEffect& out = def.grenadeEffect;
+    out.enabled = effect.value("enabled", true);
+    const std::string kind = normalizedToken(effect.value("area_kind", std::string{}));
+    if (kind == "fire") out.areaKind = WeaponGrenadeAreaKind::Fire;
+    else if (kind == "smoke") out.areaKind = WeaponGrenadeAreaKind::Smoke;
+    else if (kind == "darkbang" || kind == "flash") out.areaKind = WeaponGrenadeAreaKind::DarkBang;
+    else out.areaKind = WeaponGrenadeAreaKind::None;
+    out.radius = std::max(0.0f, effect.value("radius", out.radius));
+    out.height = std::max(0.0f, effect.value("height", out.height));
+    out.durationSeconds = std::max(0.0f, effect.value("duration_seconds", out.durationSeconds));
+    out.damagePerTick = std::max(0, effect.value("damage_per_tick", out.damagePerTick));
+    out.damageIntervalTicks = std::max(1, effect.value("damage_interval_ticks", out.damageIntervalTicks));
+    out.damagesEnemiesOnly = effect.value("damages_enemies_only", out.damagesEnemiesOnly);
+    out.spawnsAreaEffect = effect.value("spawns_area_effect",
+        out.areaKind != WeaponGrenadeAreaKind::None);
+    out.fuseSeconds = std::max(0.0f, effect.value("fuse_seconds", out.fuseSeconds));
+    out.directEffectDistance = std::max(0.0f,
+        effect.value("direct_effect_distance", out.directEffectDistance));
+    out.maxEffectDistance = std::max(out.directEffectDistance,
+        effect.value("max_effect_distance", out.maxEffectDistance));
+    out.notLookingMultiplier = std::clamp(
+        effect.value("not_looking_multiplier", out.notLookingMultiplier), 0.0f, 1.0f);
+    out.noLineOfSightMultiplier = std::clamp(
+        effect.value("no_line_of_sight_multiplier", out.noLineOfSightMultiplier), 0.0f, 1.0f);
+    out.audioOnApply = effect.value("audio_on_apply", out.audioOnApply);
+}
+
 void applyWeaponRenderJson(WeaponDefinition& def, const json& root)
 {
     if (root.contains("render") && root["render"].is_object()) {
@@ -594,6 +626,7 @@ void applyWeaponJson(WeaponDefinition& def, const json& root){
     applyWeaponExecutionType(def);
     applyWeaponSoundJson(def, root);
     applyWeaponCustomParamsJson(def, root);
+    applyWeaponGrenadeEffectJson(def, root);
     applyWeaponKnockbackJson(def, root);
     applyWeaponProjectileImpactJson(def, root);
     applyWeaponRenderJson(def, root);

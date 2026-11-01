@@ -623,15 +623,15 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             { Perf::ScopedTimer _wr("WeaponRender");
               Perf::ScopedTimer _localWeapon("Rendering::Actors::LocalWeapon");
               weapons.render(camera, player); }
+        const auto& communityMatch =
+            MimitaNet::CommunityMatchClient::instance();
+        int localOutlineTeam = player.matchTeam;
+        const uint8_t replicatedLocalTeam =
+            communityMatch.localTeam(mpContext.localPlayerId);
+        if (replicatedLocalTeam != 0xFF)
+            localOutlineTeam = static_cast<int>(replicatedLocalTeam);
         if (mpContext.active) {
             MIMITA_PERF_SCOPE("Rendering::Actors::NetworkEntities");
-            const auto& communityMatch =
-                MimitaNet::CommunityMatchClient::instance();
-            int localOutlineTeam = player.matchTeam;
-            const uint8_t replicatedLocalTeam =
-                communityMatch.localTeam(mpContext.localPlayerId);
-            if (replicatedLocalTeam != 0xFF)
-                localOutlineTeam = static_cast<int>(replicatedLocalTeam);
             for (auto& kv : mpContext.remotePlayers) {
                 Perf::state().renderPerf.actorRemotePlayers++;
                 int remoteTeam = kv.second.matchTeam;
@@ -760,7 +760,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
         { MIMITA_PERF_SCOPE("Rendering::Actors::NPCSystem");
           Perf::state().renderPerf.actorNpcs += static_cast<uint32_t>(npcSystem.all().size());
-          npcSystem.render(camera); }
+          npcSystem.render(camera, localOutlineTeam); }
         if (!replayPlaybackActive) {
             for (const Npc& npc : npcSystem.all()) {
                 if (npc.body.dead || npc.body.currentHp <= 0)
@@ -974,6 +974,57 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     if (fullFrameStretched)
         diagRenderStage(6);
     diagRenderStage(7);
+
+    // ── Loss aftermath blackout + visible Jason mover ───────────────
+    // The server authors a per-recipient mover position. Cover the world with
+    // black, clear depth, then draw the existing remote Jason body at that
+    // position so the scripted approach remains visible through geometry.
+    {
+        const MimitaNet::CommunityMatchClient& aftermath =
+            MimitaNet::CommunityMatchClient::instance();
+        if (aftermath.aftermathLocal() && aftermath.aftermathBlackout()) {
+            static GLuint aftermathVao = 0, aftermathVbo = 0;
+            if (!aftermathVao) {
+                float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+                glGenVertexArrays(1, &aftermathVao);
+                glGenBuffers(1, &aftermathVbo);
+                glBindVertexArray(aftermathVao);
+                glBindBuffer(GL_ARRAY_BUFFER, aftermathVbo);
+                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+                glEnableVertexAttribArray(0);
+                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+            }
+            GLuint shader = engine.renderer->shaderProgram;
+            glDisable(GL_DEPTH_TEST);
+            glUseProgram(shader);
+            glm::mat4 identity(1.0f);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &identity[0][0]);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &identity[0][0]);
+            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &identity[0][0]);
+            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
+            glBindVertexArray(aftermathVao);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+
+            auto moverIt = mpContext.remoteNpcs.find(aftermath.aftermathMoverActorId());
+            if (moverIt != mpContext.remoteNpcs.end()) {
+                Player& mover = moverIt->second;
+                const glm::vec3 savedPos = mover.pos;
+                mover.pos = aftermath.aftermathMoverPos();
+                mover.updateModelWorldTransforms();
+                const int localTeam = MimitaNet::CommunityMatchClient::instance()
+                    .localTeam(mpContext.localPlayerId);
+                renderNetworkPlayer(mover, camera, moverIt->first, false,
+                                    localTeam == 0xFF ? -1 : (int)localTeam, 1);
+                mover.pos = savedPos;
+                mover.updateModelWorldTransforms();
+            }
+            glBindVertexArray(0);
+        }
+    }
 
     if (gReplayExportVerbose && isExporting)
         Debug::logThrottled(Debug::Category::Replay, "replay-export-ui-world-done", 1.0f,

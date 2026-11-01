@@ -18,14 +18,22 @@ world text. The shared UI and presentation owners render those elements from
 the declared state. The aspiration to support a very large community of
 distinct modes is a direction, not a literal capacity guarantee.
 
+Every mode with a timed objective must follow
+[the general objective and round HUD contract](objective-hud.md): phase,
+active timer, objective state, team hint, and result reason must be visible on
+screen. Mode objective timers are authoritative; map timers are fallback data
+only when the mode omits a value.
+
 ## Mode specifications
 
+- [General Objective and Round HUD](objective-hud.md)
 - [Skatepark](skatepark.md)
 - [Survive the Disasters](survive-the-disasters.md)
 - [Need for Madness](need-for-madness.md)
 - [Cops vs. Robbers / Police Chase](vehicles/police-chase.md)
 - [SWAT](swat.md) and [Bodycam](bodycam.md)
 - [Zombie Tower](zombie-tower/zombie-tower.md)
+- [Versus Jason](vs-jason.md) (internal; not player-facing)
 
 ## General gamemode runtime — authoritative as of 2026-09-09
 

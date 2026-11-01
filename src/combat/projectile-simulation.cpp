@@ -459,6 +459,7 @@ ProjectileStepResult simulateProjectileTick(
             };
             CollisionCandidate best{};
             best.t = 2.0f;
+            bool worldContactThisStep = false;
 
             triCandidates.clear();
             world.queryTrianglesSwept(state.position, proposedPos, config.radius, triCandidates);
@@ -471,6 +472,7 @@ ProjectileStepResult simulateProjectileTick(
                 float t; glm::vec3 hp, hn;
                 if (sweepSphereTriangle(prevPos, proposedPos, config.radius, tri, t, hp, hn))
                 {
+                    if (t <= 1.0f) worldContactThisStep = true;
                     CollisionCandidate c{};
                     c.t = t; c.type = 0; c.triIdx = triIdx;
                     c.hitPos = hp; c.hitNormal = hn;
@@ -483,6 +485,8 @@ ProjectileStepResult simulateProjectileTick(
             world.queryPlayerCapsulesSwept(state.position, proposedPos, config.radius, capsuleCandidates);
             result.playerCapsuleCandidateTotal += (uint32_t)capsuleCandidates.size();
             result.playerCapsuleCandidateMax = std::max(result.playerCapsuleCandidateMax, (uint32_t)capsuleCandidates.size());
+            CollisionCandidate bestCapsule{};
+            bestCapsule.t = 2.0f;
             for (int ci = 0; ci < (int)capsuleCandidates.size(); ++ci)
             {
                 const SweptPlayerCapsule& cap = capsuleCandidates[ci];
@@ -496,6 +500,7 @@ ProjectileStepResult simulateProjectileTick(
                     c.spawnGeneration = cap.spawnGeneration;
                     c.hitPos = hp; c.hitNormal = hn;
                     c.impactSpeed = glm::dot(-state.velocity, hn);
+                    if (c < bestCapsule) bestCapsule = c;
                     if (c < best) best = c;
                 }
             }
@@ -516,6 +521,20 @@ ProjectileStepResult simulateProjectileTick(
                     c.impactSpeed = glm::dot(-state.velocity, hn);
                     if (c < best) best = c;
                 }
+            }
+
+            // A pass-through projectile that also passes through world geometry
+            // must still report actor contact. The deathball's large radius
+            // overlaps the floor on almost every tick, so the world candidate
+            // wins at t=0 and would otherwise mask the actor forever.
+            if (worldContactThisStep)
+                result.passedThroughWorld = true;
+            const bool preferPassThroughActor =
+                config.passThroughWorld && config.passThroughActors &&
+                best.type == 0 && bestCapsule.t <= 1.0f;
+            if (preferPassThroughActor)
+            {
+                best = bestCapsule;
             }
 
             float earliestT = best.t;
@@ -592,6 +611,7 @@ ProjectileStepResult simulateProjectileTick(
                         state.position = proposedPos;
                         result.travelDistance += glm::length(step) * (1.0f - earliestT);
                         result.type = ProjectileCollisionType::WorldPassThrough;
+                        result.passedThroughWorld = true;
                         result.hitWorldTriangleIndex = best.triIdx;
                         result.hitPosition = earliestHitPos;
                         result.hitNormal = earliestNormal;

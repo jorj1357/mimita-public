@@ -28,6 +28,45 @@ became active. A runtime scenario must wait for the handler result and then
 assert the authoritative server/client outcome separately. An unknown-command
 event is a failed scenario step, even if command delivery itself succeeded.
 
+## Collision evidence contract
+
+Collision diagnostics must make the first divergence explainable without
+enabling per-tick trace output in normal play. Records are owned by the existing
+collision/NPC/presentation owners and written through `StructuredLogger`.
+
+Required bounded events:
+
+- `collision.solve.summary` — sampled solve result, actor, position, leading
+  contacts, response normals, correction, and timing.
+- `collision.speed_collapse` — speed dropped by more than 90% within two fixed
+  ticks; include held input, grounded/freeze state, before/after velocity,
+  contacts, normals, triangle ids, penetration, and whether a real surface or
+  intentional state explains it.
+- `collision.step_up` — applied low-lip lift, candidate triangle, lift amount,
+  pre/post position, and clearance result.
+- `collision.progress.stall` — grounded input-held/no-progress window with
+  contact evidence and final reason.
+- `collision.last_valid.rollback` — rejected pose, restored pose, residual
+  penetration, core versus limb threshold, and contacts.
+- `npc.pose.penetration` — final NPC body/weapon part inside static geometry
+  beyond the standoff, with part, triangle, point, normal, and depth.
+- `npc.pose.contained` — root-only correction applied, iterations, total
+  movement, and final penetration.
+- `npc.pose.last_clear` — last-clear pose accepted after final containment.
+- `npc.pose.reset` — last-clear restore, safe-point fallback, or respawn, with
+  before/after position, yaw, ground state, velocity, and reason.
+
+Rules:
+
+- Never claim a collision was fixed from a build or a passing event alone.
+- Record expected and actual values for the first divergence.
+- Correlate by run, process, actor, tick, contact, and triangle identity.
+- Rate-limit repeated records by episode, not by hiding the first occurrence.
+- Keep static-world contacts, actor-pair contacts, and weapon/damage outcomes
+  as separate fields. Do not let one category stand in for another.
+- The event schema must be shared with the scenario recorder/analyzer rather
+  than parsed from free-form text.
+
 Status: partial implementation. `StructuredLogger` now enforces a 100,000,000
 byte canonical file ceiling and a 1,000,000,000 byte `logs` tree ceiling,
 tracks concurrent processes with shared Windows coordination, prunes eligible

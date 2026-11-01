@@ -60,6 +60,12 @@ struct TeamObjectiveContext
     uint32_t carrierActorId = 0;
     std::string plantedSiteId;
     glm::vec3 bombPosition{0.0f};
+    // A T carrier is actively planting. CT defenders move to contest this site.
+    bool planting = false;
+    uint32_t planterActorId = 0;
+    std::string contestSiteId;
+    glm::vec3 contestSitePosition{0.0f};
+    uint8_t interactionMode = 0; // ObjectiveInteractionMode
 };
 
 // Optional per-team assignment policy from JSON. When a team has no policy the

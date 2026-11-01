@@ -164,6 +164,7 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
                 if (value.contains("melee_revisions"))
                     mRevisions = ScenarioTracks::parseMeleeRevisions(value["melee_revisions"]);
             }
+            mNetworked = value.value("networked", MP_CONTEXT.active);
             mMap = value.value("map", "");
             mMode = value.value("mode", "");
             mWeaponSet = value.value("weapon_set", 0);
@@ -208,6 +209,7 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
             tick.input.freezeHeld = value.value("freeze_held", false);
             tick.input.freezePressed = value.value("freeze_pressed", false);
             tick.input.crouchHeld = value.value("crouch_held", false);
+            tick.input.interactHeld = value.value("interact_held", false);
             tick.input.reloadPressed = value.value("reload_pressed", false);
             tick.input.primaryHeld = value.value("primary_held", false);
             tick.input.secondaryHeld = value.value("secondary_held", false);
@@ -270,14 +272,14 @@ bool ScenarioPlayer::begin()
     ScenarioInput::setActive(true);
     ScenarioInput::setFrame(&mNeutral);
 
-    mServerPrepared = !schema2() || !MP_CONTEXT.active;
-    mServerBeginAck = !schema2() || !MP_CONTEXT.active;
+    mServerPrepared = !schema2() || !mNetworked;
+    mServerBeginAck = !schema2() || !mNetworked;
     mServerRejected = false;
     mServerCommandSent = false;
     mBeginSent = false;
     mServerError.clear();
 
-    if (schema2() && MP_CONTEXT.active)
+    if (schema2() && mNetworked)
     {
         MimitaNet::mpSendServerCommand(
             MP_CONTEXT, "scenario_server_play " + mPath);
@@ -359,7 +361,7 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
 
     if (mWaitingForStart)
     {
-        const bool networked = MP_CONTEXT.active;
+        const bool networked = mNetworked;
         const bool v2 = schema2();
         if (v2 && !networked)
         {
@@ -566,7 +568,7 @@ void ScenarioPlayer::fail(const std::string& reason)
     mWaitingForStart = false;
     ScenarioInput::clear();
     gFramePacer.setMaxFrames(mSavedMaxFrames > 0 ? mSavedMaxFrames : 999);
-    if (schema2() && MP_CONTEXT.active)
+    if (schema2() && mNetworked)
         MimitaNet::mpSendServerCommand(MP_CONTEXT, "scenario_server_stop");
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Errors,
@@ -599,7 +601,7 @@ void ScenarioPlayer::finish(const char* reason)
     mWaitingForStart = false;
     ScenarioInput::clear();
     gFramePacer.setMaxFrames(mSavedMaxFrames > 0 ? mSavedMaxFrames : 999);
-    if (schema2() && MP_CONTEXT.active)
+    if (schema2() && mNetworked)
         MimitaNet::mpSendServerCommand(MP_CONTEXT, "scenario_server_stop");
     const bool completed = std::string(reason ? reason : "") == "complete" &&
         mFailureReason.empty();

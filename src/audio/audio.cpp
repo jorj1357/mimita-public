@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -42,7 +43,9 @@
 
 #include "config/player-settings.h"
 #include "config/size-scaling-config.h"
+#include "config/spatial-audio-config.h"
 #include "config/weapon-hitfx-config.h"
+#include "audio/audio-acoustics.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "replay/replay.h"
@@ -55,6 +58,8 @@ static bool gServerMode = false;  // when true, audio is completely disabled
 
 static glm::vec3 gLastListenerPosition{0.0f};
 static glm::vec3 gLastListenerForward{0.0f, 1.0f, 0.0f};
+static const World* gSpatialWorld = nullptr;
+static float gSpatialConfigPollTimer = 0.0f;
 
 // cooldown timer for air jump
 static float airJumpCooldown = 0.0f;
@@ -70,6 +75,23 @@ struct ActiveSound {
     float createdTime = 0.0f;
     unsigned int ownerId = 0;
     float endSeconds = 0.0f;
+    AudioCategory category = AudioCategory::Impacts;
+    SpatialAudioMode mode = SpatialAudioMode::Legacy;
+    SpatialProfile profile;
+    LegacyProfile legacyProfile;
+    bool world = false;
+    bool spatial = false;
+    float baseVolume = 1.0f;
+    float distanceGain = 1.0f;
+    float lastDistance = 0.0f;
+    float obstruction = 0.0f;
+    float enclosure = 0.0f;
+    float wetMix = 0.0f;
+    float cutoffHz = 20000.0f;
+    float nextAcousticUpdate = 0.0f;
+    ma_lpf_node lpf{};
+    ma_delay_node delay{};
+    bool nodesReady = false;
 };
 static std::vector<std::unique_ptr<ActiveSound>> gActiveSounds;
 static void initAudioOnce();
@@ -214,9 +236,193 @@ static const std::vector<uint8_t>& getCachedSoundData(const std::string& name)
     return empty;
 }
 
+static void uninitVoice(ActiveSound& active)
+{
+    if (active.initialized) {
+        ma_sound_uninit(&active.sound);
+        ma_decoder_uninit(&active.decoder);
+        active.initialized = false;
+    }
+    if (active.nodesReady) {
+        ma_lpf_node_uninit(&active.lpf, nullptr);
+        ma_delay_node_uninit(&active.delay, nullptr);
+        active.nodesReady = false;
+    }
+}
+
+static void setVoiceCutoff(ActiveSound& active, float cutoffHz)
+{
+    if (!active.nodesReady)
+        return;
+    cutoffHz = std::clamp(cutoffHz, 200.0f,
+                          (float)ma_engine_get_sample_rate(&gEngine) * 0.45f);
+    if (std::fabs(cutoffHz - active.cutoffHz) < 1.0f)
+        return;
+    ma_lpf_config config = ma_lpf_config_init(
+        ma_format_f32, 2, ma_engine_get_sample_rate(&gEngine), cutoffHz, 2);
+    if (ma_lpf_node_reinit(&config, &active.lpf) == MA_SUCCESS)
+        active.cutoffHz = cutoffHz;
+}
+
+static float smoothStep(float edge0, float edge1, float value)
+{
+    if (edge1 <= edge0 + 0.0001f)
+        return value >= edge1 ? 1.0f : 0.0f;
+    const float t = std::clamp((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+static float spatialWetMix(const ActiveSound& active, float distanceFactor)
+{
+    const SpatialProfile& profile = active.profile;
+    float wet = profile.reverbWetNear +
+        (profile.reverbWetFar - profile.reverbWetNear) *
+            std::max(distanceFactor, std::max(active.obstruction, active.enclosure));
+    wet += active.obstruction * profile.obstructionReverbBoost;
+    wet += active.enclosure * profile.enclosureReverbBoost;
+    return std::clamp(wet, 0.0f, 1.0f);
+}
+
+static void applySpatialVoice(ActiveSound& active, bool refreshAcoustics)
+{
+    if (!active.spatial || !active.initialized)
+        return;
+
+    const glm::vec3 offset = active.position - gLastListenerPosition;
+    const float distance = glm::length(offset);
+    const float gain = active.profile.gainAt(distance);
+    active.distanceGain = gain;
+    active.lastDistance = distance;
+
+    if (refreshAcoustics) {
+        const AcousticEstimate estimate = estimateWorldAcoustics(
+            gSpatialWorld, active.profile, active.position,
+            gLastListenerPosition);
+        active.obstruction = estimate.obstruction;
+        active.enclosure = estimate.enclosure;
+    }
+
+    const float obstructionLoss =
+        1.0f - active.profile.obstructionDirectLoss * active.obstruction;
+    const float enclosureLoss =
+        1.0f - active.profile.enclosureDirectLoss * active.enclosure;
+    const float directGain = gain *
+        std::clamp(obstructionLoss, 0.0f, 1.0f) *
+        std::clamp(enclosureLoss, 0.0f, 1.0f);
+    const float distanceFactor = std::clamp(1.0f - gain, 0.0f, 1.0f);
+    const float dryShare = 1.0f - smoothStep(
+        active.profile.directFadeStart, active.profile.directFadeEnd, distance);
+    const float wet = std::max(spatialWetMix(active, distanceFactor),
+                               1.0f - dryShare);
+
+    active.wetMix = wet;
+    const PlayerSettings& settings = GetPlayerSettings();
+    ma_sound_set_volume(&active.sound,
+        std::max(0.0f, active.baseVolume * active.profile.volumeScale *
+                       settings.masterVolume * settings.sfxVolume * directGain));
+
+    if (active.nodesReady) {
+        ma_delay_node_set_wet(&active.delay, wet);
+        ma_delay_node_set_dry(&active.delay, 1.0f - wet);
+        float cutoff = active.profile.lpfOpenHz +
+            (active.profile.lpfOccludedHz - active.profile.lpfOpenHz) *
+                active.obstruction;
+        cutoff += (active.profile.lpfEnclosedHz - cutoff) * active.enclosure;
+        setVoiceCutoff(active, cutoff);
+    }
+}
+
+static void applyLegacyVoice(ActiveSound& active)
+{
+    if (!active.initialized || active.mode != SpatialAudioMode::Legacy)
+        return;
+    const float distance = glm::length(active.position - gLastListenerPosition);
+    active.lastDistance = distance;
+    const float full = active.legacyProfile.fullVolumeDistance;
+    const float outer = std::max(full + 0.01f, active.legacyProfile.maxDistance);
+    active.distanceGain = distance <= full
+        ? 1.0f
+        : std::clamp(1.0f - (distance - full) / (outer - full), 0.0f, 1.0f);
+    active.wetMix = 0.0f;
+    const PlayerSettings& settings = GetPlayerSettings();
+    ma_sound_set_volume(&active.sound,
+        std::max(0.0f, active.baseVolume * active.legacyProfile.volumeScale *
+                       settings.masterVolume * settings.sfxVolume));
+}
+
+static void logSpatialVoice(const ActiveSound& active)
+{
+    if (!StructuredLogger::instance().shouldLog(
+            StructuredCategory::Audio, StructuredLevel::Important))
+        return;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Audio, StructuredLevel::Important,
+        "audio.spatial.applied", active.name,
+        !active.world ? "local sound unchanged"
+            : (active.mode == SpatialAudioMode::Legacy
+                ? "world sound uses legacy attenuation"
+                : (active.spatial ? "world sound uses spatial profile"
+                                  : "world sound kept local")),
+        0,
+        nlohmann::json{
+            {"sound", active.name},
+            {"category", audioCategoryName(active.category)},
+            {"mode", spatialAudioModeName(active.mode)},
+            {"profile", active.mode == SpatialAudioMode::Legacy
+                ? active.legacyProfile.name : active.profile.name},
+            {"world", active.world},
+            {"spatial", active.spatial},
+            {"legacy_full_volume_distance", active.legacyProfile.fullVolumeDistance},
+            {"legacy_max_distance", active.legacyProfile.maxDistance},
+            {"volume_scale", active.mode == SpatialAudioMode::Legacy
+                ? active.legacyProfile.volumeScale : active.profile.volumeScale},
+            {"position", {active.position.x, active.position.y, active.position.z}},
+            {"listener", {gLastListenerPosition.x, gLastListenerPosition.y,
+                          gLastListenerPosition.z}},
+            {"direction", active.lastDistance > 0.0001f
+                ? std::array<float, 3>{
+                    (active.position.x - gLastListenerPosition.x) / active.lastDistance,
+                    (active.position.y - gLastListenerPosition.y) / active.lastDistance,
+                    (active.position.z - gLastListenerPosition.z) / active.lastDistance}
+                : std::array<float, 3>{0.0f, 0.0f, 0.0f}},
+            {"distance", active.lastDistance},
+            {"distance_gain", active.distanceGain},
+            {"obstruction", active.obstruction},
+            {"enclosure", active.enclosure},
+            {"wet_mix", active.wetMix},
+            {"cutoff_hz", active.cutoffHz},
+            {"volume", active.baseVolume},
+        },
+        __FILE__, __LINE__, __func__);
+}
+
+static void logSpatialConfig(const char* eventName, bool ok)
+{
+    if (!StructuredLogger::instance().shouldLog(
+            StructuredCategory::Audio, StructuredLevel::Important))
+        return;
+    const SpatialAudioData& data = SpatialAudioConfig::instance().data();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Audio, StructuredLevel::Important,
+        eventName, "", ok ? "spatial audio config accepted"
+                          : "spatial audio config rejected; previous snapshot kept",
+        0,
+        nlohmann::json{
+            {"enabled", data.enabled},
+            {"mode", spatialAudioModeName(data.mode)},
+            {"categories", data.categories.size()},
+            {"legacy_categories", data.legacyCategories.size()},
+            {"legacy_sounds", data.legacySounds.size()},
+            {"sounds", data.exactSounds.size()},
+            {"prefixes", data.prefixSounds.size()},
+        },
+        __FILE__, __LINE__, __func__);
+}
+
 static void startSound(const std::string& name, float volume, float pitch,
                        const glm::vec3* position, float maxDistance,
-                       float startSeconds, float endSeconds, unsigned int ownerId)
+                       float startSeconds, float endSeconds, unsigned int ownerId,
+                       AudioCategory category)
 {
     MIMITA_PERF_SCOPE("Audio::StartSound");
     { MIMITA_PERF_SCOPE("Audio::StartSound::InitAudio"); initAudioOnce(); }
@@ -239,7 +445,11 @@ static void startSound(const std::string& name, float volume, float pitch,
       }
     }
     { MIMITA_PERF_SCOPE("Audio::StartSound::SoundInit");
-      if (ma_sound_init_from_data_source(&gEngine, &active->decoder, 0, nullptr, &active->sound) != MA_SUCCESS) {
+      ma_sound_config soundConfig = ma_sound_config_init_2(&gEngine);
+      soundConfig.pDataSource = &active->decoder;
+      soundConfig.volumeSmoothTimeInPCMFrames =
+          ma_engine_get_sample_rate(&gEngine) / 20;
+      if (ma_sound_init_ex(&gEngine, &soundConfig, &active->sound) != MA_SUCCESS) {
         Perf::state().audioPerf.soundInitFailures++;
         Perf::state().audioPerf.soundsRejected++;
         ma_decoder_uninit(&active->decoder);
@@ -251,11 +461,25 @@ static void startSound(const std::string& name, float volume, float pitch,
     active->name = name;
     active->position = position ? *position : glm::vec3(0.0f);
     active->volume = volume;
+    active->baseVolume = volume;
     active->pitch = pitch;
     active->maxDistance = maxDistance;
     active->createdTime = gAudioTime;
     active->ownerId = ownerId;
     active->endSeconds = std::max(0.0f, endSeconds);
+    active->category = category;
+
+    const SpatialAudioData& spatialData = SpatialAudioConfig::instance().data();
+    active->category = spatialData.resolveCategory(name, category);
+    active->mode = spatialData.mode;
+    active->profile = spatialData.profileFor(active->category);
+    active->legacyProfile = spatialData.legacyProfileForSound(name, active->category);
+    const bool isWorld = position && active->category != AudioCategory::UI;
+    const bool wantsSpatial = isWorld && spatialData.enabled &&
+        active->mode == SpatialAudioMode::Spatial && active->profile.spatial;
+    active->spatial = wantsSpatial;
+    active->world = isWorld;
+
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
       const PlayerSettings& settings = GetPlayerSettings();
       ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
@@ -267,21 +491,77 @@ static void startSound(const std::string& name, float volume, float pitch,
       if (position) {
           ma_sound_set_position(&active->sound, position->x, position->y, position->z);
           ma_sound_set_spatialization_enabled(&active->sound, MA_TRUE);
-          ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
-          ma_sound_set_min_distance(&active->sound, 2.0f);
-          ma_sound_set_max_distance(&active->sound, std::max(1.0f, maxDistance));
+          if (active->mode == SpatialAudioMode::Legacy && isWorld) {
+              ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_linear);
+              ma_sound_set_min_distance(&active->sound,
+                  std::max(0.0f, active->legacyProfile.fullVolumeDistance));
+              ma_sound_set_max_distance(&active->sound,
+                  std::max(active->legacyProfile.fullVolumeDistance + 0.01f,
+                           active->legacyProfile.maxDistance));
+              ma_sound_set_rolloff(&active->sound, 1.0f);
+          } else {
+              // The custom category curve owns distance attenuation. Setting the
+              // inverse model's min and max equal keeps panning active while its
+              // own gain stays at 1.
+              ma_sound_set_attenuation_model(&active->sound, ma_attenuation_model_inverse);
+              ma_sound_set_min_distance(&active->sound, std::max(1.0f, active->profile.outerDistance));
+              ma_sound_set_max_distance(&active->sound, std::max(1.0f, active->profile.outerDistance));
+          }
       } else {
           ma_sound_set_spatialization_enabled(&active->sound, MA_FALSE);
       }
     }
+
+    if (active->mode == SpatialAudioMode::Legacy && isWorld) {
+        applyLegacyVoice(*active);
+    } else if (active->spatial) {
+        MIMITA_PERF_SCOPE("Audio::StartSound::SpatialChain");
+        const ma_uint32 sampleRate = ma_engine_get_sample_rate(&gEngine);
+        const ma_uint32 channels = 2;
+        ma_lpf_node_config lpfConfig = ma_lpf_node_config_init(
+            channels, sampleRate, active->profile.lpfOpenHz, 2);
+        ma_delay_node_config delayConfig = ma_delay_node_config_init(
+            channels, sampleRate,
+            (ma_uint32)std::max(1.0f,
+                active->profile.reverbDelayMs * (float)sampleRate / 1000.0f),
+            active->profile.reverbDecay);
+        if (ma_lpf_node_init(ma_engine_get_node_graph(&gEngine), &lpfConfig,
+                             nullptr, &active->lpf) == MA_SUCCESS) {
+            if (ma_delay_node_init(ma_engine_get_node_graph(&gEngine),
+                                   &delayConfig, nullptr,
+                                   &active->delay) == MA_SUCCESS) {
+                ma_node_attach_output_bus((ma_node*)&active->lpf, 0,
+                                          (ma_node*)&active->delay, 0);
+                ma_node_attach_output_bus((ma_node*)&active->delay, 0,
+                                          ma_engine_get_endpoint(&gEngine), 0);
+                ma_node_attach_output_bus((ma_node*)&active->sound, 0,
+                                          (ma_node*)&active->lpf, 0);
+                active->nodesReady = true;
+                active->cutoffHz = active->profile.lpfOpenHz;
+                applySpatialVoice(*active, true);
+            } else {
+                ma_lpf_node_uninit(&active->lpf, nullptr);
+            }
+        }
+        if (!active->nodesReady) {
+            // Spatialization still works; only the filter/reverb tail is lost.
+            active->spatial = false;
+            Debug::warn(Debug::Category::Audio,
+                "[AUDIO] spatial chain unavailable for %s; using panning only\n",
+                name.c_str());
+        }
+    }
+
     { MIMITA_PERF_SCOPE("Audio::StartSound::StartVoice"); ma_sound_start(&active->sound); }
     if (gSoundDebug) printf("[SOUND] playing event=%s category=%s\n",
                             name.c_str(), position ? "3D" : "2D");
-    Debug::warn(Debug::Category::Audio, "[AUDIO] startSound name=%s pos=%s vol=%.2f maxDist=%.2f spatial=%s\n",
-                name.c_str(),
+    Debug::warn(Debug::Category::Audio,
+        "[AUDIO] startSound name=%s category=%s pos=%s vol=%.2f maxDist=%.2f spatial=%s\n",
+                name.c_str(), audioCategoryName(active->category).c_str(),
                 position ? "(set)" : "(null)",
                 volume, maxDistance,
-                position ? "ENABLED" : "DISABLED");
+                active->spatial ? "ENABLED" : "DISABLED");
+    logSpatialVoice(*active);
     { MIMITA_PERF_SCOPE("Audio::StartSound::ContainerInsert");
       gActiveSounds.push_back(std::move(active)); }
     Perf::state().audioPerf.soundsStarted++;
@@ -301,6 +581,8 @@ static void initAudioOnce()
 
     gAudioInit = true;
     printf("[AUDIO] Engine initialized\n");
+    const bool spatialConfigOk = SpatialAudioConfig::instance().load();
+    logSpatialConfig("audio.spatial.config.loaded", spatialConfigOk);
 
     // Queue combat sounds for background caching (one per frame in audioUpdate)
     const char* combatSounds[] = {
@@ -339,6 +621,13 @@ void audioUpdate(float dt)
     if (!gAudioInit)
         initAudioOnce();
 
+    gSpatialConfigPollTimer += dt;
+    if (gSpatialConfigPollTimer >= 1.0f) {
+        gSpatialConfigPollTimer = 0.0f;
+        if (SpatialAudioConfig::instance().pollReload())
+            logSpatialConfig("audio.spatial.config.reloaded", true);
+    }
+
     const size_t voicesBeforeCleanup = gActiveSounds.size();
     { MIMITA_PERF_SCOPE("Audio::Update::RemoveFinishedSounds");
     gActiveSounds.erase(
@@ -349,12 +638,11 @@ void audioUpdate(float dt)
                 ma_sound_get_cursor_in_seconds(&active->sound, &cursorSeconds) == MA_SUCCESS &&
                 cursorSeconds >= active->endSeconds;
             if (!active || !active->initialized || ma_sound_at_end(&active->sound) || reachedConfiguredEnd) {
-                if (active && active->initialized) {
-                    ma_sound_uninit(&active->sound);
-                    ma_decoder_uninit(&active->decoder);
+                if (active) {
+                    if (gSoundDebug)
+                        DBG(Audio, "stopped event=%s", active->name.c_str());
+                    uninitVoice(*active);
                 }
-                if (gSoundDebug && active)
-                    DBG(Audio, "stopped event=%s", active->name.c_str());
                 return true;
             }
             return false;
@@ -363,6 +651,15 @@ void audioUpdate(float dt)
     Perf::state().audioPerf.voicesCleaned += static_cast<uint32_t>(
         voicesBeforeCleanup - gActiveSounds.size());
     Perf::state().audioPerf.activeVoices = static_cast<uint32_t>(gActiveSounds.size());
+
+    for (auto& active : gActiveSounds) {
+        if (!active || !active->spatial || !active->initialized)
+            continue;
+        const bool refresh = gAudioTime >= active->nextAcousticUpdate;
+        if (refresh)
+            active->nextAcousticUpdate = gAudioTime + 0.25f;
+        applySpatialVoice(*active, refresh);
+    }
 }
 
 AudioManager& AudioManager::instance()
@@ -404,10 +701,12 @@ void AudioManager::play(const AudioEvent& event)
         stopOwner(event.ownerId);
     if (event.world) {
         startSound(event.name, event.volume, event.pitch, &event.position, event.maxDistance,
-                   event.startSeconds, event.endSeconds, event.ownerId);
+                   event.startSeconds, event.endSeconds, event.ownerId,
+                   event.category);
     } else {
         startSound(event.name, event.volume, event.pitch, nullptr, 0.0f,
-                   event.startSeconds, event.endSeconds, event.ownerId);
+                   event.startSeconds, event.endSeconds, event.ownerId,
+                   event.category);
     }
 }
 
@@ -417,14 +716,20 @@ void AudioManager::stopOwner(unsigned int ownerId)
     gActiveSounds.erase(
         std::remove_if(gActiveSounds.begin(), gActiveSounds.end(), [ownerId](const std::unique_ptr<ActiveSound>& active) {
             if (!active || active->ownerId != ownerId) return false;
-            if (active->initialized) {
-                ma_sound_uninit(&active->sound);
-                ma_decoder_uninit(&active->decoder);
-            }
             if (gSoundDebug) DBG(Audio, "stopped event=%s owner=%u", active->name.c_str(), ownerId);
+            uninitVoice(*active);
             return true;
         }),
         gActiveSounds.end());
+}
+
+void AudioManager::stopAll()
+{
+    for (auto& active : gActiveSounds) {
+        if (active && active->initialized)
+            uninitVoice(*active);
+    }
+    gActiveSounds.clear();
 }
 
 void playSound(const std::string& name, float volume)
@@ -442,9 +747,10 @@ void playSoundPitched(const std::string& name, float volume, float pitch)
     AudioManager::instance().play({name, AudioCategory::Movement, false, {}, volume, pitch});
 }
 
-void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float pitch, float maxDistance)
+void playWorldSound(const std::string& name, glm::vec3 pos, float volume, float pitch,
+                    float maxDistance, AudioCategory category)
 {
-    AudioEvent event{name, AudioCategory::Impacts, true, pos, volume, pitch, maxDistance};
+    AudioEvent event{name, category, true, pos, volume, pitch, maxDistance};
     AudioManager::instance().play(event);
 }
 
@@ -462,9 +768,9 @@ unsigned int audioOwnerKey(unsigned int actorId, const std::string& channel)
 
 void playWorldSoundOwned(const std::string& name, glm::vec3 pos, float volume,
                          float pitch, float maxDistance, unsigned int ownerId,
-                         bool retrigger)
+                         bool retrigger, AudioCategory category)
 {
-    AudioEvent event{name, AudioCategory::Weapons, true, pos, volume, pitch,
+    AudioEvent event{name, category, true, pos, volume, pitch,
                      maxDistance, ownerId, 0.0f, 0.0f, retrigger};
     AudioManager::instance().play(event);
 }
@@ -472,6 +778,16 @@ void playWorldSoundOwned(const std::string& name, glm::vec3 pos, float volume,
 glm::vec3 audioListenerPosition()
 {
     return gLastListenerPosition;
+}
+
+glm::vec3 audioListenerForward()
+{
+    return gLastListenerForward;
+}
+
+void setAudioSpatialWorld(const World* world)
+{
+    gSpatialWorld = world;
 }
 
 void computeImpactAudio(float baseVolume, float distance, float severity,
@@ -708,10 +1024,8 @@ void setServerAudioMode(bool enabled)
     gServerMode = enabled;
     if (enabled && gAudioInit) {
         for (auto& s : gActiveSounds) {
-            if (s->initialized) {
-                ma_sound_uninit(&s->sound);
-                ma_decoder_uninit(&s->decoder);
-            }
+            if (s)
+                uninitVoice(*s);
         }
         gActiveSounds.clear();
         ma_engine_uninit(&gEngine);

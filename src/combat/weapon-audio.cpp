@@ -20,7 +20,7 @@ void playContactSound(const WeaponDefinition& def, const glm::vec3& position, fl
         WeaponExecution::paramOr(def, "contactMaxVolume", 1.0f), strength);
     const float pitch = glm::mix(WeaponExecution::paramOr(def, "contactMaxPitch", 1.4f),
         WeaponExecution::paramOr(def, "contactMinPitch", 0.5f), strength);
-    playWorldSound(def.soundHit, position, volume, pitch, 35.0f);
+    playWorldSound(def.soundHit, position, volume, pitch, 35.0f, AudioCategory::Impacts);
 }
 
 void playShootSound(const WeaponDefinition& def, const glm::vec3& position,
@@ -72,7 +72,7 @@ void playHitSound(const WeaponDefinition& def, const glm::vec3& position) {
     float dist = glm::length(position - audioListenerPosition());
     float vol, pit;
     computeImpactAudio(1.2f, dist, 0.5f, vol, pit);
-    playWorldSound(def.soundHit, position, vol, pit, 60.0f);
+    playWorldSound(def.soundHit, position, vol, pit, 60.0f, AudioCategory::Impacts);
     Debug::log(Debug::Category::Audio, "[HIT AUDIO] event=%s dist=%.1f pitch=%.2f volume=%.2f\n",
                def.soundHit.c_str(), dist, pit, vol);
 }
@@ -81,7 +81,7 @@ void playGodballWhoosh(const glm::vec3& position, float speed01) {
     float clamped = std::min(speed01, 1.0f);
     float volume = 0.1f + clamped * 0.4f;
     float pitch = 0.5f + clamped * 0.8f;
-    playWorldSound("whoosh", position, volume, pitch, 20.0f);
+    playWorldSound("whoosh", position, volume, pitch, 20.0f, AudioCategory::Impacts);
 }
 
 void playGodballImpact(const glm::vec3& position, float damageFraction) {
@@ -91,14 +91,14 @@ void playGodballImpact(const glm::vec3& position, float damageFraction) {
     pitch = std::clamp(pitch, 0.5f, 1.4f);
     printf("[SOUND] weapon=godball event=hit damageFrac=%.2f pitch=%.2f volume=%.2f\n",
            damageFraction, pitch, volume);
-    playWorldSound("godballhit", position, volume, pitch, 25.0f);
+    playWorldSound("godballhit", position, volume, pitch, 25.0f, AudioCategory::Impacts);
 }
 
 void playAltFireSound(const WeaponDefinition& def, const glm::vec3& position) {
     // Alt-fire uses soundShoot as well (separate alt_fire sound path TBD in future)
     if (!def.soundShoot.empty()) {
         Debug::log(Debug::Category::Audio, "[ALT FIRE] weapon=%s path=%s\n", def.id.c_str(), def.soundShoot.c_str());
-        playWorldSound(def.soundShoot, position, 1.0f, 1.0f, 80.0f);
+        playWorldSound(def.soundShoot, position, 1.0f, 1.0f, 80.0f, AudioCategory::Weapons);
     }
 }
 
@@ -111,7 +111,7 @@ void playSwordswordHitSound(const glm::vec3& position, float strength01) {
     pitch = std::clamp(pitch, 0.5f, 1.4f);
     printf("[SOUND] weapon=swordsword event=hit variant=%d strength=%.2f pitch=%.2f volume=%.2f\n",
            r, strength01, pitch, volume);
-    playWorldSound(name, position, volume, pitch, 35.0f);
+    playWorldSound(name, position, volume, pitch, 35.0f, AudioCategory::Impacts);
 }
 
 } // namespace WeaponAudio

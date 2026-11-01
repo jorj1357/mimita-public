@@ -1,3 +1,29 @@
+// 2026 10 31 0953 todo jorj  the plr height here
+/*
+this is messed up bc this was like december 2025 or earlier when i
+was doign this
+so 
+
+these values are oldldddd like i donth think we use them or even 
+idk
+so we need to like migratethis file out
+and i know its called in liek all thees other files tho
+so 
+idk
+but 
+idk
+matbe we can jus clean this file beacuse there is 
+fields that just arent read
+like
+air speed
+that isnt even  a thing ant more it hnk
+i think idk
+just need to clean and make this more  understadnable
+what is each thing here for and is it even used
+also todo, a lint to check if a variable is defined twice 
+or if a variable is even used anywhere 
+*/
+
 #pragma once
 #include <glm/glm.hpp>
 

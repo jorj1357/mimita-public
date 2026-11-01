@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "dust2_seam_playback_v1",
+  "description": "Replay the reported Dust 2 block-seam recording and require no grounded stall or speed-collapse event.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "dust2cyberiav4",
+    "weapon_set": "12",
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [],
+  "steps": [
+    {
+      "id": "play_dust2_seam",
+      "type": "input_playback",
+      "path": "devscripts/scenarios/user/scenario-20261031_143812-collisss-merged.jsonl",
+      "timeout_seconds": 240
+    }
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "scenario.playback.started"},
+    {"type": "event_present", "event": "scenario.playback.start_ready"},
+    {"type": "event_present", "event": "scenario.playback.completed"},
+    {"type": "event_absent", "event": "scenario.playback.failed"},
+    {"type": "event_absent", "event": "collision.progress.stall"},
+    {"type": "event_absent", "event": "collision.speed_collapse"}
+  ],
+  "timeout_seconds": 300
+}

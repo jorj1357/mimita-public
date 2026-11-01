@@ -387,6 +387,38 @@ This is the desired architecture, not a claim about current implementation.
 The existing `createRevolverDefinition()`-style registrations and slot-based
 equip plumbing are migration debt and must be measured before removal.
 
+### Grenade effect component (2026-10-31)
+
+Throwable weapons own their grenade policy in the same per-weapon definition.
+The shared top-level `grenade_effect` object selects and configures the reusable
+area-effect implementation:
+
+```json
+"grenade_effect": {
+  "enabled": true,
+  "area_kind": "fire|smoke|darkbang|none",
+  "radius": 5.0,
+  "height": 3.0,
+  "duration_seconds": 7.0,
+  "damage_per_tick": 10,
+  "damage_interval_ticks": 5,
+  "damages_enemies_only": true,
+  "spawns_area_effect": true,
+  "fuse_seconds": 2.0,
+  "direct_effect_distance": 5.0,
+  "max_effect_distance": 20.0,
+  "not_looking_multiplier": 0.5,
+  "no_line_of_sight_multiplier": 0.05,
+  "audio_on_apply": "weapon/darkbang/brownnoise"
+}
+```
+
+`GrenadeRegistry` publishes this block from the weapon registry and reloads
+with the same atomic weapon-config snapshot. `config/grenades.json` is retired;
+do not create a second grenade-policy source. Frag splash uses the shared
+damage path and may author `splashEdgeDamage` for center-to-edge interpolation
+(default frag: 1000 center / 25 edge).
+
 ### Linear impact falloff: revolver first (2026-10-20)
 
 The revolver's hit damage must vary linearly between a minimum of 15 and a
@@ -1925,6 +1957,12 @@ contributes its own knockback
 does not pierce
 A shotgun trigger press still produces one generic AttackRequest.
 The deterministic seed reconstructs all pellet directions on the server.
+
+Third-person parallax is intentional and must be preserved. The shot begins at
+the actual weapon muzzle tip, not the camera. Keeping the ray parallel to camera
+forward while offset to the muzzle means a target near a corner can be blocked
+or missed by the gun itself. That is the desired emergent behavior, not a bug.
+Do not move the hitscan origin to the camera or aim the ray at a far point.
 ________________
 
 

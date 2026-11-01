@@ -15,6 +15,8 @@
 #include <cctype>
 #include <cmath>
 #include <algorithm>
+#include <cstdlib>
+#include <windows.h>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "entities/player.h"
@@ -38,7 +40,9 @@
 #include "gui/gui-editor.h"
 #include "competitive/competitive-match.h"
 #include "competitive/competitive-ui.h"
+#include "audio/audio.h"
 #include "audio/music-manager.h"
+#include "gamemode/gamemode.h"
 #include "network/multiplayer-context.h"
 #include "gui/gui-main.h"
 #include "game/game-state.h"
@@ -46,6 +50,7 @@
 #include "gui/hud/reward-popup.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
+#include "gamemode/map-config.h"
 #include "input/mouse-lock.h"
 #include "ui/hitmarker.h"
 #include "crosshair/crosshair-render.h"
@@ -659,6 +664,15 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             glm::vec4 codeColor = isLocal
                 ? glm::vec4(0.6f, 1.0f, 0.6f, 1.0f)
                 : glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+            const Gamemode& activeMode = GamemodeRegistry::instance().get(
+                MimitaNet::CommunityMatchClient::instance().mode());
+            if (activeMode.presentation.hasRoomCodeColor) {
+                codeColor = glm::vec4(
+                    activeMode.presentation.roomCodeColor.x / 255.0f,
+                    activeMode.presentation.roomCodeColor.y / 255.0f,
+                    activeMode.presentation.roomCodeColor.z / 255.0f,
+                    1.0f);
+            }
             uiDrawText(buf, cx - codeW * 0.5f, 18.0f, codeScale, codeColor);
             // Room code instruction lines removed — belongs in ESC/Help menu.
         }
@@ -731,6 +745,46 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 const std::string rightName = namedTeams ? match.teamName(1) : "BLUE";
                 const int leftScore = namedTeams ? match.roundWins(0) : match.redScore();
                 const int rightScore = namedTeams ? match.roundWins(1) : match.blueScore();
+                const auto& objective = match.objective();
+                const bool objectivePlanted = objective.active && objective.state == 3;
+
+                // Generic phase label. The dedicated countdown number stays in
+                // countdownText; this names the current match phase.
+                if (matchLayout.get("phaseText")) {
+                    std::string phaseLabel;
+                    switch (match.phase()) {
+                        case MimitaNet::DUEL_PHASE_INTERMISSION: phaseLabel = "INTERMISSION"; break;
+                        case MimitaNet::DUEL_PHASE_COUNTDOWN: phaseLabel = "GET READY"; break;
+                        case MimitaNet::DUEL_PHASE_GO: phaseLabel = "GO!"; break;
+                        case MimitaNet::DUEL_PHASE_ACTIVE: phaseLabel = "ACTIVE"; break;
+                        case MimitaNet::DUEL_PHASE_RESULTS:
+                            phaseLabel = match.matchOver() ? "MATCH OVER" : "ROUND OVER";
+                            break;
+                        default: break;
+                    }
+                    if (!phaseLabel.empty())
+                        drawCentered("phaseText", textTemplate("phaseText", {{"{phase}", phaseLabel}}));
+                }
+
+                // Team-local objective hint. It is presentation only; the
+                // authoritative objective state remains in objectiveStatus.
+                if (matchLayout.get("objectiveHint") &&
+                    (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
+                     match.phase() == MimitaNet::DUEL_PHASE_GO) &&
+                    objective.active) {
+                    const int localTeam = (int)match.localTeam(mpContext.localPlayerId);
+                    const int carrierTeam = (int)objective.team;
+                    std::string hint;
+                    if (objective.state == 3) {
+                        hint = localTeam == carrierTeam ? "DEFEND THE BOMB" : "DEFUSE THE BOMB";
+                    } else if (objective.state == 2) {
+                        hint = localTeam == carrierTeam ? "RECOVER THE BOMB" : "HOLD THE SITES";
+                    } else if (objective.state == 1) {
+                        hint = localTeam == carrierTeam ? "PLANT THE BOMB" : "DEFEND THE SITES";
+                    }
+                    if (!hint.empty())
+                        drawCentered("objectiveHint", textTemplate("objectiveHint", {{"{hint}", hint}}));
+                }
                 if (matchLayout.get("scoreText")) {
                     drawCentered("scoreText", textTemplate("scoreText", {
                         {"{red_name}", leftName}, {"{red_score}", std::to_string(leftScore)},
@@ -901,7 +955,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                 // ── Round-based modes: active round timer + result strings ──
                 if (namedTeams) {
                     if (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE &&
-                        match.roundSeconds() > 0.0f) {
+                        match.roundSeconds() > 0.0f && !objectivePlanted) {
                         const int left = std::max(0, (int)std::ceil(match.roundTimerLeft()));
                         drawCentered("matchTime", textTemplate("matchTime", {
                             {"{minutes}", std::to_string(left / 60)},
@@ -980,27 +1034,103 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 
                     // ── Objective prompt (bomb) ─────────────────────
                     // Only shown when a mode objective exists and is in play.
-                    const auto& obj = match.objective();
-                    if (obj.active &&
+                    // 0=Inactive 1=Carried 2=Dropped 3=Planted 4=Defused 5=Exploded
+                    if (objective.active &&
                         (match.phase() == MimitaNet::DUEL_PHASE_ACTIVE ||
                          match.phase() == MimitaNet::DUEL_PHASE_GO)) {
                         const glm::vec3 camPos = camera.pos;
-                        const float dist = glm::length(camPos - obj.position);
-                        // 0=Inactive 1=Carried 2=Dropped 3=Planted 4=Defused 5=Exploded
-                        if (obj.progressKind == 1 && matchLayout.get("objectivePrompt")) {
-                            drawCentered("objectivePrompt", std::string("Planting Bomb..."));
-                        } else if (obj.progressKind == 2 && matchLayout.get("objectivePrompt")) {
-                            drawCentered("objectivePrompt", std::string("Defusing Bomb..."));
-                        } else if (obj.state == 3 && matchLayout.get("objectiveStatus")) {
-                            // Planted: show time until explosion.
-                            const int left = std::max(0, (int)std::ceil(obj.timerLeft));
+                        const float dist = glm::length(camPos - objective.position);
+                        const bool tapMode = objective.interactionMode == 1;
+                        const uint32_t localId = mpContext.localPlayerId;
+                        const int localTeam = (int)match.localTeam(localId);
+                        const bool localCarrier =
+                            objective.state == 1 && objective.carrierId == localId;
+                        const bool localInSite = localCarrier &&
+                            MapConfigRegistry::instance().siteIndexAt(
+                                THE_PLAYER.pos) >= 0;
+                        const int defenderTeam = objective.team == 0 ? 1 : 0;
+                        const bool localDefuseRange =
+                            objective.state == 3 && localTeam == defenderTeam &&
+                            dist <= 3.0f;
+                        const int percent = std::clamp(
+                            (int)std::lround(objective.progress * 100.0f), 0, 100);
+                        const int totalTaps =
+                            (objective.tapTicks > 0 && objective.requiredTicks > 0)
+                                ? objective.requiredTicks / objective.tapTicks : 0;
+                        const int elapsedTaps = totalTaps > 0
+                            ? std::clamp((int)std::lround(
+                                  objective.progress * (float)totalTaps), 0, totalTaps)
+                            : 0;
+                        auto interactionPrompt = [&](const char* action) {
+                            std::string text = tapMode ? "TAP F TO " : "HOLD F TO ";
+                            text += action;
+                            if (tapMode && totalTaps > 0) {
+                                text += " (";
+                                text += std::to_string(elapsedTaps);
+                                text += "/";
+                                text += std::to_string(totalTaps);
+                                text += ")";
+                            }
+                            return text;
+                        };
+                        if (objective.progressKind == 1 && matchLayout.get("objectivePrompt")) {
+                            std::string text = "PLANTING BOMB ";
+                            text += std::to_string(percent);
+                            text += "%";
+                            if (tapMode && totalTaps > 0) {
+                                text += " (";
+                                text += std::to_string(elapsedTaps);
+                                text += "/";
+                                text += std::to_string(totalTaps);
+                                text += " TAPS)";
+                            }
+                            drawCentered("objectivePrompt", text);
+                        } else if (objective.progressKind == 2 &&
+                                   matchLayout.get("objectivePrompt")) {
+                            std::string text = "DEFUSING BOMB ";
+                            text += std::to_string(percent);
+                            text += "%";
+                            if (tapMode && totalTaps > 0) {
+                                text += " (";
+                                text += std::to_string(elapsedTaps);
+                                text += "/";
+                                text += std::to_string(totalTaps);
+                                text += " TAPS)";
+                            }
+                            drawCentered("objectivePrompt", text);
+                        } else if (objective.state == 3 && matchLayout.get("objectiveStatus")) {
+                            // Planted: the round timer is replaced by the
+                            // authoritative explosion timer.
+                            const int left = std::max(0, (int)std::ceil(objective.timerLeft));
                             drawCentered("objectiveStatus", std::string("BOMB PLANTED ") +
                                 std::to_string(left) + "s");
-                        } else if (obj.state == 2 && matchLayout.get("objectivePrompt") && dist <= 3.0f) {
+                            if (localDefuseRange && matchLayout.get("objectivePrompt"))
+                                drawCentered("objectivePrompt",
+                                    interactionPrompt("DEFUSE BOMB"));
+                        } else if (objective.state == 2 &&
+                                   matchLayout.get("objectivePrompt") && dist <= 3.0f) {
                             drawCentered("objectivePrompt", std::string("Pick up Bomb"));
-                        } else if (obj.state == 2 && matchLayout.get("objectiveStatus")) {
+                        } else if (objective.state == 2 && matchLayout.get("objectiveStatus")) {
                             drawCentered("objectiveStatus", std::string("BOMB DROPPED"));
+                        } else if (objective.state == 1 && localInSite &&
+                                   matchLayout.get("objectivePrompt")) {
+                            drawCentered("objectivePrompt",
+                                interactionPrompt("PLANT BOMB"));
+                        } else if (objective.state == 1 && matchLayout.get("objectiveStatus")) {
+                            drawCentered("objectiveStatus", std::string("BOMB CARRIED"));
                         }
+                    }
+
+                    // Explicit objective outcome on the round-result screen.
+                    if (objective.active &&
+                        match.phase() == MimitaNet::DUEL_PHASE_RESULTS &&
+                        matchLayout.get("objectiveResultText")) {
+                        std::string result;
+                        if (objective.state == 4) result = "BOMB DEFUSED";
+                        else if (objective.state == 5) result = "BOMB EXPLODED";
+                        else if (match.roundEndReason() == 3) result = "TIME EXPIRED";
+                        if (!result.empty())
+                            drawCentered("objectiveResultText", result);
                     }
                 }
             }
@@ -1009,5 +1139,77 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         renderDuelQueueHud(engine.window(), dt);
         renderDuelMatchHud(engine.window(), dt);
         renderDuelTracer(camera);
+    }
+}
+
+void engineTickAftermathUi(Engine& engine, float dt)
+{
+    (void)dt;
+    MimitaNet::CommunityMatchClient& match =
+        MimitaNet::CommunityMatchClient::instance();
+    static bool mutedForAftermath = false;
+    static bool fatalShown = false;
+    static bool loggedMissingSoundList = false;
+
+    if (!match.aftermathLocal()) {
+        mutedForAftermath = false;
+        fatalShown = false;
+        loggedMissingSoundList = false;
+        return;
+    }
+
+    if (match.aftermathMuteAudio() && !mutedForAftermath) {
+        AudioManager::instance().stopAll();
+        MusicManager::instance().stopModeTrack();
+        mutedForAftermath = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Audio, StructuredLevel::Important,
+            "horror.aftermath.audio_muted", match.mode(),
+            "existing game audio stopped for the local aftermath", 0, {});
+    }
+
+    if (match.aftermathStage() >= 2) {
+        const Gamemode& gm = GamemodeRegistry::instance().get(match.mode());
+        if (gm.aftermath.scareSounds.empty() && !loggedMissingSoundList) {
+            loggedMissingSoundList = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Audio, StructuredLevel::Errors,
+                "horror.aftermath.sound_list_missing", match.mode(),
+                "active mode has no resolved aftermath scare sound list",
+                0, nlohmann::json{{"mode", match.mode()}});
+        }
+        uint8_t index = 0xFF;
+        while (match.takeAftermathSound(index)) {
+            if (index < gm.aftermath.scareSounds.size()) {
+                const std::string& sound = gm.aftermath.scareSounds[index];
+                playSound(sound, 1.0f);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Audio, StructuredLevel::Important,
+                    "horror.aftermath.scare_sound", match.mode(),
+                    "played one local scare sound", 0,
+                    nlohmann::json{{"mode", match.mode()},
+                                   {"sound_index", index},
+                                   {"sound", sound},
+                                   {"serial", match.aftermathSoundSerial()}});
+            }
+        }
+    }
+
+    if (match.aftermathStage() == 3 && !fatalShown) {
+        fatalShown = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "horror.aftermath.fatal_window", match.mode(),
+            "local aftermath complete; showing fatal window and closing client",
+            0, {});
+        const bool dialogAllowed =
+            match.aftermathFatalWindow() &&
+            std::getenv("MIMITA_NO_FATAL_DIALOG") == nullptr;
+        if (dialogAllowed) {
+            MessageBoxA(nullptr,
+                "666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666",
+                "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", MB_OK | MB_ICONERROR | MB_TASKMODAL);
+        }
+        glfwSetWindowShouldClose(engine.window(), GLFW_TRUE);
     }
 }

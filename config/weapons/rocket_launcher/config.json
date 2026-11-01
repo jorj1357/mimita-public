@@ -36,6 +36,7 @@
 "beam_world_thickness": null,
 "behavior_type": "rocket_launcher",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "rocketSpeed": 45.0,
     "rocketRadius": 1.0,

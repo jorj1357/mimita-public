@@ -11,6 +11,8 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+struct World;
+
 enum class AudioCategory { Movement, UI, Weapons, NPC, Impacts, Ambient };
 
 struct AudioEvent {
@@ -34,6 +36,9 @@ public:
     void setListener(glm::vec3 pos, glm::vec3 forward);
     void play(const AudioEvent& event);
     void stopOwner(unsigned int ownerId);
+    // Stops every active voice. Used by the loss aftermath before its scare
+    // sounds start, without muting the master output.
+    void stopAll();
     void setDebug(bool enabled);
     bool debug() const;
 };
@@ -48,18 +53,22 @@ void playSound(const std::string& name, float volume = 1.0f);
 void playEventSound(const std::string& name, float volume = 1.0f);
 void playSoundPitched(const std::string& name, float volume, float pitch);
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume = 1.0f,
-                    float pitch = 1.0f, float maxDistance = 30.0f);
+                    float pitch = 1.0f, float maxDistance = 30.0f,
+                    AudioCategory category = AudioCategory::Impacts);
 unsigned int audioOwnerKey(unsigned int actorId, const std::string& channel);
 void playWorldSoundOwned(const std::string& name, glm::vec3 pos, float volume,
                          float pitch, float maxDistance, unsigned int ownerId,
-                         bool retrigger = true);
+                         bool retrigger = true,
+                         AudioCategory category = AudioCategory::Weapons);
 void setAudioListener(glm::vec3 pos, glm::vec3 forward);
+void setAudioSpatialWorld(const World* world);
 void playAirJumpSound();
 void playSoundAt(const std::string& name, glm::vec3 pos, float volume = 1.0f);
 void playRandomFootstep(float sizeScale = 1.0f);
 
-// Get current audio listener world position
+// Get current audio listener world position/forward vector
 glm::vec3 audioListenerPosition();
+glm::vec3 audioListenerForward();
 
 // Compute volume/pitch for impact audio based on distance and severity.
 // severity: 0=graze, 1=direct center-mass hit

@@ -26,7 +26,9 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 44: DuelStatePacket replicates each participant's actor-preset index.
 // 45: DuelStatePacket appends Payload cart, overtime, and progress HUD state.
 // 46: MeleeHitEventPacket carries replicated weapon-clash effect flags.
-constexpr uint16_t PROTOCOL_VERSION = 46;
+// 47: DuelStatePacket matchMode fits full gamemode IDs (was silently truncated).
+// 48: DuelStatePacket adds the shared loss-aftermath phase/effect state.
+constexpr uint16_t PROTOCOL_VERSION = 48;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -48,6 +50,10 @@ enum NetworkPlayerStateFlags : uint16_t
     // The server changed this actor's authoritative transform through the
     // actor-pair collision pass on this tick. Clients apply the authoritative
     // transform instead of treating the push as ordinary prediction drift.
+    // Input-only held interaction intent (F). It is not a visual flag and is
+    // not copied into broadcast snapshot flags.
+    NET_STATE_INTERACTING  = 1 << 14,
+
     NET_STATE_ACTOR_COLLISION = 1 << 12,
     // The server corrected a movement report. The owning client must apply
     // that authoritative transform regardless of the ordinary drift threshold.
@@ -444,7 +450,9 @@ struct InputPacket
     float clientVz = 0.0f;
     int16_t equippedSlot = 0;
     uint8_t weaponState = 0;
-    uint8_t reservedWeapon = 0;
+    // Distinct interaction press serial. Reuses the former reserved byte, so
+    // the packet size and layout stay unchanged.
+    uint8_t interactSerial = 0;
     int32_t clientPingMs = 0;
     uint16_t stateFlags = 0;
     uint16_t dashSerial = 0;
@@ -1111,6 +1119,7 @@ enum DuelStatePhase : uint8_t
     DUEL_PHASE_PRE_MATCH = 5, // Retained for wire compatibility; never emitted by the active lifecycle.
     DUEL_PHASE_RESULTS = 6
     ,DUEL_PHASE_GO = 7
+    ,DUEL_PHASE_AFTERMATH = 8
 };
 
 // Procedural-world room state (Infinite Dungeon Slayer). Rides inside the
@@ -1180,7 +1189,10 @@ struct DuelStatePacket
     float playerBSpawnZ = 0.0f;
 
     // ── FFA/TDM extension fields ───────────────────────────────────
-    char matchMode[16] = {};           // "duel", "ffa", "tdm"
+    // Gamemode ids are content-defined ("funcounterstrike", "survive_disasters").
+    // Keep room for the longest shipped id; a 16-byte field silently truncated
+    // "funcounterstrike" into a different, nonexistent mode id on the client.
+    char matchMode[32] = {};           // "duel", "ffa", "tdm", ...
     uint32_t matchStartTick = 0;       // authoritative tick when match started
     uint32_t serverTick = 0;           // current server tick for sync
     int32_t victoryType = 0;           // 0=ScoreLimit, 1=TimeLimit
@@ -1236,13 +1248,16 @@ struct DuelStatePacket
     uint8_t objectiveState = 0;     // ObjectiveState
     uint8_t objectiveTeam = 0;      // allowed carrier team; 0xFF = any
     uint32_t objectiveCarrierId = 0;// 0 = none
+    uint32_t objectiveInteractorId = 0; // active planter/defuser; 0 = none
+    uint16_t objectiveRequiredTicks = 0; // active plant/defuse duration
+    uint16_t objectiveTapTicks = 0;      // repeated-tap progress per press
     float objectiveX = 0.0f;
     float objectiveY = 0.0f;
     float objectiveZ = 0.0f;
     float objectiveProgress = 0.0f; // 0..1 plant or defuse progress
     float objectiveTimerLeft = 0.0f;// seconds until explosion when planted
     uint8_t objectiveProgressKind = 0; // 0=none, 1=plant, 2=defuse
-    uint8_t objectiveReserved = 0;
+    uint8_t objectiveInteractionMode = 0; // ObjectiveInteractionMode
     char objectiveId[16] = {};
     char objectiveSite[8] = {};
     // ── Procedural world (Infinite Dungeon Slayer) ──────────────────
@@ -1291,6 +1306,26 @@ struct DuelStatePacket
     float payloadCartX = 0.0f;
     float payloadCartY = 0.0f;
     float payloadCartZ = 0.0f;
+    // ── Loss aftermath (protocol 48) ───────────────────────────────
+    // Per-recipient local presentation effect. Non-target recipients receive
+    // stage=0/targetActorId=0 and keep normal rendering.
+    uint8_t aftermathActive = 0;
+    uint8_t aftermathStage = 0;      // 1=approach, 2=scare sequence, 3=done
+    uint8_t aftermathHideHud = 0;
+    uint8_t aftermathMuteAudio = 0;
+    uint8_t aftermathBlackout = 0;
+    uint8_t aftermathFreezeLocal = 0;
+    uint8_t aftermathFatalWindow = 0;
+    uint8_t aftermathReserved = 0;
+    uint32_t aftermathTargetActorId = 0;
+    uint32_t aftermathMoverActorId = 0;
+    uint32_t aftermathStartTick = 0;
+    uint32_t aftermathSoundSerial = 0;
+    uint8_t aftermathSoundIndex = 0xFF;
+    uint8_t aftermathSoundReserved[3] = {};
+    float aftermathMoverX = 0.0f;
+    float aftermathMoverY = 0.0f;
+    float aftermathMoverZ = 0.0f;
 };
 
 // Server → a player: their opponent just respawned here. Used to draw a

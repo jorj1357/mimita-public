@@ -638,14 +638,56 @@ const BombSite* MapConfigRegistry::findSite(const std::string& id) const
 
 int MapConfigRegistry::siteIndexAt(const glm::vec3& position) const
 {
+    // A bomb site is a horizontal circular zone. Authored Z is presentation
+    // and navigation anchoring; floor height can differ from the authored
+    // point, so containment must not turn the circle into a small sphere.
     for (size_t i = 0; i < mCurrent.bombSites.size(); ++i) {
         const BombSite& site = mCurrent.bombSites[i];
         if (!site.hasPosition) continue;
-        const glm::vec3 d = position - site.position;
-        const float distSq = d.x * d.x + d.y * d.y + d.z * d.z;
-        if (distSq <= site.radius * site.radius) return (int)i;
+        const float dx = position.x - site.position.x;
+        const float dy = position.y - site.position.y;
+        if (dx * dx + dy * dy <= site.radius * site.radius) return (int)i;
     }
     return -1;
+}
+
+std::string MapConfigRegistry::createBombSite(const glm::vec3& position, float radius,
+                                              const std::string& requestedId)
+{
+    std::string id = requestedId;
+    if (id.empty()) {
+        for (char letter = 'A'; letter <= 'Z'; ++letter) {
+            const std::string candidate(1, letter);
+            if (!findSite(candidate)) { id = candidate; break; }
+        }
+    }
+    if (id.empty() || findSite(id)) return {};
+    BombSite site;
+    site.id = id;
+    site.position = position;
+    site.radius = std::max(0.1f, radius);
+    site.visibleDebug = true;
+    site.hasPosition = true;
+    mCurrent.bombSites.push_back(std::move(site));
+    markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-bombsite.created", id, "map editor authoring", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"site_id", id},
+                       {"position", {position.x, position.y, position.z}},
+                       {"radius", radius}, {"source", "map_editor"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return id;
+}
+
+bool MapConfigRegistry::deleteBombSite(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.bombSites.begin(), mCurrent.bombSites.end(),
+        [&](const BombSite& site) { return site.id == id; });
+    if (it == mCurrent.bombSites.end()) return false;
+    mCurrent.bombSites.erase(it, mCurrent.bombSites.end());
+    markChanged();
+    return true;
 }
 
 bool MapConfigRegistry::setSitePosition(const std::string& id, const glm::vec3& position)
@@ -654,6 +696,7 @@ bool MapConfigRegistry::setSitePosition(const std::string& id, const glm::vec3& 
         if (site.id != id) continue;
         site.position = position;
         site.hasPosition = true;
+        markChanged();
         return true;
     }
     return false;
@@ -664,6 +707,18 @@ bool MapConfigRegistry::setSiteVisibility(const std::string& id, bool visible)
     for (auto& site : mCurrent.bombSites) {
         if (site.id != id) continue;
         site.visibleDebug = visible;
+        markChanged();
+        return true;
+    }
+    return false;
+}
+
+bool MapConfigRegistry::setSiteRadius(const std::string& id, float radius)
+{
+    for (auto& site : mCurrent.bombSites) {
+        if (site.id != id) continue;
+        site.radius = std::max(0.1f, radius);
+        markChanged();
         return true;
     }
     return false;
@@ -1096,14 +1151,21 @@ bool mapConfigSelfTest(std::string& report)
     for (const auto& site : sites) {
         if (!site.hasPosition) continue;
         if (reg.siteIndexAt(site.position) < 0) fail("site position should be inside itself");
-        const glm::vec3 outsidePoint = site.position + glm::vec3(0, 0, site.radius + 5.0f);
-        if (reg.siteIndexAt(outsidePoint) >= 0 && sites.size() > 1) {
-            // Only a failure if the far point is outside every site.
+        // A circular site is horizontal: a different floor Z on the same XY
+        // position is still inside the usable area.
+        const glm::vec3 sameXyDifferentZ =
+            site.position + glm::vec3(0, 0, 15.0f);
+        if (reg.siteIndexAt(sameXyDifferentZ) < 0)
+            fail("site should remain usable at a different floor height");
+        const glm::vec3 outsidePoint =
+            site.position + glm::vec3(site.radius + 5.0f, 0, 0);
+        if (reg.siteIndexAt(outsidePoint) >= 0) {
             bool insideAnother = false;
             for (const auto& other : sites) {
                 if (!other.hasPosition) continue;
-                const glm::vec3 d = outsidePoint - other.position;
-                if (d.x * d.x + d.y * d.y + d.z * d.z <= other.radius * other.radius) {
+                const float dx = outsidePoint.x - other.position.x;
+                const float dy = outsidePoint.y - other.position.y;
+                if (dx * dx + dy * dy <= other.radius * other.radius) {
                     insideAnother = true; break;
                 }
             }

@@ -19,6 +19,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ui-system.h"
+#include "debug/structured-log.h"
 
 using json = nlohmann::json;
 
@@ -552,10 +553,30 @@ GuiLayout& GuiLayoutManager::getGamemodeLayout(const std::string& gamemodeId)
     else if (sectionId == "free_for_all") sectionId = "ffa";
     else if (sectionId == "bomb_tag") sectionId = "bombtag";
 
+    // Some presentation paths ask for the layout before a mode is known.
+    // Keep that empty request out of the journal; the real mode logs on use.
+    if (sectionId.empty())
+        return mGamemodeLayouts[sectionId];
+
     auto it = mGamemodeLayouts.find(sectionId);
     if (it == mGamemodeLayouts.end()) {
         GuiLayout layout;
-        layout.load("config/gui/gamemode-meta-gui.json", sectionId);
+        const bool loaded = layout.load("config/gui/gamemode-meta-gui.json", sectionId);
+        nlohmann::json elementIds = nlohmann::json::array();
+        for (const std::string& id : layout.elementIds())
+            elementIds.push_back(id);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, loaded ? StructuredLevel::Important
+                                            : StructuredLevel::Errors,
+            "hud.layout.loaded", sectionId,
+            loaded ? "gamemode HUD layout section loaded"
+                   : "gamemode HUD layout section missing or failed to load",
+            0,
+            {{"mode", gamemodeId},
+             {"section", sectionId},
+             {"loaded", loaded},
+             {"element_count", layout.elementIds().size()},
+             {"element_ids", elementIds}});
         mGamemodeLayouts[sectionId] = std::move(layout);
         it = mGamemodeLayouts.find(sectionId);
     }

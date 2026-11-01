@@ -102,6 +102,7 @@
       }
     }
   },
+"grenade_effect": null,
 "custom_params": {
     "bladeLength": 4.0,
     "bladeRadius": 1.62,

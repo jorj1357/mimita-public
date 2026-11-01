@@ -220,6 +220,69 @@ simple body shape; add a flat, standable-top support rule so any actor can
 stand on any other actor. A supported actor must move along with its moving
 support. This does not replace actor-vs-world collision.
 
+### NPC and monster final-pose world collision
+
+**Desired behavior:** a living NPC or monster must not visibly occupy static
+world geometry. Its final animated body and held weapon determine collision, not
+a single scaled actor-pair capsule and not a root-point query.
+
+Rules:
+
+1. Movement collision runs first using the shared actor path.
+2. Procedural animation, AimBody, and arm ragdoll run next and own the final
+   body-part transforms.
+3. Final-pose static-world containment runs after every pose writer and before
+   snapshot/broadcast.
+4. Containment tests all final body-part collision meshes and held-weapon
+   attachments against nearby static world triangles.
+5. The actor root is the only translation state containment may change.
+   Containment must not rewrite limb transforms, animation samples, or weapon
+   attachment transforms.
+6. If a limb or weapon overlaps the world beyond the configured standoff, the
+   root is translated until the final pose is clear. The root may move as far
+   as needed to clear the pose within the bounded solve.
+7. The allowed standoff is 1–2 cm. The goal is no visible overlap, not exact
+   geometric touching.
+8. If containment cannot resolve the pose, restore the last known clear
+   position, yaw, and grounded state and zero velocity. If that pose is invalid,
+   use a bounded nearby safe standing point; respawn only when no valid point
+   exists.
+9. Recovery must not raycast downward through a solid to a lower floor and must
+   not accept a root-point-only query as proof that the final pose is clear.
+10. The same final-pose containment owner applies to players, NPCs, and
+    monsters. The player pass runs after animation/AimBody and again after the
+    current weapon pose is published. Body and weapon contact may lift or
+    support the actor at a ledge; that is intentional gameplay.
+
+Implementation status: `actor-final-pose.cpp` runs after `updateNpcAim` and
+tests all final body/weapon meshes, including canonical and extra/generic parts.
+Root-only correction, last-clear restore, bounded safe-point fallback, and the
+server no-valid-pose respawn hook are implemented. That last case logs
+`npc.pose.reset`.
+
+**Monster avatar shapes:** tall, wide, thin, and multi-limb monster models use
+their actual body/weapon collision geometry for static-world contact. A capsule
+profile may remain the actor-vs-actor first slice, but it must not silently
+replace the avatar's world hitbox. Render meshes may remain high-detail;
+collision meshes may be decimated or simplified only under an explicit
+collision-mesh budget and must preserve the body region they represent. Optional
+limb capsule proxies are allowed only as documented coarse/LOD or actor-pair
+shapes, not as hidden substitutes for final world containment.
+
+**Triangle performance:** automatic body-triangle vs nearby-world-triangle
+collision is the target. Cost is bounded by cached broadphase candidates, actor
+local BVHs, and explicit per-actor/per-tick budgets. The specification must not
+claim unlimited model complexity; high-poly collision meshes require
+decimation/LOD or a documented proxy fallback.
+
+**Caught investigation:** a large speed collapse is evidence to investigate, not
+automatically proof of a collision bug. Record `collision.speed_collapse` when
+horizontal or total speed drops by more than 90% within two fixed ticks. Include
+held input, grounded/freeze state, contacts, normals, triangle ids, penetration,
+before/after velocity, and whether a real wall, slope, actor, or intentional
+state explains it. Curated automated scenarios fail only on unexplained
+collapses or when a known-good exception is missing.
+
 ### No-pinning movement rule
 
 In plain language: touching an NPC or another player may push the actors apart,

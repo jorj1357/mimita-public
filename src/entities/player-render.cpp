@@ -515,13 +515,31 @@ void Player::renderCurrentPose(unsigned int shader,
         glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
         glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-        glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
-        if (whiteOverride)
-            glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+        const GLint meshOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
+        const GLint meshOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
+        if (meshOutlinePassLoc >= 0) glUniform1i(meshOutlinePassLoc, outlinePass ? 1 : 0);
+        if (meshOutlineThicknessLoc >= 0)
+            glUniform1f(meshOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
+        const GLint meshUseColorLoc = glGetUniformLocation(shader, "uUseColor");
+        const GLint meshColorLoc = glGetUniformLocation(shader, "uColor");
+        glUniform1i(meshUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
+        if (outlinePass)
+            glUniform4f(meshColorLoc, outlineColor.r, outlineColor.g,
+                        outlineColor.b, outlineColor.a);
+        else if (whiteOverride)
+            glUniform4f(meshColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
         glUniform1i(glGetUniformLocation(shader,"uTex"),0);
         const GLint tintLoc = glGetUniformLocation(shader, "uTint");
         glUniform3f(tintLoc, playerTint.r, playerTint.g, playerTint.b);
 
+        // The single-mesh fallback is used by avatars that do not expose
+        // physical body parts (for example the girl body and normal zombie).
+        // It must still honor the outline pass or those actors never receive
+        // the mode-authored silhouette.
+        if (outlinePass) {
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_FRONT);
+        }
         MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
         MIMITA_GL_CALL(glBindVertexArray(meshVao));
         for (const Mesh::Batch& batch : renderMesh.batches)
@@ -529,6 +547,11 @@ void Player::renderCurrentPose(unsigned int shader,
             MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
             MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
             diagRenderCountPlayerDraw();
+        }
+        if (outlinePass) {
+            if (meshOutlinePassLoc >= 0) glUniform1i(meshOutlinePassLoc, 0);
+            if (meshOutlineThicknessLoc >= 0) glUniform1f(meshOutlineThicknessLoc, 0.0f);
+            glDisable(GL_CULL_FACE);
         }
         glUniform3f(tintLoc, 1.0f, 1.0f, 1.0f);
         return;
@@ -549,17 +572,36 @@ void Player::renderCurrentPose(unsigned int shader,
     glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-    glUniform1i(glGetUniformLocation(shader,"uUseColor"), whiteOverride ? 1 : 0);
-    if (whiteOverride)
-        glUniform4f(glGetUniformLocation(shader,"uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+    const GLint capsuleOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
+    const GLint capsuleOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
+    if (capsuleOutlinePassLoc >= 0) glUniform1i(capsuleOutlinePassLoc, outlinePass ? 1 : 0);
+    if (capsuleOutlineThicknessLoc >= 0)
+        glUniform1f(capsuleOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
+    const GLint capsuleUseColorLoc = glGetUniformLocation(shader, "uUseColor");
+    const GLint capsuleColorLoc = glGetUniformLocation(shader, "uColor");
+    glUniform1i(capsuleUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
+    if (outlinePass)
+        glUniform4f(capsuleColorLoc, outlineColor.r, outlineColor.g,
+                    outlineColor.b, outlineColor.a);
+    else if (whiteOverride)
+        glUniform4f(capsuleColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
     glUniform1i(glGetUniformLocation(shader,"uTex"),0);
     glUniform3f(glGetUniformLocation(shader,"uTint"), playerTint.r, playerTint.g, playerTint.b);
 
+    if (outlinePass) {
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+    }
     MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1")));
 
     MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
     MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
+    if (outlinePass) {
+        if (capsuleOutlinePassLoc >= 0) glUniform1i(capsuleOutlinePassLoc, 0);
+        if (capsuleOutlineThicknessLoc >= 0) glUniform1f(capsuleOutlineThicknessLoc, 0.0f);
+        glDisable(GL_CULL_FACE);
+    }
     glUniform3f(glGetUniformLocation(shader, "uTint"), 1.0f, 1.0f, 1.0f);
     diagRenderCountPlayerDraw();
 }

@@ -1098,6 +1098,13 @@ different animation samples or apply a second procedural offset to only one of
 them. If a required clip is missing, use that profile's explicit fallback and
 emit a bounded diagnostic; never silently re-enable a suppressed overlay.
 
+For NPCs and monsters, the final animation/AimBody/arm-ragdoll pose is consumed
+by static-world final-pose containment after all pose writers. That owner may
+translate the root until the final body and held-weapon collision meshes clear
+nearby world geometry, but it must not rewrite the limb transforms sampled here.
+See `docs/specs/npc-behavior/npc-behavior.md` and
+`docs/architecture/collision/collision.md`.
+
 The default policy remains the existing layered composition above. An
 exclusive policy is opt-in and scoped to the actor/profile context, so Melee can
 request it without changing other game modes or introducing a second animator.

@@ -70,9 +70,9 @@
       "id": "funcounterstrike",
       "gamemode_id": "funcounterstrike",
       "name": "Fun Counter Strike",
-      "description": "All weapons, high FOV, ragdolls enabled.",
+      "description": "Respawning bomb rounds, TDM weapons plus grenades, high FOV, ragdolls enabled.",
       "teams": 2,
-      "score_limit": 15
+      "score_limit": 0
     },
     {
       "id": "elimination",
@@ -147,6 +147,16 @@
       "description": "Attackers push the cart up the tower; defenders contest until the clock or overtime expires.",
       "teams": 2,
       "score_limit": 0
+    },
+    {
+      "id": "vs_jason",
+      "gamemode_id": "vs_jason",
+      "name": "Vs Jason",
+      "description": "Survive five minutes against Jason. Killing him wins; a timeout is a loss.",
+      "teams": 2,
+      "score_limit": 0,
+      "max_players": 32,
+      "private_by_default": true
     }
   ]
 }

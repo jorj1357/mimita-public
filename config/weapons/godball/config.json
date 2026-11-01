@@ -9,6 +9,7 @@
 "beam_world_thickness": null,
 "behavior_type": "godball",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "ballRadius": 0.5,
     "ballMass": 1.0,

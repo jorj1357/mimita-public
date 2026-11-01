@@ -375,9 +375,89 @@ def validate_collision(errors):
     return block
 
 
+def validate_spatial_audio(errors):
+    path = ROOT / "config/audio/spatial-audio.json"
+    root = load_json(path, errors)
+    if not isinstance(root, dict):
+        errors.append("config/audio/spatial-audio.json: root must be an object")
+        return 0
+    mode = root.get("mode", "legacy")
+    if mode not in ("legacy", "spatial", 1, 2):
+        errors.append("config/audio/spatial-audio.json: mode must be legacy, spatial, 1, or 2")
+    legacy = root.get("legacy")
+    if not isinstance(legacy, dict):
+        errors.append("config/audio/spatial-audio.json: legacy must be an object")
+    else:
+        full = legacy.get("fullVolumeDistance")
+        if not isinstance(full, (int, float)) or full < 0:
+            errors.append("config/audio/spatial-audio.json: legacy.fullVolumeDistance must be a non-negative number")
+        legacy_categories = legacy.get("categories")
+        if not isinstance(legacy_categories, dict) or not legacy_categories:
+            errors.append("config/audio/spatial-audio.json: legacy.categories must be a non-empty object")
+        else:
+            for name, profile in legacy_categories.items():
+                source = f"config/audio/spatial-audio.json: legacy.categories.{name}"
+                if name not in {"Movement", "UI", "Weapons", "NPC", "Impacts", "Ambient"}:
+                    errors.append(f"{source}: unknown category")
+                    continue
+                if not isinstance(profile, dict):
+                    errors.append(f"{source}: must be an object")
+                    continue
+                maximum = profile.get("maxDistance")
+                scale = profile.get("volumeScale")
+                if not isinstance(maximum, (int, float)) or maximum <= 0:
+                    errors.append(f"{source}.maxDistance: must be a positive number")
+                if not isinstance(scale, (int, float)) or scale < 0 or scale > 4:
+                    errors.append(f"{source}.volumeScale: must be in [0, 4]")
+                if (name != "UI" and isinstance(full, (int, float)) and
+                        isinstance(maximum, (int, float)) and maximum <= full):
+                    errors.append(f"{source}.maxDistance: must exceed legacy.fullVolumeDistance")
+        sounds = legacy.get("sounds")
+        if not isinstance(sounds, dict):
+            errors.append("config/audio/spatial-audio.json: legacy.sounds must be an object")
+
+    categories = root.get("categories")
+    if not isinstance(categories, dict) or not categories:
+        errors.append("config/audio/spatial-audio.json: categories must be a non-empty object")
+        return 0
+    valid = {"Movement", "UI", "Weapons", "NPC", "Impacts", "Ambient"}
+    for name, profile in categories.items():
+        source = f"config/audio/spatial-audio.json: categories.{name}"
+        if name not in valid:
+            errors.append(f"{source}: unknown category")
+            continue
+        if not isinstance(profile, dict):
+            errors.append(f"{source}: must be an object")
+            continue
+        minimum = profile.get("minDistance")
+        outer = profile.get("outerDistance")
+        if not isinstance(minimum, (int, float)) or minimum < 0:
+            errors.append(f"{source}.minDistance: must be a non-negative number")
+        if not isinstance(outer, (int, float)) or outer <= 0:
+            errors.append(f"{source}.outerDistance: must be a positive number")
+        points = profile.get("points")
+        if not isinstance(points, list) or len(points) < 2:
+            errors.append(f"{source}.points: must contain at least two [distance, gain] pairs")
+            continue
+        previous = -1.0
+        for index, point in enumerate(points):
+            if (not isinstance(point, list) or len(point) != 2 or
+                    not all(isinstance(value, (int, float)) for value in point)):
+                errors.append(f"{source}.points[{index}]: must be [distance, gain]")
+                continue
+            distance, gain = point
+            if distance <= previous:
+                errors.append(f"{source}.points[{index}]: distances must increase")
+            if gain < 0 or gain > 1:
+                errors.append(f"{source}.points[{index}]: gain must be in [0, 1]")
+            previous = distance
+    return len(categories)
+
+
 def main():
     errors = []
     validate_procedural(errors)
+    spatial_categories = validate_spatial_audio(errors)
     validate_collision(errors)
     weapon_count = validate_weapons(errors)
     clip_count, weapon_anim_count = validate_animations(errors)
@@ -411,6 +491,7 @@ def main():
     print("[CONFIG SELFTEST] animated weapons:", weapon_anim_count)
     print("[CONFIG SELFTEST] avatars:", avatar_count)
     print("[CONFIG SELFTEST] gamemodes:", gamemode_count)
+    print("[CONFIG SELFTEST] spatial audio categories:", spatial_categories)
 
     if errors:
         print("[CONFIG SELFTEST] FAIL")

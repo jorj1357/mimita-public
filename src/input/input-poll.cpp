@@ -32,6 +32,13 @@ float gScheduledMoveX = 0.0f;
 float gScheduledMoveY = 0.0f;
 std::string gScheduledMoveRequestId;
 std::string gTerminalInputOverrideRequestId;
+
+enum class ScheduledInteractMode { None, Hold, Taps };
+ScheduledInteractMode gScheduledInteractMode = ScheduledInteractMode::None;
+int gScheduledInteractTicks = 0;
+int gScheduledInteractPresses = 0;
+int gScheduledInteractPhaseTicks = 0;
+bool gScheduledInteractHeld = false;
 }
 
 void scheduleTerminalMove(float moveX, float moveY, int durationTicks,
@@ -113,6 +120,67 @@ bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
 void scheduleTerminalPrimaryHold(int durationFrames)
 {
     gTerminalPrimaryHoldFrames = std::max(0, durationFrames);
+}
+
+void scheduleTerminalInteractHold(int durationTicks)
+{
+    gScheduledInteractMode = durationTicks > 0 ? ScheduledInteractMode::Hold
+                                               : ScheduledInteractMode::None;
+    gScheduledInteractTicks = std::max(0, durationTicks);
+    gScheduledInteractPresses = 0;
+    gScheduledInteractPhaseTicks = 0;
+    gScheduledInteractHeld = gScheduledInteractMode == ScheduledInteractMode::Hold;
+}
+
+void scheduleTerminalInteractTaps(int pressCount)
+{
+    gScheduledInteractMode = pressCount > 0 ? ScheduledInteractMode::Taps
+                                            : ScheduledInteractMode::None;
+    gScheduledInteractTicks = 0;
+    gScheduledInteractPresses = std::max(0, pressCount);
+    // Three pressed ticks and three released ticks per tap are long enough for
+    // the 60 Hz network input path to observe every distinct press.
+    gScheduledInteractPhaseTicks = 3;
+    gScheduledInteractHeld = gScheduledInteractMode == ScheduledInteractMode::Taps;
+}
+
+bool peekTerminalInteract(bool& held)
+{
+    if (gScheduledInteractMode == ScheduledInteractMode::None)
+        return false;
+    held = gScheduledInteractHeld;
+    return true;
+}
+
+void advanceTerminalInteractFixedTick()
+{
+    if (gScheduledInteractMode == ScheduledInteractMode::None)
+        return;
+    if (gScheduledInteractMode == ScheduledInteractMode::Hold)
+    {
+        if (--gScheduledInteractTicks <= 0)
+        {
+            gScheduledInteractMode = ScheduledInteractMode::None;
+            gScheduledInteractHeld = false;
+        }
+        return;
+    }
+    if (--gScheduledInteractPhaseTicks > 0)
+        return;
+    if (gScheduledInteractHeld)
+    {
+        gScheduledInteractHeld = false;
+        gScheduledInteractPhaseTicks = 3;
+        return;
+    }
+    if (--gScheduledInteractPresses <= 0)
+    {
+        gScheduledInteractMode = ScheduledInteractMode::None;
+        gScheduledInteractHeld = false;
+        return;
+    }
+    gScheduledInteractHeld = true;
+    gScheduledInteractPhaseTicks = 3;
 }
 
 void consumeTerminalInputOverride() {
@@ -216,6 +284,15 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
     const bool vehicleInteraction =
         InteractionSystem::instance().handleKey(win, cam);
+    in.interactHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS;
+    {
+        bool scheduledHeld = false;
+        if (peekTerminalInteract(scheduledHeld))
+        {
+            in.interactHeld = scheduledHeld;
+            advanceTerminalInteractFixedTick();
+        }
+    }
     in.reviveHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS &&
                     !vehicleInteraction &&
                     !VehicleSystem::instance().hasLocalDriver();
@@ -313,6 +390,11 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
     frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
     frame.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld() ||
         gTerminalInputOverride.crouchHeld;
+    frame.interactHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS ||
+        gTerminalInputOverride.interactHeld;
+    bool scheduledInteractHeld = false;
+    if (peekTerminalInteract(scheduledInteractHeld))
+        frame.interactHeld = scheduledInteractHeld;
 
     if (gTerminalInputOverride.moveX != 0.0f || gTerminalInputOverride.moveY != 0.0f) {
         frame.moveX = gTerminalInputOverride.moveX;

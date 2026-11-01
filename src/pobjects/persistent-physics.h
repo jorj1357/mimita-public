@@ -44,6 +44,9 @@ struct PersistentPhysicsConfig {
     bool collideWithWorld = true;
     float explosionRadius = 8.0f;
     float explosionDamage = 150.0f;
+    // Negative keeps the legacy exponential curve; non-negative is the edge
+    // damage used by center->edge interpolation (frag: 1000/25).
+    float explosionEdgeDamage = -1.0f;
     float explosionKnockback = 160.0f;
     float explosionSelfKnockbackMul = 0.0f;
     float explosionSelfDamageMul = 1.0f;

@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 #include "network/packets.h"
@@ -77,12 +78,16 @@ public:
         uint8_t state = 0;      // ObjectiveState
         uint8_t team = 0xFF;    // allowed carrier team
         uint32_t carrierId = 0;
+        uint32_t interactorId = 0; // active planter/defuser
         glm::vec3 position{0.0f};
         std::string id;
         std::string site;
         float progress = 0.0f;      // 0..1 plant or defuse progress
+        uint16_t requiredTicks = 0; // active interaction duration
+        uint16_t tapTicks = 0;      // progress per repeated tap
         float timerLeft = 0.0f;     // seconds to explosion when planted
         uint8_t progressKind = 0;   // 0=none, 1=plant, 2=defuse
+        uint8_t interactionMode = 0; // ObjectiveInteractionMode
     };
     const ReplicatedObjective& objective() const { return mObjective; }
 
@@ -187,6 +192,24 @@ public:
     uint32_t disasterDurationTicks() const { return mDisasterDurationTicks; }
     uint32_t disasterWinner() const { return mDisasterWinner; }
     uint8_t disasterResolveSource() const { return mDisasterResolveSource; }
+
+    // ── Loss aftermath (server-authored, per recipient) ─────────────
+    bool aftermathActive() const { return mAftermathActive; }
+    bool aftermathLocal() const;
+    uint8_t aftermathStage() const { return mAftermathStage; }
+    uint32_t aftermathTargetActorId() const { return mAftermathTargetActorId; }
+    uint32_t aftermathMoverActorId() const { return mAftermathMoverActorId; }
+    glm::vec3 aftermathMoverPos() const { return mAftermathMoverPos; }
+    uint32_t aftermathSoundSerial() const { return mAftermathSoundSerial; }
+    uint8_t aftermathSoundIndex() const { return mAftermathSoundIndex; }
+    // Drains one queued scare sound. The queue preserves every replicated
+    // serial even when several state packets arrive within one render frame.
+    bool takeAftermathSound(uint8_t& outIndex);
+    bool aftermathHideHud() const { return mAftermathHideHud; }
+    bool aftermathMuteAudio() const { return mAftermathMuteAudio; }
+    bool aftermathBlackout() const { return mAftermathBlackout; }
+    bool aftermathFreezeLocal() const { return mAftermathFreezeLocal; }
+    bool aftermathFatalWindow() const { return mAftermathFatalWindow; }
 
     // ── Procedural world (Infinite Dungeon Slayer) ───────────────────
     // Server-owned room lifecycle state plus seed and generated-room counts.
@@ -305,6 +328,21 @@ private:
     uint8_t mLastOutlineParticipantCount = 0;
     std::string mPresentationFingerprint;
     ProceduralWorldNetworkState mProcedural;
+
+    // ── Loss aftermath ───────────────────────────────────────────────
+    bool mAftermathActive = false;
+    uint8_t mAftermathStage = 0;
+    uint32_t mAftermathTargetActorId = 0;
+    uint32_t mAftermathMoverActorId = 0;
+    glm::vec3 mAftermathMoverPos{0.0f};
+    uint32_t mAftermathSoundSerial = 0;
+    uint8_t mAftermathSoundIndex = 0xFF;
+    std::deque<uint8_t> mAftermathSoundQueue;
+    bool mAftermathHideHud = false;
+    bool mAftermathMuteAudio = false;
+    bool mAftermathBlackout = false;
+    bool mAftermathFreezeLocal = false;
+    bool mAftermathFatalWindow = false;
 };
 
 }

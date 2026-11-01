@@ -214,15 +214,9 @@ std::string defaultFfmpegPath()
         } catch (...) {}
     }
 #ifdef _WIN32
-    // Prefer a system FFmpeg when one is installed. The packaged build is
-    // intentionally small and may not contain every audio demuxer/decoder
-    // needed by local music files.
-    char found[MAX_PATH] = {};
-    if (SearchPathA(nullptr, "ffmpeg.exe", nullptr, MAX_PATH, found, nullptr) > 0)
-        return found;
-
-    // Shipped location: tools/ffmpeg.exe beside the game executable (release
-    // layout) or beside the working directory (source checkout).
+    // Prefer the packaged FFmpeg owned by this checkout. It is built and tested
+    // with the shipped video encoder plus the Ogg/Opus/Vorbis music decoders.
+    // A system FFmpeg remains the fallback when the packaged binary is absent.
     char module[MAX_PATH] = {};
     if (GetModuleFileNameA(nullptr, module, MAX_PATH) > 0) {
         std::filesystem::path exeDir = std::filesystem::path(module).parent_path();
@@ -238,6 +232,10 @@ std::string defaultFfmpegPath()
         if (std::filesystem::exists(cwdTools))
             return std::filesystem::absolute(cwdTools).make_preferred().string();
     }
+
+    char found[MAX_PATH] = {};
+    if (SearchPathA(nullptr, "ffmpeg.exe", nullptr, MAX_PATH, found, nullptr) > 0)
+        return found;
 #endif
     return {};
 }

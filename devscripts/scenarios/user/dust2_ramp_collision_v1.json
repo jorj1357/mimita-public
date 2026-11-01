@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "dust2_ramp_collision_v1",
+  "description": "Replay the reported Dust 2 ramp/seam collision recording and require no long input-held/no-progress stall.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "dust2cyberiav4",
+    "weapon_set": "29",
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [],
+  "steps": [
+    {
+      "id": "play_dust2_ramp",
+      "type": "input_playback",
+      "path": "devscripts/scenarios/user/scenario-20261031_034240-dustcoll.jsonl",
+      "timeout_seconds": 180
+    }
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "scenario.playback.started"},
+    {"type": "event_present", "event": "scenario.playback.start_ready"},
+    {"type": "event_present", "event": "scenario.playback.completed"},
+    {"type": "event_absent", "event": "scenario.playback.failed"},
+    {"type": "event_field_equals", "event": "scenario.playback.completed",
+     "field": "completed", "equals": true},
+    {"type": "event_field_equals", "event": "scenario.playback.completed",
+     "field": "valid", "equals": true},
+    {"type": "event_absent", "event": "collision.progress.stall"}
+  ],
+  "timeout_seconds": 240
+}

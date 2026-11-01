@@ -111,6 +111,67 @@ recorded when the local dev-loop server is active.
 
 Schema 1 recordings remain playable input-only scenarios.
 
+### Collision and final-pose tracks
+
+Collision investigations require the `client_collision` track. It records the
+canonical post-solve contacts available to the client and must identify contact
+kind, source, shape, subshape, point, normal, penetration, surface id, source
+entity id, and sweep velocity.
+
+When the server or NPC final-pose contract is under test, the recording must
+also carry:
+
+- `server_collision` — authoritative contact/manifold evidence for the same
+  server tick, when available;
+- `npc_pose` — per-NPC root, final body-part transforms or collision-mesh
+  bounds, held-weapon bounds, penetration result, last-clear state, and
+  containment/reset events;
+- `actor_pair` — actor-pair capsule contacts and response, separate from
+  static-world triangles.
+
+Collision tracks are evidence, not presentation. They must be written from the
+same final transforms and contact owner used by gameplay.
+
+### Expected-good and forbidden invariants
+
+A checked-in scenario may declare named invariants instead of only checking
+whether an event happened. Initial invariants:
+
+- `no_collision_speed_collapse` — no unexplained `collision.speed_collapse`;
+- `no_unexplained_position_reversal` — no repeated backward correction at a
+  seam with held forward input;
+- `no_grounded_seam_stall` — no grounded input-held/no-progress window;
+- `straight_dash_keeps_direction` — no lateral velocity flip on a flat surface;
+- `down_dash_slope_bounces` — slope contact produces positive normal velocity;
+- `npc_no_static_penetration` — no final NPC body/weapon overlap beyond the
+  configured standoff;
+- `npc_last_clear_recovery` — a forced caught pose restores position, yaw, and
+  grounded state with zero velocity.
+
+An event that is expected in normal play, such as an intentional freeze or a
+real wall stop, must be listed as an allowed exception on the scenario. The
+runner must not suppress evidence globally.
+
+### Automated baseline runs
+
+Known-good scenarios are versioned with expected event/metric ranges. AI runs
+the scenario on the real executable and compares the current `events.jsonl`
+against the baseline. A scenario fails when a forbidden event appears, a required
+event disappears, or a bounded metric falls outside its accepted range. Baseline
+updates are deliberate and must be justified in the scenario and changelog.
+
+### Recording finalization and headless soak
+
+`scenario_endrecord` must produce a finalized recording with a footer. A
+collision investigation must not accept a client-only partial file as complete
+evidence. The recorder must either finalize automatically at the configured
+limit/exit path or mark the file explicitly as incomplete.
+
+Headless soak scenarios may run without human input. They must launch on a
+dev-loop-owned server, run for a bounded duration, and assert forbidden events
+such as unresolved NPC penetration or downward recovery beyond the allowed
+distance.
+
 ## Recording behavior
 
 - Captures `InputFrame` at the fixed-tick boundary in

@@ -38,6 +38,7 @@
 #include "game/spawn-utils.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/actor-final-pose.h"
 #include "physics/movement/actor-pair-collision.h"
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
@@ -64,6 +65,60 @@ namespace MimitaNet {
 // what if 8 10 2026 we set to be instant so we dont need anim to play before respawn 
 // 8 10 2026 keep this its so fun 
 constexpr float SERVER_NPC_RESPAWN_SECONDS = 0.01f;
+
+static bool containServerNpcFinalPose(Npc& npc, const World& world,
+                                      const char* stage)
+{
+    ActorFinalPoseResult result;
+    const bool clear = containActorFinalPose(
+        npc.body, world, npc.finalPose, result, 0.02f, stage);
+    const uint32_t tick = static_cast<uint32_t>(npc.body.movementSimulationTick);
+    const bool reset = result.restored || result.usedSafePoint || result.failed;
+    const bool penetration = result.initialPenetration > 0.02f;
+    if (!reset && !result.budgetExceeded &&
+        (!penetration || tick - npc.finalPoseLastPenetrationLogTick < 30))
+        return clear;
+
+    nlohmann::json parts = nlohmann::json::array();
+    for (const ActorFinalPoseContact& contact : result.contacts)
+    {
+        parts.push_back({
+            {"actor_part", contact.actorPart ? contact.actorPart : ""},
+            {"world_triangle", contact.worldTriangle},
+            {"point", {contact.point.x, contact.point.y, contact.point.z}},
+            {"normal", {contact.normal.x, contact.normal.y, contact.normal.z}},
+            {"surface_normal", {contact.surfaceNormal.x,
+                                contact.surfaceNormal.y,
+                                contact.surfaceNormal.z}},
+            {"penetration_m", contact.penetration}});
+    }
+    if (penetration)
+        npc.finalPoseLastPenetrationLogTick = tick;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        reset ? "npc.pose.reset" : "npc.pose.contained",
+        std::to_string(npc.id), stage, tick,
+        {{"actor", npc.id},
+         {"stage", stage},
+         {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+         {"initial_penetration_m", result.initialPenetration},
+         {"final_penetration_m", result.finalPenetration},
+         {"iterations", result.iterations},
+         {"correction", {result.correction.x, result.correction.y,
+                          result.correction.z}},
+         {"clear", clear},
+         {"restored", result.restored},
+         {"used_safe_point", result.usedSafePoint},
+         {"failed", result.failed},
+         {"budget_exceeded", result.budgetExceeded},
+         {"reset_reason", result.resetReason},
+         {"part_count", result.partCount},
+         {"extra_part_count", result.extraPartCount},
+         {"skip_reason", result.skipReason},
+         {"parts", std::move(parts)}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return clear;
+}
 
 void broadcastNpcDamageEvent(
     SOCKET sock,
@@ -453,6 +508,9 @@ static void syncServerNpcDamageToNpc(const std::unordered_map<uint32_t, ServerNp
 
 void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
 {
+    npc.finalPose = ActorFinalPoseState{};
+    npc.finalPosePenetrating = false;
+    npc.finalPoseLastPenetrationLogTick = 0;
     const ServerGamemodeState& modeState = serverGamemodeState();
     const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
     if (mode.npcAvatar.configured) {
@@ -486,7 +544,7 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
         const ServerGamemodeState& mode = serverGamemodeState();
         const uint32_t protection = mode.payloadMode
             ? (uint32_t)std::max(0, mode.payloadSpawnProtectionTicks) : 60u;
-        serverMeleeNoteSpawn(npc.id, protection);
+        serverActorNoteSpawn(npc.id, protection);
     }
     npc.body.syncLegacyStateToLayers();
     npc.body.updateModelWorldTransforms();
@@ -672,6 +730,7 @@ static void broadcastNpcFiring(SOCKET sock,
             projectile.radius = wdef->projectileRadius > 0.0f ? wdef->projectileRadius : 0.3f;
             projectile.splashRadius = cp("splashRadius", 8.0f);
             projectile.splashDamage = cp("rocketDirectDamage", 150.0f);
+            projectile.splashEdgeDamage = cp("splashEdgeDamage", -1.0f);
             projectile.splashExponent = cp("splashExponent", 2.0f);
             projectile.knockbackStrength = cp("knockbackStrength", 160.0f);
             projectile.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
@@ -940,32 +999,41 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         }
         else
         {
-            for (const PhysicalBodyPart& part : n.body.physicalBody.parts)
+            auto appendParts = [&](const std::vector<PhysicalBodyPart>& parts)
             {
-                if (sn.bodyPartCount >= sn.bodyParts.size())
-                    break;
-                glm::vec3 low(std::numeric_limits<float>::max());
-                glm::vec3 high = -low;
-                for (int corner = 0; corner < 8; ++corner)
+                for (const PhysicalBodyPart& part : parts)
                 {
-                    const glm::vec3 local(
-                        (corner & 1) ? part.collider.localMax.x : part.collider.localMin.x,
-                        (corner & 2) ? part.collider.localMax.y : part.collider.localMin.y,
-                        (corner & 4) ? part.collider.localMax.z : part.collider.localMin.z);
-                    const glm::vec3 world = glm::vec3(part.worldTransform * glm::vec4(local, 1.0f));
-                    low = glm::min(low, world);
-                    high = glm::max(high, world);
+                    if (sn.bodyPartCount >= sn.bodyParts.size())
+                        break;
+                    glm::vec3 low(std::numeric_limits<float>::max());
+                    glm::vec3 high = -low;
+                    for (int corner = 0; corner < 8; ++corner)
+                    {
+                        const glm::vec3 local(
+                            (corner & 1) ? part.collider.localMax.x : part.collider.localMin.x,
+                            (corner & 2) ? part.collider.localMax.y : part.collider.localMin.y,
+                            (corner & 4) ? part.collider.localMax.z : part.collider.localMin.z);
+                        const glm::vec3 world = glm::vec3(part.worldTransform * glm::vec4(local, 1.0f));
+                        low = glm::min(low, world);
+                        high = glm::max(high, world);
+                    }
+                    if (glm::any(glm::greaterThan(low, high)))
+                        continue;
+                    ServerNpcBodyPartSample& sample =
+                        sn.bodyParts[sn.bodyPartCount++];
+                    const glm::vec3 center = (low + high) * 0.5f;
+                    const glm::vec3 half = (high - low) * 0.5f;
+                    sample.cx = center.x; sample.cy = center.y; sample.cz = center.z;
+                    sample.hx = half.x; sample.hy = half.y; sample.hz = half.z;
+                    sample.bodyPart = part.name == "head"
+                        ? static_cast<uint8_t>(WeaponExecution::HitBodyPart::Head)
+                        : (part.name == "leftLeg" || part.name == "rightLeg")
+                            ? static_cast<uint8_t>(WeaponExecution::HitBodyPart::Leg)
+                            : static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
                 }
-                if (glm::any(glm::greaterThan(low, high)))
-                    continue;
-                ServerNpcBodyPartSample& sample =
-                    sn.bodyParts[sn.bodyPartCount++];
-                const glm::vec3 center = (low + high) * 0.5f;
-                const glm::vec3 half = (high - low) * 0.5f;
-                sample.cx = center.x; sample.cy = center.y; sample.cz = center.z;
-                sample.hx = half.x; sample.hy = half.y; sample.hz = half.z;
-                sample.bodyPart = static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
-            }
+            };
+            appendParts(n.body.physicalBody.parts);
+            appendParts(n.body.physicalBody.extraParts);
         }
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
@@ -1350,6 +1418,7 @@ static void resolveServerActorPairCollisions(
             doCollisions(npc.body, npcWorld, grounded, SERVER_DT);
         }
         npc.body.updateModelWorldTransforms();
+        containServerNpcFinalPose(npc, npcWorld, "post_actor_pair");
     }
 
     static uint32_t lastProfileTick = 0;
@@ -1418,6 +1487,7 @@ void simulateSharedNpcs(SOCKET sock,
     const Gamemode& matchMode = GamemodeRegistry::instance().get(matchState.matchMode);
     const bool pauseNpcSimulation =
         matchState.phase == DUEL_PHASE_COUNTDOWN ||
+        matchState.aftermathActive ||
         (matchState.phase == DUEL_PHASE_GO && matchMode.features.freezeDuringGo);
     static bool npcSimulationPaused = false;
     static uint64_t npcSimulationPauseStartedMs = 0;
@@ -1748,15 +1818,14 @@ void simulateSharedNpcs(SOCKET sock,
 
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
 
-        // Ground clamp: the decimated headless collision world can miss the
-        // floor, so a server NPC that ends up below the floor gets pinned back
-        // onto the nearest floor triangle and marked grounded — it never sinks
-        // through the ground forever. Legitimate airborne/jumping NPCs above the
-        // floor are untouched; the clamp only corrects downward violations.
+        // Ground clamp: only accept a floor within a small bounded distance.
+        // A 100 m downward query can find a lower floor through a solid and
+        // teleport the NPC into the world below. Far-below actors must fall or
+        // be recovered/respawned by final-pose containment instead.
         {
             constexpr float REST_HEIGHT = 1.8f; // capsule half-height (feet at pos.z - 1.8)
             const float floorZ = NpcNavigation::groundHeightAt(
-                world, n.body.pos, 100.0f, 5.0f);
+                world, n.body.pos, 4.0f, 5.0f);
             if (floorZ > -1e5f)
             {
                 const float restZ = floorZ + REST_HEIGHT;
@@ -1769,6 +1838,7 @@ void simulateSharedNpcs(SOCKET sock,
                     n.body.ground.stableOnGround = true;
                     n.body.ground.onGround = true;
                     n.body.ground.realWorldContactThisFrame = true;
+                    containServerNpcFinalPose(n, world, "post_ground_clamp");
                 }
             }
         }
@@ -1915,32 +1985,43 @@ void simulateSharedNpcs(SOCKET sock,
                     continue;
                 recoveryCursor = index + 1;
                 if (worldPointInsideSolid(world, candidate.body.pos)) {
-                    // Cheap recovery: use the broadphase ground query instead of
-                    // the full multi-candidate safe-spawn search. The latter can
-                    // scan the whole 44k-triangle map several times and create a
-                    // multi-hundred-ms server spike when an NPC stays inside
-                    // geometry. If this single correction cannot find a clear
-                    // standing point, wait for the cooldown rather than stalling
-                    // the whole server.
                     const glm::vec3 before = candidate.body.pos;
-                    glm::vec3 resolved = before;
-                    const float floorZ = NpcNavigation::groundHeightAt(
-                        world, before, 100.0f, 5.0f);
-                    if (floorZ > -1e5f)
-                        resolved.z = floorZ + 1.8f;
+                    ActorFinalPoseResult result;
+                    const bool clear = containActorFinalPose(
+                        candidate.body, world, candidate.finalPose, result,
+                        0.02f, "post_recovery");
                     recoveryCooldownTick[candidate.id] = tick + 120u;
-                    if (glm::length(resolved - before) > 0.001f &&
-                        !worldPointInsideSolid(world, resolved)) {
-                        StructuredLogger::instance().writeEvent(
-                            StructuredCategory::Collision, StructuredLevel::Important,
-                            "npc.capsule.recovered", std::to_string(candidate.id),
-                            "npc root was inside static solid geometry", tick,
-                            {{"npc_id", candidate.id},
-                             {"from", {before.x, before.y, before.z}},
-                             {"to", {resolved.x, resolved.y, resolved.z}}},
-                            __FILE__, __LINE__, __FUNCTION__);
-                        candidate.body.pos = resolved;
+                    const bool moved =
+                        glm::length(candidate.body.pos - before) > 0.001f;
+                    if (moved || result.restored || result.usedSafePoint)
+                    {
                         candidate.body.vel = glm::vec3(0.0f);
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "npc.capsule.recovered",
+                            std::to_string(candidate.id),
+                            "npc final pose recovered without a downward floor search",
+                            tick,
+                            {{"npc_id", candidate.id},
+                             {"stage", result.stage},
+                             {"reason", result.resetReason},
+                             {"from", {before.x, before.y, before.z}},
+                             {"to", {candidate.body.pos.x,
+                                     candidate.body.pos.y,
+                                     candidate.body.pos.z}},
+                             {"initial_penetration_m",
+                              result.initialPenetration},
+                             {"final_penetration_m",
+                              result.finalPenetration},
+                             {"budget_exceeded", result.budgetExceeded}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                    if (!clear &&
+                        (result.failed ||
+                         worldPointInsideSolid(world, candidate.body.pos)))
+                    {
+                        respawnServerNpc(candidate, world);
                     }
                 }
                 // At most one deep inside-solid check per server tick.

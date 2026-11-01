@@ -44,6 +44,7 @@
 #include "physics/physical-entity.h"
 #include "impact/impact-system.h"
 #include "physics/movement/actor-collision-mesh.h"
+#include "physics/movement/actor-final-pose.h"
 #include "physics/movement/actor-triangle-solver.h"
 #include "debug/crash-handler.h"
 #include <exception>
@@ -2373,6 +2374,14 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = actorTriangleSolverSelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[ACTOR TRIANGLE SOLVE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--actor-final-pose-selftest") {
+        std::string summary;
+        const bool ok = actorFinalPoseSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[ACTOR FINAL POSE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

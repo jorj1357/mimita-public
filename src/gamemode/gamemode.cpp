@@ -522,6 +522,9 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 def.plantSeconds = std::max(0.0f, optFloat(o, "plant_seconds", 0.0f));
                 def.defuseSeconds = std::max(0.0f, optFloat(o, "defuse_seconds", 0.0f));
                 def.explosionSeconds = std::max(0.0f, optFloat(o, "explosion_seconds", 0.0f));
+                def.interactionMode = optString(o, "interaction_mode", "hold");
+                def.tapProgressSeconds = std::clamp(
+                    optFloat(o, "tap_progress_seconds", 0.1f), 0.01f, 1.0f);
                 // Optional world-space pulse visual (client render reads this).
                 if (o.contains("visual") && o["visual"].is_object()) {
                     const auto& v = o["visual"];
@@ -629,6 +632,31 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.payload.classPool = optStringArray(p, "class_pool");
         }
 
+        // ── Loss aftermath (optional). Disabled modes keep the standard
+        // results/intermission ending. The shared server consumes these data
+        // values; no mode-name branch owns the ending.
+        if (root.contains("aftermath") && root["aftermath"].is_object()) {
+            const auto& a = root["aftermath"];
+            next.aftermath.enabled = optBool(a, "enabled", next.aftermath.enabled);
+            next.aftermath.targetTeam = optString(a, "target_team", next.aftermath.targetTeam);
+            next.aftermath.scareTicks = std::clamp(
+                optInt(a, "scare_ticks", next.aftermath.scareTicks), 0, 6000);
+            next.aftermath.finalDamage = std::max(
+                0, optInt(a, "final_damage", next.aftermath.finalDamage));
+            next.aftermath.moveSpeed = std::max(
+                0.01f, optFloat(a, "move_speed", next.aftermath.moveSpeed));
+            next.aftermath.approachDistanceMeters = std::max(
+                0.0f, optFloat(a, "approach_distance_meters",
+                               next.aftermath.approachDistanceMeters));
+            next.aftermath.scareSounds = optStringArray(a, "scare_sounds");
+            next.aftermath.blackout = optBool(a, "blackout", next.aftermath.blackout);
+            next.aftermath.hideHud = optBool(a, "hide_hud", next.aftermath.hideHud);
+            next.aftermath.muteAudio = optBool(a, "mute_audio", next.aftermath.muteAudio);
+            next.aftermath.freezeLocalPlayer = optBool(
+                a, "freeze_local_player", next.aftermath.freezeLocalPlayer);
+            next.aftermath.fatalWindow = optBool(a, "fatal_window", next.aftermath.fatalWindow);
+        }
+
         // ── Presentation policy (optional). Missing keys keep ordinary
         // behavior; the actor preset refines these where both exist. ──
         if (root.contains("presentation") && root["presentation"].is_object()) {
@@ -704,6 +732,14 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     p["enemy_wireframe_color"][2].get<float>()};
                 next.presentation.hasTeamWireframeColors = true;
             }
+            if (p.contains("room_code_color") && p["room_code_color"].is_array() &&
+                p["room_code_color"].size() >= 3) {
+                next.presentation.roomCodeColor = {
+                    p["room_code_color"][0].get<float>(),
+                    p["room_code_color"][1].get<float>(),
+                    p["room_code_color"][2].get<float>()};
+                next.presentation.hasRoomCodeColor = true;
+            }
 
             auto readTrail = [&p](const char* key, bool& has,
                                   GamemodeTrailSettings& out) {
@@ -772,6 +808,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 optBool(f, "freeze_during_countdown", next.features.freezeDuringCountdown);
             next.features.freezeDuringGo =
                 optBool(f, "freeze_during_go", next.features.freezeDuringGo);
+            next.features.objectiveOnlyRoundWins =
+                optBool(f, "objective_only_round_wins", next.features.objectiveOnlyRoundWins);
             if (f.contains("destructible_world")) {
                 if (f["destructible_world"].is_null())
                     next.features.destructibleWorld = -1;
@@ -912,6 +950,10 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.waveIncrement = std::max(0, optInt(root, "wave_increment", next.waveIncrement));
         next.waveNpcsPerWave = std::max(0, optInt(root, "npcs_per_wave", next.waveNpcsPerWave));
         next.lives = std::max(1, optInt(root, "lives", next.lives));
+        next.livesEnabled = optBool(root, "lives_enabled", next.livesEnabled);
+        next.livesTeam = optString(root, "lives_team", next.livesTeam);
+        next.timeLimitStartsAtGo =
+            optBool(root, "time_limit_starts_at_go", next.timeLimitStartsAtGo);
         next.waveBannerSeconds = std::max(0.0f, optFloat(root, "wave_banner_seconds", next.waveBannerSeconds));
         next.waveStaggerEnabled = optBool(root, "wave_stagger_enabled", next.waveStaggerEnabled);
         next.waveNpcsPerTick = std::max(1, optInt(root, "wave_npcs_per_tick", next.waveNpcsPerTick));

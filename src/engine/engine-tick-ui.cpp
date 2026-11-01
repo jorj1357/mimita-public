@@ -52,6 +52,7 @@
 #include "game/game-state.h"
 #include "mapeditor/map-editor.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
 
 #include "debug/debug-log.h"
 #include "config/player-settings.h"
@@ -97,11 +98,20 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
 
     { MIMITA_PERF_SCOPE("UI::Text"); EffectPartSystem::instance().renderText(camera); }
 
-    { MIMITA_PERF_SCOPE("UI::HUD"); engineTickUIHUD(engine, dt); }
+    const MimitaNet::CommunityMatchClient& aftermathMatch =
+        MimitaNet::CommunityMatchClient::instance();
+    const bool aftermathHudHidden = aftermathMatch.aftermathLocal() &&
+        aftermathMatch.aftermathHideHud();
 
-    { MIMITA_PERF_SCOPE("UI::Overlays");
-    if (player.spawnFlashTimer <= 0.0f)
-        engineTickUIOverlays(engine, dt, worldPassRan); }
+    { MIMITA_PERF_SCOPE("UI::Aftermath"); engineTickAftermathUi(engine, dt); }
+
+    if (!aftermathHudHidden) {
+        { MIMITA_PERF_SCOPE("UI::HUD"); engineTickUIHUD(engine, dt); }
+
+        { MIMITA_PERF_SCOPE("UI::Overlays");
+        if (player.spawnFlashTimer <= 0.0f)
+            engineTickUIOverlays(engine, dt, worldPassRan); }
+    }
 
     if (gReplayPlayer.totalTicks() > 0) {
         const ReplaySceneFrame* cleanupFrame = gReplayPlayer.currentSceneFrame();

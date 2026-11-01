@@ -25,6 +25,7 @@ struct CommunityMode
     int teams = 0;
     int scoreLimit = 0;
     int maxPlayers = 0; // 0 = use the server's configured capacity
+    bool privateByDefault = false; // host menu defaults this room to private
 };
 
 struct CommunityWeaponSet

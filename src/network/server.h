@@ -204,6 +204,9 @@ struct ServerInput
     bool grabHeld = false;
     bool crouchHeld = false;
     bool reviveHeld = false;
+    // Held objective interaction input (F). Distinct presses are counted by
+    // interactSerial in ServerPlayer for repeated-tap objectives.
+    bool interactHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     bool flyFast = false;
@@ -430,6 +433,8 @@ struct ServerPlayer
     uint16_t lastDashSerial = 0;
     uint16_t lastEquipSerial = 0;
     uint16_t lastRespawnSerial = 0;
+    uint8_t lastInteractSerial = 0;
+    uint8_t pendingInteractTaps = 0;
     bool instantRespawnRequested = false;
     uint16_t inputStateFlags = 0;
     float dashCooldownTimer = 0.0f;
@@ -683,7 +688,7 @@ struct ServerNpcPositionSample {
     // The NPC's rendered body-part AABBs at this tick, matching the client's
     // collideBeam hitboxes so the server re-trace (and hit rewind) validate
     // against exactly what attackers saw — no invisible capsule.
-    std::array<ServerNpcBodyPartSample, 8> parts{};
+    std::array<ServerNpcBodyPartSample, 16> parts{};
     uint8_t partCount = 0;
     uint8_t pad3[3] = {};
 };
@@ -763,7 +768,7 @@ struct ServerNpc
     float replayBladeRadius = 0.0f;
     // Current-tick body-part AABBs computed during rebuild so pushNpcPositionHistory
     // can snapshot them into the history for hit rewind.
-    std::array<ServerNpcBodyPartSample, 8> bodyParts{};
+    std::array<ServerNpcBodyPartSample, 16> bodyParts{};
     uint8_t bodyPartCount = 0;
     // 10 seconds of broadcast history at 60 Hz so hit rewind always has the
     // exact pose the shooter rendered, even across long lag/blackout windows.
@@ -860,6 +865,8 @@ struct ServerProjectile
     float radius = 0.0f;
     float splashRadius = 0.0f;
     float splashDamage = 0.0f;
+    // Negative keeps legacy exponential falloff; non-negative is edge damage.
+    float splashEdgeDamage = -1.0f;
     float splashExponent = 2.0f;
     float knockbackStrength = 0.0f;
     float selfKnockbackMultiplier = 1.0f;

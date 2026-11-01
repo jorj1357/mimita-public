@@ -338,7 +338,8 @@ bool mergeClientAndServer(const std::string& clientPath,
 
     nlohmann::json header = *clientHeader;
     header["schema"] = kSchemaV2;
-    header["tracks"] = nlohmann::json::array({"client_input", "client_actors", "server_actors"});
+    header["tracks"] = nlohmann::json::array(
+        {"client_input", "client_actors", "client_collision", "server_actors"});
     header["server"] = {
         {"build_id", serverHeader->value("build_id", "")},
         {"start_server_tick", serverHeader->value("start_server_tick", 0u)},

@@ -351,6 +351,8 @@ void engineTickState(Engine& engine, float dt)
 
                 if (!mci.directAddress.empty())
                 {
+                    if (!mci.password.empty())
+                        mpContext.serverPassword = mci.password;
                     Debug::log(
                         Debug::Category::Networking,
                         "[DIRECT JOIN START] address=%s\n",

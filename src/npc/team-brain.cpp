@@ -414,6 +414,13 @@ bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actor
 {
     if (!mState.objective.active) return false;
     if (mState.objective.planted) {
+        // The bomb position is authoritative: the carried plant point can be
+        // away from the authored site anchor, and a CT must reach the bomb to
+        // defuse it.
+        if (glm::length(mState.objective.bombPosition) > 0.001f) {
+            out = mState.objective.bombPosition;
+            return true;
+        }
         for (const auto& site : mState.sites) {
             if (site.id == mState.objective.plantedSiteId && site.hasPosition) {
                 out = site.position;
@@ -421,6 +428,12 @@ bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actor
             }
         }
         out = mState.objective.bombPosition;
+        return true;
+    }
+    if (mState.objective.planting && mTeam == 0 &&
+        glm::length(mState.objective.contestSitePosition) > 0.001f) {
+        // Defenders contest the site where the T carrier is committing.
+        out = mState.objective.contestSitePosition;
         return true;
     }
     if (mState.objective.carriedByTeam) {

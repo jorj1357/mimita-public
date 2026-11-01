@@ -1170,7 +1170,7 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                 const ServerGamemodeState& mode = serverGamemodeState();
                 const uint32_t protection = mode.payloadMode
                     ? (uint32_t)std::max(0, mode.payloadSpawnProtectionTicks) : 60u;
-                serverMeleeNoteSpawn(p.id, protection);
+                serverActorNoteSpawn(p.id, protection);
             }
             p.input = {};
             p.attackQueued = false;
@@ -1355,6 +1355,27 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
             cmd = movementCommandFromServerInput(
                 p.input, p.lastMovementSequence,
                 MovementLifecycleIdentity{p.spawnGeneration, p.transformEpoch});
+        }
+
+        // Hold-mode planting blocks movement input and movement abilities while
+        // keeping the current velocity, so momentum can still carry the actor.
+        const MimitaNet::ServerGamemodeState& gm = serverGamemodeState();
+        if (gm.objective.valid() &&
+            gm.objective.interactionMode == ObjectiveInteractionMode::Hold &&
+            gm.objective.state == ObjectiveState::Carried &&
+            gm.objective.planterActorId == p.id &&
+            gm.objective.plantTicksElapsed > 0)
+        {
+            cmd.moveAxes = glm::vec2(0.0f);
+            cmd.jumpHeld = false;
+            cmd.jumpPressed = false;
+            cmd.dashPressed = false;
+            cmd.downDashPressed = false;
+            cmd.freezeHeld = false;
+            cmd.freezePressed = false;
+            cmd.movementDirectionPressed = false;
+            cmd.movementDirectionFreshPressed = false;
+            cmd.movementDirectionChanged = false;
         }
 
         // Re-resolve the avatar movement capability when the avatar changes

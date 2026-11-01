@@ -88,13 +88,34 @@
       "elements": {
         "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.6, "textColor": [1, 1, 1, 0.9] },
         "modeTitle": { "type": "text", "text": "{mode_name}", "x": 960, "y": 58, "fontSize": 0.32, "textColor": [1, 1, 1, 1] },
-        "scoreText": { "type": "text", "text": "{red_name} {red_score} - {blue_name} {blue_score}", "x": 960, "y": 75, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
-        "matchTime": { "type": "text", "text": "{minutes}:{seconds}", "x": 960, "y": 102, "fontSize": 0.44, "textColor": [1, 1, 1, 1] },
-        "roundText": { "type": "text", "text": "ROUND {round}", "x": 960, "y": 130, "fontSize": 0.3, "textColor": [0.7, 0.8, 1, 0.9] },
+        "phaseText": { "type": "text", "text": "{phase}", "x": 960, "y": 78, "fontSize": 0.26, "textColor": [0.75, 0.85, 1, 0.95] },
+        "scoreText": { "type": "text", "text": "{red_name} {red_score} - {blue_name} {blue_score}", "x": 960, "y": 96, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "matchTime": { "type": "text", "text": "{minutes}:{seconds}", "x": 960, "y": 122, "fontSize": 0.44, "textColor": [1, 1, 1, 1] },
+        "roundText": { "type": "text", "text": "ROUND {round}", "x": 960, "y": 150, "fontSize": 0.3, "textColor": [0.7, 0.8, 1, 0.9] },
         "roundOverText": { "type": "text", "x": 960, "y": 420, "fontSize": 0.9, "textColor": [1, 0.85, 0.25, 1] },
+        "objectiveResultText": { "type": "text", "x": 960, "y": 470, "fontSize": 0.5, "textColor": [1, 0.7, 0.25, 1] },
         "objectivePrompt": { "type": "text", "x": 960, "y": 640, "fontSize": 0.5, "textColor": [1, 0.9, 0.3, 1] },
-        "objectiveStatus": { "type": "text", "text": "BOMB DROPPED", "x": 960, "y": 150, "fontSize": 0.34, "textColor": [1, 0.5, 0.3, 1] },
-        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 120, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
+        "objectiveStatus": { "type": "text", "text": "BOMB DROPPED", "x": 960, "y": 174, "fontSize": 0.34, "textColor": [1, 0.5, 0.3, 1] },
+        "objectiveHint": { "type": "text", "text": "{hint}", "x": 960, "y": 202, "fontSize": 0.28, "textColor": [1, 0.9, 0.45, 1] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 500, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
+      }
+    },
+    "funcounterstrike": {
+      "format": "mimita-gui-layout",
+      "version": 3,
+      "elements": {
+        "intermissionText": { "type": "text", "text": "INTERMISSION {seconds}", "x": 960, "y": 400, "fontSize": 0.62, "textColor": [1, 1, 1, 0.92] },
+        "modeTitle": { "type": "text", "text": "FUN COUNTER STRIKE", "x": 960, "y": 34, "fontSize": 0.34, "textColor": [1, 1, 1, 1] },
+        "phaseText": { "type": "text", "text": "{phase}", "x": 960, "y": 58, "fontSize": 0.3, "textColor": [0.75, 0.85, 1, 0.95] },
+        "scoreText": { "type": "text", "text": "{red_name} {red_score} - {blue_name} {blue_score}", "x": 960, "y": 82, "fontSize": 0.42, "textColor": [1, 1, 1, 1] },
+        "roundText": { "type": "text", "text": "ROUND {round}", "x": 960, "y": 108, "fontSize": 0.3, "textColor": [0.7, 0.8, 1, 0.9] },
+        "matchTime": { "type": "text", "text": "{minutes}:{seconds}", "x": 960, "y": 136, "fontSize": 0.62, "textColor": [1, 1, 1, 1] },
+        "objectiveStatus": { "type": "text", "text": "BOMB CARRIED", "x": 960, "y": 178, "fontSize": 0.36, "textColor": [1, 0.55, 0.3, 1] },
+        "objectiveHint": { "type": "text", "text": "{hint}", "x": 960, "y": 208, "fontSize": 0.3, "textColor": [1, 0.9, 0.45, 1] },
+        "objectivePrompt": { "type": "text", "x": 960, "y": 640, "fontSize": 0.5, "textColor": [1, 0.9, 0.3, 1] },
+        "objectiveResultText": { "type": "text", "x": 960, "y": 470, "fontSize": 0.52, "textColor": [1, 0.7, 0.25, 1] },
+        "roundOverText": { "type": "text", "x": 960, "y": 420, "fontSize": 0.9, "textColor": [1, 0.85, 0.25, 1] },
+        "countdownText": { "type": "text", "text": "{countdown}", "goText": "GO!!!", "x": 960, "y": 500, "fontSize": 2.5, "textColor": [1, 1, 1, 1] }
       }
     },
     "payload": {

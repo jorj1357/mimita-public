@@ -56,6 +56,8 @@
 #include "world/world.h"
 #include "render/post-fx.h"
 #include "physics/ray-utils.h"
+#include "physics/movement/actor-final-pose.h"
+#include "debug/structured-log.h"
 #include "pobjects/persistent-physics.h"
 #include "gui/menus/pause-menu.h"
 
@@ -131,6 +133,44 @@ void engineTickCombat(Engine& engine, float dt)
         weapons.update(camera, player, npcSystem, world,
                        &mpContext.remotePlayers,
                        &mpContext.remoteNpcs, dt);
+    }
+
+    // Weapon pose is updated by WeaponSystem::update, after the fixed-tick
+    // final-pose pass. Re-run containment once the current weapon transform is
+    // available so turning the weapon into geometry pushes the root out in the
+    // same frame instead of using the previous frame's pose.
+    if (!replayPlaybackActive && !player.dead && !player.ragdollModeActive)
+    {
+        ActorFinalPoseResult weaponPose;
+        containActorFinalPose(player, world, player.finalPose, weaponPose,
+                              0.02f, "post_weapon");
+        static uint64_t lastWeaponPoseLogTick = 0;
+        const uint64_t tick = player.movementSimulationTick;
+        if ((weaponPose.corrected || weaponPose.restored ||
+             weaponPose.usedSafePoint || weaponPose.failed) &&
+            tick - lastWeaponPoseLogTick >= 30)
+        {
+            lastWeaponPoseLogTick = tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                weaponPose.failed ? "player.pose.reset" : "player.pose.weapon_contained",
+                "player", weaponPose.resetReason.empty() ? "weapon_pose" :
+                weaponPose.resetReason, static_cast<uint32_t>(tick),
+                {{"stage", weaponPose.stage},
+                 {"position", {player.pos.x, player.pos.y, player.pos.z}},
+                 {"correction", {weaponPose.correction.x, weaponPose.correction.y,
+                                 weaponPose.correction.z}},
+                 {"initial_penetration_m", weaponPose.initialPenetration},
+                 {"final_penetration_m", weaponPose.finalPenetration},
+                 {"clear", weaponPose.clear},
+                 {"restored", weaponPose.restored},
+                 {"used_safe_point", weaponPose.usedSafePoint},
+                 {"failed", weaponPose.failed},
+                 {"part_count", weaponPose.partCount},
+                 {"extra_part_count", weaponPose.extraPartCount},
+                 {"skip_reason", weaponPose.skipReason}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     if (!replayPlaybackActive) {
         MIMITA_PERF_SCOPE("Combat::EffectSpawn");
@@ -265,10 +305,14 @@ void engineTickCombat(Engine& engine, float dt)
 
     static bool mousePrev = false;
     const bool scenarioInputActive = ScenarioInput::active();
-    const bool gameplayInputAllowed = scenarioInputActive ||
-        (!PauseMenu::isOpen() && !MapEditor::instance().active());
-    const bool inputEnabled = scenarioInputActive ||
-        InputCommandSystem::instance().isKeyboardEnabled();
+    const MimitaNet::CommunityMatchClient& communityMatch =
+        MimitaNet::CommunityMatchClient::instance();
+    const bool aftermathInputFrozen = communityMatch.aftermathLocal() &&
+        communityMatch.aftermathFreezeLocal();
+    const bool gameplayInputAllowed = !aftermathInputFrozen && (scenarioInputActive ||
+        (!PauseMenu::isOpen() && !MapEditor::instance().active()));
+    const bool inputEnabled = !aftermathInputFrozen && (scenarioInputActive ||
+        InputCommandSystem::instance().isKeyboardEnabled());
     const bool cursorCaptured = scenarioInputActive ||
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
     bool mouseDown = ScenarioInput::mouseButton(

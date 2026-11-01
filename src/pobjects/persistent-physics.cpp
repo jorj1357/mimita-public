@@ -351,6 +351,18 @@ void PersistentPhysicsSystem::checkCollisions(
     }
 }
 
+static float persistentSplashDamage(const PersistentPhysicsConfig& cfg, float dist)
+{
+    const float radius = std::max(0.001f, cfg.explosionRadius);
+    const float t = std::clamp(dist / radius, 0.0f, 1.0f);
+    if (cfg.explosionEdgeDamage >= 0.0f)
+        return cfg.explosionEdgeDamage +
+            (cfg.explosionDamage - cfg.explosionEdgeDamage) *
+            std::pow(1.0f - t, std::max(0.01f, cfg.splashExponent));
+    return cfg.explosionDamage *
+        std::exp(-std::pow(t, 2.0f) * cfg.splashExponent);
+}
+
 void PersistentPhysicsSystem::doExplosion(
     PersistentPhysicsObject& obj,
     const World& world, Player& player, NpcSystem& npcs, Camera* camera)
@@ -381,7 +393,7 @@ void PersistentPhysicsSystem::doExplosion(
         float dist = glm::length(toEntity);
         if (dist >= radius) continue;
         glm::vec3 dir = dist > 0.001f ? toEntity / dist : glm::vec3(0.0f, 1.0f, 0.0f);
-        float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
+        float dmgScaled = persistentSplashDamage(obj.cfg, dist);
         int finalDmg = std::max(1, (int)std::round(dmgScaled));
         npc.body.currentHp -= finalDmg;
         if (npc.body.currentHp < 0) npc.body.currentHp = 0;
@@ -407,7 +419,7 @@ void PersistentPhysicsSystem::doExplosion(
         float dist = glm::length(toPlayer);
         if (dist < radius) {
             glm::vec3 dir = dist > 0.001f ? toPlayer / dist : glm::vec3(0.0f, 1.0f, 0.0f);
-            float dmgScaled = baseDamage * std::exp(-std::pow(dist / radius, 2.0f) * splashExp);
+            float dmgScaled = persistentSplashDamage(obj.cfg, dist);
             int finalDmg = std::max(1, (int)std::round(dmgScaled * obj.cfg.explosionSelfDamageMul));
             Debug::log(Debug::Category::Weapons,
                 "[SELF_DAMAGE] owner=%s isSelf=1 baseDmg=%.1f mul=%.2f finalDmg=%d dist=%.1f\n",

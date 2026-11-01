@@ -8,8 +8,11 @@
 #include "weapon-data.h"
 #include "weapon-json-config.h"
 #include "weapon-registry.h"
+#include "grenade-registry.h"
+#include "../debug/structured-log.h"
 #include "../debug/debug-log.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -1028,7 +1031,59 @@ void registerBuiltinWeapons() {
     // Data-only definitions (for example the Captain Falcon Melee move set)
     // have no C++ constructor; register them straight from config/weapons/grenade_launcher/config.json.
     registerWeaponsFromJsonRoot();
+    GrenadeRegistry::instance().rebuildFromWeapons();
     Debug::log(Debug::Category::Weapons, "[WEAPON] Registered builtin weapons including frag, smoke, fire, darkbang, and bomb");
+
+    // Effective grenade and Deathball values are recorded at publication so a
+    // config edit can be checked without guessing which file won.
+    for (const auto& kv : GrenadeRegistry::instance().all()) {
+        const GrenadeDefinition& g = kv.second;
+        if (g.areaKind == AreaEffectKind::None)
+            continue;
+        Debug::warn(Debug::Category::Weapons,
+            "[GRENADE CONFIG] id=%s kind=%d radius_m=%.2f diameter_m=%.2f "
+            "height_m=%.2f duration_s=%.2f damage=%d/%d tick\n",
+            g.id.c_str(), (int)g.areaKind, g.radius, g.radius * 2.0f,
+            g.height, g.durationSeconds, g.damagePerTick,
+            g.damageIntervalTicks);
+    }
+    if (const WeaponDefinition* ball = WeaponRegistry::instance().get("deathball")) {
+        const auto cp = [&](const char* key, float fallback) {
+            auto it = ball->customParams.find(key);
+            return it != ball->customParams.end() ? it->second : fallback;
+        };
+        const float visualRadius = cp("projectileVisualRadius", 0.0f) > 0.0f
+            ? cp("projectileVisualRadius", 0.0f) : ball->projectileRadius;
+        Debug::warn(Debug::Category::Weapons,
+            "[DEATHBALL CONFIG] collision_radius_m=%.2f visual_radius_m=%.2f "
+            "visual_diameter_m=%.2f magazine=%d fire_delay_s=%.2f reload_s=%.2f "
+            "player_capsule_height_m=%.2f\n",
+            ball->projectileRadius, visualRadius, visualRadius * 2.0f,
+            ball->magazineSize, ball->fireDelay, ball->reloadTime, 3.6f);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "deathball.config.resolve", ball->id, "config_published", 0,
+            {{"collision_radius_m", ball->projectileRadius},
+             {"visual_radius_m", visualRadius},
+             {"visual_diameter_m", visualRadius * 2.0f},
+             {"magazine_size", ball->magazineSize},
+             {"fire_delay_s", ball->fireDelay},
+             {"reload_s", ball->reloadTime},
+             {"player_capsule_height_m", 3.6f}});
+        if (ball->projectileRadius > 0.0f &&
+            std::abs(visualRadius - ball->projectileRadius) > 0.001f) {
+            Debug::warn(Debug::Category::Weapons,
+                "[DEATHBALL SCALE DIVERGENCE] collision_radius_m=%.2f "
+                "visual_radius_m=%.2f config_path=config/weapons/deathball/config.json\n",
+                ball->projectileRadius, visualRadius);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Errors,
+                "deathball.scale.first-divergence", ball->id,
+                "configured_visual_vs_collision", 0,
+                {{"expected_collision_radius_m", ball->projectileRadius},
+                 {"actual_visual_radius_m", visualRadius}});
+        }
+    }
 
     // Diagnostics: print the actually-loaded weapon stats so config edits are
     // verifiable in logs (reveals builtin-default fallback when the JSON file

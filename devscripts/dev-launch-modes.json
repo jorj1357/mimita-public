@@ -401,6 +401,22 @@
       "map": "dust2cyberiav4",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "45": {
+      "name": "fun counter strike",
+      "server_args": ["--mode", "funcounterstrike", "--gamemode", "funcounterstrike"],
+      "client_args": [],
+      "map": "dust2cyberiav4",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "46": {
+      "name": "vs jason",
+      "server_args": ["--mode", "vs_jason", "--gamemode", "vs_jason", "--no-npcs"],
+      "client_args": [],
+      "map": "dust2cyberiav4",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

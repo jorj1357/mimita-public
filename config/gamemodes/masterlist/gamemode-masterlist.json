@@ -345,6 +345,17 @@
             "default": 0.0,
             "min": 0.0
           },
+          "interaction_mode": {
+            "type": "string",
+            "required": false,
+            "default": "hold"
+          },
+          "tap_progress_seconds": {
+            "type": "number",
+            "required": false,
+            "default": 0.1,
+            "min": 0.01
+          },
           "visual": {
             "type": "object",
             "required": false,
@@ -551,6 +562,81 @@
         }
       },
       "description": "Payload rules. Map data owns the cart route and geometry."
+    },
+    "aftermath": {
+      "type": "object",
+      "required": false,
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "target_team": {
+          "type": "string",
+          "required": false,
+          "default": ""
+        },
+        "scare_ticks": {
+          "type": "integer",
+          "required": false,
+          "default": 99,
+          "min": 0,
+          "max": 6000
+        },
+        "final_damage": {
+          "type": "integer",
+          "required": false,
+          "default": 999999,
+          "min": 0
+        },
+        "move_speed": {
+          "type": "number",
+          "required": false,
+          "default": 20.0,
+          "min": 0.01
+        },
+        "approach_distance_meters": {
+          "type": "number",
+          "required": false,
+          "default": 18.0,
+          "min": 0.0
+        },
+        "scare_sounds": {
+          "type": "array",
+          "required": false,
+          "item": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "blackout": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "hide_hud": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "mute_audio": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "freeze_local_player": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "fatal_window": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        }
+      },
+      "description": "Optional loss-aftermath presentation and timing consumed by the shared server."
     },
     "presentation": {
       "type": "object",
@@ -779,6 +865,17 @@
           "nullable": true,
           "default": null
         },
+        "room_code_color": {
+          "type": "array",
+          "required": false,
+          "min_items": 3,
+          "item": {
+            "type": "number"
+          },
+          "nullable": true,
+          "default": null,
+          "description": "Optional in-room room-code text tint. Null keeps the normal HUD color."
+        },
         "enemy_trail": {
           "type": "object",
           "required": false,
@@ -989,6 +1086,11 @@
           "type": "boolean",
           "required": false,
           "default": true
+        },
+        "objective_only_round_wins": {
+          "type": "boolean",
+          "required": false,
+          "default": false
         },
         "destructible_world": {
           "type": "boolean",
@@ -1257,6 +1359,24 @@
       "required": false,
       "default": 3,
       "min": 1
+    },
+    "lives_enabled": {
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "Enables generic per-actor lives. Disabled keeps each team's normal respawn rule."
+    },
+    "lives_team": {
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Team id whose actors consume lives. Empty applies to every participant."
+    },
+    "time_limit_starts_at_go": {
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "Starts the match time limit at the GO phase instead of the ACTIVE transition."
     },
     "wave_banner_seconds": {
       "type": "number",

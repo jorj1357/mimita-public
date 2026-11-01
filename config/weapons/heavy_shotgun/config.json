@@ -9,6 +9,7 @@
 "beam_world_thickness": 0.0,
 "behavior_type": "hitscan",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "distanceFalloffStart": 45.0,
     "minDamageFraction": 0.2,

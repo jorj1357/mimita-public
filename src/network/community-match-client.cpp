@@ -220,6 +220,19 @@ void CommunityMatchClient::reset()
     mBombTimerTicks = 0;
     mBombInactiveTicks = 0;
     mBombPos = glm::vec3(0.0f);
+    mAftermathActive = false;
+    mAftermathStage = 0;
+    mAftermathTargetActorId = 0;
+    mAftermathMoverActorId = 0;
+    mAftermathMoverPos = glm::vec3(0.0f);
+    mAftermathSoundSerial = 0;
+    mAftermathSoundIndex = 0xFF;
+    mAftermathSoundQueue.clear();
+    mAftermathHideHud = false;
+    mAftermathMuteAudio = false;
+    mAftermathBlackout = false;
+    mAftermathFreezeLocal = false;
+    mAftermathFatalWindow = false;
     mLastOutlineLocalTeam = 0xFF;
     mLastOutlineParticipantCount = 0;
     mPresentationFingerprint.clear();
@@ -305,6 +318,21 @@ bool CommunityMatchClient::applyActorPreset(const MatchRoleDefinition& preset)
         preset.avatarName.empty() ? "none" : preset.avatarName.c_str(),
         preset.movementPreset.empty() ? "none" : preset.movementPreset.c_str(),
         preset.weaponSet.empty() ? "none" : preset.weaponSet.c_str());
+    return true;
+}
+
+bool CommunityMatchClient::aftermathLocal() const
+{
+    return mAftermathActive && mAftermathTargetActorId != 0 &&
+        mAftermathTargetActorId == MP_CONTEXT.localPlayerId;
+}
+
+bool CommunityMatchClient::takeAftermathSound(uint8_t& outIndex)
+{
+    if (mAftermathSoundQueue.empty())
+        return false;
+    outIndex = mAftermathSoundQueue.front();
+    mAftermathSoundQueue.pop_front();
     return true;
 }
 
@@ -464,6 +492,42 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         mFirstPersonApplied = false;
     }
     mPhase = packet.phase;
+    mAftermathActive = packet.aftermathActive != 0;
+    mAftermathStage = packet.aftermathStage;
+    mAftermathTargetActorId = packet.aftermathTargetActorId;
+    mAftermathMoverActorId = packet.aftermathMoverActorId;
+    mAftermathMoverPos = glm::vec3(packet.aftermathMoverX,
+                                   packet.aftermathMoverY,
+                                   packet.aftermathMoverZ);
+    {
+        const uint32_t previousSerial = mAftermathSoundSerial;
+        mAftermathSoundSerial = packet.aftermathSoundSerial;
+        mAftermathSoundIndex = packet.aftermathSoundIndex;
+        if (mAftermathActive && mAftermathStage == 2 &&
+            mAftermathSoundSerial != previousSerial) {
+            uint32_t count = mAftermathSoundSerial > previousSerial
+                ? mAftermathSoundSerial - previousSerial : 1u;
+            count = std::min<uint32_t>(count, 8u);
+            for (uint32_t i = 0; i < count; ++i)
+                mAftermathSoundQueue.push_back(packet.aftermathSoundIndex);
+            if (mAftermathSoundSerial <= 2u || (mAftermathSoundSerial % 25u) == 0u) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Audio, StructuredLevel::Important,
+                    "horror.aftermath.sound_queued", mMode,
+                    "queued replicated scare sound serials", packet.serverTick,
+                    nlohmann::json{{"serial", mAftermathSoundSerial},
+                                   {"previous_serial", previousSerial},
+                                   {"queued", count},
+                                   {"queue_size", mAftermathSoundQueue.size()},
+                                   {"sound_index", packet.aftermathSoundIndex}});
+            }
+        }
+    }
+    mAftermathHideHud = packet.aftermathHideHud != 0;
+    mAftermathMuteAudio = packet.aftermathMuteAudio != 0;
+    mAftermathBlackout = packet.aftermathBlackout != 0;
+    mAftermathFreezeLocal = packet.aftermathFreezeLocal != 0;
+    mAftermathFatalWindow = packet.aftermathFatalWindow != 0;
     mPhaseTimer = packet.phaseTimer;
     mMatchStartTick = packet.matchStartTick;
     if (packet.serverTick >= mServerTick) {
@@ -572,10 +636,14 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mObjective.state = packet.objectiveState;
     mObjective.team = packet.objectiveTeam;
     mObjective.carrierId = packet.objectiveCarrierId;
+    mObjective.interactorId = packet.objectiveInteractorId;
+    mObjective.interactionMode = packet.objectiveInteractionMode;
     mObjective.position = glm::vec3(packet.objectiveX, packet.objectiveY, packet.objectiveZ);
     mObjective.id = packet.objectiveId;
     mObjective.site = packet.objectiveSite;
     mObjective.progress = packet.objectiveProgress;
+    mObjective.requiredTicks = packet.objectiveRequiredTicks;
+    mObjective.tapTicks = packet.objectiveTapTicks;
     mObjective.timerLeft = packet.objectiveTimerLeft;
     mPayload.active = packet.payloadActive != 0;
     mPayload.overtime = packet.payloadOvertime != 0;

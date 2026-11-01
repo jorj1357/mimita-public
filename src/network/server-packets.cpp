@@ -316,6 +316,15 @@ void applyAcceptedInputPresentation(ServerPlayer& player,
     applyEquipIntentFromInput(player, input, "accepted-input");
     player.pingMs = std::clamp(input.clientPingMs, 0, 9999);
     player.sizeScale = std::max(input.sizeScale, 0.001f);
+    player.input.interactHeld = (input.stateFlags & NET_STATE_INTERACTING) != 0;
+    if (input.interactSerial != 0 && input.interactSerial != player.lastInteractSerial)
+    {
+        player.lastInteractSerial = input.interactSerial;
+        // Bound one packet's contribution so a malicious burst cannot finish
+        // a repeated-tap objective in a single server tick.
+        player.pendingInteractTaps =
+            (uint8_t)std::min<int>(4, (int)player.pendingInteractTaps + 1);
+    }
     player.inputStateFlags = validClientVisualStateFlags(input.stateFlags);
 
     if (input.dashSerial != 0 && input.dashSerial != player.lastDashSerial)
@@ -1771,10 +1780,12 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     }
 
     // ── Password check for private servers ──
-    if (gServerPasswordProtected && !gServerPassword.empty())
+    // A protected room is private even when its configured password is empty:
+    // no client may enter without the exact host-selected password.
+    if (gServerPasswordProtected)
     {
         const std::string supplied = boundedPacketString(join->password, sizeof(join->password));
-        if (supplied != gServerPassword)
+        if (supplied.empty() || supplied != gServerPassword)
         {
             JoinRejectPacket reject{};
             reject.header.type = PACKET_JOIN_REJECT;

@@ -368,6 +368,38 @@ void registerDebugCommands()
                 o.defuseTicksElapsed, o.defuseTicksRequired,
                 o.explosionDeadlineTick, d.objectivePickupCounter, d.objectiveDropCounter);
             Terminal::instance().addLog(buf);
+            snprintf(buf, sizeof(buf),
+                "[OBJECTIVE] mode=%s tapTicks=%d interactor=%u plantActor=%u defuseActor=%u",
+                objectiveInteractionModeName(o.interactionMode),
+                o.tapProgressTicks,
+                o.planterActorId != 0 ? o.planterActorId : o.defuserActorId,
+                o.planterActorId, o.defuserActorId);
+            Terminal::instance().addLog(buf);
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
+        "objective_give", "Debug: give the bomb to self or an actor id",
+        "objective_give [self|actor_id]",
+        [](const std::vector<std::string>& args) {
+            const std::string target = args.empty() ? "self" : args[0];
+            const std::string command = "objective_give " + target;
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+                Terminal::instance().addLog("[OBJECTIVE] sent " + command);
+                return;
+            }
+            if (MimitaNet::isServerHost()) {
+                uint32_t actorId = 0;
+                if (target != "self") {
+                    try { actorId = (uint32_t)std::stoul(target); }
+                    catch (...) { actorId = 0; }
+                }
+                MimitaNet::serverGamemodeRequestObjectiveGive(0, actorId);
+                Terminal::instance().addLog("[OBJECTIVE] requested " + command);
+                return;
+            }
+            Terminal::instance().addLog("[OBJECTIVE] objective_give requires a server connection");
         },
         "", CommandCategory::Duel
     });

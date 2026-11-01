@@ -9,6 +9,7 @@
 "beam_world_thickness": null,
 "behavior_type": "quickhit",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "activeHitboxTicks": 30.0,
     "visualReturnTicks": 60.0,

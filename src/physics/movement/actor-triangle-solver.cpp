@@ -231,9 +231,10 @@ glm::vec3 manifoldResponseNormal(const RecoveryContact& contact)
 // Opposing contacts on one world face are two actor features straddling one
 // surface, not two physical walls. Remove the non-blocking side (or the
 // shallower side when both block) before recovery and velocity response.
-void removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
-                             const glm::vec3& intendedMove)
+int removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
+                            const glm::vec3& intendedMove)
 {
+    const size_t before = contacts.size();
     static thread_local std::vector<bool> removed;
     removed.assign(contacts.size(), false);
     for (size_t i = 0; i < contacts.size(); ++i)
@@ -272,15 +273,19 @@ void removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
         if (!removed[i])
             contacts[kept++] = std::move(contacts[i]);
     contacts.resize(kept);
+    return static_cast<int>(before - kept);
 }
 
 // A slope and its connected wall can both be reported by the independent
 // triangle feature queries. When they are really the same local edge on one
 // actor part, retain the surface that blocks the current movement direction;
 // otherwise the two normals form an artificial wedge and snag the actor.
-void collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
-                                  const glm::vec3& intendedMove)
+int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
+                                 const glm::vec3& intendedMove,
+                                 const World& world,
+                                 float lowestActorZ)
 {
+    const size_t before = contacts.size();
     const float maxDistance = MOVEMENT_FEATURE_SMOOTHNESS;
     static thread_local std::vector<bool> removed;
     removed.assign(contacts.size(), false);
@@ -320,6 +325,52 @@ void collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
                     contacts[i].point.z + MOVEMENT_FEATURE_SMOOTHNESS)
                 removed[j] = true;
         }
+    }
+
+    // A flush block seam can expose a tiny vertical face whose top is at the
+    // walkable support height. The face has a real wall normal, but it is not
+    // a wall the actor must climb or stop against. Only suppress it when the
+    // triangle itself is no taller than one step above the support; a real
+    // wall keeps its full height and remains blocking.
+    for (size_t i = 0; i < contacts.size(); ++i)
+    {
+        if (removed[i] || contacts[i].entityId != 0)
+            continue;
+        RecoveryContact& wall = contacts[i];
+        if (std::fabs(wall.surfaceNormal.z) >= 0.3f ||
+            wall.point.z > lowestActorZ + 0.2f ||
+            wall.triangleIndex < 0 ||
+            wall.triangleIndex >=
+                static_cast<int>(world.collisionMesh.triangles.size()))
+            continue;
+        if (glm::dot(intendedMove, manifoldResponseNormal(wall)) >= 0.0f)
+            continue;
+
+        bool hasSupport = false;
+        float supportZ = -std::numeric_limits<float>::max();
+        for (size_t j = 0; j < contacts.size(); ++j)
+        {
+            if (i == j || removed[j] || contacts[j].entityId != 0)
+                continue;
+            const RecoveryContact& support = contacts[j];
+            if (support.surfaceNormal.z <= MAX_WALKABLE_SLOPE_DOT)
+                continue;
+            if (std::fabs(support.point.z - wall.point.z) > 0.2f)
+                continue;
+            if (glm::length(glm::vec2(wall.point - support.point)) >
+                MOVEMENT_FEATURE_SMOOTHNESS * 12.0f)
+                continue;
+            hasSupport = true;
+            supportZ = std::max(supportZ, support.point.z);
+        }
+        const CollisionTriangle& triangle =
+            world.collisionMesh.triangles[(size_t)wall.triangleIndex];
+        const float triangleTop =
+            std::max({triangle.a.z, triangle.b.z, triangle.c.z});
+        if (triangleTop <= std::max(lowestActorZ,
+                                    hasSupport ? supportZ : lowestActorZ) +
+                                MAX_STEP_HEIGHT + 0.02f)
+            removed[i] = true;
     }
 
     for (size_t i = 0; i < contacts.size(); ++i)
@@ -378,6 +429,118 @@ void collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
         if (!removed[i])
             contacts[kept++] = std::move(contacts[i]);
     contacts.resize(kept);
+    return static_cast<int>(before - kept);
+}
+
+float desiredLowestZ(const std::vector<ActorCollisionMesh>& meshes);
+
+float horizontalDistanceToAabb(const glm::vec3& point, const AABB& box)
+{
+    const float dx = std::max(std::max(box.min.x - point.x, 0.0f),
+                              point.x - box.max.x);
+    const float dy = std::max(std::max(box.min.y - point.y, 0.0f),
+                              point.y - box.max.y);
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+// The triangle owner has no legacy step-up phase. When a grounded actor is
+// blocked by a low walkable lip, lift the root over that lip and advance the
+// same tick's horizontal move if the resulting root capsule is clear. This is
+// a bounded clearance probe, not a second collision solver.
+bool tryStepUpBlockedActor(Player& player, const World& world,
+                           const glm::vec3& totalMove,
+                           const glm::vec3& movementStart,
+                           bool groundedBeforeSolve,
+                           ActorTriangleCollisionResult& result)
+{
+    if (!groundedBeforeSolve)
+        return false;
+    const float desiredH = glm::length(glm::vec2(totalMove.x, totalMove.y));
+    if (desiredH < 0.01f)
+        return false;
+    const float actualH = glm::length(glm::vec2(
+        player.pos.x - movementStart.x, player.pos.y - movementStart.y));
+    if (actualH > desiredH * 0.5f)
+        return false;
+
+    glm::vec3 forward(totalMove.x, totalMove.y, 0.0f);
+    if (glm::length(forward) < 1e-4f)
+        return false;
+    forward = glm::normalize(forward) * desiredH;
+
+    const Capsule baseCap = player.getCapsule();
+    const std::vector<ActorCollisionMesh> meshes =
+        collectActorBodyCollisionMeshes(player);
+    const float feetZ = desiredLowestZ(meshes);
+    const glm::vec3 probe = player.pos + forward;
+    const AABB query = makeSweptCapsuleAABB(
+        baseCap, forward + glm::vec3(0.0f, 0.0f, MAX_STEP_HEIGHT));
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
+    appendChunkTrianglesForAABB(world, query, MOVEMENT_FEATURE_SMOOTHNESS,
+                                candidates, "actorStepUp");
+    if (candidates.empty())
+        return false;
+
+    float targetTopZ = -std::numeric_limits<float>::max();
+    int targetTriangle = -1;
+    for (int triIndex : candidates)
+    {
+        if (triIndex < 0 ||
+            triIndex >= static_cast<int>(world.collisionMesh.triangles.size()))
+            continue;
+        const CollisionTriangle& tri =
+            world.collisionMesh.triangles[(size_t)triIndex];
+        if (tri.normal.z < MAX_WALKABLE_SLOPE_DOT)
+            continue;
+        const AABB triBox = makeTriangleAABB(tri);
+        if (horizontalDistanceToAabb(probe, triBox) >
+            MOVEMENT_FEATURE_SMOOTHNESS * 3.0f)
+            continue;
+        const float topZ = triBox.max.z;
+        if (topZ <= feetZ + 0.02f || topZ - feetZ > MAX_STEP_HEIGHT)
+            continue;
+        if (topZ > targetTopZ)
+        {
+            targetTopZ = topZ;
+            targetTriangle = triIndex;
+        }
+    }
+    if (targetTriangle < 0)
+        return false;
+
+    const glm::vec3 original = player.pos;
+    const float lift = targetTopZ - feetZ + 0.03f;
+    player.pos = original + forward + glm::vec3(0.0f, 0.0f, lift);
+    player.updateModelWorldTransforms();
+
+    const Capsule stepCap = player.getCapsule();
+    std::vector<RecoveryContact> contacts =
+        collectCapsuleRecoveryContacts(world, stepCap, candidates,
+                                       "actorStepUpClearance");
+    bool blocked = false;
+    for (const RecoveryContact& contact : contacts)
+    {
+        if (contact.normal.z < MAX_WALKABLE_SLOPE_DOT)
+        {
+            blocked = true;
+            break;
+        }
+    }
+    if (blocked)
+    {
+        player.pos = original;
+        player.updateModelWorldTransforms();
+        return false;
+    }
+    if (player.vel.z < 0.0f)
+        player.vel.z = 0.0f;
+    result.stepUpApplied = true;
+    result.grounded = true;
+    appendPlayerMovementContact(player, MovementContactKind::Step,
+                                glm::vec3(0.0f, 0.0f, 1.0f),
+                                player.pos, lift, targetTriangle);
+    return true;
 }
 
 // Lowest point of the actor's DESIRED pose (not the swept union), used to tell
@@ -699,8 +862,11 @@ bool solveActorTriangleCollision(
         // Remove conflicting opposite contacts from one shared floor face
         // before position recovery; the final response manifold applies the
         // same filter again after accumulated contacts are merged.
-        removeTouchingFaceSeams(s_contacts, desiredMovement);
-        collapseCloseFeatureContacts(s_contacts, desiredMovement);
+        result.seamContactsRemoved +=
+            removeTouchingFaceSeams(s_contacts, desiredMovement);
+        result.featureContactsCollapsed +=
+            collapseCloseFeatureContacts(s_contacts, desiredMovement, world,
+                                         recoveryFeetZ);
 
         if (s_contacts.empty())
         {
@@ -765,8 +931,14 @@ bool solveActorTriangleCollision(
     // One manifold for the whole actor.
     s_manifold.clear();
     mergeContactsByNormal(s_allContacts, s_manifold);
-    removeTouchingFaceSeams(s_manifold, desiredMovement);
-    collapseCloseFeatureContacts(s_manifold, desiredMovement);
+    result.seamContactsRemoved +=
+        removeTouchingFaceSeams(s_manifold, desiredMovement);
+    const std::vector<ActorCollisionMesh> finalMeshes =
+        collectActorCollisionMeshes(player);
+    const float lowestZ = desiredLowestZ(finalMeshes);
+    result.featureContactsCollapsed +=
+        collapseCloseFeatureContacts(s_manifold, desiredMovement, world,
+                                     lowestZ);
     std::vector<RecoveryContact>& manifold = s_manifold;
 
     // Strongest impact first, so the dominant surface owns the response and any
@@ -781,10 +953,6 @@ bool solveActorTriangleCollision(
     // Grounding comes from the actor's own geometry: the lowest point of the
     // desired pose. A walkable normal whose contact is near that lowest point is
     // ground; a walkable contact high on the body (a hand on a ledge) is not.
-    const std::vector<ActorCollisionMesh> finalMeshes =
-        collectActorCollisionMeshes(player);
-    const float lowestZ = desiredLowestZ(finalMeshes);
-
     for (const RecoveryContact& c : manifold)
     {
         ActorWorldContact wc;
@@ -1093,7 +1261,11 @@ bool runActorTriangleCollisionStep(
     const auto stepStart = std::chrono::steady_clock::now();
     const GroundState groundBeforeSolve = player.ground;
     const bool groundedBeforeSolve = groundedThisFrame;
-    glm::vec3 totalMove = (player.vel + player.externalImpulse) * dt;
+    const glm::vec3 velocityBeforeSolve = player.vel + player.externalImpulse;
+    const float speedBeforeSolve = glm::length(velocityBeforeSolve);
+    const float horizontalSpeedBeforeSolve =
+        glm::length(glm::vec2(velocityBeforeSolve.x, velocityBeforeSolve.y));
+    glm::vec3 totalMove = velocityBeforeSolve * dt;
     const glm::vec3 movementStartPosition = player.pos;
 
     // Initialize the JSON weapon collider before collecting actor meshes.
@@ -1238,6 +1410,30 @@ bool runActorTriangleCollisionStep(
         result.anyImpact = false;
     }
 
+    // A grounded actor blocked by a low walkable lip gets one bounded step-up
+    // attempt. Full walls remain blocked because the forward clearance probe
+    // still sees a non-walkable contact.
+    if (!result.stepUpApplied &&
+        tryStepUpBlockedActor(player, world, totalMove,
+                              movementStartPosition, groundedBeforeSolve,
+                              result))
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "collision.step_up", "actor-triangle-solver",
+            "actor stepped over a blocked low walkable lip",
+            static_cast<uint32_t>(player.movementSimulationTick),
+            {{"actor", player.username},
+             {"equipped_weapon", player.equippedWeaponId},
+             {"start_position", vec3Json(movementStartPosition)},
+             {"position", vec3Json(player.pos)},
+             {"requested_movement", vec3Json(totalMove)},
+             {"velocity", vec3Json(player.vel)},
+             {"seam_contacts_removed", result.seamContactsRemoved},
+             {"feature_contacts_collapsed", result.featureContactsCollapsed}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     if (result.grounded)
         groundedThisFrame = true;
     else if (player.ground.hasWorldContact &&
@@ -1251,6 +1447,99 @@ bool runActorTriangleCollisionStep(
         groundedThisFrame = true;
         player.ground.hasWorldContact = true;
         player.ground.worldContactLostTimer = 0.033f;
+    }
+
+    {
+        CollisionState& stall = player.collision;
+        const uint64_t tick = player.movementSimulationTick;
+        const float requestedH =
+            glm::length(glm::vec2(totalMove.x, totalMove.y));
+        const float achievedH = glm::length(glm::vec2(
+            player.pos.x - movementStartPosition.x,
+            player.pos.y - movementStartPosition.y));
+        const float horizontalSpeed =
+            glm::length(glm::vec2(player.vel.x, player.vel.y));
+        const bool wantsMove = glm::length(player.inputWishMove) > 0.1f;
+        const bool supported = groundedThisFrame || player.ground.onGround;
+        if (tick != stall.progressStallLastTick)
+        {
+            stall.progressStallLastTick = tick;
+            if (wantsMove && supported && horizontalSpeed < 0.5f &&
+                requestedH > 0.01f && achievedH < 0.002f)
+            {
+                if (stall.progressStallTicks == 0)
+                {
+                    stall.progressStallStartTick = tick;
+                    stall.progressStallAnchor = movementStartPosition;
+                }
+                ++stall.progressStallTicks;
+            }
+            else if (stall.progressStallTicks > 0 &&
+                     (achievedH >= 0.002f || !wantsMove || !supported))
+            {
+                if (stall.progressStallTicks >= 10)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Collision, StructuredLevel::Important,
+                        "collision.progress.stall.end", "actor-triangle-solver",
+                        "actor resumed horizontal progress after a collision stall",
+                        static_cast<uint32_t>(tick),
+                        {{"actor", player.username},
+                         {"stalled_ticks", stall.progressStallTicks},
+                         {"stall_start_tick", stall.progressStallStartTick},
+                         {"stall_anchor", vec3Json(stall.progressStallAnchor)},
+                         {"position", vec3Json(player.pos)},
+                         {"velocity", vec3Json(player.vel)}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
+                stall.progressStallTicks = 0;
+            }
+        }
+
+        if (stall.progressStallTicks >= 10 &&
+            (stall.progressStallTicks == 10 ||
+             tick - stall.progressStallLastLogTick >= 60))
+        {
+            stall.progressStallLastLogTick = tick;
+            nlohmann::json contacts = nlohmann::json::array();
+            const size_t contactCount = std::min<size_t>(4, result.contacts.size());
+            for (size_t i = 0; i < contactCount; ++i)
+            {
+                const ActorWorldContact& c = result.contacts[i];
+                contacts.push_back({
+                    {"actor_part", c.actorPart ? c.actorPart : ""},
+                    {"world_triangle", c.worldTriangle},
+                    {"entity_id", c.entityId},
+                    {"contact_point", vec3Json(c.point)},
+                    {"depenetration_normal", vec3Json(c.normal)},
+                    {"surface_normal", vec3Json(c.surfaceNormal)},
+                    {"impact_velocity", vec3Json(c.impactVelocity)},
+                    {"penetration_m", c.penetration},
+                    {"time_of_impact", c.timeOfImpact}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.progress.stall", "actor-triangle-solver",
+                "input held but actor made no horizontal progress",
+                static_cast<uint32_t>(tick),
+                {{"actor", player.username},
+                 {"equipped_weapon", player.equippedWeaponId},
+                 {"stalled_ticks", stall.progressStallTicks},
+                 {"stall_start_tick", stall.progressStallStartTick},
+                 {"stall_anchor", vec3Json(stall.progressStallAnchor)},
+                 {"position", vec3Json(player.pos)},
+                 {"velocity", vec3Json(player.vel)},
+                 {"wish", {player.inputWishMove.x, player.inputWishMove.y}},
+                 {"requested_horizontal_m", requestedH},
+                 {"achieved_horizontal_m", achievedH},
+                 {"grounded", groundedThisFrame},
+                 {"contact_count", result.contacts.size()},
+                 {"seam_contacts_removed", result.seamContactsRemoved},
+                 {"feature_contacts_collapsed", result.featureContactsCollapsed},
+                 {"step_up_applied", result.stepUpApplied},
+                 {"contacts", std::move(contacts)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     // ── Moving-support carry ──────────────────────────────
@@ -1336,6 +1625,68 @@ bool runActorTriangleCollisionStep(
              {"grounded", result.grounded},
              {"iterations", result.iterations}},
             __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    {
+        const float speedAfterSolve =
+            glm::length(player.vel + player.externalImpulse);
+        const float horizontalSpeedAfterSolve =
+            glm::length(glm::vec2(player.vel.x, player.vel.y));
+        const bool collapsed = horizontalSpeedBeforeSolve > 1.0f &&
+            horizontalSpeedAfterSolve <
+                horizontalSpeedBeforeSolve * 0.1f;
+        CollisionState& collisionState = player.collision;
+        const uint64_t tick = player.movementSimulationTick;
+        if (!collapsed)
+        {
+            collisionState.speedCollapseEpisodeActive = false;
+        }
+        else if (!collisionState.speedCollapseEpisodeActive ||
+                 tick - collisionState.speedCollapseLastLogTick >= 30)
+        {
+            collisionState.speedCollapseEpisodeActive = true;
+            collisionState.speedCollapseLastLogTick = tick;
+            nlohmann::json contactEvidence = nlohmann::json::array();
+            const size_t evidenceCount =
+                std::min<size_t>(4, result.contacts.size());
+            for (size_t i = 0; i < evidenceCount; ++i)
+            {
+                const ActorWorldContact& contact = result.contacts[i];
+                contactEvidence.push_back({
+                    {"actor_part", contact.actorPart ? contact.actorPart : ""},
+                    {"world_triangle", contact.worldTriangle},
+                    {"entity_id", contact.entityId},
+                    {"contact_point", vec3Json(contact.point)},
+                    {"normal", vec3Json(contact.normal)},
+                    {"surface_normal", vec3Json(contact.surfaceNormal)},
+                    {"penetration_m", contact.penetration},
+                    {"impact_velocity", vec3Json(contact.impactVelocity)}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.speed_collapse", "actor-triangle-solver",
+                "actor speed dropped by more than 90 percent in one fixed tick",
+                static_cast<uint32_t>(tick),
+                {{"actor", player.username},
+                 {"position", vec3Json(player.pos)},
+                 {"velocity_before", vec3Json(velocityBeforeSolve)},
+                 {"velocity_after", vec3Json(player.vel)},
+                 {"speed_before", speedBeforeSolve},
+                 {"speed_after", speedAfterSolve},
+                 {"horizontal_speed_before", horizontalSpeedBeforeSolve},
+                 {"horizontal_speed_after", horizontalSpeedAfterSolve},
+                 {"wish", {player.inputWishMove.x, player.inputWishMove.y}},
+                 {"grounded_before", groundedBeforeSolve},
+                 {"grounded_after", groundedThisFrame},
+                 {"freeze", player.freeze.freezeActive},
+                 {"seam_contacts_removed", result.seamContactsRemoved},
+                 {"feature_contacts_collapsed",
+                  result.featureContactsCollapsed},
+                 {"step_up_applied", result.stepUpApplied},
+                 {"contact_count", result.contacts.size()},
+                 {"contacts", std::move(contactEvidence)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     return true;
@@ -1465,6 +1816,23 @@ void setupBoxActor(Player& p, glm::vec3 pos, float halfXY, float halfZ)
     p.perfectPoseSkeleton.nodes[0].parent = -1;
     p.perfectPoseSkeleton.nodes[0].localTransform = glm::mat4(1.0f);
     p.perfectPoseSkeleton.restLocalTransforms.assign(1, glm::mat4(1.0f));
+    p.updateModelWorldTransforms();
+}
+
+void setupCenteredBoxActor(Player& p, glm::vec3 center, float halfXY, float halfZ)
+{
+    setupBoxActor(p, center, halfXY, halfZ);
+    PhysicalBodyPart& part = p.physicalBody.parts[0];
+    part.collider.localMin.z -= halfZ;
+    part.collider.localMax.z -= halfZ;
+    for (CollisionTriangle& tri : part.collider.triangles)
+    {
+        tri.a.z -= halfZ;
+        tri.b.z -= halfZ;
+        tri.c.z -= halfZ;
+    }
+    p.movementCapsule.radius = halfXY;
+    p.movementCapsule.height = halfZ * 2.0f;
     p.updateModelWorldTransforms();
 }
 
@@ -1691,6 +2059,53 @@ bool actorTriangleSolverSelfTest(std::string* outSummary)
                             : "200 m/s normal momentum is removed when bounce is disabled");
         check(std::fabs(p.vel.y - 120.0f) < 0.5f, "200 m/s tangential momentum is preserved");
         check(glm::length(p.vel) > 1.0f, "200 m/s impact does not zero velocity");
+    }
+
+    // 10a. Flush block seam: a vertical face whose top is at the supported
+    // feet height is not a wall. The actor keeps its intended forward motion.
+    {
+        World world = makeFloorWorld();
+        addQuad(world, {0.5f, -2.0f, -1.0f}, {0.5f, -2.0f, 0.0f},
+                {0.5f, 2.0f, 0.0f}, {0.5f, 2.0f, -1.0f});
+        buildCollisionChunks(world, nullptr);
+
+        Player p(false);
+        setupCenteredBoxActor(p, glm::vec3(0.0f, 0.0f, 1.8f), 0.7f, 1.8f);
+        const glm::vec3 move(0.3f, 0.0f, 0.0f);
+        p.pos += move;
+        p.updateModelWorldTransforms();
+
+        ActorTriangleCollisionResult r;
+        solveActorTriangleCollision(p, world, move, r);
+        bool wallContact = false;
+        for (const ActorWorldContact& c : r.contacts)
+            if (c.normal.x < -0.5f) wallContact = true;
+        check(!wallContact, "flush block seam does not produce a wall contact");
+        check(p.pos.x > 0.2f, "flush block seam preserves intended forward motion");
+    }
+
+    // 10b. Low step: a centered actor blocked by a 0.2 m walkable lip is
+    // lifted over it by the bounded step-up probe.
+    {
+        World world = makeFloorWorld();
+        std::vector<CollisionTriangle> step;
+        buildBoxTriangles(step, glm::vec3(0.8f, 0.0f, 0.1f),
+                          glm::vec3(0.2f, 2.0f, 0.1f));
+        world.collisionMesh.triangles.insert(world.collisionMesh.triangles.end(),
+                                             step.begin(), step.end());
+        buildCollisionChunks(world, nullptr);
+
+        Player p(false);
+        setupCenteredBoxActor(p, glm::vec3(0.55f, 0.0f, 1.8f), 0.7f, 1.8f);
+        const glm::vec3 start = p.pos;
+        const glm::vec3 move(1.0f / 30.0f, 0.0f, 0.0f);
+
+        ActorTriangleCollisionResult r;
+        const bool stepped = tryStepUpBlockedActor(p, world, move, start, true, r);
+        check(stepped, "grounded actor steps over a low walkable lip");
+        check(r.stepUpApplied, "low walkable lip records a step-up contact");
+        check(p.pos.z > 1.95f, "step-up raises the actor above the lip");
+        check(p.pos.x > start.x, "step-up preserves forward progress");
     }
 
     // 11. Active-path wrapper: a falling actor lands and grounds through

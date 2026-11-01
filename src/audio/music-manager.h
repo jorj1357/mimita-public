@@ -102,6 +102,7 @@ private:
     size_t mTrackHistoryIndex = 0;
     bool mHasTrackHistoryIndex = false;
     std::unordered_set<std::string> mLoggedLoadFailures;
+    std::unordered_set<std::string> mLoggedSkipFailures;
     PlaylistMode mPlaylistMode = PlaylistMode::Shuffle;
     bool mPersonalMusicOverride = false;
 

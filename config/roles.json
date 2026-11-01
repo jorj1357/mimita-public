@@ -145,6 +145,34 @@
       "avatar_forced": true
     },
     {
+      "id": "fun_counter_terrorist",
+      "display_name": "Fun Counter-Terrorist",
+      "team": 0,
+      "team_id": "ct",
+      "health": 100,
+      "weapon_set": "funcounterstrike",
+      "starting_weapon": "revolver",
+      "behavior_profile": "rage2",
+      "spawn_group": "ct_spawn",
+      "objective_permissions": ["defuse"],
+      "avatar": "abusiveboy",
+      "avatar_forced": true
+    },
+    {
+      "id": "fun_terrorist",
+      "display_name": "Fun Terrorist",
+      "team": 1,
+      "team_id": "t",
+      "health": 100,
+      "weapon_set": "funcounterstrike",
+      "starting_weapon": "revolver",
+      "behavior_profile": "rage2",
+      "spawn_group": "t_spawn",
+      "objective_permissions": ["plant", "pickup"],
+      "avatar": "jason",
+      "avatar_forced": true
+    },
+    {
       "id": "spectator",
       "display_name": "Spectator",
       "team": 2,
@@ -476,6 +504,33 @@
       "weapon_set": "payload_chainsaw",
       "starting_weapon": "spyknife",
       "behavior_profile": "aggressive"
+    },
+    {
+      "id": "vs_jason_survivor",
+      "display_name": "Survivor",
+      "team": 0,
+      "team_id": "survivors",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "standard",
+      "starting_weapon": "revolver",
+      "behavior_profile": "balanced",
+      "spawn_group": "survivors_spawn"
+    },
+    {
+      "id": "vs_jason_jason",
+      "display_name": "Jason",
+      "team": 1,
+      "team_id": "jason",
+      "health": 6666,
+      "movement_preset": "vs_jason",
+      "actor_preset": "juggernaut_arcade",
+      "weapon_set": "vs_jason_chainsaw",
+      "starting_weapon": "chainsaw",
+      "behavior_profile": "vs_jason_chase",
+      "spawn_group": "jason_spawn",
+      "avatar": "jason",
+      "avatar_forced": true
     }
   ]
 }

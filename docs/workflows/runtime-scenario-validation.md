@@ -59,6 +59,40 @@ networking, configuration loading, animation, collision, audio, and visual
 behavior. A runtime log proves that the path executed; human visual or feel
 acceptance remains a separate claim.
 
+## Automated expected-good scenarios
+
+Known-good collision behavior must be encoded as versioned scenarios so AI can
+test it without a human driving the game.
+
+A scenario may assert:
+
+- a required event is present;
+- a forbidden event is absent;
+- an event field equals or stays within an expected range;
+- a bounded journal metric such as unresolved NPC penetration, speed collapse,
+  or seam oscillation stays below its accepted limit.
+
+Known intentional exceptions, such as a real wall stop, a freeze, or a scripted
+teleport, must be declared in the scenario rather than weakened globally.
+
+Baseline scenarios are run on the real executable through the dev loop. The
+runner records the build, executable identity, `EVENTS_JSONL_PATH`, scenario
+inputs, assertions, and terminal verdict. A current run fails when a forbidden
+event appears, a required event disappears, or a metric leaves its accepted
+range. Baseline changes are deliberate and are recorded in the changelog.
+
+For collision work, the minimum scenario set is:
+
+- flat block/ramp seam traversal;
+- straight dash on flat ground;
+- down-dash onto a slope;
+- NPC/monster final-pose containment near walls, blocks, and ramps;
+- forced last-clear recovery for an NPC inside geometry.
+
+The scenario file is the machine-readable contract; the analyzer may classify
+events, but it must not silently excuse a failure or replace the runtime
+journal.
+
 ## Evidence report
 
 Always separate:

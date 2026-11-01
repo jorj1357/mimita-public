@@ -491,7 +491,8 @@ static void appendGenericRenderParts(
         const std::vector<TransformNode>& nodes,
         const std::vector<PhysicalBodyPart>& physical,
         std::vector<PhysicalBodyPart>& extras,
-        std::vector<Mesh>& extraMeshes)
+        std::vector<Mesh>& extraMeshes,
+        bool buildRenderMeshes)
 {
     std::unordered_set<int> used;
     for (const auto& p : physical)
@@ -507,9 +508,12 @@ static void appendGenericRenderParts(
         if (node.mesh < 0 || node.mesh >= (int)model.meshes.size())
             continue;
         Mesh mesh;
-        appendNodeRenderMesh(model, i, mesh);
-        if (mesh.verts.empty())
-            continue;
+        if (buildRenderMeshes)
+        {
+            appendNodeRenderMesh(model, i, mesh);
+            if (mesh.verts.empty())
+                continue;
+        }
 
         std::string base = playerBodyPartBaseName(nodes[i].name);
         if (base.empty())
@@ -523,7 +527,8 @@ static void appendGenericRenderParts(
         part.nodeIndex = i;
         appendNodeCollider(model, i, part.collider);
         extras.push_back(std::move(part));
-        extraMeshes.push_back(std::move(mesh));
+        if (buildRenderMeshes)
+            extraMeshes.push_back(std::move(mesh));
     }
 }
 
@@ -535,7 +540,8 @@ static void buildExtraRenderPartsFromModel(
         const std::vector<std::pair<std::string, std::string>>& extraNodes,
         std::vector<PhysicalBodyPart>& outParts,
         std::vector<Mesh>& outMeshes,
-        const std::vector<TransformNode>& nodes)
+        const std::vector<TransformNode>& nodes,
+        bool buildRenderMeshes)
 {
     outParts.clear();
     outMeshes.clear();
@@ -563,15 +569,19 @@ static void buildExtraRenderPartsFromModel(
             continue;
         }
         Mesh mesh;
-        appendNodeRenderMesh(model, idx, mesh);
-        if (mesh.verts.empty())
-            continue;
+        if (buildRenderMeshes)
+        {
+            appendNodeRenderMesh(model, idx, mesh);
+            if (mesh.verts.empty())
+                continue;
+        }
         PhysicalBodyPart part;
         part.name = partName;
         part.nodeIndex = idx;
         appendNodeCollider(model, idx, part.collider);
         outParts.push_back(std::move(part));
-        outMeshes.push_back(std::move(mesh));
+        if (buildRenderMeshes)
+            outMeshes.push_back(std::move(mesh));
     }
 
     nlohmann::json resolved = nlohmann::json::array();
@@ -952,18 +962,17 @@ static void buildBodyPartCollidersFromModel(const tinygltf::Model& model, Player
         );
     }
 
-    if (buildRenderMeshes) {
-        buildExtraRenderPartsFromModel(model, gAvatarRigExtraNodes,
-                                       player.physicalBody.extraParts,
-                                       player.physicalBody.extraPartMeshes,
-                                       player.nodes);
-        // Only generalize when the model has no canonical body or declares a
-        // rig, so existing six-part avatars are unchanged.
-        if (player.physicalBody.parts.empty() || !gAvatarRigExtraNodes.empty())
-            appendGenericRenderParts(model, player.nodes, player.physicalBody.parts,
-                                     player.physicalBody.extraParts,
-                                     player.physicalBody.extraPartMeshes);
-    }
+    buildExtraRenderPartsFromModel(model, gAvatarRigExtraNodes,
+                                   player.physicalBody.extraParts,
+                                   player.physicalBody.extraPartMeshes,
+                                   player.nodes, buildRenderMeshes);
+    // Collision parts must also exist on headless/server actors. Only render
+    // mesh creation depends on a GL context.
+    if (player.physicalBody.parts.empty() || !gAvatarRigExtraNodes.empty())
+        appendGenericRenderParts(model, player.nodes, player.physicalBody.parts,
+                                 player.physicalBody.extraParts,
+                                 player.physicalBody.extraPartMeshes,
+                                 buildRenderMeshes);
 }
 
 bool Player::loadModel(const char* path)
@@ -1076,7 +1085,7 @@ bool Player::loadModelColliders(const char* path)
         applyBodypartConfigOverrides(restLocalTransforms, nodes, gAvatarUseModelTransforms);
         syncPoseSkeletonFromRestLocal(*this);
         updateModelWorldTransforms();
-        return !physicalBody.parts.empty();
+        return !physicalBody.parts.empty() || !physicalBody.extraParts.empty();
     }
 
     tinygltf::TinyGLTF loader;
@@ -1110,7 +1119,7 @@ bool Player::loadModelColliders(const char* path)
 
     // Do not publish into the shared cache: this actor has no GL render mesh,
     // and a cache entry with an empty render mesh would break later client loads.
-    return !physicalBody.parts.empty();
+    return !physicalBody.parts.empty() || !physicalBody.extraParts.empty();
 }
 
 bool Player::loadCharacter(const std::string& characterName)
@@ -1232,11 +1241,11 @@ static void buildPlayerDataFromModel(PendingPlayerModel* d, const tinygltf::Mode
     buildExtraRenderPartsFromModel(model, d->rigExtraNodes,
                                    d->physicalBodyData.extraParts,
                                    d->physicalBodyData.extraPartMeshes,
-                                   d->nodes);
+                                   d->nodes, true);
     if (d->physicalBodyData.parts.empty() || !d->rigExtraNodes.empty())
         appendGenericRenderParts(model, d->nodes, d->physicalBodyData.parts,
                                  d->physicalBodyData.extraParts,
-                                 d->physicalBodyData.extraPartMeshes);
+                                 d->physicalBodyData.extraPartMeshes, true);
 }
 
 static void modelLoadThreadFunc(PendingPlayerModel* d)

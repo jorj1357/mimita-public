@@ -10,6 +10,21 @@
 
 * `assets/music/ingame/donttrack` is intentionally excluded from source control via `.gitignore`. It contains local music work files, exports, experiments, and temporary audio assets. Any file that should become part of the game must be moved out of this folder into `assets/music/ingame/`.
 
+## Bundled FFmpeg
+
+`tools/ffmpeg.exe` is tracked because it is the packaged video/audio decoder.
+It is a deliberately small static build, not a full FFmpeg distribution. Its
+feature whitelist must keep the replay encoder plus the music paths:
+`wav`, `mov/mp4/m4a`, `matroska`, `ogg`, `opus`, `vorbis`, `aac`, and PCM,
+with the `wav` and `null` muxers used by cached music decoding and diagnostics.
+
+Rebuild it with `devscripts/build-minimal-ffmpeg.sh` from an MSYS2 MINGW64
+shell. Do not replace it with the full multi-hundred-megabyte system build.
+When adding a new music container or codec, update the script whitelist,
+rebuild, and verify the resulting binary can decode the actual files before
+committing it. A binary that contains a codec decoder but lacks its container
+demuxer is not sufficient.
+
 # Reusable Blender-authored object assets
 
 Reusable object assets live under `assets/objects/library/<asset-id>/`.

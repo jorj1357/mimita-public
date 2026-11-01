@@ -98,6 +98,10 @@ struct ProjectileStepResult
     uint32_t hitPlayerId = 0;
     uint32_t hitPlayerSpawnGeneration = 0;
     uint32_t hitEntityId = 0;
+    // True when the swept step also overlapped/passed through world geometry.
+    // This is independent of `type`: a pass-through projectile can contact an
+    // actor and world geometry on the same step, and both owners must run.
+    bool passedThroughWorld = false;
     int hitWorldTriangleIndex = -1;
     uint32_t triangleQueryCount = 0;
     uint32_t triangleCandidateTotal = 0;

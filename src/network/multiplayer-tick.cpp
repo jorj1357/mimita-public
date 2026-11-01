@@ -2558,6 +2558,14 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         if (input->shieldHeld) stateFlags |= NET_STATE_SHIELDING;
         if (input->grabHeld) stateFlags |= NET_STATE_GRABBING;
         if (input->crouchHeld) stateFlags |= NET_STATE_CROUCHING;
+        if (input->interactHeld) stateFlags |= NET_STATE_INTERACTING;
+        if (input->interactHeld && !ctx.lastSentInteractHeld)
+        {
+            ++ctx.nextLocalInteractSerial;
+            if (ctx.nextLocalInteractSerial == 0)
+                ctx.nextLocalInteractSerial = 1;
+        }
+        ctx.lastSentInteractHeld = input->interactHeld;
 
         // Rate-limited walk send logging
         {
@@ -2654,6 +2662,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
 
         in.equippedSlot = (int16_t)input->equippedSlot;
         in.weaponState = input->weaponState;
+        in.interactSerial = ctx.nextLocalInteractSerial;
         in.clientPingMs = ctx.localPingMs;
         in.stateFlags = stateFlags;
         in.movementSequence = ctx.nextMovementSequence++;

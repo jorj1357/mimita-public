@@ -43,6 +43,7 @@
 #include "persistence/persistence-emit.h"
 #include "config/spawn-velocity-config.h"
 #include "network/actor-lifecycle.h"
+#include "network/network-weapons.h"
 #include "physics/physical-entity.h"
 
 namespace MimitaNet {
@@ -157,6 +158,7 @@ bool serverMatchRespawnsEnabled()
 bool serverActorRespawnsEnabled(uint32_t actorId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
+    if (d.aftermathActive) return false;
     if (!d.enabled || d.warmup) return true;
     const auto team = d.matchTeams.find(actorId);
     if (team != d.matchTeams.end() && team->second >= 0 && team->second < 2) {
@@ -169,6 +171,8 @@ bool serverActorRespawnsEnabled(uint32_t actorId)
 bool serverPlayerRespawnsEnabled(uint32_t playerId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
+    if (d.aftermathActive)
+        return false;
     // Intermission warmup: infinite lives so players can move and fight freely.
     if (d.warmup)
         return true;
@@ -176,19 +180,41 @@ bool serverPlayerRespawnsEnabled(uint32_t playerId)
         return d.waveLivesRemaining > 0;
     if (d.persistentNpcSpawns)
         return true;
-    // Melee: a fighter respawns only while it still has stocks.
-    if (d.matchMode == "melee")
-        return serverMeleeActorHasStocks(playerId);
-    return serverActorRespawnsEnabled(playerId);
+    if (!serverActorRespawnsEnabled(playerId))
+        return false;
+    if (d.livesEnabled)
+        return serverActorHasLives(playerId);
+    return true;
 }
 
-bool serverMeleeActorHasStocks(uint32_t actorId)
+bool serverActorLivesApplyToTeam(int team)
 {
     const ServerGamemodeState& d = serverGamemodeState();
-    if (d.matchMode != "melee")
+    if (!d.livesEnabled)
+        return false;
+    if (d.livesTeam.empty())
         return true;
-    auto it = d.meleeStocks.find(actorId);
-    return it == d.meleeStocks.end() ? d.waveLives > 0 : it->second > 0;
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    const int configuredTeam = resolveTeamIndexFromId(gm, d.livesTeam);
+    return configuredTeam < 0 || team == configuredTeam;
+}
+
+bool serverActorHasLives(uint32_t actorId)
+{
+    const ServerGamemodeState& d = serverGamemodeState();
+    if (!d.livesEnabled)
+        return true;
+    auto teamIt = d.matchTeams.find(actorId);
+    const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+    if (!serverActorLivesApplyToTeam(team))
+        return true;
+    auto it = d.actorLives.find(actorId);
+    return it == d.actorLives.end() ? d.actorLivesDefault > 0 : it->second > 0;
+}
+
+bool serverAftermathActive()
+{
+    return serverGamemodeState().aftermathActive;
 }
 
 bool serverMeleeActorProtected(uint32_t actorId)
@@ -201,15 +227,17 @@ bool serverMeleeActorProtected(uint32_t actorId)
            d.currentServerTick < it->second;
 }
 
-void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
+void serverActorNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
 {
     ServerGamemodeState& d = serverGamemodeState();
+    auto teamIt = d.matchTeams.find(actorId);
+    const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+    if (serverActorLivesApplyToTeam(team) &&
+        d.actorLives.find(actorId) == d.actorLives.end()) {
+        d.actorLives[actorId] = std::max(1, d.actorLivesDefault);
+    }
     if (d.matchMode != "melee" && !d.payloadMode)
         return;
-    if (d.matchMode == "melee") {
-        if (d.meleeStocks.find(actorId) == d.meleeStocks.end())
-            d.meleeStocks[actorId] = std::max(1, d.waveLives);
-    }
     if (protectionTicks == 0)
         return;
     d.meleeSpawnProtectionUntilTick[actorId] = d.currentServerTick + protectionTicks;
@@ -229,28 +257,32 @@ void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
                        {"protection_ticks", protectionTicks}});
 }
 
-bool serverMeleeConsumeStock(uint32_t actorId)
+bool serverActorConsumeLife(uint32_t actorId)
 {
     ServerGamemodeState& d = serverGamemodeState();
-    if (d.matchMode != "melee")
+    auto teamIt = d.matchTeams.find(actorId);
+    const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+    if (!serverActorLivesApplyToTeam(team))
         return true;
-    int& stocks = d.meleeStocks[actorId];
-    if (stocks <= 0)
-        stocks = 0;
+    int& lives = d.actorLives[actorId];
+    if (lives <= 0)
+        lives = 0;
     else
-        --stocks;
+        --lives;
     Debug::log(Debug::Category::Duel,
-        "[MELEE] actor=%u lost a stock; stocks=%d\n", actorId, stocks);
+        "[LIVES] actor=%u lost a life; lives=%d mode=%s\n",
+        actorId, lives, d.matchMode.c_str());
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Duel, StructuredLevel::Important,
-        "melee.stock_lost", std::to_string(actorId),
-        stocks > 0 ? "melee stock lost; fighter respawns"
-                   : "melee stock lost; fighter eliminated",
+        "gamemode.actor.life_lost", std::to_string(actorId),
+        lives > 0 ? "actor life lost; actor respawns"
+                  : "actor life lost; actor eliminated",
         d.currentServerTick,
         nlohmann::json{{"actor", actorId},
-                       {"stocks_remaining", stocks},
-                       {"eliminated", stocks <= 0}});
-    return stocks > 0;
+                       {"mode", d.matchMode},
+                       {"lives_remaining", lives},
+                       {"eliminated", lives <= 0}});
+    return lives > 0;
 }
 
 bool serverFriendlyFireEnabled()
@@ -1193,9 +1225,22 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     d.waveNpcsPerWave = gm.waveNpcsPerWave;
     d.waveLives = std::max(1, gm.lives);
     d.waveLivesRemaining = d.waveLives;
-    // Melee resets every fighter's stocks from the mode `lives` value. The map
-    // is also lazily seeded per actor, so a late joiner still starts with stocks.
-    d.meleeStocks.clear();
+    // Generic per-actor lives apply to melee and Vs Jason. The map is also
+    // lazily seeded per actor, so a late joiner still starts with lives.
+    d.livesEnabled = gm.livesEnabled;
+    d.livesTeam = gm.livesTeam;
+    d.actorLivesDefault = std::max(1, gm.lives);
+    d.actorLives.clear();
+    d.timeLimitStartsAtGo = gm.timeLimitStartsAtGo;
+    d.aftermath = gm.aftermath;
+    d.aftermathActive = false;
+    d.aftermathStage = 0;
+    d.aftermathStartTick = 0;
+    d.aftermathSoundStartTick = 0;
+    d.aftermathSoundSerial = 0;
+    d.aftermathSoundIndex = 0xFF;
+    d.aftermathMoverActorId = 0;
+    d.aftermathEffects.clear();
     d.meleeSpawnProtectionUntilTick.clear();
     d.waveHighest = 0;
     d.waveBannerSeconds = gm.waveBannerSeconds;
@@ -1288,6 +1333,8 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     // ── Mode objective item ─────────────────────────────────────────
     // Reset, then adopt the first valid objective definition from the mode.
     d.objective = ObjectiveInstance{};
+    d.objectivePlantSeconds = 0.0f;
+    d.objectiveDefuseSeconds = 0.0f;
     d.objectivePickupCounter = 0;
     d.objectiveDropCounter = 0;
     d.objectiveNextCarrierScanTick = 0;
@@ -1297,7 +1344,12 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         d.objective.id = def.id;
         d.objective.kind = kind;
         d.objective.allowedCarrierTeam = resolveTeamIndexFromId(gm, def.carrierTeam);
+        d.objectivePlantSeconds = def.plantSeconds;
+        d.objectiveDefuseSeconds = def.defuseSeconds;
         d.objective.explosionSeconds = def.explosionSeconds;
+        d.objective.interactionMode =
+            objectiveInteractionModeFromString(def.interactionMode);
+        d.objective.tapProgressTicks = objectiveSecondsToTicks(def.tapProgressSeconds);
         d.objective.active = !def.id.empty();
         d.objective.state = ObjectiveState::Inactive;
         break;
@@ -1532,6 +1584,7 @@ void logCountdownCompletion(ServerGamemodeState& d, uint32_t tick)
 void serverObjectiveTick(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
                          uint32_t tick);
 void assignObjectiveCarrier(ServerGamemodeState& d,
                             const std::unordered_map<uint32_t, ServerPlayer>& players,
@@ -1596,6 +1649,20 @@ void broadcastDuelState(SOCKET sock,
     std::strncpy(pkt.teamBName, d.teamBName.c_str(), sizeof(pkt.teamBName) - 1);
 
     // ── FFA/TDM extension fields ───────────────────────────────────
+    if (d.matchMode.size() >= sizeof(pkt.matchMode)) {
+        static std::string lastTruncatedMode;
+        if (lastTruncatedMode != d.matchMode) {
+            lastTruncatedMode = d.matchMode;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Errors,
+                "network.mode.truncated", d.matchMode,
+                "replicated gamemode id exceeds DuelStatePacket::matchMode",
+                0,
+                {{"mode", d.matchMode},
+                 {"mode_bytes", d.matchMode.size()},
+                 {"field_bytes", sizeof(pkt.matchMode)}});
+        }
+    }
     std::strncpy(pkt.matchMode, d.matchMode.c_str(), sizeof(pkt.matchMode) - 1);
     pkt.matchStartTick = d.matchStartTick;
     pkt.serverTick = d.currentServerTick;
@@ -1643,6 +1710,15 @@ void broadcastDuelState(SOCKET sock,
     pkt.objectiveTeam = d.objective.allowedCarrierTeam < 0
         ? 0xFF : (uint8_t)d.objective.allowedCarrierTeam;
     pkt.objectiveCarrierId = d.objective.carrierActorId;
+    pkt.objectiveInteractorId = d.objective.planterActorId != 0
+        ? d.objective.planterActorId : d.objective.defuserActorId;
+    pkt.objectiveInteractionMode = (uint8_t)d.objective.interactionMode;
+    const int activeInteractionTicks = d.objective.state == ObjectiveState::Planted
+        ? d.objective.defuseTicksRequired : d.objective.plantTicksRequired;
+    pkt.objectiveRequiredTicks = (uint16_t)std::min(
+        65535, std::max(0, activeInteractionTicks));
+    pkt.objectiveTapTicks = (uint16_t)std::min(
+        65535, std::max(0, d.objective.tapProgressTicks));
     pkt.objectiveX = d.objective.position.x;
     pkt.objectiveY = d.objective.position.y;
     pkt.objectiveZ = d.objective.position.z;
@@ -1654,11 +1730,19 @@ void broadcastDuelState(SOCKET sock,
         pkt.objectiveProgressKind = 2;
         pkt.objectiveProgress = (float)d.objective.defuseTicksElapsed /
                                 (float)d.objective.defuseTicksRequired;
+        pkt.objectiveRequiredTicks = (uint16_t)std::min(
+            65535, d.objective.defuseTicksRequired);
+        pkt.objectiveTapTicks = (uint16_t)std::min(
+            65535, d.objective.tapProgressTicks);
     } else if (d.objective.state == ObjectiveState::Carried &&
                d.objective.plantTicksElapsed > 0 && d.objective.plantTicksRequired > 0) {
         pkt.objectiveProgressKind = 1;
         pkt.objectiveProgress = (float)d.objective.plantTicksElapsed /
                                 (float)d.objective.plantTicksRequired;
+        pkt.objectiveRequiredTicks = (uint16_t)std::min(
+            65535, d.objective.plantTicksRequired);
+        pkt.objectiveTapTicks = (uint16_t)std::min(
+            65535, d.objective.tapProgressTicks);
     }
     pkt.objectiveTimerLeft = (d.objective.explosionDeadlineTick > d.currentServerTick)
         ? (float)(d.objective.explosionDeadlineTick - d.currentServerTick) / 60.0f : 0.0f;
@@ -1817,6 +1901,32 @@ void broadcastDuelState(SOCKET sock,
         if (kv.second.spawnState != ServerPlayer::Active)
             continue;
         DuelStatePacket recipientPacket = pkt;
+        if (d.aftermathActive) {
+            const ServerGamemodeState::AftermathEffect* effect = nullptr;
+            for (const auto& candidate : d.aftermathEffects) {
+                if (candidate.targetActorId == kv.second.id) {
+                    effect = &candidate;
+                    break;
+                }
+            }
+            if (effect) {
+                recipientPacket.aftermathActive = 1;
+                recipientPacket.aftermathStage = d.aftermathStage;
+                recipientPacket.aftermathTargetActorId = kv.second.id;
+                recipientPacket.aftermathMoverActorId = d.aftermathMoverActorId;
+                recipientPacket.aftermathStartTick = d.aftermathStartTick;
+                recipientPacket.aftermathSoundSerial = d.aftermathSoundSerial;
+                recipientPacket.aftermathSoundIndex = d.aftermathSoundIndex;
+                recipientPacket.aftermathHideHud = d.aftermath.hideHud ? 1 : 0;
+                recipientPacket.aftermathMuteAudio = d.aftermath.muteAudio ? 1 : 0;
+                recipientPacket.aftermathBlackout = d.aftermath.blackout ? 1 : 0;
+                recipientPacket.aftermathFreezeLocal = d.aftermath.freezeLocalPlayer ? 1 : 0;
+                recipientPacket.aftermathFatalWindow = d.aftermath.fatalWindow ? 1 : 0;
+                recipientPacket.aftermathMoverX = effect->moverPos.x;
+                recipientPacket.aftermathMoverY = effect->moverPos.y;
+                recipientPacket.aftermathMoverZ = effect->moverPos.z;
+            }
+        }
         bool localActorIncluded = false;
         for (uint8_t i = 0; i < recipientPacket.participantCount; ++i) {
             if (recipientPacket.participantIds[i] == kv.second.id) {
@@ -3127,7 +3237,9 @@ void checkObjectiveRoundEnd(ServerGamemodeState& d, uint32_t tick)
         if (inPlay) ++aliveByTeam[team];
     }
 
-    if (anyTeamMembers[0] && anyTeamMembers[1]) {
+    const Gamemode& roundMode = GamemodeRegistry::instance().get(d.matchMode);
+    if (!roundMode.features.objectiveOnlyRoundWins &&
+        anyTeamMembers[0] && anyTeamMembers[1]) {
         const bool aAlive = aliveByTeam[0] > 0;
         const bool bAlive = aliveByTeam[1] > 0;
         if (aAlive != bAlive) {
@@ -3362,16 +3474,99 @@ static void serverPayloadTick(ServerGamemodeState& d,
 }
 
 // The generic objective tick: keep the bomb on a valid living carrier, drop it
-// when the carrier dies/disconnects, and auto-pick-up for the nearest valid
-// living actor of the allowed team within pickup radius. No wall/occlusion
-// pickup through geometry beyond the proximity check (Stage 12 adds site logic).
+// when the carrier dies/disconnects, and advance deliberate hold/tap
+// interactions. Entering a site never plants automatically.
 void serverObjectiveTick(ServerGamemodeState& d,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         NpcSystem& npcSystem,
                          uint32_t tick)
 {
+    struct PendingTapClear {
+        std::unordered_map<uint32_t, ServerPlayer>& players;
+        ~PendingTapClear() {
+            for (auto& kv : players) kv.second.pendingInteractTaps = 0;
+        }
+    } pendingTapClear{players};
+
     if (!d.objective.valid()) return;
     if (d.phase != DUEL_PHASE_ACTIVE && d.phase != DUEL_PHASE_GO) return;
+
+    const bool tapMode =
+        d.objective.interactionMode == ObjectiveInteractionMode::RepeatedTap;
+    const int tapTicks = std::max(1, d.objective.tapProgressTicks);
+
+    auto findNpc = [&](uint32_t actorId) -> Npc* {
+        for (Npc& npc : npcSystem.all())
+            if (npc.id == actorId) return &npc;
+        return nullptr;
+    };
+    auto actorDistanceSq = [&](const glm::vec3& pos) {
+        const glm::vec3 delta = pos - d.objective.position;
+        return delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
+    };
+    auto emitProgress = [&](uint32_t actorId, bool planting, const char* site,
+                            int elapsed, int required) {
+        if (elapsed <= 0 || required <= 0) return;
+        bool emit = false;
+        if (tapMode) {
+            emit = (elapsed % (tapTicks * 5)) == 0;
+        } else {
+            emit = elapsed == std::max(1, required / 2);
+        }
+        if (!emit) return;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "objective.interaction-progress", std::to_string(d.duelId),
+            planting ? "plant_progress" : "defuse_progress", tick,
+            nlohmann::json{{"objective", d.objective.id},
+                           {"operator", actorId},
+                           {"planting", planting},
+                           {"site", site ? site : ""},
+                           {"elapsed_ticks", elapsed},
+                           {"required_ticks", required},
+                           {"mode", objectiveInteractionModeName(d.objective.interactionMode)},
+                           {"taps", tapMode ? (elapsed / tapTicks) : 0}});
+    };
+    auto emitInterruption = [&](const char* event, const char* reason,
+                                uint32_t actorId, int elapsed, int required) {
+        if (elapsed <= 0) return;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            event, std::to_string(d.duelId), reason, tick,
+            nlohmann::json{{"objective", d.objective.id},
+                           {"operator", actorId},
+                           {"reason", reason},
+                           {"progress_ticks", elapsed},
+                           {"required_ticks", required},
+                           {"mode", objectiveInteractionModeName(d.objective.interactionMode)}});
+    };
+    auto resetPlant = [&](const char* reason) {
+        emitInterruption("objective.plant-interrupted", reason,
+                         d.objective.planterActorId,
+                         d.objective.plantTicksElapsed,
+                         d.objective.plantTicksRequired);
+        if (d.objective.planterActorId != 0 || d.objective.plantTicksElapsed != 0) {
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+        }
+        d.objective.plantTicksElapsed = 0;
+        d.objective.planterActorId = 0;
+        d.objective.npcTapCooldownTicks = 0;
+    };
+    auto resetDefuse = [&](const char* reason) {
+        emitInterruption("objective.defuse-interrupted", reason,
+                         d.objective.defuserActorId,
+                         d.objective.defuseTicksElapsed,
+                         d.objective.defuseTicksRequired);
+        if (d.objective.defuserActorId != 0 || d.objective.defuseTicksElapsed != 0) {
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+        }
+        d.objective.defuseTicksElapsed = 0;
+        d.objective.defuserActorId = 0;
+        d.objective.npcTapCooldownTicks = 0;
+    };
 
     // 1) If carried, validate the carrier is still alive. If not, drop it at
     //    the carrier's last known position.
@@ -3381,13 +3576,12 @@ void serverObjectiveTick(ServerGamemodeState& d,
                                                   d.objective.carrierActorId, carrierPos);
         if (!alive) {
             glm::vec3 dropPos = d.objective.position;
-            // Prefer the actor's last position when we can still find the body.
             auto pIt = players.find(d.objective.carrierActorId);
             auto nIt = npcs.find(d.objective.carrierActorId);
             if (pIt != players.end()) dropPos = pIt->second.pos;
             else if (nIt != npcs.end()) dropPos = nIt->second.pos;
-            // Never drop inside the world; raise slightly so it is pickable.
             dropPos.z += 0.3f;
+            resetPlant("died");
             d.objective.state = ObjectiveState::Dropped;
             d.objective.position = dropPos;
             const uint32_t droppedCarrier = d.objective.carrierActorId;
@@ -3409,7 +3603,7 @@ void serverObjectiveTick(ServerGamemodeState& d,
     }
 
     // 2) If carried, keep the replicated position following the carrier and
-    //    attempt a plant when the carrier stands inside a valid bomb site.
+    //    advance a deliberate plant while the carrier remains inside a site.
     if (d.objective.state == ObjectiveState::Carried) {
         glm::vec3 carrierPos;
         if (objectiveActorPosition(players, npcs, d.objective.carrierActorId, carrierPos))
@@ -3417,66 +3611,145 @@ void serverObjectiveTick(ServerGamemodeState& d,
 
         const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
         const int siteIndex = MapConfigRegistry::instance().siteIndexAt(d.objective.position);
-        const bool inSite = siteIndex >= 0;
+        const std::string siteId = siteIndex >= 0
+            ? mapCfg.bombSites[(size_t)siteIndex].id : std::string();
 
-        if (inSite) {
-            const bool wasPlanting = d.objective.plantTicksElapsed > 0;
-            if (!wasPlanting) {
-                d.objective.planterActorId = d.objective.carrierActorId;
-                Debug::warn(Debug::Category::Duel,
-                    "[OBJECTIVE] plant-start id=%s actor=%u site=%s tick=%u\n",
-                    d.objective.id.c_str(), d.objective.carrierActorId,
-                    mapCfg.bombSites[(size_t)siteIndex].id.c_str(), tick);
+        if (mapCfg.bombSites.empty()) {
+            static uint32_t lastSiteWarningTick = 0;
+            if (lastSiteWarningTick == 0 || tick >= lastSiteWarningTick + 300) {
+                lastSiteWarningTick = tick;
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Duel, StructuredLevel::Important,
-                    "objective.plant-start", std::to_string(d.duelId), "site",
-                    tick, nlohmann::json{{"objective", d.objective.id},
-                                         {"operator", d.objective.carrierActorId},
-                                         {"site", mapCfg.bombSites[(size_t)siteIndex].id}});
+                    "objective.site-unavailable", std::to_string(d.duelId),
+                    "no_usable_site", tick,
+                    nlohmann::json{{"objective", d.objective.id},
+                                   {"carrier", d.objective.carrierActorId},
+                                   {"usable_sites", 0}});
             }
-            if (advanceObjectiveProgress(d.objective.plantTicksElapsed,
-                                         d.objective.plantTicksRequired, true)) {
-                d.objective.state = ObjectiveState::Planted;
-                d.objective.plantedSiteId = mapCfg.bombSites[(size_t)siteIndex].id;
-                d.objective.position = carrierPos;
-                d.objective.carrierActorId = 0;
-                d.objective.explosionDeadlineTick = d.currentServerTick +
-                    (uint32_t)objectiveSecondsToTicks(d.objective.explosionSeconds);
-                ++d.stateVersion;
-                d.stateBroadcastPending = true;
-                Debug::warn(Debug::Category::Duel,
-                    "[OBJECTIVE] planted id=%s site=%s deadline=%u tick=%u\n",
-                    d.objective.id.c_str(), d.objective.plantedSiteId.c_str(),
-                    d.objective.explosionDeadlineTick, tick);
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Duel, StructuredLevel::Important,
-                    "objective.planted", std::to_string(d.duelId), d.objective.plantedSiteId,
-                    tick, nlohmann::json{{"objective", d.objective.id},
-                                         {"site", d.objective.plantedSiteId}});
+        }
+
+        if (siteIndex < 0) {
+            if (d.objective.plantTicksElapsed > 0)
+                resetPlant(mapCfg.bombSites.empty() ? "no_usable_site" : "left_site");
+            return;
+        }
+
+        bool plantHeld = false;
+        int plantTaps = 0;
+        const bool carrierIsNpc = npcs.find(d.objective.carrierActorId) != npcs.end();
+        if (carrierIsNpc) {
+            Npc* carrier = findNpc(d.objective.carrierActorId);
+            plantHeld = carrier && carrier->body.currentHp > 0 &&
+                carrier->utility.currentGoal == UtilityGoalKind::PlantObjective &&
+                carrier->utilityContext.atObjective;
+            if (!plantHeld) {
+                d.objective.npcTapCooldownTicks = 0;
+            } else if (tapMode) {
+                if (d.objective.npcTapCooldownTicks <= 0) {
+                    plantTaps = 1;
+                    d.objective.npcTapCooldownTicks = tapTicks;
+                } else {
+                    --d.objective.npcTapCooldownTicks;
+                }
             }
-        } else if (d.objective.plantTicksElapsed > 0) {
-            // Interrupted by leaving the site.
+        } else {
+            auto pIt = players.find(d.objective.carrierActorId);
+            if (pIt != players.end()) {
+                plantHeld = pIt->second.input.interactHeld;
+                plantTaps = pIt->second.pendingInteractTaps;
+            }
+        }
+
+        const bool hasPlantInput = plantHeld || (tapMode && plantTaps > 0);
+        if (d.objective.plantTicksElapsed == 0 && hasPlantInput) {
+            d.objective.planterActorId = d.objective.carrierActorId;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] plant-start id=%s actor=%u site=%s tick=%u mode=%s\n",
+                d.objective.id.c_str(), d.objective.carrierActorId,
+                siteId.c_str(), tick,
+                objectiveInteractionModeName(d.objective.interactionMode));
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
-                "objective.plant-interrupted", std::to_string(d.duelId),
-                "left_site", tick,
-                nlohmann::json{{"objective", d.objective.id},
-                               {"operator", d.objective.planterActorId},
-                               {"progress_ticks", d.objective.plantTicksElapsed},
-                               {"required_ticks", d.objective.plantTicksRequired}});
-            d.objective.plantTicksElapsed = 0;
-            d.objective.planterActorId = 0;
+                "objective.plant-start", std::to_string(d.duelId), "site",
+                tick, nlohmann::json{{"objective", d.objective.id},
+                                     {"operator", d.objective.carrierActorId},
+                                     {"operator_kind", carrierIsNpc ? "npc" : "player"},
+                                     {"site", siteId},
+                                     {"mode", objectiveInteractionModeName(
+                                         d.objective.interactionMode)},
+                                     {"required_ticks", d.objective.plantTicksRequired}});
             ++d.stateVersion;
             d.stateBroadcastPending = true;
+        }
+
+        bool planted = false;
+        if (d.objective.plantTicksElapsed > 0) {
+            const int previousElapsed = d.objective.plantTicksElapsed;
+            if (!tapMode && !plantHeld) {
+                resetPlant("released");
+            } else if (tapMode && plantTaps > 0) {
+                for (int i = 0; i < plantTaps && !planted; ++i)
+                    planted = advanceObjectiveTapProgress(
+                        d.objective.plantTicksElapsed,
+                        d.objective.plantTicksRequired, tapTicks);
+            } else if (!tapMode) {
+                planted = advanceObjectiveProgress(
+                    d.objective.plantTicksElapsed,
+                    d.objective.plantTicksRequired, true);
+            }
+            if (!planted && d.objective.plantTicksElapsed > 0 &&
+                d.objective.plantTicksElapsed != previousElapsed)
+                emitProgress(d.objective.planterActorId, true, siteId.c_str(),
+                             d.objective.plantTicksElapsed,
+                             d.objective.plantTicksRequired);
+        } else if (hasPlantInput) {
+            if (!tapMode) {
+                planted = advanceObjectiveProgress(
+                    d.objective.plantTicksElapsed,
+                    d.objective.plantTicksRequired, true);
+            } else {
+                for (int i = 0; i < plantTaps && !planted; ++i)
+                    planted = advanceObjectiveTapProgress(
+                        d.objective.plantTicksElapsed,
+                        d.objective.plantTicksRequired, tapTicks);
+            }
+            if (!planted)
+                emitProgress(d.objective.planterActorId, true, siteId.c_str(),
+                             d.objective.plantTicksElapsed,
+                             d.objective.plantTicksRequired);
+        }
+
+        if (planted) {
+            const uint32_t planter = d.objective.planterActorId;
+            d.objective.state = ObjectiveState::Planted;
+            d.objective.plantedSiteId = siteId;
+            d.objective.position = carrierPos;
+            d.objective.carrierActorId = 0;
+            d.objective.planterActorId = 0;
+            d.objective.plantTicksElapsed = 0;
+            d.objective.npcTapCooldownTicks = 0;
+            d.objective.explosionDeadlineTick = d.currentServerTick +
+                (uint32_t)objectiveSecondsToTicks(d.objective.explosionSeconds);
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+            Debug::warn(Debug::Category::Duel,
+                "[OBJECTIVE] planted id=%s site=%s deadline=%u tick=%u\n",
+                d.objective.id.c_str(), d.objective.plantedSiteId.c_str(),
+                d.objective.explosionDeadlineTick, tick);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.planted", std::to_string(d.duelId), d.objective.plantedSiteId,
+                tick, nlohmann::json{{"objective", d.objective.id},
+                                     {"site", d.objective.plantedSiteId},
+                                     {"operator", planter},
+                                     {"mode", objectiveInteractionModeName(
+                                         d.objective.interactionMode)}});
         }
         return;
     }
 
-    // 3) If planted, advance the defuse when a Counter-Terrorist is in range,
-    //    and explode when the deadline passes. Both are fixed-tick and
-    //    interruptible.
+    // 3) If planted, advance deliberate defusing and explode when due.
     if (d.objective.state == ObjectiveState::Planted) {
-        // Explosion wins if the deadline is reached.
         if (d.objective.explosionDeadlineTick != 0 &&
             d.currentServerTick >= d.objective.explosionDeadlineTick) {
             d.objective.state = ObjectiveState::Exploded;
@@ -3494,36 +3767,151 @@ void serverObjectiveTick(ServerGamemodeState& d,
             return;
         }
 
-        // Find a defusing CT within interaction range of the planted bomb.
         const int defenderTeam = (d.objective.allowedCarrierTeam == 0) ? 1 : 0;
-        uint32_t defuser = 0;
-        float bestDistSq = d.objective.interactionRange * d.objective.interactionRange;
-        auto considerDefuser = [&](uint32_t actorId, const glm::vec3& pos, bool dead) {
-            if (dead || actorId == 0) return;
-            if (objectiveActorTeam(d, actorId) != defenderTeam) return;
-            const glm::vec3 delta = pos - d.objective.position;
-            const float distSq = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-            if (distSq <= bestDistSq) { bestDistSq = distSq; defuser = actorId; }
-        };
-        for (const auto& kv : players) considerDefuser(kv.first, kv.second.pos, kv.second.dead);
-        for (const auto& kv : npcs)
-            considerDefuser(kv.first, kv.second.pos, kv.second.health <= 0);
+        const float rangeSq = d.objective.interactionRange * d.objective.interactionRange;
 
-        const bool wasDefusing = d.objective.defuseTicksElapsed > 0;
-        if (defuser != 0 && !wasDefusing) {
-            d.objective.defuserActorId = defuser;
+        auto defuserStillValid = [&](uint32_t actorId) {
+            if (actorId == 0) return false;
+            if (objectiveActorTeam(d, actorId) != defenderTeam) return false;
+            auto pIt = players.find(actorId);
+            if (pIt != players.end()) {
+                return !pIt->second.dead &&
+                    actorDistanceSq(pIt->second.pos) <= rangeSq;
+            }
+            auto nIt = npcs.find(actorId);
+            if (nIt != npcs.end()) {
+                return nIt->second.health > 0 &&
+                    actorDistanceSq(nIt->second.pos) <= rangeSq;
+            }
+            return false;
+        };
+
+        uint32_t candidate = 0;
+        bool candidateHeld = false;
+        bool candidateIsNpc = false;
+        float bestDistSq = rangeSq;
+
+        for (const auto& kv : players) {
+            const ServerPlayer& p = kv.second;
+            if (p.dead || objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+            if (!p.input.interactHeld && p.pendingInteractTaps == 0) continue;
+            const float distSq = actorDistanceSq(p.pos);
+            if (distSq <= bestDistSq) {
+                bestDistSq = distSq;
+                candidate = kv.first;
+                candidateHeld = p.input.interactHeld;
+                candidateIsNpc = false;
+            }
+        }
+        for (const auto& kv : npcs) {
+            if (kv.second.health <= 0 ||
+                objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+            const float distSq = actorDistanceSq(kv.second.pos);
+            if (distSq > bestDistSq) continue;
+            Npc* npc = findNpc(kv.first);
+            if (!npc || npc->body.currentHp <= 0) continue;
+            if (npc->utility.currentGoal != UtilityGoalKind::DefuseObjective ||
+                !npc->utilityContext.atObjective)
+                continue;
+            bestDistSq = distSq;
+            candidate = kv.first;
+            candidateHeld = true;
+            candidateIsNpc = true;
+        }
+
+        int candidateTaps = 0;
+        if (candidate != 0) {
+            if (!candidateIsNpc) {
+                auto pIt = players.find(candidate);
+                if (pIt != players.end())
+                    candidateTaps = pIt->second.pendingInteractTaps;
+                d.objective.npcTapCooldownTicks = 0;
+            } else if (tapMode) {
+                if (d.objective.npcTapCooldownTicks <= 0) {
+                    candidateTaps = 1;
+                    d.objective.npcTapCooldownTicks = tapTicks;
+                } else {
+                    --d.objective.npcTapCooldownTicks;
+                }
+            }
+        }
+
+        const bool hasDefuseInput =
+            candidate != 0 && (candidateHeld || (tapMode && candidateTaps > 0));
+        if (d.objective.defuseTicksElapsed == 0 && hasDefuseInput) {
+            d.objective.defuserActorId = candidate;
             Debug::warn(Debug::Category::Duel,
-                "[OBJECTIVE] defuse-start id=%s actor=%u tick=%u\n",
-                d.objective.id.c_str(), defuser, tick);
+                "[OBJECTIVE] defuse-start id=%s actor=%u tick=%u mode=%s\n",
+                d.objective.id.c_str(), candidate, tick,
+                objectiveInteractionModeName(d.objective.interactionMode));
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "objective.defuse-start", std::to_string(d.duelId), "range",
-                tick, nlohmann::json{{"objective", d.objective.id}, {"operator", defuser}});
+                tick, nlohmann::json{{"objective", d.objective.id},
+                                     {"operator", candidate},
+                                     {"operator_kind", candidateIsNpc ? "npc" : "player"},
+                                     {"mode", objectiveInteractionModeName(
+                                         d.objective.interactionMode)},
+                                     {"required_ticks", d.objective.defuseTicksRequired}});
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+        } else if (candidate != 0 && d.objective.defuseTicksElapsed > 0 &&
+                   d.objective.defuserActorId != candidate) {
+            // A different actor may only take over after a clean restart; this
+            // keeps hold-mode release semantics deterministic.
+            resetDefuse("operator_changed");
+            d.objective.defuserActorId = candidate;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
         }
-        const bool canDefuse = defuser != 0;
-        if (advanceObjectiveProgress(d.objective.defuseTicksElapsed,
-                                     d.objective.defuseTicksRequired, canDefuse)) {
+
+        bool defused = false;
+        if (d.objective.defuseTicksElapsed > 0) {
+            const int previousElapsed = d.objective.defuseTicksElapsed;
+            if (!tapMode && !hasDefuseInput) {
+                resetDefuse("released");
+            } else if (tapMode && candidateTaps > 0) {
+                for (int i = 0; i < candidateTaps && !defused; ++i)
+                    defused = advanceObjectiveTapProgress(
+                        d.objective.defuseTicksElapsed,
+                        d.objective.defuseTicksRequired, tapTicks);
+            } else if (!tapMode && hasDefuseInput) {
+                defused = advanceObjectiveProgress(
+                    d.objective.defuseTicksElapsed,
+                    d.objective.defuseTicksRequired, true);
+            }
+            if (tapMode && !hasDefuseInput &&
+                !defuserStillValid(d.objective.defuserActorId)) {
+                resetDefuse("left_range");
+            }
+            if (!defused && d.objective.defuseTicksElapsed > 0 &&
+                d.objective.defuseTicksElapsed != previousElapsed)
+                emitProgress(d.objective.defuserActorId, false, "",
+                             d.objective.defuseTicksElapsed,
+                             d.objective.defuseTicksRequired);
+        } else if (hasDefuseInput) {
+            if (!tapMode) {
+                defused = advanceObjectiveProgress(
+                    d.objective.defuseTicksElapsed,
+                    d.objective.defuseTicksRequired, true);
+            } else {
+                for (int i = 0; i < candidateTaps && !defused; ++i)
+                    defused = advanceObjectiveTapProgress(
+                        d.objective.defuseTicksElapsed,
+                        d.objective.defuseTicksRequired, tapTicks);
+            }
+            if (!defused)
+                emitProgress(d.objective.defuserActorId, false, "",
+                             d.objective.defuseTicksElapsed,
+                             d.objective.defuseTicksRequired);
+        }
+
+        if (defused) {
+            const uint32_t defuser = d.objective.defuserActorId;
             d.objective.state = ObjectiveState::Defused;
+            d.objective.defuserActorId = 0;
+            d.objective.defuseTicksElapsed = 0;
+            d.objective.npcTapCooldownTicks = 0;
             ++d.stateVersion;
             d.stateBroadcastPending = true;
             Debug::warn(Debug::Category::Duel,
@@ -3532,21 +3920,14 @@ void serverObjectiveTick(ServerGamemodeState& d,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "objective.defused", std::to_string(d.duelId), "range",
-                tick, nlohmann::json{{"objective", d.objective.id}, {"operator", defuser}});
+                tick, nlohmann::json{{"objective", d.objective.id},
+                                     {"operator", defuser},
+                                     {"mode", objectiveInteractionModeName(
+                                         d.objective.interactionMode)}});
             endObjectiveRound(d, defenderTeam, 2, tick);
-        } else if (!canDefuse && d.objective.defuseTicksElapsed > 0) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Duel, StructuredLevel::Important,
-                "objective.defuse-interrupted", std::to_string(d.duelId),
-                "no_defuser_in_range", tick,
-                nlohmann::json{{"objective", d.objective.id},
-                               {"operator", d.objective.defuserActorId},
-                               {"progress_ticks", d.objective.defuseTicksElapsed},
-                               {"required_ticks", d.objective.defuseTicksRequired}});
-            d.objective.defuseTicksElapsed = 0;
+        } else if (candidate == 0 && d.objective.defuseTicksElapsed == 0) {
             d.objective.defuserActorId = 0;
-        } else if (!canDefuse && d.objective.defuseTicksElapsed == 0) {
-            d.objective.defuserActorId = 0;
+            d.objective.npcTapCooldownTicks = 0;
         }
         return;
     }
@@ -3593,13 +3974,36 @@ void assignObjectiveCarrier(ServerGamemodeState& d,
 {
     if (!d.objective.valid()) return;
 
-    // Load the map's objective timers (plant/defuse/explosion) and reset the
-    // per-round plant/defuse progress. Sites come from the map config.
+    // Mode objective timers are authoritative. The map's bomb block is a
+    // compatibility fallback only when a mode does not configure the value.
     MapConfigRegistry::instance().load(d.mapId);
     const MapObjectiveConfig& mapCfg = MapConfigRegistry::instance().current();
-    d.objective.plantTicksRequired = objectiveSecondsToTicks(mapCfg.plantSeconds);
-    d.objective.defuseTicksRequired = objectiveSecondsToTicks(mapCfg.defuseSeconds);
-    d.objective.explosionSeconds = mapCfg.explosionSeconds;
+    const bool plantFromMode = d.objectivePlantSeconds > 0.0f;
+    const bool defuseFromMode = d.objectiveDefuseSeconds > 0.0f;
+    const bool explosionFromMode = d.objective.explosionSeconds > 0.0f;
+    const float plantSeconds = plantFromMode ? d.objectivePlantSeconds
+                                             : mapCfg.plantSeconds;
+    const float defuseSeconds = defuseFromMode ? d.objectiveDefuseSeconds
+                                               : mapCfg.defuseSeconds;
+    const float explosionSeconds = explosionFromMode ? d.objective.explosionSeconds
+                                                     : mapCfg.explosionSeconds;
+    d.objective.plantTicksRequired = objectiveSecondsToTicks(plantSeconds);
+    d.objective.defuseTicksRequired = objectiveSecondsToTicks(defuseSeconds);
+    d.objective.explosionSeconds = explosionSeconds;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "objective.timers.resolved", std::to_string(d.duelId),
+        "effective timers resolved", d.currentServerTick,
+        nlohmann::json{{"objective", d.objective.id},
+                       {"plant_seconds", plantSeconds},
+                       {"defuse_seconds", defuseSeconds},
+                       {"explosion_seconds", explosionSeconds},
+                       {"interaction_mode",
+                        objectiveInteractionModeName(d.objective.interactionMode)},
+                       {"tap_progress_ticks", d.objective.tapProgressTicks},
+                       {"plant_source", plantFromMode ? "mode" : "map"},
+                       {"defuse_source", defuseFromMode ? "mode" : "map"},
+                       {"explosion_source", explosionFromMode ? "mode" : "map"}});
     d.objective.plantTicksElapsed = 0;
     d.objective.defuseTicksElapsed = 0;
     d.objective.planterActorId = 0;
@@ -3649,7 +4053,9 @@ void assignObjectiveCarrier(ServerGamemodeState& d,
             {"objective", d.objective.id},
             {"carrier", d.objective.carrierActorId},
             {"carrier_team", objectiveActorTeam(d, d.objective.carrierActorId)},
-            {"allowed_team", d.objective.allowedCarrierTeam}});
+            {"allowed_team", d.objective.allowedCarrierTeam},
+            {"bomb_item_id", "bomb"},
+            {"bomb_item_equippable", WeaponRegistry::instance().has("bomb")}});
 }
 
 
@@ -4034,6 +4440,11 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
             serverClearActorPreset(id);
             --have;
         }
+        int rosterNpcHealth = 3500;
+        if (const MatchRoleDefinition* role =
+                MatchRoleRegistry::instance().get(gm.teams[team].role)) {
+            if (role->health > 0) rosterNpcHealth = role->health;
+        }
         while (have < needed) {
             while (npcs.find(nextId) != npcs.end() || players.find(nextId) != players.end()) ++nextId;
             ServerNpc npc;
@@ -4041,7 +4452,7 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
             npc.name = gm.teams[team].displayName + " " + std::to_string(humanCounts[team] + have + 1);
             npc.pos = gamemodeSpawnPoint(d, (int)team);
             npc.yaw = team == 0 ? 0.0f : 3.14159265f;
-            npc.health = 3500;
+            npc.health = rosterNpcHealth;
             npc.matchTeam = (int)team;
             npcs.emplace(nextId, npc);
             d.teamRosterNpcIds.push_back(nextId);
@@ -4058,7 +4469,7 @@ static void reconcileTeamRosterNpc(ServerGamemodeState& d,
         for (uint32_t id : d.teamRosterNpcIds) {
             auto it = npcs.find(id);
             if (it != npcs.end() && it->second.matchTeam == (int)team) {
-                it->second.health = 3500;
+                it->second.health = rosterNpcHealth;
                 it->second.pos = gamemodeSpawnPoint(d, (int)team);
             }
         }
@@ -4122,51 +4533,54 @@ void updateActorStates(ServerGamemodeState& d, SOCKET sock,
             before == ActorState::Alive && dead && d.waveLivesRemaining > 0)
             serverConsumeNpcWaveLife(kv.first);
 
-        // Melee: any fighter (human or NPC) that dies loses one stock. Publish
-        // the stock count in chat so the event is visible to everyone, not
-        // only present in the server journal.
-        if (d.matchMode == "melee" && before == ActorState::Alive && dead) {
-            serverMeleeConsumeStock(kv.first);
-            const auto stockIt = d.meleeStocks.find(kv.first);
-            const int stocksLeft = stockIt == d.meleeStocks.end()
-                ? 0 : std::max(0, stockIt->second);
-            const auto nameIt = d.participantNames.find(kv.first);
-            const std::string fighterName = nameIt != d.participantNames.end()
-                ? nameIt->second : "A fighter";
-            std::string message = fighterName + " lost a stock. " +
-                std::to_string(stocksLeft) +
-                (stocksLeft == 1 ? " stock left." : " stocks left.");
+        // Generic per-actor lives: any matching actor that dies loses one life.
+        // Melee publishes the remaining stock count in chat; other modes use
+        // their own HUD and journal presentation.
+        if (d.livesEnabled && before == ActorState::Alive && dead &&
+            serverActorLivesApplyToTeam(desc.teamId)) {
+            serverActorConsumeLife(kv.first);
+            if (d.matchMode == "melee") {
+                const auto stockIt = d.actorLives.find(kv.first);
+                const int stocksLeft = stockIt == d.actorLives.end()
+                    ? 0 : std::max(0, stockIt->second);
+                const auto nameIt = d.participantNames.find(kv.first);
+                const std::string fighterName = nameIt != d.participantNames.end()
+                    ? nameIt->second : "A fighter";
+                std::string message = fighterName + " lost a stock. " +
+                    std::to_string(stocksLeft) +
+                    (stocksLeft == 1 ? " stock left." : " stocks left.");
 
-            if (stocksLeft == 0) {
-                uint32_t winnerId = 0;
-                for (uint32_t participantId : d.participants) {
-                    if (participantId == kv.first) continue;
-                    const auto otherIt = d.matchActors.find(participantId);
-                    if (otherIt == d.matchActors.end() ||
-                        (otherIt->second.state != ActorState::Alive &&
-                         otherIt->second.state != ActorState::Respawning))
-                        continue;
-                    const auto otherPlayer = players.find(participantId);
-                    if (otherPlayer != players.end() && otherPlayer->second.dead)
-                        continue;
-                    const auto otherNpc = npcs.find(participantId);
-                    if (otherNpc != npcs.end() && otherNpc->second.health <= 0)
-                        continue;
-                    winnerId = participantId;
-                    break;
+                if (stocksLeft == 0) {
+                    uint32_t winnerId = 0;
+                    for (uint32_t participantId : d.participants) {
+                        if (participantId == kv.first) continue;
+                        const auto otherIt = d.matchActors.find(participantId);
+                        if (otherIt == d.matchActors.end() ||
+                            (otherIt->second.state != ActorState::Alive &&
+                             otherIt->second.state != ActorState::Respawning))
+                            continue;
+                        const auto otherPlayer = players.find(participantId);
+                        if (otherPlayer != players.end() && otherPlayer->second.dead)
+                            continue;
+                        const auto otherNpc = npcs.find(participantId);
+                        if (otherNpc != npcs.end() && otherNpc->second.health <= 0)
+                            continue;
+                        winnerId = participantId;
+                        break;
+                    }
+                    const auto winnerNameIt = d.participantNames.find(winnerId);
+                    if (winnerId != 0 && winnerNameIt != d.participantNames.end())
+                        message += " " + winnerNameIt->second + " wins the round!";
                 }
-                const auto winnerNameIt = d.participantNames.find(winnerId);
-                if (winnerId != 0 && winnerNameIt != d.participantNames.end())
-                    message += " " + winnerNameIt->second + " wins the round!";
+                broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
+                                           message.c_str());
             }
-            broadcastServerChatMessage(sock, players, tick, totalPacketsOut,
-                                       message.c_str());
         }
 
         const bool respawns = desc.controller == ActorController::Human
             ? serverPlayerRespawnsEnabled(kv.first)
-            : (d.matchMode == "melee" ? serverMeleeActorHasStocks(kv.first)
-                                      : serverActorRespawnsEnabled(kv.first));
+            : (serverActorRespawnsEnabled(kv.first) &&
+               (!d.livesEnabled || serverActorHasLives(kv.first)));
 
         desc.state = downed ? ActorState::Downed
                             : nextActorState(before, dead, respawns);
@@ -4373,6 +4787,15 @@ void beginMatchCountdown(ServerGamemodeState& d,
     d.roundCountdownFreeze =
         GamemodeRegistry::instance().get(d.matchMode).features.freezeDuringCountdown;
     resetGamemodeActorsAtMapSpawn(d, players, npcs, npcSystem);
+    if (d.livesEnabled) {
+        d.actorLives.clear();
+        for (uint32_t id : d.participants) {
+            auto teamIt = d.matchTeams.find(id);
+            const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+            if (serverActorLivesApplyToTeam(team))
+                d.actorLives[id] = d.actorLivesDefault;
+        }
+    }
     if (d.zombieTower) {
         const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
         if (gm.features.freezeDuringCountdown) d.roundCountdownFreeze = true;
@@ -5430,9 +5853,342 @@ static void emitGamemodeMatchPersistence(ServerGamemodeState& d, uint32_t tick,
         event.participants.size());
 }
 
+static int aftermathTargetTeamIndex(const ServerGamemodeState& d)
+{
+    if (d.aftermath.targetTeam.empty()) return -1;
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    return resolveTeamIndexFromId(gm, d.aftermath.targetTeam);
+}
+
+static bool aftermathActorCanReturn(const ServerGamemodeState& d, uint32_t actorId)
+{
+    auto aIt = d.matchActors.find(actorId);
+    if (aIt != d.matchActors.end() &&
+        (aIt->second.state == ActorState::Alive ||
+         aIt->second.state == ActorState::Respawning))
+        return true;
+    auto teamIt = d.matchTeams.find(actorId);
+    const int team = teamIt != d.matchTeams.end() ? teamIt->second : -1;
+    if (d.livesEnabled && serverActorLivesApplyToTeam(team))
+        return serverActorHasLives(actorId);
+    return serverActorRespawnsEnabled(actorId);
+}
+
+static bool aftermathTeamCanContinue(const ServerGamemodeState& d, int team)
+{
+    for (uint32_t id : d.participants) {
+        auto teamIt = d.matchTeams.find(id);
+        if (teamIt == d.matchTeams.end() || teamIt->second != team) continue;
+        if (aftermathActorCanReturn(d, id)) return true;
+    }
+    return false;
+}
+
+static uint32_t aftermathNextRandom(ServerGamemodeState& d)
+{
+    uint32_t x = d.aftermathRngState ? d.aftermathRngState : 0x9e3779b9u;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    d.aftermathRngState = x ? x : 0x9e3779b9u;
+    return d.aftermathRngState;
+}
+
+static bool beginAftermath(ServerGamemodeState& d, SOCKET sock,
+                           std::unordered_map<uint32_t, ServerPlayer>& players,
+                           std::unordered_map<uint32_t, ServerNpc>& npcs,
+                           uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (!d.aftermath.enabled || d.aftermathActive) return false;
+    const int targetTeam = aftermathTargetTeamIndex(d);
+    if (targetTeam < 0) return false;
+
+    std::vector<uint32_t> targets;
+    for (const auto& kv : players) {
+        const ServerPlayer& p = kv.second;
+        if (p.spawnState != ServerPlayer::Active) continue;
+        auto teamIt = d.matchTeams.find(p.id);
+        if (teamIt == d.matchTeams.end() || teamIt->second != targetTeam) continue;
+        targets.push_back(p.id);
+    }
+    if (targets.empty()) return false;
+
+    ServerNpc* mover = nullptr;
+    for (auto& kv : npcs) {
+        if (kv.second.health <= 0) continue;
+        if (kv.second.matchTeam == targetTeam) continue;
+        mover = &kv.second;
+        break;
+    }
+    if (!mover) return false;
+
+    d.aftermathActive = true;
+    d.aftermathStage = 1;
+    d.aftermathStartTick = tick;
+    d.aftermathSoundStartTick = 0;
+    d.aftermathFinishTick = 0;
+    d.aftermathSoundSerial = 0;
+    d.aftermathSoundIndex = 0xFF;
+    d.aftermathMoverActorId = mover->entityId;
+    d.aftermathRngState = (tick * 1664525u + mover->entityId * 1013904223u) | 1u;
+    d.aftermathEffects.clear();
+    d.matchOver = true;
+    d.phase = DUEL_PHASE_AFTERMATH;
+    d.phaseTimer = 0.0f;
+    ++d.stateVersion;
+
+    const float approach = std::max(4.0f, d.aftermath.approachDistanceMeters);
+    const float speed = std::max(0.01f, d.aftermath.moveSpeed);
+    for (uint32_t id : targets) {
+        auto pIt = players.find(id);
+        if (pIt == players.end()) continue;
+        ServerPlayer& p = pIt->second;
+        glm::vec3 dir = p.pos - mover->pos;
+        dir.z = 0.0f;
+        if (glm::dot(dir, dir) < 0.0001f) dir = glm::vec3(1.0f, 0.0f, 0.0f);
+        else dir = glm::normalize(dir);
+
+        ServerGamemodeState::AftermathEffect effect;
+        effect.targetActorId = id;
+        effect.endPos = p.pos;
+        effect.startPos = p.pos - dir * approach;
+        effect.startPos.z = p.pos.z;
+        effect.moverPos = effect.startPos;
+        effect.startTick = tick;
+        effect.durationTicks = (uint32_t)std::max<int64_t>(
+            1, (int64_t)std::llround((double)approach / (double)speed * 60.0));
+        d.aftermathEffects.push_back(effect);
+
+        // Hold the survivor in place for the scripted approach and make the
+        // final hit a normal authoritative damage event.
+        p.dead = false;
+        p.downed = false;
+        p.health = 1;
+        p.respawnSeconds = -1.0f;
+        p.teleportInvulnerabilityTicks = 0;
+        p.movement.movementEnabled = false;
+        p.movement.baseVelocity = glm::vec3(0.0f);
+        p.movement.externalImpulse = glm::vec3(0.0f);
+        p.attackQueued = false;
+        p.input = {};
+        p.lastNpcDamageSourceId = mover->entityId;
+        p.lastNpcDamageTick = tick;
+        auto descIt = d.matchActors.find(id);
+        if (descIt != d.matchActors.end()) descIt->second.state = ActorState::Alive;
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Duel, StructuredLevel::Important,
+        "gamemode.aftermath.begin", d.matchMode,
+        "loss aftermath started; survivors frozen and Jason scripted toward them",
+        tick,
+        nlohmann::json{{"mode", d.matchMode},
+                       {"target_team", targetTeam},
+                       {"mover_actor", d.aftermathMoverActorId},
+                       {"targets", d.aftermathEffects.size()},
+                       {"approach_distance", approach},
+                       {"move_speed", speed},
+                       {"scare_ticks", d.aftermath.scareTicks},
+                       {"final_damage", d.aftermath.finalDamage}});
+    broadcastDuelState(sock, d, players, totalPacketsOut);
+    return true;
+}
+
+static void serverAftermathTick(ServerGamemodeState& d, SOCKET sock,
+                                std::unordered_map<uint32_t, ServerPlayer>& players,
+                                std::unordered_map<uint32_t, ServerNpc>& npcs,
+                                uint32_t tick, uint64_t& totalPacketsOut)
+{
+    if (!d.aftermathActive) return;
+
+    // Drop effects for clients that disconnected or were removed.
+    d.aftermathEffects.erase(
+        std::remove_if(d.aftermathEffects.begin(), d.aftermathEffects.end(),
+            [&](const ServerGamemodeState::AftermathEffect& effect) {
+                auto it = players.find(effect.targetActorId);
+                return it == players.end() ||
+                       it->second.spawnState != ServerPlayer::Active;
+            }),
+        d.aftermathEffects.end());
+
+    for (auto& effect : d.aftermathEffects) {
+        auto pIt = players.find(effect.targetActorId);
+        if (pIt == players.end()) continue;
+        ServerPlayer& p = pIt->second;
+        p.pos = effect.endPos;
+        p.vel = glm::vec3(0.0f);
+        p.movement.movementEnabled = false;
+        p.movement.baseVelocity = glm::vec3(0.0f);
+        p.movement.externalImpulse = glm::vec3(0.0f);
+        p.input = {};
+        p.attackQueued = false;
+    }
+
+    if (d.aftermathEffects.empty()) {
+        d.aftermathActive = false;
+        d.aftermathStage = 0;
+        d.phase = DUEL_PHASE_INTERMISSION;
+        d.phaseTimer = d.intermissionSeconds;
+        d.matchOver = false;
+        ++d.stateVersion;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.aftermath.finished", d.matchMode,
+            "no targeted survivors remain; returning to intermission", tick, {});
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        return;
+    }
+
+    if (d.aftermathStage == 1) {
+        bool allReached = true;
+        for (auto& effect : d.aftermathEffects) {
+            auto pIt = players.find(effect.targetActorId);
+            if (pIt == players.end()) continue;
+            ServerPlayer& p = pIt->second;
+            // Keep the frozen survivor authoritative at their last position.
+            p.vel = glm::vec3(0.0f);
+            p.movement.movementEnabled = false;
+            p.input = {};
+            const uint32_t elapsed = tick > effect.startTick ? tick - effect.startTick : 0;
+            const float t = effect.durationTicks > 0
+                ? std::clamp((float)elapsed / (float)effect.durationTicks, 0.0f, 1.0f)
+                : 1.0f;
+            effect.moverPos = glm::mix(effect.startPos, effect.endPos, t);
+            if (t < 1.0f) allReached = false;
+        }
+        if (!allReached) {
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            return;
+        }
+        if (allReached) {
+            d.aftermathStage = 2;
+            d.aftermathSoundStartTick = tick + 1;
+            d.aftermathSoundSerial = 0;
+            d.aftermathSoundIndex = 0xFF;
+            const uint8_t weaponType = [] {
+                if (const WeaponDefinition* wd = WeaponRegistry::instance().get("chainsaw"))
+                    return networkWeaponTypeForDefinition(*wd);
+                return (uint8_t)NETWORK_WEAPON_NONE;
+            }();
+            for (auto& effect : d.aftermathEffects) {
+                auto pIt = players.find(effect.targetActorId);
+                if (pIt == players.end()) continue;
+                ServerPlayer& p = pIt->second;
+                p.dead = false;
+                p.downed = false;
+                p.health = 1;
+                p.teleportInvulnerabilityTicks = 0;
+                p.lastNpcDamageSourceId = d.aftermathMoverActorId;
+                p.lastNpcDamageTick = tick;
+
+                ServerActorDamageRequest request;
+                request.attacker = {d.aftermathMoverActorId, ServerActorKind::Npc, nullptr, nullptr};
+                request.victim = {p.id, ServerActorKind::Player, nullptr, nullptr};
+                request.damage = std::max(1, d.aftermath.finalDamage);
+                request.knockback = glm::vec3(0.0f);
+                request.source = ServerDamageSource::PhysicalContact;
+                request.weaponId = "chainsaw";
+                request.weaponDisplayName = "Chainsaw";
+                request.serverTick = tick;
+                const ServerDamageResult result = applyActorDamage(players, npcs, request);
+                if (result.applied) {
+                    const glm::vec3 hit = p.pos;
+                    queueServerDamageConfirmedEvent(
+                        sock, players, tick, totalPacketsOut,
+                        0, p, request.damage, result, hit, glm::vec3(0, 0, 1),
+                        glm::vec3(0.0f), ServerDamageSource::PhysicalContact,
+                        weaponType, 0, 0, d.aftermathMoverActorId, "chainsaw", 0.0f);
+                }
+                p.respawnSeconds = -1.0f;
+                p.movement.movementEnabled = false;
+                p.input = {};
+                p.attackQueued = false;
+                auto descIt = d.matchActors.find(p.id);
+                if (descIt != d.matchActors.end()) descIt->second.state = ActorState::Spectating;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "gamemode.aftermath.final_damage", std::to_string(p.id),
+                    "Jason reached the survivor and applied final damage",
+                    tick,
+                    nlohmann::json{{"mode", d.matchMode},
+                                   {"target", p.id},
+                                   {"mover_actor", d.aftermathMoverActorId},
+                                   {"damage", request.damage},
+                                   {"applied", result.applied},
+                                   {"killed", result.killed},
+                                   {"health_after", result.healthAfter}});
+            }
+            ++d.stateVersion;
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+        }
+        return;
+    }
+
+    if (d.aftermathStage == 2) {
+        const int scareTicks = std::max(0, d.aftermath.scareTicks);
+        const uint32_t elapsed = tick > d.aftermathSoundStartTick
+            ? tick - d.aftermathSoundStartTick : 0;
+        if ((int)elapsed >= scareTicks) {
+            d.aftermathStage = 3;
+            d.aftermathFinishTick = tick + 60;
+            ++d.stateVersion;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.aftermath.scare_sequence_complete", d.matchMode,
+                "99-tick scare sequence complete", tick,
+                nlohmann::json{{"mode", d.matchMode},
+                               {"scare_ticks", scareTicks},
+                               {"sound_serial", d.aftermathSoundSerial}});
+            broadcastDuelState(sock, d, players, totalPacketsOut);
+            return;
+        }
+        if (!d.aftermath.scareSounds.empty()) {
+            const uint32_t roll = aftermathNextRandom(d);
+            d.aftermathSoundIndex = (uint8_t)(roll % d.aftermath.scareSounds.size());
+        } else {
+            d.aftermathSoundIndex = 0;
+        }
+        ++d.aftermathSoundSerial;
+        ++d.stateVersion;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.aftermath.scare_tick", d.matchMode,
+            "one overlapping scare sound emitted this server tick", tick,
+            nlohmann::json{{"mode", d.matchMode},
+                           {"tick_index", elapsed},
+                           {"sound_serial", d.aftermathSoundSerial},
+                           {"sound_index", d.aftermathSoundIndex},
+                           {"sound_count", d.aftermath.scareSounds.size()}});
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+        return;
+    }
+
+    if (d.aftermathStage == 3 && d.aftermathFinishTick != 0 &&
+        tick >= d.aftermathFinishTick) {
+        d.aftermathActive = false;
+        d.aftermathStage = 0;
+        d.aftermathEffects.clear();
+        d.aftermathFinishTick = 0;
+        d.phase = DUEL_PHASE_INTERMISSION;
+        d.phaseTimer = d.intermissionSeconds;
+        d.matchOver = false;
+        d.winnerTeam = -1;
+        d.winnerPlayerId = 0;
+        ++d.stateVersion;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "gamemode.aftermath.finished", d.matchMode,
+            "aftermath complete; room returned to the shared intermission",
+            tick, nlohmann::json{{"mode", d.matchMode}});
+        broadcastDuelState(sock, d, players, totalPacketsOut);
+    }
+}
+
 void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
                              SOCKET sock,
                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                             std::unordered_map<uint32_t, ServerNpc>& npcs,
                              uint64_t& totalPacketsOut)
 {
     // ── Generic last-actor-alive (teamless) elimination ─────────────
@@ -5488,11 +6244,16 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
             const bool inPlay = aIt != d.matchActors.end() &&
                 (aIt->second.state == ActorState::Alive ||
                  aIt->second.state == ActorState::Respawning);
-            if (inPlay) { ++aliveActors; lastAliveActor = id; }
+            // Lives/aftermath modes treat an actor that can still respawn as
+            // still in the match, so a one-tick death between respawns is not
+            // mistaken for elimination.
+            const bool canContinue = (d.livesEnabled || d.aftermath.enabled)
+                ? aftermathActorCanReturn(d, id) : inPlay;
+            if (canContinue) { ++aliveActors; lastAliveActor = id; }
             if (team >= 0) {
                 anyTeam = true;
                 teams.insert(team);
-                if (inPlay) aliveByTeam[team]++;
+                if (canContinue) aliveByTeam[team]++;
             }
         }
 
@@ -5521,6 +6282,14 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
         }
 
         if (decided) {
+            const int targetTeam = aftermathTargetTeamIndex(d);
+            if (d.aftermath.enabled && targetTeam >= 0 && winnerTeam != targetTeam) {
+                d.winnerTeam = winnerTeam;
+                d.winnerPlayerId = winnerActor;
+                d.victoryType = 0;
+                if (beginAftermath(d, sock, players, npcs, tick, totalPacketsOut))
+                    return;
+            }
             d.matchOver = true;
             d.phase = DUEL_PHASE_RESULTS;
             d.victoryType = 0;
@@ -5584,6 +6353,15 @@ void checkMatchWinConditions(ServerGamemodeState& d, uint32_t tick,
 
     // Time limit check
     if (d.matchTimeLimitTick > 0 && tick >= d.matchTimeLimitTick) {
+        const int targetTeam = aftermathTargetTeamIndex(d);
+        if (d.aftermath.enabled && targetTeam >= 0 &&
+            d.timeLimitWinnerTeam >= 0 && d.timeLimitWinnerTeam != targetTeam) {
+            d.victoryType = 1;
+            d.winnerTeam = d.timeLimitWinnerTeam;
+            d.winnerPlayerId = 0;
+            if (beginAftermath(d, sock, players, npcs, tick, totalPacketsOut))
+                return;
+        }
         d.matchOver = true;
         d.phase = DUEL_PHASE_RESULTS;
         d.victoryType = 1;  // TimeLimit
@@ -5746,9 +6524,38 @@ void serverAreaEffectTick(ServerGamemodeState& d,
     }
 
     std::vector<AreaEffectDamage> damage;
+    const std::vector<AreaEffect> before = d.areaEffects;
     tickAreaEffects(d.areaEffects, SERVER_DT, positions, teams, damage);
 
+    for (const AreaEffect& oldEffect : before) {
+        const bool stillAlive = std::any_of(d.areaEffects.begin(), d.areaEffects.end(),
+            [&](const AreaEffect& e) { return e.id == oldEffect.id; });
+        if (!stillAlive) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.effect.expired", std::to_string(oldEffect.id),
+                "lifetime", tick,
+                nlohmann::json{{"effect", oldEffect.id},
+                               {"kind", (int)oldEffect.kind},
+                               {"duration_s", oldEffect.durationSeconds},
+                               {"radius_m", oldEffect.radius}});
+        }
+    }
+
     for (const AreaEffectDamage& hit : damage) {
+        const auto beforeIt = std::find_if(before.begin(), before.end(),
+            [&](const AreaEffect& e) { return e.id == hit.effectId; });
+        if (beforeIt != before.end()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.effect.damage", std::to_string(hit.effectId),
+                "tick", tick,
+                nlohmann::json{{"effect", hit.effectId},
+                               {"kind", (int)beforeIt->kind},
+                               {"actor", hit.actorId},
+                               {"damage", hit.damage},
+                               {"remaining_s", beforeIt->remainingSeconds()}});
+        }
         auto pIt = players.find(hit.actorId);
         if (pIt != players.end()) {
             ServerDamageSource source = ServerDamageSource::GrenadeExplosion;
@@ -5817,6 +6624,23 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             brain.state().sites.push_back(info);
         }
 
+        bool anyUsableSite = false;
+        for (const TeamSiteInfo& site : brain.state().sites)
+            if (site.hasPosition) { anyUsableSite = true; break; }
+        if (d.objective.valid() && !anyUsableSite) {
+            static uint32_t lastUnresolvedTick = 0;
+            if (lastUnresolvedTick == 0 || tick >= lastUnresolvedTick + 300) {
+                lastUnresolvedTick = tick;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "objective.target-unresolved", std::to_string(team),
+                    "no_usable_site", tick,
+                    nlohmann::json{{"team", team},
+                                   {"objective", d.objective.id},
+                                   {"sites", brain.state().sites.size()}});
+            }
+        }
+
         // Objective context.
         TeamObjectiveContext ctx;
         ctx.active = d.objective.valid();
@@ -5826,6 +6650,18 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.carrierActorId = d.objective.carrierActorId;
         ctx.plantedSiteId = d.objective.plantedSiteId;
         ctx.bombPosition = d.objective.position;
+        ctx.planting = d.objective.state == ObjectiveState::Carried &&
+            d.objective.planterActorId != 0 && d.objective.plantTicksElapsed > 0;
+        ctx.planterActorId = d.objective.planterActorId;
+        ctx.interactionMode = (uint8_t)d.objective.interactionMode;
+        if (ctx.planting) {
+            const int siteIndex =
+                MapConfigRegistry::instance().siteIndexAt(d.objective.position);
+            if (siteIndex >= 0) {
+                ctx.contestSiteId = mapCfg.bombSites[(size_t)siteIndex].id;
+                ctx.contestSitePosition = mapCfg.bombSites[(size_t)siteIndex].position;
+            }
+        }
         brain.state().objective = ctx;
         if (ctx.planted) {
             for (auto& site : brain.state().sites)
@@ -6115,7 +6951,8 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             glm::length(npc.body.pos - d.objective.position) <= d.objective.interactionRange;
         const int objectiveContextKey = (hasObj ? 1 : 0) |
             (ctx.atObjective ? 2 : 0) | (ctx.canPlant ? 4 : 0) |
-            (ctx.canDefuse ? 8 : 0) | (payloadObjective ? 16 : 0);
+            (ctx.canDefuse ? 8 : 0) | (payloadObjective ? 16 : 0) |
+            (d.objective.planterActorId != 0 ? 32 : 0);
         if (objectiveContextKey != npc.lastObjectiveContextKey) {
             npc.lastObjectiveContextKey = objectiveContextKey;
             StructuredLogger::instance().writeEvent(
@@ -6130,6 +6967,10 @@ void serverTeamBrainTick(ServerGamemodeState& d,
                                {"at_objective", ctx.atObjective},
                                {"can_plant", ctx.canPlant},
                                {"can_defuse", ctx.canDefuse},
+                               {"planting", d.objective.planterActorId != 0},
+                               {"planter_actor_id", d.objective.planterActorId},
+                               {"interaction_mode", objectiveInteractionModeName(
+                                   d.objective.interactionMode)},
                                {"carrier_actor_id", d.objective.carrierActorId},
                                {"is_carrier", d.objective.carrierActorId == npc.id},
                                {"actor_site_index", actorSiteIndex},
@@ -6187,6 +7028,51 @@ void serverGamemodeTick(SOCKET sock,
         lastMapConfigPollMs = mapPollNow;
     }
     payloadSyncCartFromMap(d, tick);
+    if (d.hasPendingObjectiveGive) {
+        d.hasPendingObjectiveGive = false;
+        const uint32_t target = d.pendingObjectiveGiveActorId != 0
+            ? d.pendingObjectiveGiveActorId
+            : d.pendingObjectiveGiveRequesterId;
+        const char* rejection = nullptr;
+        glm::vec3 targetPos{0.0f};
+        if (!d.objective.valid()) rejection = "no_objective";
+        else if (!d.objectiveRounds) rejection = "not_objective_rounds";
+        else if (target == 0 ||
+                 !objectiveActorPosition(players, npcs, target, targetPos))
+            rejection = "invalid_actor";
+
+        if (rejection) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.debug-assign", std::to_string(d.duelId),
+                rejection, tick,
+                nlohmann::json{{"requested_actor", target},
+                               {"requester", d.pendingObjectiveGiveRequesterId},
+                               {"accepted", false},
+                               {"reason", rejection}});
+        } else {
+            d.objective.state = ObjectiveState::Carried;
+            d.objective.carrierActorId = target;
+            d.objective.position = targetPos;
+            d.objective.planterActorId = 0;
+            d.objective.defuserActorId = 0;
+            d.objective.plantTicksElapsed = 0;
+            d.objective.defuseTicksElapsed = 0;
+            d.objective.npcTapCooldownTicks = 0;
+            d.objective.plantedSiteId.clear();
+            d.objective.explosionDeadlineTick = 0;
+            ++d.stateVersion;
+            d.stateBroadcastPending = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "objective.debug-assign", std::to_string(d.duelId),
+                "assigned", tick,
+                nlohmann::json{{"requested_actor", target},
+                               {"requester", d.pendingObjectiveGiveRequesterId},
+                               {"accepted", true},
+                               {"position", {targetPos.x, targetPos.y, targetPos.z}}});
+        }
+    }
     // The server normally polls gamemode JSON from its outer loop. Keep this
     // bounded fallback here too so a hosted server applies wave tuning without
     // a restart, while avoiding filesystem work on every 60 Hz tick.
@@ -6211,6 +7097,11 @@ void serverGamemodeTick(SOCKET sock,
             d.intermissionSeconds = (float)live.intermissionSeconds;
             d.resultsSeconds = (float)live.resultsSeconds;
         }
+    }
+    if (d.aftermathActive)
+    {
+        serverAftermathTick(d, sock, players, npcs, tick, totalPacketsOut);
+        return;
     }
     updateActorStates(d, sock, players, npcs, tick, totalPacketsOut);
     // Generic area effects tick at fixed 60 Hz in every managed mode.
@@ -6871,7 +7762,7 @@ void serverGamemodeTick(SOCKET sock,
             if (d.payloadMode) {
                 serverPayloadTick(d, players, npcs, npcSystem, tick);
             } else {
-                serverObjectiveTick(d, players, npcs, tick);
+                serverObjectiveTick(d, players, npcs, npcSystem, tick);
                 checkObjectiveRoundEnd(d, tick);
             }
             if (d.phase != DUEL_PHASE_ACTIVE)
@@ -7092,6 +7983,20 @@ void serverGamemodeTick(SOCKET sock,
                         nlohmann::json{{"track", d.ztMusicTrack},
                                        {"serial", d.ztMusicSerial}});
                 }
+                if (d.timeLimitStartsAtGo) {
+                    d.matchStartTick = tick;
+                    if (d.timeLimitSeconds > 0)
+                        d.matchTimeLimitTick =
+                            tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Important,
+                        "gamemode.time_limit.start", d.matchMode,
+                        "match time limit started at GO", tick,
+                        nlohmann::json{{"mode", d.matchMode},
+                                       {"start_tick", d.matchStartTick},
+                                       {"time_limit_seconds", d.timeLimitSeconds},
+                                       {"deadline_tick", d.matchTimeLimitTick}});
+                }
                 ++d.stateVersion;
                 d.lastBroadcastTick = tick;
                 Debug::log(Debug::Category::Duel,
@@ -7115,7 +8020,8 @@ void serverGamemodeTick(SOCKET sock,
                 d.phase = DUEL_PHASE_ACTIVE;
                 d.roundCountdownFreeze = false;
                 d.waveBannerVisible = false;
-                d.matchStartTick = tick;
+                if (!d.timeLimitStartsAtGo)
+                    d.matchStartTick = tick;
                 if (d.persistentNpcSpawns)
                     d.npcSpawnNextTick = tick + (uint32_t)std::max(1, d.npcSpawnIntervalTicks);
                 if (d.npcWaves) {
@@ -7125,7 +8031,7 @@ void serverGamemodeTick(SOCKET sock,
                     broadcastDuelState(sock, d, players, totalPacketsOut);
                     break;
                 }
-                if (d.timeLimitSeconds > 0)
+                if (d.timeLimitSeconds > 0 && !d.timeLimitStartsAtGo)
                     d.matchTimeLimitTick = tick + (uint32_t)(d.timeLimitSeconds * 60.0f);
                 // A declared disaster assigns per-actor weapons before the
                 // actors are placed at their spawns, so the spawn reset applies
@@ -7260,7 +8166,7 @@ void serverGamemodeTick(SOCKET sock,
                 break;
             }
             // Check win conditions on every tick
-            checkMatchWinConditions(d, tick, sock, players, totalPacketsOut);
+            checkMatchWinConditions(d, tick, sock, players, npcs, totalPacketsOut);
             if (d.phase != DUEL_PHASE_ACTIVE) break;  // win condition triggered
             // A declared disaster that reaches its bounded duration with more
             // than one survivor resolves a deterministic winner (pure rule).
@@ -8039,6 +8945,16 @@ void serverGamemodeRequestMapChange(const std::string& mapId)
     if (!d.enabled || mapId.empty()) return;
     d.hasPendingManualMap = true;
     d.pendingManualMap = mapId;
+}
+
+void serverGamemodeRequestObjectiveGive(uint32_t requesterActorId,
+                                        uint32_t targetActorId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled) return;
+    d.hasPendingObjectiveGive = true;
+    d.pendingObjectiveGiveRequesterId = requesterActorId;
+    d.pendingObjectiveGiveActorId = targetActorId;
 }
 
 void serverGamemodeRequestJuggernautSkip()

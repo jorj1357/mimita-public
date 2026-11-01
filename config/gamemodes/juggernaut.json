@@ -120,6 +120,20 @@
     "team_change_cooldown_seconds": 300.0,
     "class_pool": []
   },
+  "aftermath": {
+    "enabled": false,
+    "target_team": "",
+    "scare_ticks": 99,
+    "final_damage": 999999,
+    "move_speed": 20.0,
+    "approach_distance_meters": 18.0,
+    "scare_sounds": [],
+    "blackout": true,
+    "hide_hud": true,
+    "mute_audio": true,
+    "freeze_local_player": true,
+    "fatal_window": true
+  },
   "presentation": {
     "damage_numbers": false,
     "hit_effects": false,
@@ -160,6 +174,7 @@
     ],
     "friendly_wireframe_color": null,
     "enemy_wireframe_color": null,
+    "room_code_color": null,
     "enemy_trail": {
       "enabled": null,
       "minSpeed": null,
@@ -196,6 +211,7 @@
     "torch_lighting": false,
     "freeze_during_countdown": false,
     "freeze_during_go": true,
+    "objective_only_round_wins": false,
     "destructible_world": null,
     "destructible_world_reset": "round"
   },
@@ -243,6 +259,9 @@
   "wave_increment": 1,
   "npcs_per_wave": 0,
   "lives": 3,
+  "lives_enabled": false,
+  "lives_team": "",
+  "time_limit_starts_at_go": false,
   "wave_banner_seconds": 3.0,
   "wave_stagger_enabled": true,
   "wave_npcs_per_tick": 10,

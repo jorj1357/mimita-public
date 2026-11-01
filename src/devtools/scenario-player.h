@@ -74,6 +74,7 @@ private:
     bool mActive = false;
     bool mWaitingForStart = false;
     bool mValid = false;
+    bool mNetworked = false;
     int mSchemaVersion = 1;
     uint64_t mStartMs = 0;
     uint32_t mIndex = 0;

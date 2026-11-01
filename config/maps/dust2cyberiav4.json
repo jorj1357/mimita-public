@@ -25,6 +25,26 @@
       "visible_debug": true
     }
   ],
+  "entities": [
+    {
+      "id": "ct_spawnpoint",
+      "type": "spawnpoint",
+      "tag": "ct_spawn",
+      "position": [-878.3729858398438, 122.62106323242188, 2349.300048828125],
+      "radius": 1.0,
+      "enabled": true,
+      "visible": true
+    },
+    {
+      "id": "t_spawnpoint",
+      "type": "spawnpoint",
+      "tag": "t_spawn",
+      "position": [-604.89453125, 28.294063568115234, 2366.224853515625],
+      "radius": 1.0,
+      "enabled": true,
+      "visible": true
+    }
+  ],
   "bomb": {
     "plant_seconds": 3,
     "defuse_seconds": 5,

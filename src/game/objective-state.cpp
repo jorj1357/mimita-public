@@ -12,6 +12,17 @@ ObjectiveKind objectiveKindFromString(const std::string& kind)
     return ObjectiveKind::None;
 }
 
+ObjectiveInteractionMode objectiveInteractionModeFromString(const std::string& mode)
+{
+    if (mode == "repeated_tap" || mode == "tap") return ObjectiveInteractionMode::RepeatedTap;
+    return ObjectiveInteractionMode::Hold;
+}
+
+const char* objectiveInteractionModeName(ObjectiveInteractionMode mode)
+{
+    return mode == ObjectiveInteractionMode::RepeatedTap ? "repeated_tap" : "hold";
+}
+
 uint32_t selectObjectiveCarrier(const ObjectiveInstance& obj,
                                const ObjectiveCarrierCandidate* candidates,
                                int candidateCount,
@@ -49,6 +60,16 @@ bool advanceObjectiveProgress(int& elapsed, int required, bool canProgress)
         return true;
     }
     return false;
+}
+
+bool advanceObjectiveTapProgress(int& elapsed, int required, int tapTicks)
+{
+    if (required <= 0) {
+        elapsed = 0;
+        return true;
+    }
+    elapsed = std::min(required, elapsed + std::max(1, tapTicks));
+    return elapsed >= required;
 }
 
 int objectiveSecondsToTicks(float seconds)
@@ -145,6 +166,47 @@ bool objectiveSelfTest(std::string& report)
             fail("zero-required action should complete immediately");
 
         report += "progress=ok\n";
+    }
+
+    // Interaction-mode parsing and repeated-tap totals.
+    {
+        if (objectiveInteractionModeFromString("hold") != ObjectiveInteractionMode::Hold)
+            fail("'hold' should map to Hold");
+        if (objectiveInteractionModeFromString("repeated_tap") !=
+            ObjectiveInteractionMode::RepeatedTap)
+            fail("'repeated_tap' should map to RepeatedTap");
+        if (objectiveInteractionModeFromString("") != ObjectiveInteractionMode::Hold)
+            fail("missing interaction mode should default to Hold");
+
+        const int plantRequired = objectiveSecondsToTicks(1.0f);
+        const int defuseRequired = objectiveSecondsToTicks(5.0f);
+        const int tapTicks = objectiveSecondsToTicks(0.1f);
+        if (plantRequired != 60) fail("1s plant should be 60 ticks");
+        if (defuseRequired != 300) fail("5s defuse should be 300 ticks");
+        if (tapTicks != 6) fail("0.1s tap should be 6 ticks");
+
+        int plantElapsed = 0;
+        for (int i = 0; i < 9; ++i)
+            if (advanceObjectiveTapProgress(plantElapsed, plantRequired, tapTicks))
+                fail("9 taps must not complete a 1s plant");
+        if (plantElapsed != 54) fail("9 taps should total 54 ticks");
+        if (!advanceObjectiveTapProgress(plantElapsed, plantRequired, tapTicks))
+            fail("10 taps should complete a 1s plant");
+        if (plantElapsed != plantRequired) fail("tap plant should clamp to required");
+
+        int defuseElapsed = 0;
+        for (int i = 0; i < 49; ++i)
+            if (advanceObjectiveTapProgress(defuseElapsed, defuseRequired, tapTicks))
+                fail("49 taps must not complete a 5s defuse");
+        if (defuseElapsed != 294) fail("49 taps should total 294 ticks");
+        if (!advanceObjectiveTapProgress(defuseElapsed, defuseRequired, tapTicks))
+            fail("50 taps should complete a 5s defuse");
+
+        // Release/pause keeps accumulated tap progress; the host resets it only
+        // on death, invalid state, or leaving the valid area.
+        if (defuseElapsed != defuseRequired)
+            fail("tap progress should remain at completion");
+        report += "interaction-modes=ok\n";
     }
 
     report += ok ? "PASS\n" : "FAIL\n";

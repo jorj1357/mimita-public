@@ -126,6 +126,38 @@ ActorVisualBounds computeActorVisualBounds(const Player& player)
     };
     include(player.physicalBody.parts, player.physicalBody.partMeshes);
     include(player.physicalBody.extraParts, player.physicalBody.extraPartMeshes);
+    // Avatars without physical body parts render through the single-mesh
+    // fallback. Their outline/wireframe guard still needs real bounds, or the
+    // guard rejects every frame and those actors never receive a silhouette.
+    if (bounds.parts == 0 && !player.renderMesh.verts.empty())
+    {
+        const glm::mat4 model =
+            glm::translate(glm::mat4(1.0f), player.pos) *
+            glm::rotate(glm::mat4(1.0f), glm::radians(player.yaw), glm::vec3(0, 0, 1));
+        for (const Mesh::Batch& batch : player.renderMesh.batches)
+        {
+            if (!batch.hasBounds)
+                continue;
+            const glm::vec3 localCenter = (batch.boundsMin + batch.boundsMax) * 0.5f;
+            const glm::vec3 localHalf = (batch.boundsMax - batch.boundsMin) * 0.5f;
+            const glm::vec3 center = glm::vec3(model * glm::vec4(localCenter, 1.0f));
+            const float radius = glm::length(localHalf);
+            if (first) {
+                bounds.min = center - glm::vec3(radius);
+                bounds.max = center + glm::vec3(radius);
+                first = false;
+            } else {
+                bounds.min = glm::min(bounds.min, center - glm::vec3(radius));
+                bounds.max = glm::max(bounds.max, center + glm::vec3(radius));
+            }
+            bounds.maxOffset = std::max(bounds.maxOffset,
+                glm::length(center - player.pos) + radius);
+            bounds.maxWorldExtent = std::max(bounds.maxWorldExtent,
+                glm::length(center - player.pos) + radius);
+            ++bounds.meshBoundsParts;
+            ++bounds.parts;
+        }
+    }
     if (bounds.parts == 0)
         return bounds;
     bounds.size = bounds.max - bounds.min;
@@ -507,9 +539,10 @@ void renderPlayerInternal(
     }
     const bool teamIdentityKnown = isLocal ||
         (localTeam >= 0 && resolvedActorTeam >= 0);
-    // Do not guess an unknown actor is hostile for a gamemode-forced outline.
-    // Configured layers remain independent; only this forced outline waits for
-    // authoritative team identity.
+    // Team identity still decides teammate-vs-enemy color. An actor with an
+    // unknown team uses the configured enemy layer rather than losing its
+    // outline entirely; the mode's player_outlines/friendly_outlines policy
+    // still gates whether that layer is allowed.
     const bool modeForcesTeamOutline = !isLocal && teamIdentityKnown &&
         visualsConfig.hasPlayerOutlinesOverride() && visualsConfig.playerOutlinesEnabled() &&
         (!teammate || visualsConfig.friendlyOutlinesEnabled());
@@ -518,7 +551,11 @@ void renderPlayerInternal(
         (!teammate || visualsConfig.friendlyWireframesEnabled());
 
     const bool visualLayersAllowed = !visualsConfig.hasPlayerOutlinesOverride();
+    const bool configuredTeamOutline = !isLocal && outline->enabled &&
+        (!teammate || visualsConfig.friendlyOutlinesEnabled()) &&
+        (!visualsConfig.hasPlayerOutlinesOverride() || visualsConfig.playerOutlinesEnabled());
     const bool outlineAllowed = visualLayersAllowed || modeForcesTeamOutline ||
+        configuredTeamOutline ||
         (isLocal && visualsConfig.hasPlayerOutlinesOverride() &&
          visualsConfig.playerOutlinesEnabled() && visualsConfig.friendlyOutlinesEnabled());
     const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;

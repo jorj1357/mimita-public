@@ -348,6 +348,7 @@ void ScenarioRecorder::writeHeader(const Player& player, const Camera& camera)
     tracks.push_back("client_input");
     if (mNetworked)
         tracks.push_back("client_actors");
+    tracks.push_back("client_collision");
     if (mNetworked)
     {
         for (const auto& entry : WeaponData::MeleeMoveSetRegistry::instance().all())
@@ -496,6 +497,7 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
         {"freeze_held", frame.freezeHeld},
         {"freeze_pressed", frame.freezePressed},
         {"crouch_held", frame.crouchHeld},
+        {"interact_held", frame.interactHeld},
         {"reload_pressed", frame.reloadPressed},
         {"primary_held", frame.primaryHeld},
         {"secondary_held", frame.secondaryHeld},
@@ -514,6 +516,35 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
         {"transform_epoch", player.networkTransformEpoch},
         {"cam_yaw", camera.yaw},
         {"cam_pitch", camera.pitch}
+    };
+
+    nlohmann::json collisionContacts = nlohmann::json::array();
+    const size_t maxCollisionContacts =
+        std::min<size_t>(player.movementContacts.size(), 8);
+    for (size_t i = 0; i < maxCollisionContacts; ++i)
+    {
+        const MovementContact& contact = player.movementContacts[i];
+        collisionContacts.push_back({
+            {"kind", static_cast<int>(contact.kind)},
+            {"source", static_cast<int>(contact.source)},
+            {"shape", static_cast<int>(contact.shapeKind)},
+            {"subshape", static_cast<int>(contact.subshape)},
+            {"point", ScenarioTracks::vec3Json(contact.point)},
+            {"normal", ScenarioTracks::vec3Json(contact.normal)},
+            {"sweep_velocity", ScenarioTracks::vec3Json(contact.sweepVelocity)},
+            {"penetration_m", contact.penetrationDepth},
+            {"surface_id", contact.surfaceId},
+            {"source_entity_id", contact.sourceEntityId}
+        });
+    }
+    tick["collision"] = {
+        {"on_ground", player.ground.onGround},
+        {"stable_on_ground", player.ground.stableOnGround},
+        {"has_world_contact", player.ground.hasWorldContact},
+        {"contact_count", player.movementContacts.size()},
+        {"duplicate_contact_count", player.movementContacts.duplicateCount},
+        {"overflow_contact_count", player.movementContacts.overflowCount},
+        {"contacts", std::move(collisionContacts)}
     };
 
     if (mNetworked)

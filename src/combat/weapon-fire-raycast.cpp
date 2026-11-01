@@ -412,37 +412,41 @@ BeamCollisionResult collideBeam(
                 continue;
             }
             remote.updateModelWorldTransforms();
-            for (const PhysicalBodyPart& part : remote.physicalBody.parts) {
-                glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-                glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-                glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
-                float d = 0.0f;
-                glm::vec3 nml;
-                bool h = false;
-                if (useSphereCast) {
-                    h = sweptSphereAabb(origin, direction, beamThickness, center - half, center + half, result.nearest, d, nml);
-                } else {
-                    h = rayAabb(origin, direction, center - half, center + half, d, nml);
+            auto traceParts = [&](const std::vector<PhysicalBodyPart>& parts) {
+                for (const PhysicalBodyPart& part : parts) {
+                    glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                    glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                    glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                    float d = 0.0f;
+                    glm::vec3 nml;
+                    bool h = false;
+                    if (useSphereCast) {
+                        h = sweptSphereAabb(origin, direction, beamThickness, center - half, center + half, result.nearest, d, nml);
+                    } else {
+                        h = rayAabb(origin, direction, center - half, center + half, d, nml);
+                    }
+                    if (h && d < result.nearest) {
+                        result.nearest = d;
+                        result.hitWorld = false;
+                        result.victim = nullptr;
+                        result.remoteVictim = nullptr;
+                        result.remoteTargetId = 0;
+                        result.remoteNpcVictim = &remote;
+                        result.remoteNpcTargetId = entry.first;
+                        result.hitPart = part.name;
+                        result.hitNormal = nml;
+                        glm::vec3 sweepCenter = origin + direction * d;
+                        result.sweepCenterPosition = sweepCenter;
+                        result.hitPosition = useSphereCast
+                            ? sweepCenter - nml * beamThickness
+                            : sweepCenter;
+                        result.localHeight = std::clamp(
+                            (sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
+                    }
                 }
-                if (h && d < result.nearest) {
-                    result.nearest = d;
-                    result.hitWorld = false;
-                    result.victim = nullptr;
-                    result.remoteVictim = nullptr;
-                    result.remoteTargetId = 0;
-                    result.remoteNpcVictim = &remote;
-                    result.remoteNpcTargetId = entry.first;
-                    result.hitPart = part.name;
-                    result.hitNormal = nml;
-                    glm::vec3 sweepCenter = origin + direction * d;
-                    result.sweepCenterPosition = sweepCenter;
-                    result.hitPosition = useSphereCast
-                        ? sweepCenter - nml * beamThickness
-                        : sweepCenter;
-                    result.localHeight = std::clamp(
-                        (sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
-                }
-            }
+            };
+            traceParts(remote.physicalBody.parts);
+            traceParts(remote.physicalBody.extraParts);
         }
     }
 
@@ -450,7 +454,8 @@ BeamCollisionResult collideBeam(
         // No capsule fallback — only real body-part intersections count.
         // The server's mirror player has no loaded model, so reconstruct its
         // real body-part boxes from the standard template at (pos, yaw).
-        if (targetPlayer->physicalBody.parts.empty())
+        if (targetPlayer->physicalBody.parts.empty() &&
+            targetPlayer->physicalBody.extraParts.empty())
         {
             if (const auto* tpl = MimitaNet::standardPlayerBodyTemplate())
             {
@@ -494,34 +499,38 @@ BeamCollisionResult collideBeam(
             return result;
         }
         const_cast<Player*>(targetPlayer)->updateModelWorldTransforms();
-        for (const PhysicalBodyPart& part : targetPlayer->physicalBody.parts) {
-            glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
-            glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
-            glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
-            float d = 0.0f;
-            glm::vec3 nml;
-            bool h = false;
-            if (useSphereCast) {
-                h = sweptSphereAabb(origin, direction, beamThickness, center - half, center + half, result.nearest, d, nml);
-            } else {
-                h = rayAabb(origin, direction, center - half, center + half, d, nml);
+        auto traceParts = [&](const std::vector<PhysicalBodyPart>& parts) {
+            for (const PhysicalBodyPart& part : parts) {
+                glm::vec3 localCenter = (part.collider.localMin + part.collider.localMax) * 0.5f;
+                glm::vec3 center = glm::vec3(part.worldTransform * glm::vec4(localCenter, 1.0f));
+                glm::vec3 half = glm::max((part.collider.localMax - part.collider.localMin) * 0.5f, glm::vec3(0.12f));
+                float d = 0.0f;
+                glm::vec3 nml;
+                bool h = false;
+                if (useSphereCast) {
+                    h = sweptSphereAabb(origin, direction, beamThickness, center - half, center + half, result.nearest, d, nml);
+                } else {
+                    h = rayAabb(origin, direction, center - half, center + half, d, nml);
+                }
+                if (h && d < result.nearest) {
+                    result.nearest = d;
+                    result.hitWorld = false;
+                    result.victim = nullptr;
+                    result.remoteVictim = nullptr;
+                    result.hitPart = part.name;
+                    result.hitNormal = nml;
+                    glm::vec3 sweepCenter = origin + direction * d;
+                    result.sweepCenterPosition = sweepCenter;
+                    result.hitPosition = useSphereCast
+                        ? sweepCenter - nml * beamThickness
+                        : sweepCenter;
+                    result.localHeight = std::clamp(
+                        (sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
+                }
             }
-            if (h && d < result.nearest) {
-                result.nearest = d;
-                result.hitWorld = false;
-                result.victim = nullptr;
-                result.remoteVictim = nullptr;
-                result.hitPart = part.name;
-                result.hitNormal = nml;
-                glm::vec3 sweepCenter = origin + direction * d;
-                result.sweepCenterPosition = sweepCenter;
-                result.hitPosition = useSphereCast
-                    ? sweepCenter - nml * beamThickness
-                    : sweepCenter;
-                result.localHeight = std::clamp(
-                    (sweepCenter.z - (center.z - half.z)) / (half.z * 2.0f), 0.0f, 1.0f);
-            }
-        }
+        };
+        traceParts(targetPlayer->physicalBody.parts);
+        traceParts(targetPlayer->physicalBody.extraParts);
     }
 
     return result;

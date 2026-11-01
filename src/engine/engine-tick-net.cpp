@@ -162,12 +162,34 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.shieldHeld = MimitaMelee::shieldHeld();
         mpInput.crouchHeld =
             cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
+        mpInput.interactHeld =
+            cmd.isKeyboardEnabled() &&
+            glfwGetKey(engine.window(), GLFW_KEY_F) == GLFW_PRESS;
+        bool scheduledInteractHeld = false;
+        if (peekTerminalInteract(scheduledInteractHeld))
+            mpInput.interactHeld = scheduledInteractHeld;
         mpInput.flyUp = cmd.getState("freeze").held;
         mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.flyFast = cmd.getState("dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
             glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        {
+            const MimitaNet::CommunityMatchClient& match =
+                MimitaNet::CommunityMatchClient::instance();
+            if (match.aftermathLocal() && match.aftermathFreezeLocal()) {
+                mpInput.wishX = 0.0f;
+                mpInput.wishY = 0.0f;
+                mpInput.jumpHeld = false;
+                mpInput.dashPressed = false;
+                mpInput.downDashPressed = false;
+                mpInput.freezeHeld = false;
+                mpInput.shieldHeld = false;
+                mpInput.crouchHeld = false;
+                mpInput.interactHeld = false;
+                mpInput.attackPressed = false;
+            }
+        }
         mpInput.equippedSlot = player.equippedSlot;
         if (mpContext.communityWeaponSetId > 0) {
             auto& cfg = MimitaNet::CommunityServerConfig::instance();
@@ -200,6 +222,7 @@ void engineTickNet(Engine& engine, float dt)
             mpInput.freezeHeld = recorded->freezeHeld;
             mpInput.shieldHeld = recorded->shieldHeld;
             mpInput.crouchHeld = recorded->crouchHeld;
+            mpInput.interactHeld = recorded->interactHeld;
             mpInput.attackPressed = recorded->primaryHeld;
             mpInput.wishX = recorded->wishSide;
             mpInput.wishY = recorded->wishForward;

@@ -133,6 +133,95 @@ static bool claimedHitInBodyParts(const glm::vec3& claimedHit,
     return false;
 }
 
+// NPC hit validation must use the NPC's replicated body-part boxes, not the
+// standard humanoid template. Random avatars and monsters keep their real
+// parts in physicalBody.extraParts, and their server samples are recorded from
+// both lists. Returns false when no body samples exist so callers can fall back
+// to the template for legacy actors.
+static bool buildNpcTargetBodyPartBoxes(
+    std::vector<WeaponExecution::PlayerTarget::BodyPartBox>& out,
+    const ServerNpc& npc, uint32_t tick)
+{
+    out.clear();
+    const ServerNpcBodyPartSample* parts = nullptr;
+    uint8_t count = 0;
+    if (tick != 0 && getNpcBodyPartsAtTick(npc, tick, &parts, &count) &&
+        parts && count > 0)
+    {
+        out.reserve(count);
+        for (uint8_t i = 0; i < count; ++i)
+        {
+            WeaponExecution::PlayerTarget::BodyPartBox box;
+            box.center = {parts[i].cx, parts[i].cy, parts[i].cz};
+            box.half = {parts[i].hx, parts[i].hy, parts[i].hz};
+            box.bodyPart = (WeaponExecution::HitBodyPart)parts[i].bodyPart;
+            out.push_back(box);
+        }
+        return true;
+    }
+    if (npc.bodyPartCount > 0)
+    {
+        out.reserve(npc.bodyPartCount);
+        for (uint8_t i = 0; i < npc.bodyPartCount &&
+                           i < npc.bodyParts.size(); ++i)
+        {
+            const ServerNpcBodyPartSample& part = npc.bodyParts[i];
+            WeaponExecution::PlayerTarget::BodyPartBox box;
+            box.center = {part.cx, part.cy, part.cz};
+            box.half = {part.hx, part.hy, part.hz};
+            box.bodyPart = (WeaponExecution::HitBodyPart)part.bodyPart;
+            out.push_back(box);
+        }
+        return !out.empty();
+    }
+    return false;
+}
+
+static void fillNpcTargetBodyParts(WeaponExecution::PlayerTarget& target,
+                                   const ServerNpc& npc, uint32_t tick)
+{
+    if (!buildNpcTargetBodyPartBoxes(target.bodyParts, npc, tick))
+    {
+        glm::vec3 pos = npc.pos;
+        float yaw = npc.yaw;
+        if (tick != 0)
+            getNpcPoseAtTick(npc, tick, pos, yaw);
+        fillTargetBodyParts(target, pos, yaw);
+    }
+}
+
+static bool claimedHitInNpcBodyParts(const glm::vec3& claimedHit,
+                                     const ServerNpc& npc, uint32_t tick,
+                                     float tolerance, uint8_t& claimPart)
+{
+    std::vector<WeaponExecution::PlayerTarget::BodyPartBox> boxes;
+    if (!buildNpcTargetBodyPartBoxes(boxes, npc, tick))
+    {
+        glm::vec3 pos = npc.pos;
+        float yaw = npc.yaw;
+        if (tick != 0)
+            getNpcPoseAtTick(npc, tick, pos, yaw);
+        return claimedHitInBodyParts(claimedHit, pos, yaw, tolerance, claimPart);
+    }
+    for (const auto& box : boxes)
+    {
+        const glm::vec3 half = box.half + glm::vec3(tolerance);
+        if (claimedHit.x >= box.center.x - half.x &&
+            claimedHit.x <= box.center.x + half.x &&
+            claimedHit.y >= box.center.y - half.y &&
+            claimedHit.y <= box.center.y + half.y &&
+            claimedHit.z >= box.center.z - half.z &&
+            claimedHit.z <= box.center.z + half.z)
+        {
+            if (claimPart == 0 || claimPart == 2)
+                claimPart = box.bodyPart == WeaponExecution::HitBodyPart::Head ? 1
+                    : (box.bodyPart == WeaponExecution::HitBodyPart::Leg ? 3 : 2);
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 // ── Idempotent attack result cache ────────────────────────────────────
@@ -617,9 +706,10 @@ void handleAttackRequest(
             targetDesc.radius = PLAYER_RADIUS;
             targetDesc.height = PLAYER_HEIGHT;
             targetDesc.dead = false;
-            // Reconstruct the NPC's body-part hitboxes at the rewound pose +
-            // rewound yaw (the facing the attacker actually saw) — no capsule.
-            fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw);
+            // Use the NPC's own replicated body-part boxes at the rewound tick.
+            // The standard humanoid template cannot represent random avatars or
+            // monsters and caused direct hits to miss on the server.
+            fillNpcTargetBodyParts(targetDesc, npc, rewindTick);
             targets.push_back(targetDesc);
 
             // Debug: surface the visible-pose vs current-pose transform
@@ -724,8 +814,9 @@ void handleAttackRequest(
                             float rewoundYaw = npc.yaw;
                             getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw);
                             rewoundTargetPos = rewoundPos;
-                            if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
-                                                      tolerance, claimPart))
+                            if (claimedHitInNpcBodyParts(claimedHit, npc,
+                                                         rewindTick, tolerance,
+                                                         claimPart))
                                 claimAccepted = true;
                         }
                     }
@@ -839,7 +930,7 @@ void handleAttackRequest(
                 contact.weaponId = def->id;
                 contact.weaponDisplayName = def->displayName;
                 contact.serverTick = tick;
-                contact.contactTick = tick;
+                contact.contactTick = rewindTick;
                 contact.contactId = req->requestId;
                 contact.maxDistance = maxRange;
                 contact.hitTolerance = 0.35f;
@@ -891,7 +982,7 @@ void handleAttackRequest(
             contact.weaponId = def->id;
             contact.weaponDisplayName = def->displayName;
             contact.serverTick = tick;
-            contact.contactTick = tick;
+            contact.contactTick = rewindTick;
             contact.contactId = req->requestId;
             contact.maxDistance = maxRange;
             contact.hitTolerance = 0.35f;

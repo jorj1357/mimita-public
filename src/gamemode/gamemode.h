@@ -42,6 +42,9 @@ struct GamemodeFeatures {
     bool torchLighting = false;
     bool freezeDuringCountdown = false;
     bool freezeDuringGo = true;
+    // When true, only the mode objective decides round wins. Team elimination
+    // never ends the round; the timer/bomb still resolve it.
+    bool objectiveOnlyRoundWins = false;
     // -1 inherits the global config/destructible-world.json world.enabled
     // value, 0 disables world destruction, 1 enables it.
     int destructibleWorld = -1;
@@ -112,6 +115,8 @@ struct GamemodeObjectiveDefinition {
     float plantSeconds = 0.0f;
     float defuseSeconds = 0.0f;
     float explosionSeconds = 0.0f;
+    std::string interactionMode = "hold";
+    float tapProgressSeconds = 0.1f;
     GamemodeObjectiveVisual visual;
 };
 
@@ -179,6 +184,9 @@ struct GamemodePresentation {
     bool hasTeamWireframeColors = false;
     glm::vec3 friendlyWireframeColor{0.0f, 255.0f, 0.0f};
     glm::vec3 enemyWireframeColor{255.0f, 0.0f, 0.0f};
+    // Optional in-room room-code tint. Null inherits the normal HUD color.
+    bool hasRoomCodeColor = false;
+    glm::vec3 roomCodeColor{255.0f, 255.0f, 255.0f};
     // Trail policy. has* stays false when the mode provided no concrete value,
     // so the local playervisuals.json settings remain authoritative.
     bool hasEnemyTrail = false;
@@ -248,6 +256,24 @@ struct GamemodeNpcAvatarPolicy {
     std::vector<std::string> allowed;
     std::vector<std::string> denied;
     std::string spawnPolicy = "reroll_each_spawn";
+};
+
+// Optional loss-aftermath rules. The mode declares the losing team and the
+// presentation/audio budget; the shared server owns the scripted ending and the
+// client owns the local presentation. Disabled modes never enter aftermath.
+struct GamemodeAftermath {
+    bool enabled = false;
+    std::string targetTeam;
+    int scareTicks = 99;
+    int finalDamage = 999999;
+    float moveSpeed = 20.0f;
+    float approachDistanceMeters = 18.0f;
+    std::vector<std::string> scareSounds;
+    bool blackout = true;
+    bool hideHud = true;
+    bool muteAudio = true;
+    bool freezeLocalPlayer = true;
+    bool fatalWindow = true;
 };
 
 // Optional Payload rules. Map data owns cart origin/route/interaction geometry;
@@ -347,6 +373,7 @@ struct Gamemode {
     GamemodeAvatarPolicy avatar;
     GamemodeNpcAvatarPolicy npcAvatar;
     GamemodePayload payload;
+    GamemodeAftermath aftermath;
     // ── Elimination / win rules (optional) ──────────────────────────
     // Empty = legacy score/time behavior. "last_team_standing" ends the match
     // when only one team (or, in FFA, one actor) still has an in-play actor.
@@ -355,6 +382,14 @@ struct Gamemode {
     int waveIncrement = 1;
     int waveNpcsPerWave = 0; // >0: target = wave number * this value
     int lives = 3;
+    // Generic per-actor lives. When enabled, every actor on `livesTeam` (or
+    // every participant when empty) consumes one life per death and respawns
+    // only while lives remain. Disabled keeps each team's normal respawn rule.
+    bool livesEnabled = false;
+    std::string livesTeam;
+    // When true, the match time limit starts at the GO phase instead of at the
+    // ACTIVE transition.
+    bool timeLimitStartsAtGo = false;
     float waveBannerSeconds = 3.0f;
     bool waveStaggerEnabled = true;
     int waveNpcsPerTick = 10;

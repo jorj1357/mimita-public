@@ -1,4 +1,53 @@
-﻿## New intake — 2026-10-31: Destructible world disabled by default
+﻿2026 11 01 1048 jorj todo - need a 
+json lint
+what fields even exist
+cuz we 
+i removed retrograd fast movment prset
+but other things still use it
+weneed a auto runner
+prob do it in the dev loop llike have that check all the time
+and split dev loop into multiple pthon files, not jsut 1 big one 
+also how come editing thet json here  C:\mimita-v9\config\gamemodes\vs_jason.json 
+doesnt  update the game like 
+teh role u get live 
+i close the server, start a new on e= still i have the 50 fov and stuff, not good, i want to ahve fast quick movmeent, live, when ichange the gamemode config live 
+
+### Diagnosis — 2026-11-01
+
+The active `vs_jason` config did load, and the server assigned the human the
+configured `elite_fighter` role with `movement_preset: source`. The mode also
+declared `actor_preset: juggernaut_arcade`; that preset forces 50 FOV and uses
+Juggernaut movement. The client applies the mode preset when the local role has
+no actor-preset reference, so its camera and predicted movement came from the
+mode preset instead of matching TDM's `juggernaut_fighter` setup. The mode's
+shared preset now points to `juggernaut_fighter` (100 FOV, `source` movement),
+while Jason retains the explicit `juggernaut_arcade` role preset. The current
+dev-loop journal confirms the prior server-side role assignment and mode
+configuration. After the correction, live run `20261101_155626` loaded
+`juggernaut_fighter` as the mode preset while preserving the human's
+`elite_fighter` role and `source` movement preset. The journal confirms config
+and role resolution; visual FOV and movement acceptance still need direct
+in-game observation.
+
+## New intake — 2026-10-31: weapon slots past 10 are hard to equip
+
+**Observed:** the direct number-key equip path covers logical weapon slots 1–10
+only (`equipslot0`–`equipslot9` map to slots 10 and 1–9). Loadouts that bind more
+than ten weapons require the terminal command `equipslot <slot>` for the later
+entries. In the Fun Counter Strike set (`config/weaponsets.json` set `30`) this
+affects at least `darkbang` (logical slot 11) and `bomb` (logical slot 12).
+
+**Desired behavior:** every weapon bound to an active loadout should be
+equippable without typing a terminal command, including loadouts longer than ten
+entries. The exact UX is undecided: a second row of bindings, a scroll/cycle
+scheme, a weapon wheel, or a loadout-order change are all acceptable directions.
+
+**Status:** logged for later. Do not change keybindings, loadout order, or the
+inventory UI as part of the current HUD/Deathball fix.
+
+---
+
+## New intake — 2026-10-31: Destructible world disabled by default
 
 **Decision:** world-geometry destruction is disabled by default through
 `config/destructible-world.json` `world.enabled: false`. Static authored map
@@ -2415,3 +2464,127 @@ Future tooling note: the dev loop should eventually support arbitrary named
 launch lanes so a stable play build can run while an AI builds/tests another
 build; see `docs/specs/dev-loop/dev-loop.md`. That lane work is not part of this
 collision fix.
+
+## Intake — 2026-10-31: final-pose actor collision and monster hitboxes
+
+The player reports that tall monster avatars, especially the Chainsaw Boss, put
+their animated legs into blocks even though the root is outside. The working
+explanation is that animation/AimBody writes the final limb pose after movement
+collision, while recovery only checks the root point. The desired behavior is
+root-authoritative final-pose containment: animation may move limbs freely, but
+after all pose writers the final body and held-weapon hitboxes are tested against
+nearby static geometry and the root is pushed until the visible pose is clear.
+No limb transform is rewritten.
+
+The player also reports that the Chainsaw Boss's `2.0 m` radius / `6.6 m` height
+actor-pair capsule is not a believable world hitbox for a tall monster. The
+actor-pair capsule and the static-world body hitbox are separate contracts.
+Static-world collision uses body/weapon triangles (or an explicitly documented
+collision-mesh proxy), not a single scaled capsule. A limb-capsule proxy is
+allowed only as a documented coarse/LOD or actor-pair shape.
+
+Agreed constraints:
+
+- root may be pushed as far as needed to clear the final pose;
+- allow 1–2 cm standoff so meshes do not visibly intersect;
+- include held weapons/attachments in containment;
+- if containment cannot resolve, restore last known clear position, yaw, and
+  grounded state, and zero velocity;
+- if that pose is invalid, use a bounded nearby safe point, then respawn;
+- no downward ray through a solid to a lower floor;
+- this pass is NPC/monster-specific; player behavior stays separate;
+- large speed collapses are investigation events, not an automatic narrow gate.
+
+Automated validation must be stronger: scenarios should record final NPC pose
+and contacts, run headless without human input, and fail on forbidden events
+such as unresolved `npc.pose.penetration` or unexplained
+`collision.speed_collapse`. The expected-good/forbidden invariant contract is
+specified in `docs/specs/dev-loop/scenario-input-recording.md` and
+`docs/workflows/runtime-scenario-validation.md`.
+
+## Intake — 2026-11-01: automatic readable scenario recordings
+
+Recordings must be automatically saved in a final, readable, self-contained
+format. A player or AI should not need to manually clean, cut, merge, truncate,
+or re-export a scenario before it can be analyzed or replayed.
+
+Requirements:
+
+- `scenario_endrecord` must produce one finalized JSONL file with a valid header
+  and footer, complete client and server tracks, and no missing sidecar.
+- The final file must contain both client and authoritative server positions,
+  velocities, grounded state, actor identities, fixed ticks, map identity, mode,
+  run/build identity, and collision/contact evidence.
+- The final file must be valid, parseable JSONL for every written line and must
+  not end mid-record because the client disconnected or closed.
+- Automatic merge and finalization must happen without a manual step. If the
+  server track is missing or incomplete, the recorder must report a clear
+  failure instead of silently leaving a client-only file.
+- Recordings should include a compact readable summary alongside the raw JSONL:
+  first divergence, speed collapses, final-pose penetrations/resets, NPC
+  stuck/recovery counts, and the exact frames to inspect.
+- The raw recording may stay large, but it must remain complete and directly
+  consumable by `scenario-analyze.py` and the playback path.
+- Do not require external scripts to strip the header, remove partial lines,
+  combine the `.server.jsonl` sidecar, or repair the footer.
+
+## Intake — 2026-11-01: mace ground clipping and NPCs falling through the world
+
+Recording:
+`devscripts/scenarios/user/scenario-20261101_011715-meleemace.jsonl`.
+It is a complete merged schema-2 recording: 7275 client ticks, 7250 server
+ticks, header/footer present, `client_input`, `client_actors`,
+`client_collision`, and `server_actors`.
+
+Client-side catches:
+
+- frame 4161: grounded, held `+X`, horizontal speed `6.07 -> 0.05`, contact
+  normal roughly `[0.24, 0, 0.97]`;
+- frame 6429: grounded, held `+Y`, mace swing active, horizontal speed
+  `32.61 -> 1.32`, contact normal roughly `[-0.24, 0, 0.97]`;
+- after frame 6980 the player has no ground contact and both client and server
+  fall far below the map; this is not only a visual replica mismatch.
+
+NPC world failure:
+
+- the server issued 999 `npc.stuck-recovery` and 106
+  `npc.capsule.recovered` events;
+- at server tick 18419, NPC 100006 was moved by capsule recovery from z
+  `2349.18` to z `2303.11` (about 46 m downward) and later reached z `-500`;
+- NPC 100008 reached z `-502`, NPC 100005 reached z `61`, and NPC 100017
+  reached z `-501`;
+- there were zero `npc.pose.penetration` and zero `npc.pose.reset` events, so
+  final-pose containment did not explain or catch these falls.
+
+The recovery code at `src/network/server-npcs.cpp:1886` calls
+`NpcNavigation::groundHeightAt(world, before, 100.0f, 5.0f)` and sets
+`resolved.z = floorZ + 1.8f`. That can search far downward through a solid and
+place the NPC on a lower floor. It then checks only `worldPointInsideSolid` at
+the root, not the full capsule or final body pose.
+
+Client/server divergence:
+
+- first difference over 0.25 m is frame 62;
+- 5156 recorded frames exceed 1.5 m root divergence;
+- maximum observed divergence is 16.37 m at frame 529;
+- at several server ticks the client and server velocities are completely
+  different, so client visual clipping and server NPC state must be diagnosed
+  separately.
+
+Playback attempt: `scenario_play` reached `start_readiness` but failed with
+`start_readiness_timeout`; the server position did not match the recorded start
+and server begin was never prepared. The recording was analyzed offline and
+against its live server events instead.
+
+Next fix priorities:
+
+1. Replace downward-through-solid NPC recovery with last-clear/safe final-pose
+   recovery; validate the full capsule/final body, never a point on a lower
+   floor.
+2. Re-run NPC final-pose containment after actor-pair collision and after any
+   recovery.
+3. Add player final-pose containment after animation/AimBody and after
+   actor-pair, including configured weapon shapes.
+4. Fail closed when final-pose narrowphase exceeds its triangle budget.
+5. Record final-pose state, contact evidence, and client/server root deltas in
+   the scenario tracks and emit a readable summary automatically.

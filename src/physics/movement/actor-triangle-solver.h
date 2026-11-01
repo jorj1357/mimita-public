@@ -48,6 +48,9 @@ struct ActorTriangleCollisionResult {
     bool grounded = false;
     bool anyImpact = false;
     bool budgetExceeded = false;
+    bool stepUpApplied = false;
+    int seamContactsRemoved = 0;
+    int featureContactsCollapsed = 0;
     float maxPenetration = 0.0f;
     int candidates = 0;
     // Candidate triangles whose AABB exceeds kMaxChunksPerTriangle chunks, i.e.

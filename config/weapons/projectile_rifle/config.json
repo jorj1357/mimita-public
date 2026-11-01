@@ -9,6 +9,7 @@
 "beam_world_thickness": null,
 "behavior_type": "projectile",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "spreadMode": 0.0,
     "spreadBlend": 0.0,

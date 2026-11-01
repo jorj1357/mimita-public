@@ -315,6 +315,11 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
 {
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
         return MapConfigRegistry::instance().payload().cartOrigin;
+    if (ref.kind == EditorObjectKind::BombSite) {
+        if (const BombSite* site = MapConfigRegistry::instance().findSite(ref.id))
+            return site->position;
+        return glm::vec3(0.0f);
+    }
     if (const auto* object = mapObjectFor(ref)) return glm::vec3(object->transform[3]);
     if (const auto* entity = entityFor(ref)) return entity->position;
     if (const auto* block = blockFor(ref)) return block->position;
@@ -331,6 +336,10 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
         payload.hasCartOrigin = true;
         payload.cartOrigin = position;
         reg.markChanged();
+        return;
+    }
+    if (ref.kind == EditorObjectKind::BombSite) {
+        reg.setSitePosition(ref.id, position);
         return;
     }
     if (ref.kind == EditorObjectKind::MapGLBObject) {
@@ -897,6 +906,7 @@ std::string MapEditor::kindName(EditorObjectKind kind)
     switch (kind) {
         case EditorObjectKind::Entity: return "entity";
         case EditorObjectKind::Block: return "block";
+        case EditorObjectKind::BombSite: return "bombsite";
         case EditorObjectKind::PayloadRoutePoint: return "route";
         case EditorObjectKind::PayloadCartOrigin: return "cart";
         case EditorObjectKind::MapGLBObject: return "glb";
@@ -965,6 +975,8 @@ void MapEditor::deleteSelection()
             MapConfigRegistry::instance().deleteBlock(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadRoutePoint)
             MapConfigRegistry::instance().deletePayloadRoutePoint(ref.id);
+        else if (ref.kind == EditorObjectKind::BombSite)
+            MapConfigRegistry::instance().deleteBombSite(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
             auto& payload = MapConfigRegistry::instance().payloadMutable();
             payload.hasCartOrigin = false;
@@ -992,6 +1004,8 @@ void MapEditor::cutSelection()
             MapConfigRegistry::instance().deleteBlock(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadRoutePoint)
             MapConfigRegistry::instance().deletePayloadRoutePoint(ref.id);
+        else if (ref.kind == EditorObjectKind::BombSite)
+            MapConfigRegistry::instance().deleteBombSite(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
             auto& payload = MapConfigRegistry::instance().payloadMutable();
             payload.hasCartOrigin = false;
@@ -1108,6 +1122,10 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
     if (const auto& payload = config.payload; payload.hasCartOrigin &&
         matches("cart_origin cart"))
         out.push_back({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
+    for (const auto& site : config.bombSites) {
+        if (matches(site.id + " bombsite site"))
+            out.push_back({EditorObjectKind::BombSite, site.id});
+    }
     for (const auto& route : config.payload.route) {
         if (matches(route.id + " route"))
             out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
@@ -1480,6 +1498,8 @@ void MapEditor::selectAllEdit()
         if (entity.enabled) mSelection.push_back({EditorObjectKind::Entity, entity.id});
     for (const auto& block : MapConfigRegistry::instance().current().blocks)
         if (block.enabled) mSelection.push_back({EditorObjectKind::Block, block.id});
+    for (const auto& site : MapConfigRegistry::instance().current().bombSites)
+        mSelection.push_back({EditorObjectKind::BombSite, site.id});
     for (const auto& route : MapConfigRegistry::instance().current().payload.route)
         mSelection.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
     if (gpWorld)
@@ -1546,6 +1566,9 @@ void MapEditor::focusSelection()
         radius = std::max({block->size.x, block->size.y, block->size.z, 0.5f}) * 0.5f;
     } else if (const MapEntity* entity = entityFor(ref)) {
         radius = std::max({entity->size.x, entity->size.y, entity->size.z, entity->radius, 0.5f});
+    } else if (ref.kind == EditorObjectKind::BombSite) {
+        if (const BombSite* site = MapConfigRegistry::instance().findSite(ref.id))
+            radius = std::max(site->radius, 0.5f);
     } else if (const PayloadRoutePoint* route = routeFor(ref)) {
         radius = std::max(route->radius, 0.5f);
     }
@@ -1662,6 +1685,42 @@ std::string MapEditor::addBlock(const std::string& id)
     rebuildGeometry();
     notify("added block " + created);
     return created;
+}
+
+std::string MapEditor::addBombSite(const std::string& id, float radius)
+{
+    pushUndo("add bombsite");
+    const glm::vec3 position = THE_CAMERA.pos + THE_CAMERA.front * 8.0f;
+    const std::string created = MapConfigRegistry::instance().createBombSite(
+        position, radius, id);
+    if (created.empty()) {
+        notify("add bombsite failed: id exists or is invalid");
+        return {};
+    }
+    selectOnly({EditorObjectKind::BombSite, created});
+    notify("added bombsite " + created);
+    return created;
+}
+
+void MapEditor::setSelectedBombSiteRadius(float radius)
+{
+    if (mSelection.empty()) {
+        notify("set_radius: no bombsite selected");
+        return;
+    }
+    pushUndo("bombsite radius");
+    bool changed = false;
+    for (const EditorObjectRef& ref : mSelection) {
+        if (ref.kind != EditorObjectKind::BombSite) continue;
+        if (MapConfigRegistry::instance().setSiteRadius(
+                ref.id, std::max(0.1f, radius)))
+            changed = true;
+    }
+    if (!changed) {
+        notify("set_radius: select a bombsite first");
+        return;
+    }
+    notify("bombsite radius=" + std::to_string(std::max(0.1f, radius)));
 }
 
 std::string MapEditor::addRoutePoint(const std::string& id)
@@ -1898,12 +1957,14 @@ bool MapEditor::selectKind(const std::string& kind)
     EditorObjectKind want;
     if (normalized == "entity") want = EditorObjectKind::Entity;
     else if (normalized == "block") want = EditorObjectKind::Block;
+    else if (normalized == "bombsite" || normalized == "site")
+        want = EditorObjectKind::BombSite;
     else if (normalized == "route" || normalized == "payload")
         want = EditorObjectKind::PayloadRoutePoint;
     else if (normalized == "cart") want = EditorObjectKind::PayloadCartOrigin;
     else if (normalized == "glb") want = EditorObjectKind::MapGLBObject;
     else {
-        notify("select_kind expects entity, block, route, cart, glb, or all");
+        notify("select_kind expects entity, block, bombsite, route, cart, glb, or all");
         return false;
     }
     std::vector<EditorObjectRef> objects;
@@ -2038,6 +2099,34 @@ void MapEditor::renderWorld(Camera& camera)
         if (cfg.labelMode == "hovered") return hovered;
         return isSelected(ref) || hovered;
     };
+
+    for (const BombSite& site : config.bombSites) {
+        if (!site.hasPosition) continue;
+        const bool selected = isSelected({EditorObjectKind::BombSite, site.id});
+        const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+                                         : glm::vec4(1, 0.35f, 0.35f, 1);
+        // The usable area is a horizontal circular zone. Draw a thin filled
+        // disc plus an outline ring so its radius is readable from any angle.
+        DebugVis::drawFilledCylinder(camera, site.position, glm::vec3(0, 0, 1),
+            site.radius, 0.02f,
+            glm::vec4(color.r, color.g, color.b, selected ? 0.24f : 0.12f));
+        constexpr int kSegments = 48;
+        glm::vec3 previous{0.0f};
+        for (int i = 0; i <= kSegments; ++i) {
+            const float angle = (float)i / (float)kSegments * 6.2831853f;
+            const glm::vec3 point = site.position + glm::vec3(
+                std::cos(angle) * site.radius, std::sin(angle) * site.radius, 0.0f);
+            if (i > 0) DebugVis::drawLine(camera, previous, point, color);
+            previous = point;
+        }
+        DebugVis::drawPointCross(camera, site.position, 0.5f, color);
+        char label[128];
+        std::snprintf(label, sizeof(label), "BOMB SITE %s r%.1f",
+            site.id.c_str(), site.radius);
+        if (showLabel({EditorObjectKind::BombSite, site.id}, false))
+            DebugVis::drawWorldLabel(site.position + glm::vec3(0, 0, 0.8f),
+                label, color);
+    }
 
     if (config.payload.hasCartOrigin) {
         const bool selected = isSelected({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
@@ -2235,6 +2324,7 @@ void MapEditor::renderUI(GLFWwindow* window)
         if (!selected) {
             switch (ref.kind) {
                 case EditorObjectKind::MapGLBObject: color = {0.55f, 0.9f, 0.6f, 1}; break;
+                case EditorObjectKind::BombSite: color = {1, 0.35f, 0.35f, 1}; break;
                 case EditorObjectKind::PayloadRoutePoint: color = {1, 0.55f, 0.2f, 1}; break;
                 case EditorObjectKind::PayloadCartOrigin: color = {1, 0.75f, 0.2f, 1}; break;
                 case EditorObjectKind::Block: color = {0.4f, 0.8f, 1, 1}; break;
@@ -2297,6 +2387,12 @@ void MapEditor::renderUI(GLFWwindow* window)
             scale = entity->size;
             details = entity->type + " tag=" + entity->tag +
                 " radius=" + std::to_string(entity->radius);
+        } else if (ref.kind == EditorObjectKind::BombSite) {
+            if (const BombSite* site = MapConfigRegistry::instance().findSite(ref.id)) {
+                scale = glm::vec3(site->radius);
+                details = "bombsite radius=" + std::to_string(site->radius) +
+                    (site->visibleDebug ? " visible" : " hidden");
+            }
         } else if (const PayloadRoutePoint* route = routeFor(ref)) {
             scale = glm::vec3(route->radius);
             details = "order=" + std::to_string(route->order) +

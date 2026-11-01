@@ -2856,6 +2856,11 @@ final physical/render-relevant body transforms
 
 not stale pre-animation transforms.
 
+For static-world collision, the final-pose containment rule may translate the
+actor root until the final body/weapon meshes are clear. It must not rewrite
+limb transforms. See `collision.md` for the NPC/monster final-pose contract.
+Actor-pair capsules remain a separate collision contract.
+
 ---
 
 # 162. Ragdoll ownership

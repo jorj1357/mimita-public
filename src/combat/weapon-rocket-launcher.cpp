@@ -33,6 +33,7 @@
 #include "effects/hit-effects.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "replay/replay.h"
 #include "npc/npc.h"
 #include "world/world.h"
@@ -330,6 +331,30 @@ void update(
     if (dt <= 0.0f) return;
     state.gameTime += dt;
 
+    if (def.id == "deathball" && !presentationOnly) {
+        static bool loggedLocalScale = false;
+        if (!loggedLocalScale) {
+            loggedLocalScale = true;
+            const ProjectileVisualConfig visual = projectileVisualConfigForWeapon(def.id);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "deathball.local_scale", def.id, "first_local_update", 0,
+                {{"collision_radius_m", def.projectileRadius},
+                 {"visual_radius_m", visual.radius},
+                 {"visual_diameter_m", visual.radius * 2.0f},
+                 {"local_hit_radius_m", std::max(0.01f, def.projectileRadius)},
+                 {"player_capsule_height_m", 3.6f}});
+            if (std::abs(visual.radius - def.projectileRadius) > 0.001f) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Errors,
+                    "deathball.scale.first-divergence", def.id,
+                    "visual_vs_collision", 0,
+                    {{"expected_collision_radius_m", def.projectileRadius},
+                     {"actual_visual_radius_m", visual.radius}});
+            }
+        }
+    }
+
     // Read config values for smoke (hot-reloadable). Projectile visuals are
     // read in WeaponSystem::render during the render pass.
     bool smokeEnabled = cp(def, "smokeEnabled", 1.0f) > 0.0f;
@@ -423,6 +448,9 @@ void update(
 
         // ── Player collision ──
         {
+            const float ballRadius = std::max(0.01f,
+                def.projectileRadius > 0.0f ? def.projectileRadius
+                                           : cp(def, "projectile_radius", 0.7f));
             bool hitOwner = false;
             glm::vec3 checkPos = newPos;
             Capsule ownerCapsule = owner.getCapsule();
@@ -434,7 +462,7 @@ void update(
                          ownerCapsule.b.z + ownerCapsule.r);
             glm::vec3 closest = glm::clamp(checkPos, mn, mx);
             float dist = glm::length(checkPos - closest);
-            if (!presentationOnly && dist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
+            if (!presentationOnly && dist < ballRadius && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
                 hitOwner = true;
             }
             if (!hitOwner) {
@@ -451,7 +479,7 @@ void update(
                         half = glm::max(half, glm::vec3(0.2f));
                         glm::vec3 closest2 = glm::clamp(checkPos, center - half, center + half);
                         float dist2 = glm::length(checkPos - closest2);
-                        if (dist2 < 0.5f) {
+                        if (dist2 < ballRadius) {
                             hitNpc = true;
                             hitNpcId = npc.id;
                             break;
@@ -486,7 +514,7 @@ void update(
                                   victimCapsule.b.z + victimCapsule.r);
                     glm::vec3 vclosest = glm::clamp(checkPos, vmn, vmx);
                     float vdist = glm::length(checkPos - vclosest);
-                    if (vdist < 0.5f && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
+                    if (vdist < ballRadius && rocket.distanceTraveled >= IGNORE_OWNER_DIST) {
                         const bool passThrough = cp(def, "passThroughActors", 0.0f) > 0.0f;
                         if (passThrough) {
                             applyDeathballLocalDamage(def, owner, *victimPlayer,

@@ -16,6 +16,7 @@
 
 #include "debug/debug-visuals.h"
 #include "entities/player.h"
+#include "physics/movement/actor-final-pose.h"
 #include "input/input-state.h"
 #include "input/input-frame.h"
 #include "npc/npc-state-machine.h"
@@ -105,6 +106,9 @@ public:
     uint32_t movementStuckRecoveryCount = 0;
     uint32_t movementStuckJumpCount = 0;
     glm::vec3 movementStuckEpisodeStartPos{0.0f};
+    ActorFinalPoseState finalPose;
+    uint64_t finalPoseLastPenetrationLogTick = 0;
+    bool finalPosePenetrating = false;
     uint32_t lastNavFailureTick = 0;
     int lastNavFailureGoalKind = -1;
     std::string lastNavFailureReason;
@@ -153,6 +157,9 @@ public:
     bool dashCommandConsumed = false;
     float attackCooldown = 0.0f;
     float weaponSwitchCooldown = 0.0f;
+    // Early-use grenade policy. Prevents repeated utility throws and lets the
+    // brain pick a grenade as soon as a safe opportunity exists.
+    float grenadeOpportunityCooldown = 0.0f;
     // Weapon visit cycle (elite profiles only). Visits count accepted shots.
     std::string cycleWeapon;
     int cycleVisitShotsRemaining = 0;
@@ -301,7 +308,7 @@ public:
     // context (selected target + objective + optional goal) and calls this;
     // Sandbox and Counter-Strike both reach exactly this function.
     void updateOneNpc(Npc& npc, const World& world, const NpcMovementContext& context, float dt);
-    void render(const Camera& camera) const;
+    void render(const Camera& camera, int localTeam = -1) const;
     void drawDebug(const Camera& camera) const;
     std::vector<DebugVis::NpcDebugInfo> debugInfo() const;
     const std::vector<Npc>& all() const { return npcs; }

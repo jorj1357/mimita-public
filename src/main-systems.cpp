@@ -264,6 +264,30 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
+        "agent.interact", "Drive the objective interaction input (F)",
+        "agent.interact <hold|tap> <ticks|presses>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 2 || (args[0] != "hold" && args[0] != "tap")) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.interact <hold|tap> <ticks|presses>");
+                return;
+            }
+            int amount = 0;
+            try { amount = std::stoi(args[1]); } catch (...) { amount = 0; }
+            amount = std::clamp(amount, 0, 3600);
+            if (args[0] == "hold")
+                scheduleTerminalInteractHold(amount);
+            else
+                scheduleTerminalInteractTaps(amount);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.interact accepted",
+                {{"command", "agent.interact"}, {"kind", args[0]},
+                 {"amount", amount}, {"player", gpPlayer ? gpPlayer->username
+                                                          : std::string()}});
+        }, "2026-11-01", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
         "agent.holdprimary", "Hold primary fire for bounded input frames",
         "agent.holdprimary <frames>",
         [](const std::vector<std::string>& args) {
@@ -463,6 +487,7 @@ void registerAgentCommands()
 #include "game/gamemode-manager.h"
 #include "gui/gui-editor-commands.h"
 #include "camera/camera-commands.h"
+#include "audio/audio-commands.h"
 #include "audio/music-commands.h"
 #include "notifications/notification-commands.h"
 #include <windows.h>
@@ -690,6 +715,7 @@ void gameInitSubsystems(Engine& engine)
                "[CHAT TRACE 1 AFTER INIT] gpChatHistory=%p historyAddress=%p\n",
                (void*)gpChatHistory, (void*)&sChatHistory);
     gpWorld = &world;
+    setAudioSpatialWorld(&world);
     gpActiveMapPath = &activeMapPath;
     gpNpcSystem = &npcSystem;
     gpFreecamEnabled = &freecamEnabled;
@@ -721,6 +747,7 @@ void gameInitSubsystems(Engine& engine)
     registerDynamicLightCommands();
     registerVideoCommands();
     registerMusicCommands();
+    registerAudioCommands();
     registerNotificationCommands();
     registerDevLogCommands();
     registerDevOverlayCommands();

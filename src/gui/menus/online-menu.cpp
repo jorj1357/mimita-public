@@ -404,6 +404,17 @@ OnlineMenuResult drawOnlineMenu(GLFWwindow* win)
         b.set("server.weapon_set_description", communityConfig.weaponSetDescription(setId));
     }
 
+    static std::string lastSelectedMode;
+    const std::string selectedMode = b.get("server.mode");
+    if (selectedMode != lastSelectedMode && !selectedMode.empty())
+        lastSelectedMode = selectedMode;
+    {
+        const MimitaNet::CommunityMode* mode = communityConfig.modeByName(selectedMode);
+        if (mode && mode->privateByDefault &&
+            b.get("server.privacy") != "Private (with password)")
+            b.set("server.privacy", "Private (with password)");
+    }
+
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/community-menu.json");
 
     // Derive dropdown modal state from actual open dropdowns (blocks Phase 1 clicks)

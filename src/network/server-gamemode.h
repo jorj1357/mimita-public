@@ -27,6 +27,7 @@
 #include "procedural/procedural-world.h"
 #include "gamemode/action-graph.h"
 #include "gamemode/disaster-runtime.h"
+#include "gamemode/gamemode.h"
 #include "gamemode/payload-runtime.h"
 
 namespace MimitaNet {
@@ -159,6 +160,31 @@ struct ServerGamemodeState
     float intermissionSeconds = 15.0f;
     float resultsSeconds = 8.0f;
     int timeLimitSeconds = 300;
+    bool timeLimitStartsAtGo = false;
+    GamemodeAftermath aftermath;
+    // ── Loss aftermath state (shared owner) ────────────────────────
+    // One presentation effect per targeted human survivor. The server owns
+    // timing and damage; the client renders its own effect against the local
+    // frozen body.
+    struct AftermathEffect {
+        uint32_t targetActorId = 0;
+        glm::vec3 startPos{0.0f};
+        glm::vec3 endPos{0.0f};
+        glm::vec3 moverPos{0.0f};
+        uint32_t startTick = 0;
+        uint32_t durationTicks = 0;
+        bool reached = false;
+    };
+    bool aftermathActive = false;
+    uint8_t aftermathStage = 0;  // 1=approach, 2=scare sequence, 3=done
+    uint32_t aftermathStartTick = 0;
+    uint32_t aftermathSoundStartTick = 0;
+    uint32_t aftermathFinishTick = 0;
+    uint32_t aftermathSoundSerial = 0;
+    uint8_t aftermathSoundIndex = 0xFF;
+    uint32_t aftermathMoverActorId = 0;
+    uint32_t aftermathRngState = 1;
+    std::vector<AftermathEffect> aftermathEffects;
 
     // FFA scoring: per-player kills/deaths
     std::unordered_map<uint32_t, int> ffaKills;
@@ -235,9 +261,17 @@ struct ServerGamemodeState
     // Server-owned. The gamemode JSON declares the kind/carrier team; the
     // runtime owns carrier/drop/pickup state. Never stored in an actor preset.
     ObjectiveInstance objective;
+    // Mode-authored objective timers. Non-zero values are authoritative over
+    // the map's compatibility fallback timers.
+    float objectivePlantSeconds = 0.0f;
+    float objectiveDefuseSeconds = 0.0f;
     uint32_t objectiveNextCarrierScanTick = 0;
     uint32_t objectivePickupCounter = 0;
     uint32_t objectiveDropCounter = 0;
+    // Debug-only deterministic assignment requested through a server command.
+    bool hasPendingObjectiveGive = false;
+    uint32_t pendingObjectiveGiveRequesterId = 0;
+    uint32_t pendingObjectiveGiveActorId = 0;
     // ── Payload mode (attack/defend cart) ───────────────────────────
     // The server owns the cart rules; map data supplies the route/box.
     bool payloadMode = false;
@@ -271,10 +305,12 @@ struct ServerGamemodeState
     int waveNpcsPerWave = 0;
     int waveLives = 3;
     int waveLivesRemaining = 3;
-    // Melee mode: per-fighter stocks (lives). A fighter respawns only while it
-    // still has stocks; the generic `last_actor_alive` win condition then ends
-    // the match when at most one fighter remains in play.
-    std::unordered_map<uint32_t, int> meleeStocks;
+    // Generic per-actor lives. Enabled by mode data; a matching actor respawns
+    // only while it still has lives. Melee and Vs Jason share this owner.
+    bool livesEnabled = false;
+    std::string livesTeam;
+    int actorLivesDefault = 3;
+    std::unordered_map<uint32_t, int> actorLives;
     // Melee spawn protection: server tick until which the actor is protected.
     std::unordered_map<uint32_t, uint32_t> meleeSpawnProtectionUntilTick;
     uint32_t waveHighest = 0;
@@ -420,13 +456,14 @@ bool serverFriendlyFireBlocks(
     const std::unordered_map<uint32_t, ServerNpc>& npcs,
     const char* path, uint32_t tick);
 void serverConsumeNpcWaveLife(uint32_t playerId);
-// Melee mode stock/spawn-protection policy (no-op in other modes). A fighter
-// respawns only while it has stocks; the generic last_actor_alive win condition
-// then ends the match when at most one fighter remains in play.
+// Generic per-actor lives policy plus shared melee spawn protection. Actors on
+// the mode's lives team respawn only while lives remain.
 bool serverMeleeActorProtected(uint32_t actorId);
-void serverMeleeNoteSpawn(uint32_t actorId, uint32_t protectionTicks);
-bool serverMeleeConsumeStock(uint32_t actorId);
-bool serverMeleeActorHasStocks(uint32_t actorId);
+void serverActorNoteSpawn(uint32_t actorId, uint32_t protectionTicks);
+bool serverActorConsumeLife(uint32_t actorId);
+bool serverActorHasLives(uint32_t actorId);
+bool serverActorLivesApplyToTeam(int team);
+bool serverAftermathActive();
 // Effective respawn delay in seconds (unset falls back to the legacy 0.01s).
 float serverMatchRespawnSeconds();
 float serverActorRespawnSeconds(uint32_t actorId);
@@ -518,6 +555,10 @@ void serverGamemodeRematchNow();
 
 // Host-only changemap command: reload the given map live on the next tick.
 void serverGamemodeRequestMapChange(const std::string& mapId);
+// Debug-only: assign the objective carrier on the next authoritative tick.
+// targetActorId 0 means the requester.
+void serverGamemodeRequestObjectiveGive(uint32_t requesterActorId,
+                                        uint32_t targetActorId);
 std::string serverActiveTeamList();
 bool serverRequestTeamChange(uint32_t playerId, int requestedTeam,
                              SOCKET sock,

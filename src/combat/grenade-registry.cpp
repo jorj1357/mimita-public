@@ -1,50 +1,24 @@
 // 10 02 2026
-// Grenade definition loader (config/grenades.json).
+// Grenade effect registry built from per-weapon config.
 #include "combat/grenade-registry.h"
 
-#include <fstream>
+#include <algorithm>
 
-#include <nlohmann/json.hpp>
-
+#include "combat/weapon-data.h"
+#include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
-#include "utils/json-comments.h"
-#include "utils/path_utils.h"
-
-using json = nlohmann::json;
 
 namespace {
 
-std::filesystem::file_time_type getLastWrite(const std::string& path)
+AreaEffectKind areaKindFromWeaponKind(WeaponGrenadeAreaKind kind)
 {
-    std::error_code ec;
-    const auto time = std::filesystem::last_write_time(path, ec);
-    return ec ? std::filesystem::file_time_type{} : time;
-}
-
-std::string resolveUnder(const std::string& relative)
-{
-    std::error_code ec;
-    if (std::filesystem::exists(relative, ec) && !ec) return relative;
-    const auto cwd = std::filesystem::current_path(ec);
-    if (!ec && std::filesystem::exists(cwd / relative, ec) && !ec)
-        return (cwd / relative).string();
-    std::filesystem::path exeDir(getExecutableDirectory());
-    for (int level = 0; level < 6 && !exeDir.empty(); ++level) {
-        const auto candidate = exeDir / relative;
-        if (std::filesystem::exists(candidate, ec) && !ec) return candidate.string();
-        const auto parent = exeDir.parent_path();
-        if (parent == exeDir) break;
-        exeDir = parent;
+    switch (kind) {
+    case WeaponGrenadeAreaKind::Fire: return AreaEffectKind::Fire;
+    case WeaponGrenadeAreaKind::Smoke: return AreaEffectKind::Smoke;
+    case WeaponGrenadeAreaKind::DarkBang: return AreaEffectKind::DarkBang;
+    case WeaponGrenadeAreaKind::None:
+    default: return AreaEffectKind::None;
     }
-    return relative;
-}
-
-AreaEffectKind areaKindFromString(const std::string& s)
-{
-    if (s == "fire") return AreaEffectKind::Fire;
-    if (s == "smoke") return AreaEffectKind::Smoke;
-    if (s == "darkbang" || s == "flash") return AreaEffectKind::DarkBang;
-    return AreaEffectKind::None;
 }
 
 } // namespace
@@ -55,65 +29,48 @@ GrenadeRegistry& GrenadeRegistry::instance()
     return registry;
 }
 
-bool GrenadeRegistry::load(const std::string& path)
+bool GrenadeRegistry::rebuildFromWeapons()
 {
-    mPath = resolveUnder(path);
-    mLastWrite = getLastWrite(mPath);
-    std::ifstream file(mPath);
-    if (!file.is_open()) {
-        Debug::warn(Debug::Category::Weapons,
-            "[GRENADE] missing %s; no grenade defs loaded\n", mPath.c_str());
-        return false;
+    std::unordered_map<std::string, GrenadeDefinition> defs;
+    for (const auto& kv : WeaponRegistry::instance().all()) {
+        const WeaponDefinition& weapon = kv.second;
+        const WeaponGrenadeEffect& effect = weapon.grenadeEffect;
+        if (!effect.enabled)
+            continue;
+        GrenadeDefinition def;
+        def.id = weapon.id;
+        def.weaponId = weapon.id;
+        def.areaKind = areaKindFromWeaponKind(effect.areaKind);
+        def.radius = std::max(0.5f, effect.radius);
+        def.height = std::max(0.0f, effect.height);
+        def.durationSeconds = std::max(0.0f, effect.durationSeconds);
+        def.damagePerTick = std::max(0, effect.damagePerTick);
+        def.damageIntervalTicks = std::max(1, effect.damageIntervalTicks);
+        def.damagesEnemiesOnly = effect.damagesEnemiesOnly;
+        def.spawnsAreaEffect = effect.spawnsAreaEffect &&
+            def.areaKind != AreaEffectKind::None;
+        def.fuseSeconds = std::max(0.0f, effect.fuseSeconds);
+        def.directEffectDistance = std::max(0.0f, effect.directEffectDistance);
+        def.maxEffectDistance = std::max(def.directEffectDistance,
+            effect.maxEffectDistance);
+        def.notLookingMultiplier = std::clamp(effect.notLookingMultiplier, 0.0f, 1.0f);
+        def.noLineOfSightMultiplier = std::clamp(effect.noLineOfSightMultiplier, 0.0f, 1.0f);
+        def.audioOnApply = effect.audioOnApply;
+        defs[def.id] = std::move(def);
     }
-    try {
-        const json root = parseJsonConfig(file);
-        const json* list = nullptr;
-        if (root.contains("grenades") && root["grenades"].is_array())
-            list = &root["grenades"];
-        else if (root.is_array())
-            list = &root;
-        if (!list) return false;
-
-        std::unordered_map<std::string, GrenadeDefinition> defs;
-        for (const auto& item : *list) {
-            if (!item.is_object()) continue;
-            GrenadeDefinition def;
-            def.id = item.value("id", std::string{});
-            if (def.id.empty()) continue;
-            def.weaponId = item.value("weapon_id", std::string{});
-            def.areaKind = areaKindFromString(item.value("area_kind", std::string{}));
-            def.radius = std::max(0.5f, item.value("radius", def.radius));
-            def.height = std::max(0.0f, item.value("height", def.height));
-            def.durationSeconds = std::max(0.0f, item.value("duration_seconds", def.durationSeconds));
-            def.damagePerTick = std::max(0, item.value("damage_per_tick", def.damagePerTick));
-            def.damageIntervalTicks = std::max(1, item.value("damage_interval_ticks", def.damageIntervalTicks));
-            def.damagesEnemiesOnly = item.value("damages_enemies_only", def.damagesEnemiesOnly);
-            def.spawnsAreaEffect = item.value("spawns_area_effect", def.areaKind != AreaEffectKind::None);
-            def.fuseSeconds = std::max(0.0f, item.value("fuse_seconds", def.fuseSeconds));
-            def.directEffectDistance = std::max(0.0f, item.value("direct_effect_distance", def.directEffectDistance));
-            def.maxEffectDistance = std::max(def.directEffectDistance,
-                item.value("max_effect_distance", def.maxEffectDistance));
-            def.notLookingMultiplier = std::clamp(item.value("not_looking_multiplier", def.notLookingMultiplier), 0.0f, 1.0f);
-            def.noLineOfSightMultiplier = std::clamp(item.value("no_line_of_sight_multiplier", def.noLineOfSightMultiplier), 0.0f, 1.0f);
-            defs[def.id] = std::move(def);
-        }
-        mDefs = std::move(defs);
-        Debug::warn(Debug::Category::Weapons,
-            "[GRENADE] loaded %zu grenade defs from %s\n", mDefs.size(), mPath.c_str());
-        return !mDefs.empty();
-    } catch (const std::exception& e) {
-        Debug::error(Debug::Category::Weapons,
-            "[GRENADE] parse error in %s: %s; keeping previous defs\n", mPath.c_str(), e.what());
-        return false;
-    }
+    mDefs = std::move(defs);
+    mWeaponRevision = WeaponRegistry::instance().revision();
+    Debug::log(Debug::Category::Weapons,
+        "[GRENADE] published %zu grenade effects from weapon definitions\n",
+        mDefs.size());
+    return !mDefs.empty();
 }
 
 bool GrenadeRegistry::pollReload()
 {
-    if (mPath.empty()) return false;
-    const auto write = getLastWrite(mPath);
-    if (write == std::filesystem::file_time_type{} || write == mLastWrite) return false;
-    return load(mPath);
+    if (WeaponRegistry::instance().revision() == mWeaponRevision)
+        return false;
+    return rebuildFromWeapons();
 }
 
 const GrenadeDefinition* GrenadeRegistry::get(const std::string& id) const
@@ -127,8 +84,9 @@ bool grenadeRegistrySelfTest(std::string& report)
     bool ok = true;
     auto fail = [&](const std::string& why) { ok = false; report += "FAIL: " + why + "\n"; };
 
+    WeaponData::registerBuiltinWeapons();
     GrenadeRegistry& reg = GrenadeRegistry::instance();
-    const bool loaded = reg.load();
+    const bool loaded = reg.rebuildFromWeapons();
     report += "loaded=" + std::string(loaded ? "yes" : "no") +
               " defs=" + std::to_string(reg.all().size()) + "\n";
     if (!loaded) { report += "FAIL\n"; return false; }
@@ -137,16 +95,21 @@ bool grenadeRegistrySelfTest(std::string& report)
     if (!fire) fail("fire grenade missing");
     else {
         if (fire->areaKind != AreaEffectKind::Fire) fail("fire area_kind should be Fire");
-        if (fire->damagePerTick != 10) fail("fire damage_per_tick should be 10");
-        if (fire->damageIntervalTicks != 10) fail("fire damage_interval_ticks should be 10");
+        if (fire->radius != 5.0f) fail("fire radius should be 5 m");
+        if (fire->damagePerTick <= 0) fail("fire damage_per_tick should be positive");
         if (!fire->spawnsAreaEffect) fail("fire should spawn an area effect");
     }
     const GrenadeDefinition* smoke = reg.get("smoke");
     if (!smoke || smoke->areaKind != AreaEffectKind::Smoke) fail("smoke grenade missing/mistyped");
+    else {
+        if (smoke->radius != 10.0f) fail("smoke radius should be 10 m (20 m diameter)");
+        if (smoke->durationSeconds != 10.0f) fail("smoke lifetime should be 10 s");
+    }
     const GrenadeDefinition* dark = reg.get("darkbang");
     if (!dark || dark->areaKind != AreaEffectKind::DarkBang) fail("darkbang grenade missing/mistyped");
     const GrenadeDefinition* frag = reg.get("frag");
     if (!frag) fail("frag grenade missing");
+    else if (frag->spawnsAreaEffect) fail("frag should not leave a lingering area effect");
 
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;

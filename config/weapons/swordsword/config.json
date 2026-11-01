@@ -103,6 +103,7 @@
       }
     }
   },
+"grenade_effect": null,
 "custom_params": {
     "range": 16.0,
     "arcDegrees": 120.0,

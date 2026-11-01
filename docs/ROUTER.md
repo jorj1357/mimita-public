@@ -81,6 +81,8 @@ systems first. Use this default order:
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
 | Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Team Deathmatch rules | `docs/specs/gamemodes/teamdeathmatch.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/networking/networking.md` |
+| Fun Counter Strike, respawning bomb rounds, grenades, Deathball | `docs/specs/gamemodes/funcounterstrike.md`, `docs/specs/gamemodes/counterstrike.md`, `docs/specs/weapons/weapons.md`, `docs/specs/weapons/deathball.md`, `docs/specs/entity-editor/entity-editor.md` |
+| Objective/round HUD for any mode | `docs/specs/gamemodes/objective-hud.md`, `docs/specs/gui/gui.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Zombie Tower phases, encounters, checkpoints, or monster roles | `docs/specs/gamemodes/zombie-tower/zombie-tower.md`, `docs/specs/actor-presets/actor-presets.md`, `docs/specs/npc-behavior/npc-behavior.md` |
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |

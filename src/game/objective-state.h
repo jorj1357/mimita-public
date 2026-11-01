@@ -30,6 +30,15 @@ enum class ObjectiveState : uint8_t
     Exploded
 };
 
+// How an actor proves a deliberate plant/defuse interaction. Hold is the
+// default: progress follows the held input. RepeatedTap advances progress by
+// tapProgressTicks for every distinct press/release edge.
+enum class ObjectiveInteractionMode : uint8_t
+{
+    Hold = 0,
+    RepeatedTap = 1
+};
+
 // Generic objective instance owned by the server. One per active objective.
 struct ObjectiveInstance
 {
@@ -56,12 +65,20 @@ struct ObjectiveInstance
     uint32_t defuserActorId = 0;
     std::string plantedSiteId;
 
+    // Interaction policy resolved from the mode objective JSON.
+    ObjectiveInteractionMode interactionMode = ObjectiveInteractionMode::Hold;
+    int tapProgressTicks = 6;  // 0.1 s at the fixed 60 Hz tick
+    int npcTapCooldownTicks = 0;
+
     bool valid() const { return active && kind != ObjectiveKind::None; }
     bool isPlanted() const { return state == ObjectiveState::Planted; }
 };
 
 // Resolve an objective kind from a JSON string ("bomb"). Unknown -> None.
 ObjectiveKind objectiveKindFromString(const std::string& kind);
+// Resolve an interaction mode. Missing/unknown values default to Hold.
+ObjectiveInteractionMode objectiveInteractionModeFromString(const std::string& mode);
+const char* objectiveInteractionModeName(ObjectiveInteractionMode mode);
 
 // One candidate carrier considered for pickup/assignment.
 struct ObjectiveCarrierCandidate
@@ -82,6 +99,10 @@ uint32_t selectObjectiveCarrier(const ObjectiveInstance& obj,
 // Advance a fixed-tick progress counter. Returns true when it just completed.
 // `canProgress` false resets progress to zero (interruptible). Pure.
 bool advanceObjectiveProgress(int& elapsed, int required, bool canProgress);
+
+// Add one distinct repeated-tap contribution. Release does not reset progress;
+// the host resets it when the actor dies, leaves the area, or becomes invalid.
+bool advanceObjectiveTapProgress(int& elapsed, int required, int tapTicks);
 
 // Convert seconds to fixed 60 Hz ticks, clamped to at least 1.
 int objectiveSecondsToTicks(float seconds);

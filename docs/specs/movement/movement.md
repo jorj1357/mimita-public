@@ -895,6 +895,25 @@ public:
 Client and server may store the map differently.
 Their collision semantics must match. EXACTLY MUST MATCH NO DIFFERENCE. BOTH IDEALLY USE THE SAME EXACT FUNCTIONS
 Step-up
+Actor-vs-world final pose
+Animation, procedural pose, AimBody, and ragdoll may move body parts freely,
+but static-world collision must consume the final transforms, not a stale
+pre-animation pose. The actor root is the only translation authority: final-pose
+containment may move the root until the final body and held-weapon collision
+meshes are clear, and must not rewrite limb transforms or animation samples.
+Player final-pose behavior is included. The local player runs containment after
+animation/AimBody and again after WeaponSystem updates the current weapon pose.
+`actor-final-pose.cpp` is the shared owner for players, NPCs, and monsters after
+AimBody/arm ragdoll. Petting, leaning, or hanging on geometry with the held
+weapon is intentional: weapon contact may lift and support the actor at ledges
+and edges, just like body contact. It is not presentation-only.
+
+A single scaled capsule is not the static-world hitbox for a tall, wide, thin,
+or multi-limb monster. Render and collision meshes may be separate; collision
+meshes may be decimated under an explicit budget. Optional limb capsule proxies
+are allowed only as documented coarse/LOD or actor-pair shapes, not as hidden
+world hitboxes.
+
 Step-up remains enabled.
 Initial maximum step height:
 maxStepHeight = 0.25f;

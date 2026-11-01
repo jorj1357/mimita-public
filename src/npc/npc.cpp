@@ -26,6 +26,7 @@
 #include "perf/perf.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
+#include "physics/movement/actor-final-pose.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision-subgrid.h"
@@ -39,6 +40,7 @@
 #include "npc/npc-navigation-settings.h"
 #include "npc/npc-combat.h"
 #include "combat/weapon-registry.h"
+#include "npc/npc-utility.h"
 #include "perf/perf.h"
 #include "npc/npc-state-machine.h"
 #include "npc/npc-movement-context.h"
@@ -1253,6 +1255,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     npc.jumpCooldown = std::max(0.0f, npc.jumpCooldown - safeDt);
     npc.attackCooldown = std::max(0.0f, npc.attackCooldown - safeDt);
     npc.weaponSwitchCooldown = std::max(0.0f, npc.weaponSwitchCooldown - safeDt);
+    npc.grenadeOpportunityCooldown = std::max(0.0f, npc.grenadeOpportunityCooldown - safeDt);
     npc.hitReactionTimer = std::max(0.0f, npc.hitReactionTimer - safeDt);
     npc.aimTimer = std::max(0.0f, npc.aimTimer);
     npc.stateMachine.stateTimer += safeDt;
@@ -2570,6 +2573,114 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         RagdollModeSystem::instance().updateNpcAim(
             safeDt, world, npc, aimForward, aimPoint, attack, npcArmRagdoll);
 
+        const uint32_t poseTick =
+            static_cast<uint32_t>(npc.body.movementSimulationTick);
+        const bool hadClearPose = npc.finalPose.hasClearPose;
+        ActorFinalPoseResult poseResult;
+        const bool poseClear =
+            containActorFinalPose(npc.body, world, npc.finalPose,
+                                  poseResult, 0.02f, "post_animation");
+        if (poseClear && !hadClearPose)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.pose.last_clear", std::to_string(npc.id),
+                "final NPC body and weapon meshes accepted a clear pose",
+                poseTick,
+                {{"actor", npc.id},
+                 {"avatar", npc.avatarName},
+                 {"position", {npc.body.pos.x, npc.body.pos.y,
+                                npc.body.pos.z}},
+                 {"initial_penetration_m", poseResult.initialPenetration},
+                 {"part_count", poseResult.partCount},
+                 {"extra_part_count", poseResult.extraPartCount},
+                 {"skip_reason", poseResult.skipReason}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (poseResult.initialPenetration > 0.02f &&
+            !poseResult.contacts.empty() &&
+            (!npc.finalPosePenetrating ||
+             poseTick - npc.finalPoseLastPenetrationLogTick >= 60))
+        {
+            npc.finalPosePenetrating = true;
+            npc.finalPoseLastPenetrationLogTick = poseTick;
+            nlohmann::json partContacts = nlohmann::json::array();
+            for (const ActorFinalPoseContact& contact : poseResult.contacts)
+            {
+                partContacts.push_back({
+                    {"actor_part", contact.actorPart ? contact.actorPart : ""},
+                    {"world_triangle", contact.worldTriangle},
+                    {"point", {contact.point.x, contact.point.y, contact.point.z}},
+                    {"normal", {contact.normal.x, contact.normal.y,
+                                contact.normal.z}},
+                    {"surface_normal",
+                     {contact.surfaceNormal.x, contact.surfaceNormal.y,
+                      contact.surfaceNormal.z}},
+                    {"penetration_m", contact.penetration}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.pose.penetration", std::to_string(npc.id),
+                "final NPC body or weapon mesh entered static geometry",
+                poseTick,
+                {{"actor", npc.id},
+                 {"avatar", npc.avatarName},
+                 {"position", {npc.body.pos.x, npc.body.pos.y,
+                                npc.body.pos.z}},
+                 {"max_penetration_m", poseResult.initialPenetration},
+                 {"stage", poseResult.stage},
+                 {"parts", std::move(partContacts)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        else if (poseResult.contacts.empty())
+        {
+            npc.finalPosePenetrating = false;
+        }
+
+        if (poseResult.corrected)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.pose.contained", std::to_string(npc.id),
+                "final NPC pose contained by translating the root",
+                poseTick,
+                {{"actor", npc.id},
+                 {"position", {npc.body.pos.x, npc.body.pos.y,
+                                npc.body.pos.z}},
+                 {"iterations", poseResult.iterations},
+                 {"correction", {poseResult.correction.x,
+                                  poseResult.correction.y,
+                                  poseResult.correction.z}},
+                 {"final_penetration_m", poseResult.finalPenetration},
+                 {"stage", poseResult.stage},
+                 {"budget_exceeded", poseResult.budgetExceeded},
+                 {"clear", poseClear}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
+        if (poseResult.restored || poseResult.usedSafePoint ||
+            poseResult.failed)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.pose.reset", std::to_string(npc.id),
+                poseResult.resetReason, poseTick,
+                {{"actor", npc.id},
+                 {"position", {npc.body.pos.x, npc.body.pos.y,
+                                npc.body.pos.z}},
+                 {"yaw", npc.body.yaw},
+                 {"grounded", npc.body.ground.onGround},
+                 {"velocity", {npc.body.vel.x, npc.body.vel.y,
+                                npc.body.vel.z}},
+                 {"restored", poseResult.restored},
+                 {"used_safe_point", poseResult.usedSafePoint},
+                 {"failed", poseResult.failed},
+                 {"stage", poseResult.stage},
+                 {"budget_exceeded", poseResult.budgetExceeded},
+                 {"final_penetration_m", poseResult.finalPenetration}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+
         clearCollisionEntityContext();
 
         float planarSpeedAfter = glm::length(glm::vec2(npc.body.vel.x, npc.body.vel.y));
@@ -2634,6 +2745,95 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     if (wantDownDash && downDashAvailableBefore && !npc.body.dash.downDashAvailable)
     {
         npc.downDashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.50f;
+    }
+
+    // Early-use grenade policy: when a safe opportunity exists, switch to a
+    // ready grenade and let the shared fire path throw it. Safety checks reject
+    // self-blasts, teammates in the blast, and reloading/empty grenades.
+    if (npc.grenadeOpportunityCooldown <= 0.0f && npc.sensors.hasTarget &&
+        npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f) {
+        const auto& cfg = NpcDifficultyConfig::instance().settings();
+        const std::vector<std::string>& loadout =
+            npc.loadoutOverride.empty() ? cfg.weaponLoadout : npc.loadoutOverride;
+        const glm::vec3 targetPoint = npc.sensors.targetPos;
+        std::string chosen;
+        WeaponGrenadeAreaKind chosenKind = WeaponGrenadeAreaKind::None;
+        float chosenRadius = 0.0f;
+        int chosenPreference = -1;
+        int friendlyNear = 0;
+        int enemyDensity = 0;
+        const float targetDistance = npc.sensors.targetDistance;
+        for (const std::string& wid : loadout) {
+            const WeaponDefinition* def = WeaponRegistry::instance().get(wid);
+            if (!def || def->behaviorType != WeaponBehaviorType::GrenadeLauncher)
+                continue;
+            auto rtIt = npc.body.weaponRuntimes.find(wid);
+            if (rtIt == npc.body.weaponRuntimes.end()) continue;
+            const WeaponRuntime& rt = rtIt->second;
+            if (rt.currentAmmo <= 0 || rt.isReloading) continue;
+            const float radius = def->grenadeEffect.radius > 0.0f
+                ? def->grenadeEffect.radius : 6.0f;
+            if (targetDistance < radius + 1.0f || targetDistance > 40.0f)
+                continue;
+            const WeaponGrenadeAreaKind kind = def->grenadeEffect.areaKind;
+            const bool preferUtility = npc.cachedLoSBlocked;
+            const bool frag = wid == "frag";
+            const int preference = preferUtility
+                ? (kind == WeaponGrenadeAreaKind::Smoke ? 3 :
+                   kind == WeaponGrenadeAreaKind::Fire ? 2 :
+                   kind == WeaponGrenadeAreaKind::DarkBang ? 1 : 0)
+                : (frag ? 3 :
+                   kind == WeaponGrenadeAreaKind::Fire ? 2 :
+                   kind == WeaponGrenadeAreaKind::Smoke ? 1 :
+                   kind == WeaponGrenadeAreaKind::DarkBang ? 1 : 0);
+            if (preference <= chosenPreference) continue;
+            chosen = wid;
+            chosenKind = kind;
+            chosenRadius = radius;
+            chosenPreference = preference;
+        }
+        if (!chosen.empty()) {
+            for (const Npc& other : npcs) {
+                if (&other == &npc || other.body.currentHp <= 0) continue;
+                const float dist = glm::length(other.body.pos - targetPoint);
+                if (other.body.matchTeam == npc.body.matchTeam &&
+                    dist <= chosenRadius)
+                    ++friendlyNear;
+                if (other.body.matchTeam != npc.body.matchTeam &&
+                    dist <= 6.0f)
+                    ++enemyDensity;
+            }
+            GrenadeThrowContext ctx;
+            ctx.hasTarget = true;
+            ctx.haveGrenade = true;
+            ctx.targetBehindCover = npc.cachedLoSBlocked;
+            ctx.enemyGroupDensity = std::max(1, enemyDensity);
+            ctx.friendlyNearImpact = friendlyNear;
+            ctx.selfInBlast = glm::length(npc.body.pos - targetPoint) <=
+                chosenRadius + 0.5f;
+            ctx.siteDefense = npc.utilityContext.onDefense;
+            ctx.siteRetake = npc.utilityContext.canDefuse;
+            const float score = scoreGrenadeThrow(ctx);
+            const bool allowed = grenadeThrowAllowed(ctx);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "npc.grenade-decision", std::to_string(npc.id),
+                allowed ? "throw" : "reject",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                {{"actor", npc.id}, {"team", npc.body.matchTeam},
+                 {"weapon", chosen}, {"kind", (int)chosenKind},
+                 {"target_distance", targetDistance},
+                 {"radius_m", chosenRadius}, {"score", score},
+                 {"friendly_near", friendlyNear},
+                 {"enemy_density", enemyDensity},
+                 {"behind_cover", npc.cachedLoSBlocked},
+                 {"self_in_blast", ctx.selfInBlast}});
+            if (allowed && npcSwitchWeapon(npc, chosen)) {
+                npc.weaponSwitchCooldown = std::max(npc.weaponSwitchCooldown, 1.0f);
+                npc.grenadeOpportunityCooldown = 8.0f;
+                npc.lastLoggedGrenadeWeapon = chosen;
+            }
+        }
     }
 
     // Reaction delay: after acquiring a target, wait before the first shot.
@@ -2719,11 +2919,17 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     emitMovementDecision(npc, replanReasonThisTick, jumpReason, safeDt);
 }
 
-void NpcSystem::render(const Camera& camera) const
+void NpcSystem::render(const Camera& camera, int localTeam) const
 {
     Perf::ScopedTimer _t("NpcRender");
     for (const Npc& npc : npcs)
-        renderPlayer(npc.body, camera);
+    {
+        // Local NPCs are not the local player. Render them through the remote
+        // actor path so team outlines and the enemy/teammate presentation apply
+        // to every avatar, including the single-mesh monster fallbacks.
+        renderNetworkPlayer(npc.body, camera, npc.id, false,
+                            localTeam, npc.body.matchTeam);
+    }
 }
 
 void NpcSystem::drawDebug(const Camera& camera) const

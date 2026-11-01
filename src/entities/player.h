@@ -27,6 +27,7 @@
 #include "avatar/avatar.h"
 #include "combat/weapon-collision-config.h"
 #include "combat/weapon-types.h"
+#include "physics/movement/actor-final-pose.h"
 #include "physics/movement/movement-types.h"
 #include "tinygltf/tiny_gltf.h"
 #include "vip/vip-appearance.h"
@@ -154,8 +155,9 @@ struct PhysicalBodyPart {
 struct PhysicalBody {
     std::vector<PhysicalBodyPart> parts;
     std::vector<Mesh> partMeshes;
-    // Render-only animated parts declared by the avatar rig (wings, stingers,
-    // tails). Drawn and animated but never simulated or hit-tested.
+    // Additional animated body parts (rig extras, random-avatar meshes, and
+    // monsters). They participate in world containment and hit validation when
+    // they carry collision triangles.
     std::vector<PhysicalBodyPart> extraParts;
     std::vector<Mesh> extraPartMeshes;
 };
@@ -516,6 +518,18 @@ struct CollisionState {
     uint64_t supportActorKey = 0;
     glm::vec3 supportActorVelocity{0.0f};
 
+    // Bounded progress-stall diagnostic. Input can be held while the actor
+    // makes no horizontal progress on connected geometry. Keep this state on
+    // the collision owner so the solver can emit one correlated event instead
+    // of logging every contact on every tick.
+    int progressStallTicks = 0;
+    uint64_t progressStallLastTick = ~0ull;
+    uint64_t progressStallStartTick = 0;
+    uint64_t progressStallLastLogTick = 0;
+    glm::vec3 progressStallAnchor{0.0f};
+    uint64_t speedCollapseLastLogTick = 0;
+    bool speedCollapseEpisodeActive = false;
+
     // Diagnostics: track values that should never grow unbounded
     int diagPrevCandidates = 0;
     int diagCandidateGrowthFrames = 0;
@@ -649,6 +663,7 @@ public:
     DashState dash;
     FreezeState freeze;
     CollisionState collision;
+    ActorFinalPoseState finalPose;
     GroundReturnState groundReturn;
 
     // -------- Godball replication (set from network) --------

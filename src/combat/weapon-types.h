@@ -152,6 +152,35 @@ struct ArmRagdollConfig {
     glm::vec3 aimRotationDegrees{0.0f};
 };
 
+// Shared grenade/tool effect schema. Per-weapon JSON owns these values; the
+// generic grenade registry and area-effect system consume them. C++ owns the
+// reusable effect implementations (smoke volume, fire cylinder, darkbang).
+enum class WeaponGrenadeAreaKind {
+    None,
+    Fire,
+    Smoke,
+    DarkBang
+};
+
+struct WeaponGrenadeEffect {
+    bool enabled = false;
+    WeaponGrenadeAreaKind areaKind = WeaponGrenadeAreaKind::None;
+    float radius = 4.0f;
+    float height = 3.0f;
+    float durationSeconds = 0.0f;
+    int damagePerTick = 0;
+    int damageIntervalTicks = 10;
+    bool damagesEnemiesOnly = true;
+    bool spawnsAreaEffect = false;
+    float fuseSeconds = 2.0f;
+    float directEffectDistance = 5.0f;
+    float maxEffectDistance = 20.0f;
+    float notLookingMultiplier = 0.5f;
+    float noLineOfSightMultiplier = 0.05f;
+    // Optional sound played on the exposed client when the effect is applied.
+    std::string audioOnApply;
+};
+
 struct WeaponDefinition {    std::string id;
     std::string displayName;
     int slot = 0;
@@ -318,6 +347,7 @@ struct WeaponDefinition {    std::string id;
     bool muzzleFlashEnabled = true;
 
     std::unordered_map<std::string, float> customParams;
+    WeaponGrenadeEffect grenadeEffect;
     MeleeContactConfig meleeContact;
     ArmRagdollConfig armRagdoll;
 

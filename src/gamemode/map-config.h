@@ -179,8 +179,14 @@ public:
     int siteIndexAt(const glm::vec3& position) const;
 
     // Runtime editing (writes back to the JSON file so positions persist).
+    std::vector<BombSite>& bombSitesMutable() { return mCurrent.bombSites; }
+    const std::vector<BombSite>& bombSites() const { return mCurrent.bombSites; }
+    std::string createBombSite(const glm::vec3& position, float radius = 4.0f,
+                               const std::string& requestedId = "");
+    bool deleteBombSite(const std::string& id);
     bool setSitePosition(const std::string& id, const glm::vec3& position);
     bool setSiteVisibility(const std::string& id, bool visible);
+    bool setSiteRadius(const std::string& id, float radius);
     bool save(bool withBackup = true);
 
     const MapEntity* findEntity(const std::string& id) const;

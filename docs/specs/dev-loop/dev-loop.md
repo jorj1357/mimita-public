@@ -2287,3 +2287,46 @@ The N-client matrix runner is part of this package. It starts one server and N
 clients, each with its own command queue, journal, scenario, assertions, and
 bad-connection profile. Client journals remain separate and linked by run,
 server, and client IDs.
+
+## Collision scenario evidence (2026-10-31)
+
+Collision recordings must let an AI inspect the first blocking step without a
+server. The client recorder writes a `client_collision` track on every schema-2
+tick: grounded state, contact count, duplicate/overflow counts, and up to eight
+canonical contacts (kind, source, shape, subshape, point, normal, sweep
+velocity, penetration, surface id, source entity id).
+
+`devscripts/scenario-analyze.py <recording.jsonl>` reads schema 1/2/3 recordings
+offline and reports:
+
+- header/footer/track validity;
+- grounded input-held-without-horizontal-progress windows;
+- airborne input-held-without-horizontal-progress windows separately, so wall
+  pinning is not misreported as a grounded seam stall;
+- intentional freeze-input windows excluded from stall classification;
+- repeated-position frames with nonzero velocity;
+- the collision payload attached to the first stalled tick, when present.
+
+The analyzer is diagnostic only. Server-backed replay still requires the normal
+`scenario-file` launch/readiness path and a dev-loop-owned server; a recording
+taken in an external room is not replay-authoritative.
+
+## Future: named launch lanes (not implemented)
+
+The current loop has one daemon, one build worker, one `.dev/current` launch
+path, and a default per-checkout `mimita.exe` cap of one. That prevents a stable
+play build from co-existing with an AI test build.
+
+The future contract should support arbitrary named lanes (`A`, `B`, `C`, ...)
+in one checkout:
+
+- each lane has its own selected artifact/build identity, server, client set,
+  run ID, room/port, journal, command queue, visibility, and process cap;
+- one compiler/linker job remains global; lanes do not run competing builds;
+- published numbered artifacts stay immutable; a lane selects an artifact and
+  never rewrites another lane's executable;
+- process reaping is scoped to the lane that requested it;
+- status separates `build_pipeline` from `lanes[]`, and each lane reports the
+  live map/mode/room from its actual processes rather than only launch args;
+- AI commands target an explicit lane/client; multi-client matrix runs are one
+  lane with N clients.

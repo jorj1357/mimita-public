@@ -1,7 +1,9 @@
 # Flat-floor back-face made a straight dash reflect
 
 - Recorded: `2026-10-25T14:25:00Z`
+- Time last updated: `2026-10-31T11:50:24Z`
 - Status: FIXED IN SOURCE; LIVE PLAYBACK HAS ZERO ROLLBACKS; HUMAN FEEL REVIEW PENDING
+- Occurrence 2: SUSPECTED RECURRENCE (2026-10-31); cause unconfirmed
 
 ## Observed
 
@@ -59,3 +61,27 @@ response bug, not networking.
 - `docs/regressions/2026-09-29/slope-edge-snag-REG.md`
 - `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`
 - `docs/regressions/2026-10-25/coolplace-limb-rollback-REG.md`
+
+---
+
+## Regression Occurrence 2 — 2026-10-31
+
+Time: `2026-10-31T11:50:24Z` (human report)
+
+Status: SUSPECTED RECURRENCE; cause not yet confirmed.
+
+The player reports that dashing on a flat surface can still send movement off to
+the side instead of continuing straight. This is the same observed symptom as
+Occurrence 1, but the current report does not yet include a complete recording
+with `client_collision`, so it is not confirmed to share the same response-normal
+defect.
+
+The current implementation still contains two different walkable-face rules:
+some paths use `surfaceNormal.z`, while the near-feet response override uses
+`fabs(surfaceNormal.z)`. A rounded feature normal can still win if the selected
+contact is not recognized as a near-feet walkable face. This is recorded as a
+candidate, not a confirmed cause.
+
+Next evidence: a short dash recording on the exact flat seam, with the selected
+response normal, surface normal, triangle id, contact kind, and before/after
+velocity. Do not mark this occurrence fixed from a deterministic self-test alone.

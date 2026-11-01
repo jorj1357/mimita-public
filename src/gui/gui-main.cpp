@@ -207,6 +207,10 @@ static void readServerSettingsFromBindings()
     const MimitaNet::CommunityMode* selectedMode =
         MimitaNet::CommunityServerConfig::instance().modeByName(mode);
     gServerLaunchSettings.gameMode = selectedMode ? selectedMode->id : "sandbox";
+    if (selectedMode && selectedMode->privateByDefault) {
+        gServerLaunchSettings.passwordProtected = true;
+        b.set("server.privacy", "Private (with password)");
+    }
     if (selectedMode && selectedMode->maxPlayers > 0)
         gServerLaunchSettings.maxPlayers = std::min<uint32_t>(
             gServerLaunchSettings.maxPlayers, (uint32_t)selectedMode->maxPlayers);
@@ -1213,6 +1217,18 @@ void guiMain(GLFWwindow* win, GameState& state)
                 {
                     // Read settings from UI bindings before starting
                     readServerSettingsFromBindings();
+                    if (gServerLaunchSettings.passwordProtected &&
+                        gServerLaunchSettings.password.empty()) {
+                        onlineMenuSetServerCode("Enter a private password");
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Errors,
+                            "network.gui-server.password-required", "",
+                            "private server start blocked until a password is entered",
+                            0,
+                            {{"mode", gServerLaunchSettings.gameMode}},
+                            __FILE__, __LINE__, __func__);
+                        break;
+                    }
 
                     // Coordinator is the single source of truth — clear so we wait for it
                     gServerLaunchSettings.serverCode.clear();
@@ -1234,6 +1250,8 @@ void guiMain(GLFWwindow* win, GameState& state)
                             "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
                         gPendingConnect.mapName = gServerLaunchSettings.mapName;
                         gPendingConnect.serverName = gServerLaunchSettings.serverName;
+                        gPendingConnect.passwordProtected = gServerLaunchSettings.passwordProtected;
+                        gPendingConnect.password = gServerLaunchSettings.password;
                         onlineMenuSetActive(false);
                         state = GAME_PLAYING;
                     }
@@ -1258,6 +1276,8 @@ void guiMain(GLFWwindow* win, GameState& state)
                                 "127.0.0.1:" + std::to_string(gServerLaunchSettings.port);
                             gPendingConnect.mapName = gServerLaunchSettings.mapName;
                             gPendingConnect.serverName = gServerLaunchSettings.serverName;
+                            gPendingConnect.passwordProtected = gServerLaunchSettings.passwordProtected;
+                            gPendingConnect.password = gServerLaunchSettings.password;
 
                             onlineMenuSetActive(false);
                             state = GAME_PLAYING;

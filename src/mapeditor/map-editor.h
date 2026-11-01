@@ -23,6 +23,7 @@ struct MapGLBObject;
 enum class EditorObjectKind {
     Entity,
     Block,
+    BombSite,
     PayloadRoutePoint,
     PayloadCartOrigin,
     MapGLBObject
@@ -88,6 +89,8 @@ public:
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
     std::string addBlock(const std::string& id = {});
+    std::string addBombSite(const std::string& id = {}, float radius = 4.0f);
+    void setSelectedBombSiteRadius(float radius);
     std::string addRoutePoint(const std::string& id = {});
     void addCartOrigin();
     bool setSelectedRouteCheckpoint(bool checkpoint);

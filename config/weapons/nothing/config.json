@@ -9,6 +9,7 @@
 "beam_world_thickness": null,
 "behavior_type": "none",
 "components": null,
+"grenade_effect": null,
 "custom_params": null,
 "damage": 0.0,
 "damage_animation_mode": null,

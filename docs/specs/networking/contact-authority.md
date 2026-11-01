@@ -173,6 +173,13 @@ Deathball is a projectile contact profile:
 - tick interval
 - wall lifetime decay
 
+World pass-through and actor contact are independent. When a swept step overlaps
+world geometry and an actor at the same time, the projectile query must report
+the actor contact and still apply the wall lifetime decay. World geometry must
+not consume the actor contact. The authoritative contact point is the nearest
+point on the victim's body so feedback appears on the victim, and knockback
+points outward from the ball's center to the victim.
+
 There must be no `if (weaponId == "deathball")` branch in the shared projectile
 contact handler.
 

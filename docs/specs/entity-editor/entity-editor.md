@@ -564,7 +564,8 @@ Run `entity_help` in the game for the compact in-game list.
 | `entity_set` | `entity_set <id> <property> <value>` | Change an authored property; `size` takes three values. |
 | `entity_delete` | `entity_delete [id]` | Delete an entity from memory. |
 | `entity_visibility` | `entity_visibility <on\|off>` | Local master switch for all debug visibility. Off by default. |
-| `entity_visibility_actor_capsules` | `entity_visibility_actor_capsules <on\|off>` | Show actor-pair collision capsules through walls. |
+| `entity_visibility_actor_capsules` | `entity_visibility_actor_capsules <on\|off>` | Show actor-pair solver capsules through walls, with an accurate capsule body and hemispherical caps. |
+| `entity_visibility_actor_hitboxes` | `entity_visibility_actor_hitboxes <on\|off>` | Show final body-part and held-weapon collision hitboxes through walls. |
 | `entity_visibility_weapon_hitboxes` | `entity_visibility_weapon_hitboxes <on\|off>` | Show active weapon hitboxes through walls. |
 | `entity_visibility_npc_positions` | `entity_visibility_npc_positions <on\|off>` | Show NPC position/navigation markers through walls. |
 | `entity_visibility_map_objects` | `entity_visibility_map_objects <on\|off>` | Show authored map entities and constraints. |
@@ -574,16 +575,35 @@ Run `entity_help` in the game for the compact in-game list.
 ### Local viewer visibility
 
 `entity_visibility 1|0` is the local viewer’s master switch. It starts off and
-is not saved across restarts. The four category commands start enabled, so
-turning the master on shows every category until a category is turned off.
-Categories are independent and may be toggled while the master is off; they
-take effect when the master is on.
+is not saved across restarts. The category commands start enabled, so turning
+the master on shows every category until a category is turned off. Categories
+are independent and may be toggled while the master is off; they take effect
+when the master is on.
 
 Visibility is presentation-only. It never mutates `entity.visible`, saves map
 JSON, sends a packet, or changes another client’s view. Collision shapes are
 drawn with depth testing disabled so the requested capsules and hitboxes are
 visible through walls. `entity_set <id> visible <0|1>` remains the separate
 authored-data control for one map entity.
+
+### Collision debug shapes
+
+The collision categories answer different questions and must be labeled:
+
+- `entity_visibility_actor_capsules` shows the actor-pair solver shape from
+  `config/actor-collision.json`. It is not the actor’s static-world hitbox.
+- `entity_visibility_actor_hitboxes` shows the final body-part and held-weapon
+  collision meshes used against static world geometry.
+- `entity_visibility_weapon_hitboxes` shows active weapon contact shapes.
+- `entity_visibility_npc_positions` shows NPC roots and navigation markers.
+
+`drawCapsuleWire()` and `drawCapsuleApprox()` are legacy, separate
+visualizations. They must be consolidated into one accurate capsule renderer
+that draws the cylinder body and both hemispherical caps. A capsule debug draw
+must show the complete shape the solver tests, not a cylinder approximation.
+The actor-hitbox view must show final animated body/weapon shapes so a tall
+monster's legs, arms, and held weapon can be compared directly with world
+geometry.
 
 ### Entity types
 
@@ -719,6 +739,37 @@ consumers are future slices. `spawnpoint` is different: the server already
 consumes enabled authored spawnpoint entities in some gamemode-managed spawn
 paths, with optional team spawn-group tag matching. That consumption is
 incomplete and does not cover every spawn entry path.
+
+## Bomb-site zones
+
+Bomb sites are authored map data owned by `MapConfigRegistry` and persisted in
+`config/maps/<map>.json` as `bomb_sites`. They are not a second entity type.
+The map editor can create, select, move, and delete sites:
+
+- `mapeditor add bombsite [id] [radius]` creates a site at the editor camera
+  look point and selects it.
+- Sites appear in the outliner and respond to the shared select/nudge/
+  set_position/set_radius/delete actions.
+- The editor draws each site as a labeled circular usable area and highlights
+  the selected site.
+- `mapeditor save` persists the site list; invalid JSON keeps the last valid
+  config.
+- The terminal `site_debug` command remains available for `show`, `hide`,
+  `select`, `move`, `print`, and `save`.
+
+The current authored shape is:
+
+```json
+"bomb_sites": [
+  { "id": "A", "position": [0, 0, 0], "radius": 4.0, "visible_debug": true }
+]
+```
+
+Entering a site circle makes the bomb interaction available; it never plants
+automatically. Planting and defusing require the mode's selected interaction
+(hold or repeated taps) while the actor remains inside the site or interaction
+range. The gamemode objective's `site_group` label is not a second lookup
+authority.
 
 ## Open issue: one authored spawn point is not used by every spawn path
 

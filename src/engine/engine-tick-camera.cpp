@@ -306,6 +306,8 @@ void engineTickCamera(Engine& engine, float dt)
         const MimitaNet::CommunityMatchClient& match =
             MimitaNet::CommunityMatchClient::instance();
         static bool spectatorForced = false;
+        const bool aftermathFrozen = match.aftermathLocal() &&
+            match.aftermathFreezeLocal();
         if (match.active() && match.teamName(0).size() > 0) {
             const uint8_t st = match.localActorState(mpContext.localPlayerId);
             // ActorState: 0=Alive,1=Dead,2=Respawning,3=Spectating
@@ -315,7 +317,7 @@ void engineTickCamera(Engine& engine, float dt)
             const bool roundInPlay =
                 match.phase() != MimitaNet::DUEL_PHASE_INTERMISSION &&
                 match.phase() != MimitaNet::DUEL_PHASE_WAITING;
-            if (deadState && roundInPlay) {
+            if (deadState && roundInPlay && !aftermathFrozen) {
                 freecamEnabled = true;
                 spectatorForced = true;
             } else if (spectatorForced) {

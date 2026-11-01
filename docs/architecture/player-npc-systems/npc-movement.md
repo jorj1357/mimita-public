@@ -1903,6 +1903,23 @@ its net useful movement remains too small
 
 Single-frame collision does not equal stuck.
 
+77.1 Final-pose world containment
+
+Navigation stuck and pose caught are different states.
+
+Pose caught means the NPC's final animated body or held weapon still overlaps
+static world geometry beyond the configured 1–2 cm standoff after movement and
+pose solving. It is not the same as having no useful navigation progress.
+
+The final-pose containment owner runs after all animation/AimBody/arm-ragdoll
+writers. It may translate the root only; it must not rewrite limb or weapon
+transforms. If the final pose cannot be made clear, restore the last known clear
+position, yaw, and grounded state, zero velocity, then use a bounded nearby safe
+standing point if needed.
+
+Actor-pair capsules are not the static-world hitbox. They remain a separate
+first-slice contract.
+
 78. Stuck recovery
 
 Recovery should escalate.

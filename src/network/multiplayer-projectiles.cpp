@@ -13,6 +13,7 @@
 #include "network/simulation-constants.h"
 #include "config/networking-config.h"
 #include "network/confirmed-damage-presentation.h"
+#include "audio/audio.h"
 #include "audio/hitmarker-audio.h"
 #include "network/network-weapons.h"
 #include "killfeed/killfeed.h"
@@ -64,9 +65,20 @@ struct ClientSmokeVolume {
     glm::vec3 position{0.0f};
     float radius = 7.5f;
     float remainingSeconds = 0.0f;
+    float totalSeconds = 0.0f;
 };
 
 static std::vector<ClientSmokeVolume> gSmokeVolumes;
+
+struct ClientFireVolume {
+    glm::vec3 position{0.0f};
+    float radius = 5.0f;
+    float height = 3.0f;
+    float remainingSeconds = 0.0f;
+    float totalSeconds = 0.0f;
+};
+
+static std::vector<ClientFireVolume> gFireVolumes;
 
 static bool grenadeLineOfSight(const glm::vec3& from, const glm::vec3& to)
 {
@@ -1009,7 +1021,28 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         ? *dynamicWeaponId : networkWeaponTypeName(event->weapon);
     if (const GrenadeDefinition* grenade = GrenadeRegistry::instance().get(weaponName)) {
         if (grenade->areaKind == AreaEffectKind::Smoke) {
-            gSmokeVolumes.push_back({position, grenade->radius, grenade->durationSeconds});
+            gSmokeVolumes.push_back({position, grenade->radius,
+                grenade->durationSeconds, grenade->durationSeconds});
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.smoke.spawn", std::to_string(event->projectileId),
+                "terminal", event->header.tick,
+                {{"radius_m", grenade->radius},
+                 {"diameter_m", grenade->radius * 2.0f},
+                 {"duration_s", grenade->durationSeconds}});
+        } else if (grenade->areaKind == AreaEffectKind::Fire) {
+            gFireVolumes.push_back({position, grenade->radius, grenade->height,
+                grenade->durationSeconds, grenade->durationSeconds});
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.fire.spawn", std::to_string(event->projectileId),
+                "terminal", event->header.tick,
+                {{"radius_m", grenade->radius},
+                 {"diameter_m", grenade->radius * 2.0f},
+                 {"height_m", grenade->height},
+                 {"duration_s", grenade->durationSeconds},
+                 {"damage_per_tick", grenade->damagePerTick},
+                 {"interval_ticks", grenade->damageIntervalTicks}});
         } else if (grenade->areaKind == AreaEffectKind::DarkBang && gpPlayer && gpCamera) {
             const float distance = glm::length(position - gpCamera->pos);
             if (distance <= grenade->maxEffectDistance) {
@@ -1025,10 +1058,21 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                         (distance - grenade->directEffectDistance) /
                         std::max(0.001f, grenade->maxEffectDistance - grenade->directEffectDistance),
                         0.0f, 1.0f));
+                const float exposure = lookFactor * distanceFactor * lineOfSightFactor;
                 gpPlayer->darkbangIntensity = std::max(
-                    gpPlayer->darkbangIntensity, lookFactor * distanceFactor * lineOfSightFactor);
+                    gpPlayer->darkbangIntensity, exposure);
                 gpPlayer->darkbangTimer = std::max(
-                    gpPlayer->darkbangTimer, grenade->durationSeconds);
+                    gpPlayer->darkbangTimer, grenade->durationSeconds * exposure);
+                if (!grenade->audioOnApply.empty())
+                    playSound(grenade->audioOnApply, 0.8f);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                    "grenade.darkbang.exposure", std::to_string(event->projectileId),
+                    "terminal", event->header.tick,
+                    {{"distance_m", distance},
+                     {"exposure", exposure},
+                     {"look_factor", lookFactor},
+                     {"line_of_sight_factor", lineOfSightFactor}});
             }
         }
     }
@@ -2019,6 +2063,13 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
         else
             ++it;
     }
+    for (auto it = gFireVolumes.begin(); it != gFireVolumes.end();) {
+        it->remainingSeconds -= std::max(0.0f, dt);
+        if (it->remainingSeconds <= 0.0f)
+            it = gFireVolumes.erase(it);
+        else
+            ++it;
+    }
     constexpr float kProjectileFixedDt = 1.0f / 60.0f;
     (void)dt;
 
@@ -2105,7 +2156,7 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
             applyPhysicsState(projectile, state);
             projectile.distanceTraveled += step.travelDistance;
 
-            if (step.type == ProjectileCollisionType::WorldPassThrough) {
+            if (step.passedThroughWorld) {
                 const WeaponDefinition* def = projectileDefinition(
                     projectile.weaponDefNetworkId, projectile.weaponType);
                 if (def) {
@@ -2467,13 +2518,35 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
 {
     for (const ClientSmokeVolume& smoke : gSmokeVolumes) {
         const float distance = gpPlayer
-            ? glm::length(gpPlayer->pos - smoke.position) : smoke.radius + 1.0f;
-        const float insideFade = std::clamp((smoke.radius - distance) / 1.0f, 0.0f, 1.0f);
-        const float alpha = distance <= smoke.radius
-            ? std::max(0.01f, insideFade)
-            : 0.72f;
+            ? glm::length(gpPlayer->pos - smoke.position) : smoke.radius * 0.5f;
+        // The outer 5% of the 20 m smoke diameter is the fade band. Inside the
+        // band the volume stays opaque so it actually blocks vision.
+        const float fadeBand = std::max(0.001f, smoke.radius * 0.05f);
+        const float edgeDistance = smoke.radius - distance;
+        const float alpha = edgeDistance >= fadeBand
+            ? 0.72f
+            : std::clamp(edgeDistance / fadeBand, 0.0f, 1.0f) * 0.72f;
         DebugVis::drawFilledSphere(camera, smoke.position, smoke.radius,
             glm::vec4(0.5f, 0.5f, 0.5f, alpha));
+        if (smoke.remainingSeconds > 0.0f) {
+            char label[32];
+            std::snprintf(label, sizeof(label), "Smoke %.1fs",
+                smoke.remainingSeconds);
+            DebugVis::drawWorldLabel(smoke.position + glm::vec3(0.0f, 0.0f, 2.2f),
+                label, glm::vec4(0.85f, 0.85f, 0.85f, 0.9f));
+        }
+    }
+    for (const ClientFireVolume& fire : gFireVolumes) {
+        const float life = fire.totalSeconds > 0.001f
+            ? std::clamp(fire.remainingSeconds / fire.totalSeconds, 0.0f, 1.0f)
+            : 1.0f;
+        DebugVis::drawFilledCylinder(camera, fire.position,
+            glm::vec3(0.0f, 0.0f, 1.0f), fire.radius, fire.height,
+            glm::vec4(1.0f, 0.28f, 0.02f, 0.22f + 0.28f * life));
+        char label[32];
+        std::snprintf(label, sizeof(label), "Fire %.1fs", fire.remainingSeconds);
+        DebugVis::drawWorldLabel(fire.position + glm::vec3(0.0f, 0.0f, fire.height + 0.5f),
+            label, glm::vec4(1.0f, 0.55f, 0.2f, 0.9f));
     }
     for (const auto& entry : ctx.networkProjectiles)
     {

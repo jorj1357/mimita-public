@@ -620,6 +620,8 @@ struct MultiplayerContext
     uint16_t nextLocalFreezeSerial = 0;
     uint16_t nextLocalMovementDirectionSerial = 0;
     uint16_t nextLocalEquipSerial = 0;
+    uint8_t nextLocalInteractSerial = 0;
+    bool lastSentInteractHeld = false;
     // ── Respawn lifecycle ─────────────────────────────────────────────
     uint16_t nextLocalRespawnSerial = 1;   // permanently monotonic, never reset to 0
     uint16_t pendingRespawnSerial = 0;     // 0 = no pending request
@@ -884,6 +886,7 @@ struct MpInput
     bool shieldHeld = false;
     bool grabHeld = false;
     bool crouchHeld = false;
+    bool interactHeld = false;
     bool flyUp = false;
     bool flyDown = false;
     bool flyFast = false;

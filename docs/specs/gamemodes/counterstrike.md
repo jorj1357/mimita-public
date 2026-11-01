@@ -2,6 +2,12 @@
 
 MiMITA Counter-Strike Mode — Full Specification v1
 
+Scope note (2026-10-31): this document owns the one-life tactical
+`counterstrike` mode. The respawning bomb-focused `funcounterstrike` mode has
+its own specification at `docs/specs/gamemodes/funcounterstrike.md`. Do not
+apply one-life elimination-round rules or this mode's loadout to Fun Counter
+Strike.
+
 Date: 2026-10-06
 Status: Draft v1 / authoritative target behavior pending human edits
 Purpose: Define the intended Counter-Strike mode behavior, architecture, configuration ownership, NPC behavior, runtime observability, and acceptance conditions.

@@ -1,0 +1,254 @@
+{
+  "mode": "legacy",
+  "enabled": true,
+  "legacy": {
+    "fullVolumeDistance": 1.0,
+    "categories": {
+      "Weapons": {
+        "maxDistance": 150.0,
+        "volumeScale": 1.0
+      },
+      "Impacts": {
+        "maxDistance": 100.0,
+        "volumeScale": 1.0
+      },
+      "Movement": {
+        "maxDistance": 80.0,
+        "volumeScale": 1.0
+      },
+      "NPC": {
+        "maxDistance": 120.0,
+        "volumeScale": 1.0
+      },
+      "Ambient": {
+        "maxDistance": 1000.0,
+        "volumeScale": 1.0
+      },
+      "UI": {
+        "maxDistance": 2.0,
+        "volumeScale": 1.0
+      }
+    },
+    "sounds": {
+      "player_hurt": {
+        "maxDistance": 100.0,
+        "volumeScale": 1.2
+      }
+    }
+  },
+  "categories": {
+    "Weapons": {
+      "spatial": true,
+      "minDistance": 2.0,
+      "outerDistance": 10000.0,
+      "volumeScale": 1.0,
+      "points": [
+        [2.0, 1.0],
+        [50.0, 1.0],
+        [100.0, 0.35],
+        [500.0, 0.05],
+        [1000.0, 0.02],
+        [10000.0, 0.0]
+      ],
+      "directFadeStart": 50.0,
+      "directFadeEnd": 150.0,
+      "reverb": {
+        "wetNear": 0.03,
+        "wetFar": 0.95,
+        "delayMs": 70.0,
+        "decay": 0.50
+      },
+      "muffle": {
+        "openHz": 20000.0,
+        "occludedHz": 1800.0,
+        "enclosedHz": 900.0
+      },
+      "obstruction": {
+        "directLoss": 0.80,
+        "reverbBoost": 0.35
+      },
+      "enclosure": {
+        "directLoss": 0.50,
+        "reverbBoost": 0.35,
+        "probeRadius": 12.0
+      }
+    },
+    "Impacts": {
+      "spatial": true,
+      "minDistance": 1.0,
+      "outerDistance": 300.0,
+      "volumeScale": 1.0,
+      "points": [
+        [1.0, 1.0],
+        [50.0, 1.0],
+        [80.0, 0.15],
+        [300.0, 0.0]
+      ],
+      "directFadeStart": 50.0,
+      "directFadeEnd": 100.0,
+      "reverb": {
+        "wetNear": 0.02,
+        "wetFar": 0.95,
+        "delayMs": 45.0,
+        "decay": 0.40
+      },
+      "muffle": {
+        "openHz": 20000.0,
+        "occludedHz": 1800.0,
+        "enclosedHz": 900.0
+      },
+      "obstruction": {
+        "directLoss": 0.80,
+        "reverbBoost": 0.35
+      },
+      "enclosure": {
+        "directLoss": 0.50,
+        "reverbBoost": 0.35,
+        "probeRadius": 6.0
+      }
+    },
+    "Movement": {
+      "spatial": true,
+      "minDistance": 1.0,
+      "outerDistance": 150.0,
+      "volumeScale": 1.0,
+      "points": [
+        [1.0, 1.0],
+        [50.0, 1.0],
+        [80.0, 0.10],
+        [150.0, 0.0]
+      ],
+      "directFadeStart": 50.0,
+      "directFadeEnd": 80.0,
+      "reverb": {
+        "wetNear": 0.02,
+        "wetFar": 0.95,
+        "delayMs": 35.0,
+        "decay": 0.32
+      },
+      "muffle": {
+        "openHz": 20000.0,
+        "occludedHz": 2200.0,
+        "enclosedHz": 1100.0
+      },
+      "obstruction": {
+        "directLoss": 0.80,
+        "reverbBoost": 0.35
+      },
+      "enclosure": {
+        "directLoss": 0.50,
+        "reverbBoost": 0.35,
+        "probeRadius": 5.0
+      }
+    },
+    "NPC": {
+      "spatial": true,
+      "minDistance": 2.0,
+      "outerDistance": 300.0,
+      "volumeScale": 1.0,
+      "points": [
+        [2.0, 1.0],
+        [50.0, 1.0],
+        [100.0, 0.20],
+        [300.0, 0.0]
+      ],
+      "directFadeStart": 50.0,
+      "directFadeEnd": 120.0,
+      "reverb": {
+        "wetNear": 0.02,
+        "wetFar": 0.95,
+        "delayMs": 55.0,
+        "decay": 0.42
+      },
+      "muffle": {
+        "openHz": 20000.0,
+        "occludedHz": 1800.0,
+        "enclosedHz": 900.0
+      },
+      "obstruction": {
+        "directLoss": 0.80,
+        "reverbBoost": 0.35
+      },
+      "enclosure": {
+        "directLoss": 0.50,
+        "reverbBoost": 0.35,
+        "probeRadius": 8.0
+      }
+    },
+    "Ambient": {
+      "spatial": true,
+      "minDistance": 1.0,
+      "outerDistance": 5000.0,
+      "volumeScale": 1.0,
+      "points": [
+        [1.0, 1.0],
+        [50.0, 1.0],
+        [500.0, 0.20],
+        [2000.0, 0.03],
+        [5000.0, 0.0]
+      ],
+      "directFadeStart": 50.0,
+      "directFadeEnd": 500.0,
+      "reverb": {
+        "wetNear": 0.05,
+        "wetFar": 0.95,
+        "delayMs": 110.0,
+        "decay": 0.55
+      },
+      "muffle": {
+        "openHz": 20000.0,
+        "occludedHz": 1600.0,
+        "enclosedHz": 700.0
+      },
+      "obstruction": {
+        "directLoss": 0.80,
+        "reverbBoost": 0.35
+      },
+      "enclosure": {
+        "directLoss": 0.50,
+        "reverbBoost": 0.35,
+        "probeRadius": 20.0
+      }
+    },
+    "UI": {
+      "spatial": false,
+      "minDistance": 1.0,
+      "outerDistance": 2.0,
+      "volumeScale": 1.0,
+      "points": [
+        [1.0, 1.0],
+        [2.0, 0.0]
+      ]
+    }
+  },
+  "sounds": {
+    "revolvershoot": "Weapons",
+    "shotgunshoot": "Weapons",
+    "godballhit": "Weapons",
+    "npc_spawn": "NPC",
+    "npc_death": "NPC",
+    "hitworld": "Impacts",
+    "world_impact": "Impacts",
+    "player_hurt": "Impacts",
+    "ui/click": "UI",
+    "ui/hover": "UI"
+  },
+  "prefixes": {
+    "entity/player/walk": "Movement",
+    "entity/player/jump": "Movement",
+    "entity/player/dash": "Movement",
+    "entity/player/land": "Movement",
+    "entity/player/freeze": "Movement",
+    "entity/player/doublejump": "Movement",
+    "entity/player/spawning": "Movement",
+    "weapon/": "Weapons",
+    "grenadelauncher/": "Weapons",
+    "rocketlauncher/": "Weapons",
+    "npc_": "NPC",
+    "ui/": "UI",
+    "hit": "Impacts",
+    "impact": "Impacts",
+    "rain": "Ambient",
+    "ambient": "Ambient"
+  }
+}

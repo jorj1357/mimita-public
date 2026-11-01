@@ -91,6 +91,7 @@ void Player::reset()
     movementContactHistory.clear();
     lastValidWorldCollisionPosition = pos;
     hasLastValidWorldCollisionPosition = false;
+    finalPose = ActorFinalPoseState{};
 
     jump.jumpHeldPrev = false;
     dash.moveHeldPrev = false;

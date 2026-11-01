@@ -12,6 +12,10 @@
 
 #include <nlohmann/json.hpp>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "miniaudio.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
@@ -170,6 +174,63 @@ std::string musicCachePath(const std::string& path)
     return (cacheDir / (cacheKey + ".wav")).string();
 }
 
+bool runFfmpeg(const std::string& ffmpeg, const std::string& input,
+               const std::string& output, const std::string& logPath,
+               int& exitCode, std::string& error)
+{
+    const std::string command = "\"" + ffmpeg +
+        "\" -hide_banner -nostdin -loglevel error -y -i \"" + input +
+        "\" -vn -ac 2 -ar 48000 -c:a pcm_s16le -f wav \"" + output + "\"";
+
+#ifdef _WIN32
+    SECURITY_ATTRIBUTES attributes{};
+    attributes.nLength = sizeof(attributes);
+    attributes.bInheritHandle = TRUE;
+    HANDLE log = CreateFileA(logPath.c_str(), GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (log == INVALID_HANDLE_VALUE) {
+        error = "cannot create the FFmpeg diagnostic log";
+        return false;
+    }
+    HANDLE nullInput = CreateFileA("NUL", GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, &attributes, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdOutput = log;
+    startup.hStdError = log;
+    startup.hStdInput = nullInput;
+    PROCESS_INFORMATION process{};
+    std::vector<char> mutableCommand(command.begin(), command.end());
+    mutableCommand.push_back('\0');
+    const BOOL started = CreateProcessA(
+        nullptr, mutableCommand.data(), nullptr, nullptr, TRUE,
+        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process);
+    CloseHandle(log);
+    if (nullInput != INVALID_HANDLE_VALUE)
+        CloseHandle(nullInput);
+    if (!started) {
+        error = "could not start FFmpeg (win32=" +
+            std::to_string((unsigned long)GetLastError()) + ")";
+        return false;
+    }
+    WaitForSingleObject(process.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(process.hProcess, &code);
+    CloseHandle(process.hProcess);
+    CloseHandle(process.hThread);
+    exitCode = (int)code;
+    return true;
+#else
+    (void)logPath;
+    exitCode = std::system(command.c_str());
+    return true;
+#endif
+}
+
 bool decodeMusicToCache(const std::string& path, std::string& error)
 {
     const std::string output = musicCachePath(path);
@@ -187,15 +248,32 @@ bool decodeMusicToCache(const std::string& path, std::string& error)
     const std::string temporary = output + "." +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
         ".partial.wav";
+    const std::string errorLog = temporary + ".log";
     std::error_code ec;
-    const std::string command = "\"" + ffmpeg +
-        "\" -hide_banner -loglevel error -y -i \"" + path +
-        "\" -vn -ac 2 -ar 48000 -c:a pcm_s16le -f wav \"" + temporary + "\"";
-    const int result = std::system(command.c_str());
+    const std::string input = std::filesystem::absolute(path).make_preferred().string();
+    int result = 1;
+    std::string runError;
+    if (!runFfmpeg(ffmpeg, input, temporary, errorLog, result, runError)) {
+        std::filesystem::remove(temporary, ec);
+        error = runError;
+        return false;
+    }
+    std::string detail;
+    if (std::filesystem::exists(errorLog, ec)) {
+        std::ifstream errorFile(errorLog);
+        std::string line;
+        while (detail.size() < 400 && std::getline(errorFile, line)) {
+            if (!detail.empty()) detail += " | ";
+            detail += line;
+        }
+        std::filesystem::remove(errorLog, ec);
+    }
     if (result != 0 || !std::filesystem::exists(temporary) ||
         std::filesystem::file_size(temporary, ec) <= 44 || ec) {
         std::filesystem::remove(temporary, ec);
-        error = "FFmpeg decode failed (exit=" + std::to_string(result) + ")";
+        error = "FFmpeg decode failed (exit=" + std::to_string(result) +
+            ", ffmpeg=" + ffmpeg + ")";
+        if (!detail.empty()) error += ": " + detail;
         return false;
     }
     std::filesystem::rename(temporary, output, ec);
@@ -245,6 +323,8 @@ void MusicManager::startMusicPredecode()
 
     mMusicPredecodeStop.store(false, std::memory_order_release);
     mMusicPredecodeThread = std::thread([this, paths = std::move(paths)]() {
+        Debug::log(Debug::Category::Audio, "[MUSIC] decoder=%s\n",
+                   defaultFfmpegPath().c_str());
         for (const std::string& path : paths) {
             if (mMusicPredecodeStop.load(std::memory_order_acquire))
                 return;
@@ -314,7 +394,17 @@ bool MusicManager::startTrack(const std::string& path, bool addToHistory)
     if (!std::filesystem::exists(path)) return false;
 
     const std::string playbackPath = resolvePlaybackPath(path);
-    if (playbackPath.empty()) return false;
+    if (playbackPath.empty()) {
+        if (mLoggedSkipFailures.insert(path).second) {
+            const std::string reason = requiresFfmpegDecode(path)
+                ? "FFmpeg decode cache is not ready or the selected FFmpeg lacks the required demuxer/decoder"
+                : "miniaudio cannot open this source";
+            logMusicEvent("music.track.skipped", path, reason);
+            Debug::log(Debug::Category::Audio,
+                "[MUSIC] skipping track: %s (%s)\n", path.c_str(), reason.c_str());
+        }
+        return false;
+    }
 
     mCurrentSound = new ma_sound();
     ma_result result = ma_sound_init_from_file(mEngine, playbackPath.c_str(),
@@ -397,8 +487,10 @@ void MusicManager::playNextIngame()
 
         if (startTrack(mPlaylist[mPlaylistIndex].path))
             return;
-        Debug::log(Debug::Category::Audio, "[MUSIC] skipping unusable track: %s\n",
-            mPlaylist[mPlaylistIndex].path.c_str());
+        if (mLoggedSkipFailures.insert(mPlaylist[mPlaylistIndex].path).second) {
+            Debug::log(Debug::Category::Audio, "[MUSIC] skipping unusable track: %s\n",
+                mPlaylist[mPlaylistIndex].path.c_str());
+        }
     }
 
     if (!mNoPlayableTracksReported) {
@@ -716,6 +808,7 @@ void MusicManager::reload()
     scanFolder("assets/music/ingame", mIngameTracks);
     loadCredits("assets/music/credits.json");
     mLoggedLoadFailures.clear();
+    mLoggedSkipFailures.clear();
     startMusicPredecode();
 
     if (mMode == Mode::Ingame && (!mModeTrackMode || mPersonalMusicOverride)) {

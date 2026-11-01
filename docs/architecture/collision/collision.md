@@ -234,14 +234,85 @@ for recovery and walkability.
 `0.9999` smooths only exactly coplanar seams. Lower values also smooth shallow
 ramp creases; this is hot-reloadable but should be tuned by human feel review.
 
-## NPC collision scope — capsule now, triangle target later
+## Actor-vs-world triangle ownership and NPC/monster containment — 2026-10-31
 
-NPC world collision currently uses a scaled capsule plus safe spawn and
-post-pose recovery. Full animated triangle-versus-triangle NPC collision is the
-later target. Capsules are cheaper, quicker to iterate, and sufficient for
-keeping NPCs out of solid geometry for now; do not treat the capsule
-approximation as the final actor-vs-actor contract. Players and weapons continue
-to use the shared actor-triangle solver.
+Status: IMPLEMENTED SLICE (2026-10-31). This supersedes the earlier “NPC
+collision uses a scaled capsule” statement. NPCs and monsters already route
+through the actor-triangle solver for static-world collision. Final-pose
+containment now runs after AimBody/arm-ragdoll in `actor-final-pose.cpp`, tests
+the final body and held-weapon collision meshes, translates only the root, and
+keeps a last-clear pose plus a bounded safe-point fallback. The server respawn
+fallback is wired when both the last-clear pose and the safe point fail; that
+case emits `npc.pose.reset`. The same owner covers players, including a second
+pass after the current weapon pose is published. Body and weapon contacts both
+participate in lift/support; a weapon resting on a ledge may hold the actor up.
+
+### Static-world collision
+
+- Players, NPCs, monsters, and bosses use their final body-part and held-weapon
+  collision meshes against static world triangles. A single scaled capsule is
+  not the static-world hitbox for an actor. Canonical parts and extra/generic
+  animated parts both participate; random avatars and monsters must not fall
+  back to “no collision parts” merely because their mesh node names are not
+  `head`/`torso`/arms/legs.
+- Render mesh and collision mesh are separate concepts. The render mesh may stay
+  high-detail and animated; the collision mesh is the source of truth for world
+  contacts. Collision meshes may be decimated or simplified, but simplification
+  must preserve the same geometry class and must be validated against the render
+  silhouette for the body region it represents.
+- Optional limb capsule proxies are allowed only as a documented coarse/LOD or
+  actor-pair shape. They must not silently replace the final body/weapon mesh
+  for static-world containment. If a proxy is used, the debug view and the
+  recorded evidence must identify it as a proxy, not as the actual hitbox.
+- Triangle-vs-world cost is bounded by actor collision triangles times nearby
+  world candidates, not by the whole map. The world broadphase and actor local
+  BVH must remain cached and reuse scratch storage. The current narrowphase
+  budgets are 64 contacts per actor part and 200,000 triangle tests; future
+  implementation must define the collision-mesh budget and a safe behavior when
+  a pathological model reaches it. Do not claim unlimited triangle support.
+
+### Final-pose containment
+
+- Animation, procedural pose, AimBody, and arm ragdoll own body-part transforms.
+- Static-world collision consumes the final transforms, not the pre-animation
+  movement pose.
+- The actor root is the only translation state that containment may change.
+  Containment must not rewrite limb transforms, animation samples, or weapon
+  attachment transforms.
+- After all pose writers, containment tests the final body and weapon collision
+  meshes against nearby static triangles. If any part overlaps beyond the
+  configured standoff, the root is translated until the final pose is clear.
+- The agreed standoff is 1–2 cm, enough to prevent visible overlap without
+  forcing exact touching.
+- If containment cannot resolve the pose, restore the last known clear root
+  position, yaw, and ground state, and zero velocity. If that pose is not valid,
+  use a bounded nearby safe standing point; respawn only if no valid point
+  exists.
+- Recovery must not raycast downward through a solid to a lower floor, and must
+  not accept a root-only point query as proof that the final pose is clear.
+
+### Actor-pair capsule scope — separate contract
+
+Actor-vs-actor collision keeps the capsule-pair first slice described below.
+Capsules are per actor-preset profiles in `config/actor-collision.json`; the
+Chainsaw Boss profile (`2.0 m` radius, `6.6 m` height) is an actor-pair
+approximation, not its static-world hitbox. Full animated triangle-vs-triangle
+actor-pair collision remains a later migration. Debug rendering must label the
+actor-pair capsule separately from final body/weapon hitboxes.
+
+### Debug rendering
+
+The existing `drawCapsuleWire()` and `drawCapsuleApprox()` are separate,
+incomplete visualizations:
+
+- `drawCapsuleWire()` draws the axis, two end rings, and connecting lines but
+  not the hemispherical caps;
+- `drawCapsuleApprox()` is an even coarser line approximation.
+
+They must be consolidated into one accurate capsule renderer that draws the
+capsule body and both hemispherical caps. The actor-hitbox debug category must
+also render final body-part triangles and held-weapon hitboxes, with labels
+that distinguish world hitboxes, weapon hitboxes, and actor-pair capsules.
 
 ## Safe spawn placement — 2026-10-25
 

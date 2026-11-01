@@ -134,6 +134,7 @@ int runClient(const LaunchOptions& options)
     printf("[CLIENT] loading map=%s path=%s\n", clientMap.c_str(), clientMapPath.c_str());
     World world;
     loadWorldFromGLB(world, clientMapPath.c_str());
+    setAudioSpatialWorld(&world);
 
     Camera camera;
     engine.bindCamera(&camera);
@@ -142,6 +143,8 @@ int runClient(const LaunchOptions& options)
     uint32_t localPlayerId = 0;
     uint32_t clientTick = 0;
     uint32_t movementSequence = 1;
+    uint8_t interactSerial = 0;
+    bool lastInteractHeld = false;
     uint64_t lastHelloMs = 0;
     uint64_t lastLogMs = nowMs();
     uint64_t packetsSent = 0;
@@ -371,7 +374,16 @@ int runClient(const LaunchOptions& options)
                 if (input.downDashPressed) sf |= NET_STATE_DOWN_DASHING;
                 if (input.freezeHeld) sf |= NET_STATE_FREEZING;
                 if (input.reviveHeld) sf |= NET_STATE_REVIVING;
+                if (input.interactHeld) sf |= NET_STATE_INTERACTING;
+                if (input.interactHeld && !lastInteractHeld)
+                {
+                    ++interactSerial;
+                    if (interactSerial == 0)
+                        interactSerial = 1;
+                }
+                lastInteractHeld = input.interactHeld;
                 in.stateFlags = sf;
+                in.interactSerial = interactSerial;
             }
             in.movementSequence = movementSequence++;
             if (movementSequence == 0)

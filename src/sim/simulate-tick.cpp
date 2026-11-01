@@ -11,12 +11,14 @@
 #include "sim/sim-context.h"
 #include "input/input-frame.h"
 #include "input/input-commands.h"
+#include "input/input-poll.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
 #include "input/input-state.h"
 #include "physics/physics-mini.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "physics/movement/actor-final-pose.h"
 #include "physics/movement/actor-pair-collision.h"
 #include "config/actor-collision-config.h"
 #include "npc/npc.h"
@@ -37,6 +39,9 @@
 #include "ragdoll/ragdoll-mode.h"
 #include "ragdoll/ragdoll-mode-config.h"
 #include "network/multiplayer-context.h"
+#include "network/community-match-client.h"
+#include "game/objective-state.h"
+#include "gamemode/map-config.h"
 #include "network/community-match-client.h"
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-system.h"
@@ -79,6 +84,92 @@ static InputState inputStateFromFrame(const InputFrame& frame)
 
 static constexpr float TICK_DT = 1.0f / 60.0f;
 
+static void containAndLogPlayerFinalPose(Player& player, const World& world,
+                                         const char* stage)
+{
+    ActorFinalPoseResult result;
+    const bool clear = containActorFinalPose(
+        player, world, player.finalPose, result, 0.02f, stage);
+    static uint64_t lastLogTick = 0;
+    const uint64_t tick = player.movementSimulationTick;
+    const bool reset = result.restored || result.usedSafePoint || result.failed;
+    const bool penetration = result.initialPenetration > 0.02f;
+    if (!reset && !result.budgetExceeded &&
+        (!penetration || tick - lastLogTick < 30))
+        return;
+
+    nlohmann::json parts = nlohmann::json::array();
+    for (const ActorFinalPoseContact& contact : result.contacts)
+    {
+        parts.push_back({
+            {"actor_part", contact.actorPart ? contact.actorPart : ""},
+            {"world_triangle", contact.worldTriangle},
+            {"point", {contact.point.x, contact.point.y, contact.point.z}},
+            {"normal", {contact.normal.x, contact.normal.y, contact.normal.z}},
+            {"surface_normal", {contact.surfaceNormal.x,
+                                contact.surfaceNormal.y,
+                                contact.surfaceNormal.z}},
+            {"penetration_m", contact.penetration}});
+    }
+    if (penetration)
+        lastLogTick = tick;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Collision, StructuredLevel::Important,
+        reset ? "player.pose.reset" : "player.pose.contained",
+        "local-player", stage, static_cast<uint32_t>(tick),
+        {{"actor", player.username},
+         {"stage", stage},
+         {"position", {player.pos.x, player.pos.y, player.pos.z}},
+         {"initial_penetration_m", result.initialPenetration},
+         {"final_penetration_m", result.finalPenetration},
+         {"iterations", result.iterations},
+         {"correction", {result.correction.x, result.correction.y,
+                          result.correction.z}},
+         {"clear", clear},
+         {"restored", result.restored},
+         {"used_safe_point", result.usedSafePoint},
+         {"failed", result.failed},
+         {"budget_exceeded", result.budgetExceeded},
+         {"reset_reason", result.resetReason},
+         {"part_count", result.partCount},
+         {"extra_part_count", result.extraPartCount},
+         {"skip_reason", result.skipReason},
+         {"parts", std::move(parts)}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+static void containAndLogLocalNpcFinalPose(Npc& npc, const World& world,
+                                           const char* stage)
+{
+    ActorFinalPoseResult result;
+    const bool clear = containActorFinalPose(
+        npc.body, world, npc.finalPose, result, 0.02f, stage);
+    if (clear && !result.corrected && !result.budgetExceeded)
+        return;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        result.failed ? "npc.pose.reset" : "npc.pose.contained",
+        std::to_string(npc.id), stage,
+        static_cast<uint32_t>(npc.body.movementSimulationTick),
+        {{"actor", npc.id},
+         {"stage", stage},
+         {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+         {"initial_penetration_m", result.initialPenetration},
+         {"final_penetration_m", result.finalPenetration},
+         {"correction", {result.correction.x, result.correction.y,
+                          result.correction.z}},
+         {"clear", clear},
+         {"restored", result.restored},
+         {"used_safe_point", result.usedSafePoint},
+         {"failed", result.failed},
+         {"budget_exceeded", result.budgetExceeded},
+         {"reset_reason", result.resetReason},
+         {"part_count", result.partCount},
+         {"extra_part_count", result.extraPartCount},
+         {"skip_reason", result.skipReason}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void simulateTick(SimContext& sim, const InputFrame& frame)
 {
     MIMITA_PERF_SCOPE("Simulation::SimulateTick");
@@ -100,6 +191,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
       {
           return;
       } }
+    advanceTerminalInteractFixedTick();
 
     // Install changed avatar animation JSON before any player or NPC samples a
     // pose this tick. This presentation path remains live even when generic
@@ -236,6 +328,32 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         } else {
             MIMITA_PERF_SCOPE("PhysicsMainUpdate");
             InputState normalInput = inputStateFromFrame(tickFrame);
+            // Mirror the authoritative hold-mode plant lock locally so the
+            // predicted actor does not run ahead of the server. Momentum is
+            // preserved because velocity is left untouched.
+            bool plantingLock = false;
+            if (tickFrame.interactHeld && mpContext.active)
+            {
+                const auto& objective =
+                    MimitaNet::CommunityMatchClient::instance().objective();
+                plantingLock =
+                    objective.active &&
+                    objective.state == (uint8_t)ObjectiveState::Carried &&
+                    objective.interactionMode ==
+                        (uint8_t)ObjectiveInteractionMode::Hold &&
+                    objective.carrierId == mpContext.localPlayerId &&
+                    MapConfigRegistry::instance().siteIndexAt(sim.player->pos) >= 0;
+            }
+            if (plantingLock)
+            {
+                normalInput.wishMoveXY = glm::vec2(0.0f);
+                normalInput.jumpHeld = false;
+                normalInput.jumpPressed = false;
+                normalInput.dashPressed = false;
+                normalInput.downDashPressed = false;
+                normalInput.freezeHeld = false;
+                normalInput.freezePressed = false;
+            }
             setCollisionEntityContext("Player", 0, false);
             physicsMainUpdate(*sim.player, *sim.world, normalInput, TICK_DT);
             clearCollisionEntityContext();
@@ -287,6 +405,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             sim.player->updateProceduralAnimation(TICK_DT, THE_CAMERA.front,
                                                   THE_CAMERA.pos, false);
     } }
+
+    if (!sim.player->dead && !sim.player->ragdollModeActive)
+        containAndLogPlayerFinalPose(*sim.player, *sim.world, "post_animation");
 
     {
         MIMITA_PERF_SCOPE("NpcUpdate");
@@ -426,6 +547,9 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 doCollisions(*sim.player, *sim.world, grounded, TICK_DT);
             }
             sim.player->updateModelWorldTransforms();
+            if (!sim.player->dead && !sim.player->ragdollModeActive)
+                containAndLogPlayerFinalPose(*sim.player, *sim.world,
+                                             "post_actor_pair");
         }
 
         for (std::size_t i = 0; i < localNpcActorCount; ++i)
@@ -448,6 +572,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 doCollisions(npc.body, *sim.world, grounded, TICK_DT);
             }
             npc.body.updateModelWorldTransforms();
+            containAndLogLocalNpcFinalPose(npc, *sim.world, "post_actor_pair");
         }
 
         static uint32_t lastCollisionProfileTick = 0;

@@ -1087,6 +1087,34 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         serverRespawnAllActors(sock, players, npcs, tick, totalPacketsOut);
         ack(true, "applied: respawn_all");
     }
+    else if (commandStr == "objective_give" ||
+             commandStr.rfind("objective_give ", 0) == 0)
+    {
+        const std::string arg = commandStr.size() > 15
+            ? commandStr.substr(15) : std::string("self");
+        uint32_t target = it->second.id;
+        bool valid = true;
+        if (!arg.empty() && arg != "self")
+        {
+            try
+            {
+                target = (uint32_t)std::stoul(arg);
+            }
+            catch (...)
+            {
+                valid = false;
+            }
+        }
+        if (!valid)
+        {
+            ack(false, "rejected: objective_give <self|actor_id>");
+        }
+        else
+        {
+            serverGamemodeRequestObjectiveGive(it->second.id, target);
+            ack(true, "queued: objective_give");
+        }
+    }
     else if (commandStr.rfind("healthall ", 0) == 0)
     {
         const std::string arg = commandStr.substr(10);

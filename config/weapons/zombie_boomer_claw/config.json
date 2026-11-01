@@ -9,6 +9,7 @@
 "beam_world_thickness": null,
 "behavior_type": "spyknife",
 "components": null,
+"grenade_effect": null,
 "custom_params": {
     "networkBatchIntervalTicks": 10.0,
     "networkBatchMaxContacts": 6.0,

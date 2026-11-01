@@ -108,10 +108,18 @@ only for a headless/unconnected server console.
 ## Debug visibility commands
 
 `entity_visibility 1|0` is the local viewer’s master switch, off by default.
-`entity_visibility_actor_capsules`, `entity_visibility_weapon_hitboxes`,
-`entity_visibility_npc_positions`, and `entity_visibility_map_objects` control
-the individual categories. They are local presentation commands: no packet is
-sent, authored map data is not changed, and another client’s view is unaffected.
+`entity_visibility_actor_capsules`, `entity_visibility_actor_hitboxes`,
+`entity_visibility_weapon_hitboxes`, `entity_visibility_npc_positions`, and
+`entity_visibility_map_objects` control the individual categories. They are
+local presentation commands: no packet is sent, authored map data is not
+changed, and another client’s view is unaffected.
+
+`entity_visibility_actor_capsules` shows the actor-pair solver capsule and must
+render the full capsule, including both hemispherical caps. It is not the
+static-world body hitbox. `entity_visibility_actor_hitboxes` shows the final
+animated body-part and held-weapon collision meshes used against world geometry.
+The two views must be labeled separately because a monster may have a large
+actor-pair capsule while its world collision comes from individual limbs.
 
 ## Live identity command
 

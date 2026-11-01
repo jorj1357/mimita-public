@@ -26,6 +26,7 @@
     },
     {
       "id": 5,
+      "key": "all_weapons",
       "name": "All weapons",
       "description": "All stable and OP weapons, including future weapons.",
       "weapons": [
@@ -92,6 +93,27 @@
         "chainsaw",
         "mace",
         "deathball",
+        "nothing"
+      ]
+    },
+    {
+      "id": 30,
+      "key": "funcounterstrike",
+      "name": "Fun Counter Strike",
+      "description": "TDM weapons plus frag, smoke, fire, darkbang, and the terrorist bomb.",
+      "weapons": [
+        "revolver",
+        "shotgun",
+        "rocket_launcher",
+        "swordsword",
+        "chainsaw",
+        "mace",
+        "deathball",
+        "frag",
+        "smoke",
+        "fire",
+        "darkbang",
+        "bomb",
         "nothing"
       ]
     },
@@ -262,6 +284,14 @@
       "description": "Chainsaw placeholder: Spyknife, Force Punch until a dedicated weapon exists.",
       "role_only": true,
       "weapons": ["spyknife", "force_punch", "nothing"]
+    },
+    {
+      "id": 31,
+      "key": "vs_jason_chainsaw",
+      "name": "Vs Jason Chainsaw (role)",
+      "description": "Jason's chainsaw-only loadout.",
+      "role_only": true,
+      "weapons": ["chainsaw", "nothing"]
     }
   ]
 }

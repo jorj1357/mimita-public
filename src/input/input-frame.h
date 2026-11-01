@@ -30,6 +30,9 @@ struct InputFrame {
     bool freezeHeld = false;
     bool freezePressed = false;
     bool crouchHeld = false;
+    // Held objective interaction input (F). The authoritative packet counts
+    // press edges from this field.
+    bool interactHeld = false;
     float lookYaw = 0.0f;
     float lookPitch = 0.0f;
     glm::vec3 camForward{0.0f, 1.0f, 0.0f};

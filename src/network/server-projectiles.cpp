@@ -206,6 +206,10 @@ struct ProjectileConfig
     float radius = 0.3f;
     float splashRadius = 8.0f;
     float splashDamage = 150.0f;
+    // Negative keeps the legacy exponential curve. A non-negative value is the
+    // damage at the splash edge and enables the center->edge interpolation used
+    // by frag grenades (1000 center / 25 edge).
+    float splashEdgeDamage = -1.0f;
     float splashExponent = 2.0f;
     float knockbackStrength = 160.0f;
     float selfKnockbackMultiplier = 1.0f;
@@ -243,6 +247,7 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
 
     cfg.splashRadius = cp("splashRadius", 8.0f);
     cfg.splashDamage = cp("rocketDirectDamage", 150.0f);
+    cfg.splashEdgeDamage = cp("splashEdgeDamage", -1.0f);
     cfg.splashExponent = cp("splashExponent", 2.0f);
     cfg.knockbackStrength = cp("knockbackStrength", 160.0f);
     cfg.selfKnockbackMultiplier = cp("selfKnockbackMultiplier", 1.0f);
@@ -300,6 +305,33 @@ namespace {
 bool finiteVec(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// One damage curve for both players and NPCs. The edge value is optional so
+// rockets keep their legacy exponential falloff while frag can author 1000
+// center / 25 edge.
+float splashDamageAt(const ProjectileConfig& cfg, float dist)
+{
+    const float radius = std::max(0.001f, cfg.splashRadius);
+    const float t = std::clamp(dist / radius, 0.0f, 1.0f);
+    if (cfg.splashEdgeDamage >= 0.0f)
+        return cfg.splashEdgeDamage +
+            (cfg.splashDamage - cfg.splashEdgeDamage) *
+            std::pow(1.0f - t, std::max(0.01f, cfg.splashExponent));
+    return cfg.splashDamage *
+        std::exp(-std::pow(t, 2.0f) * cfg.splashExponent);
+}
+
+float splashDamageAt(const ServerProjectile& projectile, float dist)
+{
+    const float radius = std::max(0.001f, projectile.splashRadius);
+    const float t = std::clamp(dist / radius, 0.0f, 1.0f);
+    if (projectile.splashEdgeDamage >= 0.0f)
+        return projectile.splashEdgeDamage +
+            (projectile.splashDamage - projectile.splashEdgeDamage) *
+            std::pow(1.0f - t, std::max(0.01f, projectile.splashExponent));
+    return projectile.splashDamage *
+        std::exp(-std::pow(t, 2.0f) * projectile.splashExponent);
 }
 
 template <typename Packet>
@@ -932,9 +964,7 @@ void explodeProjectile(SOCKET sock,
         const glm::vec3 dir = dist > 0.001f
             ? toVictim / dist
             : glm::vec3(0.0f, 1.0f, 0.0f);
-        float damageValue = projectile.splashDamage *
-            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
-                     projectile.splashExponent);
+        float damageValue = splashDamageAt(projectile, dist);
         if (victim.id == directTargetId && dist < 1.5f)
             damageValue = std::max(damageValue, projectile.splashDamage);
         const bool isSelfDamage = (victim.id == projectile.ownerPlayerId);
@@ -1065,9 +1095,7 @@ void explodeProjectile(SOCKET sock,
         const glm::vec3 dir = dist > 0.001f
             ? toNpc / dist
             : glm::vec3(0.0f, 1.0f, 0.0f);
-        float damageValue = projectile.splashDamage *
-            std::exp(-std::pow(dist / projectile.splashRadius, 2.0f) *
-                     projectile.splashExponent);
+        float damageValue = splashDamageAt(projectile, dist);
         const int finalDamage = std::max(1, (int)std::round(damageValue));
 
         const float t = dist / projectile.splashRadius;
@@ -1292,6 +1320,7 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     projectile.radius = cfg.radius;
     projectile.splashRadius = cfg.splashRadius;
     projectile.splashDamage = cfg.splashDamage;
+    projectile.splashEdgeDamage = cfg.splashEdgeDamage;
     projectile.splashExponent = cfg.splashExponent;
     projectile.knockbackStrength = cfg.knockbackStrength;
     projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
@@ -1568,7 +1597,7 @@ void tickServerProjectiles(SOCKET sock,
                     return it != stepDef->customParams.end() ? it->second : fallback;
                 };
 
-                if (step.type == ProjectileCollisionType::WorldPassThrough) {
+                if (step.passedThroughWorld) {
                     const float wallDecay = std::max(1.0f,
                         stepParam("wallDecayMultiplier", 3.0f));
                     projectile.age += tickDt * (wallDecay - 1.0f);
@@ -1587,7 +1616,8 @@ void tickServerProjectiles(SOCKET sock,
                              {"lifetime", projectile.lifetime},
                              {"hit", {step.hitPosition.x, step.hitPosition.y, step.hitPosition.z}}});
                     }
-                } else if (step.type == ProjectileCollisionType::PlayerPassThrough &&
+                }
+                if (step.type == ProjectileCollisionType::PlayerPassThrough &&
                            stepDef && stepDef->id == "deathball") {
                     const uint32_t targetId = step.hitPlayerId;
                     ServerActorRef attackerRef{};
@@ -1623,18 +1653,22 @@ void tickServerProjectiles(SOCKET sock,
                     }
                     if (found && attackerRef.id != 0) {
                         const glm::vec3 center = projectile.position;
-                        const glm::vec3 targetCenter = victimPos + glm::vec3(0.0f, 0.0f, 0.9f);
                         const float radius = std::max(0.01f, projectile.radius);
-                        const float dist = glm::length(targetCenter - center);
+                        const float dist = glm::length(victimPos - center);
                         const float t = glm::clamp(dist / radius, 0.0f, 1.0f);
                         const int damage = std::max(1, (int)std::lround(glm::mix(
                             stepParam("deathballDamageCenter", 10.0f),
                             stepParam("deathballDamageEdge", 1.0f), t)));
-                        glm::vec3 push = targetCenter - victimPos;
+                        glm::vec3 push = victimPos - center;
                         if (glm::length(push) < 0.001f) push = step.hitNormal;
                         push = glm::normalize(push);
                         const glm::vec3 impulse = push * (float)damage *
                             std::max(0.0f, stepParam("deathballKnockbackPerDamage", 0.1f));
+                        glm::vec3 contactPoint = victimPos;
+                        if (!nearestServerActorBodyPoint(players, npcs, victimRef.id,
+                                victimRef.kind, center, stepTick, contactPoint)) {
+                            contactPoint = victimPos;
+                        }
                         ServerContactRequest contact;
                         contact.attacker = attackerRef;
                         contact.victimId = victimRef.id;
@@ -1643,19 +1677,19 @@ void tickServerProjectiles(SOCKET sock,
                             ? victimRef.npc->transformEpoch : victimRef.player->spawnGeneration;
                         contact.kind = ServerContactKind::Deathball;
                         contact.origin = center;
-                        contact.point = center;
+                        contact.point = contactPoint;
                         contact.normal = step.hitNormal;
                         contact.damage = damage;
                         contact.knockback = impulse;
-                        contact.source = ServerDamageSource::RocketExplosion;
+                        contact.source = ServerDamageSource::PhysicalContact;
                         contact.weaponId = stepDef->id;
                         contact.weaponDisplayName = stepDef->displayName;
                         contact.serverTick = stepTick;
                         contact.contactTick = stepTick;
                         contact.maxContactAgeTicks = 2;
                         contact.contactId = projectile.id;
-                        contact.maxDistance = radius + PLAYER_RADIUS + 0.5f;
-                        contact.hitTolerance = radius + 0.5f;
+                        contact.maxDistance = glm::length(contactPoint - center) + 0.5f;
+                        contact.hitTolerance = 0.25f;
                         contact.validateHitVolume = true;
                         contact.dedupe = true;
                         const ServerContactResult contactResult =
@@ -1666,8 +1700,8 @@ void tickServerProjectiles(SOCKET sock,
                                 queueServerDamageConfirmedEvent(sock, players, stepTick,
                                     totalPacketsOut,
                                     attackerRef.kind == ServerActorKind::Player ? attackerRef.id : 0,
-                                    *victimRef.player, damage, result, center,
-                                    step.hitNormal, impulse, ServerDamageSource::RocketExplosion,
+                                    *victimRef.player, damage, result, contactPoint,
+                                    step.hitNormal, impulse, ServerDamageSource::PhysicalContact,
                                     networkWeaponTypeForDefinition(*stepDef),
                                     projectile.id, projectile.id,
                                     attackerRef.kind == ServerActorKind::Npc ? attackerRef.id : 0,
@@ -1675,7 +1709,7 @@ void tickServerProjectiles(SOCKET sock,
                             } else if (victimRef.kind == ServerActorKind::Npc && victimRef.npc) {
                                 broadcastNpcDamageEvent(sock, players, stepTick, totalPacketsOut,
                                     attackerRef.id, *victimRef.npc, damage, result.killed,
-                                    projectile.position, center, push, step.hitNormal,
+                                    center, contactPoint, push, step.hitNormal,
                                     networkWeaponTypeForDefinition(*stepDef),
                                     (uint8_t)attackerRef.kind, 0.0f);
                             }
@@ -1694,6 +1728,8 @@ void tickServerProjectiles(SOCKET sock,
                                  {"radius_m", radius},
                                  {"distance_m", dist},
                                  {"knockback", {impulse.x, impulse.y, impulse.z}},
+                                 {"contact_point", {contactPoint.x, contactPoint.y, contactPoint.z}},
+                                 {"passed_through_world", step.passedThroughWorld},
                                  {"health_before", result.healthBefore},
                                  {"health_after", result.healthAfter},
                                  {"killed", result.killed}});
