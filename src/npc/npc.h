@@ -63,6 +63,9 @@ public:
     // never hits 0 (clients ignore epoch 0).
     uint16_t transformEpoch = 1;
     std::string avatarName;
+    // The constructor may choose a generic per-life avatar for local/sandbox
+    // NPCs. A mode policy replaces that placeholder before the first broadcast.
+    bool avatarIsPlaceholder = true;
     float difficulty = 1.0f;
     NpcDifficultyTuning tuning;
     Player body;
@@ -109,6 +112,9 @@ public:
     ActorFinalPoseState finalPose;
     uint64_t finalPoseLastPenetrationLogTick = 0;
     bool finalPosePenetrating = false;
+    // Set by spawn finalization; the first authoritative tick validates the
+    // final animated body/weapon pose before AI movement or combat begins.
+    bool spawnPosePending = false;
     uint32_t lastNavFailureTick = 0;
     int lastNavFailureGoalKind = -1;
     std::string lastNavFailureReason;

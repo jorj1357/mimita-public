@@ -2311,6 +2311,28 @@ The analyzer is diagnostic only. Server-backed replay still requires the normal
 `scenario-file` launch/readiness path and a dev-loop-owned server; a recording
 taken in an external room is not replay-authoritative.
 
+## Unattended AI match (`--ai-match`)
+
+The dev loop can run a bounded live match with the real local player under AI
+control:
+
+```text
+python devscripts/dev-loop.py --ai-match --ai-seconds 60 --profile tdm-validation
+```
+
+It launches or reuses the configured dev-loop server/client (default TDM launch
+mode 41, map `dust2cyberiav4`, weapon set 29), waits for the authoritative
+active phase, sends `player_control ai`, waits for the requested duration, and
+restores `player_control human`. No scenario recording is created.
+
+The runner is not allowed to pass on process liveness alone. It requires
+journal evidence for the control transition, actor-pair contacts, accepted NPC
+shots, NPC damage, and at least one applied damage result. Build identity,
+journal evidence, and human visual review remain separate claims.
+
+The journal may rotate into sealed `events-NNNN.jsonl` segments plus the active
+`events.jsonl`. The runner's cursor reads them chronologically as one run.
+
 ## Future: named launch lanes (not implemented)
 
 The current loop has one daemon, one build worker, one `.dev/current` launch

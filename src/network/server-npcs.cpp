@@ -511,14 +511,29 @@ void finalizeServerNpcSpawn(Npc& npc, ActorSpawnReason reason)
     npc.finalPose = ActorFinalPoseState{};
     npc.finalPosePenetrating = false;
     npc.finalPoseLastPenetrationLogTick = 0;
+    npc.spawnPosePending = true;
     const ServerGamemodeState& modeState = serverGamemodeState();
     const Gamemode& mode = GamemodeRegistry::instance().get(modeState.matchMode);
     if (mode.npcAvatar.configured) {
+        // The constructor's generic per-life avatar is only a local/sandbox
+        // placeholder. Never let it appear as the previous avatar for a mode's
+        // first selection; respawns keep the real previous avatar so
+        // keep_per_npc still works.
+        if (npc.avatarIsPlaceholder)
+            npc.avatarName.clear();
         const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
         assignNpcAvatarForMode(npc, mode.npcAvatar, modeState.matchMode,
                                profile.avatarForced ? profile.avatarName : "",
                                profile.allowedAvatars,
                                profile.deniedAvatars);
+        npc.avatarIsPlaceholder = false;
+    } else {
+        const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
+        if (!profile.avatarName.empty())
+            npc.avatarName = profile.avatarName;
+        else
+            assignNpcAvatar(npc);
+        npc.avatarIsPlaceholder = false;
     }
     npc.wakeupTimer = static_cast<float>(
         NpcDifficultyConfig::instance().settings().spawnActionDelayTicks) / 60.0f;
@@ -561,8 +576,6 @@ static void respawnServerNpc(Npc& npc, const World& world)
     // New life: bump the lifecycle counter so clients detect the respawn.
     npc.transformEpoch = static_cast<uint16_t>((npc.transformEpoch % 65535) + 1);
     const Gamemode& mode = GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
-    if (!mode.npcAvatar.configured)
-        assignNpcAvatar(npc);
     // Reapply the actor's role stats/loadout for the new life so role identity
     // is never lost across respawn.
     const ActorSpawnProfile profile = serverResolveActorSpawnProfile(npc.id);
@@ -1305,6 +1318,8 @@ static void resolveServerActorPairCollisions(
         actor.onGround = player.onGround;
         actor.stableOnGround = player.movement.ground.stableOnGround ||
                                player.onGround;
+        actor.hasWorldContact = player.movement.ground.hasWorldContact ||
+                                player.onGround;
         actor.profile = &collisionConfig.profileFor(player.actorPresetId);
         actor.previousSupportKey = player.actorCollisionSupportKey;
         actor.previousSupportVelocity = player.actorCollisionSupportVelocity;
@@ -1333,6 +1348,7 @@ static void resolveServerActorPairCollisions(
         actor.staticCollider = dead;
         actor.onGround = npc.body.ground.onGround;
         actor.stableOnGround = npc.body.ground.stableOnGround;
+        actor.hasWorldContact = npc.body.ground.hasWorldContact;
         actor.profile = &collisionConfig.profileFor(npc.actorPresetId);
         actor.previousSupportKey = npc.body.collision.supportActorKey;
         actor.previousSupportVelocity = npc.body.collision.supportActorVelocity;
@@ -1371,17 +1387,44 @@ static void resolveServerActorPairCollisions(
         player.onGround = out.onGround;
         player.movement.ground.onGround = out.onGround;
         player.movement.ground.stableOnGround = out.stableOnGround;
-        player.movement.ground.hasWorldContact =
-            player.movement.ground.hasWorldContact || out.onGround;
+        player.movement.ground.hasWorldContact = out.hasWorldContact;
         player.actorCollisionSupportKey = out.supportKey;
         player.actorCollisionSupportVelocity = out.supportVelocity;
         player.actorCollisionChanged = out.corrected || out.pushed;
 
-        if (out.corrected && out.supportKey == 0)
+        // Re-check static geometry after any actor-pair correction, push, or
+        // support. Actor support by itself is not a world floor.
+        const bool recheckedWorld =
+            out.corrected || out.pushed || out.supportKey != 0;
+        if (recheckedWorld)
             resolveWorldCollision(player, playerWorld);
+        const bool worldGrounded = recheckedWorld
+            ? player.onGround : out.hasWorldContact;
+        if (out.supportKey != 0)
+        {
+            player.onGround = true;
+            player.movement.ground.onGround = true;
+            player.movement.ground.stableOnGround = true;
+        }
+        player.movement.ground.hasWorldContact = worldGrounded;
         player.movement.ground.onGround = player.onGround;
         player.movement.ground.stableOnGround =
             player.onGround || player.movement.ground.stableOnGround;
+        if (out.supportKey != 0)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "actor.collision.support-world", std::to_string(player.id),
+                "actor support kept distinct from static-world contact", tick,
+                {{"source", "server"}, {"actor", player.id}, {"kind", "player"},
+                 {"support_key", out.supportKey},
+                 {"before_has_world_contact", actor.hasWorldContact},
+                 {"after_has_world_contact", worldGrounded},
+                 {"actor_supported", true},
+                 {"corrected", out.corrected}, {"pushed", out.pushed},
+                 {"position", {player.pos.x, player.pos.y, player.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
 
         player.lastAcceptedClientPosition = player.pos;
         player.lastAcceptedClientVelocity = player.vel;
@@ -1407,15 +1450,31 @@ static void resolveServerActorPairCollisions(
         npc.body.externalImpulse = out.externalImpulse;
         npc.body.ground.onGround = out.onGround;
         npc.body.ground.stableOnGround = out.stableOnGround;
-        npc.body.ground.hasWorldContact =
-            npc.body.ground.hasWorldContact || out.onGround;
+        npc.body.ground.hasWorldContact = out.hasWorldContact;
         npc.body.collision.supportActorKey = out.supportKey;
         npc.body.collision.supportActorVelocity = out.supportVelocity;
 
-        if (out.corrected && out.supportKey == 0)
+        if (out.corrected || out.pushed || out.supportKey != 0)
         {
             bool grounded = false;
             doCollisions(npc.body, npcWorld, grounded, SERVER_DT);
+        }
+        if (out.supportKey != 0)
+        {
+            npc.body.ground.onGround = true;
+            npc.body.ground.stableOnGround = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "actor.collision.support-world", std::to_string(npc.id),
+                "actor support kept distinct from static-world contact", tick,
+                {{"source", "server"}, {"actor", npc.id}, {"kind", "npc"},
+                 {"support_key", out.supportKey},
+                 {"before_has_world_contact", actor.hasWorldContact},
+                 {"after_has_world_contact", npc.body.ground.hasWorldContact},
+                 {"actor_supported", true},
+                 {"corrected", out.corrected}, {"pushed", out.pushed},
+                 {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
         npc.body.updateModelWorldTransforms();
         containServerNpcFinalPose(npc, npcWorld, "post_actor_pair");
@@ -1615,6 +1674,38 @@ void simulateSharedNpcs(SOCKET sock,
             continue;
         if (freezeWaveBanner)
             continue;
+
+        if (n.spawnPosePending)
+        {
+            n.spawnPosePending = false;
+            ActorFinalPoseResult spawnPose;
+            const glm::vec3 before = n.body.pos;
+            const bool clear = containActorFinalPose(
+                n.body, world, n.finalPose, spawnPose, 0.02f, "post_spawn");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.spawn-pose.checked", std::to_string(n.id),
+                clear ? "clear" : "not_clear", tick,
+                {{"actor", n.id},
+                 {"avatar", n.avatarName},
+                 {"actor_preset", n.actorPresetId},
+                 {"from", {before.x, before.y, before.z}},
+                 {"to", {n.body.pos.x, n.body.pos.y, n.body.pos.z}},
+                 {"initial_penetration_m", spawnPose.initialPenetration},
+                 {"final_penetration_m", spawnPose.finalPenetration},
+                 {"clear", clear},
+                 {"restored", spawnPose.restored},
+                 {"used_safe_point", spawnPose.usedSafePoint},
+                 {"failed", spawnPose.failed},
+                 {"reset_reason", spawnPose.resetReason}},
+                __FILE__, __LINE__, __FUNCTION__);
+            if (!clear &&
+                (spawnPose.failed || worldPointInsideSolid(world, n.body.pos)))
+            {
+                respawnServerNpc(n, world);
+                continue;
+            }
+        }
 
         const uint32_t prevTarget = n.serverTargetId;
         const int myTeam = npcTeamOf(n);

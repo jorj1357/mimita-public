@@ -469,6 +469,34 @@ bool HitEffects::loadConfig(const std::string& path)
                 cfg.damageNumber.endScale = d["endScale"];
                 markHitFxApplied("hitfx_end_scale");
             }
+            if (d.contains("scaleByDamage")) {
+                cfg.damageNumber.scaleByDamage = d["scaleByDamage"];
+                markHitFxApplied("hitfx_damage_scale_enabled");
+            }
+            if (d.contains("damageScaleLowValue")) {
+                cfg.damageNumber.damageScaleLowValue = d["damageScaleLowValue"];
+                markHitFxApplied("hitfx_damage_scale_low_value");
+            }
+            if (d.contains("damageScaleMidValue")) {
+                cfg.damageNumber.damageScaleMidValue = d["damageScaleMidValue"];
+                markHitFxApplied("hitfx_damage_scale_mid_value");
+            }
+            if (d.contains("damageScaleHighValue")) {
+                cfg.damageNumber.damageScaleHighValue = d["damageScaleHighValue"];
+                markHitFxApplied("hitfx_damage_scale_high_value");
+            }
+            if (d.contains("damageScaleLow")) {
+                cfg.damageNumber.damageScaleLow = d["damageScaleLow"];
+                markHitFxApplied("hitfx_damage_scale_low");
+            }
+            if (d.contains("damageScaleMid")) {
+                cfg.damageNumber.damageScaleMid = d["damageScaleMid"];
+                markHitFxApplied("hitfx_damage_scale_mid");
+            }
+            if (d.contains("damageScaleHigh")) {
+                cfg.damageNumber.damageScaleHigh = d["damageScaleHigh"];
+                markHitFxApplied("hitfx_damage_scale_high");
+            }
             if (d.contains("randomHorizontalSpread")) {
                 cfg.damageNumber.randomHorizontalSpread = d["randomHorizontalSpread"];
                 markHitFxApplied("hitfx_horizontal_spread");

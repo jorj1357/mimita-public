@@ -13,6 +13,8 @@
 #include "input/input-frame.h"
 #include "combat/melee-client.h"
 #include "debug/structured-log.h"
+#include "actor/player-ai.h"
+#include "terminal/terminal-state.h"
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdio>
@@ -39,6 +41,24 @@ int gScheduledInteractTicks = 0;
 int gScheduledInteractPresses = 0;
 int gScheduledInteractPhaseTicks = 0;
 bool gScheduledInteractHeld = false;
+}
+
+void clearHeldGameplayInputs()
+{
+    gTerminalInputOverride = InputFrame{};
+    gTerminalPrimaryHoldFrames = 0;
+    gScheduledMoveTicks = 0;
+    gScheduledMoveTotal = 0;
+    gScheduledMoveNetworkReleasePending = false;
+    gScheduledMoveX = 0.0f;
+    gScheduledMoveY = 0.0f;
+    gScheduledMoveRequestId.clear();
+    gTerminalInputOverrideRequestId.clear();
+    gScheduledInteractMode = ScheduledInteractMode::None;
+    gScheduledInteractTicks = 0;
+    gScheduledInteractPresses = 0;
+    gScheduledInteractPhaseTicks = 0;
+    gScheduledInteractHeld = false;
 }
 
 void scheduleTerminalMove(float moveX, float moveY, int durationTicks,
@@ -456,6 +476,13 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
                 ? "agent-command" : gTerminalInputOverrideRequestId,
             "terminal input override merged into fixed-tick input frame", 0, fields,
             __FILE__, __LINE__, __FUNCTION__);
+    }
+
+    // AI control replaces only gameplay intent. The resulting frame still goes
+    // through the same physics, collision, weapon, and network paths as a
+    // human's frame.
+    if (PlayerAiController::active()) {
+        frame = PlayerAiController::buildFrame(THE_PLAYER, cam, THE_WORLD);
     }
 
     consumeTerminalInputOverride();

@@ -45,6 +45,7 @@
 #include "impact/impact-system.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/actor-final-pose.h"
+#include "physics/movement/actor-pair-collision.h"
 #include "physics/movement/actor-triangle-solver.h"
 #include "debug/crash-handler.h"
 #include <exception>
@@ -2382,6 +2383,22 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = actorFinalPoseSelfTest(&summary);
         printf("%s", summary.c_str());
         printf("[ACTOR FINAL POSE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--actor-pair-support-selftest") {
+        std::string summary;
+        const bool ok = actorPairSupportSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[ACTOR PAIR SUPPORT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        return true;
+    }
+
+    if (std::string(argv[1]) == "--journal-rotation-selftest") {
+        std::string summary;
+        const bool ok = structuredLogRotationSelfTest(&summary);
+        printf("%s", summary.c_str());
+        printf("[JOURNAL ROTATION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         return true;
     }
 

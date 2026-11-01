@@ -177,6 +177,18 @@ static bool buildNpcTargetBodyPartBoxes(
     return false;
 }
 
+static WeaponExecution::PlayerTarget::BodyPartBox npcCapsuleBox(
+    const ServerNpc& npc, const glm::vec3& pos)
+{
+    const float scale = npc.sizeScale > 0.0f ? npc.sizeScale : 1.0f;
+    WeaponExecution::PlayerTarget::BodyPartBox box;
+    box.center = pos;
+    box.half = {PLAYER_RADIUS * scale, PLAYER_RADIUS * scale,
+                PLAYER_HEIGHT * scale * 0.5f};
+    box.bodyPart = WeaponExecution::HitBodyPart::Torso;
+    return box;
+}
+
 static void fillNpcTargetBodyParts(WeaponExecution::PlayerTarget& target,
                                    const ServerNpc& npc, uint32_t tick)
 {
@@ -186,7 +198,11 @@ static void fillNpcTargetBodyParts(WeaponExecution::PlayerTarget& target,
         float yaw = npc.yaw;
         if (tick != 0)
             getNpcPoseAtTick(npc, tick, pos, yaw);
-        fillTargetBodyParts(target, pos, yaw);
+        // No replicated collision body (headless random avatar/monster yet):
+        // use the authoritative actor capsule as a wide plausible-volume
+        // fallback. The client still shows its own precise trace.
+        target.bodyParts.clear();
+        target.bodyParts.push_back(npcCapsuleBox(npc, pos));
     }
 }
 
@@ -198,10 +214,12 @@ static bool claimedHitInNpcBodyParts(const glm::vec3& claimedHit,
     if (!buildNpcTargetBodyPartBoxes(boxes, npc, tick))
     {
         glm::vec3 pos = npc.pos;
-        float yaw = npc.yaw;
         if (tick != 0)
+        {
+            float yaw = npc.yaw;
             getNpcPoseAtTick(npc, tick, pos, yaw);
-        return claimedHitInBodyParts(claimedHit, pos, yaw, tolerance, claimPart);
+        }
+        boxes.push_back(npcCapsuleBox(npc, pos));
     }
     for (const auto& box : boxes)
     {
@@ -933,7 +951,9 @@ void handleAttackRequest(
                 contact.contactTick = rewindTick;
                 contact.contactId = req->requestId;
                 contact.maxDistance = maxRange;
-                contact.hitTolerance = 0.35f;
+                contact.hitTolerance = std::max(
+                    0.35f,
+                    NetworkingConfig::instance().data().remotePlayers.claimLagAllowance);
                 contact.validateHitVolume = true;
                 contact.dedupe = true;
                 const ServerContactResult contactResult =
@@ -985,7 +1005,9 @@ void handleAttackRequest(
             contact.contactTick = rewindTick;
             contact.contactId = req->requestId;
             contact.maxDistance = maxRange;
-            contact.hitTolerance = 0.35f;
+            contact.hitTolerance = std::max(
+                    0.35f,
+                    NetworkingConfig::instance().data().remotePlayers.claimLagAllowance);
             contact.validateHitVolume = true;
             contact.dedupe = true;
             const ServerContactResult contactResult =

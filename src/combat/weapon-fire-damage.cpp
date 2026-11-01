@@ -724,7 +724,12 @@ void processMultiPelletRemoteNpcHit(
         const uint64_t nowMsVal = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
-        gpMpContext->predictedNpcHitMs[pelletRemoteNpcTargetId] = nowMsVal;
+        uint64_t& previousHitMs =
+            gpMpContext->predictedNpcHitMs[pelletRemoteNpcTargetId];
+        if (previousHitMs == 0 || nowMsVal - previousHitMs > 50)
+            gpMpContext->predictedNpcDamage[pelletRemoteNpcTargetId] = 0;
+        previousHitMs = nowMsVal;
+        gpMpContext->predictedNpcDamage[pelletRemoteNpcTargetId] += totalDmg;
         if (NetworkingConfig::instance().data().prediction.predictDamage)
             MimitaNet::mpApplyPredictedDamage(
                 *gpMpContext, pelletRemoteNpcTargetId, totalDmg, true);

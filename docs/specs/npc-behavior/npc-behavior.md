@@ -260,6 +260,34 @@ Root-only correction, last-clear restore, bounded safe-point fallback, and the
 server no-valid-pose respawn hook are implemented. That last case logs
 `npc.pose.reset`.
 
+### Spawn pose and avatar order (2026-11-01)
+
+A spawn is not accepted merely because its root point and a capsule fit. The
+first authoritative tick after spawn validates the final animated body and held
+weapon against static world geometry before normal AI movement or combat. If the
+pose is not clear, the existing root-only correction, last-clear, and bounded
+safe-point paths run; respawn occurs only when bounded recovery fails.
+
+A mode avatar policy must not expose a generic per-life placeholder avatar
+before the policy's first selection. The placeholder is cleared before the
+mode's first `keep_per_npc` selection, so a disallowed monster or headless
+avatar cannot appear and then be corrected. Respawns preserve the selected
+avatar for `keep_per_npc`; a mode that rerolls each spawn selects the new life's
+avatar before the first pose is broadcast.
+
+### Crowd and corner behavior (2026-11-01)
+
+Actor-pair support and static-world contact remain distinct. Any actor-pair
+correction or push is re-checked against static world geometry in the same
+fixed tick, so a crowd pushing into a corner cannot bury an actor through the
+floor or wall. The response may distribute simultaneous contacts, but it keeps
+the shared fixed-tick solver and does not add a second collision path.
+
+NPC navigation treats dense corners as a movement problem: it should choose a
+different approach sector, hold back, or use wall-avoidance instead of walking
+into a crowd that is already occupying one corner. This uses existing
+approach-sector and navigation knowledge; it does not grant collision immunity.
+
 **Monster avatar shapes:** tall, wide, thin, and multi-limb monster models use
 their actual body/weapon collision geometry for static-world contact. A capsule
 profile may remain the actor-vs-actor first slice, but it must not silently
@@ -622,3 +650,14 @@ never change the aim target position. This is the same “why / where / how”
 split required by
 `docs/architecture/player-npc-systems/npc-movement.md`: TeamBrain chooses the
 side, the navigator finds the route, and shared movement executes it.
+
+## Live NPC render presence — 2026-11-01
+
+A living NPC that remains an active combatant must not silently lose its visible
+model while continuing to move, attack, or deal damage. Normal camera frustum
+and world occlusion still apply; this requirement forbids an invisible active
+mesh caused by a client entity, snapshot, model-resolution, or render-state
+mismatch. The same actor identity must remain traceable from authoritative NPC
+state through client replication and model rendering. If the render asset or
+binding is unavailable, emit a bounded diagnostic that identifies the actor and
+failure stage rather than leaving an apparently invisible combatant active.

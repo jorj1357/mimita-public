@@ -619,7 +619,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             } else if (damageNumber) {
                 const auto& cfg = HitEffects::config().damageNumber;
                 const float textScale = std::max(0.01f,
-                    cfg.fontSize * std::max(0.0f, cfg.startScale + (cfg.endScale - cfg.startScale) * t));
+                    cfg.fontSize * std::max(0.0f, effect.scale + (effect.endScale - effect.scale) * t));
                 const float textAlpha = damageNumberOpacity(cfg, t, distFade);
                 const glm::vec3 color = (!effect.label.empty() && effect.label[0] == '+')
                     ? cfg.healingColor
@@ -997,7 +997,7 @@ void EffectPartSystem::renderText(const Camera& camera) const {
         if (DebugVis::projectToScreen(camera, projectPos, x, y)) {
             if (damageNumber) {
                 const auto& cfg = HitEffects::config().damageNumber;
-                const float textScale = std::max(0.01f, cfg.fontSize * std::max(0.0f, cfg.startScale + (cfg.endScale - cfg.startScale) * t));
+                const float textScale = std::max(0.01f, cfg.fontSize * std::max(0.0f, effect.scale + (effect.endScale - effect.scale) * t));
                 const float textAlpha = damageNumberOpacity(cfg, t, distFade);
                 const glm::vec3 color = effect.label[0] == '+' ? cfg.healingColor : effect.color;
                 drawDamageNumberText(effect.label.c_str(), x + cfg.screenOffsetX, y + cfg.screenOffsetY,

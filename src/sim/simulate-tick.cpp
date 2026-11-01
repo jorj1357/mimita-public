@@ -450,6 +450,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
         localActor.staticCollider = localRagdollStatic;
         localActor.onGround = sim.player->ground.onGround;
         localActor.stableOnGround = sim.player->ground.stableOnGround;
+        localActor.hasWorldContact = sim.player->ground.hasWorldContact;
         localActor.profile = &collisionConfig.profileFor(localPreset);
         localActor.previousSupportKey = sim.player->collision.supportActorKey;
         localActor.previousSupportVelocity =
@@ -472,6 +473,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             actor.staticCollider = dead;
             actor.onGround = npc.body.ground.onGround;
             actor.stableOnGround = npc.body.ground.stableOnGround;
+            actor.hasWorldContact = npc.body.ground.hasWorldContact;
             actor.profile = &collisionConfig.profileFor(npc.actorPresetId);
             actor.previousSupportKey = npc.body.collision.supportActorKey;
             actor.previousSupportVelocity = npc.body.collision.supportActorVelocity;
@@ -497,6 +499,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 actor.staticCollider = true;
                 actor.onGround = remote.ground.onGround;
                 actor.stableOnGround = remote.ground.stableOnGround;
+                actor.hasWorldContact = remote.ground.hasWorldContact;
                 actor.profile = &collisionConfig.profileFor(std::string());
                 collisionActors.push_back(actor);
             }
@@ -515,6 +518,7 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 actor.staticCollider = true;
                 actor.onGround = remote.ground.onGround;
                 actor.stableOnGround = remote.ground.stableOnGround;
+                actor.hasWorldContact = remote.ground.hasWorldContact;
                 actor.profile = &collisionConfig.profileFor(std::string());
                 collisionActors.push_back(actor);
             }
@@ -539,12 +543,20 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             sim.player->externalImpulse = out.externalImpulse;
             sim.player->ground.onGround = out.onGround;
             sim.player->ground.stableOnGround = out.stableOnGround;
+            sim.player->ground.hasWorldContact = out.hasWorldContact;
             sim.player->collision.supportActorKey = out.supportKey;
             sim.player->collision.supportActorVelocity = out.supportVelocity;
-            if (out.corrected && out.supportKey == 0)
+            // Any actor-pair position/velocity change must be re-checked against
+            // static geometry in the same tick. Actor support alone is not floor.
+            if (out.corrected || out.pushed || out.supportKey != 0)
             {
                 bool grounded = false;
                 doCollisions(*sim.player, *sim.world, grounded, TICK_DT);
+            }
+            if (out.supportKey != 0)
+            {
+                sim.player->ground.onGround = true;
+                sim.player->ground.stableOnGround = true;
             }
             sim.player->updateModelWorldTransforms();
             if (!sim.player->dead && !sim.player->ragdollModeActive)
@@ -564,12 +576,18 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             npc.body.externalImpulse = out.externalImpulse;
             npc.body.ground.onGround = out.onGround;
             npc.body.ground.stableOnGround = out.stableOnGround;
+            npc.body.ground.hasWorldContact = out.hasWorldContact;
             npc.body.collision.supportActorKey = out.supportKey;
             npc.body.collision.supportActorVelocity = out.supportVelocity;
-            if (out.corrected && out.supportKey == 0)
+            if (out.corrected || out.pushed || out.supportKey != 0)
             {
                 bool grounded = false;
                 doCollisions(npc.body, *sim.world, grounded, TICK_DT);
+            }
+            if (out.supportKey != 0)
+            {
+                npc.body.ground.onGround = true;
+                npc.body.ground.stableOnGround = true;
             }
             npc.body.updateModelWorldTransforms();
             containAndLogLocalNpcFinalPose(npc, *sim.world, "post_actor_pair");

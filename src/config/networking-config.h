@@ -50,18 +50,18 @@ struct RemotePlayerInterpolationConfig
     double rewindCompensationSeconds = 0.0;
     // How close a claimed hit must land to the rewound body (units) for the
     // pellet/shot validation path to accept it. Replaces the hardcoded 2.5f.
-    float rewindHitTolerance = 2.5f;
+    float rewindHitTolerance = 4.0f;
     // Extra units added to the claim validation tolerance so a shot that lands
     // on the target's RENDERED body registers even when motion-filter /
     // interpolation lag puts the server's rewind pose slightly ahead of where
     // the shooter saw the target. Anti-cheat tolerance only — the client's
     // precise body-part trace still decides the hitmarker.
-    float claimLagAllowance = 3.0f;
+    float claimLagAllowance = 4.0f;
     // Hard ceiling (in server ticks) on how far back the server rewinds for hit
     // validation. A stale/ancient client fire tick can never rewind to a pose
     // older than this — protects against clock drift sending the rewind
     // seconds into the past (which made every hit miss). 0 = no clamp.
-    uint32_t maxRewindTicks = 60;
+    uint32_t maxRewindTicks = 120;
     // Max units/sec the server-smoothed broadcast position may move per tick.
     // 0 = unlimited. Clamps residual catch-up spikes from bursty reports so
     // even a bad-connection client's bursts render as steady motion.

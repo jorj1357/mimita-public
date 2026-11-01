@@ -13,6 +13,12 @@ processes. Every record identifies its side with `process` (`client` or
 actor IDs, projectile IDs, connection/request IDs, event names, results, and
 errors remain searchable side by side in the same file.
 
+Before the active `events.jsonl` would exceed 100,000,000 bytes, it is sealed as
+`events-NNNN.jsonl` and a fresh `events.jsonl` continues the run. Readers must
+read sealed segments in numeric order and then the active file as one
+chronological run. The active path remains `events.jsonl`, so
+`EVENTS_JSONL_PATH` and launcher contracts are unchanged.
+
 `StructuredLogger` is the single writer. The old `LiveEventJournal` API is
 kept as a compatibility facade for existing hot-code call sites, but it now
 emits into `events.jsonl`; new runs must not create

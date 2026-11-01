@@ -1957,6 +1957,10 @@ contributes its own knockback
 does not pierce
 A shotgun trigger press still produces one generic AttackRequest.
 The deterministic seed reconstructs all pellet directions on the server.
+For one trigger and one target, shotgun damage is one aggregate result per
+fixed tick: sum every pellet that actually hit that target, then show exactly
+one damage number. Per-pellet blood and impact effects are allowed; per-pellet
+zero damage numbers are not.
 
 Third-person parallax is intentional and must be preserved. The shot begins at
 the actual weapon muzzle tip, not the camera. Keeping the ray parallel to camera

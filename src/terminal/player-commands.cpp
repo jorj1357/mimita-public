@@ -8,6 +8,8 @@
 #include <vector>
 #include "devtools/terminal.h"
 #include "terminal/terminal-state.h"
+#include "actor/player-ai.h"
+#include "debug/structured-log.h"
 #include "input/input-commands.h"
 #include "network/net_mode.h"
 #include "combat/death-system.h"
@@ -18,6 +20,8 @@
 #include "network/packets.h"
 #include "network/multiplayer-context.h"
 #include "physics/movement/movement-step.h"
+#include "physics/movement/physics-collision.h"
+#include "game/spawn-utils.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-history.h"
 #include "gui/hud/chat-window.h"
@@ -310,12 +314,103 @@ void registerPlayerCommands()
     });
 
     Terminal::instance().registerCommand({
+        "collision_probe", "Probe static collision at a world point",
+        "collision_probe x,y,z",
+        [](const std::vector<std::string>& args) {
+            glm::vec3 point(0.0f);
+            if (!parseTeleportPosition(args, point) ||
+                !std::isfinite(point.x) || !std::isfinite(point.y) ||
+                !std::isfinite(point.z)) {
+                Terminal::instance().addLog(
+                    "[ERROR] Usage: collision_probe x,y,z");
+                return;
+            }
+            const World& world = THE_WORLD;
+            const bool inside = worldPointInsideSolid(world, point);
+            float downDistance = 5.0f;
+            const bool hasGround = rayTraverseGridCells(
+                world, point, glm::vec3(0.0f, 0.0f, -1.0f), 5.0f,
+                downDistance, nullptr);
+            const float ground = hasGround ? point.z - downDistance : -1e6f;
+            const glm::vec3 dirs[6] = {
+                {1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
+                {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+            nlohmann::json hits = nlohmann::json::array();
+            for (const glm::vec3& dir : dirs) {
+                float hitDistance = 5.0f;
+                const bool hit = rayTraverseGridCells(
+                    world, point, dir, 5.0f, hitDistance, nullptr);
+                hits.push_back({{"dir", {dir.x, dir.y, dir.z}},
+                                {"hit", hit}, {"distance", hitDistance}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "collision.probe", "manual",
+                "static collision probe at a world point",
+                (uint32_t)THE_PLAYER.movementSimulationTick,
+                {{"point", {point.x, point.y, point.z}},
+                 {"inside_solid", inside},
+                 {"ground_z", ground},
+                 {"triangle_count", world.collisionMesh.triangles.size()},
+                 {"rays", hits}},
+                __FILE__, __LINE__, __FUNCTION__);
+            char line[256];
+            snprintf(line, sizeof(line),
+                     "[COLLISION] inside=%d ground_z=%.2f triangles=%zu",
+                     inside ? 1 : 0, ground,
+                     world.collisionMesh.triangles.size());
+            Terminal::instance().addLog(line);
+        },
+        "2026-11-01",
+        CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
         "freeze", "Toggle freeze", "freeze",
         [](const std::vector<std::string>&) {
             gTerminalInputOverride.freezeHeld = !gTerminalInputOverride.freezeHeld;
             Terminal::instance().addLog(
                 gTerminalInputOverride.freezeHeld ? "[GAMEPLAY] freeze ON" : "[GAMEPLAY] freeze OFF");
         }
+    });
+
+    Terminal::instance().registerCommand({
+        "player_control", "Let AI drive or return control to the human player",
+        "player_control ai|human",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 1 ||
+                (args[0] != "ai" && args[0] != "human")) {
+                Terminal::instance().addLog(
+                    "[ERROR] Usage: player_control ai|human");
+                return;
+            }
+            const bool ai = args[0] == "ai";
+            PlayerAiController::setActive(ai);
+            if (!ai) {
+                clearHeldGameplayInputs();
+                Player& player = THE_PLAYER;
+                player.inputWishMove = glm::vec2(0.0f);
+                player.jump.jumpHeldPrev = false;
+                player.dash.moveHeldPrev = false;
+                player.dash.dashHeldPrev = false;
+                player.freeze.freezeHeldPrev = false;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "player.control.mode", ai ? "ai" : "human",
+                ai ? "AI now drives the existing local player through normal input"
+                   : "human input restored and held intent cleared",
+                (uint32_t)THE_PLAYER.movementSimulationTick,
+                {{"mode", ai ? "ai" : "human"},
+                 {"player_id", MP_CONTEXT.localPlayerId},
+                 {"position", {THE_PLAYER.pos.x, THE_PLAYER.pos.y,
+                                THE_PLAYER.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+            Terminal::instance().addLog(ai ? "[PLAYER] AI control ON"
+                                           : "[PLAYER] human control ON");
+        },
+        "2026-11-01",
+        CommandCategory::Player
     });
 
     Terminal::instance().registerCommand({

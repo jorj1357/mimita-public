@@ -3048,17 +3048,38 @@ Combat intelligence determines when the best route is not simply the shortest ro
 Human movement recordings teach it additional ways that skilled players already know how to move.
 
 All of these feed one shared actor execution system.
-## User-reported hospital multi-floor pursuit issue — 2026-10-16
+## User-reported multi-floor pursuit and advanced traversal — 2026-11-01
 
-The user reports that in the hospital map an NPC can appear to treat the player
-as being on its floor while failing to route down/up to reach them. This is not
-yet reproduced or attributed to Recast, floor classification, goal selection,
-or a missing vertical transition.
+The user reports that Hospital NPC pursuit can stall across floors and wants
+NPCs to navigate complex multi-level maps reliably, including cases where no
+straight walkable route reaches the target. This shared capability is a
+Zombie Tower priority, but it applies across modes. The cause of the Hospital
+report remains unconfirmed: goal selection, floor classification, path search,
+missing traversal links, local avoidance, or movement execution may be the first
+failing stage.
 
-Use the existing multi-floor navigation design in this document. Add a live
-scenario with two vertically separated walkable floors and a valid stair/ramp
-connection: place the NPC and player on opposite floors, verify each actor's
-floor/region identity and goal projection, inspect the Detour corridor and
-transition nodes, and prove that the NPC takes the connection instead of
-stalling or falsely treating the floors as one surface. Also test genuinely
-disconnected floors so the NPC does not invent a path through solid geometry.
+Use this document's existing multi-floor navigation, traversal-link, ability,
+stuck-recovery, and corner-avoidance requirements. NPCs choose among the same
+movement abilities available to their actor role, including jumping, dashing,
+and rocket jumping when the role, mode, weapon, and physics make them available.
+They must plan and execute those routes through shared actor movement and
+collision; they do not get a separate movement system or privileged knowledge.
+When no legal route exists, report the unreachable goal instead of repeatedly
+grinding into geometry or another actor.
+
+Acceptance scenarios:
+
+- Hospital: put the NPC and target on different floors with a valid stair/ramp
+  connection; verify floor/region identity, goal projection, path corridor,
+  traversal nodes, and positive movement progress.
+- Zombie Tower: exercise multiple floors, gaps, and obstacles that require the
+  role's available jump/dash/rocket-jump capabilities; confirm the NPC selects
+  legal traversal and resumes its objective after reaching the target area.
+- Disconnected floors: prove the NPC reports no route and does not invent a path
+  through solid geometry.
+- Crowded corners and spawn areas: verify the existing corner and no-pinning
+  requirements keep NPCs from deadlocking or being pushed into closed geometry.
+
+The Zombie Tower v1 specification requires at least 50 floors. Its latest
+design note asks whether the target should be 100; this navigation issue does
+not decide that open scope question.

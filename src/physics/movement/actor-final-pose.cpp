@@ -137,7 +137,8 @@ void acceptClearPose(Player& actor, ActorFinalPoseState& state)
     state.hasClearPose = true;
     state.clearPosition = actor.pos;
     state.clearYaw = actor.yaw;
-    state.clearOnGround = actor.ground.onGround || actor.ground.hasWorldContact;
+    state.clearOnGround = actor.ground.hasWorldContact ||
+                          actor.ground.realWorldContactThisFrame;
     state.clearTick = actor.movementSimulationTick;
 }
 

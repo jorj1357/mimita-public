@@ -15,9 +15,9 @@
     "server_broadcast_delay_ms": 1,
     "server_broadcast_extrapolation_ms": 1000,
     "rewind_compensation_ms": 1,
-    "rewind_hit_tolerance": 2.5,
-    "claim_lag_allowance": 3.0,
-    "max_rewind_ticks": 60,
+    "rewind_hit_tolerance": 4.0,
+    "claim_lag_allowance": 4.0,
+    "max_rewind_ticks": 120,
     "server_broadcast_max_speed": 0,
     "server_sim_smooth_ticks": 2,
     "interpolation_delay_ms": 1,
@@ -130,7 +130,7 @@
 
   "server_authoritative_hits": {
     "comment": "false = client predicts hit feedback instantly (current default). true = client shows NOTHING until server confirms the hit. Disagreement effects always show when server rejects a hit. World impacts (wall/ground) always show regardless.",
-    "enabled": true
+    "enabled": false
   },
 
   "disagreement_visuals": {
@@ -140,8 +140,8 @@
 
   "prediction": {
     "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths controls instant lethal presentation; the reliable server event remains authoritative and disagreement rolls back once.",
-    "predict_damage": false,
-    "predict_deaths": false
+    "predict_damage": true,
+    "predict_deaths": true
   },
 
   "remote_projectile_interpolation": {

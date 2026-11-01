@@ -1,3 +1,89 @@
+2026 11 01 1224 jorj
+more monster ideas
+
+since wehave 100 floors or shoudl  do 100 floors
+we should have 
+like 2x the monsters 
+
+current monsters
+
+boomer 
+stabber
+crawler
+griever
+brute
+nromal zombie
+chainsaw boss
+charger
+
+new monsters
+
+1. spitter
+spits acid
+
+2. tower + minion
+tower spawns N minions
+miniosn weak alone, strong in swarm
+
+new bosses
+
+1. vs jason
+- make him bigger and faster
+like chaisnsawboss
+aw tha sucks tho 
+hes jutslike a clone of chainsawboss 
+matbe not this
+
+2. slasher
+like 3k hp?
+like marth frmo ssbm
+matbe more annouing to fight but cool
+uses sword and slashes with sword over adn over 
+
+3. smg?
+shoots smg projectiles at u 
+and its like
+bullet hell
+i like that a lot 
+
+4. telekinesis boss
+big hand 
+small weak boss but if u get close then it pushes u away
+u have to hit like 
+idk 
+a special weak spot
+but telekinesis hands to pick up plauers and throw things at them
+or swat them away
+telegraphed tho 
+cant just be instnat 
+idk zomb tower  2026 11 01 1228 jorj 
+
+final boss ideas
+
+1. not rag ?
+rag is like 
+deity
+you see glimpses of him like gman
+so like
+lesser rag
+idk
+master hand style maybe
+but more zomb tower related
+
+2. mr greed
+idk
+
+3. zombie king
+like 50,000 hp
+shoot srockets, huge sword, melee, slam
+shockwaves
+destructible world? hmm
+THROWS ACTUAL PHSICS OBJECTS AT THE PLAUER PLZ 
+pick stuff up out of the ground and throw it at the plauer 
+matbe like 50m tall? idk 
+
+
+
 ## First playable version — implementation contract
 
 **Status:** Core first-playable behavior is agreed. The implementation-readiness section below separates work that can begin now from authored map data and remaining edge cases.

@@ -1,53 +1,101 @@
-// Counter-Strike objective data for dust2cyberiav4. Hot-reloadable: edit and
-// save, then `site_debug` / the next TeamBrain tick applies it live; nothing is
-// compiled in and no code owns these coordinates.
-//
-// Anchors are placed on the map's playable floor between the two team spawns.
-// X/Y are the usable bomb-site areas; Z is only a hint. At runtime the server
-// snaps each site's Z to the loaded collision floor
-// (`NpcNavigation::groundHeightAt`) so a slightly high/low anchor is still
-// reachable, and falls back to "site unavailable" if no floor exists under it.
-// `visible_debug: true` draws the site sphere so it can be seen and moved with
-// `site_debug show` / `site_debug move A` / `site_debug print` / `site_debug
-// save`, which writes the verified position back to this file.
 {
+  "blocks": [],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
   "bomb_sites": [
     {
       "id": "A",
-      "position": [-700.0, 60.0, 2345.0],
-      "radius": 4.0,
+      "position": [
+        -902.107421875,
+        149.3358917236328,
+        2361.3447265625
+      ],
+      "radius": 20.0,
       "visible_debug": true
     },
     {
       "id": "B",
-      "position": [-820.0, 90.0, 2345.0],
-      "radius": 4.0,
+      "position": [
+        -912.2757568359375,
+        -95.6591567993164,
+        2353.096435546875
+      ],
+      "radius": 30.0,
       "visible_debug": true
     }
   ],
   "entities": [
     {
-      "id": "ct_spawnpoint",
-      "type": "spawnpoint",
-      "tag": "ct_spawn",
-      "position": [-878.3729858398438, 122.62106323242188, 2349.300048828125],
-      "radius": 1.0,
+      "activationRadius": 0.0,
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
       "enabled": true,
-      "visible": true
+      "healthMultiplier": 1.0,
+      "id": "ct_spawnpoint",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "order": 0,
+      "pickupId": "",
+      "position": [
+        -878.3729858398438,
+        122.62106323242188,
+        2349.300048828125
+      ],
+      "radius": 1.0,
+      "required": false,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "ct_spawn",
+      "type": "spawnpoint",
+      "visible": true,
+      "yaw": 0.0
     },
     {
-      "id": "t_spawnpoint",
-      "type": "spawnpoint",
-      "tag": "t_spawn",
-      "position": [-604.89453125, 28.294063568115234, 2366.224853515625],
-      "radius": 1.0,
+      "activationRadius": 0.0,
+      "bossId": "",
+      "checkpointRequirement": 0,
+      "damage": 0,
+      "damageIntervalTicks": 60,
+      "damageType": "generic",
       "enabled": true,
-      "visible": true
+      "healthMultiplier": 1.0,
+      "id": "t_spawnpoint",
+      "maxAlive": 1,
+      "monsterPool": "default",
+      "oneShot": false,
+      "order": 0,
+      "pickupId": "",
+      "position": [
+        -604.89453125,
+        28.294063568115234,
+        2366.224853515625
+      ],
+      "radius": 1.0,
+      "required": false,
+      "size": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "spawnCooldownTicks": 60,
+      "spawnCount": 1,
+      "tag": "t_spawn",
+      "type": "spawnpoint",
+      "visible": true,
+      "yaw": 0.0
     }
   ],
-  "bomb": {
-    "plant_seconds": 3,
-    "defuse_seconds": 5,
-    "explosion_seconds": 40
-  }
+  "glb_objects": []
 }

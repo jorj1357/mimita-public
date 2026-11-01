@@ -424,3 +424,19 @@ contain arcade energy/radius multipliers.
 
 The `cut_energy_scale` and `cut_radius_scale` fields were removed in the
 2026-10-30 physical-impact migration. New content uses the physical profile.
+
+## Repository-wide field and reference inventory — desired
+
+The user wants a discoverable lint path that answers which fields each
+runtime-loaded JSON configuration family accepts and catches references to
+removed or unknown data, including a movement preset removed while still
+referenced elsewhere. For each owned configuration family, its owner or
+masterlist must identify the accepted fields and their loader; where values
+reference another registry, validation must check that the referenced ID
+exists.
+
+An automated check should report the file, field/reference path, and reason
+without rewriting configuration. Its accepted fields and reference rules must
+agree with the runtime loader. This is a desired cross-family validation
+contract; the presence of gamemode or weapon validators does not establish that
+all runtime-loaded JSON families and cross-file references are covered.

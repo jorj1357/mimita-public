@@ -221,6 +221,21 @@ configured hit effects
 
 These should use the existing stretched-sphere/damage-number behavior where appropriate rather than unnecessarily creating another system.
 
+Damage-number size is damage-scaled and hot-reloadable through
+`config/hitfx.json`:
+
+```text
+damage 1    -> small
+damage 100  -> larger
+damage 200+ -> largest configured tier
+```
+
+The scale is piecewise linear between configurable low/mid/high damage anchors
+and low/mid/high size multipliers. Healing and percentage displays keep their
+own presentation and do not use the damage tier scale. A shotgun shot shows one
+aggregate number for all pellets that hit the target; it must not show one zero
+number per pellet.
+
 ## **Gun Fire**
 
 Firing a gun should support:

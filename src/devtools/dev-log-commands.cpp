@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -44,10 +45,24 @@ void registerDevLogCommands()
                 return;
             }
 
-            // Inspect the shared file so a client-only file cannot be mistaken
-            // for the client+server session record.
-            std::ifstream in(path);
-            std::string line;
+            // A rotated run is one chronological journal: sealed
+            // events-NNNN.jsonl segments first, then the active events.jsonl.
+            std::vector<std::filesystem::path> segments;
+            const std::filesystem::path runDir = path.parent_path();
+            for (std::filesystem::directory_iterator it(runDir, ec), end;
+                 it != end && !ec; it.increment(ec)) {
+                if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+                const std::string name = it->path().filename().string();
+                if (name.rfind("events-", 0) == 0 &&
+                    name.size() > 12 && name.substr(name.size() - 6) == ".jsonl")
+                    segments.push_back(it->path());
+            }
+            std::sort(segments.begin(), segments.end(),
+                      [](const auto& a, const auto& b) {
+                          return a.filename().string() < b.filename().string();
+                      });
+            segments.push_back(path);
+
             long long lines = 0, invalid = 0, npcEvents = 0;
             long long deathEvents = 0, ragdollEvents = 0;
             bool sawClient = false, sawServer = false, sawStarted = false;
@@ -55,7 +70,9 @@ void registerDevLogCommands()
             std::map<std::string, int> categoryCounts;
             std::map<std::string, std::map<std::string, int>> processCounts;
             std::vector<std::string> startupIdentities;
-            if (in.is_open()) {
+            for (const auto& segment : segments) {
+                std::ifstream in(segment);
+                std::string line;
                 while (std::getline(in, line)) {
                     if (line.empty()) continue;
                     ++lines;
@@ -93,7 +110,11 @@ void registerDevLogCommands()
             }
 
             std::string report;
-            report += "events file:\n" + path.string() + "\n\n";
+            report += "events files (" + std::to_string(segments.size()) +
+                      " segment(s), chronological):\n";
+            for (const auto& segment : segments)
+                report += "  " + segment.string() + "\n";
+            report += "\n";
             report += "processes:\n";
             report += std::string("client: ") + (sawClient ? "yes" : "no") + "\n";
             report += std::string("server: ") + (sawServer ? "yes" : "no") + "\n";

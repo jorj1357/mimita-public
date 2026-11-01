@@ -217,6 +217,9 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
 void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
 {
     NpcSensorContext sensors;
+    // The sensor clock is the fixed-tick time source for throttled diagnostics
+    // and radar delay. It must advance every simulated tick.
+    sensors.time = npc.sensors.time + dt;
     sensors.selfVel = npc.body.vel + npc.body.externalImpulse;
     sensors.touchFloor = npc.body.ground.hasWorldContact;
 
@@ -232,6 +235,8 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
         npc.belief = BeliefState{};
         npc.stateMachine.lastKnownTarget = npc.body.pos;
         npc.stateMachine.lastKnownAge = 0.0f;
+        npc.cachedLoSBlocked = false;
+        npc.losTickCounter = 0;
     }
 
     {
@@ -373,6 +378,33 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
     }
 
     npc.sensors = sensors;
+
+    // Bounded sense evidence (once per second per actor) so target/LOS failures
+    // can be distinguished from weapon or cooldown failures.
+    {
+        const uint32_t senseTick = (uint32_t)(npc.sensors.time * 60.0f);
+        if (((senseTick + npc.id) % 60u) == 0u) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.target-sense", std::to_string(npc.id),
+                npc.sensors.hasTarget ? "visible" : "no_visible_target",
+                senseTick,
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"team", npc.body.matchTeam},
+                    {"profile", npc.behaviorProfileId},
+                    {"server_target_id", npc.serverTargetId},
+                    {"candidate_valid", !player.dead && player.currentHp > 0},
+                    {"target_visible", npc.sensors.hasTarget},
+                    {"has_line_of_sight", !npc.cachedLoSBlocked},
+                    {"cached_los_blocked", npc.cachedLoSBlocked},
+                    {"target_distance", npc.sensors.targetDistance},
+                    {"belief_has_target", npc.belief.hasTarget},
+                    {"equipped", npc.body.equippedWeaponId},
+                    {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     // ── Utility context + goal selection ───────────────────────────
     // Objective fields are filled by objective-aware callers (TeamBrain in a

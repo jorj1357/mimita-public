@@ -262,6 +262,7 @@ private:
     std::string mRunId;        // yyyymmdd_hhmmss for this run
     std::string mEventsPath;   // logs/yyyy-mm-dd/yyyymmdd_hhmmss/events.jsonl
     FILE* mEventsFile = nullptr;
+    uint64_t mSegmentGeneration = 0;
     void* mRunLease = nullptr; // named event held while this run has a live process
     std::atomic<uint64_t> mSequence{0};
     std::atomic<uint64_t> mEventCounters[(int)StructuredCategory::Count]{};
@@ -350,6 +351,9 @@ AudioBufferAnalysis analyzeAudioBuffer(
 void logAudioAnalysis(StructuredCategory cat, StructuredLevel level,
     const std::string& eventId, const std::string& correlationId,
     const std::string& stage, const AudioBufferAnalysis& analysis);
+
+// Focused regression: sealed segment naming, truncation, and segment discovery.
+bool structuredLogRotationSelfTest(std::string* summary = nullptr);
 
 // ── Convenience macros ──────────────────────────────────────
 // These capture __FILE__, __LINE__, __FUNCTION__ automatically.

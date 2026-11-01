@@ -330,6 +330,39 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
             auto dmgIt = ctx.predictedNpcDamage.find(event->npcEntityId);
             if (dmgIt != ctx.predictedNpcDamage.end() && dmgIt->second > 0)
             {
+                const int predictedDamage = dmgIt->second;
+                const int delta = event->damage - predictedDamage;
+                ++ctx.damagePredictionSamples;
+                if (delta == 0)
+                    ++ctx.damagePredictionMatches;
+                else
+                {
+                    ++ctx.damagePredictionMismatches;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "net.prediction.damage.mismatch",
+                        "NPC_" + std::to_string(event->npcEntityId),
+                        "predicted NPC damage differed from authoritative damage",
+                        event->header.tick,
+                        {{"predicted_damage", predictedDamage},
+                         {"actual_damage", event->damage},
+                         {"delta", delta},
+                         {"target", event->npcEntityId},
+                         {"weapon", networkWeaponTypeName(event->weapon)}});
+                }
+                if (ctx.damagePredictionSamples % 60 == 0)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "net.prediction.accuracy", "damage-prediction",
+                        "rolling predicted-versus-actual damage accuracy",
+                        event->header.tick,
+                        {{"samples", ctx.damagePredictionSamples},
+                         {"matches", ctx.damagePredictionMatches},
+                         {"mismatches", ctx.damagePredictionMismatches},
+                         {"accuracy", (double)ctx.damagePredictionMatches /
+                              (double)ctx.damagePredictionSamples}});
+                }
                 const float ratio = std::abs((float)event->damage - (float)dmgIt->second) / (float)dmgIt->second;
                 if (ratio > 0.1f)
                 {
@@ -755,6 +788,10 @@ void applyPelletBlastEventPacket(MultiplayerContext& ctx,
             ev.direction = -hitNml;
             ev.hitEntity = true;
             ev.damage = 0;
+            // Blood/impact per pellet, but the aggregate DamageConfirmed event
+            // owns the single damage number. A per-pellet 0 here was the
+            // source of the "many 0 numbers" shotgun display.
+            ev.spawnDamageNumber = false;
             ev.attacker = weaponName;
             ev.weaponSource = "pellet_blast";
             HitEffects::onHit(ev);

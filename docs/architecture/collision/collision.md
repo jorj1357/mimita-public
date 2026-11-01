@@ -300,6 +300,34 @@ approximation, not its static-world hitbox. Full animated triangle-vs-triangle
 actor-pair collision remains a later migration. Debug rendering must label the
 actor-pair capsule separately from final body/weapon hitboxes.
 
+### Actor support is not static-world contact — 2026-11-01
+
+Actor-pair support and carry may set a supported actor's grounded state so that
+stacking, standing, and carrying keep working. They must never report that
+support as static-world contact.
+
+- The actor-pair solver carries an explicit world-contact flag per actor and
+  output. Only a real static-world solve may set it.
+- Losing actor support does not preserve actor-derived ground. The next tick
+  starts from real world contact, not the previous support.
+- After any actor-pair correction, push, or support change, the owning
+  player/NPC path re-runs the static-world solver in the same fixed tick. The
+  merged grounded state is `worldGrounded || actorSupported`; the world-contact
+  flag remains world-only.
+- Final-pose containment records only real world contact as its restorable
+  ground state. A last-clear pose taken while standing on another actor must not
+  later restore fabricated floor support.
+- The shared `default` actor-pair profile uses player-like dimensions
+  (0.7 m radius, 3.6 m height) and the documented push tuning. An empty or
+  unknown actor preset must not inherit an oversized test capsule.
+
+Corner contact remains owned by the shared pair solver and world solver. A
+bounded multi-contact solve may distribute simultaneous contacts so a crowd
+cannot bury one actor through a wall or floor; it must not create a second
+collision solver or run outside the fixed tick. NPC navigation additionally
+avoids dense corners through its existing approach-sector and wall-avoidance
+policy; this is movement knowledge, not a collision exception.
+
 ### Debug rendering
 
 The existing `drawCapsuleWire()` and `drawCapsuleApprox()` are separate,

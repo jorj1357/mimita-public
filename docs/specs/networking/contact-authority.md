@@ -305,10 +305,21 @@ blocking after the deletion and consolidation work.
 Accuracy is measured as the percentage of predicted damaging contacts whose
 final server outcome matches the client prediction.
 
-- RTT below `100 ms`: `99.99%` claim acceptance and exact damage match.
-- RTT `100 ms` or more: `99%` claim acceptance and exact damage match.
+- Ideal: `100%` of predicted damaging contacts match the server's actual
+  damage exactly.
+- Required target: `99.99%` predicted-versus-actual damage equality across the
+  supported RTT range, including shotgun aggregate damage.
 - The target is long-term and is measured across the full actor/weapon/network
   matrix, not from a single run.
+- A predicted hit that the server accepts must produce the same total damage,
+  not merely a hitmarker or blood effect. A shotgun trigger is one predicted
+  contact per target per fixed tick; its 15 pellet damages are summed, not
+  compared as 15 independent contacts.
+- The server should accept plausible predicted hits with wide rewind, lag, and
+  target-volume tolerance. Reject only impossible or invalid contacts, not
+  small interpolation, body-part, or aggregation differences.
+- Record `predicted_damage`, `actual_damage`, delta, ratio, weapon, target,
+  pellet hits, and the accept/reject reason so the match rate is measurable.
 
 A predicted damaging contact is the denominator. Weapon-clash bounces,
 same-team contacts that correctly produce no damage, and predictions suppressed

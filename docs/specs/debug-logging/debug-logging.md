@@ -81,10 +81,11 @@ canonical-writer migration below.
 Source inspection confirms a named cross-process mutex, shared quota state,
 pre-write per-file and total-tree checks, pruning of eligible completed runs,
 and dropped-record accounting in `src/debug/structured-log.cpp`. The active
-writer does not rotate an oversized/current `events.jsonl` into segments, and
-the repository still contains direct/category diagnostic sinks that have not
-been migrated. Source guards therefore exist, but the full storage issue is
-not confirmed resolved.
+writer now rotates a full `events.jsonl` into sealed `events-NNNN.jsonl`
+segments before a record would cross the per-file ceiling, then continues in a
+fresh `events.jsonl`. `log_open` and the dev-loop journal cursor read sealed
+segments plus the active file chronologically as one run. The repository still
+contains direct/category diagnostic sinks that have not been migrated.
 
 The inspected run
 `logs/2026-10-16/20261016_134002/events.jsonl` is 100,004,632 bytes, exceeding
@@ -134,13 +135,16 @@ The desired storage invariant is absolute, not best-effort:
    stream when space becomes available. The logger must not bypass the quota
    for errors, crashes, or assertions.
 
-The current source does not rotate a full active `events.jsonl` into segments;
-it rejects a record that would cross the per-file ceiling. Drop counts are
-attached to a later accepted canonical record. If the active file stays full,
-there is no available record in that file to report the accumulated count.
-StructuredLogger also does not cover every legacy or direct-file diagnostic
-sink in the inventory below. These are known gaps and must remain visible in
-validation and user-facing storage claims.
+The active canonical writer rotates a full `events.jsonl` into a sealed
+`events-NNNN.jsonl` segment before accepting a record that would cross the
+per-file ceiling. The active path stays `events.jsonl` so `EVENTS_JSONL_PATH`
+and existing launch contracts remain valid. Rotation copies the complete
+segment, truncates the active file under the shared named mutex, and advances a
+shared generation; other writer processes re-synchronize on their next write.
+Drop counts are attached to a later accepted canonical record. StructuredLogger
+does not cover every legacy or direct-file diagnostic sink in the inventory
+below. These are known gaps and must remain visible in validation and
+user-facing storage claims.
 
 The exact byte units are decimal bytes, not MiB/GiB. The implementation may
 reserve internal headroom below 1,000,000,000 bytes, but the specification's

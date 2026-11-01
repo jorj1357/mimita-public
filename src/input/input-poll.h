@@ -21,6 +21,8 @@ InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam);
 
 extern InputFrame gTerminalInputOverride;
 void consumeTerminalInputOverride();
+// Clears AI/terminal held intent when control returns to the human.
+void clearHeldGameplayInputs();
 
 // Correlates a terminal-input override (agent.action) with the request that
 // requested it so the applied event can carry the same request id.

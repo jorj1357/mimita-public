@@ -639,6 +639,10 @@ lifetime = ...
 modifier = ...
 ```
 
+Damage-number scale may additionally be driven by `{damage}` with configurable
+anchors: 1 damage = small, 100 damage = larger, 200+ damage = largest. Shotgun
+uses one aggregate number for all pellets that hit that target.
+
 The gameplay damage system should not decide font, color, text size, or animation.
 
 ## **2D and 3D**

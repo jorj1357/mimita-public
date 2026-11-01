@@ -381,6 +381,14 @@ void registerWeaponCommands()
                                 mpContext, netId, requestSlot,
                                 shot.start, direction, shot.start, attackVariant,
                                 claimedTargetId, shot.end, claimedBodyPart);
+                            if (requestId != 0 && claimedTargetId != 0) {
+                                auto& claim = mpContext.pendingHitClaims[requestId];
+                                claim.predictedDamage =
+                                    static_cast<int>(shot.damage);
+                                claim.predictedPelletHits =
+                                    static_cast<uint8_t>(std::clamp(
+                                        wdef2->pelletCount, 1, 255));
+                            }
                             emitLocalAttack("attack_request_sent",
                                             {{"weapon", wdef2->id},
                                              {"weapon_def_network_id", netId},

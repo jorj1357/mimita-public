@@ -113,7 +113,8 @@ static void emitFireBlocked(const Npc& npc, const char* reason)
 static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
                          const glm::vec3& idealDir,
                          const glm::vec3& finalDir,
-                         float maxErrorDeg, float actualErrorDeg)
+                         float maxErrorDeg, float actualErrorDeg,
+                         bool accepted)
 {
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, finalDir), -1.0f, 1.0f)));
     // Gun-vs-bullet mismatch: degrees between the model's planar facing and the
@@ -125,7 +126,8 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
         facingAimDeg = glm::degrees(std::acos(std::clamp(glm::dot(planarFacing, planarShot), -1.0f, 1.0f)));
     StructuredLogger::instance().writeEvent(
         StructuredCategory::NpcCombat, StructuredLevel::Important,
-        "npc.shot", std::to_string(npc.id), "shot_fired",
+        "npc.shot", std::to_string(npc.id),
+        accepted ? "shot_accepted" : "shot_not_executed",
         (uint32_t)(npc.sensors.time * 60.0f),
         nlohmann::json{
             {"actor", npc.id},
@@ -133,6 +135,7 @@ static void logAimDebug(const Npc& npc, const WeaponDefinition& def,
             {"profile", npc.behaviorProfileId},
             {"skill_tier", npc.behavior.skillTier},
             {"weapon", def.id},
+            {"accepted", accepted},
             {"target_id", npc.serverTargetId},
             {"target_distance", npc.sensors.targetDistance},
             {"max_error_deg", maxErrorDeg},
@@ -395,8 +398,6 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     float errorDeg = NpcCombat::effectiveAimErrorDegrees(npc);
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));
 
-    logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff);
-
     DBG(NpcCombat, "id=%u dist=%.1fm maxError=%.1fdeg "
         "ideal=(%.3f,%.3f,%.3f) final=(%.3f,%.3f,%.3f) diff=%.1fdeg "
         "weapon=%s ready=%s",
@@ -532,6 +533,8 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         break;
     }
     }
+
+    logAimDebug(npc, *def, idealDir, aimDir, errorDeg, angleDiff, fired);
 
     if (player.currentHp < hpBeforeShot)
     {

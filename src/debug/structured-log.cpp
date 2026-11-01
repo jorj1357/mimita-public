@@ -69,10 +69,14 @@ constexpr uint64_t kStartupLogTargetBytes =
 struct SharedLogQuotaState {
     volatile LONG initialized;
     unsigned long long totalBytes;
+    // Rotation coordination: every writer observes the generation and the next
+    // sealed segment index through the same named mapping.
+    unsigned long long segmentGeneration;
+    unsigned int nextSegmentIndex;
     struct FileEntry {
         char path[512];
         unsigned long long bytes;
-    } files[64];
+    } files[256];
 };
 
 struct SharedLogQuota {
@@ -129,6 +133,8 @@ std::filesystem::path logRootForEventsPath(const std::string& eventsPath) {
     return runDir.parent_path().parent_path();
 }
 
+bool runHasJournalSegment(const std::filesystem::path& runDir);
+
 std::string runLeaseName(const std::filesystem::path& root,
                          const std::string& runId) {
     std::error_code ec;
@@ -174,7 +180,7 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
              runIt != runEnd; runIt.increment(ec)) {
             if (ec) { ec.clear(); continue; }
             if (runIt->is_directory(ec) && !ec && !samePath(runIt->path(), activeRunDir) &&
-                std::filesystem::is_regular_file(runIt->path() / "events.jsonl", ec) && !ec)
+                runHasJournalSegment(runIt->path()) && !ec)
                 completedLogs.push_back(runIt->path());
             // Legacy LogManager files sit directly in date folders. They are
             // included in the tree quota, so completed ones must be eligible
@@ -271,6 +277,62 @@ SharedLogQuotaState::FileEntry* quotaFileEntry(SharedLogQuotaState& state,
         ? std::filesystem::file_size(path, ec) : 0;
     if (ec) empty->bytes = 0;
     return empty;
+}
+
+bool runHasJournalSegment(const std::filesystem::path& runDir) {
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(runDir, ec), end; it != end;
+         it.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const std::string name = it->path().filename().string();
+        if (name == "events.jsonl" ||
+            (name.rfind("events-", 0) == 0 && name.size() > 12 &&
+             name.substr(name.size() - 6) == ".jsonl"))
+            return true;
+    }
+    return false;
+}
+
+// Seal the current events.jsonl as events-NNNN.jsonl and truncate the active
+// file in place. All writers hold the shared named mutex and the active file is
+// unbuffered, so no writer can leave buffered records in the sealed segment.
+bool rotateActiveSegment(FILE* file, const std::string& eventsPath,
+                         SharedLogQuotaState& state,
+                         SharedLogQuotaState::FileEntry*& entry) {
+    if (!file || eventsPath.empty()) return false;
+    const std::filesystem::path active(eventsPath);
+    const std::filesystem::path runDir = active.parent_path();
+    std::error_code ec;
+    if (!std::filesystem::exists(active, ec) || ec) return false;
+    const uint64_t size = std::filesystem::file_size(active, ec);
+    if (ec || size == 0) return false;
+
+    unsigned int index = state.nextSegmentIndex ? state.nextSegmentIndex : 1u;
+    std::filesystem::path sealed;
+    for (; index < 1000000u; ++index) {
+        char name[64]{};
+        std::snprintf(name, sizeof(name), "events-%04u.jsonl", index);
+        sealed = runDir / name;
+        if (!std::filesystem::exists(sealed, ec) || ec) break;
+        ec.clear();
+    }
+    if (index >= 1000000u) return false;
+
+    std::filesystem::copy_file(active, sealed,
+                               std::filesystem::copy_options::none, ec);
+    if (ec) return false;
+    std::fflush(file);
+    if (_chsize_s(_fileno(file), 0) != 0) {
+        // Keep the sealed copy; never corrupt the active file on failure.
+        std::error_code removeError;
+        std::filesystem::remove(sealed, removeError);
+        return false;
+    }
+    state.nextSegmentIndex = index + 1u;
+    ++state.segmentGeneration;
+    if (entry) entry->bytes = 0;
+    return true;
 }
 }
 
@@ -903,6 +965,10 @@ void StructuredLogger::init() {
         }
         return;
     }
+    // Rotation truncates the live file under the shared mutex. Unbuffered
+    // writes guarantee another process cannot leave old records in a sealed
+    // segment after the truncation point.
+    std::setvbuf(mEventsFile, nullptr, _IONBF, 0);
     mInitialized = true;
 
     char exePath[MAX_PATH]{};
@@ -1265,6 +1331,22 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     }
 
     auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+    if (mSegmentGeneration != quota.state->segmentGeneration) {
+        mSegmentGeneration = quota.state->segmentGeneration;
+        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+        std::error_code sizeError;
+        if (fileEntry) {
+            fileEntry->bytes = std::filesystem::exists(mEventsPath, sizeError) &&
+                !sizeError ? std::filesystem::file_size(mEventsPath, sizeError) : 0;
+        }
+    }
+    if (fileEntry && fileEntry->bytes > 0 &&
+        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
+            mSegmentGeneration = quota.state->segmentGeneration;
+            fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+        }
+    }
     if (!fileEntry || fileEntry->bytes > kMaxLogFileBytes ||
         line.size() > kMaxLogFileBytes - fileEntry->bytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
@@ -1352,6 +1434,22 @@ bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush
         outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
     const std::string line = outputRecord.dump() + "\n";
     auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+    if (mSegmentGeneration != quota.state->segmentGeneration) {
+        mSegmentGeneration = quota.state->segmentGeneration;
+        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+        std::error_code sizeError;
+        if (fileEntry) {
+            fileEntry->bytes = std::filesystem::exists(mEventsPath, sizeError) &&
+                !sizeError ? std::filesystem::file_size(mEventsPath, sizeError) : 0;
+        }
+    }
+    if (fileEntry && fileEntry->bytes > 0 &&
+        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
+            mSegmentGeneration = quota.state->segmentGeneration;
+            fileEntry = quotaFileEntry(*quota.state, mEventsPath);
+        }
+    }
     if (line.size() > kMaxLogFileBytes || !fileEntry ||
         fileEntry->bytes > kMaxLogFileBytes ||
         line.size() > kMaxLogFileBytes - fileEntry->bytes ||
@@ -1627,4 +1725,52 @@ void StructuredLogger::assertNear(
     e.tolerance = tolerance;
 
     write(e);
+}
+
+bool structuredLogRotationSelfTest(std::string* summary)
+{
+    bool ok = true;
+    std::string report;
+    const auto expect = [&](bool condition, const char* label) {
+        report += std::string(condition ? "PASS " : "FAIL ") + label + "\n";
+        ok = ok && condition;
+    };
+
+    std::error_code ec;
+    const std::filesystem::path dir =
+        std::filesystem::temp_directory_path(ec) /
+        ("mimita-journal-rotation-" + std::to_string(GetCurrentProcessId()));
+    if (ec) { if (summary) *summary = "FAIL temp directory\n"; return false; }
+    std::filesystem::remove_all(dir, ec);
+    std::filesystem::create_directories(dir, ec);
+    const std::filesystem::path active = dir / "events.jsonl";
+    {
+        FILE* seed = fopen(active.string().c_str(), "wb");
+        if (!seed) { if (summary) *summary = "FAIL seed file\n"; return false; }
+        fputs("{\"event\":\"one\"}\n{\"event\":\"two\"}\n", seed);
+        fclose(seed);
+    }
+
+    FILE* file = fopen(active.string().c_str(), "ab");
+    expect(file != nullptr, "active journal opens");
+    SharedLogQuotaState state{};
+    auto* entry = quotaFileEntry(state, active.string());
+    const bool rotated = file && rotateActiveSegment(file, active.string(), state, entry);
+    expect(rotated, "rotation seals the active journal");
+    const std::filesystem::path sealed = dir / "events-0001.jsonl";
+    expect(std::filesystem::is_regular_file(sealed, ec), "sealed segment exists");
+    expect(std::filesystem::file_size(active, ec) == 0, "active journal is truncated");
+    expect(state.segmentGeneration == 1, "generation advanced after rotation");
+    expect(state.nextSegmentIndex == 2, "next segment index advanced");
+    if (file) {
+        fputs("{\"event\":\"three\"}\n", file);
+        fflush(file);
+        fclose(file);
+    }
+    expect(std::filesystem::file_size(active, ec) > 0, "new records stay in active journal");
+    expect(runHasJournalSegment(dir), "reader recognizes segmented runs");
+    std::filesystem::remove_all(dir, ec);
+
+    if (summary) *summary = report;
+    return ok;
 }

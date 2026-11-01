@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <glm/glm.hpp>
 
@@ -51,6 +52,9 @@ struct ActorPairCollisionActor
     bool staticCollider = false;
     bool onGround = false;
     bool stableOnGround = true;
+    // Actual static-world contact this tick. Actor support must never set this;
+    // it is the only flag that may be treated as map-floor contact.
+    bool hasWorldContact = false;
     const ActorCollisionProfile* profile = nullptr;
     std::uint64_t previousSupportKey = 0;
     glm::vec3 previousSupportVelocity{0.0f};
@@ -63,6 +67,7 @@ struct ActorPairCollisionOutput
     glm::vec3 externalImpulse{0.0f};
     bool onGround = false;
     bool stableOnGround = true;
+    bool hasWorldContact = false;
     std::uint64_t supportKey = 0;
     glm::vec3 supportVelocity{0.0f};
     bool corrected = false;
@@ -100,3 +105,7 @@ void resolveActorPairCollisions(
     ActorPairCollisionStats* outStats = nullptr,
     const char* source = "unknown",
     std::uint32_t tick = 0);
+
+// Focused regression: actor support must not be reported as static-world
+// contact, and losing support must not preserve actor-derived ground.
+bool actorPairSupportSelfTest(std::string* summary = nullptr);

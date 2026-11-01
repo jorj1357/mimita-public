@@ -136,6 +136,25 @@ that same bridge instead of adding one cold command per report.
 
 ## AI runtime validation workflow
 
+`player_control ai|human` is a local viewer command. It switches the existing
+local player's input source between the human and the bounded player-AI owner.
+AI mode uses the same `InputFrame`/`ActorIntent` boundary, collision, weapon,
+and server validation as human input; it does not spawn a second actor or
+mutate server-owned state. Returning to `human` clears held AI/terminal input
+and restores normal control immediately.
+
+`collision_probe x,y,z` is a local diagnostic command. It reports whether a
+world point is inside static collision, the downward floor height, and bounded
+ray hits in six directions, and writes `collision.probe` to the canonical
+journal. Use it to distinguish a missing map-collision block from an actor
+being pushed into existing geometry.
+
+The dev loop exposes these through `--ai-match`, which starts a bounded TDM
+match on the requested map, enables `player_control ai`, waits for the requested
+duration, restores human control, and requires journal evidence that actor
+contacts and accepted combat occurred. The run is live gameplay, not recorded
+input playback.
+
 An AI agent investigating or changing behavior must use the real runtime path
 before creating a new test. The required loop is:
 

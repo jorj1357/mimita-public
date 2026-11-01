@@ -14,8 +14,8 @@
     "melee": {
       "animation_only": true,
       "arm_ragdoll": {
-        // "enabled": true,
-        "enabled": false,
+        "enabled": true,
+        // "enabled": false,
         "extend_strength": 500.0,
         "extend_max_speed": 253.0,
         "max_stretch": 0.25,

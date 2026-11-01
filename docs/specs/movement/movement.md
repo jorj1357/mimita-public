@@ -1446,3 +1446,18 @@ correction class/reason, collision result, map bounds, and transform/lifecycle
 identity at the first divergence. The desired result is responsive movement with
 valid collision and a bounded, explainable correction that does not keep pulling
 the player toward obsolete state.
+
+## Consistent bounce on physical impacts — 2026-11-01
+
+**Desired behavior:** every physical collision impact produces a reliable bounce
+response. Contact category, actor turning, and finite edge or corner geometry
+must not silently remove the response. This includes weapon-to-world impacts,
+actor-to-world body contacts, actor-pair contacts, and impacts while the actor is
+turning or steering.
+
+Use the shared collision response and fixed 60 Hz gameplay path. Adjacent
+triangle features may be merged when they represent one physical contact; they
+must not turn one impact into repeated artificial impulses or suppress its
+bounce. The exact response magnitudes and how sustained resting contact differs
+from a new impact remain tuning decisions and must be verified with representative
+runtime scenarios.

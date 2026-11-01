@@ -145,6 +145,15 @@ struct DamageNumberConfig {
     float moveSpeed = 1.0f;
     float startScale = 1.0f;
     float endScale = 1.0f;
+    // Damage number size follows the actual damage value. Piecewise linear:
+    // 1 -> lowScale, 100 -> midScale, 200+ -> highScale.
+    bool scaleByDamage = true;
+    float damageScaleLowValue = 1.0f;
+    float damageScaleMidValue = 100.0f;
+    float damageScaleHighValue = 200.0f;
+    float damageScaleLow = 0.65f;
+    float damageScaleMid = 1.35f;
+    float damageScaleHigh = 2.0f;
     float randomHorizontalSpread = 0.0f;
     float randomVerticalSpread = 0.0f;
     float spawnJitter = 0.0f;

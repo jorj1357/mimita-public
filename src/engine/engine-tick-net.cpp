@@ -11,6 +11,7 @@
 #include "engine/engine-tick-net.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
+#include "actor/player-ai.h"
 #include <cstdio>
 #include <string>
 #include <unordered_set>
@@ -231,6 +232,25 @@ void engineTickNet(Engine& engine, float dt)
             mpInput.camForward = recorded->camForward;
             mpInput.equippedSlot = player.equippedSlot;
         }
+    }
+
+    if (PlayerAiController::active())
+    {
+        const InputFrame ai = PlayerAiController::buildFrame(player, camera, world);
+        mpInput.jumpHeld = ai.jump;
+        mpInput.dashPressed = ai.dashPressed;
+        mpInput.downDashPressed = ai.downDashPressed;
+        mpInput.freezeHeld = ai.freezeHeld;
+        mpInput.shieldHeld = ai.shieldHeld;
+        mpInput.crouchHeld = ai.crouchHeld;
+        mpInput.interactHeld = ai.interactHeld;
+        mpInput.attackPressed = ai.primaryHeld;
+        mpInput.wishX = ai.wishSide;
+        mpInput.wishY = ai.wishForward;
+        mpInput.yaw = ai.lookYaw;
+        mpInput.lookPitch = ai.lookPitch;
+        mpInput.camForward = ai.camForward;
+        mpInput.equippedSlot = player.equippedSlot;
     }
 
     // Detect canonical gameplay events and increment serials.

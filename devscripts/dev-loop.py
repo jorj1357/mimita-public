@@ -3112,23 +3112,24 @@ class DevLoop:
             return None
         deadline = time.time() + timeout
         while time.time() < deadline:
-            try:
-                with open(self.events_path, "r", encoding="utf-8") as journal:
-                    for line in journal:
-                        try:
-                            event = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if event.get("event") != event_name:
-                            continue
-                        if pids and event.get("pid") not in pids:
-                            continue
-                        fields = event.get("fields", {})
-                        if field_key and fields.get(field_key) != field_value:
-                            continue
-                        return event
-            except OSError:
-                pass
+            for segment in _journal_segment_paths(self.events_path):
+                try:
+                    with open(segment, "r", encoding="utf-8", errors="replace") as journal:
+                        for line in journal:
+                            try:
+                                event = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if event.get("event") != event_name:
+                                continue
+                            if pids and event.get("pid") not in pids:
+                                continue
+                            fields = event.get("fields", {})
+                            if field_key and fields.get(field_key) != field_value:
+                                continue
+                            return event
+                except OSError:
+                    pass
             time.sleep(0.1)
         return None
 
@@ -3524,25 +3525,101 @@ def _server_weapon_set(current: dict):
     return value
 
 
-def _journal_read_from(path: str, offset: int) -> tuple[list[dict], int]:
-    records: list[dict] = []
+def _journal_segment_paths(events_path: str) -> list[Path]:
+    if not events_path:
+        return []
+    active = Path(events_path)
+    run_dir = active.parent
+    segments: list[Path] = []
     try:
-        with open(path, "r", encoding="utf-8", errors="replace") as journal:
-            journal.seek(offset)
-            for line in journal:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    value = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(value, dict):
-                    records.append(value)
-            offset = journal.tell()
+        segments = sorted(run_dir.glob("events-*.jsonl"),
+                          key=lambda path: path.name)
     except OSError:
-        pass
-    return records, offset
+        segments = []
+    if active.exists():
+        segments.append(active)
+    return segments
+
+
+def _journal_record_key(record: dict) -> tuple:
+    return (
+        record.get("pid"),
+        record.get("process"),
+        record.get("event_id"),
+        record.get("seq"),
+        record.get("event"),
+        record.get("request_id"),
+    )
+
+
+class _JournalCursor:
+    """Incremental reader across sealed journal segments plus the active file."""
+
+    def __init__(self, events_path: str, start_at_end: bool = False):
+        self.events_path = events_path
+        self.offsets: dict[str, int] = {}
+        self.seen: set[tuple] = set()
+        if start_at_end:
+            for segment in _journal_segment_paths(events_path):
+                try:
+                    self.offsets[str(segment)] = segment.stat().st_size
+                except OSError:
+                    self.offsets[str(segment)] = 0
+            # Mark existing records so a later seal/rename cannot replay them.
+            for record in self._read_segments():
+                self.seen.add(_journal_record_key(record))
+
+    def _read_segments(self) -> list[dict]:
+        records: list[dict] = []
+        for segment in _journal_segment_paths(self.events_path):
+            name = str(segment)
+            try:
+                size = segment.stat().st_size
+            except OSError:
+                continue
+            offset = self.offsets.get(name, 0)
+            if offset > size:
+                offset = 0  # the active file was truncated after sealing
+            try:
+                with open(segment, "r", encoding="utf-8", errors="replace") as journal:
+                    journal.seek(offset)
+                    while True:
+                        line = journal.readline()
+                        if not line:
+                            break
+                        if not line.endswith("\n"):
+                            break
+                        offset = journal.tell()
+                        text = line.strip()
+                        if not text:
+                            continue
+                        try:
+                            value = json.loads(text)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(value, dict):
+                            records.append(value)
+            except OSError:
+                continue
+            self.offsets[name] = offset
+        return records
+
+    def read(self) -> list[dict]:
+        fresh: list[dict] = []
+        for record in self._read_segments():
+            key = _journal_record_key(record)
+            if key in self.seen:
+                continue
+            self.seen.add(key)
+            fresh.append(record)
+        return fresh
+
+
+def _journal_read_from(path: str, offset: int) -> tuple[list[dict], int]:
+    """Compatibility shim: read all segments from a byte offset in the active file."""
+    cursor = _JournalCursor(path)
+    cursor.offsets[str(Path(path))] = offset
+    return cursor.read(), offset
 
 
 def _append_journal_event(events_path: str, event: str, fields: dict, reason: str,
@@ -3727,11 +3804,11 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
     return passed_all, results
 
 
-def run_scenario_file(args: argparse.Namespace) -> int:
+def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None = None) -> int:
     """Ensure a live run, execute steps in order (commands and event waits),
     evaluate assertions from the live journal, and return a verdict."""
     try:
-        scenario = _scenario_load(args.scenario_file)
+        scenario = scenario_override if scenario_override is not None else _scenario_load(args.scenario_file)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"[DEV SCENARIO] invalid scenario: {error}", file=sys.stderr)
         return 2
@@ -3846,13 +3923,10 @@ def run_scenario_file(args: argparse.Namespace) -> int:
     }, "scenario started by control client", request_id)
 
     records: list[dict] = []
-    offset = start_offset
+    cursor = _JournalCursor(events_path, start_at_end=not launched_fresh)
 
     def pump() -> None:
-        nonlocal offset
-        batch, new_offset = _journal_read_from(events_path, offset)
-        records.extend(batch)
-        offset = new_offset
+        records.extend(cursor.read())
 
     def wait_for_event(spec: dict, deadline: float) -> tuple[bool, dict | None]:
         name = str(spec.get("wait_for_event", ""))
@@ -3867,6 +3941,13 @@ def run_scenario_file(args: argparse.Namespace) -> int:
                     return True, record
             time.sleep(0.25)
         pump()
+        # A reused run may already have passed the requested lifecycle event
+        # before this scenario started. Accept it from the full run journal.
+        for record in _JournalCursor(events_path).read():
+            if record.get("event") != name:
+                continue
+            if all(_field_path(record, key) == value for key, value in where.items()):
+                return True, record
         return False, None
 
     def wait_for_playback_terminal(path: str, deadline: float) -> tuple[bool, str]:
@@ -4214,15 +4295,10 @@ def wait_for_command_result(events_path: str, request_id: str, timeout: float,
               "reason": ""}
     if not events_path or not request_id:
         return result
-    if start_offset is None:
-        try:
-            start_offset = Path(events_path).stat().st_size
-        except OSError:
-            start_offset = 0
-    offset = start_offset
+    cursor = _JournalCursor(events_path)
     deadline = time.time() + timeout
     while time.time() < deadline:
-        batch, offset = _journal_read_from(events_path, offset)
+        batch = cursor.read()
         for record in batch:
             if not _record_request_id(record).startswith(request_id):
                 continue
@@ -4609,6 +4685,8 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
 
 
 def _control_action(args: argparse.Namespace) -> str:
+    if getattr(args, "ai_match", False):
+        return "scenario-file"
     if args.command:
         return "command"
     if args.scenario_file:
@@ -4635,12 +4713,58 @@ def wait_for_build_request(request_id: str, timeout: float) -> int:
     return 2
 
 
+def run_ai_match(args: argparse.Namespace) -> int:
+    """Bounded unattended TDM match on the real dev-loop client.
+
+    The player stays the same authoritative actor; only its local input source
+    changes through `player_control ai`. The scenario is in-memory because this
+    is live gameplay, not a recorded-input replay.
+    """
+    seconds = max(5.0, float(args.ai_seconds))
+    scenario_id = f"ai_match_tdm_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    scenario = {
+        "id": scenario_id,
+        "launch": {
+            "profile": args.profile,
+            "launch_mode": args.launch_mode or args.ai_launch_mode,
+            "map": args.ai_map,
+            "weapon_set": 29,
+        },
+        "setup": [
+            {
+                "id": "wait_active",
+                "wait_for_event": "network.mode.start",
+                "where": {"stage": "active"},
+                "timeout_seconds": 120,
+            },
+            {"id": "enable_ai", "command": "player_control", "args": ["ai"]},
+        ],
+        "steps": [
+            {"id": "ai_live_match", "wait_seconds": seconds},
+            {"id": "restore_human", "command": "player_control", "args": ["human"]},
+        ],
+        "assertions": [
+            {"type": "event_count_at_least", "event": "player.control.mode", "minimum": 2},
+            {"type": "event_count_at_least", "event": "actor.collision.contact", "minimum": 1},
+            {"type": "event_field_count_at_least", "event": "npc.shot",
+             "field": "accepted", "equals": True, "minimum": 1},
+            {"type": "event_count_at_least", "event": "npc.damage", "minimum": 1},
+            {"type": "event_count_at_least", "event": "server.damage.applied", "minimum": 1},
+        ],
+        "timeout_seconds": seconds + 150.0,
+    }
+    print(f"[DEV AI MATCH] id={scenario_id} map={args.ai_map} seconds={seconds:.0f} "
+          f"launch_mode={scenario['launch']['launch_mode']}")
+    return run_scenario_file(args, scenario)
+
+
 def run_control_client(args: argparse.Namespace) -> int:
     action = _control_action(args)
 
     # Preserve read-only status behavior: never start or wake the daemon for a
     # pure status read. `--ensure-running` is explicitly not a read-only read.
     if (action == "status" and not args.command and not args.scenario_file
+            and not getattr(args, "ai_match", False)
             and not args.request and not args.ensure_running):
         current = read_current_run()
         if current is None:
@@ -4667,12 +4791,15 @@ def run_control_client(args: argparse.Namespace) -> int:
         return 2
 
     if action == "status" and args.ensure_running and not args.command \
-            and not args.scenario_file and not args.request:
+            and not args.scenario_file and not getattr(args, "ai_match", False) \
+            and not args.request:
         print("[DEV CONTROL] watchdog and daemon are running")
         _print_read_only_status(current, args.json)
         return 0
 
     if action == "scenario-file":
+        if getattr(args, "ai_match", False):
+            return run_ai_match(args)
         return run_scenario_file(args)
 
     port = current.get("control_port")
@@ -4765,6 +4892,19 @@ def main() -> int:
                         help="send one terminal command to the running daemon, wait for the result, and exit")
     parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
     parser.add_argument(
+        "--ai-match",
+        action="store_true",
+        help="run an unattended TDM match with the local player under AI control",
+    )
+    parser.add_argument("--ai-seconds", type=float, default=90.0,
+                        help="bounded duration for --ai-match")
+    parser.add_argument("--ai-map", default="dust2cyberiav4",
+                        help="map for --ai-match")
+    parser.add_argument("--ai-profile", default="tdm-validation",
+                        help="dev profile for --ai-match")
+    parser.add_argument("--ai-launch-mode", default="41",
+                        help="dev launch mode for --ai-match (default 41 = TDM networking)")
+    parser.add_argument(
         "--request",
         choices=("launch", "build", "stop-client", "stop-server", "stop"),
         help="send a command to the already-running dev-loop daemon and exit",
@@ -4792,7 +4932,13 @@ def main() -> int:
                         help="seconds to wait for a command result from the client")
     args = parser.parse_args()
 
-    control = bool(args.status or args.request or args.command or args.scenario_file)
+    control = bool(args.status or args.request or args.command or args.scenario_file
+                   or args.ai_match)
+
+    if args.ai_match:
+        args.profile = args.ai_profile
+        if not args.launch_mode:
+            args.launch_mode = args.ai_launch_mode
 
     if (args.daemon or args.dev_loop_role == "daemon") and not control:
         owner_pid = acquire_dev_loop_lock()

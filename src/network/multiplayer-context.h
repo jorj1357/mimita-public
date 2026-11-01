@@ -594,6 +594,9 @@ struct MultiplayerContext
     uint64_t predictedHits = 0;
     uint64_t confirmedHits = 0;
     uint64_t rejectedHits = 0;
+    uint64_t damagePredictionMatches = 0;
+    uint64_t damagePredictionMismatches = 0;
+    uint64_t damagePredictionSamples = 0;
 
     // ── Ghost: show authoritative server position ─────────────────────
     bool showServerGhost = false;
@@ -715,6 +718,8 @@ struct MultiplayerContext
         uint32_t requestId = 0;
         uint32_t claimedTargetId = 0;
         glm::vec3 claimedHit{0.0f};
+        int predictedDamage = 0;
+        uint8_t predictedPelletHits = 0;
         uint64_t sentMs = 0;
         bool confirmed = false;
         bool resolved = false;

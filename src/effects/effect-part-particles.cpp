@@ -24,6 +24,29 @@ static float randomSignedRange(float amount)
     return (t * 2.0f - 1.0f) * amount;
 }
 
+static float damageNumberScale(const DamageNumberConfig& cfg, int damage)
+{
+    if (!cfg.scaleByDamage)
+        return 1.0f;
+    const float value = (float)std::abs(damage);
+    const float lowV = std::max(0.0f, cfg.damageScaleLowValue);
+    const float midV = std::max(lowV + 0.001f, cfg.damageScaleMidValue);
+    const float highV = std::max(midV + 0.001f, cfg.damageScaleHighValue);
+    if (value <= lowV)
+        return std::max(0.0f, cfg.damageScaleLow);
+    if (value < midV)
+    {
+        const float t = (value - lowV) / (midV - lowV);
+        return glm::mix(cfg.damageScaleLow, cfg.damageScaleMid, t);
+    }
+    if (value < highV)
+    {
+        const float t = (value - midV) / (highV - midV);
+        return glm::mix(cfg.damageScaleMid, cfg.damageScaleHigh, t);
+    }
+    return std::max(0.0f, cfg.damageScaleHigh);
+}
+
 EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string& victim,
                                           int damage, bool percent) {
     if (!ActorPresetWeapons::damageNumbersEnabled()) return nullptr;
@@ -60,8 +83,9 @@ EffectPart* EffectPartSystem::spawnDamage(glm::vec3 position, const std::string&
         : (damage < 0 ? ("+" + std::to_string(-damage)) : std::to_string(damage));
     e.replayType = "damage_number";
     e.billboardText = true;
-    e.scale = std::max(0.0f, dn.startScale);
-    e.endScale = std::max(0.0f, dn.endScale);
+    const float damageScale = percent ? 1.0f : damageNumberScale(dn, damage);
+    e.scale = std::max(0.0f, dn.startScale) * damageScale;
+    e.endScale = std::max(0.0f, dn.endScale) * damageScale;
     e.alpha = std::clamp(dn.startOpacity, 0.0f, 1.0f);
     return spawn(e);
 }

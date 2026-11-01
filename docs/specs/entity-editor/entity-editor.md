@@ -370,7 +370,7 @@ movement step-up and slope rules in the movement spec as the default behavior;
 define any per-surface override there and in the collision contract before
 implementation. Client and server behavior must match. The related design
 questions and initial acceptance cases are tracked in
-[`open-gameplay-issues.md`](../open-gameplay-issues.md#new-intake--2026-10-29-authored-climbable-pass-through-and-transparent-surfaces).
+[`open-gameplay-issues.md`](../open-gameplay-issues.md#deferred-design-work).
 
 ### Payload route authoring
 
@@ -765,6 +765,12 @@ The current authored shape is:
 ]
 ```
 
+When the local viewer enables Entity Visibility and the map-object category is
+enabled, bomb-site zones are visible by default as labeled circular regions.
+Their visibility does not require selecting a site or enabling a second
+bomb-site-specific debug command. The master visibility switch remains off by
+default; this requirement applies when the viewer turns it on.
+
 Entering a site circle makes the bomb interaction available; it never plants
 automatically. Planting and defusing require the mode's selected interaction
 (hold or repeated taps) while the actor remains inside the site or interaction
@@ -934,3 +940,17 @@ GLB scale/rotation values are not evidence that those overrides can already be
 edited or saved. Acceptance requires placing an asset, editing its transform
 and physical properties, attaching it to another object, saving/reloading,
 and confirming the same assembly is used by the live server.
+
+## Future workflow: live Blender-to-game map editing
+
+Creators want to edit a selected map in Blender and see validated changes in
+the game without manually repeating export, asset selection, and reload steps.
+The intended workflow may watch the Blender source, the exported GLB, or both,
+then request a safe map reload after a complete valid export. This is a deferred
+workflow idea, not a current capability or implementation authorization.
+
+Before implementation, define how Blender produces the game asset, how a
+complete save/export is detected, how geometry and map data are validated, how
+the game avoids loading a partial asset, how live reload errors are shown, and
+how local edits reach an authorized remote server. Keep this workflow connected
+to the in-game editor and shared asset-management rules.

@@ -11,6 +11,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <vector>
@@ -673,8 +674,12 @@ void resolveActorPairCollisions(
         outputs[i].pos = actors[i].pos;
         outputs[i].vel = actors[i].vel;
         outputs[i].externalImpulse = actors[i].externalImpulse;
-        outputs[i].onGround = actors[i].onGround;
-        outputs[i].stableOnGround = actors[i].stableOnGround;
+        // Only static-world contact survives into the pair pass. Actor support
+        // is re-established below and must never masquerade as a map floor.
+        outputs[i].hasWorldContact = actors[i].hasWorldContact;
+        outputs[i].onGround = actors[i].onGround && actors[i].hasWorldContact;
+        outputs[i].stableOnGround =
+            actors[i].stableOnGround && actors[i].hasWorldContact;
     }
 
     Scratch& s = scratch();
@@ -833,4 +838,88 @@ void resolveActorPairCollisions(
 
     if (outStats)
         *outStats = stats;
+}
+
+bool actorPairSupportSelfTest(std::string* summary)
+{
+    ActorCollisionData data;
+    ActorCollisionProfile profile;
+    profile.id = "default";
+    profile.capsuleRadiusM = 0.7f;
+    profile.capsuleHeightM = 3.6f;
+    profile.push.supportTopToleranceM = 0.2f;
+    profile.push.supportSnapMaxM = 0.35f;
+    data.profiles.emplace(profile.id, profile);
+    data.broadphaseCellSizeM = 4.0f;
+    data.maxCandidatePairs = 64;
+
+    bool ok = true;
+    std::string report;
+    const auto expect = [&](bool condition, const char* label) {
+        report += std::string(condition ? "PASS " : "FAIL ") + label + "\n";
+        ok = ok && condition;
+    };
+
+    ActorPairCollisionActor actors[2];
+    actors[0].id = 1;
+    actors[0].kind = ActorPairKind::Player;
+    actors[0].pos = glm::vec3(0.0f, 0.0f, -0.2f);
+    actors[0].prevPos = actors[0].pos;
+    actors[0].onGround = true;
+    actors[0].hasWorldContact = true;
+    actors[0].profile = &data.profiles.at("default");
+
+    actors[1].id = 2;
+    actors[1].kind = ActorPairKind::Npc;
+    actors[1].pos = glm::vec3(0.4f, 0.0f, 3.3f);
+    actors[1].prevPos = actors[1].pos;
+    actors[1].onGround = false;
+    actors[1].hasWorldContact = false;
+    actors[1].profile = &data.profiles.at("default");
+
+    ActorPairCollisionOutput outputs[2];
+    ActorPairCollisionStats stats;
+    {
+        const Capsule lowerCap = actorPairCapsuleFor(*actors[0].profile,
+            actors[0].prevPos, 0.0f, 1.0f, false);
+        const Capsule upperCap = actorPairCapsuleFor(*actors[1].profile,
+            actors[1].prevPos, 0.0f, 1.0f, false);
+        report += "caps lower=(" + std::to_string(lowerCap.a.z) + "," +
+            std::to_string(lowerCap.b.z) + ",r=" + std::to_string(lowerCap.r) +
+            ") upper=(" + std::to_string(upperCap.a.z) + "," +
+            std::to_string(upperCap.b.z) + ",r=" + std::to_string(upperCap.r) + ")\n";
+    }
+    resolveActorPairCollisions(actors, 2, 1.0f / 60.0f, data, outputs, &stats,
+                               "selftest", 1);
+    report += "stats pairs=" + std::to_string(stats.candidatePairs) +
+        " narrow=" + std::to_string(stats.narrowPairs) +
+        " contacts=" + std::to_string(stats.contacts) +
+        " supports=" + std::to_string(stats.supports) +
+        " support_key=" + std::to_string(outputs[1].supportKey) +
+        " on_ground=" + std::to_string((int)outputs[1].onGround) + "\n";
+    expect(stats.supports == 1, "stacked actor registers support");
+    expect(outputs[1].supportKey == actorPairKey(ActorPairKind::Player, 1),
+           "support key names the lower actor");
+    expect(outputs[1].onGround, "supported actor is on ground");
+    expect(!outputs[1].hasWorldContact,
+           "actor support is not static-world contact");
+
+    ActorPairCollisionActor falling[2];
+    falling[0] = actors[0];
+    falling[1] = actors[1];
+    falling[1].pos = glm::vec3(0.4f, 0.0f, 20.0f);
+    falling[1].prevPos = falling[1].pos;
+    falling[1].onGround = true;
+    falling[1].hasWorldContact = false;
+    falling[1].previousSupportKey = outputs[1].supportKey;
+    ActorPairCollisionOutput gone[2];
+    resolveActorPairCollisions(falling, 2, 1.0f / 60.0f, data, gone, &stats,
+                               "selftest", 2);
+    expect(gone[1].supportKey == 0, "separated actor loses support key");
+    expect(!gone[1].onGround, "lost support does not fabricate ground");
+    expect(!gone[1].hasWorldContact,
+           "lost support does not fabricate world contact");
+
+    if (summary) *summary = report;
+    return ok;
 }

@@ -1330,6 +1330,50 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         {
             const bool targetMatched =
                 claimIt->second.claimedTargetId == event->targetPlayerId;
+            const int predictedDamage = claimIt->second.predictedDamage;
+            if (predictedDamage > 0 && event->damage > 0)
+            {
+                ++ctx.damagePredictionSamples;
+                const int delta = event->damage - predictedDamage;
+                const float ratio = std::fabs((float)delta) /
+                    (float)std::max(1, predictedDamage);
+                if (delta == 0)
+                {
+                    ++ctx.damagePredictionMatches;
+                }
+                else
+                {
+                    ++ctx.damagePredictionMismatches;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "net.prediction.damage.mismatch",
+                        "ATTACK_" + std::to_string(event->causeSerial),
+                        "predicted damage differed from authoritative damage",
+                        (uint32_t)event->header.tick,
+                        {{"predicted_damage", predictedDamage},
+                         {"actual_damage", event->damage},
+                         {"delta", delta},
+                         {"ratio", ratio},
+                         {"target", event->targetPlayerId},
+                         {"weapon", networkWeaponTypeName(event->weapon)},
+                         {"pellet_hits", claimIt->second.predictedPelletHits}});
+                }
+                if (ctx.damagePredictionSamples % 60 == 0)
+                {
+                    const double matchRate =
+                        (double)ctx.damagePredictionMatches /
+                        (double)ctx.damagePredictionSamples;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "net.prediction.accuracy", "damage-prediction",
+                        "rolling predicted-versus-actual damage accuracy",
+                        (uint32_t)event->header.tick,
+                        {{"samples", ctx.damagePredictionSamples},
+                         {"matches", ctx.damagePredictionMatches},
+                         {"mismatches", ctx.damagePredictionMismatches},
+                         {"accuracy", matchRate}});
+                }
+            }
             claimIt->second.confirmed = true;
             claimIt->second.resolved = true;
             if (!targetMatched)
