@@ -112,7 +112,8 @@
       "tap_progress_seconds": 0.1,
       "visual": {
         "pulse": true,
-        "radius": 2.35,
+        // "radius": 2.35,
+        "radius": 5.35,
         "pulse_amplitude": 0.15,
         "period_seconds": 1.5,
         "color": [
