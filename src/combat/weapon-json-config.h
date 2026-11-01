@@ -8,6 +8,8 @@ namespace WeaponData {
 
 void loadWeaponJsonConfig();
 nlohmann::json readWeaponDefinitionRoot();
+const nlohmann::json& cachedWeaponDefinitionRoot();
+bool hasCachedWeaponDefinitionRoot();
 std::string weaponDefinitionSignature();
 void registerWeaponFromJson(WeaponDefinition def, bool builtin = true);
 // Registers any JSON-only weapon/moveset definition whose id has no builtin

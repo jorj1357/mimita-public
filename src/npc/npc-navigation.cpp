@@ -161,7 +161,7 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
     glm::vec3 forwardNormal{0.0f};
     const bool forwardHit = rayHitsAny(origin, desiredDir, checkDist, candidates, world,
                                        nullptr, &forwardNormal);
-    const bool forwardBlocked = forwardHit && forwardNormal.z < kWalkableSlopeDot;
+    const bool forwardBlocked = forwardHit && std::fabs(forwardNormal.z) < kWalkableSlopeDot;
     const bool forwardUnsupported = cfg.wallGroundSupportRequired &&
         !hasGroundSupport(npc, desiredDir, world, checkDist,
                           cfg.wallGroundProbeDepth, candidates);
@@ -200,7 +200,7 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         glm::vec3 altNormal{0.0f};
         const bool altHit = rayHitsAny(origin, altDir, searchDist,
                                        candidates, world, &hitDistance, &altNormal);
-        const bool blocked = altHit && altNormal.z < kWalkableSlopeDot;
+        const bool blocked = altHit && std::fabs(altNormal.z) < kWalkableSlopeDot;
         const bool unsupported = cfg.wallGroundSupportRequired &&
             !hasGroundSupport(npc, altDir, world, searchDist,
                               cfg.wallGroundProbeDepth, candidates);
@@ -238,7 +238,7 @@ glm::vec3 NpcNavigation::wallAvoidDirection(const Npc& npc, glm::vec3 desiredDir
         glm::vec3 altNormal{0.0f};
         const bool altHit = rayHitsAny(origin, altDir, searchDist,
                                        candidates, world, &hitDistance, &altNormal);
-        const bool blocked = altHit && altNormal.z < kWalkableSlopeDot;
+        const bool blocked = altHit && std::fabs(altNormal.z) < kWalkableSlopeDot;
         if (blocked && hitDistance > bestClearance) {
             bestClearance = hitDistance;
             bestDir = altDir;
@@ -425,7 +425,7 @@ bool NpcNavigation::obstacleInDirection(const Npc& npc, glm::vec3 dir, float che
     glm::vec3 hitNormal{0.0f};
     if (!rayHitsAny(origin, checkDir, checkDist, candidates, world, nullptr, &hitNormal))
         return false;
-    return hitNormal.z < kWalkableSlopeDot;
+    return std::fabs(hitNormal.z) < kWalkableSlopeDot;
 }
 
 bool NpcNavigation::lowObstacleAhead(const Npc& npc, glm::vec3 dir, const World& world,
@@ -444,7 +444,7 @@ bool NpcNavigation::lowObstacleAhead(const Npc& npc, glm::vec3 dir, const World&
     glm::vec3 lowNormal{0.0f};
     const bool lowBlocked =
         rayHitsAny(lowOrigin, checkDir, probeDist, candidates, world, nullptr, &lowNormal) &&
-        lowNormal.z < kWalkableSlopeDot;
+        std::fabs(lowNormal.z) < kWalkableSlopeDot;
     if (!lowBlocked)
         return false;
 
@@ -454,7 +454,7 @@ bool NpcNavigation::lowObstacleAhead(const Npc& npc, glm::vec3 dir, const World&
     glm::vec3 highNormal{0.0f};
     const bool highBlocked =
         rayHitsAny(highOrigin, checkDir, probeDist, candidates, world, nullptr, &highNormal) &&
-        highNormal.z < kWalkableSlopeDot;
+        std::fabs(highNormal.z) < kWalkableSlopeDot;
     return !highBlocked;
 }
 

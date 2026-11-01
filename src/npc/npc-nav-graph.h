@@ -29,7 +29,7 @@ struct NpcNavGraphSettings
     float chunkSize = 32.0f;          // graph chunk edge length (XZ)
     float cellSize = 2.0f;            // coarse node spacing
     float maxWalkableSlopeDot = 0.80f;// cos(max walkable slope); shared rule
-    float maxStepHeight = 0.65f;      // rise walked up without a jump
+    float maxStepHeight = 0.25f;      // rise walked up without a jump
     float maxDropHeight = 14.0f;      // drop the actor may fall
     float jumpHeight = 2.0f;          // legal rise via a jump
     float actorRadius = 0.45f;        // capsule radius for edge clearance

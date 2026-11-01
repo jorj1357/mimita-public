@@ -62,7 +62,15 @@ static WeaponViewModelConfig parseOne(const json& root) {
 
 void WeaponConfig::load() {
     try {
-        json root = WeaponData::readWeaponDefinitionRoot();
+        json fallback;
+        const json* rootPtr = nullptr;
+        if (WeaponData::hasCachedWeaponDefinitionRoot()) {
+            rootPtr = &WeaponData::cachedWeaponDefinitionRoot();
+        } else {
+            fallback = WeaponData::readWeaponDefinitionRoot();
+            rootPtr = &fallback;
+        }
+        const json& root = *rootPtr;
         std::unordered_map<std::string, WeaponViewModelConfig> candidate;
 
         for (auto it = root.begin(); it != root.end(); ++it) {

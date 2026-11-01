@@ -39,8 +39,11 @@
 "grenade_effect": null,
 "custom_params": {
     "distanceFalloffStart": 240.0,
-    "minDamageFraction": 0.5,
+    // "minDamageFraction": 0.5,
+    "minDamageFraction": 1.0,
     "falloffExponent": 1.1,
+    // "falloffExponent": 1.0,
+    // "falloffExponent": 0.5,
     "limbDamageMultiplier": 0.75,
     "minAngleFactor": 0.45,
     "shootPoseTime": 0.12,
@@ -50,7 +53,9 @@
 "damage_animation_mode": null,
 "damage_scale": null,
 "enemy_impulse_multiplier": 1.0,
+// npcs kill me too fast 2026 11 01 1756 jorj 
 "fire_delay": 0.008,
+// "fire_delay": 0.1,
 "fire_mode": "semi_auto",
 "headshot_multiplier": 3.0,
 "hitscan": true,

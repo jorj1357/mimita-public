@@ -15,7 +15,7 @@ struct NavigationAgentProfile
 {
     float radius = 0.45f;
     float height = 1.8f;
-    float stepHeight = 0.65f;
+    float stepHeight = 0.25f;
     float maxSlopeDegrees = 53.0f;
 };
 

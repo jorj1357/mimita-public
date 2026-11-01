@@ -314,6 +314,9 @@ public:
     // Server-owned grenade hazard snapshot consumed by perception/utility.
     // One copy per fixed tick; never rebuilt per NPC.
     void setHazardEffects(const std::vector<AreaEffect>& effects);
+    // Live frag projectiles are rebuilt each tick and merged with area hazards
+    // by perception/utility. They may explode before the next area-effect tick.
+    void setProjectileHazards(const std::vector<AreaEffect>& effects);
 
     // The one shared NPC movement executor. Mode-specific code builds the
     // context (selected target + objective + optional goal) and calls this;
@@ -356,6 +359,7 @@ public:
 private:
     std::vector<Npc> npcs;
     std::vector<AreaEffect> mHazardEffects;
+    std::vector<AreaEffect> mProjectileHazards;
     uint32_t nextId = 100;
     float globalDifficulty_ = -1.0f;
     float currentTime = 0.0f;

@@ -155,7 +155,7 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.objectiveState = ctx.enemyAreaKnown ? 0.5f : 0.0f;
             {
                 float huntBias = std::max(0.0f, ctx.travelHuntBias);
-                if (ctx.team == 1 && !ctx.planted) {
+                if (ctx.objectiveKnown && ctx.team == 1 && !ctx.planted) {
                     // Terrorists' top priority is reaching the chosen site and
                     // planting; do not divert to enemy reports first.
                     huntBias = 0.0f;
@@ -181,7 +181,7 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.relevance = ctx.focusKnown ? 0.85f : 0.0f;
             s.teamInformation = ctx.focusKnown ? 1.0f : 0.0f;
             s.distance = (ctx.squadSlotKnown && !ctx.atSquadSlot) ? 1.0f : 0.5f;
-            s.total = s.relevance * (ctx.atSquadSlot ? 0.2f : 1.0f) *
+            s.total = s.relevance * (ctx.atSquadSlot ? 0.85f : 1.0f) *
                       (ctx.hasVisibleTarget ? 0.35f : 1.0f) *
                       (0.5f + 0.5f * teamFactor);
             break;

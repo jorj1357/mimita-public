@@ -22,9 +22,9 @@ namespace {
 constexpr float kArriveXZ = 1.1f;
 constexpr float kArriveZ = 1.4f;
 constexpr float kRetargetDist = 1.6f;
-constexpr float kStepUp = 0.65f;
+constexpr float kStepUp = 0.25f;
 constexpr float kDropThreshold = 2.0f;     // steeper than this is a real drop
-constexpr float kWalkableSlope = 1.0f;     // |dz|/dist walkable on foot
+constexpr float kWalkableSlope = 0.75f;    // |dz|/dist walkable on foot
 constexpr float kJumpTakeoffDist = 3.0f;
 constexpr float kDashMinDistance = 8.0f;
 constexpr int kTraversalStuckTicks = 75;   // ~1.25s with no progress

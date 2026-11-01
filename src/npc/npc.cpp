@@ -222,7 +222,8 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
 }
 
 void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
-                const std::vector<AreaEffect>* hazards)
+                const std::vector<AreaEffect>* hazards,
+                const std::vector<AreaEffect>* projectileHazards)
 {
     NpcSensorContext sensors;
     // The sensor clock is the fixed-tick time source for throttled diagnostics
@@ -449,38 +450,39 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
     // blocker above. The snapshot is server-owned and shared by all NPCs.
     uctx.hazardActive = false;
     uctx.lookAwayKnown = false;
-    if (hazards) {
-        for (const AreaEffect& effect : *hazards) {
-            if (effect.kind != AreaEffectKind::Fire &&
-                effect.kind != AreaEffectKind::DarkBang &&
-                effect.kind != AreaEffectKind::Danger)
-                continue;
-            const float dist = glm::length(npc.body.pos - effect.position);
-            const float reactRadius = effect.radius + 1.5f;
-            if (effect.kind == AreaEffectKind::DarkBang &&
-                dist <= effect.radius + 8.0f) {
-                uctx.lookAwayKnown = true;
-                uctx.lookAwayFrom = effect.position;
-            }
-            if (dist <= reactRadius) {
-                uctx.hazardActive = true;
-                uctx.hazardPos = effect.position;
-                uctx.hazardRadius = effect.radius;
-                uctx.hazardKind = (int)effect.kind;
-            }
+    auto considerHazard = [&](const AreaEffect& effect) {
+        if (effect.kind != AreaEffectKind::Fire &&
+            effect.kind != AreaEffectKind::DarkBang &&
+            effect.kind != AreaEffectKind::Danger)
+            return;
+        const float dist = glm::length(npc.body.pos - effect.position);
+        const float reactRadius = effect.radius + 1.5f;
+        if (effect.kind == AreaEffectKind::DarkBang &&
+            dist <= effect.radius + 8.0f) {
+            uctx.lookAwayKnown = true;
+            uctx.lookAwayFrom = effect.position;
         }
-        if (uctx.hazardActive &&
-            ((uint32_t)(npc.sensors.time * 60.0f) % 120u) == 0u) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::NpcMovement, StructuredLevel::Important,
-                "npc.hazard-avoid", std::to_string(npc.id), "grenade_hazard",
-                (uint32_t)(npc.sensors.time * 60.0f),
-                nlohmann::json{{"actor", npc.id},
-                               {"hazard_kind", uctx.hazardKind},
-                               {"distance_m", glm::length(npc.body.pos - uctx.hazardPos)},
-                               {"radius_m", uctx.hazardRadius},
-                               {"action", "flee"}});
+        if (dist <= reactRadius) {
+            uctx.hazardActive = true;
+            uctx.hazardPos = effect.position;
+            uctx.hazardRadius = effect.radius;
+            uctx.hazardKind = (int)effect.kind;
         }
+    };
+    if (hazards) for (const AreaEffect& e : *hazards) considerHazard(e);
+    if (projectileHazards)
+        for (const AreaEffect& e : *projectileHazards) considerHazard(e);
+    if (uctx.hazardActive &&
+        ((uint32_t)(npc.sensors.time * 60.0f) % 120u) == 0u) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.hazard-avoid", std::to_string(npc.id), "grenade_hazard",
+            (uint32_t)(npc.sensors.time * 60.0f),
+            nlohmann::json{{"actor", npc.id},
+                           {"hazard_kind", uctx.hazardKind},
+                           {"distance_m", glm::length(npc.body.pos - uctx.hazardPos)},
+                           {"radius_m", uctx.hazardRadius},
+                           {"action", "flee"}});
     }
     npc.utilityContext = uctx;
     selectUtilityGoal(npc.utilityContext, npc.utility, dt);
@@ -646,6 +648,14 @@ NpcGoal makeNavGoal(const Npc& npc)
             // DefendSite previously had no mapping and fell through to the
             // state machine (Patrol), so defenders ignored their objective.
             if (glm::length(npc.utilityContext.objectivePos) > 0.001f) {
+                // A designated bomb recoverer must enter the pickup radius, not
+                // stop at the generic 4 m objective hold distance.
+                if (npc.utilityContext.isRecoverer) {
+                    goal.kind = NpcGoalKind::ReachPosition;
+                    goal.targetPos = npc.utilityContext.objectivePos;
+                    goal.tolerance = 0.5f;
+                    return goal;
+                }
                 const float distToObjective = glm::length(glm::vec2(
                     npc.utilityContext.objectivePos.x - npc.body.pos.x,
                     npc.utilityContext.objectivePos.y - npc.body.pos.y));
@@ -1306,6 +1316,11 @@ void NpcSystem::setHazardEffects(const std::vector<AreaEffect>& effects)
     mHazardEffects = effects;
 }
 
+void NpcSystem::setProjectileHazards(const std::vector<AreaEffect>& effects)
+{
+    mProjectileHazards = effects;
+}
+
 void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
@@ -1445,7 +1460,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
-    senseWorld(npc, world, player, safeDt, &mHazardEffects);
+    senseWorld(npc, world, player, safeDt, &mHazardEffects, &mProjectileHazards);
 
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {

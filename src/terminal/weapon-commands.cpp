@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -375,19 +376,61 @@ void registerWeaponCommands()
                                 claimedBodyPart = 3;
                             else if (!shot.bodyPart.empty())
                                 claimedBodyPart = 2;
+
+                            MimitaNet::ClaimedHitPacket claims[
+                                MimitaNet::MAX_CLAIMED_HIT_TARGETS]{};
+                            uint8_t claimCount = std::min<uint8_t>(
+                                shot.claimedHitCount,
+                                MimitaNet::MAX_CLAIMED_HIT_TARGETS);
+                            if (claimCount == 0 && claimedTargetId != 0) {
+                                claims[0].targetId = claimedTargetId;
+                                claims[0].damage = (uint16_t)std::clamp(
+                                    (int)std::round(shot.damage), 1, 65535);
+                                claims[0].pelletHits = (uint8_t)std::clamp(
+                                    wdef2->pelletCount, 1, 255);
+                                claims[0].bodyPart = claimedBodyPart;
+                                claims[0].hitX = shot.end.x;
+                                claims[0].hitY = shot.end.y;
+                                claims[0].hitZ = shot.end.z;
+                                claimCount = 1;
+                            } else {
+                                for (int i = 0; i < claimCount; ++i) {
+                                    const ShotClaim& src = shot.claimedHits[i];
+                                    claims[i].targetId = src.targetId;
+                                    claims[i].damage = (uint16_t)std::clamp(
+                                        src.damage, 1, 65535);
+                                    claims[i].pelletHits = src.pelletHits;
+                                    claims[i].bodyPart = src.bodyPart;
+                                    claims[i].hitX = src.hitPosition.x;
+                                    claims[i].hitY = src.hitPosition.y;
+                                    claims[i].hitZ = src.hitPosition.z;
+                                }
+                            }
+
+                            int primaryDamage = static_cast<int>(shot.damage);
+                            uint8_t primaryPelletHits = (uint8_t)std::clamp(
+                                wdef2->pelletCount, 1, 255);
+                            uint8_t primaryBodyPart = claimedBodyPart;
+                            for (int i = 0; i < claimCount; ++i) {
+                                if (claims[i].targetId != claimedTargetId)
+                                    continue;
+                                primaryDamage = claims[i].damage;
+                                primaryPelletHits = claims[i].pelletHits;
+                                primaryBodyPart = claims[i].bodyPart;
+                                break;
+                            }
+
                             const int requestSlot = communityRequestSlot(
                                 mpContext, wdef2->id, wdef2->slot);
                             uint32_t requestId = MimitaNet::mpSendAttackRequest(
                                 mpContext, netId, requestSlot,
                                 shot.start, direction, shot.start, attackVariant,
-                                claimedTargetId, shot.end, claimedBodyPart);
+                                claimedTargetId, shot.end, primaryBodyPart,
+                                0, 0, claims, claimCount);
                             if (requestId != 0 && claimedTargetId != 0) {
                                 auto& claim = mpContext.pendingHitClaims[requestId];
-                                claim.predictedDamage =
-                                    static_cast<int>(shot.damage);
-                                claim.predictedPelletHits =
-                                    static_cast<uint8_t>(std::clamp(
-                                        wdef2->pelletCount, 1, 255));
+                                claim.predictedDamage = primaryDamage;
+                                claim.predictedPelletHits = primaryPelletHits;
                             }
                             emitLocalAttack("attack_request_sent",
                                             {{"weapon", wdef2->id},

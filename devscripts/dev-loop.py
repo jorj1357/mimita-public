@@ -4750,6 +4750,9 @@ def run_ai_match(args: argparse.Namespace) -> int:
              "field": "accepted", "equals": True, "minimum": 1},
             {"type": "event_count_at_least", "event": "npc.damage", "minimum": 1},
             {"type": "event_count_at_least", "event": "server.damage.applied", "minimum": 1},
+            {"type": "event_count_at_least", "event": "player.ai.state", "minimum": 1},
+            {"type": "event_count_at_least", "event": "npc.focus-changed", "minimum": 1},
+            {"type": "event_count_at_least", "event": "npc.squad-sector-assigned", "minimum": 1},
         ],
         "timeout_seconds": seconds + 150.0,
     }

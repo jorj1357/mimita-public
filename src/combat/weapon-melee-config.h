@@ -23,6 +23,10 @@
 
 namespace WeaponData {
 
+// Clear the parsed animation-clip timeline index after the animation library
+// changes. The next move-set parse rebuilds it once.
+void invalidateMeleeClipIndex();
+
 enum class MeleeButton {
     Primary,   // left click / A
     Secondary, // right click / B

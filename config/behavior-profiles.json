@@ -47,7 +47,8 @@
         "deathball": 1,
         "spyknife": 1
       },
-      "weapon_visit_jitter_shots": 0,
+      // "weapon_visit_jitter_shots": 0,
+      "weapon_visit_jitter_shots": 50,
       "weapon_switch_delay_min": 0.02,
       "weapon_switch_delay_max": 0.1,
       "weapon_cycle_include_melee": true

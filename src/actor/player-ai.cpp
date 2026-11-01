@@ -16,10 +16,13 @@
 
 #include "camera.h"
 #include "entities/player.h"
+#include "combat/weapon-registry.h"
+#include "devtools/terminal.h"
 #include "input/input-frame.h"
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/config.h"
 #include "terminal/terminal-state.h"
 #include "debug/structured-log.h"
 
@@ -58,8 +61,6 @@ TargetView chooseTarget(const Player& player)
         if (!hostile(player, candidate)) return;
         const glm::vec3 delta = candidate.pos - player.pos;
         const float distance = glm::length(delta);
-        // Prefer nearby hostiles, with a small bias toward the current aim
-        // direction so the AI does not oscillate between two equidistant actors.
         const glm::vec3 planar(delta.x, delta.y, 0.0f);
         const float len = glm::length(planar);
         float score = distance;
@@ -91,9 +92,15 @@ bool worldBlocks(const World& world, const glm::vec3& from, const glm::vec3& to)
     if (distance < 0.5f) return false;
     delta /= distance;
     float hitDistance = distance;
-    if (!rayTraverseGridCells(world, from, delta, distance, hitDistance, nullptr))
+    glm::vec3 normal(0.0f);
+    if (!rayTraverseGridCells(world, from, delta, distance, hitDistance, &normal))
         return false;
-    return hitDistance > 0.1f && hitDistance < distance - 0.3f;
+    if (hitDistance <= 0.1f || hitDistance >= distance - 0.3f)
+        return false;
+    if (normal.z < 0.0f)
+        normal = -normal;
+    // A walkable ramp is terrain, not a wall. Only a non-walkable face blocks.
+    return normal.z <= MAX_WALKABLE_SLOPE_DOT;
 }
 
 glm::vec2 avoidWalls(const World& world, const Player& player,
@@ -101,10 +108,16 @@ glm::vec2 avoidWalls(const World& world, const Player& player,
 {
     if (glm::length(desired) < 0.001f) return desired;
     desired = glm::normalize(desired);
-    const glm::vec3 origin = player.pos + glm::vec3(0.0f, 0.0f, 0.9f);
-    const auto clear = [&](glm::vec2 direction) {
+    const auto blockedAt = [&](glm::vec2 direction, float z) {
+        const glm::vec3 origin(player.pos.x, player.pos.y, z);
         const glm::vec3 to = origin + glm::vec3(direction.x, direction.y, 0.0f) * 2.5f;
-        return !worldBlocks(world, origin, to);
+        return worldBlocks(world, origin, to);
+    };
+    const auto clear = [&](glm::vec2 direction) {
+        // A low walkable lip/ramp must not read as a full wall. A tall wall
+        // blocks both the foot-level and chest-level probes.
+        return !(blockedAt(direction, player.pos.z - 1.2f) &&
+                 blockedAt(direction, player.pos.z + 0.4f));
     };
     if (clear(desired)) return desired;
     static const float angles[] = {25.0f, -25.0f, 50.0f, -50.0f,
@@ -117,7 +130,84 @@ glm::vec2 avoidWalls(const World& world, const Player& player,
             desired.x * std::sin(radians) + desired.y * std::cos(radians));
         if (clear(candidate)) return candidate;
     }
-    return -desired;
+    // Every candidate sees walkable terrain or a low lip; let the shared
+    // movement solver climb it instead of reversing or oscillating.
+    return desired;
+}
+
+void applySmoothAim(Camera& camera, float targetYaw, float targetPitch)
+{
+    static auto last = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(now - last).count();
+    last = now;
+    dt = std::clamp(dt, 0.0f, 0.05f);
+    if (dt <= 0.0f) return;
+
+    float deltaYaw = targetYaw - camera.yaw;
+    while (deltaYaw > 180.0f) deltaYaw -= 360.0f;
+    while (deltaYaw < -180.0f) deltaYaw += 360.0f;
+    constexpr float kMaxTurnDegreesPerSecond = 720.0f;
+    const float maxStep = kMaxTurnDegreesPerSecond * dt;
+    const float yawStep = std::clamp(deltaYaw, -maxStep, maxStep);
+    const float pitchStep = std::clamp(targetPitch - camera.pitch, -maxStep, maxStep);
+    camera.yaw += yawStep;
+    camera.pitch = std::clamp(camera.pitch + pitchStep, -89.0f, 89.0f);
+    camera.updateVectors();
+}
+
+bool usableWeapon(const Player& player, const std::string& id)
+{
+    if (id.empty() || id == "nothing") return false;
+    auto it = player.weaponRuntimes.find(id);
+    if (it == player.weaponRuntimes.end()) return false;
+    const WeaponDefinition* def = WeaponRegistry::instance().get(id);
+    if (!def) return false;
+    if (def->magazineSize <= 0) return true; // continuous-contact melee
+    return it->second.currentAmmo > 0 || it->second.reserveAmmo > 0;
+}
+
+std::string chooseWeapon(const Player& player, const TargetView& target)
+{
+    static const char* closeWeapons[] = {
+        "chainsaw", "swordsword", "mace", "shotgun", "revolver"};
+    static const char* midWeapons[] = {
+        "shotgun", "revolver", "rocket_launcher", "chainsaw"};
+    static const char* farWeapons[] = {
+        "revolver", "rocket_launcher", "shotgun"};
+    const char* const* list = midWeapons;
+    size_t count = sizeof(midWeapons) / sizeof(midWeapons[0]);
+    if (target.distance < 4.0f) {
+        list = closeWeapons;
+        count = sizeof(closeWeapons) / sizeof(closeWeapons[0]);
+    } else if (target.distance > 18.0f) {
+        list = farWeapons;
+        count = sizeof(farWeapons) / sizeof(farWeapons[0]);
+    }
+    for (size_t i = 0; i < count; ++i)
+        if (usableWeapon(player, list[i])) return list[i];
+    return {};
+}
+
+void maybeEquipWeapon(const Player& player, const TargetView& target)
+{
+    static uint64_t lastAttemptTick = 0;
+    const uint64_t tick = player.movementSimulationTick;
+    if (tick < lastAttemptTick + 90u) return;
+    const std::string from = player.equippedWeaponId;
+    const std::string wanted = chooseWeapon(player, target);
+    if (wanted.empty() || wanted == from) return;
+    lastAttemptTick = tick;
+    Terminal::instance().execute("equipweapon " + wanted);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "player.ai.equip", "player-ai", "normal equip command",
+        (uint32_t)tick,
+        {{"player_id", MP_CONTEXT.localPlayerId},
+         {"from", from},
+         {"to", wanted},
+         {"target_distance", target.distance}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 } // namespace
@@ -128,7 +218,7 @@ bool active() { return gActive; }
 
 void setActive(bool enabled) { gActive = enabled; }
 
-InputFrame buildFrame(const Player& player, const Camera& camera,
+InputFrame buildFrame(const Player& player, Camera& camera,
                       const World& world)
 {
     InputFrame frame;
@@ -182,6 +272,12 @@ InputFrame buildFrame(const Player& player, const Camera& camera,
 
     worldMove = avoidWalls(world, player, worldMove);
 
+    // The real camera is part of the player. Turn it smoothly toward the same
+    // point the body/weapon is aiming at; otherwise engineTickCamera rebuilds
+    // front from the stale yaw and syncPlayerYawFromCamera pulls the body back.
+    if (target.valid)
+        applySmoothAim(camera, desiredYaw, desiredPitch);
+
     const uint32_t tick = (uint32_t)player.movementSimulationTick;
     const uint32_t playerId = MP_CONTEXT.localPlayerId;
     if (((tick + playerId) % 60u) == 0u) {
@@ -196,7 +292,11 @@ InputFrame buildFrame(const Player& player, const Camera& camera,
              {"has_line_of_sight", hasLineOfSight},
              {"move", {worldMove.x, worldMove.y}},
              {"aim_yaw", desiredYaw},
+             {"camera_yaw", camera.yaw},
              {"aim_pitch", desiredPitch},
+             {"camera_pitch", camera.pitch},
+             {"body_yaw", player.yaw},
+             {"camera_body_error_deg", std::remainder(camera.yaw - player.yaw, 360.0f)},
              {"pos", {player.pos.x, player.pos.y, player.pos.z}}},
             __FILE__, __LINE__, __FUNCTION__);
     }
@@ -205,12 +305,12 @@ InputFrame buildFrame(const Player& player, const Camera& camera,
     frame.moveY = worldMove.y;
     frame.movementPressed = glm::length(worldMove) > 0.001f;
     frame.movementJustPressed = frame.movementPressed;
-    frame.lookYaw = desiredYaw;
-    frame.lookPitch = desiredPitch;
-    frame.camForward = aimDirection;
+    frame.lookYaw = camera.yaw;
+    frame.lookPitch = camera.pitch;
+    frame.camForward = camera.front;
 
-    const glm::vec3 forward(std::cos(glm::radians(desiredYaw)),
-                            std::sin(glm::radians(desiredYaw)), 0.0f);
+    const glm::vec3 forward(std::cos(glm::radians(camera.yaw)),
+                            std::sin(glm::radians(camera.yaw)), 0.0f);
     const glm::vec3 right = glm::normalize(glm::cross(forward, glm::vec3(0, 0, 1)));
     frame.wishForward = glm::dot(glm::vec3(worldMove.x, worldMove.y, 0.0f), forward);
     frame.wishSide = glm::dot(glm::vec3(worldMove.x, worldMove.y, 0.0f), right);
@@ -223,13 +323,7 @@ InputFrame buildFrame(const Player& player, const Camera& camera,
 
     if (target.valid && hasLineOfSight && target.distance < 45.0f) {
         const float aimError = glm::degrees(std::acos(glm::clamp(
-            glm::dot(aimDirection,
-                glm::vec3(std::cos(glm::radians(camera.yaw)) *
-                              std::cos(glm::radians(camera.pitch)),
-                          std::sin(glm::radians(camera.yaw)) *
-                              std::cos(glm::radians(camera.pitch)),
-                          std::sin(glm::radians(camera.pitch)))),
-            -1.0f, 1.0f)));
+            glm::dot(aimDirection, camera.front), -1.0f, 1.0f)));
         frame.primaryHeld = aimError < 12.0f;
         frame.secondaryHeld = target.distance < 8.0f && aimError < 18.0f;
     }
@@ -240,6 +334,9 @@ InputFrame buildFrame(const Player& player, const Camera& camera,
     if (it != player.weaponRuntimes.end() && it->second.currentAmmo <= 0 &&
         it->second.reserveAmmo > 0 && !it->second.isReloading)
         frame.reloadPressed = true;
+
+    if (target.valid)
+        maybeEquipWeapon(player, target);
 
     return frame;
 }

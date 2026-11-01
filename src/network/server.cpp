@@ -1599,6 +1599,27 @@ static void simulateOneServerTick(ListenServerState& state)
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);
+        if (state.npcSystem) {
+            // Live frag projectiles are hazards before they detonate. Rebuild
+            // one small snapshot per tick; do not rescan projectiles per NPC.
+            std::vector<AreaEffect> projectileHazards;
+            for (const auto& kv : state.projectiles) {
+                const ServerProjectile& projectile = kv.second;
+                if (projectile.exploded) continue;
+                const std::string* id =
+                    weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+                if (!id || *id != "frag") continue;
+                AreaEffect hazard;
+                hazard.kind = AreaEffectKind::Danger;
+                hazard.position = projectile.position;
+                hazard.radius = projectile.splashRadius;
+                hazard.height = 0.0f;
+                hazard.durationTicks = 30;
+                hazard.alive = true;
+                projectileHazards.push_back(hazard);
+            }
+            state.npcSystem->setProjectileHazards(projectileHazards);
+        }
 
         tickServerMeleeActions(state.sock, state.players, state.npcs,
                                state.tick, state.totalPacketsOut);

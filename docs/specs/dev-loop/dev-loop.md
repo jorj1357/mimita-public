@@ -2330,6 +2330,16 @@ journal evidence for the control transition, actor-pair contacts, accepted NPC
 shots, NPC damage, and at least one applied damage result. Build identity,
 journal evidence, and human visual review remain separate claims.
 
+The AI-controlled player also turns the real camera smoothly toward its target,
+can equip a range-appropriate weapon through the normal equip command, and
+climbs walkable slopes instead of classifying them as walls. The AI-match
+scenario asserts AI state, focus changes, and squad sector assignment in
+addition to contact/combat evidence.
+
+Watching the same live run from the NPC/AI perspective is a high-value review
+surface. Use the AI camera/aim journal records together with squad focus and
+push distance; do not infer team movement from score alone.
+
 The journal may rotate into sealed `events-NNNN.jsonl` segments plus the active
 `events.jsonl`. The runner's cursor reads them chronologically as one run.
 

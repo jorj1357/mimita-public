@@ -2852,6 +2852,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 retry.claimedHitY = p.claimedHit.y;
                 retry.claimedHitZ = p.claimedHit.z;
                 retry.claimedBodyPart = p.claimedBodyPart;
+                retry.claimedHitCount = p.claimedHitCount;
+                for (int i = 0; i < p.claimedHitCount &&
+                     i < MAX_CLAIMED_HIT_TARGETS; ++i)
+                    retry.claimedHits[i] = p.claimedHits[i];
                 mpSendPacket(ctx, &retry, sizeof(retry));
                 p.lastSentMs = now;
                 p.attempts++;

@@ -4,7 +4,7 @@
 * Carries compact gameplay state for join, input, snapshots, weapons, projectiles, and lifecycle.
 * Keeps packet layouts explicit and protocol-versioned for client/server compatibility.
 * Does NOT own transport sockets, validation policy, gameplay simulation, or rendering.
-* Does NOT trust client health, damage, death, ammo, score, projectile hits, or weapon outcomes.
+* Carries validated client-first hitscan aggregates; the server caps and validates them.
 * Does NOT encode private runtime-only Player or MovementState object layouts.
 */
 
@@ -28,7 +28,9 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 46: MeleeHitEventPacket carries replicated weapon-clash effect flags.
 // 47: DuelStatePacket matchMode fits full gamemode IDs (was silently truncated).
 // 48: DuelStatePacket adds the shared loss-aftermath phase/effect state.
-constexpr uint16_t PROTOCOL_VERSION = 48;
+// 49: AttackRequestPacket carries validated client-first per-target hitscan
+//     aggregates so shotgun/revolver damage can match local prediction.
+constexpr uint16_t PROTOCOL_VERSION = 49;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1684,6 +1686,25 @@ struct ProjectileFireResultPacket
 // All weapons (hitscan, projectile, melee) share this packet.
 // weaponDefNetworkId is a stable uint16 assigned during protocol init.
 // basedOnInputSequence ties the attack to a specific equip/input frame.
+constexpr int MAX_CLAIMED_HIT_TARGETS = 8;
+
+// Client-local hitscan aggregate for one target. The server validates target
+// identity, life, range, occlusion, hit volume, and caps damage before using
+// the claimed total. This is the client-authority contract: the shooter owns
+// what they saw; the server rejects only implausible outcomes.
+struct ClaimedHitPacket
+{
+    uint32_t targetId = 0;
+    uint32_t targetSpawnGeneration = 0;
+    uint16_t damage = 0;
+    uint8_t pelletHits = 0;
+    uint8_t bodyPart = 0; // 0=none 1=head 2=torso 3=leg
+    uint8_t pad[2] = {};
+    float hitX = 0.0f;
+    float hitY = 0.0f;
+    float hitZ = 0.0f;
+};
+
 struct AttackRequestPacket
 {
     PacketHeader header;
@@ -1711,6 +1732,11 @@ struct AttackRequestPacket
     uint8_t claimedBodyPart = 0; // 0=none 1=head 2=torso 3=leg
     uint8_t reservedAttack[2] = {};
     uint32_t movesetHash = 0;
+    // Validated client-first per-target hitscan claims. Single-ray weapons use
+    // one entry; multi-pellet weapons use one entry per target.
+    uint8_t claimedHitCount = 0;
+    uint8_t claimPad[3] = {};
+    ClaimedHitPacket claimedHits[MAX_CLAIMED_HIT_TARGETS];
 };
 
 struct AttackResultPacket
@@ -1883,7 +1909,9 @@ static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket 
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "PelletBlastEventPacket exceeds safe datagram limit");
 static_assert(sizeof(PelletBlastTargetResult) <= 24, "PelletBlastTargetResult is too large");
-static_assert(sizeof(AttackRequestPacket) <= 128, "AttackRequestPacket is too large");
+// 8 claimed-hit targets (multi-pellet shotgun claims) exceed the legacy 128-byte
+// bound. Keep the explicit cap but allow the intended claimed-hit payload.
+static_assert(sizeof(AttackRequestPacket) <= 384, "AttackRequestPacket is too large");
 static_assert(sizeof(AttackResultPacket) <= 96, "AttackResultPacket is too large");
 static_assert(sizeof(ReloadRequestPacket) <= 48, "ReloadRequestPacket is too large");
 static_assert(sizeof(ReloadResultPacket) <= 72, "ReloadResultPacket is too large");

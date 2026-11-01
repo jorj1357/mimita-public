@@ -175,7 +175,8 @@ NpcNavGraph::GraphChunk* NpcNavGraph::buildChunk(const World& world,
             for (int ti : chunk.triangles) {
                 if (ti < 0 || ti >= (int)world.collisionMesh.triangles.size()) continue;
                 const CollisionTriangle& tri = world.collisionMesh.triangles[(size_t)ti];
-                if (tri.normal.z < walkableDot) continue;
+                const glm::vec3 surfaceNormal = tri.normal.z < 0.0f ? -tri.normal : tri.normal;
+                if (surfaceNormal.z < walkableDot) continue;
                 float t = 0.0f;
                 if (!rayTriangle(origin, down, tri, depth, t)) continue;
                 const float z = fromZ - t;
@@ -185,9 +186,9 @@ NpcNavGraph::GraphChunk* NpcNavGraph::buildChunk(const World& world,
                 if (dup) continue;
                 NavigationSurface surf;
                 surf.position = glm::vec3(x, y, z);
-                surf.normal = tri.normal;
+                surf.normal = surfaceNormal;
                 surf.height = z;
-                surf.kind = classifySurface(tri.normal, walkableDot);
+                surf.kind = classifySurface(surfaceNormal, walkableDot);
                 surf.walkable = true;
                 column.push_back(surf);
             }

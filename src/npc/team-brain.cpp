@@ -400,7 +400,7 @@ void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
     // is the behavior that stops one NPC from running off alone across the map.
     const float rallyLimit = std::max(
         tuning.spreadRadiusMeters * 1.25f,
-        tuning.rallyDistanceMeters * (1.0f + tuning.cohesion));
+        tuning.rallyDistanceMeters * std::max(0.25f, 1.0f - tuning.cohesion));
     for (int i = 0; i < count; ++i) {
         const glm::vec2 memberXy(ordered[i].pos.x, ordered[i].pos.y);
         const glm::vec2 anchorXy(sq.anchor.x, sq.anchor.y);

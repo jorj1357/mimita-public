@@ -45,7 +45,7 @@ struct NpcNavigationSettings
     std::string blockedBehavior = "turn_then_repath";
 
     // Maximum rise walked up without a jump.
-    float maxStepHeight = 0.65f;
+    float maxStepHeight = 0.25f;
 
     // How far ahead the navigator probes for a blocking wall (meters).
     float wallProbeDistance = 1.6f;

@@ -6907,6 +6907,8 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         tun.approachReassignTicks = npc.behavior.approachReassignTicks;
         tun.approachDistanceMeters = npc.behavior.approachDistanceMeters;
         tun.slotStickiness = npc.behavior.slotStickiness;
+        if (d.matchMode == "tdm")
+            tun.maxAttackersPerTarget = std::max(tun.maxAttackersPerTarget, 16);
         set = true;
     }
     auto gatherMembers = [&](int team, std::vector<SquadMember>& out) {
@@ -6934,10 +6936,20 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     // Focus the enemy nearest the squad's own centroid, not whichever report
     // happened to be inserted first. This is what makes a squad converge as a
     // unit instead of splitting toward unrelated enemies.
-    const bool hasFocusA = d.teamBrainA.selectFocus(
+    bool hasFocusA = d.teamBrainA.selectFocus(
         centroidA, focusA, focusActorA, focusConfA);
-    const bool hasFocusB = d.teamBrainB.selectFocus(
+    bool hasFocusB = d.teamBrainB.selectFocus(
         centroidB, focusB, focusActorB, focusConfB);
+    // TDM has no objective round. If no recent enemy report exists yet, push
+    // the whole team toward the enemy spawn instead of loitering at home.
+    if (!hasFocusA && !membersB.empty()) {
+        focusA = gamemodeSpawnPoint(d, 1);
+        hasFocusA = true;
+    }
+    if (!hasFocusB && !membersA.empty()) {
+        focusB = gamemodeSpawnPoint(d, 0);
+        hasFocusB = true;
+    }
 
     auto focusForwardFor = [&](bool hasFocus, uint32_t focusActor,
                                const glm::vec3& focusPos,
@@ -7018,6 +7030,24 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.focusKnown = sq.active && glm::length(sq.focusPos) > 0.001f;
         if (ctx.focusKnown) ctx.focusPos = sq.focusPos;
         ctx.swarm = npc.behavior.swarm;
+        ctx.team = team;
+        const std::size_t ownAlive = (team == 0) ? membersA.size() : membersB.size();
+        const std::size_t enemyAlive = (team == 0) ? membersB.size() : membersA.size();
+        ctx.teamAlive = static_cast<int>(ownAlive);
+        ctx.enemyCount = static_cast<int>(enemyAlive);
+        if (gm.npcTravel.configured) {
+            ctx.travelObjectiveBias = gm.npcTravel.objectiveBias;
+            ctx.travelHuntBias = gm.npcTravel.huntBias;
+        }
+        glm::vec3 enemyAreaPos;
+        float enemyConf = 0.0f;
+        ctx.enemyAreaKnown = brain.bestTeamReport(enemyAreaPos, enemyConf);
+        if (ctx.enemyAreaKnown) {
+            ctx.enemyAreaPos = enemyAreaPos;
+        } else if (enemyAlive > 0) {
+            ctx.enemyAreaKnown = true;
+            ctx.enemyAreaPos = gamemodeSpawnPoint(d, 1 - team);
+        }
         glm::vec3 slot{0.0f}, anchor{0.0f};
         ctx.squadSlotKnown = brain.squadSlotFor(npc.id, slot, anchor);
         if (ctx.squadSlotKnown) {

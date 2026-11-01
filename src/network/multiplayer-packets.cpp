@@ -635,7 +635,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& claimedHit,
     uint8_t claimedBodyPart,
     uint16_t movesetRevision,
-    uint32_t movesetHash)
+    uint32_t movesetHash,
+    const ClaimedHitPacket* claimedHits,
+    uint8_t claimedHitCount)
 {
     if (!ctx.active || !ctx.localPlayerId)
         return 0;
@@ -681,6 +683,13 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     req.claimedHitY = claimedHit.y;
     req.claimedHitZ = claimedHit.z;
     req.claimedBodyPart = claimedBodyPart;
+    if (claimedHits && claimedHitCount > 0)
+    {
+        req.claimedHitCount = (uint8_t)std::min<int>(
+            claimedHitCount, MAX_CLAIMED_HIT_TARGETS);
+        for (int i = 0; i < req.claimedHitCount; ++i)
+            req.claimedHits[i] = claimedHits[i];
+    }
     // Melee move-set revision for client/server alignment, carried in the
     // two unused reserved bytes so the packet size does not change.
     req.reservedAttack[0] = (uint8_t)(movesetRevision & 0xff);
@@ -707,6 +716,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     pending.claimedTargetId = claimedTargetId;
     pending.claimedHit = claimedHit;
     pending.claimedBodyPart = claimedBodyPart;
+    pending.claimedHitCount = req.claimedHitCount;
+    for (int i = 0; i < req.claimedHitCount; ++i)
+        pending.claimedHits[i] = req.claimedHits[i];
     pending.firstSentMs = nowMs();
     pending.lastSentMs = nowMs();
     pending.attempts = 1;
@@ -721,6 +733,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
         claim.requestId = requestId;
         claim.claimedTargetId = claimedTargetId;
         claim.claimedHit = claimedHit;
+        claim.claimedHitCount = req.claimedHitCount;
+        for (int i = 0; i < req.claimedHitCount; ++i)
+            claim.claimedHits[i] = req.claimedHits[i];
         claim.sentMs = nowMs();
         ctx.pendingHitClaims[requestId] = claim;
     }

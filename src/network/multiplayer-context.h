@@ -683,6 +683,8 @@ struct MultiplayerContext
         uint32_t claimedTargetId = 0;
         glm::vec3 claimedHit{0.0f};
         uint8_t claimedBodyPart = 0;
+        uint8_t claimedHitCount = 0;
+        ClaimedHitPacket claimedHits[MAX_CLAIMED_HIT_TARGETS];
         uint64_t firstSentMs = 0;
         uint64_t lastSentMs = 0;
         int attempts = 0;
@@ -720,6 +722,8 @@ struct MultiplayerContext
         glm::vec3 claimedHit{0.0f};
         int predictedDamage = 0;
         uint8_t predictedPelletHits = 0;
+        uint8_t claimedHitCount = 0;
+        ClaimedHitPacket claimedHits[MAX_CLAIMED_HIT_TARGETS];
         uint64_t sentMs = 0;
         bool confirmed = false;
         bool resolved = false;
@@ -972,7 +976,9 @@ uint32_t mpSendAttackRequest(MultiplayerContext& ctx,
     const glm::vec3& claimedHit = glm::vec3(0.0f),
     uint8_t claimedBodyPart = 0,
     uint16_t movesetRevision = 0,
-    uint32_t movesetHash = 0);
+    uint32_t movesetHash = 0,
+    const ClaimedHitPacket* claimedHits = nullptr,
+    uint8_t claimedHitCount = 0);
 void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command);
 uint32_t mpSendShotEvent(
     MultiplayerContext& ctx,

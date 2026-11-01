@@ -3,7 +3,7 @@
 * Handles authoritative generic AttackRequest validation and execution dispatch.
 * Routes hitscan, physical-contact, and projectile weapon definitions through one request path.
 * Owns attack idempotency, ammo/cooldown mutation, and server damage decisions for migrated weapons.
-* Does NOT trust client target, damage, death, health, or projectile hit outcomes.
+* Validates client-first hitscan claims, caps impossible damage, and adopts plausible aggregates.
 * Does NOT implement packet polling, client prediction, rendering, or audio presentation.
 * Does NOT own projectile simulation internals, render correction, or legacy direct fire packets.
 */
@@ -36,6 +36,23 @@ namespace {
 static bool finiteVec3(const glm::vec3& v)
 {
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+}
+
+// Hard ceiling for a client-claimed hitscan aggregate. The server trusts a
+// plausible claim exactly, but never accepts more than one maximum-damage
+// pellet per configured pellet.
+static int maxClaimedHitscanDamage(const WeaponDefinition& def, int pelletCount)
+{
+    int best = 0;
+    for (const char* part : {"head", "torso", "leg"})
+    {
+        best = std::max(best, WeaponExecution::computeHitscanDamage(
+            def, part, 0.0f, 1.0f));
+    }
+    if (best <= 0)
+        best = std::max(1, (int)std::round(
+            def.damage * std::max(0.0f, def.damageScale)));
+    return best * std::max(1, pelletCount);
 }
 
 static glm::vec3 normalizedOrZero(const glm::vec3& v)
@@ -779,143 +796,189 @@ void handleAttackRequest(
         // target's rewound collision volume (body parts for NPCs, capsule +
         // tolerance for players) and is not wall-occluded — so what the shooter
         // saw is what takes damage.
-        if (req->claimedTargetId != 0)
+        // ── Client-first hit claims ─────────────────────────────────────
+        // The shooter's local trace owns what they saw. The server validates
+        // target identity, life, range, occlusion, and hit volume, then adopts
+        // the claimed per-target aggregate (clamped to the weapon maximum).
+        // This is intentionally client-trusting: reject only impossible
+        // outcomes, not normal jitter or pellet-pattern differences.
+        ClaimedHitPacket legacyClaim{};
+        const ClaimedHitPacket* claims = req->claimedHits;
+        int claimCount = std::min<int>(req->claimedHitCount,
+                                       MAX_CLAIMED_HIT_TARGETS);
+        if (claimCount == 0 && req->claimedTargetId != 0)
         {
-            const glm::vec3 claimedHit(req->claimedHitX, req->claimedHitY, req->claimedHitZ);
+            legacyClaim.targetId = req->claimedTargetId;
+            legacyClaim.bodyPart = req->claimedBodyPart;
+            legacyClaim.hitX = req->claimedHitX;
+            legacyClaim.hitY = req->claimedHitY;
+            legacyClaim.hitZ = req->claimedHitZ;
+            claims = &legacyClaim;
+            claimCount = 1;
+        }
+
+        const int maxClaimDamage = maxClaimedHitscanDamage(
+            *def, std::max(1, def->pelletCount));
+
+        for (int ci = 0; ci < claimCount; ++ci)
+        {
+            const ClaimedHitPacket& claim = claims[ci];
+            if (claim.targetId == 0)
+                continue;
+
+            const glm::vec3 claimedHit(claim.hitX, claim.hitY, claim.hitZ);
             const glm::vec3 claimedDir = claimedHit - origin;
             const float claimedDist = glm::length(claimedDir);
+            if (claimedDist <= 0.001f || claimedDist > maxRange)
+                continue;
+
             bool alreadyConfirmed = false;
             for (const auto& agg : trace.aggregates)
             {
-                if (agg.targetPlayerId == req->claimedTargetId)
+                if (agg.targetPlayerId == claim.targetId)
                 {
                     alreadyConfirmed = true;
                     break;
                 }
             }
-            if (!alreadyConfirmed && claimedDist > 0.001f &&
-                claimedDist <= maxRange)
+
+            bool claimAccepted = alreadyConfirmed;
+            uint8_t claimPart = claim.bodyPart;
+            uint32_t claimedSpawnGen = claim.targetSpawnGeneration;
+            glm::vec3 rewoundTargetPos{0.0f};
+
+            if (!alreadyConfirmed)
             {
-                // World occlusion: reuse the main trace's worldBlockDistance
-                // instead of a second full raycast. The main trace already
-                // found the nearest world hit along this direction.
-                bool occluded = false;
+                // World occlusion: reuse the main trace's world block distance.
                 if (worldBlockDistance < claimedDist - 0.1f)
-                    occluded = true;
-
-                if (!occluded)
-                {
-                    // Claim acceptance tolerance: base rewind tolerance plus a
-                    // lag allowance so a hit that connects on the target's
-                    // RENDERED body registers even when motion-filter lag puts
-                    // the server's rewind pose slightly ahead of what the
-                    // shooter saw ("shoot what I see").
-                    const NetworkingConfigData& netCfg =
-                        NetworkingConfig::instance().data();
-                    const float tolerance =
-                        std::max(0.0f, netCfg.remotePlayers.rewindHitTolerance) +
-                        std::max(0.0f, netCfg.remotePlayers.claimLagAllowance);
-                    bool claimAccepted = false;
-                    uint8_t claimPart = req->claimedBodyPart;
-                    glm::vec3 rewoundTargetPos{0.0f}; // for the reject diagnostic
-                    uint32_t claimedSpawnGen = 0;
-                    auto npcClaimIt = npcs.find(req->claimedTargetId);
-                    if (npcClaimIt != npcs.end())
-                    {
-                        const ServerNpc& npc = npcClaimIt->second;
-                        if (npc.health > 0)
-                        {
-                            // Validate the claimed hit against the NPC's real
-                            // body-part hitboxes reconstructed at the rewound
-                            // pose + rewound yaw — never a capsule.
-                            glm::vec3 rewoundPos = npc.pos;
-                            float rewoundYaw = npc.yaw;
-                            getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw);
-                            rewoundTargetPos = rewoundPos;
-                            if (claimedHitInNpcBodyParts(claimedHit, npc,
-                                                         rewindTick, tolerance,
-                                                         claimPart))
-                                claimAccepted = true;
-                        }
-                    }
-                    else
-                    {
-                        auto playerClaimIt = players.find(req->claimedTargetId);
-                        if (playerClaimIt != players.end() &&
-                            !playerClaimIt->second.dead &&
-                            playerClaimIt->second.spawnState == ServerPlayer::Active)
-                        {
-                            claimedSpawnGen = playerClaimIt->second.spawnGeneration;
-                            glm::vec3 rewoundPos = playerClaimIt->second.pos;
-                            float rewoundYaw = playerClaimIt->second.yaw;
-                            getPlayerPoseAtTick(playerClaimIt->second, rewindTick,
-                                                rewoundPos, rewoundYaw);
-                            rewoundTargetPos = rewoundPos;
-                            // Validate the claimed hit against the victim's
-                            // replicated limb hitboxes when present (same shapes
-                            // as the re-trace), else the static template.
-                            RagdollReplicationPose claimPose;
-                            const RagdollReplicationPose* claimPosePtr = nullptr;
-                            if (playerClaimIt->second.hasRagdollPose &&
-                                getPlayerRagdollPoseAtTick(playerClaimIt->second,
-                                                           rewindTick, claimPose))
-                                claimPosePtr = &claimPose;
-                            if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
-                                                      tolerance, claimPart, claimPosePtr))
-                                claimAccepted = true;
-                        }
-                    }
-
-                    if (claimAccepted)
-                    {
-                        // Damage for the claimed hit using the claimed body
-                        // part + range falloff, mirroring the client model.
-                        const std::string claimBodyPart =
-                            claimPart == 1 ? "head" : (claimPart == 3 ? "leg" : "torso");
-                        const float dmgF = (float)WeaponExecution::computeHitscanDamage(
-                            *def, claimBodyPart, claimedDist, 1.0f);
-                        WeaponExecution::HitscanDamageAggregate agg;
-                        agg.targetPlayerId = req->claimedTargetId;
-                        agg.targetSpawnGeneration = claimedSpawnGen;
-                        agg.damage = dmgF <= 0.0f
-                            ? 0 : std::max(1, (int)std::round(dmgF));
-                        agg.pelletHits = 1;
-                        agg.hitPosition = claimedHit;
-                        agg.hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
-                        agg.knockback = claimedDir / claimedDist *
-                            (dmgF * traceConfig.knockbackPerDamage);
-                        agg.headshot = claimPart == 1;
-                        trace.aggregates.push_back(agg);
-                        Debug::log(Debug::Category::Weapons,
-                            "[ATTACK CLAIM ACCEPT] playerId=%u requestId=%u "
-                            "claimedTarget=%u part=%u dist=%.2f damage=%d\n",
-                            shooter.id, req->requestId, req->claimedTargetId,
-                            claimPart, claimedDist, agg.damage);
-                    }
-                    else
-                    {
-                        const float offsetFromRewound = glm::length(
-                            claimedHit - rewoundTargetPos);
-                        Debug::log(Debug::Category::Weapons,
-                            "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
-                            "claimedTarget=%u claimedHit=(%.2f,%.2f,%.2f) "
-                            "rewoundTarget=(%.2f,%.2f,%.2f) offset=%.2f tolerance=%.2f "
-                            "rewindTick=%u dist=%.2f reason=not-in-volume\n",
-                            shooter.id, req->requestId, req->claimedTargetId,
-                            claimedHit.x, claimedHit.y, claimedHit.z,
-                            rewoundTargetPos.x, rewoundTargetPos.y, rewoundTargetPos.z,
-                            offsetFromRewound, tolerance,
-                            rewindTick, claimedDist);
-                    }
-                }
-                else
                 {
                     Debug::log(Debug::Category::Weapons,
                         "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
                         "claimedTarget=%u reason=world-occluded\n",
-                        shooter.id, req->requestId, req->claimedTargetId);
+                        shooter.id, req->requestId, claim.targetId);
+                    continue;
+                }
+
+                const NetworkingConfigData& netCfg =
+                    NetworkingConfig::instance().data();
+                const float tolerance =
+                    std::max(0.0f, netCfg.remotePlayers.rewindHitTolerance) +
+                    std::max(0.0f, netCfg.remotePlayers.claimLagAllowance);
+                auto npcClaimIt = npcs.find(claim.targetId);
+                if (npcClaimIt != npcs.end())
+                {
+                    const ServerNpc& npc = npcClaimIt->second;
+                    if (npc.health > 0)
+                    {
+                        glm::vec3 rewoundPos = npc.pos;
+                        float rewoundYaw = npc.yaw;
+                        getNpcPoseAtTick(npc, rewindTick, rewoundPos, rewoundYaw);
+                        rewoundTargetPos = rewoundPos;
+                        if (claimedHitInNpcBodyParts(claimedHit, npc,
+                                                     rewindTick, tolerance,
+                                                     claimPart))
+                            claimAccepted = true;
+                    }
+                }
+                else
+                {
+                    auto playerClaimIt = players.find(claim.targetId);
+                    if (playerClaimIt != players.end() &&
+                        !playerClaimIt->second.dead &&
+                        playerClaimIt->second.spawnState == ServerPlayer::Active)
+                    {
+                        claimedSpawnGen = playerClaimIt->second.spawnGeneration;
+                        glm::vec3 rewoundPos = playerClaimIt->second.pos;
+                        float rewoundYaw = playerClaimIt->second.yaw;
+                        getPlayerPoseAtTick(playerClaimIt->second, rewindTick,
+                                            rewoundPos, rewoundYaw);
+                        rewoundTargetPos = rewoundPos;
+                        RagdollReplicationPose claimPose;
+                        const RagdollReplicationPose* claimPosePtr = nullptr;
+                        if (playerClaimIt->second.hasRagdollPose &&
+                            getPlayerRagdollPoseAtTick(playerClaimIt->second,
+                                                       rewindTick, claimPose))
+                            claimPosePtr = &claimPose;
+                        if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
+                                                  tolerance, claimPart, claimPosePtr))
+                            claimAccepted = true;
+                    }
+                }
+
+                if (!claimAccepted)
+                {
+                    const float offsetFromRewound = glm::length(
+                        claimedHit - rewoundTargetPos);
+                    Debug::log(Debug::Category::Weapons,
+                        "[ATTACK CLAIM REJECT] playerId=%u requestId=%u "
+                        "claimedTarget=%u claimedHit=(%.2f,%.2f,%.2f) "
+                        "rewoundTarget=(%.2f,%.2f,%.2f) offset=%.2f tolerance=%.2f "
+                        "rewindTick=%u dist=%.2f reason=not-in-volume\n",
+                        shooter.id, req->requestId, claim.targetId,
+                        claimedHit.x, claimedHit.y, claimedHit.z,
+                        rewoundTargetPos.x, rewoundTargetPos.y, rewoundTargetPos.z,
+                        offsetFromRewound, tolerance,
+                        rewindTick, claimedDist);
+                    continue;
                 }
             }
+
+            if (claimPart == 0 || claimPart == 2)
+                claimPart = 2;
+            const std::string claimBodyPart =
+                claimPart == 1 ? "head" : (claimPart == 3 ? "leg" : "torso");
+
+            int claimedDamage = (int)claim.damage;
+            if (claimedDamage <= 0)
+            {
+                claimedDamage = WeaponExecution::computeHitscanDamage(
+                    *def, claimBodyPart, claimedDist, 1.0f);
+            }
+            claimedDamage = std::clamp(claimedDamage, 0, maxClaimDamage);
+            if (claimedDamage <= 0)
+                continue;
+
+            const int claimedPellets = std::clamp<int>(
+                claim.pelletHits > 0 ? claim.pelletHits : 1,
+                1, std::max(1, def->pelletCount));
+
+            auto aggregateIt = std::find_if(
+                trace.aggregates.begin(), trace.aggregates.end(),
+                [&](const WeaponExecution::HitscanDamageAggregate& aggregate) {
+                    return aggregate.targetPlayerId == claim.targetId;
+                });
+            if (aggregateIt == trace.aggregates.end())
+            {
+                WeaponExecution::HitscanDamageAggregate agg;
+                agg.targetPlayerId = claim.targetId;
+                agg.targetSpawnGeneration = claimedSpawnGen;
+                agg.hitPosition = claimedHit;
+                agg.hitNormal = glm::length(claimedDir) > 0.001f
+                    ? -glm::normalize(claimedDir) : glm::vec3(0.0f, 0.0f, 1.0f);
+                agg.damage = claimedDamage;
+                agg.pelletHits = claimedPellets;
+                agg.knockback = claimedDir / claimedDist *
+                    (claimedDamage * traceConfig.knockbackPerDamage);
+                agg.headshot = claimPart == 1;
+                trace.aggregates.push_back(agg);
+            }
+            else
+            {
+                aggregateIt->damage = claimedDamage;
+                aggregateIt->pelletHits = claimedPellets;
+                aggregateIt->hitPosition = claimedHit;
+                aggregateIt->knockback = claimedDir / claimedDist *
+                    (claimedDamage * traceConfig.knockbackPerDamage);
+                aggregateIt->headshot = claimPart == 1;
+            }
+
+            Debug::log(Debug::Category::Weapons,
+                "[ATTACK CLAIM ACCEPT] playerId=%u requestId=%u "
+                "claimedTarget=%u part=%u dist=%.2f damage=%d pellets=%d "
+                "alreadyConfirmed=%d\n",
+                shooter.id, req->requestId, claim.targetId, claimPart,
+                claimedDist, claimedDamage, claimedPellets,
+                (int)alreadyConfirmed);
         }
 
         if (rt.magazineAmmo > 0)
@@ -1270,7 +1333,12 @@ void handleAttackRequest(
             bool hitClaimed = false;
             for (const auto& agg : trace.aggregates)
             {
-                if (req->claimedTargetId != 0 && agg.targetPlayerId == req->claimedTargetId)
+                bool claimed = req->claimedTargetId != 0 &&
+                    agg.targetPlayerId == req->claimedTargetId;
+                for (int i = 0; !claimed && i < req->claimedHitCount &&
+                     i < MAX_CLAIMED_HIT_TARGETS; ++i)
+                    claimed = req->claimedHits[i].targetId == agg.targetPlayerId;
+                if (claimed)
                 {
                     hitClaimed = true;
                     break;

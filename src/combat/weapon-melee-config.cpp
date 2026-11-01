@@ -12,6 +12,7 @@
 
 #include "../debug/debug-log.h"
 #include "../debug/structured-log.h"
+#include "perf/perf-spike.h"
 
 #include <algorithm>
 #include <array>
@@ -28,67 +29,106 @@ namespace {
 
 using json = nlohmann::json;
 
-bool loadClipTimeline(const std::string& clipId, int& duration,
-                      int& windupEnd, int& activeEnd,
-                      std::array<int, 4>* sourceTicksOut = nullptr)
+struct ClipTimelineEntry
 {
+    bool valid = false;
+    int duration = 0;
+    int windupEnd = 0;
+    int activeEnd = 0;
+    std::array<int, 4> sourceTicks{{-1, -1, -1, -1}};
+};
+
+std::unordered_map<std::string, ClipTimelineEntry> gClipTimelineIndex;
+bool gClipTimelineIndexBuilt = false;
+
+bool parseClipTimeline(const json& clip, ClipTimelineEntry& out)
+{
+    if (!clip.is_object() || !clip.contains("durationTicks") ||
+        !clip["durationTicks"].is_number_integer() ||
+        !clip.contains("markers") || !clip["markers"].is_array())
+        return false;
+    out.duration = clip["durationTicks"].get<int>();
+    int starts[4] = {-1, -1, -1, -1};
+    int sourceTicks[4] = {-1, -1, -1, -1};
+    int sourceCount = 0;
+    const char* names[4] = {"phase.windup", "phase.active", "phase.recovery", "action.end"};
+    for (const json& marker : clip["markers"]) {
+        if (!marker.is_object() || !marker.contains("name") ||
+            !marker["name"].is_string()) continue;
+        const std::string name = marker["name"].get<std::string>();
+        for (int i = 0; i < 4; ++i) {
+            if (name == names[i]) {
+                if (starts[i] >= 0) return false;
+                if (!marker.contains("tick") || !marker["tick"].is_number_integer())
+                    return false;
+                starts[i] = marker["tick"].get<int>();
+                sourceTicks[i] = starts[i];
+                if (marker.contains("sourceTick")) {
+                    if (!marker["sourceTick"].is_number_integer()) return false;
+                    sourceTicks[i] = marker["sourceTick"].get<int>();
+                    ++sourceCount;
+                }
+            }
+        }
+    }
+    if (starts[0] != 0 || starts[1] <= starts[0] ||
+        starts[2] <= starts[1] || starts[3] <= starts[2] ||
+        starts[3] != out.duration) return false;
+    if ((sourceCount != 0 && sourceCount != 4) || sourceTicks[0] != 0 ||
+        sourceTicks[1] <= sourceTicks[0] || sourceTicks[2] <= sourceTicks[1] ||
+        sourceTicks[3] <= sourceTicks[2]) return false;
+    out.windupEnd = starts[1];
+    out.activeEnd = starts[2];
+    for (int i = 0; i < 4; ++i) out.sourceTicks[i] = sourceTicks[i];
+    out.valid = true;
+    return true;
+}
+
+void buildClipTimelineIndex()
+{
+    MIMITA_PERF_SCOPE("Config::MeleeClipIndexBuild");
+    gClipTimelineIndex.clear();
+    gClipTimelineIndexBuilt = true;
     const std::filesystem::path root(resolveAssetPath("config/animations/library"));
     std::error_code ec;
     if (!std::filesystem::is_directory(root, ec) || ec)
-        return false;
-
-    bool found = false;
+        return;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(root, ec)) {
-        if (ec) return false;
+        if (ec) return;
         if (!entry.is_regular_file() || entry.path().extension() != ".json") continue;
         std::ifstream file(entry.path());
         if (!file.is_open()) continue;
         json document;
         try { file >> document; } catch (...) { continue; }
-        if (!document.contains("clips") || !document["clips"].is_object() ||
-            !document["clips"].contains(clipId)) continue;
-        if (found) return false; // ambiguous IDs are invalid, never pick by directory order
-        found = true;
-        const json& clip = document["clips"][clipId];
-        if (!clip.is_object() || !clip.contains("durationTicks") ||
-            !clip["durationTicks"].is_number_integer() ||
-            !clip.contains("markers") || !clip["markers"].is_array()) return false;
-        duration = clip["durationTicks"].get<int>();
-        int starts[4] = {-1, -1, -1, -1};
-        int sourceTicks[4] = {-1, -1, -1, -1};
-        int sourceCount = 0;
-        const char* names[4] = {"phase.windup", "phase.active", "phase.recovery", "action.end"};
-        for (const json& marker : clip["markers"]) {
-            if (!marker.is_object() || !marker.contains("name") ||
-                !marker["name"].is_string()) continue;
-            const std::string name = marker["name"].get<std::string>();
-            for (int i = 0; i < 4; ++i) {
-                if (name == names[i]) {
-                    if (starts[i] >= 0) return false;
-                    if (!marker.contains("tick") || !marker["tick"].is_number_integer())
-                        return false;
-                    starts[i] = marker["tick"].get<int>();
-                    sourceTicks[i] = starts[i];
-                    if (marker.contains("sourceTick")) {
-                        if (!marker["sourceTick"].is_number_integer()) return false;
-                        sourceTicks[i] = marker["sourceTick"].get<int>();
-                        ++sourceCount;
-                    }
-                }
+        if (!document.contains("clips") || !document["clips"].is_object()) continue;
+        for (auto it = document["clips"].begin(); it != document["clips"].end(); ++it) {
+            const std::string clipId = it.key();
+            auto existing = gClipTimelineIndex.find(clipId);
+            if (existing != gClipTimelineIndex.end()) {
+                existing->second.valid = false; // ambiguous IDs are invalid
+                continue;
             }
+            ClipTimelineEntry parsed;
+            parseClipTimeline(it.value(), parsed);
+            gClipTimelineIndex.emplace(clipId, parsed);
         }
-        if (starts[0] != 0 || starts[1] <= starts[0] ||
-            starts[2] <= starts[1] || starts[3] <= starts[2] ||
-            starts[3] != duration) return false;
-        if ((sourceCount != 0 && sourceCount != 4) || sourceTicks[0] != 0 ||
-            sourceTicks[1] <= sourceTicks[0] || sourceTicks[2] <= sourceTicks[1] ||
-            sourceTicks[3] <= sourceTicks[2]) return false;
-        if (sourceTicksOut)
-            for (int i = 0; i < 4; ++i) (*sourceTicksOut)[i] = sourceTicks[i];
-        windupEnd = starts[1];
-        activeEnd = starts[2];
     }
-    return found;
+}
+
+bool loadClipTimeline(const std::string& clipId, int& duration,
+                      int& windupEnd, int& activeEnd,
+                      std::array<int, 4>* sourceTicksOut = nullptr)
+{
+    if (!gClipTimelineIndexBuilt)
+        buildClipTimelineIndex();
+    auto it = gClipTimelineIndex.find(clipId);
+    if (it == gClipTimelineIndex.end() || !it->second.valid)
+        return false;
+    duration = it->second.duration;
+    windupEnd = it->second.windupEnd;
+    activeEnd = it->second.activeEnd;
+    if (sourceTicksOut) *sourceTicksOut = it->second.sourceTicks;
+    return true;
 }
 
 std::string normalizedToken(std::string value)
@@ -528,6 +568,9 @@ void MeleeMoveSetRegistry::set(MeleeMoveSet moveSet)
     static uint32_t sRevisionCounter = 0;
     moveSet.revision = ++sRevisionCounter;
     const std::string defId = moveSet.definitionId;
+    auto existing = mSets.find(defId);
+    if (existing != mSets.end() && existing->second.hash == moveSet.hash)
+        return;
     const size_t actionCount = moveSet.actions.size();
     const uint32_t hash = moveSet.hash;
     const uint32_t revision = moveSet.revision;
@@ -622,6 +665,12 @@ bool parseMeleeMoveSet(const std::string& definitionId,
         "[MELEE] parsed moveset '%s' actions=%zu hash=%u\n",
         definitionId.c_str(), out.actions.size(), out.hash);
     return true;
+}
+
+void invalidateMeleeClipIndex()
+{
+    gClipTimelineIndexBuilt = false;
+    gClipTimelineIndex.clear();
 }
 
 } // namespace WeaponData

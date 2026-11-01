@@ -140,8 +140,10 @@ that same bridge instead of adding one cold command per report.
 local player's input source between the human and the bounded player-AI owner.
 AI mode uses the same `InputFrame`/`ActorIntent` boundary, collision, weapon,
 and server validation as human input; it does not spawn a second actor or
-mutate server-owned state. Returning to `human` clears held AI/terminal input
-and restores normal control immediately.
+mutate server-owned state. AI mode turns the real camera smoothly toward its
+target, equips a legal range-appropriate weapon through the normal equip
+command, and treats walkable ramps as terrain. Returning to `human` clears held
+AI/terminal input and restores normal control immediately.
 
 `collision_probe x,y,z` is a local diagnostic command. It reports whether a
 world point is inside static collision, the downward floor height, and bounded

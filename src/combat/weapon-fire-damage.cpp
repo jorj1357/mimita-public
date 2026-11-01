@@ -39,6 +39,44 @@ static bool serverAuthHits()
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 
+static uint8_t claimBodyPart(const std::string& hitPart)
+{
+    if (hitPart == "head") return 1;
+    if (hitPart == "leg") return 3;
+    return 2;
+}
+
+// Record one target's local predicted aggregate. The server validates this
+// claim before using it, so a shotgun blast can keep the exact damage the
+// shooter saw even when the server's re-trace sees a different pellet pattern.
+static void recordShotClaim(RevolverShotResult& result, uint32_t targetId,
+                            int damage, int pelletHits,
+                            const std::string& hitPart,
+                            const glm::vec3& hitPosition)
+{
+    if (targetId == 0 || damage <= 0 || pelletHits <= 0)
+        return;
+    for (int i = 0; i < result.claimedHitCount; ++i)
+    {
+        if (result.claimedHits[i].targetId != targetId)
+            continue;
+        ShotClaim& claim = result.claimedHits[i];
+        claim.damage += damage;
+        claim.pelletHits = (uint8_t)std::min(255, claim.pelletHits + pelletHits);
+        claim.hitPosition = hitPosition;
+        claim.bodyPart = claimBodyPart(hitPart);
+        return;
+    }
+    if (result.claimedHitCount >= MAX_SHOT_CLAIMS)
+        return;
+    ShotClaim& claim = result.claimedHits[result.claimedHitCount++];
+    claim.targetId = targetId;
+    claim.hitPosition = hitPosition;
+    claim.damage = damage;
+    claim.pelletHits = (uint8_t)std::min(255, pelletHits);
+    claim.bodyPart = claimBodyPart(hitPart);
+}
+
 static void fireSound(const WeaponDefinition& def, const glm::vec3& muzzlePos)
 {
     WeaponAudio::playShootSound(def, muzzlePos);
@@ -294,6 +332,7 @@ void processRemotePlayerHit(
     Player* remoteVictim)
 {
     const int totalDamage = predictedRemoteDamage(def, hitPart, nearest);
+    recordShotClaim(result, remoteTargetId, totalDamage, 1, hitPart, hitEnd);
 
     result.hitEntity = true;
     result.targetIsRemotePlayer = true;
@@ -355,6 +394,7 @@ void processRemoteNpcHit(
     if (remoteNpc)
     {
         const int totalDamage = predictedRemoteDamage(def, hitPart, nearest);
+        recordShotClaim(result, remoteNpcTargetId, totalDamage, 1, hitPart, hitEnd);
         result.hitEntity = true;
         result.bodyPart = hitPart;
         result.end = hitEnd;
@@ -660,6 +700,7 @@ int totalDmg = WeaponExecution::computeHitscanDamage(def, hitPart, pelletNearest
     accumulatedDamage += (float)totalDmg;
     anyHitEntity = true;
     lastTargetId = pelletRemoteTargetId;
+    recordShotClaim(result, pelletRemoteTargetId, totalDmg, 1, hitPart, hitEnd);
 
     float df = WeaponExecution::hitscanFalloffFactor(def, pelletNearest);
     accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,
@@ -712,6 +753,7 @@ void processMultiPelletRemoteNpcHit(
     accumulatedDamage += (float)totalDmg;
     anyHitEntity = true;
     lastTargetId = pelletRemoteNpcTargetId;
+    recordShotClaim(result, pelletRemoteNpcTargetId, totalDmg, 1, hitPart, hitEnd);
 
     float df = WeaponExecution::hitscanFalloffFactor(def, pelletNearest);
     accumulatedKnockback += victimKnockbackImpulse(def, pelletDir,

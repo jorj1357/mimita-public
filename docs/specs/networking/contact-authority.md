@@ -92,6 +92,41 @@ The shared resolver validates in this order:
 No weapon-specific path may skip a step. If a weapon needs a different policy,
 that policy is explicit config and still passes through the same order.
 
+## Client-first authority policy
+
+Confirmed direction as of 2026-11-01: MiMITA should be **much more
+client-trusting** until anti-cheat becomes a real requirement, or a better
+shared-simulation design replaces this policy. The server is a referee for
+impossible or self-contradictory outcomes, not a second independent shooter.
+
+For hitscan, including every shotgun pellet and the shotgun aggregate:
+
+- The client owns what it saw, including the per-target total damage and
+  pellet-hit count.
+- The client sends a bounded per-target claim with the attack request:
+  target id, claimed total damage, claimed pellet hits, body part, and hit
+  position.
+- The server validates target identity, life, spawn generation, reach, world
+  occlusion, and hit volume.
+- When the claim is valid, the server adopts the claimed aggregate for that
+  target. It must not replace a valid shotgun aggregate with a re-traced
+  one-pellet result.
+- Claimed damage is capped only by the weapon’s configured theoretical maximum
+  for the claimed body part and pellet count. This is an impossibility guard,
+  not a low gameplay cap.
+- Reject only clear impossibilities, such as dead targets, stale generations,
+  out-of-range hits, wall-occluded claims, missing targets, or damage beyond
+  the configured maximum.
+- Accept small interpolation, body-part, pellet-pattern, aggregation, jitter,
+  and rewind differences. Those are normal client/server differences, not
+  cheating.
+
+This is the intended contract for the current phase: predicted damage, blood,
+hitmarker, and the actual applied damage should agree for accepted hits. If a
+claim is rejected, the prediction must be rolled back immediately. Anti-cheat
+may later add stronger validation without changing the ownership model: the
+client remains the source of what it saw, and the server remains the referee.
+
 ## One damage sink
 
 `applyActorDamage` in `src/network/server-damage.cpp` is the only combat path
@@ -123,7 +158,8 @@ only in how damage is resolved from config and contact data.
 ### Hitscan
 
 - geometry: ray or swept beam vs body-part boxes/capsule
-- damage: existing `computeHitscanDamage`
+- damage: existing `computeHitscanDamage` validates/caps the value; an accepted
+  client-first claim supplies the adopted per-target total
 - falloff, headshot, limb multiplier, pellet spread stay hitscan-specific
 
 ### Projectile

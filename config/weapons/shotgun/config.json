@@ -50,7 +50,9 @@
 "damage_animation_mode": null,
 "damage_scale": null,
 "enemy_impulse_multiplier": 1.0,
-"fire_delay": 0.01,
+// "fire_delay": 0.01,
+// match revovler 2026 11 01 1805
+"fire_delay": 0.008,
 "fire_mode": "semi_auto",
 "headshot_multiplier": 2.0,
 "hitscan": true,

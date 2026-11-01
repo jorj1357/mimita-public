@@ -135,7 +135,8 @@ void gatherColumnSurfaces(const World& world, const std::vector<int>& candidates
     for (int ti : candidates) {
         if (ti < 0 || ti >= (int)tris.size()) continue;
         const CollisionTriangle& tri = tris[ti];
-        if (tri.normal.z < walkableDot) continue;
+        const glm::vec3 surfaceNormal = tri.normal.z < 0.0f ? -tri.normal : tri.normal;
+        if (surfaceNormal.z < walkableDot) continue;
         float t = 0.0f;
         if (!NpcNavigation::rayTriangle(origin, down, tri, depth, t)) continue;
         const float z = fromZ - t;
@@ -145,9 +146,9 @@ void gatherColumnSurfaces(const World& world, const std::vector<int>& candidates
         if (duplicate) continue;
         NavigationSurface s;
         s.position = glm::vec3(x, y, z);
-        s.normal = tri.normal;
+        s.normal = surfaceNormal;
         s.height = z;
-        s.kind = classifySurface(tri.normal, walkableDot);
+        s.kind = classifySurface(surfaceNormal, walkableDot);
         s.walkable = true;
         out.push_back(s);
     }

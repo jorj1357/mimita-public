@@ -1,4 +1,12 @@
-﻿2026 11 01 1558 config rotations 
+﻿2026 11 01 1728 
+50 v 50 on fun coutner strke not good
+need npc behaviro to ebeebn 
+be even more smooth and more perofming better 
+while building? i think
+idk 
+buudign game 
+
+2026 11 01 1558 config rotations 
 json
 chainsw rotating
 freeze whoel game for liek 2 sec

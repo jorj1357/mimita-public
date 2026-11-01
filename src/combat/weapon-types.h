@@ -448,6 +448,19 @@ enum class WeaponFireBlockReason {
     Cooldown
 };
 
+// A client-local per-target hitscan result. The client sends this with the
+// attack request so the server can validate and adopt the exact aggregate the
+// shooter saw instead of re-simulating a different pellet result.
+struct ShotClaim {
+    uint32_t targetId = 0;
+    glm::vec3 hitPosition{0.0f};
+    int damage = 0;
+    uint8_t pelletHits = 0;
+    uint8_t bodyPart = 0; // 0=none 1=head 2=torso 3=leg
+};
+
+constexpr int MAX_SHOT_CLAIMS = 8;
+
 struct RevolverShotResult {
     bool fired = false;
     WeaponFireBlockReason blockedReason = WeaponFireBlockReason::None;
@@ -467,4 +480,8 @@ struct RevolverShotResult {
     glm::vec3 hitNormal{0.0f};
     glm::vec3 knockbackImpulse{0.0f};
     bool autoReloadTriggered = false;  // set when fire() starts auto-reload on empty
+    // Per-target local claims, sent to the server for validated client-first
+    // damage. Multi-pellet weapons record every target the blast touched.
+    ShotClaim claimedHits[MAX_SHOT_CLAIMS];
+    uint8_t claimedHitCount = 0;
 };

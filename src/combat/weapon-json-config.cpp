@@ -697,6 +697,7 @@ std::string weaponDefinitionSignature()
 
 nlohmann::json readWeaponDefinitionRoot()
 {
+    MIMITA_PERF_SCOPE("Config::WeaponDefinitionRead");
     json root = json::object();
     std::ifstream aggregate(weaponConfigPath());
     if (aggregate.is_open()) {
@@ -819,6 +820,7 @@ void loadWeaponJsonConfig()
         gWeaponConfigRoot = std::move(candidate);
         gWeaponConfigSignature = weaponDefinitionSignature();
         gLastRejectedSignature.clear();
+        invalidateMeleeClipIndex();
         Debug::log(Debug::Category::Weapons,
             "[WEAPON CONFIG] loaded %zu definitions from aggregate and per-weapon files\n",
             gWeaponConfigRoot.size());
@@ -880,11 +882,14 @@ void registerWeaponsFromJsonRoot()
         if (!WeaponRegistry::instance().has(id) || !isBuiltin)
             registerWeaponFromJson(std::move(def), false);
 
-        // Builtins keep their constructor-owned base definition, but both
-        // builtins and JSON-only definitions publish the current Melee data.
-        WeaponData::MeleeMoveSet moveSet;
-        if (WeaponData::parseMeleeMoveSet(id, it.value(), moveSet))
-            WeaponData::MeleeMoveSetRegistry::instance().set(std::move(moveSet));
+        // Builtins and JSON-only definitions already publish the current Melee
+        // data through registerWeaponFromJson -> applyWeaponJson. Only parse
+        // here if that path did not produce a move set.
+        if (WeaponData::MeleeMoveSetRegistry::instance().get(id) == nullptr) {
+            WeaponData::MeleeMoveSet moveSet;
+            if (WeaponData::parseMeleeMoveSet(id, it.value(), moveSet))
+                WeaponData::MeleeMoveSetRegistry::instance().set(std::move(moveSet));
+        }
     }
 }
 
@@ -908,6 +913,16 @@ bool reloadBuiltinWeaponsIfChanged()
         "[WEAPON] hot reloaded %s%s", weaponConfigPath().c_str(),
         animationLibraryWasChanged ? " after animation library edit" : "");
     return true;
+}
+
+const nlohmann::json& cachedWeaponDefinitionRoot()
+{
+    return gWeaponConfigRoot;
+}
+
+bool hasCachedWeaponDefinitionRoot()
+{
+    return !gWeaponConfigRoot.empty();
 }
 
 } // namespace WeaponData

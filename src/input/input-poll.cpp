@@ -339,7 +339,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     return in;
 }
 
-InputFrame buildInputFrame(GLFWwindow* win, const Camera& cam)
+InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
 {
     ensureInputInit(win);
     InputCommandSystem::instance().update(0.016f);

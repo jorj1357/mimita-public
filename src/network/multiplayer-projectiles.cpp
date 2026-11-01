@@ -1393,9 +1393,20 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
         auto claimIt = ctx.pendingHitClaims.find(event->causeSerial);
         if (claimIt != ctx.pendingHitClaims.end())
         {
-            const bool targetMatched =
+            bool targetMatched =
                 claimIt->second.claimedTargetId == event->targetPlayerId;
-            const int predictedDamage = claimIt->second.predictedDamage;
+            int predictedDamage = claimIt->second.predictedDamage;
+            uint8_t predictedPelletHits = claimIt->second.predictedPelletHits;
+            for (int i = 0; i < claimIt->second.claimedHitCount; ++i)
+            {
+                const ClaimedHitPacket& claimed = claimIt->second.claimedHits[i];
+                if (claimed.targetId != event->targetPlayerId)
+                    continue;
+                targetMatched = true;
+                predictedDamage = claimed.damage;
+                predictedPelletHits = claimed.pelletHits;
+                break;
+            }
             if (predictedDamage > 0 && event->damage > 0)
             {
                 ++ctx.damagePredictionSamples;
@@ -1421,7 +1432,7 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                          {"ratio", ratio},
                          {"target", event->targetPlayerId},
                          {"weapon", networkWeaponTypeName(event->weapon)},
-                         {"pellet_hits", claimIt->second.predictedPelletHits}});
+                         {"pellet_hits", predictedPelletHits}});
                 }
                 if (ctx.damagePredictionSamples % 60 == 0)
                 {

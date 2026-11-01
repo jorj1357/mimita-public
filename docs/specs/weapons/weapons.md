@@ -1055,17 +1055,20 @@ Conceptual structure:
     glm::vec3 predictedMuzzlePosition;
 };
 The request contains intent.
-It does not contain trusted damage values.
+For the current client-first hitscan contract, the client may also send a
+bounded per-target claim containing the damage and pellet-hit total it saw.
+The server validates and caps that claim before adopting it. This is the
+intentional client-authority policy in
+`../networking/contact-authority.md`.
 The client must never send:
-I dealt 100 damage
 I killed player 2
 My grenade exploded here and damaged these players
-The client instead sends:
-I attempted to fire this weapon
+For projectile and melee attacks, the client instead sends:
+I attempted to fire this weapon
 from this origin
 in this direction
 at this simulation tick
-The server determines the result.
+The server determines the result.
 ________________
 
 
