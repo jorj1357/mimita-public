@@ -266,7 +266,9 @@ A spawn is not accepted merely because its root point and a capsule fit. The
 first authoritative tick after spawn validates the final animated body and held
 weapon against static world geometry before normal AI movement or combat. If the
 pose is not clear, the existing root-only correction, last-clear, and bounded
-safe-point paths run; respawn occurs only when bounded recovery fails.
+safe-point paths run; respawn occurs only when bounded recovery fails. A pose
+fully inside a closed block may not intersect any face, so containment also
+rejects a root inside the closed solid named by its nearest supporting triangle.
 
 A mode avatar policy must not expose a generic per-life placeholder avatar
 before the policy's first selection. The placeholder is cleared before the
@@ -661,3 +663,75 @@ mismatch. The same actor identity must remain traceable from authoritative NPC
 state through client replication and model rendering. If the render asset or
 binding is unavailable, emit a bounded diagnostic that identifies the actor and
 failure stage rather than leaving an apparently invisible combatant active.
+
+## 12. Objective rush and team commitment (2026-11-01)
+
+This section is a Fun Counter Strike behavior-profile contract. Counter Strike
+typical keeps its deliberate movement feel. Both modes share the TeamBrain,
+utility, navigation, and objective owners; no parallel AI system is created.
+
+### Simulation time
+
+NPC decisions and travel measurement use fixed server ticks. Human-facing
+diagnostics may derive seconds as `ticks / 60`. Path commitment, dash cadence,
+bunny-hop timing, and hazard reaction windows are expressed in ticks.
+
+### Terrorist team commitment
+
+- At round start, Terrorist NPCs choose **one bomb site for the whole round** as
+  a team. The choice is deterministic for a given round and map seed, stable for
+  the round, and logged as `team.site-choice`.
+- Every living Terrorist NPC moves to that chosen site. The bomb carrier plants;
+  supporters escort, clear the route, and fight only when a hostile interrupts.
+- If the carrier dies and the bomb drops, the nearest living Terrorist is
+  assigned to recover it. That NPC paths to the bomb, picks it up, then resumes
+  travel to the chosen site to plant.
+- After the plant, Terrorists defend the bomb. The bomb position is their
+  objective point. They kill enemies close to the bomb, prioritise an active
+  defuser, and do not chase enemies far outside the defend radius.
+
+### Counter-Terrorist response
+
+- CTs do **not** receive the Terrorists' round site choice.
+- CTs use perception-gated shared reports and memory only. A team report must
+  come from an actor that actually perceived the target; the team must not
+  receive exact positions of every living enemy every tick.
+- With a report, CTs rush toward the reported enemy area, fight, and try to
+  prevent a plant. Without a report, they defend usable sites and rotate on new
+  reports.
+- After a plant, the nearest CT is assigned to defuse (the existing
+  `TeamAssignment::Defuse`); the others cover. Defusing outranks hunting.
+
+### Movement efficiency and rush
+
+- NPCs use the known navigation route directly. They must not explore, wander,
+  or oscillate when a valid objective route exists.
+- While travelling to a known objective and no visible target interrupts, an
+  NPC requests dash whenever the shared dash ability is available.
+- Fun Counter Strike profiles may combine jump/bunny-hop and air-strafe inputs
+  to reduce start-to-goal time. These are existing shared movement inputs, not a
+  new movement implementation. Rocket-jumping and other exploits are future
+  authored techniques, not a requirement for this slice.
+- Rush is opt-in through the Fun Counter Strike behavior profile. It must not
+  change human movement or Counter Strike typical movement.
+- Log bounded `npc.rush` samples with goal, distance, net progress, dash count,
+  and path state.
+
+## 13. Grenade hazard avoidance (2026-11-01)
+
+NPCs consume one shared per-tick hazard snapshot built from authoritative area
+effects and active grenade projectiles. Do not add a second smoke/fire query or
+a parallel damage path.
+
+- **Smoke** blocks NPC line of sight. A smoke volume between an NPC and a
+  target makes the target non-visible. Log `grenade.smoke.block` on a
+  rate-limited basis.
+- **Fire** is a hazard. NPCs avoid entering the cylinder and path around it when
+  an alternative route exists.
+- **Frag** projectiles and fresh frag blasts are hazards. NPCs that see a live
+  frag projectile or are inside its blast radius run away from it.
+- **Darkbang** is a hazard. NPCs look away and prefer distance when no closer
+  visible target forces engagement.
+- Hazard responses reuse the existing `Survive`/flee and navigation goals. They
+  do not create a new damage, movement, or navigation owner. Log decisions as
+  `npc.hazard-avoid`.

@@ -7,6 +7,7 @@
 #include <random>
 #include <GLFW/glfw3.h>
 #include "world/world-gltf-loader.h"
+#include "audio/audio.h"
 #include "audio/music-manager.h"
 #include "gui/gui-main.h"
 #include "gui/hud/chat-window.h"
@@ -97,6 +98,9 @@ void engineTickState(Engine& engine, float dt)
         if (player.darkbangTimer <= 0.0f)
             player.darkbangIntensity = 0.0f;
     }
+    // Darkbang ducks all other sounds while its screen effect is active.
+    setGlobalDuck(1.0f - 0.85f *
+        std::clamp(player.darkbangIntensity, 0.0f, 1.0f));
 
     static GameState prevState = GAME_MENU;
     static bool npcsSpawned = false;

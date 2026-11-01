@@ -131,6 +131,16 @@ namespace DebugVis {
     void drawFilledBillboard(const Camera& camera, glm::vec3 position, float size,
                              float rotation, float stretch, glm::vec4 color);
     
+    // Camera-inside volume overlays. World volumes submit a tint when the
+    // camera is inside their radius; volumes may also request the HUD layer.
+    // Reset once per rendered frame, then draw the world overlay after world
+    // geometry and the HUD overlay after the HUD pass.
+    void resetCameraVolumeOverlays();
+    void submitCameraVolumeOverlay(const Camera& camera, glm::vec3 center,
+                                   float radius, glm::vec4 color,
+                                   bool includeHud);
+    bool cameraVolumeOverlay(bool hud, glm::vec4& out);
+
     // Solid filled sphere (for production particles — footsteps, dash)
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale = glm::vec3(1.0f));
     void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,

@@ -7,6 +7,9 @@
 #include "combat/weapon-data.h"
 #include "combat/weapon-registry.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -43,18 +46,26 @@ bool GrenadeRegistry::rebuildFromWeapons()
         def.areaKind = areaKindFromWeaponKind(effect.areaKind);
         def.radius = std::max(0.5f, effect.radius);
         def.height = std::max(0.0f, effect.height);
-        def.durationSeconds = std::max(0.0f, effect.durationSeconds);
+        def.durationTicks = std::max(0, effect.durationTicks);
+        def.fuseTicks = std::max(1, effect.fuseTicks);
         def.damagePerTick = std::max(0, effect.damagePerTick);
         def.damageIntervalTicks = std::max(1, effect.damageIntervalTicks);
         def.damagesEnemiesOnly = effect.damagesEnemiesOnly;
         def.spawnsAreaEffect = effect.spawnsAreaEffect &&
             def.areaKind != AreaEffectKind::None;
-        def.fuseSeconds = std::max(0.0f, effect.fuseSeconds);
         def.directEffectDistance = std::max(0.0f, effect.directEffectDistance);
         def.maxEffectDistance = std::max(def.directEffectDistance,
             effect.maxEffectDistance);
         def.notLookingMultiplier = std::clamp(effect.notLookingMultiplier, 0.0f, 1.0f);
         def.noLineOfSightMultiplier = std::clamp(effect.noLineOfSightMultiplier, 0.0f, 1.0f);
+        def.visualTicks = std::max(0, effect.visualTicks);
+        def.visualRadius = std::max(0.0f, effect.visualRadius);
+        def.visualAlphaStart = std::clamp(effect.visualAlphaStart, 0.0f, 1.0f);
+        def.visualAlphaEnd = std::clamp(effect.visualAlphaEnd, 0.0f, 1.0f);
+        def.visualColorR = std::clamp(effect.visualColorR, 0.0f, 1.0f);
+        def.visualColorG = std::clamp(effect.visualColorG, 0.0f, 1.0f);
+        def.visualColorB = std::clamp(effect.visualColorB, 0.0f, 1.0f);
+        def.cameraOverlay = effect.cameraOverlay;
         def.audioOnApply = effect.audioOnApply;
         defs[def.id] = std::move(def);
     }
@@ -63,6 +74,26 @@ bool GrenadeRegistry::rebuildFromWeapons()
     Debug::log(Debug::Category::Weapons,
         "[GRENADE] published %zu grenade effects from weapon definitions\n",
         mDefs.size());
+    for (const auto& kv : mDefs) {
+        const GrenadeDefinition& g = kv.second;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "grenade.config.resolved", g.id, "weapon-snapshot", 0,
+            nlohmann::json{{"id", g.id},
+                           {"area_kind", (int)g.areaKind},
+                           {"radius_m", g.radius},
+                           {"duration_ticks", g.durationTicks},
+                           {"duration_s", g.durationSeconds()},
+                           {"fuse_ticks", g.fuseTicks},
+                           {"damage_per_tick", g.damagePerTick},
+                           {"damage_interval_ticks", g.damageIntervalTicks},
+                           {"damages_enemies_only", g.damagesEnemiesOnly},
+                           {"visual_ticks", g.visualTicks},
+                           {"visual_radius_m", g.visualRadius},
+                           {"visual_alpha_start", g.visualAlphaStart},
+                           {"visual_alpha_end", g.visualAlphaEnd},
+                           {"camera_overlay", g.cameraOverlay}});
+    }
     return !mDefs.empty();
 }
 
@@ -103,13 +134,22 @@ bool grenadeRegistrySelfTest(std::string& report)
     if (!smoke || smoke->areaKind != AreaEffectKind::Smoke) fail("smoke grenade missing/mistyped");
     else {
         if (smoke->radius != 10.0f) fail("smoke radius should be 10 m (20 m diameter)");
-        if (smoke->durationSeconds != 10.0f) fail("smoke lifetime should be 10 s");
+        if (smoke->durationTicks != 600) fail("smoke lifetime should be 600 ticks (10 s)");
     }
     const GrenadeDefinition* dark = reg.get("darkbang");
     if (!dark || dark->areaKind != AreaEffectKind::DarkBang) fail("darkbang grenade missing/mistyped");
+    else {
+        if (dark->fuseTicks != 120) fail("darkbang fuse should be 120 ticks");
+        if (dark->visualTicks != 30) fail("darkbang visual should be 30 ticks");
+        if (dark->cameraOverlay != "world_hud") fail("darkbang should overlay world_hud");
+    }
     const GrenadeDefinition* frag = reg.get("frag");
     if (!frag) fail("frag grenade missing");
     else if (frag->spawnsAreaEffect) fail("frag should not leave a lingering area effect");
+    else {
+        if (frag->fuseTicks != 120) fail("frag fuse should be 120 ticks");
+        if (frag->visualTicks != 30) fail("frag blast visual should be 30 ticks");
+    }
 
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;

@@ -83,7 +83,9 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             break;
 
         case UtilityGoalKind::Survive:
-            s.relevance = lowHealth * (0.5f + 0.5f * enemyFactor);
+            s.relevance = std::max(
+                lowHealth * (0.5f + 0.5f * enemyFactor),
+                ctx.hazardActive ? 1.0f : 0.0f);
             s.objectiveState = 0.0f;
             s.total = s.relevance * (0.5f + 0.5f * (1.0f - ready));
             break;
@@ -101,7 +103,16 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             break;
 
         case UtilityGoalKind::MoveToObjective:
-            s.relevance = ctx.objectiveKnown ? (ctx.atObjective ? 0.1f : 0.7f) : 0.0f;
+            if (ctx.objectiveKnown) {
+                if (ctx.planted && ctx.team == 1)
+                    s.relevance = ctx.atObjective ? 0.45f : 0.8f;
+                else if (ctx.planted && ctx.team == 0)
+                    s.relevance = ctx.atObjective ? 0.55f : 0.9f;
+                else
+                    s.relevance = ctx.atObjective ? 0.1f : 0.7f;
+            } else {
+                s.relevance = 0.0f;
+            }
             s.objectiveState = ctx.objectiveKnown ? 1.0f : 0.0f;
             s.total = s.relevance * (0.5f + 0.5f * far01) * health;
             break;
@@ -131,7 +142,8 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             break;
 
         case UtilityGoalKind::RetakeSite:
-            s.relevance = (ctx.onDefense && ctx.objectiveKnown) ? 0.6f : 0.0f;
+            s.relevance = (ctx.onDefense && ctx.objectiveKnown)
+                ? (ctx.planted ? 0.9f : 0.6f) : 0.0f;
             s.objectiveState = ctx.objectiveKnown ? 0.7f : 0.0f;
             s.total = s.relevance * (0.5f + 0.5f * enemyFactor);
             break;
@@ -141,8 +153,24 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             // with a report and no visible/known target close by.
             s.relevance = ctx.enemyAreaKnown ? 1.0f : 0.0f;
             s.objectiveState = ctx.enemyAreaKnown ? 0.5f : 0.0f;
-            s.total = s.relevance * std::max(0.0f, ctx.travelHuntBias) *
-                      (0.5f + 0.5f * teamFactor);
+            {
+                float huntBias = std::max(0.0f, ctx.travelHuntBias);
+                if (ctx.team == 1 && !ctx.planted) {
+                    // Terrorists' top priority is reaching the chosen site and
+                    // planting; do not divert to enemy reports first.
+                    huntBias = 0.0f;
+                } else if (ctx.planted && ctx.team == 1) {
+                    // Terrorists may chase reports only inside the bomb defend
+                    // radius; outside it they hold the bomb.
+                    const float d = glm::length(ctx.enemyAreaPos - ctx.plantedBombPos);
+                    huntBias = (d <= ctx.bombDefendRadius)
+                        ? std::max(huntBias, 0.85f) : 0.0f;
+                } else if (ctx.planted && ctx.team == 0) {
+                    // CTs must not abandon the defuse to hunt.
+                    huntBias = std::min(huntBias, 0.3f);
+                }
+                s.total = s.relevance * huntBias * (0.5f + 0.5f * teamFactor);
+            }
             break;
 
         case UtilityGoalKind::FocusTarget:

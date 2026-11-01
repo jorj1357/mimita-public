@@ -27,6 +27,9 @@
 #include "replay/replay-export-ui.h"
 #include "replay/replay-factory.h"
 #include "gui/ui-system.h"
+#include "debug/debug-visuals.h"
+
+#include <algorithm>
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
@@ -164,6 +167,20 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     }
     MapEditor::instance().tick(dt);
     MapEditor::instance().renderUI(engine.window());
+
+    // Darkbang/HUD-layer camera volume overlay. Drawn after the HUD so the
+    // requested `world_hud` mode darkens the GUI as well as the world.
+    {
+        glm::vec4 overlay;
+        if (DebugVis::cameraVolumeOverlay(true, overlay))
+            uiDrawRect({0.0f, 0.0f, uiScreenW(), uiScreenH()}, overlay,
+                       "camera-volume-hud-overlay");
+        else if (player.darkbangTimer > 0.0f && player.darkbangIntensity > 0.001f)
+            uiDrawRect({0.0f, 0.0f, uiScreenW(), uiScreenH()},
+                       {0.0f, 0.0f, 0.0f,
+                        std::clamp(player.darkbangIntensity, 0.0f, 1.0f)},
+                       "darkbang-hud-overlay");
+    }
 
     // The pause modal is deliberately last in the gameplay UI pass: it must
     // cover the HUD and world without relying on depth ordering.

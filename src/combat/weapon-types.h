@@ -167,18 +167,35 @@ struct WeaponGrenadeEffect {
     WeaponGrenadeAreaKind areaKind = WeaponGrenadeAreaKind::None;
     float radius = 4.0f;
     float height = 3.0f;
-    float durationSeconds = 0.0f;
+    // Authoritative fixed-tick timing. These are the only stored grenade
+    // duration/fuse values; seconds are derived for display and physics.
+    int durationTicks = 0;
+    int fuseTicks = 120;
     int damagePerTick = 0;
     int damageIntervalTicks = 10;
     bool damagesEnemiesOnly = true;
     bool spawnsAreaEffect = false;
-    float fuseSeconds = 2.0f;
     float directEffectDistance = 5.0f;
     float maxEffectDistance = 20.0f;
     float notLookingMultiplier = 0.5f;
     float noLineOfSightMultiplier = 0.05f;
+    // Radius-indicator presentation. visualTicks == 0 means the area volume is
+    // its own visual (smoke/fire); > 0 spawns a short-lived radius sphere.
+    int visualTicks = 0;
+    float visualRadius = 0.0f;
+    float visualAlphaStart = 0.5f;
+    float visualAlphaEnd = 0.0f;
+    float visualColorR = 1.0f;
+    float visualColorG = 1.0f;
+    float visualColorB = 1.0f;
+    // "none", "world", or "world_hud". A camera inside the volume applies the
+    // shared overlay to the requested layer.
+    std::string cameraOverlay = "none";
     // Optional sound played on the exposed client when the effect is applied.
     std::string audioOnApply;
+
+    float durationSeconds() const { return static_cast<float>(durationTicks) / 60.0f; }
+    float fuseSeconds() const { return static_cast<float>(fuseTicks) / 60.0f; }
 };
 
 struct WeaponDefinition {    std::string id;
@@ -353,6 +370,21 @@ struct WeaponDefinition {    std::string id;
 
     bool validate() const;
 };
+
+// Single derived boundary for grenade fuse timing. The per-weapon
+// `grenade_effect.fuse_ticks` is the only grenade fuse owner; non-grenade
+// projectiles keep their legacy `custom_params.fuseTime` behavior.
+inline bool weaponGrenadeTimingConfigured(const WeaponDefinition& def)
+{
+    return def.grenadeEffect.enabled && def.grenadeEffect.fuseTicks > 0;
+}
+
+inline float weaponGrenadeFuseSeconds(const WeaponDefinition& def)
+{
+    if (weaponGrenadeTimingConfigured(def))
+        return static_cast<float>(def.grenadeEffect.fuseTicks) / 60.0f;
+    return def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f;
+}
 
 struct WeaponRuntime {
     int currentAmmo = 0;

@@ -453,7 +453,7 @@ void EffectPartSystem::render(const Camera& camera) const {
         const bool damageNumber = effect.replayType == "damage_number" ||
                                   effect.replayType == "server_disagreement_text";
         float alpha = effect.alpha * distFade;
-        if (effect.replayType == "explosion_shockwave")
+        if (effect.useEndAlpha || effect.replayType == "explosion_shockwave")
             alpha = glm::mix(effect.alpha, effect.endAlpha, t) * distFade;
         else if (!damageNumber && (effect.replayType != "death_ellipsoid" || HitEffects::config().deathEllipsoid.fade))
             alpha *= (1.0f - t);
@@ -577,6 +577,10 @@ void EffectPartSystem::render(const Camera& camera) const {
             drawEffectModel(camera, effect, drawScale, drawColor);
         }
         else if (!effect.billboardText) {
+            if (effect.cameraOverlayWorld || effect.cameraOverlayHud)
+                DebugVis::submitCameraVolumeOverlay(camera, effect.position,
+                    drawScale, glm::vec4(effect.color, alpha),
+                    effect.cameraOverlayHud);
             DebugVis::drawFilledSphere(camera, effect.position, drawScale, drawColor);
         }
         

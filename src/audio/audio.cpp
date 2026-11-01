@@ -33,6 +33,20 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+
+namespace {
+float gGlobalDuck = 1.0f;
+}
+
+void setGlobalDuck(float duck)
+{
+    gGlobalDuck = std::clamp(duck, 0.0f, 1.0f);
+}
+
+float getGlobalDuck()
+{
+    return gGlobalDuck;
+}
 #include <functional>
 #include <fstream>
 #include <thread>
@@ -319,7 +333,8 @@ static void applySpatialVoice(ActiveSound& active, bool refreshAcoustics)
     const PlayerSettings& settings = GetPlayerSettings();
     ma_sound_set_volume(&active.sound,
         std::max(0.0f, active.baseVolume * active.profile.volumeScale *
-                       settings.masterVolume * settings.sfxVolume * directGain));
+                       settings.masterVolume * settings.sfxVolume * directGain *
+                       gGlobalDuck));
 
     if (active.nodesReady) {
         ma_delay_node_set_wet(&active.delay, wet);
@@ -347,7 +362,7 @@ static void applyLegacyVoice(ActiveSound& active)
     const PlayerSettings& settings = GetPlayerSettings();
     ma_sound_set_volume(&active.sound,
         std::max(0.0f, active.baseVolume * active.legacyProfile.volumeScale *
-                       settings.masterVolume * settings.sfxVolume));
+                       settings.masterVolume * settings.sfxVolume * gGlobalDuck));
 }
 
 static void logSpatialVoice(const ActiveSound& active)
@@ -482,7 +497,7 @@ static void startSound(const std::string& name, float volume, float pitch,
 
     { MIMITA_PERF_SCOPE("Audio::StartSound::ConfigureVoice");
       const PlayerSettings& settings = GetPlayerSettings();
-      ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume));
+      ma_sound_set_volume(&active->sound, std::max(0.0f, volume * settings.masterVolume * settings.sfxVolume * gGlobalDuck));
       ma_sound_set_pitch(&active->sound, std::clamp(pitch, 0.05f, 4.0f));
       if (startSeconds > 0.0f) {
           const ma_uint64 frame = static_cast<ma_uint64>(startSeconds * active->decoder.outputSampleRate);

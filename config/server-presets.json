@@ -33,7 +33,7 @@
     },
     "zombie_tower_1": {
       "server_name": "Zombie Tower 1",
-      "map": "zombietower4",
+      "map": "zombietower6",
       "mode": "zombie_tower",
       "startup_npcs": false,
       "npc_count": 0,

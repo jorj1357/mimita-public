@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -469,13 +470,24 @@ void applyWeaponGrenadeEffectJson(WeaponDefinition& def, const json& root)
     else out.areaKind = WeaponGrenadeAreaKind::None;
     out.radius = std::max(0.0f, effect.value("radius", out.radius));
     out.height = std::max(0.0f, effect.value("height", out.height));
-    out.durationSeconds = std::max(0.0f, effect.value("duration_seconds", out.durationSeconds));
+    // Ticks are authoritative. The legacy *_seconds fields are accepted only as
+    // a load-time convenience and are converted immediately.
+    if (effect.contains("duration_ticks"))
+        out.durationTicks = std::max(0,
+            effect.value("duration_ticks", out.durationTicks));
+    else if (effect.contains("duration_seconds"))
+        out.durationTicks = std::max(0, (int)std::lround(
+            effect.value("duration_seconds", 0.0f) * 60.0f));
+    if (effect.contains("fuse_ticks"))
+        out.fuseTicks = std::max(1, effect.value("fuse_ticks", out.fuseTicks));
+    else if (effect.contains("fuse_seconds"))
+        out.fuseTicks = std::max(1, (int)std::lround(
+            effect.value("fuse_seconds", 2.0f) * 60.0f));
     out.damagePerTick = std::max(0, effect.value("damage_per_tick", out.damagePerTick));
     out.damageIntervalTicks = std::max(1, effect.value("damage_interval_ticks", out.damageIntervalTicks));
     out.damagesEnemiesOnly = effect.value("damages_enemies_only", out.damagesEnemiesOnly);
     out.spawnsAreaEffect = effect.value("spawns_area_effect",
         out.areaKind != WeaponGrenadeAreaKind::None);
-    out.fuseSeconds = std::max(0.0f, effect.value("fuse_seconds", out.fuseSeconds));
     out.directEffectDistance = std::max(0.0f,
         effect.value("direct_effect_distance", out.directEffectDistance));
     out.maxEffectDistance = std::max(out.directEffectDistance,
@@ -484,6 +496,23 @@ void applyWeaponGrenadeEffectJson(WeaponDefinition& def, const json& root)
         effect.value("not_looking_multiplier", out.notLookingMultiplier), 0.0f, 1.0f);
     out.noLineOfSightMultiplier = std::clamp(
         effect.value("no_line_of_sight_multiplier", out.noLineOfSightMultiplier), 0.0f, 1.0f);
+    out.visualTicks = std::max(0, effect.value("visual_ticks", out.visualTicks));
+    out.visualRadius = std::max(0.0f, effect.value("visual_radius", out.visualRadius));
+    out.visualAlphaStart = std::clamp(
+        effect.value("visual_alpha_start", out.visualAlphaStart), 0.0f, 1.0f);
+    out.visualAlphaEnd = std::clamp(
+        effect.value("visual_alpha_end", out.visualAlphaEnd), 0.0f, 1.0f);
+    if (effect.contains("visual_color_rgb") &&
+        effect["visual_color_rgb"].is_array() &&
+        effect["visual_color_rgb"].size() >= 3) {
+        out.visualColorR = std::clamp(
+            effect["visual_color_rgb"][0].get<float>(), 0.0f, 1.0f);
+        out.visualColorG = std::clamp(
+            effect["visual_color_rgb"][1].get<float>(), 0.0f, 1.0f);
+        out.visualColorB = std::clamp(
+            effect["visual_color_rgb"][2].get<float>(), 0.0f, 1.0f);
+    }
+    out.cameraOverlay = effect.value("camera_overlay", out.cameraOverlay);
     out.audioOnApply = effect.value("audio_on_apply", out.audioOnApply);
 }
 

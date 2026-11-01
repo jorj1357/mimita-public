@@ -1301,3 +1301,21 @@ boolean explicitly enables or disables both the glyph and temporary crosshair
 color. Presentation edits hot-reload; a rejected edit keeps the last valid
 configuration.
 
+
+## Darkbang screen, GUI, and audio presentation (2026-11-01)
+
+Darkbang uses the shared camera-inside volume overlay. Its visible radius sphere
+uses the configured effect radius and runs for 30 client/UI ticks with alpha
+`0.5 -> 0.0`. While the camera is inside the sphere, the world overlay applies;
+Darkbang also requests the `world_hud` mode so the GUI/HUD darkens with it.
+
+The gameplay exposure timer remains authoritative and may outlast the radius
+sphere. Full exposure applies within 1 m of the centre; distance, facing, and
+line of sight scale the rest.
+
+While Darkbang intensity is active, all other sounds are ducked. The Darkbang
+apply sound is excluded from ducking. Both the GUI overlay and the audio duck
+must return to normal when the exposure timer expires.
+
+World-space grenade timers are presentation-only and derive two-decimal seconds
+from authoritative ticks, for example `9.83`.

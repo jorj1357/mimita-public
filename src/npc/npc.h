@@ -26,6 +26,7 @@
 #include "npc/npc-perception.h"
 #include "npc/npc-utility.h"
 #include "npc/npc-movement-context.h"
+#include "combat/area-effect.h"
 
 class Camera;
 struct World;
@@ -310,6 +311,10 @@ public:
     // single shared mirror). Advances that NPC's AI, movement, and firing.
     void updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt);
 
+    // Server-owned grenade hazard snapshot consumed by perception/utility.
+    // One copy per fixed tick; never rebuilt per NPC.
+    void setHazardEffects(const std::vector<AreaEffect>& effects);
+
     // The one shared NPC movement executor. Mode-specific code builds the
     // context (selected target + objective + optional goal) and calls this;
     // Sandbox and Counter-Strike both reach exactly this function.
@@ -350,6 +355,7 @@ public:
 
 private:
     std::vector<Npc> npcs;
+    std::vector<AreaEffect> mHazardEffects;
     uint32_t nextId = 100;
     float globalDifficulty_ = -1.0f;
     float currentTime = 0.0f;

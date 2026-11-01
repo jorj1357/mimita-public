@@ -64,8 +64,9 @@ namespace {
 struct ClientSmokeVolume {
     glm::vec3 position{0.0f};
     float radius = 7.5f;
-    float remainingSeconds = 0.0f;
-    float totalSeconds = 0.0f;
+    int remainingTicks = 0;
+    int totalTicks = 0;
+    float tickAccumulator = 0.0f;
 };
 
 static std::vector<ClientSmokeVolume> gSmokeVolumes;
@@ -74,11 +75,24 @@ struct ClientFireVolume {
     glm::vec3 position{0.0f};
     float radius = 5.0f;
     float height = 3.0f;
-    float remainingSeconds = 0.0f;
-    float totalSeconds = 0.0f;
+    int remainingTicks = 0;
+    int totalTicks = 0;
+    float tickAccumulator = 0.0f;
 };
 
 static std::vector<ClientFireVolume> gFireVolumes;
+
+// Client presentation volumes age in fixed 60 Hz ticks. The frame dt only
+// advances an accumulator; the stored lifetime and countdown are ticks.
+static void advanceClientVolumeTicks(int& remainingTicks, float& accumulator, float dt)
+{
+    accumulator += std::max(0.0f, dt);
+    constexpr float kTick = 1.0f / 60.0f;
+    while (accumulator >= kTick && remainingTicks > 0) {
+        accumulator -= kTick;
+        --remainingTicks;
+    }
+}
 
 static bool grenadeLineOfSight(const glm::vec3& from, const glm::vec3& to)
 {
@@ -605,7 +619,9 @@ uint32_t mpPredictProjectileAttack(
     projectile.velocity = dir * speed + glm::vec3(0.0f, 0.0f, upBias);
     projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     projectile.angularVelocity = glm::vec3(0.0f);
-    projectile.lifetime = cp(def, "fuseTime", def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f);
+    projectile.lifetime = weaponGrenadeTimingConfigured(*def)
+        ? weaponGrenadeFuseSeconds(*def)
+        : cp(def, "fuseTime", def->projectileLifetime > 0.0f ? def->projectileLifetime : 5.0f);
     projectile.radius = def->projectileRadius > 0.0f ? def->projectileRadius : 0.3f;
     projectile.predicted = true;
     projectile.exploded = false;
@@ -1022,17 +1038,18 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
     if (const GrenadeDefinition* grenade = GrenadeRegistry::instance().get(weaponName)) {
         if (grenade->areaKind == AreaEffectKind::Smoke) {
             gSmokeVolumes.push_back({position, grenade->radius,
-                grenade->durationSeconds, grenade->durationSeconds});
+                grenade->durationTicks, grenade->durationTicks, 0.0f});
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                 "grenade.smoke.spawn", std::to_string(event->projectileId),
                 "terminal", event->header.tick,
                 {{"radius_m", grenade->radius},
                  {"diameter_m", grenade->radius * 2.0f},
-                 {"duration_s", grenade->durationSeconds}});
+                 {"duration_ticks", grenade->durationTicks},
+                 {"duration_s", grenade->durationSeconds()}});
         } else if (grenade->areaKind == AreaEffectKind::Fire) {
             gFireVolumes.push_back({position, grenade->radius, grenade->height,
-                grenade->durationSeconds, grenade->durationSeconds});
+                grenade->durationTicks, grenade->durationTicks, 0.0f});
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                 "grenade.fire.spawn", std::to_string(event->projectileId),
@@ -1040,9 +1057,11 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                 {{"radius_m", grenade->radius},
                  {"diameter_m", grenade->radius * 2.0f},
                  {"height_m", grenade->height},
-                 {"duration_s", grenade->durationSeconds},
+                 {"duration_ticks", grenade->durationTicks},
+                 {"duration_s", grenade->durationSeconds()},
                  {"damage_per_tick", grenade->damagePerTick},
-                 {"interval_ticks", grenade->damageIntervalTicks}});
+                 {"interval_ticks", grenade->damageIntervalTicks},
+                 {"damage_all_actors", !grenade->damagesEnemiesOnly}});
         } else if (grenade->areaKind == AreaEffectKind::DarkBang && gpPlayer && gpCamera) {
             const float distance = glm::length(position - gpCamera->pos);
             if (distance <= grenade->maxEffectDistance) {
@@ -1062,9 +1081,13 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                 gpPlayer->darkbangIntensity = std::max(
                     gpPlayer->darkbangIntensity, exposure);
                 gpPlayer->darkbangTimer = std::max(
-                    gpPlayer->darkbangTimer, grenade->durationSeconds * exposure);
-                if (!grenade->audioOnApply.empty())
+                    gpPlayer->darkbangTimer, grenade->durationSeconds() * exposure);
+                if (!grenade->audioOnApply.empty()) {
+                    const float previousDuck = getGlobalDuck();
+                    setGlobalDuck(1.0f);
                     playSound(grenade->audioOnApply, 0.8f);
+                    setGlobalDuck(previousDuck);
+                }
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                     "grenade.darkbang.exposure", std::to_string(event->projectileId),
@@ -1072,8 +1095,50 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                     {{"distance_m", distance},
                      {"exposure", exposure},
                      {"look_factor", lookFactor},
-                     {"line_of_sight_factor", lineOfSightFactor}});
+                     {"line_of_sight_factor", lineOfSightFactor},
+                     {"duration_ticks", grenade->durationTicks},
+                     {"duration_s", grenade->durationSeconds()},
+                     {"visual_ticks", grenade->visualTicks},
+                     {"visual_radius_m", grenade->visualRadius},
+                     {"camera_overlay", grenade->cameraOverlay},
+                     {"gui_alpha", exposure},
+                     {"audio_duck", 1.0f - 0.85f * std::clamp(exposure, 0.0f, 1.0f)}});
             }
+        }
+        // Short-lived radius indicator for grenades whose area volume is not
+        // itself the visual (frag red blast, darkbang black effect radius).
+        if (grenade->visualTicks > 0 && grenade->visualRadius > 0.0f) {
+            EffectPart sphere;
+            sphere.position = position;
+            sphere.maxLifetime = static_cast<float>(grenade->visualTicks) / 60.0f;
+            sphere.scale = grenade->visualRadius;
+            sphere.endScale = grenade->visualRadius;
+            sphere.color = glm::vec3(grenade->visualColorR,
+                                     grenade->visualColorG,
+                                     grenade->visualColorB);
+            sphere.alpha = grenade->visualAlphaStart;
+            sphere.endAlpha = grenade->visualAlphaEnd;
+            sphere.useEndAlpha = true;
+            sphere.cameraOverlayWorld = grenade->cameraOverlay == "world" ||
+                grenade->cameraOverlay == "world_hud";
+            sphere.cameraOverlayHud = grenade->cameraOverlay == "world_hud";
+            sphere.billboardText = false;
+            sphere.replayType = grenade->id + "_radius_indicator";
+            EffectPartSystem::instance().spawn(sphere);
+            const char* visualEvent =
+                grenade->areaKind == AreaEffectKind::DarkBang
+                    ? "grenade.darkbang.visual"
+                    : "grenade.frag.blast.visual";
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                visualEvent, std::to_string(event->projectileId),
+                "radius_indicator", event->header.tick,
+                {{"kind", grenade->id},
+                 {"radius_m", grenade->visualRadius},
+                 {"alpha_start", grenade->visualAlphaStart},
+                 {"alpha_end", grenade->visualAlphaEnd},
+                 {"visual_ticks", grenade->visualTicks},
+                 {"camera_overlay", grenade->cameraOverlay}});
         }
     }
     bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
@@ -2101,15 +2166,15 @@ void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const World& 
     }
 
     for (auto it = gSmokeVolumes.begin(); it != gSmokeVolumes.end();) {
-        it->remainingSeconds -= std::max(0.0f, dt);
-        if (it->remainingSeconds <= 0.0f)
+        advanceClientVolumeTicks(it->remainingTicks, it->tickAccumulator, dt);
+        if (it->remainingTicks <= 0)
             it = gSmokeVolumes.erase(it);
         else
             ++it;
     }
     for (auto it = gFireVolumes.begin(); it != gFireVolumes.end();) {
-        it->remainingSeconds -= std::max(0.0f, dt);
-        if (it->remainingSeconds <= 0.0f)
+        advanceClientVolumeTicks(it->remainingTicks, it->tickAccumulator, dt);
+        if (it->remainingTicks <= 0)
             it = gFireVolumes.erase(it);
         else
             ++it;
@@ -2570,25 +2635,38 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         const float alpha = edgeDistance >= fadeBand
             ? 0.72f
             : std::clamp(edgeDistance / fadeBand, 0.0f, 1.0f) * 0.72f;
+        const glm::vec4 smokeColor(0.5f, 0.5f, 0.5f, alpha);
+        DebugVis::submitCameraVolumeOverlay(camera, smoke.position,
+            smoke.radius, smokeColor, false);
         DebugVis::drawFilledSphere(camera, smoke.position, smoke.radius,
-            glm::vec4(0.5f, 0.5f, 0.5f, alpha));
-        if (smoke.remainingSeconds > 0.0f) {
-            char label[32];
-            std::snprintf(label, sizeof(label), "Smoke %.1fs",
-                smoke.remainingSeconds);
+            smokeColor);
+        if (smoke.remainingTicks > 0) {
+            char label[40];
+            std::snprintf(label, sizeof(label), "Smoke %.2fs",
+                static_cast<float>(smoke.remainingTicks) / 60.0f);
             DebugVis::drawWorldLabel(smoke.position + glm::vec3(0.0f, 0.0f, 2.2f),
                 label, glm::vec4(0.85f, 0.85f, 0.85f, 0.9f));
         }
     }
     for (const ClientFireVolume& fire : gFireVolumes) {
-        const float life = fire.totalSeconds > 0.001f
-            ? std::clamp(fire.remainingSeconds / fire.totalSeconds, 0.0f, 1.0f)
+        // Bright orange at spawn -> dark red at expiry, alpha 0.7 -> 0.3.
+        const float life = fire.totalTicks > 0
+            ? std::clamp(static_cast<float>(fire.remainingTicks) /
+                         static_cast<float>(fire.totalTicks), 0.0f, 1.0f)
             : 1.0f;
+        const glm::vec3 hot(1.0f, 0.55f, 0.05f);
+        const glm::vec3 cold(0.42f, 0.02f, 0.01f);
+        const glm::vec3 color = glm::mix(cold, hot, life);
+        const float alpha = glm::mix(0.3f, 0.7f, life);
+        const glm::vec4 fireColor(color, alpha);
+        DebugVis::submitCameraVolumeOverlay(camera, fire.position,
+            fire.radius, fireColor, false);
         DebugVis::drawFilledCylinder(camera, fire.position,
             glm::vec3(0.0f, 0.0f, 1.0f), fire.radius, fire.height,
-            glm::vec4(1.0f, 0.28f, 0.02f, 0.22f + 0.28f * life));
-        char label[32];
-        std::snprintf(label, sizeof(label), "Fire %.1fs", fire.remainingSeconds);
+            fireColor);
+        char label[40];
+        std::snprintf(label, sizeof(label), "Fire %.2fs",
+            static_cast<float>(fire.remainingTicks) / 60.0f);
         DebugVis::drawWorldLabel(fire.position + glm::vec3(0.0f, 0.0f, fire.height + 0.5f),
             label, glm::vec4(1.0f, 0.55f, 0.2f, 0.9f));
     }

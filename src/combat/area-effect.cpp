@@ -16,15 +16,14 @@ bool areaEffectContains(const AreaEffect& effect, const glm::vec3& position)
 }
 
 void tickAreaEffects(std::vector<AreaEffect>& effects,
-                     float dt,
                      const std::vector<std::pair<uint32_t, glm::vec3>>& actorPositions,
                      const std::vector<int>& actorTeams,
                      std::vector<AreaEffectDamage>& outDamage)
 {
     for (AreaEffect& effect : effects) {
         if (!effect.alive) continue;
-        effect.ageSeconds += dt;
-        if (effect.ageSeconds >= effect.durationSeconds) {
+        effect.ageTicks += 1;
+        if (effect.ageTicks >= effect.durationTicks) {
             effect.alive = false;
             continue;
         }
@@ -39,7 +38,8 @@ void tickAreaEffects(std::vector<AreaEffect>& effects,
 
         for (size_t i = 0; i < actorPositions.size(); ++i) {
             const uint32_t actorId = actorPositions[i].first;
-            if (actorId == 0 || actorId == effect.ownerActorId) continue;
+            if (actorId == 0) continue;
+            if (actorId == effect.ownerActorId && !effect.damageOwner) continue;
             if (effect.damagesEnemiesOnly) {
                 const int team = i < actorTeams.size() ? actorTeams[i] : -1;
                 if (effect.ownerTeam >= 0 && team == effect.ownerTeam) continue;
@@ -51,6 +51,55 @@ void tickAreaEffects(std::vector<AreaEffect>& effects,
 
     effects.erase(std::remove_if(effects.begin(), effects.end(),
         [](const AreaEffect& e) { return !e.alive; }), effects.end());
+}
+
+bool areaEffectSegmentBlocked(const std::vector<AreaEffect>& effects,
+                              AreaEffectKind kind,
+                              const glm::vec3& from,
+                              const glm::vec3& to)
+{
+    const glm::vec3 delta = to - from;
+    const float a = delta.x * delta.x + delta.y * delta.y;
+    const float zMinPad = 1.0f;
+    for (const AreaEffect& effect : effects) {
+        if (!effect.alive || effect.kind != kind) continue;
+        const float zMin = effect.position.z - zMinPad;
+        const float zMax = effect.position.z +
+            (effect.height > 0.0f ? effect.height : 1.0e9f);
+
+        float tEnter = 0.0f;
+        float tExit = 1.0f;
+
+        if (a < 1.0e-8f) {
+            const float dx = from.x - effect.position.x;
+            const float dy = from.y - effect.position.y;
+            if (dx * dx + dy * dy > effect.radius * effect.radius) continue;
+        } else {
+            const float fx = from.x - effect.position.x;
+            const float fy = from.y - effect.position.y;
+            const float b = 2.0f * (fx * delta.x + fy * delta.y);
+            const float c = fx * fx + fy * fy - effect.radius * effect.radius;
+            const float disc = b * b - 4.0f * a * c;
+            if (disc < 0.0f) continue;
+            const float root = std::sqrt(disc);
+            const float inv = 1.0f / (2.0f * a);
+            tEnter = std::max(tEnter, (-b - root) * inv);
+            tExit = std::min(tExit, (-b + root) * inv);
+        }
+
+        if (std::fabs(delta.z) < 1.0e-8f) {
+            if (from.z < zMin || from.z > zMax) continue;
+        } else {
+            const float t1 = (zMin - from.z) / delta.z;
+            const float t2 = (zMax - from.z) / delta.z;
+            tEnter = std::max(tEnter, std::min(t1, t2));
+            tExit = std::min(tExit, std::max(t1, t2));
+        }
+
+        if (tEnter <= tExit && tExit >= 0.0f && tEnter <= 1.0f)
+            return true;
+    }
+    return false;
 }
 
 bool areaEffectSelfTest(std::string& report)
@@ -81,7 +130,7 @@ bool areaEffectSelfTest(std::string& report)
         fire.position = glm::vec3(0, 0, 0);
         fire.radius = 5.0f;
         fire.height = 3.0f;
-        fire.durationSeconds = 10.0f;
+        fire.durationTicks = 600;
         fire.damagePerTick = 10;
         fire.damageIntervalTicks = 10;
         effects.push_back(fire);
@@ -97,11 +146,11 @@ bool areaEffectSelfTest(std::string& report)
 
         std::vector<AreaEffectDamage> dmg;
         // 9 ticks: no damage yet (interval 10).
-        for (int i = 0; i < 9; ++i) tickAreaEffects(effects, 1.0f / 60.0f, positions, teams, dmg);
+        for (int i = 0; i < 9; ++i) tickAreaEffects(effects, positions, teams, dmg);
         if (!dmg.empty()) fail("fire should not damage before the interval");
 
         // 10th tick: enemy inside takes damage; ally and outside do not.
-        tickAreaEffects(effects, 1.0f / 60.0f, positions, teams, dmg);
+        tickAreaEffects(effects, positions, teams, dmg);
         if (dmg.size() != 1) fail("exactly one enemy should take fire damage");
         else {
             if (dmg[0].actorId != 1) fail("wrong actor took fire damage");
@@ -118,12 +167,34 @@ bool areaEffectSelfTest(std::string& report)
         smoke.kind = AreaEffectKind::Smoke;
         smoke.position = glm::vec3(0, 0, 0);
         smoke.radius = 4.0f;
-        smoke.durationSeconds = 0.05f;
+        smoke.durationTicks = 3;
         effects.push_back(smoke);
         std::vector<AreaEffectDamage> dmg;
-        tickAreaEffects(effects, 0.1f, {}, {}, dmg);
+        for (int i = 0; i < 3; ++i) tickAreaEffects(effects, {}, {}, dmg);
         if (!effects.empty()) fail("expired effect should be removed");
         report += "expiry=ok\n";
+    }
+
+    // Smoke segment blocking: a segment through the volume is blocked; one
+    // around it is not; the wrong kind is ignored.
+    {
+        AreaEffect smoke;
+        smoke.kind = AreaEffectKind::Smoke;
+        smoke.position = glm::vec3(0, 0, 0);
+        smoke.radius = 5.0f;
+        smoke.height = 8.0f;
+        smoke.durationTicks = 600;
+        std::vector<AreaEffect> effects{smoke};
+        if (!areaEffectSegmentBlocked(effects, AreaEffectKind::Smoke,
+                                      glm::vec3(-10, 0, 1), glm::vec3(10, 0, 1)))
+            fail("smoke should block a segment through it");
+        if (areaEffectSegmentBlocked(effects, AreaEffectKind::Smoke,
+                                     glm::vec3(-10, 20, 1), glm::vec3(10, 20, 1)))
+            fail("smoke should not block a segment outside its radius");
+        if (areaEffectSegmentBlocked(effects, AreaEffectKind::Fire,
+                                     glm::vec3(-10, 0, 1), glm::vec3(10, 0, 1)))
+            fail("non-smoke kind should not block smoke segments");
+        report += "smoke_segment=ok\n";
     }
 
     report += ok ? "PASS\n" : "FAIL\n";

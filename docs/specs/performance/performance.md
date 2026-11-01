@@ -92,3 +92,17 @@ Avoid architecture that exists only for abstraction.
 
 Abstractions should earn their cost.
 
+
+## Grenade hazards and NPC rush budget (2026-11-01)
+
+NPC smoke/fire/darkbang/frag hazard awareness uses one reusable per-tick hazard
+snapshot. Do not rescan all collision triangles or all projectiles per NPC per
+query. The snapshot is built once per fixed tick, reused by all NPC perception
+and utility calls, and must avoid hot-loop allocations.
+
+Smoke line-of-sight blocking reuses the existing LOS ray and a bounded volume
+segment test. It must not become a second full collision query.
+
+Fun Counter Strike rush reuses the existing navigation route and shared
+movement/dash/jump inputs. It must not add a parallel mover, per-tick heap
+allocation, or an extra physics pass.

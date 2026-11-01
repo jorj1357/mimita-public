@@ -1785,3 +1785,36 @@ A live journal has exactly one process owner.
 
 No journal may contain two server owners or two clients under one identity.
 `scenario.startrecord` must reject a recording when ownership is ambiguous.
+
+## Grenade, hazard, and NPC objective proof events (2026-11-01)
+
+These bounded events let an agent prove the grenade and Fun Counter Strike NPC
+behavior through the live `events.jsonl` journal. They are rate-limited and
+must not become per-tick spam.
+
+- `grenade.config.resolved`: kind, radius, `duration_ticks`, `fuse_ticks`,
+  damage cadence, bounce values, visual ticks/alpha.
+- `grenade.spawn`: kind, position, `fuse_ticks`.
+- `grenade.bounce`: tick, speed before/after, restitution, position.
+- `grenade.area.spawn`: radius, `duration_ticks`, visual ticks/alpha,
+  camera-overlay mode.
+- `grenade.area.tick`: every 60 ticks and at first/last tick; remaining ticks
+  and derived remaining seconds.
+- `grenade.effect.damage`: effect, kind, actor, actor kind, team, damage, tick,
+  remaining ticks.
+- `grenade.frag.blast`: radius, center/edge damage, affected actors,
+  `damage_ticks: 1`.
+- `grenade.darkbang.apply`: distance, exposure, intensity, duration ticks, GUI
+  alpha, audio duck.
+- `grenade.darkbang.visual`: radius, alpha start/end, start/end tick.
+- `grenade.smoke.block`: actor, target, smoke effect id, tick.
+- `npc.hazard-avoid`: hazard kind, distance, action (flee/duck/look-away), tick.
+- `team.site-choice`: round, chosen site, candidates, deterministic seed/hash.
+- `npc.bomb-recovery`: actor, bomb position, chosen site, tick.
+- `npc.rush`: goal, distance, net progress, dash count, path state.
+- `npc.defuse-assigned`: CT actor, bomb position, distance, tick.
+- `npc.team-report`: reporting actor, target, position, confidence, tick.
+
+Every record carries the universal `tick`. Derived seconds are optional
+readability fields; the tick is the authoritative value. Assertions must use
+ticks and configured ranges, not wall-clock time.

@@ -8,6 +8,7 @@
 #include "actor/player-ai.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 

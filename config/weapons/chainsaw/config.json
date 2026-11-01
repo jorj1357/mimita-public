@@ -14,8 +14,8 @@
     "melee": {
       "animation_only": true,
       "arm_ragdoll": {
-        "enabled": true,
-        // "enabled": false,
+        // "enabled": true,
+        "enabled": false,
         "extend_strength": 500.0,
         "extend_max_speed": 253.0,
         "max_stretch": 0.25,
@@ -186,6 +186,7 @@
       -90.0
     ],
     "attachment": {
+      // normal pose 2026 11 01 1555
       // "position": [
       //   0.25,
       //   // 0.5,
@@ -195,6 +196,7 @@
       //   // -0.25
       //   -2.0
       // ],
+      // ragdoll arm pose 2026 11 01 1554
       "position": [
         0.25,
         // 0.5,
@@ -204,17 +206,24 @@
         -0.25
         // -2.0
       ],
+      // fixed arm rotation 2026 11 01 1555
       "rotation_degrees": [
-        // 90.0,
-        0.0,
-        // 10.0,
-        // 90.0,
-        0.0,
-        // -25.0
-        // -90.0
-        90.0
-        // 0.0
+       90.0,
+        10.0,
+        -25.0
       ]
+      // ragdoll arm pose 2026 11 01 1555 
+      // "rotation_degrees": [
+      //   // 90.0,
+      //   0.0,
+      //   // 10.0,
+      //   // 90.0,
+      //   0.0,
+      //   // -25.0
+      //   // -90.0
+      //   90.0
+      //   // 0.0
+      // ]
     },
     "scale": [
       2.0,

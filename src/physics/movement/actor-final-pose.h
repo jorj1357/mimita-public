@@ -43,6 +43,7 @@ struct ActorFinalPoseResult
     bool usedSafePoint = false;
     bool failed = false;
     bool budgetExceeded = false;
+    bool rootInsideClosedSolid = false;
     const char* stage = "final";
     int partCount = 0;
     int extraPartCount = 0;
@@ -63,3 +64,8 @@ bool containActorFinalPose(Player& actor,
                            const char* stage = "final");
 
 bool actorFinalPoseSelfTest(std::string* outSummary = nullptr);
+
+// True when the root is inside a closed collision solid volume, not merely
+// inside the map's enclosing room shell. Uses the nearest floor triangle's
+// solid id and tests parity against that solid only.
+bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point);

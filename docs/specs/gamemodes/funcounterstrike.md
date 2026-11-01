@@ -15,6 +15,21 @@ Keep the rules distinct:
 - `funcounterstrike` is the respawning bomb mode. Elimination never wins a
   round; the bomb objective alone decides it.
 
+## Simulation time units
+
+Authoritative gameplay time is integer fixed ticks at 60 Hz.
+
+- Server configuration uses `*_ticks` fields. `*_seconds` is accepted only as a
+  load-time convenience and is converted to ticks.
+- Server simulation, client prediction, and replay compare ticks, not render
+  frames.
+- Human-facing text derives seconds as `ticks / 60` and may show two decimals,
+  for example `9.83`.
+- Structured logs carry the authoritative `tick` and may also carry derived
+  seconds for readability.
+- One value has one owner. Per-weapon `grenade_effect` owns grenade fuse and
+  area-effect lifetime; `custom_params.fuseTime` is retired for grenades.
+
 ## Round lifecycle
 
 - Unplanted round timer: **90 seconds** by default (`rounds.round_seconds`).
@@ -139,7 +154,9 @@ when the mode omits a value; the effective source and values are logged as
 
 The canonical grenade policy lives in each weapon definition under
 `config/weapons/<id>/config.json` in a shared `grenade_effect` block. The old
-`config/grenades.json` file is retired so there is one source of truth.
+`config/grenades.json` file is retired so there is one source of truth. The
+`grenade_effect` block is the only owner of grenade fuse and area-effect timing;
+`custom_params.fuseTime` must not appear on grenade weapons.
 
 Shared schema fields:
 
@@ -149,55 +166,88 @@ Shared schema fields:
   "area_kind": "fire|smoke|darkbang|none",
   "radius": 5.0,
   "height": 3.0,
-  "duration_seconds": 7.0,
+  "duration_ticks": 420,
+  "fuse_ticks": 120,
   "damage_per_tick": 10,
   "damage_interval_ticks": 5,
-  "damages_enemies_only": true,
+  "damages_enemies_only": false,
   "spawns_area_effect": true,
-  "fuse_seconds": 2.0,
-  "direct_effect_distance": 5.0,
+  "direct_effect_distance": 1.0,
   "max_effect_distance": 20.0,
   "not_looking_multiplier": 0.5,
   "no_line_of_sight_multiplier": 0.05,
+  "visual_ticks": 30,
+  "visual_radius": 6.0,
+  "visual_alpha_start": 0.5,
+  "visual_alpha_end": 0.0,
+  "visual_color_rgb": [0.0, 0.0, 0.0],
+  "camera_overlay": "world_hud",
   "audio_on_apply": "weapon/darkbang/brownnoise"
 }
 ```
 
 `GrenadeRegistry` publishes these definitions from the weapon registry and
 reloads with the same atomic weapon-config snapshot. Do not add a second
-grenade-policy loader.
+grenade-policy loader. Player throws, NPC throws, client prediction, and the
+local persistent-physics path all derive their fuse from `fuse_ticks`.
+
+Grenade projectiles are physically larger and bouncier than the legacy
+defaults. The configured projectile radius and bounce values are presentation
+and physics policy, not a separate gameplay system.
 
 ### Frag
 
-- Highly visible red blast through the shared explosion presentation.
+- Highly visible red blast radius through the shared explosion presentation.
 - **1000 damage at the center**, **25 damage at the outer edge** by default.
+- Damage is applied for exactly **one fixed tick**. The visual radius is not a
+  second damage volume and must not repeatedly damage actors.
+- The red radius sphere shows the full configured splash radius (20 m by
+  default), starts at alpha **0.5**, and reaches alpha **0.0** over 30 ticks.
 - Uses the shared splash/damage/knockback path and the optional
   `splashEdgeDamage` center-to-edge interpolation.
 
 ### Smoke
 
 - Gray volume, **20 m diameter** (`radius: 10.0`).
-- **10-second tick-based lifetime**; clients count down the remaining time.
-- The **outer 5% of the radius is the fade band**.
-- NPC perception currently does not consume smoke. Treat that as an open hook;
-  do not invent a second smoke query in combat code.
+- **600-tick lifetime** (10 seconds at 60 Hz); clients display the derived
+  remaining seconds live with two decimals, for example `9.83`.
+- The **outer 5% of the radius is the fade band**. The camera-inside volume
+  primitive applies a world-only fog overlay so an actor inside the smoke cannot
+  see the world through it.
+- Smoke blocks NPC perception through the shared LOS query. A smoke volume
+  between an NPC and a target is a blocker; do not add a second smoke query in
+  combat code.
 
 ### Fire
 
 - Cylinder, **10 m diameter** (`radius: 5.0`) by default.
-- Configured to deter and kill over sustained exposure. Defaults are
-  `10 damage / 5 ticks` for 7 seconds; tune the JSON, not the code.
-- Damage goes through the shared fixed-tick area-effect and damage paths.
+- **420-tick lifetime** (7 seconds at 60 Hz).
+- Starts bright orange with alpha **0.7**, transitions to dark red with alpha
+  **0.3**, then disappears.
+- Deals `10 damage / 5 ticks` to **all actors touching the cylinder, including
+  the thrower**. Damage goes through the shared fixed-tick area-effect and
+  damage paths; there is no separate fire damage path.
+- NPCs treat fire as a hazard and path around it instead of entering it.
 
 ### Darkbang
 
-- Exposure-based black-screen intensity from distance, facing, and line of
-  sight.
-- Duration scales with exposure.
+- **6 m effect radius** (`radius: 6.0`). Full effect is applied within **1 m**
+  of the exact centre; exposure falls off with distance.
+- Exposure also considers facing and line of sight.
+- The black radius sphere shows the effect radius, starts at alpha **0.5** on
+  tick 1, and reaches alpha **0.0** at tick 30.
+- The camera-inside volume primitive darkens the world and, in
+  `world_hud` mode, the GUI. A fully opaque configured sphere makes the affected
+  layer fully black.
+- While intensity is active, all other sounds are ducked (made quieter). The
+  Darkbang apply sound itself is not ducked.
+- Duration scales with exposure in ticks.
 - Plays the configured brown-noise audio on apply; the default asset is
   `assets/sound/weapon/darkbang/brownnoise.wav`.
-- Recovery is client-owned and returns the screen/audio state to normal when
-  the timer expires.
+- Recovery is client-owned and returns the screen, GUI, and audio state to
+  normal when the timer expires.
+- NPCs look away from a nearby Darkbang and prefer distance when no closer
+  visible target forces them to engage.
 
 ## NPC grenade policy
 
@@ -211,9 +261,50 @@ grenade-policy loader.
 - Log every decision as `npc.grenade-decision` with weapon, kind, distance,
   radius, score, friendly count, enemy density, cover state, and self-blast
   result.
-- NPC objective behavior retains the shared TeamBrain/utility owners:
-  carrier commits to a site, supporters escort, CTs defend/rotate, and a
-  planted bomb triggers retake/defuse behavior.
+- NPCs treat active grenade volumes as hazards:
+  - smoke blocks their line of sight and target acquisition;
+  - fire is avoided; NPCs path around it rather than entering it;
+  - frag projectiles and fresh frag blasts are avoided; NPCs run away when they
+    see them;
+  - darkbang makes NPCs look away and prefer distance when no closer visible
+    target forces engagement.
+- Hazard decisions use the shared hazard snapshot and are logged as
+  `npc.hazard-avoid`.
+
+## NPC objective strategy
+
+Terrorist NPCs:
+
+- Choose **one bomb site for the whole round** as a team. The choice is
+  deterministic for a given round/map seed, logged as `team.site-choice`, and
+  stable until the next round.
+- Every living Terrorist NPC travels to that chosen site. The carrier plants;
+  supporters escort and clear the route.
+- If the bomb is dropped, the nearest living Terrorist is assigned to recover
+  it. It paths to the bomb, picks it up, and then resumes travel to the chosen
+  site to plant.
+- After the plant, Terrorists defend the bomb. They kill enemies close to the
+  bomb, prioritise an active defuser, and do not chase enemies far away from the
+  bomb.
+
+Counter-Terrorist NPCs:
+
+- Do not receive the Terrorists' round site choice. They use perception-gated
+  team reports and memory only.
+- With a report, they rush toward the reported enemy area at maximum useful
+  speed, fight, and try to prevent a plant.
+- Without a report, they defend usable sites and rotate on new reports.
+- After a plant, the nearest CT is assigned to defuse; the others cover it.
+  Defusing remains the top priority.
+
+Fun Counter Strike NPC rush:
+
+- NPCs use known navigation routes directly instead of searching or wandering.
+- They request dash whenever the shared dash ability is available, and may
+  combine jump/bunny-hop and air-strafe movement to reduce travel time.
+- Rush behavior is a Fun Counter Strike behavior-profile choice, not a change to
+  human Counter Strike movement.
+- All timing is expressed and logged in fixed ticks; display seconds are derived.
 
 ## Deathball contract
 
@@ -271,10 +362,13 @@ repeated):
 | Rounds | endless | gamemode JSON |
 | Match length | configurable (0 = endless) | gamemode JSON |
 | Respawn | instant (non-zero seconds) | gamemode JSON |
-| Smoke | 20 m diameter, 10 s | smoke weapon JSON |
-| Fire | 10 m diameter, 10 dmg / 5 ticks | fire weapon JSON |
-| Frag | 1000 center / 25 edge | frag weapon JSON |
-| Deathball | 999 clip, 1 s fire, 1 s reload | deathball weapon JSON |
+| Grenade fuse | 120 ticks (2 s) | weapon `grenade_effect.fuse_ticks` |
+| Smoke | 20 m diameter, 600 ticks | smoke weapon JSON |
+| Fire | 10 m diameter, 420 ticks, 10 dmg / 5 ticks, all actors | fire weapon JSON |
+| Frag | 20 m radius, 1000 center / 25 edge, one damage tick | frag weapon JSON |
+| Darkbang | 6 m radius, full within 1 m, 30-tick visual | darkbang weapon JSON |
+| Grenade bounce | restitution ~0.82, friction ~0.12, 30 bounces | per-weapon JSON |
+| Deathball | 999 clip, 60-tick fire, 60-tick reload | deathball weapon JSON |
 
 ## Runtime acceptance
 

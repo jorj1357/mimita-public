@@ -399,25 +399,48 @@ area-effect implementation:
   "area_kind": "fire|smoke|darkbang|none",
   "radius": 5.0,
   "height": 3.0,
-  "duration_seconds": 7.0,
+  "duration_ticks": 420,
+  "fuse_ticks": 120,
   "damage_per_tick": 10,
   "damage_interval_ticks": 5,
-  "damages_enemies_only": true,
+  "damages_enemies_only": false,
   "spawns_area_effect": true,
-  "fuse_seconds": 2.0,
-  "direct_effect_distance": 5.0,
+  "direct_effect_distance": 1.0,
   "max_effect_distance": 20.0,
   "not_looking_multiplier": 0.5,
   "no_line_of_sight_multiplier": 0.05,
+  "visual_ticks": 30,
+  "visual_radius": 6.0,
+  "visual_alpha_start": 0.5,
+  "visual_alpha_end": 0.0,
+  "visual_color_rgb": [0.0, 0.0, 0.0],
+  "camera_overlay": "world_hud",
   "audio_on_apply": "weapon/darkbang/brownnoise"
 }
 ```
 
+**Simulation time rule.** Authoritative gameplay time is integer fixed ticks at
+60 Hz. Grenade and area-effect configuration therefore uses `*_ticks` fields.
+`*_seconds` may be accepted only as a legacy load-time convenience and is
+converted to ticks immediately. Client display derives seconds as
+`ticks / 60` and may show two decimals. Structured logs carry the authoritative
+`tick` and may also include derived seconds. Server simulation, client
+prediction, and replay compare ticks, never render frames.
+
 `GrenadeRegistry` publishes this block from the weapon registry and reloads
 with the same atomic weapon-config snapshot. `config/grenades.json` is retired;
-do not create a second grenade-policy source. Frag splash uses the shared
-damage path and may author `splashEdgeDamage` for center-to-edge interpolation
-(default frag: 1000 center / 25 edge).
+do not create a second grenade-policy source. `grenade_effect` is the single
+owner of grenade fuse and lifetime; `custom_params.fuseTime` must not appear on
+grenade weapons. Player throws, NPC throws, client prediction, and the local
+persistent-physics path must all derive the fuse from the same `fuse_ticks`.
+
+Frag splash uses the shared damage path and may author `splashEdgeDamage` for
+center-to-edge interpolation (default frag: 1000 center / 25 edge). Frag damage
+is applied for one fixed tick; the visible blast-radius sphere is presentation
+only and must not become a second damage volume. Fire damages all actors,
+including the thrower, and is avoided by NPCs. Smoke blocks NPC line of sight.
+Darkbang owns an effect radius, a short visual radius sphere, camera-inside
+world/GUI darkening, and global sound ducking.
 
 ### Linear impact falloff: revolver first (2026-10-20)
 

@@ -19,7 +19,7 @@ void setActive(bool enabled);
 
 // Builds one input frame from replicated hostiles and the current player pose.
 // Safe to call when inactive (returns an empty frame).
-InputFrame buildFrame(const Player& player, const Camera& camera,
+InputFrame buildFrame(const Player& player, Camera& camera,
                       const World& world);
 
 } // namespace PlayerAiController

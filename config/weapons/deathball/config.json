@@ -118,19 +118,19 @@
 "viewmodel": {
     "enabled": true,
     "position": [
-      0.0,
-      -0.2,
-      0.8
-    ],
-    "rotation_degrees": [
-      0.0,
+      -0.5,
       0.0,
       0.0
     ],
+    "rotation_degrees": [
+      0.0,
+      90.0,
+      0.0
+    ],
     "scale": [
-      0.8,
-      0.8,
-      0.8
+      1.0,
+      1.0,
+      1.0
     ]
   },
 "world_impact": null,

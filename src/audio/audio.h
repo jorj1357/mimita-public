@@ -49,6 +49,11 @@ void playFreezeBeginSound();
 void playFreezeHoldSound();
 void playFreezeEndSound();
 
+// Global duck multiplier applied to all normal sound playback. Used by
+// Darkbang to make other sounds quieter while the screen is affected.
+void setGlobalDuck(float duck);
+float getGlobalDuck();
+
 void playSound(const std::string& name, float volume = 1.0f);
 void playEventSound(const std::string& name, float volume = 1.0f);
 void playSoundPitched(const std::string& name, float volume, float pitch);

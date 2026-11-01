@@ -385,6 +385,8 @@ void readProfile(const json& j, const std::string& fallbackId,
         j, "travel_target_reached_meters", 2.0f, 30.0f,
         out.travelTargetReachedMeters, out.id);
 
+    out.objectiveRush = boolOr(j, "objective_rush", out.objectiveRush);
+
     // General group/focus behavior (npc-group-behavior.md).
     out.focusEnabled = boolOr(j, "focus_enabled", out.focusEnabled);
     out.focusMode = j.value("focus_mode", out.focusMode);
@@ -582,6 +584,7 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.travelTargetDistanceMeters = def->travelTargetDistanceMeters;
     out.travelTargetReachedMeters = def->travelTargetReachedMeters;
 
+    out.objectiveRush = def->objectiveRush;
     // General group/focus behavior.
     out.focusEnabled = def->focusEnabled;
     out.focusMode = def->focusMode;

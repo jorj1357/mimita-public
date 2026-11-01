@@ -21,7 +21,8 @@ enum class AreaEffectKind : uint8_t
     None = 0,
     Fire,        // cylinder, periodic damage
     Smoke,       // volume, blocks vision, lifetime
-    DarkBang     // blinding screen effect, duration
+    DarkBang,    // blinding screen effect, duration
+    Danger       // no damage; short AI hazard marker (for example frag blast)
 };
 
 // One live area effect. Server-owned; replicated presentation is derived from
@@ -35,15 +36,25 @@ struct AreaEffect
     glm::vec3 position{0.0f};
     float radius = 4.0f;
     float height = 3.0f;             // fire/smoke cylinder height
-    float durationSeconds = 0.0f;    // total lifetime
-    float ageSeconds = 0.0f;
+    int durationTicks = 0;           // total lifetime, authoritative
+    int ageTicks = 0;
     int damagePerTick = 0;           // fire only
     int damageIntervalTicks = 10;    // fire only
     int ticksSinceDamage = 0;
     bool damagesEnemiesOnly = true;  // fire team policy
+    bool damageOwner = false;        // fire may burn the thrower
     bool alive = true;
 
-    float remainingSeconds() const { return durationSeconds - ageSeconds; }
+    int remainingTicks() const {
+        return durationTicks > ageTicks ? durationTicks - ageTicks : 0;
+    }
+    // Derived display value only; never store or compare seconds internally.
+    float remainingSeconds() const {
+        return static_cast<float>(remainingTicks()) / 60.0f;
+    }
+    float durationSeconds() const {
+        return static_cast<float>(durationTicks) / 60.0f;
+    }
 };
 
 // Advance every effect by one fixed tick. Appends damage events (actorId,
@@ -53,13 +64,19 @@ struct AreaEffect
 struct AreaEffectDamage { uint32_t actorId = 0; int damage = 0; uint32_t effectId = 0; };
 
 void tickAreaEffects(std::vector<AreaEffect>& effects,
-                     float dt,
                      const std::vector<std::pair<uint32_t, glm::vec3>>& actorPositions,
                      const std::vector<int>& actorTeams,
                      std::vector<AreaEffectDamage>& outDamage);
 
 // Is a position inside an effect's cylinder? Pure.
 bool areaEffectContains(const AreaEffect& effect, const glm::vec3& position);
+
+// Does any effect of `kind` intersect the segment from -> to? Used for smoke
+// line-of-sight blocking. Pure over the effect list; no world mutation.
+bool areaEffectSegmentBlocked(const std::vector<AreaEffect>& effects,
+                              AreaEffectKind kind,
+                              const glm::vec3& from,
+                              const glm::vec3& to);
 
 // World-independent selftest for area-effect ticking, fire cadence, and expiry.
 bool areaEffectSelfTest(std::string& report);

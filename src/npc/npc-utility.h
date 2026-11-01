@@ -73,6 +73,20 @@ struct UtilityContext {
     bool canPlant = false;              // carrier, in a valid site
     bool canDefuse = false;             // defender, at a planted objective
     bool onDefense = false;
+    int team = -1;                      // owner team (0 CT, 1 T)
+    bool planted = false;               // objective is planted
+    glm::vec3 plantedBombPos{0.0f};
+    bool bombDropped = false;           // objective is dropped and recoverable
+    bool isRecoverer = false;           // this actor is assigned to recover it
+    bool isDefuserId = false;           // this CT is the designated defuser
+    float bombDefendRadius = 15.0f;     // T post-plant defend radius
+    // Grenade hazard context. One shared snapshot owns these values.
+    bool hazardActive = false;
+    glm::vec3 hazardPos{0.0f};
+    float hazardRadius = 0.0f;
+    int hazardKind = 0;                 // AreaEffectKind / frag
+    bool lookAwayKnown = false;
+    glm::vec3 lookAwayFrom{0.0f};
     // Team-level enemy-area knowledge (from TeamBrain reports). Travel toward
     // this when no closer objective/target dominates.
     bool enemyAreaKnown = false;

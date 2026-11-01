@@ -130,6 +130,13 @@ bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def
     if (npc.dashCooldown > 0.0f)
         return false;
 
+    // Fun Counter Strike objective rush: when the route is known and there is
+    // no visible target, spend the dash immediately instead of rolling a
+    // probability. The shared movement preset still owns availability.
+    if (npc.behavior.active && npc.behavior.objectiveRush &&
+        npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget)
+        return true;
+
     float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
     float chanceScale = cfg.dashChance;
 
@@ -214,7 +221,8 @@ static glm::vec3 delayedTarget(const Npc& npc, const glm::vec3& currentPos,
     return bestPos + bestVel * predictTime;
 }
 
-void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
+void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
+                const std::vector<AreaEffect>* hazards)
 {
     NpcSensorContext sensors;
     // The sensor clock is the fixed-tick time source for throttled diagnostics
@@ -285,6 +293,20 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
                 float hitDist = losDist;
                 if (rayTraverseGridCells(world, fromPos, losDir, losDist, hitDist, nullptr))
                     losBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
+            }
+            if (!losBlocked && hazards &&
+                areaEffectSegmentBlocked(*hazards, AreaEffectKind::Smoke,
+                                         fromPos, toPos)) {
+                losBlocked = true;
+                if (((uint32_t)(npc.sensors.time * 60.0f) % 120u) == 0u) {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::NpcMovement, StructuredLevel::Important,
+                        "grenade.smoke.block", std::to_string(npc.id), "smoke_los",
+                        (uint32_t)(npc.sensors.time * 60.0f),
+                        nlohmann::json{{"actor", npc.id},
+                                       {"target", npc.perceptionTargetId},
+                                       {"smoke_volumes", hazards->size()}});
+                }
             }
             npc.cachedLoSBlocked = losBlocked;
         }
@@ -422,6 +444,43 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt)
         const auto& rt = npc.body.weaponRuntimes.find(npc.body.equippedWeaponId);
         uctx.weaponReady = rt == npc.body.weaponRuntimes.end()
             || (!rt->second.isReloading && rt->second.currentAmmo > 0);
+    }
+    // Grenade hazard context (fire/frag/darkbang). Smoke is handled by the LOS
+    // blocker above. The snapshot is server-owned and shared by all NPCs.
+    uctx.hazardActive = false;
+    uctx.lookAwayKnown = false;
+    if (hazards) {
+        for (const AreaEffect& effect : *hazards) {
+            if (effect.kind != AreaEffectKind::Fire &&
+                effect.kind != AreaEffectKind::DarkBang &&
+                effect.kind != AreaEffectKind::Danger)
+                continue;
+            const float dist = glm::length(npc.body.pos - effect.position);
+            const float reactRadius = effect.radius + 1.5f;
+            if (effect.kind == AreaEffectKind::DarkBang &&
+                dist <= effect.radius + 8.0f) {
+                uctx.lookAwayKnown = true;
+                uctx.lookAwayFrom = effect.position;
+            }
+            if (dist <= reactRadius) {
+                uctx.hazardActive = true;
+                uctx.hazardPos = effect.position;
+                uctx.hazardRadius = effect.radius;
+                uctx.hazardKind = (int)effect.kind;
+            }
+        }
+        if (uctx.hazardActive &&
+            ((uint32_t)(npc.sensors.time * 60.0f) % 120u) == 0u) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.hazard-avoid", std::to_string(npc.id), "grenade_hazard",
+                (uint32_t)(npc.sensors.time * 60.0f),
+                nlohmann::json{{"actor", npc.id},
+                               {"hazard_kind", uctx.hazardKind},
+                               {"distance_m", glm::length(npc.body.pos - uctx.hazardPos)},
+                               {"radius_m", uctx.hazardRadius},
+                               {"action", "flee"}});
+        }
     }
     npc.utilityContext = uctx;
     selectUtilityGoal(npc.utilityContext, npc.utility, dt);
@@ -562,6 +621,18 @@ NpcGoal makeNavGoal(const Npc& npc)
             break;
         case UtilityGoalKind::Survive:
         case UtilityGoalKind::TakeCover:
+            if (npc.utilityContext.hazardActive) {
+                glm::vec3 away = npc.body.pos - npc.utilityContext.hazardPos;
+                away.z = 0.0f;
+                if (glm::length(away) < 0.01f)
+                    away = glm::vec3(1.0f, 0.0f, 0.0f);
+                away = glm::normalize(away);
+                goal.kind = NpcGoalKind::ReachPosition;
+                goal.targetPos = npc.utilityContext.hazardPos +
+                    away * (npc.utilityContext.hazardRadius + 3.0f);
+                goal.tolerance = 1.5f;
+                return goal;
+            }
             if (npc.sensors.hasTarget) {
                 goal.kind = NpcGoalKind::FleeActor;
                 goal.desiredDistance = 8.0f;
@@ -1230,6 +1301,11 @@ static void emitMovementDecision(Npc& npc, const char* replanReason,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
+void NpcSystem::setHazardEffects(const std::vector<AreaEffect>& effects)
+{
+    mHazardEffects = effects;
+}
+
 void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                              const NpcMovementContext& context, float dt)
 {
@@ -1369,7 +1445,27 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
-    senseWorld(npc, world, player, safeDt);
+    senseWorld(npc, world, player, safeDt, &mHazardEffects);
+
+    if (npc.behavior.active && npc.behavior.objectiveRush &&
+        npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {
+        const uint32_t rushTick = (uint32_t)(npc.sensors.time * 60.0f);
+        if ((rushTick % 300u) == 0u) {
+            const float dist = glm::length(
+                npc.utilityContext.objectivePos - npc.body.pos);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.rush", std::to_string(npc.id), "objective_route", rushTick,
+                nlohmann::json{{"actor", npc.id},
+                               {"team", npc.body.matchTeam},
+                               {"goal", utilityGoalName(npc.utility.currentGoal)},
+                               {"distance_m", dist},
+                               {"dash_available", npc.body.dash.dashAvailable},
+                               {"objective", {npc.utilityContext.objectivePos.x,
+                                              npc.utilityContext.objectivePos.y,
+                                              npc.utilityContext.objectivePos.z}}});
+        }
+    }
 
     // Hearing: if no target, react to nearby combat sounds
     if (!npc.sensors.hasTarget && npc.stateMachine.lastKnownAge > 2.0f)

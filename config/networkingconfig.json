@@ -136,12 +136,15 @@
   "disagreement_visuals": {
     "comment": "Server-disagree effects (correction indicators, HIT REJECTED pops). Keep off when prediction is trusted; disagreements should be rare and shrinking.",
     "enabled": true
+    // "enabled": false
   },
 
   "prediction": {
     "comment": "Client-side prediction scope. Hitmarker + hit sound are ALWAYS predicted (instant). predict_damage controls instant damage numbers + target health bar. predict_deaths controls instant lethal presentation; the reliable server event remains authoritative and disagreement rolls back once.",
-    "predict_damage": true,
-    "predict_deaths": true
+    // "predict_damage": true,
+    "predict_damage": false,
+    // "predict_deaths": true
+    "predict_deaths": false
   },
 
   "remote_projectile_interpolation": {

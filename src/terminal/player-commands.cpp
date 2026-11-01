@@ -21,6 +21,8 @@
 #include "network/multiplayer-context.h"
 #include "physics/movement/movement-step.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/actor-final-pose.h"
+#include "physics/ray-utils.h"
 #include "game/spawn-utils.h"
 #include "gui/hud/chat-bubble.h"
 #include "gui/hud/chat-history.h"
@@ -343,6 +345,12 @@ void registerPlayerCommands()
                 hits.push_back({{"dir", {dir.x, dir.y, dir.z}},
                                 {"hit", hit}, {"distance", hitDistance}});
             }
+            const int groundTriangle = selectWorldTriangle(
+                world, point, glm::vec3(0.0f, 0.0f, -1.0f));
+            const uint32_t groundSolidId =
+                groundTriangle >= 0 &&
+                (size_t)groundTriangle < world.collisionMesh.solidIds.size()
+                    ? world.collisionMesh.solidIds[(size_t)groundTriangle] : 0;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Collision, StructuredLevel::Important,
                 "collision.probe", "manual",
@@ -350,6 +358,9 @@ void registerPlayerCommands()
                 (uint32_t)THE_PLAYER.movementSimulationTick,
                 {{"point", {point.x, point.y, point.z}},
                  {"inside_solid", inside},
+                 {"inside_closed_solid", actorRootInsideClosedSolid(world, point)},
+                 {"ground_triangle", groundTriangle},
+                 {"ground_solid_id", groundSolidId},
                  {"ground_z", ground},
                  {"triangle_count", world.collisionMesh.triangles.size()},
                  {"rays", hits}},

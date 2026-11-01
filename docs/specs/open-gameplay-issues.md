@@ -1,3 +1,26 @@
+﻿2026 11 01 1558 config rotations 
+json
+chainsw rotating
+freeze whoel game for liek 2 sec
+thees secodns add up
+not good
+needs to be instnat 
+or 
+make this odabel
+doa ble in the enigen
+liek map editor
+tweak rotations live bro
+i dont wann a do the json editing over nad over and over 
+
+2026 11 01 1151 jojr t  isuse notices again
+phsics at like 
+networking at 5 ms phsics at 8 ms
+npcs  sink thru the ground on map atdm, near a sphere
+
+phs at like 17.20 worst render
+
+going to like 10 fps in teh seam between the two big blocks in the atdm map as well 
+
 # Open Gameplay Issues
 
 ## Purpose and audience

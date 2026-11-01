@@ -57,7 +57,12 @@ struct TeamObjectiveContext
     bool active = false;
     bool carriedByTeam = false;
     bool planted = false;
+    bool bombDropped = false;
     uint32_t carrierActorId = 0;
+    // Nearest living Terrorist assigned to recover a dropped bomb.
+    uint32_t recovererActorId = 0;
+    // Counter-Terrorist currently defusing the planted bomb (0 = none).
+    uint32_t defuserActorId = 0;
     std::string plantedSiteId;
     glm::vec3 bombPosition{0.0f};
     // A T carrier is actively planting. CT defenders move to contest this site.
@@ -66,6 +71,8 @@ struct TeamObjectiveContext
     std::string contestSiteId;
     glm::vec3 contestSitePosition{0.0f};
     uint8_t interactionMode = 0; // ObjectiveInteractionMode
+    // Terrorists defend this radius around the planted bomb.
+    float bombDefendRadius = 15.0f;
 };
 
 // Optional per-team assignment policy from JSON. When a team has no policy the
@@ -122,6 +129,12 @@ struct TeamBrainState
     std::vector<EnemyReport> enemyReports;
     TeamObjectiveContext objective;
     std::vector<TeamSiteInfo> sites;
+    // Round-scoped Terrorist attack site. Chosen once per round and stable
+    // until the next round; Counter-Terrorists never receive this value.
+    std::string chosenSiteId;
+    glm::vec3 chosenSitePosition{0.0f};
+    bool chosenSiteValid = false;
+    uint32_t chosenSiteRound = 0;
     TeamAssignmentPolicy policy;
     // actor id -> assignment for the current round.
     std::vector<std::pair<uint32_t, TeamAssignment>> assignments;
@@ -140,6 +153,8 @@ struct TeamBrainState
     uint32_t reportedSquadApproachEpoch = 0;
     bool hasReportedFocus = false;
     glm::vec3 reportedFocusPos{0.0f};
+    uint32_t reportedRecovererActorId = 0;
+    uint32_t reportedDefuserId = 0;
 };
 
 // The generic TeamBrain. One instance per team; used by both sides.
@@ -174,6 +189,13 @@ public:
                            bool objectiveRounds);
     // Assignment for an actor, or None.
     TeamAssignment assignmentFor(uint32_t actorId) const;
+    // Override one actor's assignment (for example one CT as the defuser).
+    void setAssignment(uint32_t actorId, TeamAssignment assignment);
+    // Choose one usable site for the whole round. Deterministic for a given
+    // round + seed. Only meaningful for the Terrorist brain.
+    bool chooseAttackSite(uint32_t round, uint64_t seed, uint32_t tick = 0);
+    // Selected attack site, or false when none is usable.
+    bool chosenAttackSite(std::string& outId, glm::vec3& outPosition) const;
 
     // Recompute the shared squad anchor and per-actor slots. `living` is this
     // team's living members; `focusActive`/`focusPos` come from the team's best

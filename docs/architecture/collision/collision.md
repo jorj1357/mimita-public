@@ -317,6 +317,11 @@ support as static-world contact.
 - Final-pose containment records only real world contact as its restorable
   ground state. A last-clear pose taken while standing on another actor must not
   later restore fabricated floor support.
+- A final pose that is fully inside a closed collision solid may have no
+  triangle intersection at all. Containment must also test whether the root is
+  inside the solid named by the nearest supporting triangle, not only whether
+  the animated surface crosses a face. The map's enclosing room shell is not a
+  closed block for this test.
 - The shared `default` actor-pair profile uses player-like dimensions
   (0.7 m radius, 3.6 m height) and the documented push tuning. An empty or
   unknown actor preset must not inherit an oversized test capsule.

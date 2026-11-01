@@ -44,7 +44,13 @@ avatar replaced a placeholder, and the canonical journal dropped records at the
 - `config/debuglogger.json`: NPC combat category enabled at important for the
   required shot/attack evidence.
 - `collision_probe` command for distinguishing missing map collision from actor
-  penetration.
+  penetration. It now reports `inside_closed_solid`, the ground triangle, and
+  its solid id.
+- `src/physics/movement/actor-final-pose.*`: added
+  `actorRootInsideClosedSolid`. A pose fully inside a closed block can have no
+  triangle intersection, so containment now tests parity against the closed
+  solid named by the nearest supporting triangle. Spawn pose, last-clear, safe
+  point, and server inside-solid recovery use the same test.
 
 ## Evidence
 
@@ -70,6 +76,17 @@ avatar replaced a placeholder, and the canonical journal dropped records at the
 - `collision.probe` at points near CT spawn on `dust2cyberiav4` recorded inside
   and ray results; the reported block still needs human visual confirmation and
   map-collision ownership review.
+- Live journal inspection of `logs/2026-11-01/20261101_204505` found two server
+  processes writing the same run (the dev-loop server on atdm and a nested
+  dust2 server child of the client). The dust2 live server showed five NPC roots
+  inside solid collision, e.g. actor 200005 at `(-588.7, 89.1, 2361.1)`
+  (`inside_solid=true`). The journal rotated live into
+  `events-0001.jsonl`, `events-0002.jsonl`, `events-0003.jsonl`, and active
+  `events.jsonl`, proving rotation in a real run.
+- Build 157 `collision_probe` at that block point reported
+  `inside_closed_solid=true`, `ground_solid_id=329`. Build 157 AI match passed
+  all five current assertions; a clean long recovery run is pending because the
+  build pipeline was rebuilding unrelated source changes.
 
 ## Specs and records
 

@@ -37,6 +37,12 @@ struct EffectPart
     float endScale = 1.0f;
     float alpha = 1.0f;
     float endAlpha = 1.0f;
+    // When true, alpha interpolates linearly from alpha to endAlpha over the
+    // effect lifetime. Legacy effects keep their age-based fade otherwise.
+    bool useEndAlpha = false;
+    // Camera-inside volume overlay submission for translucent spheres.
+    bool cameraOverlayWorld = false;
+    bool cameraOverlayHud = false;
     // Optional age-based color cycle for lightweight client-only trails.
     // The values are expressed in 60 Hz ticks so the visual is predictable.
     bool phaseColors = false;

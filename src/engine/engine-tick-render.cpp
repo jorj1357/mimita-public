@@ -397,8 +397,41 @@ static void renderReplayActors(
     }
 }
 
+static void drawScreenOverlay(Engine& engine, const glm::vec4& color)
+{
+    if (color.a <= 0.001f) return;
+    static GLuint vao = 0, vbo = 0;
+    if (!vao) {
+        float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
+        glGenVertexArrays(1, &vao);
+        glGenBuffers(1, &vbo);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    }
+    GLuint shader = engine.renderer->shaderProgram;
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(shader);
+    glm::mat4 id(1.0f);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
+    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
+    glUniform4f(glGetUniformLocation(shader, "uColor"),
+                color.r, color.g, color.b, std::clamp(color.a, 0.0f, 1.0f));
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+}
+
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 {
+    DebugVis::resetCameraVolumeOverlays();
     // Mode 1 restores the original per-frame shadow map update. Mode 2 keeps
     // the later alternating-frame optimization available for future use.
     constexpr int kShadowUpdateMode = 1;
@@ -543,60 +576,11 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         static uint32_t remoteWeaponFrameCounter = 0;
         const bool updateRemoteWeaponAnimation =
             (remoteWeaponFrameCounter++ & 1u) == 0u;
-        if (player.spawnFlashTimer > 0.0f) {
-            static GLuint spawnFlashVao = 0, spawnFlashVbo = 0;
-            if (!spawnFlashVao) {
-                float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-                glGenVertexArrays(1, &spawnFlashVao);
-                glGenBuffers(1, &spawnFlashVbo);
-                glBindVertexArray(spawnFlashVao);
-                glBindBuffer(GL_ARRAY_BUFFER, spawnFlashVbo);
-                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-                glEnableVertexAttribArray(0);
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-            }
-            GLuint shader = engine.renderer->shaderProgram;
-            glDisable(GL_DEPTH_TEST);
-            glUseProgram(shader);
-            glm::mat4 id(1.0f);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
-            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
-            glBindVertexArray(spawnFlashVao);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glEnable(GL_DEPTH_TEST);
-        }
-        if (player.darkbangTimer > 0.0f && player.darkbangIntensity > 0.001f) {
-            static GLuint darkbangVao = 0, darkbangVbo = 0;
-            if (!darkbangVao) {
-                float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-                glGenVertexArrays(1, &darkbangVao);
-                glGenBuffers(1, &darkbangVbo);
-                glBindVertexArray(darkbangVao);
-                glBindBuffer(GL_ARRAY_BUFFER, darkbangVbo);
-                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-                glEnableVertexAttribArray(0);
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
-            }
-            GLuint shader = engine.renderer->shaderProgram;
-            glDisable(GL_DEPTH_TEST);
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glUseProgram(shader);
-            glm::mat4 id(1.0f);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
-            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f,
-                        std::clamp(player.darkbangIntensity, 0.0f, 1.0f));
-            glBindVertexArray(darkbangVao);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glDisable(GL_BLEND);
-            glEnable(GL_DEPTH_TEST);
-        }
+        if (player.spawnFlashTimer > 0.0f)
+            drawScreenOverlay(engine, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+        if (player.darkbangTimer > 0.0f && player.darkbangIntensity > 0.001f)
+            drawScreenOverlay(engine, glm::vec4(0.0f, 0.0f, 0.0f,
+                player.darkbangIntensity));
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
           Perf::state().renderPerf.actorLocal++;
           try {
@@ -1030,6 +1014,13 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         Debug::logThrottled(Debug::Category::Replay, "replay-export-ui-world-done", 1.0f,
             "[replay-export-ui] frame=%u world pass rendered\n",
             getReplayExportJob().capturedTicks);
+
+    // Camera-inside volume fog/tint (smoke, fire, darkbang radius sphere).
+    {
+        glm::vec4 overlay;
+        if (DebugVis::cameraVolumeOverlay(false, overlay))
+            drawScreenOverlay(engine, overlay);
+    }
 
     worldPassRan = true;
 

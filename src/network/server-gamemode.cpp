@@ -3639,9 +3639,11 @@ void serverObjectiveTick(ServerGamemodeState& d,
         const bool carrierIsNpc = npcs.find(d.objective.carrierActorId) != npcs.end();
         if (carrierIsNpc) {
             Npc* carrier = findNpc(d.objective.carrierActorId);
+            // Site containment was already checked above. The NPC's selected
+            // PlantObjective goal is the interaction intent; do not require a
+            // second 3D anchor-distance gate that can differ from the site floor.
             plantHeld = carrier && carrier->body.currentHp > 0 &&
-                carrier->utility.currentGoal == UtilityGoalKind::PlantObjective &&
-                carrier->utilityContext.atObjective;
+                carrier->utility.currentGoal == UtilityGoalKind::PlantObjective;
             if (!plantHeld) {
                 d.objective.npcTapCooldownTicks = 0;
             } else if (tapMode) {
@@ -3810,8 +3812,7 @@ void serverObjectiveTick(ServerGamemodeState& d,
             if (distSq > bestDistSq) continue;
             Npc* npc = findNpc(kv.first);
             if (!npc || npc->body.currentHp <= 0) continue;
-            if (npc->utility.currentGoal != UtilityGoalKind::DefuseObjective ||
-                !npc->utilityContext.atObjective)
+            if (npc->utility.currentGoal != UtilityGoalKind::DefuseObjective)
                 continue;
             bestDistSq = distSq;
             candidate = kv.first;
@@ -6446,7 +6447,7 @@ bool serverFriendlyFireBlocks(
 // ── Generic area effects (fire/smoke/dark-bang) ────────────────────────
 uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
                                int ownerTeam, const glm::vec3& position,
-                               float radius, float height, float durationSeconds,
+                               float radius, float height, int durationTicks,
                                int damagePerTick, int damageIntervalTicks,
                                bool damagesEnemiesOnly)
 {
@@ -6459,26 +6460,32 @@ uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
     effect.position = position;
     effect.radius = radius;
     effect.height = height;
-    effect.durationSeconds = durationSeconds;
+    effect.durationTicks = std::max(0, durationTicks);
     effect.damagePerTick = damagePerTick;
     effect.damageIntervalTicks = damageIntervalTicks;
     effect.damagesEnemiesOnly = damagesEnemiesOnly && !serverFriendlyFireEnabled();
+    // A non-enemy-only effect is an "anyone touching" effect; the thrower is a
+    // valid target. Enemy-only effects keep the legacy self-skip.
+    effect.damageOwner = !effect.damagesEnemiesOnly;
     effect.alive = true;
     d.areaEffects.push_back(effect);
     ++d.areaEffectSpawnCounter;
     ++d.stateVersion;
     d.stateBroadcastPending = true;
     Debug::warn(Debug::Category::Weapons,
-        "[AREA EFFECT] spawn id=%u kind=%d owner=%u team=%d pos=(%.1f %.1f %.1f) r=%.1f dur=%.1f dmg=%d/%d tick=?\n",
+        "[AREA EFFECT] spawn id=%u kind=%d owner=%u team=%d pos=(%.1f %.1f %.1f) r=%.1f dur_ticks=%d dmg=%d/%d tick=?\n",
         effect.id, (int)kind, ownerActorId, ownerTeam,
-        position.x, position.y, position.z, radius, durationSeconds,
+        position.x, position.y, position.z, radius, durationTicks,
         damagePerTick, damageIntervalTicks);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Weapons, StructuredLevel::Important,
         "area_effect.spawn", std::to_string(effect.id), "grenade",
         d.currentServerTick,
         nlohmann::json{{"effect", effect.id}, {"kind", (int)kind},
-                       {"owner", ownerActorId}, {"team", ownerTeam}});
+                       {"owner", ownerActorId}, {"team", ownerTeam},
+                       {"radius_m", radius}, {"height_m", height},
+                       {"duration_ticks", effect.durationTicks},
+                       {"duration_s", effect.remainingSeconds()}});
     return effect.id;
 }
 
@@ -6490,7 +6497,7 @@ uint32_t serverSpawnGrenadeAreaEffect(const std::string& grenadeId,
     if (!def || !def->spawnsAreaEffect || def->areaKind == AreaEffectKind::None)
         return 0;
     return serverSpawnAreaEffect(def->areaKind, ownerActorId, ownerTeam, position,
-                                 def->radius, def->height, def->durationSeconds,
+                                 def->radius, def->height, def->durationTicks,
                                  def->damagePerTick, def->damageIntervalTicks,
                                  def->damagesEnemiesOnly);
 }
@@ -6525,7 +6532,21 @@ void serverAreaEffectTick(ServerGamemodeState& d,
 
     std::vector<AreaEffectDamage> damage;
     const std::vector<AreaEffect> before = d.areaEffects;
-    tickAreaEffects(d.areaEffects, SERVER_DT, positions, teams, damage);
+    tickAreaEffects(d.areaEffects, positions, teams, damage);
+
+    // Bounded live countdown evidence: one sample per second per active effect.
+    if ((tick % 60u) == 0u) {
+        for (const AreaEffect& effect : d.areaEffects) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.area.tick", std::to_string(effect.id),
+                "countdown", tick,
+                nlohmann::json{{"effect", effect.id},
+                               {"kind", (int)effect.kind},
+                               {"remaining_ticks", effect.remainingTicks()},
+                               {"remaining_s", effect.remainingSeconds()}});
+        }
+    }
 
     for (const AreaEffect& oldEffect : before) {
         const bool stillAlive = std::any_of(d.areaEffects.begin(), d.areaEffects.end(),
@@ -6535,9 +6556,10 @@ void serverAreaEffectTick(ServerGamemodeState& d,
                 StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                 "grenade.effect.expired", std::to_string(oldEffect.id),
                 "lifetime", tick,
-                nlohmann::json{{"effect", oldEffect.id},
+                 nlohmann::json{{"effect", oldEffect.id},
                                {"kind", (int)oldEffect.kind},
-                               {"duration_s", oldEffect.durationSeconds},
+                               {"duration_ticks", oldEffect.durationTicks},
+                               {"duration_s", oldEffect.durationSeconds()},
                                {"radius_m", oldEffect.radius}});
         }
     }
@@ -6550,10 +6572,11 @@ void serverAreaEffectTick(ServerGamemodeState& d,
                 StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                 "grenade.effect.damage", std::to_string(hit.effectId),
                 "tick", tick,
-                nlohmann::json{{"effect", hit.effectId},
+                 nlohmann::json{{"effect", hit.effectId},
                                {"kind", (int)beforeIt->kind},
                                {"actor", hit.actorId},
                                {"damage", hit.damage},
+                               {"remaining_ticks", beforeIt->remainingTicks()},
                                {"remaining_s", beforeIt->remainingSeconds()}});
         }
         auto pIt = players.find(hit.actorId);
@@ -6645,11 +6668,39 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         TeamObjectiveContext ctx;
         ctx.active = d.objective.valid();
         ctx.planted = d.objective.state == ObjectiveState::Planted;
+        ctx.bombDropped = d.objective.state == ObjectiveState::Dropped;
         ctx.carriedByTeam = d.objective.state == ObjectiveState::Carried &&
             objectiveActorTeam(d, d.objective.carrierActorId) == team;
         ctx.carrierActorId = d.objective.carrierActorId;
         ctx.plantedSiteId = d.objective.plantedSiteId;
         ctx.bombPosition = d.objective.position;
+        ctx.defuserActorId = d.objective.defuserActorId;
+        ctx.bombDefendRadius = 15.0f;
+        if (team == 1 && ctx.bombDropped) {
+            const uint32_t stable = d.teamBrainB.state().reportedRecovererActorId;
+            bool stableAlive = false;
+            auto checkStable = [&](uint32_t id, bool dead) {
+                if (!dead && id == stable && objectiveActorTeam(d, id) == 1)
+                    stableAlive = true;
+            };
+            for (const auto& kv : players) checkStable(kv.first, kv.second.dead);
+            for (const auto& kv : npcs) checkStable(kv.first, kv.second.health <= 0);
+            if (stableAlive) {
+                ctx.recovererActorId = stable;
+            } else {
+                float bestDist = 1.0e30f;
+                auto consider = [&](uint32_t id, const glm::vec3& pos, bool dead) {
+                    if (dead || objectiveActorTeam(d, id) != 1) return;
+                    const float dist = glm::length(pos - d.objective.position);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        ctx.recovererActorId = id;
+                    }
+                };
+                for (const auto& kv : players) consider(kv.first, kv.second.pos, kv.second.dead);
+                for (const auto& kv : npcs) consider(kv.first, kv.second.pos, kv.second.health <= 0);
+            }
+        }
         ctx.planting = d.objective.state == ObjectiveState::Carried &&
             d.objective.planterActorId != 0 && d.objective.plantTicksElapsed > 0;
         ctx.planterActorId = d.objective.planterActorId;
@@ -6672,21 +6723,53 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     applyPolicy(d.teamBrainA, 0);
     applyPolicy(d.teamBrainB, 1);
 
-    // Shared enemy reports from living actors' current positions (exact sight).
+    // Publish the shared grenade hazard snapshot for the next NPC simulation
+    // pass. One copy per tick; no per-NPC rescan.
+    npcSystem.setHazardEffects(d.areaEffects);
+
+    // Terrorists commit to one site for the whole round. The choice is
+    // deterministic for the match seed + round and is logged once.
+    if (d.teamBrainB.state().chosenSiteRound != d.roundNumber ||
+        !d.teamBrainB.state().chosenSiteValid)
+        d.teamBrainB.chooseAttackSite(d.roundNumber,
+            static_cast<uint64_t>(d.matchSeed), tick);
+
+    // Shared reports come from actual NPC perception, not exact positions of
+    // every living actor. A team only knows an enemy that a teammate observed;
+    // memory/hysteresis keeps the last known position useful after sight is
+    // lost. This is the "reports and memory only" rule.
     auto teamOf = [&](uint32_t actorId) { return objectiveActorTeam(d, actorId); };
     d.teamBrainA.tickReports(SERVER_DT, 3.0f);
     d.teamBrainB.tickReports(SERVER_DT, 3.0f);
-    for (const auto& kv : players) {
-        if (kv.second.dead) continue;
-        const int team = teamOf(kv.first);
-        if (team == 1) d.teamBrainA.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
-        else if (team == 0) d.teamBrainB.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
-    }
-    for (const auto& kv : npcs) {
-        if (kv.second.health <= 0) continue;
-        const int team = teamOf(kv.first);
-        if (team == 1) d.teamBrainA.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
-        else if (team == 0) d.teamBrainB.reportEnemySighting(kv.first, kv.second.pos, 1.0f, false);
+    bool loggedReportA = false;
+    bool loggedReportB = false;
+    for (const Npc& npc : npcSystem.all()) {
+        if (npc.body.dead || npc.body.currentHp <= 0) continue;
+        const int team = npc.body.matchTeam;
+        if (team != 0 && team != 1) continue;
+        const uint32_t targetId = npc.perceptionTargetId;
+        if (targetId == 0) continue;
+        const bool visible = npc.perception.visible;
+        const glm::vec3 pos = visible
+            ? npc.perception.position
+            : npc.belief.lastKnownPosition;
+        if (!visible && !npc.belief.hasTarget) continue;
+        const float confidence = visible ? 1.0f : 0.35f;
+        TeamBrain& ownBrain = (team == 0) ? d.teamBrainA : d.teamBrainB;
+        ownBrain.reportEnemySighting(targetId, pos, confidence, !visible);
+        bool& logged = (team == 0) ? loggedReportA : loggedReportB;
+        if (!logged && visible && (tick % 120u) == 0u) {
+            logged = true;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.team-report", std::to_string(team), "perception", tick,
+                nlohmann::json{{"team", team},
+                               {"reporter", npc.id},
+                               {"target", targetId},
+                               {"position", {pos.x, pos.y, pos.z}},
+                               {"confidence", confidence},
+                               {"visible", visible}});
+        }
     }
 
     // Living actors for assignment apportionment.
@@ -6699,6 +6782,78 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             living.push_back({kv.first, teamOf(kv.first)});
     d.teamBrainA.updateAssignments(living, d.objectiveRounds);
     d.teamBrainB.updateAssignments(living, d.objectiveRounds);
+
+    // One CT is the designated defuser after a plant; the rest cover. The
+    // existing TeamAssignment::Defuse label was previously never assigned.
+    if (d.objective.state == ObjectiveState::Planted) {
+        // Keep one designated defuser stable instead of changing the nearest
+        // actor every tick while the CTs move around the bomb.
+        const uint32_t stable = d.teamBrainA.state().reportedDefuserId;
+        bool stableAlive = false;
+        float stableDist = 1.0e30f;
+        auto scan = [&](uint32_t id, const glm::vec3& pos, bool dead) {
+            if (dead || objectiveActorTeam(d, id) != 0) return;
+            if (id == stable) {
+                stableAlive = true;
+                stableDist = glm::length(pos - d.objective.position);
+            }
+        };
+        for (const auto& kv : players) scan(kv.first, kv.second.pos, kv.second.dead);
+        for (const auto& kv : npcs) scan(kv.first, kv.second.pos, kv.second.health <= 0);
+
+        uint32_t defuser = stableAlive ? stable : 0;
+        float bestDist = stableDist;
+        if (!stableAlive) {
+            bestDist = 1.0e30f;
+            auto pickNearest = [&](uint32_t id, const glm::vec3& pos, bool dead) {
+                if (dead || objectiveActorTeam(d, id) != 0) return;
+                const float dist = glm::length(pos - d.objective.position);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    defuser = id;
+                }
+            };
+            for (const auto& kv : players) pickNearest(kv.first, kv.second.pos, kv.second.dead);
+            for (const auto& kv : npcs) pickNearest(kv.first, kv.second.pos, kv.second.health <= 0);
+        }
+        if (defuser != 0 &&
+            d.teamBrainA.state().reportedDefuserId != defuser) {
+            d.teamBrainA.state().reportedDefuserId = defuser;
+            d.teamBrainA.setAssignment(defuser, TeamAssignment::Defuse);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.defuse-assigned", std::to_string(defuser),
+                "nearest_ct_to_planted_bomb", tick,
+                nlohmann::json{{"actor", defuser},
+                               {"bomb", {d.objective.position.x,
+                                         d.objective.position.y,
+                                         d.objective.position.z}},
+                               {"distance_m", bestDist}});
+        } else if (defuser == 0) {
+            d.teamBrainA.state().reportedDefuserId = 0;
+        }
+    }
+
+    if (d.objective.state == ObjectiveState::Dropped) {
+        const uint32_t recoverer = d.teamBrainB.state().objective.recovererActorId;
+        if (recoverer != 0 &&
+            d.teamBrainB.state().reportedRecovererActorId != recoverer) {
+            d.teamBrainB.state().reportedRecovererActorId = recoverer;
+            d.teamBrainB.setAssignment(recoverer, TeamAssignment::CarryBomb);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.bomb-recovery", std::to_string(recoverer),
+                "nearest_t_to_dropped_bomb", tick,
+                nlohmann::json{{"actor", recoverer},
+                               {"bomb", {d.objective.position.x,
+                                         d.objective.position.y,
+                                         d.objective.position.z}},
+                               {"chosen_site",
+                                d.teamBrainB.state().chosenSiteId}});
+        } else if (recoverer == 0) {
+            d.teamBrainB.state().reportedRecovererActorId = 0;
+        }
+    }
 
     // ── General group/focus behavior (all modes) ──────────────────────────
     // Resolve per-team squad tuning from the members' behavior profiles, then
@@ -6919,23 +7074,43 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         }
 
         UtilityContext& ctx = npc.utilityContext;
+        ctx.team = team;
         ctx.objectiveKnown = hasObj;
         if (hasObj) ctx.objectivePos = objPos;
         ctx.onDefense = payloadObjective
             ? (team == d.payloadRuntime.defenderTeam)
-            : (team == 0);
+            : (team == 0 ||
+               (team == 1 && d.objective.state == ObjectiveState::Planted));
+        ctx.planted = d.objective.state == ObjectiveState::Planted;
+        ctx.plantedBombPos = d.objective.position;
+        ctx.bombDropped = d.objective.state == ObjectiveState::Dropped;
+        ctx.isRecoverer = team == 1 && ctx.bombDropped &&
+            brain.state().objective.recovererActorId == npc.id;
+        ctx.isDefuserId = team == 0 && ctx.planted &&
+            d.objective.defuserActorId != 0 &&
+            d.objective.defuserActorId == npc.id;
+        ctx.bombDefendRadius = 15.0f;
         // Team's best estimate of where enemies are, so an NPC with no visible
         // target can travel toward the enemy area instead of wandering.
         glm::vec3 enemyAreaPos;
         float enemyConf = 0.0f;
         ctx.enemyAreaKnown = brain.bestTeamReport(enemyAreaPos, enemyConf);
         if (ctx.enemyAreaKnown) ctx.enemyAreaPos = enemyAreaPos;
+        // Terrorists defending a plant prioritise the active defuser.
+        if (team == 1 && ctx.planted && d.objective.defuserActorId != 0) {
+            auto defuserIt = livingPos.find(d.objective.defuserActorId);
+            if (defuserIt != livingPos.end()) {
+                ctx.enemyAreaKnown = true;
+                ctx.enemyAreaPos = defuserIt->second;
+            }
+        }
         if (gm.npcTravel.configured) {
             ctx.travelObjectiveBias = gm.npcTravel.objectiveBias;
             ctx.travelHuntBias = gm.npcTravel.huntBias;
         }
         ctx.atObjective = hasObj &&
-            glm::length(npc.body.pos - objPos) <= 3.0f;
+            glm::length(glm::vec2(objPos.x - npc.body.pos.x,
+                                  objPos.y - npc.body.pos.y)) <= 3.0f;
         // A Terrorist carrying the bomb can plant inside a site.
         const int actorSiteIndex = MapConfigRegistry::instance().siteIndexAt(npc.body.pos);
         const glm::vec3 objectiveAnchor =

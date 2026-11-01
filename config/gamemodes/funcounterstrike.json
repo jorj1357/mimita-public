@@ -254,7 +254,7 @@
   "roles": {},
   "actor_preset": "",
   "movement_preset": "",
-  "npc_behavior_profile": "rage2",
+  "npc_behavior_profile": "fun_cs_rush",
   "npc_targeting": {
     "enabled": true,
     "mode": "opposite_team",

@@ -1042,10 +1042,11 @@ void registerBuiltinWeapons() {
             continue;
         Debug::warn(Debug::Category::Weapons,
             "[GRENADE CONFIG] id=%s kind=%d radius_m=%.2f diameter_m=%.2f "
-            "height_m=%.2f duration_s=%.2f damage=%d/%d tick\n",
+            "height_m=%.2f duration_ticks=%d duration_s=%.2f fuse_ticks=%d "
+            "damage=%d/%d tick\n",
             g.id.c_str(), (int)g.areaKind, g.radius, g.radius * 2.0f,
-            g.height, g.durationSeconds, g.damagePerTick,
-            g.damageIntervalTicks);
+            g.height, g.durationTicks, g.durationSeconds(), g.fuseTicks,
+            g.damagePerTick, g.damageIntervalTicks);
     }
     if (const WeaponDefinition* ball = WeaponRegistry::instance().get("deathball")) {
         const auto cp = [&](const char* key, float fallback) {

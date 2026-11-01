@@ -967,3 +967,34 @@ LOG WHAT WAS LEARNED
 NEVER SILENTLY BREAK THAT BEHAVIOR AGAIN
 ```
 
+
+## Camera-inside volume overlays and radius indicators (2026-11-01)
+
+Translucent world volumes need one shared presentation primitive. When the
+camera is inside a configured volume, the renderer accumulates a full-screen
+overlay from that volume's color and alpha. The same primitive is used by smoke,
+fire, and Darkbang; do not create a separate screen-darkening path per grenade.
+
+- `world` mode darkens/tints the world pass only.
+- `world_hud` mode also applies the overlay after the HUD pass.
+- A configured alpha of 1.0 with a black color makes the affected layer fully
+  black.
+- Overlay lifetimes are integer ticks. Human-facing text derives seconds as
+  `ticks / 60`.
+- Overlay accumulation is bounded and allocation-free per frame.
+
+Radius-indicator spheres use the same effect primitive as other effects:
+
+- **Frag:** red sphere at the configured splash radius (20 m default), alpha
+  linearly `0.5 -> 0.0` over 30 ticks. It is presentation only; damage is one
+  fixed tick.
+- **Darkbang:** black sphere at the configured effect radius (6 m default),
+  alpha linearly `0.5 -> 0.0` over 30 ticks. Full gameplay effect remains within
+  1 m of the centre.
+- **Smoke:** gray volume with the outer 5% as the fade band; when the camera is
+  inside, the world-only fog overlay applies.
+- **Fire:** cylinder whose color transitions from bright orange to dark red and
+  whose alpha transitions from `0.7` to `0.3`.
+
+All effect lifetimes and color/alpha phases are expressed in ticks so the same
+event and configuration reproduce the same visuals in live play and replay.

@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include <nlohmann/json.hpp>
+
+#include "debug/structured-log.h"
+
 const char* teamAssignmentName(TeamAssignment a)
 {
     switch (a) {
@@ -125,23 +129,27 @@ void TeamBrain::updateAssignments(
     const bool isCounterTerrorist = (mTeam == 0);
 
     if (isTerrorist) {
-        // One bomb carrier (already handled by the objective) plus attackers
-        // pushed toward sites. If the objective is carried by us, keep the
-        // carrier assigned to CarryBomb and split the rest across sites.
-        size_t index = 0;
-        if (mState.objective.active && mState.objective.carriedByTeam) {
-            for (uint32_t id : members) {
-                if (id == mState.objective.carrierActorId) {
-                    mState.assignments.push_back({id, TeamAssignment::CarryBomb});
-                    members.erase(members.begin() + (index));
-                    break;
+        // One bomb carrier or dropped-bomb recoverer, plus attackers pushed
+        // toward the round-chosen site.
+        auto assignCarryAndErase = [&](uint32_t actorId) {
+            for (size_t i = 0; i < members.size(); ++i) {
+                if (members[i] == actorId) {
+                    mState.assignments.push_back({actorId, TeamAssignment::CarryBomb});
+                    members.erase(members.begin() + (long)i);
+                    return true;
                 }
-                ++index;
             }
+            return false;
+        };
+        if (mState.objective.active && mState.objective.carriedByTeam &&
+            mState.objective.carrierActorId != 0) {
+            assignCarryAndErase(mState.objective.carrierActorId);
+        } else if (mState.objective.bombDropped &&
+                   mState.objective.recovererActorId != 0) {
+            assignCarryAndErase(mState.objective.recovererActorId);
         }
-        for (size_t i = 0; i < members.size(); ++i) {
-            mState.assignments.push_back({members[i], TeamAssignment::AttackSite});
-        }
+        for (uint32_t id : members)
+            mState.assignments.push_back({id, TeamAssignment::AttackSite});
         return;
     }
 
@@ -181,6 +189,73 @@ TeamAssignment TeamBrain::assignmentFor(uint32_t actorId) const
     for (const auto& entry : mState.assignments)
         if (entry.first == actorId) return entry.second;
     return TeamAssignment::None;
+}
+
+void TeamBrain::setAssignment(uint32_t actorId, TeamAssignment assignment)
+{
+    for (auto& entry : mState.assignments) {
+        if (entry.first == actorId) {
+            entry.second = assignment;
+            return;
+        }
+    }
+    mState.assignments.push_back({actorId, assignment});
+}
+
+bool TeamBrain::chooseAttackSite(uint32_t round, uint64_t seed, uint32_t tick)
+{
+    if (mTeam != 1)
+        return false;
+    if (mState.chosenSiteValid && mState.chosenSiteRound == round)
+        return true;
+
+    std::vector<const TeamSiteInfo*> usable;
+    for (const TeamSiteInfo& site : mState.sites)
+        if (site.hasPosition) usable.push_back(&site);
+    if (usable.empty()) {
+        mState.chosenSiteValid = false;
+        mState.chosenSiteId.clear();
+        mState.chosenSiteRound = round;
+        return false;
+    }
+
+    // Stable order by id so the same round + seed always chooses the same
+    // site regardless of map-load insertion order.
+    std::sort(usable.begin(), usable.end(),
+        [](const TeamSiteInfo* a, const TeamSiteInfo* b) { return a->id < b->id; });
+    uint64_t hash = seed ^ (static_cast<uint64_t>(round) * 0x9E3779B97F4A7C15ull);
+    hash ^= hash >> 33;
+    hash *= 0xff51afd7ed558ccdull;
+    hash ^= hash >> 33;
+    const size_t index = static_cast<size_t>(hash % usable.size());
+    mState.chosenSiteId = usable[index]->id;
+    mState.chosenSitePosition = usable[index]->position;
+    mState.chosenSiteValid = true;
+    mState.chosenSiteRound = round;
+
+    nlohmann::json candidateIds = nlohmann::json::array();
+    for (const TeamSiteInfo* site : usable) candidateIds.push_back(site->id);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "team.site-choice", std::to_string(mTeam), "round_site_choice", tick,
+        nlohmann::json{{"team", mTeam},
+                       {"round", round},
+                       {"site", mState.chosenSiteId},
+                       {"position", {mState.chosenSitePosition.x,
+                                     mState.chosenSitePosition.y,
+                                     mState.chosenSitePosition.z}},
+                       {"candidates", std::move(candidateIds)},
+                       {"seed", seed}});
+    return true;
+}
+
+bool TeamBrain::chosenAttackSite(std::string& outId, glm::vec3& outPosition) const
+{
+    if (!mState.chosenSiteValid)
+        return false;
+    outId = mState.chosenSiteId;
+    outPosition = mState.chosenSitePosition;
+    return true;
 }
 
 void TeamBrain::updateSquad(const std::vector<SquadMember>& living,
@@ -413,10 +488,11 @@ bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actor
                                         glm::vec3& out) const
 {
     if (!mState.objective.active) return false;
+
+    // Planted bomb is the single objective point for both teams: CTs must reach
+    // it to defuse, and Terrorists defend the bomb's neighbourhood. The carried
+    // plant point can differ from the authored site anchor.
     if (mState.objective.planted) {
-        // The bomb position is authoritative: the carried plant point can be
-        // away from the authored site anchor, and a CT must reach the bomb to
-        // defuse it.
         if (glm::length(mState.objective.bombPosition) > 0.001f) {
             out = mState.objective.bombPosition;
             return true;
@@ -430,23 +506,44 @@ bool TeamBrain::objectiveTargetPosition(uint32_t actorId, const glm::vec3& actor
         out = mState.objective.bombPosition;
         return true;
     }
-    if (mState.objective.planting && mTeam == 0 &&
-        glm::length(mState.objective.contestSitePosition) > 0.001f) {
-        // Defenders contest the site where the T carrier is committing.
-        out = mState.objective.contestSitePosition;
-        return true;
-    }
-    if (mState.objective.carriedByTeam) {
-        // The carrier must deliver the bomb: send it to the nearest site so it
-        // walks there and plants. Supporters head to the bomb (the carrier).
-        if (actorId != 0 && actorId == mState.objective.carrierActorId &&
-            nearestSitePosition(actorPos, out)) {
+
+    // Counter-Terrorists do not know the Terrorist round site choice. They
+    // contest an active plant, otherwise use the team's perception-gated
+    // reports/memory, and fall back to defending a nearby site.
+    if (mTeam == 0) {
+        if (mState.objective.planting &&
+            glm::length(mState.objective.contestSitePosition) > 0.001f) {
+            out = mState.objective.contestSitePosition;
             return true;
         }
+        glm::vec3 reportPos;
+        float reportConfidence = 0.0f;
+        if (bestTeamReport(reportPos, reportConfidence)) {
+            out = reportPos;
+            return true;
+        }
+        if (nearestSitePosition(actorPos, out)) return true;
+        for (const auto& site : mState.sites) {
+            if (site.hasPosition) {
+                out = site.position;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Terrorists: recover a dropped bomb first, then every living T travels to
+    // the one round-chosen site. Supporters no longer follow the carrier's
+    // current position, so the whole team commits to the same destination.
+    if (mState.objective.bombDropped && mState.objective.recovererActorId != 0 &&
+        actorId == mState.objective.recovererActorId) {
         out = mState.objective.bombPosition;
         return true;
     }
-    // Default: nearest available site.
+    if (mState.chosenSiteValid) {
+        out = mState.chosenSitePosition;
+        return true;
+    }
     if (nearestSitePosition(actorPos, out)) return true;
     for (const auto& site : mState.sites) {
         if (site.hasPosition) {
@@ -620,14 +717,28 @@ bool teamBrainSelfTest(std::string& report)
         a.position = glm::vec3(50, 0, 0);
         a.hasPosition = true;
         brain.state().sites.push_back(a);
+        if (!brain.chooseAttackSite(1, 12345))
+            fail("Terrorist brain should choose a usable site");
         glm::vec3 out;
         if (!brain.objectiveTargetPosition(7, glm::vec3(1, 0, 0), out) ||
             glm::length(out - glm::vec3(50, 0, 0)) > 0.001f)
-            fail("carrier should be sent to the nearest site");
-        // A supporter still follows the bomb/carrier.
+            fail("carrier should be sent to the chosen site");
+        // Supporters commit to the same chosen site, not the carrier's body.
+        if (!brain.objectiveTargetPosition(8, glm::vec3(1, 0, 0), out) ||
+            glm::length(out - glm::vec3(50, 0, 0)) > 0.001f)
+            fail("supporter should go to the chosen site");
+
+        // A dropped bomb sends only the designated recoverer to the bomb.
+        brain.state().objective.carriedByTeam = false;
+        brain.state().objective.bombDropped = true;
+        brain.state().objective.recovererActorId = 8;
+        brain.state().objective.bombPosition = glm::vec3(0, 0, 0);
         if (!brain.objectiveTargetPosition(8, glm::vec3(1, 0, 0), out) ||
             glm::length(out - glm::vec3(0, 0, 0)) > 0.001f)
-            fail("supporter should follow the carried bomb");
+            fail("recoverer should be sent to the dropped bomb");
+        if (!brain.objectiveTargetPosition(7, glm::vec3(1, 0, 0), out) ||
+            glm::length(out - glm::vec3(50, 0, 0)) > 0.001f)
+            fail("non-recoverer should still go to the chosen site");
         report += "carrier_target=ok\n";
     }
 

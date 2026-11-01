@@ -539,7 +539,7 @@ void serverGamemodeRecordKill(
 // Server-authoritative; the effect is ticked at fixed 60 Hz. Returns the id.
 uint32_t serverSpawnAreaEffect(AreaEffectKind kind, uint32_t ownerActorId,
                                int ownerTeam, const glm::vec3& position,
-                               float radius, float height, float durationSeconds,
+                               float radius, float height, int durationTicks,
                                int damagePerTick, int damageIntervalTicks,
                                bool damagesEnemiesOnly);
 

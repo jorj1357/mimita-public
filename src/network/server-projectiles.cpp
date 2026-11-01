@@ -243,7 +243,11 @@ std::optional<ProjectileConfig> projectileConfigFromDefinition(
         return it != def.customParams.end() ? it->second : fallback;
     };
 
-    cfg.lifetime = cp("fuseTime", def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f);
+    // Grenades own their fuse in grenade_effect.fuse_ticks. Non-grenade
+    // projectiles keep the legacy custom_params.fuseTime behavior.
+    cfg.lifetime = weaponGrenadeTimingConfigured(def)
+        ? weaponGrenadeFuseSeconds(def)
+        : cp("fuseTime", def.projectileLifetime > 0.0f ? def.projectileLifetime : 5.0f);
 
     cfg.splashRadius = cp("splashRadius", 8.0f);
     cfg.splashDamage = cp("rocketDirectDamage", 150.0f);
@@ -679,6 +683,22 @@ void explodeProjectile(SOCKET sock,
         const auto teamIt = mode.matchTeams.find(ownerActorId);
         const int ownerTeam = teamIt != mode.matchTeams.end() ? teamIt->second : -1;
         serverSpawnGrenadeAreaEffect(*grenadeId, ownerActorId, ownerTeam, position);
+        // Frag has no lingering damage volume, but NPCs still need a short
+        // hazard marker so they run out of the blast area. This deals no damage.
+        if (*grenadeId == "frag") {
+            serverSpawnAreaEffect(AreaEffectKind::Danger, ownerActorId, ownerTeam,
+                position, projectile.splashRadius, 0.0f, /*durationTicks=*/30,
+                0, 1, false);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                "grenade.frag.blast", std::to_string(projectile.id),
+                "terminal", tick,
+                nlohmann::json{{"projectile", projectile.id},
+                               {"radius_m", projectile.splashRadius},
+                               {"center_damage", projectile.splashDamage},
+                               {"edge_damage", projectile.splashEdgeDamage},
+                               {"damage_ticks", 1}});
+        }
     }
 
     ProjectileExplodeEventPacket packet{};

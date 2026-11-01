@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "grenade_tick_contract_v1",
+  "description": "Prove grenade timing is defined once in grenade_effect ticks: spawn each grenade effect, then assert the resolved fuse/duration/visual ticks in the live journal.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": 45,
+    "map": "dust2cyberiav4",
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "wait_active", "wait_for_event": "round.active", "timeout_seconds": 120}
+  ],
+  "steps": [
+    {"id": "spawn_smoke", "command": "grenade_spawn", "args": ["smoke"], "delay_ms_after": 300},
+    {"id": "spawn_fire", "command": "grenade_spawn", "args": ["fire"], "delay_ms_after": 300},
+    {"id": "spawn_darkbang", "command": "grenade_spawn", "args": ["darkbang"], "delay_ms_after": 300},
+    {"id": "spawn_frag", "command": "grenade_spawn", "args": ["frag"], "delay_ms_after": 300},
+    {"id": "settle", "wait_seconds": 1}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "id", "equals": "frag"},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "id", "equals": "smoke"},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "id", "equals": "fire"},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "id", "equals": "darkbang"},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "fuse_ticks", "equals": 120},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "duration_ticks", "equals": 600},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "duration_ticks", "equals": 420},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "duration_ticks", "equals": 150},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "visual_ticks", "equals": 30},
+    {"type": "event_field_equals", "event": "grenade.config.resolved", "field": "camera_overlay", "equals": "world_hud"},
+    {"type": "event_field_equals", "event": "area_effect.spawn", "field": "duration_ticks", "equals": 600},
+    {"type": "event_field_equals", "event": "area_effect.spawn", "field": "duration_ticks", "equals": 420},
+    {"type": "event_field_equals", "event": "area_effect.spawn", "field": "duration_ticks", "equals": 150}
+  ],
+  "timeout_seconds": 180
+}

@@ -104,6 +104,9 @@ struct BehaviorProfileDefinition
     // ── General group/focus behavior (see npc-group-behavior.md) ─────────
     // A role references this profile; the shared TeamBrain consumes it. All
     // default off so existing profiles keep per-actor behavior unchanged.
+    // Fun Counter Strike objective rush: use the known route directly and dash
+    // whenever the shared ability is available. Does not change human movement.
+    bool objectiveRush = false;
     bool focusEnabled = false;               // participate in TeamFocus
     std::string focusMode = "hostile_team";  // hostile_team | priority_then_hostile
     bool swarm = false;                      // take firing slots around the focus
@@ -191,6 +194,7 @@ struct NpcBehaviorTuning
     float travelTargetReachedMeters = 4.0f;
 
     // General group/focus behavior (see npc-group-behavior.md). Default off.
+    bool objectiveRush = false;
     bool focusEnabled = false;
     std::string focusMode = "hostile_team";
     bool swarm = false;

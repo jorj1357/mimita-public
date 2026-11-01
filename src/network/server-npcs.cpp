@@ -112,6 +112,7 @@ static bool containServerNpcFinalPose(Npc& npc, const World& world,
          {"failed", result.failed},
          {"budget_exceeded", result.budgetExceeded},
          {"reset_reason", result.resetReason},
+         {"root_inside_closed_solid", result.rootInsideClosedSolid},
          {"part_count", result.partCount},
          {"extra_part_count", result.extraPartCount},
          {"skip_reason", result.skipReason},
@@ -739,7 +740,9 @@ static void broadcastNpcFiring(SOCKET sock,
                 projectile.angularVelocity = right * cp("angSpeed", 6.0f);
             }
 
-            projectile.lifetime = wdef->projectileLifetime > 0.0f ? wdef->projectileLifetime : 5.0f;
+            projectile.lifetime = weaponGrenadeTimingConfigured(*wdef)
+                ? weaponGrenadeFuseSeconds(*wdef)
+                : (wdef->projectileLifetime > 0.0f ? wdef->projectileLifetime : 5.0f);
             projectile.radius = wdef->projectileRadius > 0.0f ? wdef->projectileRadius : 0.3f;
             projectile.splashRadius = cp("splashRadius", 8.0f);
             projectile.splashDamage = cp("rocketDirectDamage", 150.0f);
@@ -1697,10 +1700,11 @@ void simulateSharedNpcs(SOCKET sock,
                  {"restored", spawnPose.restored},
                  {"used_safe_point", spawnPose.usedSafePoint},
                  {"failed", spawnPose.failed},
+                 {"root_inside_closed_solid", spawnPose.rootInsideClosedSolid},
                  {"reset_reason", spawnPose.resetReason}},
                 __FILE__, __LINE__, __FUNCTION__);
             if (!clear &&
-                (spawnPose.failed || worldPointInsideSolid(world, n.body.pos)))
+                (spawnPose.failed || actorRootInsideClosedSolid(world, n.body.pos)))
             {
                 respawnServerNpc(n, world);
                 continue;
@@ -2075,7 +2079,7 @@ void simulateSharedNpcs(SOCKET sock,
                 if (!stuck && !periodic)
                     continue;
                 recoveryCursor = index + 1;
-                if (worldPointInsideSolid(world, candidate.body.pos)) {
+                if (actorRootInsideClosedSolid(world, candidate.body.pos)) {
                     const glm::vec3 before = candidate.body.pos;
                     ActorFinalPoseResult result;
                     const bool clear = containActorFinalPose(
@@ -2110,7 +2114,7 @@ void simulateSharedNpcs(SOCKET sock,
                     }
                     if (!clear &&
                         (result.failed ||
-                         worldPointInsideSolid(world, candidate.body.pos)))
+                         actorRootInsideClosedSolid(world, candidate.body.pos)))
                     {
                         respawnServerNpc(candidate, world);
                     }

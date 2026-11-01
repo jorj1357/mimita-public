@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "fun_cs_npc_objective_v1",
+  "description": "Fun Counter Strike NPC objective proof: one round-chosen T site, objective rush events, a real NPC plant, and one designated CT defuser assignment.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": 45,
+    "map": "dust2cyberiav4",
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "wait_active", "wait_for_event": "round.active", "timeout_seconds": 120}
+  ],
+  "steps": [
+    {"id": "wait_site_choice", "wait_for_event": "team.site-choice", "timeout_seconds": 60},
+    {"id": "wait_rush", "wait_for_event": "npc.rush", "timeout_seconds": 60},
+    {"id": "wait_plant", "wait_for_event": "objective.planted", "timeout_seconds": 240},
+    {"id": "wait_defuser", "wait_for_event": "npc.defuse-assigned", "timeout_seconds": 60}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "team.site-choice"},
+    {"type": "event_present", "event": "npc.rush"},
+    {"type": "event_present", "event": "objective.planted"},
+    {"type": "event_present", "event": "npc.defuse-assigned"},
+    {"type": "event_absent", "event": "objective.target-unresolved"}
+  ],
+  "timeout_seconds": 420
+}

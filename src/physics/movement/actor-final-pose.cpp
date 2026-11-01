@@ -13,7 +13,35 @@
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/ray-utils.h"
 #include "world/world.h"
+
+bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point)
+{
+    const auto& mesh = world.collisionMesh;
+    if (mesh.triangles.empty() || mesh.solidIds.size() != mesh.triangles.size())
+        return false;
+    const int floorTriangle =
+        selectWorldTriangle(world, point, glm::vec3(0.0f, 0.0f, -1.0f));
+    if (floorTriangle < 0 ||
+        static_cast<std::size_t>(floorTriangle) >= mesh.solidIds.size())
+        return false;
+    const std::uint32_t solidId = mesh.solidIds[floorTriangle];
+    if (solidId == 0)
+        return false;
+    const glm::vec3 direction =
+        glm::normalize(glm::vec3(1.0f, 0.3713907f, 0.193f));
+    int hits = 0;
+    for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
+        if (mesh.solidIds[i] != solidId)
+            continue;
+        float distance = 0.0f;
+        if (rayTriangle(point, direction, mesh.triangles[i], distance) &&
+            distance > 1.0e-4f)
+            ++hits;
+    }
+    return (hits % 2) != 0;
+}
 
 namespace {
 
@@ -148,7 +176,8 @@ bool validateAt(Player& actor, const World& world, const glm::vec3& position,
     const glm::vec3 before = actor.pos;
     translateRoot(actor, position - before);
     sample = sampleFinalPose(actor, world, standoff);
-    const bool clear = !sample.budgetExceeded &&
+    const bool clear = !actorRootInsideClosedSolid(world, position) &&
+        !sample.budgetExceeded &&
         sample.maxPenetration <=
             std::max(standoff, kClearanceEpsilon) + 0.01f;
     if (!clear)
@@ -194,7 +223,7 @@ bool findBoundedSafePoint(Player& actor, const World& world,
             {
                 const glm::vec3 candidate = base + horizontal +
                     glm::vec3(0.0f, 0.0f, lift);
-                if (worldPointInsideSolid(world, candidate))
+                if (actorRootInsideClosedSolid(world, candidate))
                     continue;
                 if (!validateAt(actor, world, candidate, standoff, outSample))
                 {
@@ -255,13 +284,16 @@ bool containActorFinalPose(Player& actor,
     }
 
     PoseSample sample = sampleFinalPose(actor, world, standoff);
+    const bool rootInsideClosedSolid =
+        actorRootInsideClosedSolid(world, actor.pos);
+    result.rootInsideClosedSolid = rootInsideClosedSolid;
     const float clearTolerance =
         std::max(standoff, kClearanceEpsilon) + 0.01f;
     result.initialPenetration = sample.maxPenetration;
     result.finalPenetration = sample.maxPenetration;
     result.budgetExceeded = sample.budgetExceeded;
     copyContacts(sample.contacts, result);
-    if (!sample.budgetExceeded &&
+    if (!rootInsideClosedSolid && !sample.budgetExceeded &&
         sample.maxPenetration <= clearTolerance)
     {
         acceptClearPose(actor, state);
@@ -299,6 +331,7 @@ bool containActorFinalPose(Player& actor,
             sample.budgetExceeded;
         copyContacts(sample.contacts, result);
         if (!sample.budgetExceeded &&
+            !actorRootInsideClosedSolid(world, actor.pos) &&
             sample.maxPenetration <= clearTolerance)
         {
             result.clear = true;

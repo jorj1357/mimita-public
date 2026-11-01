@@ -17,6 +17,36 @@ struct DebugTriVertex
 extern std::vector<DebugTriVertex> gTriVerts;
 extern std::vector<DebugTriVertex> gOverlayTriVerts;
 
+namespace {
+glm::vec4 gCameraWorldOverlay{0.0f};
+glm::vec4 gCameraHudOverlay{0.0f};
+}
+
+namespace DebugVis {
+void resetCameraVolumeOverlays()
+{
+    gCameraWorldOverlay = glm::vec4(0.0f);
+    gCameraHudOverlay = glm::vec4(0.0f);
+}
+
+void submitCameraVolumeOverlay(const Camera& camera, glm::vec3 center,
+                               float radius, glm::vec4 color, bool includeHud)
+{
+    if (radius <= 0.0f || color.a <= 0.0f) return;
+    if (glm::length(camera.pos - center) > radius) return;
+    if (color.a > gCameraWorldOverlay.a) gCameraWorldOverlay = color;
+    if (includeHud && color.a > gCameraHudOverlay.a) gCameraHudOverlay = color;
+}
+
+bool cameraVolumeOverlay(bool hud, glm::vec4& out)
+{
+    const glm::vec4& v = hud ? gCameraHudOverlay : gCameraWorldOverlay;
+    if (v.a <= 0.0f) return false;
+    out = v;
+    return true;
+}
+} // namespace DebugVis
+
 // =====================================================
 // Solid triangle rendering
 // =====================================================

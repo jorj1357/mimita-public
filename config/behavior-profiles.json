@@ -317,6 +317,22 @@
       "travel_target_reached_meters": 4.0
     },
     {
+      // Fun Counter Strike objective rush. Reuses the elite baseline but does
+      // not opt into group focus/swarm; the team already commits to one site.
+      // NPCs use known routes and spend dash whenever the shared ability is
+      // available. Counter Strike typical keeps rage2.
+      "id": "fun_cs_rush",
+      "skill_tier": "elite",
+      "objective_rush": true,
+      "focus_enabled": false,
+      "swarm": false,
+      "information_mode": "memory",
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "after_reaching_last_known": "continue_pursuit"
+    },
+    {
       // Rage2 is a custom profile. Its id is selected by Sandbox JSON.
       "id": "rage2",
       // Movement replanning + commitment defaults (documented in `balanced`).
