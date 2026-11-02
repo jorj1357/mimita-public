@@ -6,6 +6,7 @@
     "profile": "npc-navigation",
     "launch_mode": 45,
     "map": "dust2cyberiav4",
+    "weapon_set": 30,
     "visibility": "headless",
     "reuse_matching_run": false
   },

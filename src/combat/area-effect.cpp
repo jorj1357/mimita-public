@@ -44,7 +44,21 @@ void tickAreaEffects(std::vector<AreaEffect>& effects,
                 const int team = i < actorTeams.size() ? actorTeams[i] : -1;
                 if (effect.ownerTeam >= 0 && team == effect.ownerTeam) continue;
             }
-            if (!areaEffectContains(effect, actorPositions[i].second)) continue;
+            // "Anyone touching" is a capsule-vs-cylinder test, not a single
+            // center-point test. A small actor radius/height default is used
+            // because the server's actor positions are root/feet positions.
+            const glm::vec3& pos = actorPositions[i].second;
+            constexpr float kActorRadius = 0.4f;
+            constexpr float kActorHeight = 1.8f;
+            const float planarDist = glm::length(glm::vec2(
+                pos.x - effect.position.x, pos.y - effect.position.y));
+            if (planarDist > effect.radius + kActorRadius) continue;
+            const float zMin = effect.position.z - 1.0f;
+            const float zMax = effect.position.z +
+                (effect.height > 0.0f ? effect.height : 1.0e9f);
+            const float actorMin = pos.z - kActorRadius;
+            const float actorMax = pos.z + kActorHeight;
+            if (actorMax < zMin || actorMin > zMax) continue;
             outDamage.push_back({actorId, effect.damagePerTick, effect.id});
         }
     }

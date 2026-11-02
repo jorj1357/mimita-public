@@ -57,7 +57,7 @@ public:
     void reset();
 
 private:
-    TraversalType select(const Npc& npc, const NpcNavResult& nav,
+    TraversalType select(Npc& npc, const NpcNavResult& nav,
                          const MovementConfig& cfg, bool& feasible) const;
     void begin(const Npc& npc, TraversalType type, const glm::vec3& target);
     void finish(const Npc& npc, bool completed);

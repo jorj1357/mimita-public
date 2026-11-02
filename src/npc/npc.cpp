@@ -130,15 +130,16 @@ bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def
     if (npc.dashCooldown > 0.0f)
         return false;
 
-    // Fun Counter Strike objective rush: when the route is known and there is
-    // no visible target, spend the dash immediately instead of rolling a
-    // probability. The shared movement preset still owns availability.
+    float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+    float chanceScale = (npc.behavior.active && npc.behavior.dashChance >= 0.0f)
+        ? npc.behavior.dashChance : cfg.dashChance;
+
+    // An objective rush makes a known route dash-eligible, but the selected
+    // behavior profile still controls how often the ready shared ability is
+    // requested. This keeps easy-mode tuning local to that profile.
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget)
-        return true;
-
-    float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
-    float chanceScale = cfg.dashChance;
+        return random01(npc.rngState) < glm::clamp(chanceScale, 0.0f, 1.0f);
 
     if (distance > 10.0f && d01 > 0.3f)
         return random01(npc.rngState) < (0.6f * chanceScale);
@@ -656,9 +657,12 @@ NpcGoal makeNavGoal(const Npc& npc)
                     goal.tolerance = 0.5f;
                     return goal;
                 }
+                const glm::vec3 travelTarget = npc.utilityContext.travelSlotKnown
+                    ? npc.utilityContext.travelSlot
+                    : npc.utilityContext.objectivePos;
                 const float distToObjective = glm::length(glm::vec2(
-                    npc.utilityContext.objectivePos.x - npc.body.pos.x,
-                    npc.utilityContext.objectivePos.y - npc.body.pos.y));
+                    travelTarget.x - npc.body.pos.x,
+                    travelTarget.y - npc.body.pos.y));
                 // Hold at the objective instead of running through it: return a
                 // zero-length goal so the actor stops within its tolerance.
                 if (distToObjective <= 4.0f) {
@@ -668,7 +672,7 @@ NpcGoal makeNavGoal(const Npc& npc)
                     return goal;
                 }
                 goal.kind = NpcGoalKind::ReachPosition;
-                goal.targetPos = npc.utilityContext.objectivePos;
+                goal.targetPos = travelTarget;
                 goal.tolerance = (npc.utility.currentGoal == UtilityGoalKind::DefendSite)
                     ? 2.5f : 1.2f;
                 return goal;
@@ -2297,6 +2301,15 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
+    // Fun Counter Strike objective rush: allow profile-tuned dash requests on
+    // a known route when no enemy is visible. Shared ability availability and
+    // cooldown still decide whether a requested dash can execute.
+    if (!dash && npc.behavior.active && npc.behavior.objectiveRush &&
+        npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget &&
+        npc.dashCooldown <= 0.0f && npc.body.dash.dashAvailable)
+        dash = shouldDash(npc, difficulty01(npc.difficulty),
+                          npc.sensors.targetDistance, cachedWeaponDef, false);
+
     // Cover seeking
     if (npc.sensors.hasTarget && glm::length(moveDir) > 0.001f)
     {
@@ -2678,6 +2691,29 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         moveDir = areaEscapeDir;
     }
 
+    // Nearby-actor separation: keep teammates from stacking on the same
+    // objective point. This is a bounded steering hint; actor-pair collision
+    // remains the final contact owner.
+    if (!npc.sensors.hasTarget && npc.behavior.active &&
+        glm::length(moveDir) > 0.001f) {
+        const float separation = npc.behavior.separationMeters > 0.0f
+            ? npc.behavior.separationMeters : 1.5f;
+        glm::vec3 repulse(0.0f);
+        for (const Npc& other : npcs) {
+            if (&other == &npc || other.body.dead || other.body.currentHp <= 0)
+                continue;
+            glm::vec3 delta = npc.body.pos - other.body.pos;
+            delta.z = 0.0f;
+            const float dist = glm::length(delta);
+            if (dist > 0.01f && dist < separation)
+                repulse += (delta / dist) * (separation - dist);
+        }
+        if (glm::length(repulse) > 0.001f) {
+            moveDir = glm::normalize(
+                moveDir + glm::normalize(repulse) * 0.7f);
+        }
+    }
+
     InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);
     input.freezeHeld = freeze;
     input.groundReturnPressed = false;
@@ -2866,7 +2902,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
     if (input.dashPressed && npc.body.dash.didDash)
     {
-        npc.dashCooldown = 0.80f - difficulty01(npc.difficulty) * 0.62f;
+        npc.dashCooldown = (npc.behavior.active && npc.behavior.dashCooldownTicks >= 0)
+            ? static_cast<float>(npc.behavior.dashCooldownTicks) / 60.0f
+            : (0.80f - difficulty01(npc.difficulty) * 0.62f);
         EffectPartSystem::instance().spawnDash(npc.body.pos);
         if (!npc.hasLoggedDash) {
             npc.hasLoggedDash = true;

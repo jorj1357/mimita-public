@@ -30,6 +30,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "perf/perf.h"
+#include "persistence/persistence-rewards.h"
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
@@ -1347,6 +1348,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         d.objectivePlantSeconds = def.plantSeconds;
         d.objectiveDefuseSeconds = def.defuseSeconds;
         d.objective.explosionSeconds = def.explosionSeconds;
+        d.objective.interactionRange = def.interactionRangeMeters;
         d.objective.interactionMode =
             objectiveInteractionModeFromString(def.interactionMode);
         d.objective.tapProgressTicks = objectiveSecondsToTicks(def.tapProgressSeconds);
@@ -1713,6 +1715,7 @@ void broadcastDuelState(SOCKET sock,
     pkt.objectiveInteractorId = d.objective.planterActorId != 0
         ? d.objective.planterActorId : d.objective.defuserActorId;
     pkt.objectiveInteractionMode = (uint8_t)d.objective.interactionMode;
+    pkt.objectiveInteractionRange = d.objective.interactionRange;
     const int activeInteractionTicks = d.objective.state == ObjectiveState::Planted
         ? d.objective.defuseTicksRequired : d.objective.plantTicksRequired;
     pkt.objectiveRequiredTicks = (uint16_t)std::min(
@@ -3792,10 +3795,15 @@ void serverObjectiveTick(ServerGamemodeState& d,
         bool candidateHeld = false;
         bool candidateIsNpc = false;
         float bestDistSq = rangeSq;
+        // Keep one designated defuser stable. Otherwise a closer CT can steal
+        // the interaction and reset progress every few ticks.
+        const uint32_t designatedDefuser =
+            d.teamBrainA.state().reportedDefuserId;
 
         for (const auto& kv : players) {
             const ServerPlayer& p = kv.second;
             if (p.dead || objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+            if (designatedDefuser != 0 && kv.first != designatedDefuser) continue;
             if (!p.input.interactHeld && p.pendingInteractTaps == 0) continue;
             const float distSq = actorDistanceSq(p.pos);
             if (distSq <= bestDistSq) {
@@ -3808,6 +3816,7 @@ void serverObjectiveTick(ServerGamemodeState& d,
         for (const auto& kv : npcs) {
             if (kv.second.health <= 0 ||
                 objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+            if (designatedDefuser != 0 && kv.first != designatedDefuser) continue;
             const float distSq = actorDistanceSq(kv.second.pos);
             if (distSq > bestDistSq) continue;
             Npc* npc = findNpc(kv.first);
@@ -6567,15 +6576,19 @@ void serverAreaEffectTick(ServerGamemodeState& d,
     for (const AreaEffectDamage& hit : damage) {
         const auto beforeIt = std::find_if(before.begin(), before.end(),
             [&](const AreaEffect& e) { return e.id == hit.effectId; });
-        if (beforeIt != before.end()) {
+        // Damage is applied every configured tick. Journal samples are
+        // rate-limited so a 1-damage/tick fire cannot flood the log.
+        if (beforeIt != before.end() && (tick % 30u) == 0u) {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
                 "grenade.effect.damage", std::to_string(hit.effectId),
                 "tick", tick,
-                 nlohmann::json{{"effect", hit.effectId},
+                nlohmann::json{{"effect", hit.effectId},
                                {"kind", (int)beforeIt->kind},
                                {"actor", hit.actorId},
                                {"damage", hit.damage},
+                               {"damage_interval_ticks",
+                                beforeIt->damageIntervalTicks},
                                {"remaining_ticks", beforeIt->remainingTicks()},
                                {"remaining_s", beforeIt->remainingSeconds()}});
         }
@@ -7081,6 +7094,21 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     const bool payloadObjective = d.payloadMode && d.payloadRuntime.active &&
         d.phase == DUEL_PHASE_ACTIVE;
 
+    // Deterministic per-team formation index, used to spread travel/cover
+    // slots instead of stacking every NPC on the same objective point.
+    std::unordered_map<uint32_t, int> teamSlotIndex;
+    {
+        std::vector<uint32_t> ids[2];
+        for (const auto& e : living) {
+            if (e.second == 0 || e.second == 1) ids[e.second].push_back(e.first);
+        }
+        for (int team = 0; team < 2; ++team) {
+            std::sort(ids[team].begin(), ids[team].end());
+            for (int i = 0; i < (int)ids[team].size(); ++i)
+                teamSlotIndex[ids[team][i]] = i;
+        }
+    }
+
     // Push objective context onto each NPC's utility brain. objectivePos points
     // at the bomb/site the NPC's team should care about.
     for (Npc& npc : npcSystem.all()) {
@@ -7116,10 +7144,39 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         ctx.bombDropped = d.objective.state == ObjectiveState::Dropped;
         ctx.isRecoverer = team == 1 && ctx.bombDropped &&
             brain.state().objective.recovererActorId == npc.id;
+        ctx.isCarrier = team == 1 && d.objective.state == ObjectiveState::Carried &&
+            d.objective.carrierActorId == npc.id;
         ctx.isDefuserId = team == 0 && ctx.planted &&
-            d.objective.defuserActorId != 0 &&
-            d.objective.defuserActorId == npc.id;
+            d.teamBrainA.state().reportedDefuserId == npc.id;
         ctx.bombDefendRadius = 15.0f;
+        ctx.travelSlotKnown = false;
+        if (!payloadObjective && hasObj) {
+            const bool exactRole = ctx.isCarrier || ctx.isRecoverer || ctx.isDefuserId;
+            const int slots = (npc.behavior.active && npc.behavior.formationSlots > 0)
+                ? npc.behavior.formationSlots : 5;
+            const float radius = (npc.behavior.active &&
+                npc.behavior.formationRadiusMeters > 0.0f)
+                ? npc.behavior.formationRadiusMeters : 5.0f;
+            if (!exactRole && slots > 1 && radius > 0.01f) {
+                glm::vec3 center = objPos;
+                if (ctx.planted) {
+                    if (team == 0) {
+                        auto defuserIt = livingPos.find(
+                            d.teamBrainA.state().reportedDefuserId);
+                        center = defuserIt != livingPos.end()
+                            ? defuserIt->second : d.objective.position;
+                    } else {
+                        center = d.objective.position;
+                    }
+                }
+                const int idx = teamSlotIndex.count(npc.id)
+                    ? teamSlotIndex[npc.id] : 0;
+                const float angle = 6.2831853f * (float)(idx % slots) / (float)slots;
+                ctx.travelSlot = center +
+                    glm::vec3(std::cos(angle), std::sin(angle), 0.0f) * radius;
+                ctx.travelSlotKnown = true;
+            }
+        }
         // Team's best estimate of where enemies are, so an NPC with no visible
         // target can travel toward the enemy area instead of wandering.
         glm::vec3 enemyAreaPos;
@@ -9263,6 +9320,35 @@ void serverGamemodeRecordKill(
         "[KILL EVENT] killer=%s kind=%u victim=%s kind=%u weapon=\"%s\" tick=%u event=%u\n",
         killerName.c_str(), (unsigned)killerEntityType, victimName.c_str(),
         (unsigned)victimEntityType, weaponDisplayName.c_str(), tick, killPkt.eventId);
+
+    // One reward decision for every authoritative kill, independent of which
+    // weapon or damage source produced it. The persistence layer consumes the
+    // same decision; this event is the runtime proof of attribution.
+    {
+        const auto& rewards = getDefaultRewards();
+        const bool victimIsNpc = victimEntityType == ENTITY_NPC;
+        const bool killerIsPlayer = killerEntityType == ENTITY_PLAYER;
+        const int rewardXp = victimIsNpc ? rewards.npcKillXp
+                                         : rewards.playerKillXp;
+        const int rewardGold = victimIsNpc ? rewards.npcKillGold
+                                           : rewards.playerKillGold;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "kill.reward", std::to_string(killPkt.eventId),
+            "authoritative kill credit", tick,
+            nlohmann::json{{"killer", killerId},
+                           {"killer_name", killerName},
+                           {"killer_is_player", killerIsPlayer},
+                           {"killer_is_npc", killerEntityType == ENTITY_NPC},
+                           {"victim", victimId},
+                           {"victim_name", victimName},
+                           {"victim_is_npc", victimIsNpc},
+                           {"weapon", weaponId},
+                           {"weapon_display", weaponDisplayName},
+                           {"reward_xp", rewardXp},
+                           {"reward_gold", rewardGold},
+                           {"awarded", killerIsPlayer && killerId != victimId}});
+    }
 
     ServerGamemodeState& d = serverGamemodeState();
     if (!d.enabled) return;

@@ -345,6 +345,13 @@
             "default": 0.0,
             "min": 0.0
           },
+          "interaction_range_m": {
+            "type": "number",
+            "required": false,
+            "default": 3.0,
+            "min": 0.5,
+            "max": 20.0
+          },
           "interaction_mode": {
             "type": "string",
             "required": false,

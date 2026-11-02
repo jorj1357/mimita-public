@@ -707,7 +707,10 @@ bunny-hop timing, and hazard reaction windows are expressed in ticks.
 - NPCs use the known navigation route directly. They must not explore, wander,
   or oscillate when a valid objective route exists.
 - While travelling to a known objective and no visible target interrupts, an
-  NPC requests dash whenever the shared dash ability is available.
+  NPC may request dash when the shared dash ability is available. The selected
+  behavior profile's `dash_chance` controls optional route-dash probability;
+  the Fun Counter Strike easy profile uses `0.1` while retaining objective
+  rush. Dashes required to cross a path gap or large step remain available.
 - Fun Counter Strike profiles may combine jump/bunny-hop and air-strafe inputs
   to reduce start-to-goal time. These are existing shared movement inputs, not a
   new movement implementation. Rocket-jumping and other exploits are future
@@ -735,3 +738,62 @@ a parallel damage path.
 - Hazard responses reuse the existing `Survive`/flee and navigation goals. They
   do not create a new damage, movement, or navigation owner. Log decisions as
   `npc.hazard-avoid`.
+
+## 14. NPC tuning cheat sheet (2026-11-01)
+
+Edit NPC behavior through data, not new C++ branches. The owners are:
+
+| What to tune | File | Field |
+|---|---|---|
+| Which profile a role uses | `config/roles.json` | `behavior_profile` |
+| Which movement preset a role uses | `config/roles.json` | `movement_preset` |
+| Which weapon set a role uses | `config/roles.json` | `weapon_set` |
+| Which actor preset a role uses | `config/roles.json` | `actor_preset` |
+| Minimum gap between accepted shots | `config/behavior-profiles.json` | `fire_interval_ticks` (fixed 60 Hz ticks) |
+| Fire cadence scaling | `config/behavior-profiles.json` | `fire_cadence_multiplier` |
+| Dash probability / cooldown | `config/behavior-profiles.json` | `dash_chance`, `dash_cooldown_ticks` |
+| Objective-rush mode | `config/behavior-profiles.json` | `objective_rush` |
+| Objective formation spread | `config/behavior-profiles.json` | `formation_slots`, `formation_radius_m` |
+| Nearby-actor separation | `config/behavior-profiles.json` | `separation_m` |
+| Global fallback fire pacing | `config/npc-difficulty.json` | `fireDelayMin`, `fireDelayMax` |
+| Global fallback dash chance | `config/npc-difficulty.json` | `dashChance` |
+| Global fallback movement preset | `config/npc-difficulty.json` | `movementPreset` |
+| Shared speed, dash impulse, speed limit | `config/movement/movement-*.json` | `ground_speed`, `air_speed`, `ground_dash_impulse`, `air_dash_impulse`, `speed_limit_enabled` |
+
+Precedence for per-actor combat/movement tuning:
+
+1. explicit behavior-profile value;
+2. mode/role loadout or movement preset;
+3. `config/npc-difficulty.json` fallback;
+4. weapon definition (fire delay floor) and shared movement physics.
+
+`fire_interval_ticks` is a hard floor: no weapon, cadence multiplier, or
+aggression setting may produce an accepted NPC shot faster than that interval.
+The weapon's own fire delay still applies when it is longer.
+
+Fun Counter Strike keeps two profile variants so difficulty can be switched
+with one setting. Change `npc_behavior_profile` in
+`config/gamemodes/funcounterstrike.json` between `fun_cs_rush` (elite) and
+`fun_cs_rush_easy` (beginner with 25-degree aim error, a 120-tick minimum shot
+gap, and 0.1 optional dash chance). Both profiles retain the same objective
+rush and formation settings.
+
+Example easy Fun Counter Strike profile:
+
+```json
+{
+  "id": "fun_cs_rush_easy",
+  "skill_tier": "beginner",
+  "objective_rush": true,
+  "aim_error_deg": 25.0,
+  "fire_interval_ticks": 120,
+  "dash_chance": 0.1,
+  "dash_cooldown_ticks": 3,
+  "formation_slots": 6,
+  "formation_radius_m": 5.0,
+  "separation_m": 1.5
+}
+```
+
+Edit the JSON and let the existing hot-reload path apply it. Do not add a
+parallel NPC tuning file or a mode-specific combat branch.

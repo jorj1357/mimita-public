@@ -86,6 +86,19 @@ void registerNpcCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "npc_unstuck", "Teleport every NPC back to its team spawn point",
+        "npc_unstuck",
+        [](const std::vector<std::string>&) {
+            if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_unstuck");
+                Terminal::instance().addLog("[NPC COMMAND] npc_unstuck sent to server");
+            } else {
+                Terminal::instance().addLog(
+                    "[NPC COMMAND] npc_unstuck requires a connected room");
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
         "npc_delete_all", "Delete every NPC", "npc_delete_all",
         [](const std::vector<std::string>&) {
             if (::gpMpContext && ::gpMpContext->active) {

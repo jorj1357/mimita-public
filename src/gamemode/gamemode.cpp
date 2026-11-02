@@ -522,6 +522,9 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 def.plantSeconds = std::max(0.0f, optFloat(o, "plant_seconds", 0.0f));
                 def.defuseSeconds = std::max(0.0f, optFloat(o, "defuse_seconds", 0.0f));
                 def.explosionSeconds = std::max(0.0f, optFloat(o, "explosion_seconds", 0.0f));
+                def.interactionRangeMeters = std::clamp(
+                    optFloat(o, "interaction_range_m", def.interactionRangeMeters),
+                    0.5f, 20.0f);
                 def.interactionMode = optString(o, "interaction_mode", "hold");
                 def.tapProgressSeconds = std::clamp(
                     optFloat(o, "tap_progress_seconds", 0.1f), 0.01f, 1.0f);

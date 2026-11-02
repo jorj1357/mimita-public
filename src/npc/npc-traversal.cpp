@@ -14,6 +14,7 @@
 #include <cmath>
 
 #include "npc/npc.h"
+#include "npc/npc-internal.h"
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
 
@@ -61,7 +62,7 @@ void NpcTraversalExecutor::reset()
     mDashBanTimer = 0.0f;
 }
 
-TraversalType NpcTraversalExecutor::select(const Npc& npc, const NpcNavResult& nav,
+TraversalType NpcTraversalExecutor::select(Npc& npc, const NpcNavResult& nav,
                                            const MovementConfig& cfg, bool& feasible) const
 {
     feasible = true;
@@ -79,8 +80,13 @@ TraversalType NpcTraversalExecutor::select(const Npc& npc, const NpcNavResult& n
     // height changes become jump/drop traversals.
     const float slope = nav.distance > 0.01f ? dz / nav.distance : 0.0f;
     if (std::fabs(dz) < kDropThreshold && std::fabs(slope) <= kWalkableSlope) {
-        // Long open run: dash if the actor can.
-        if (dashReady && dist > kDashMinDistance) return TraversalType::Dash;
+        // Long open run: profile chance controls optional dash use. Dashes
+        // needed for gaps or large steps above remain traversal requirements.
+        const float dashChance = npc.behavior.active && npc.behavior.dashChance >= 0.0f
+            ? std::clamp(npc.behavior.dashChance, 0.0f, 1.0f) : 1.0f;
+        if (dashReady && dist > kDashMinDistance &&
+            random01(npc.rngState) < dashChance)
+            return TraversalType::Dash;
         return TraversalType::Walk;
     }
     if (dz > 0.0f) {

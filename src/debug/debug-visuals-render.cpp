@@ -16,6 +16,7 @@ struct DebugTriVertex
 
 extern std::vector<DebugTriVertex> gTriVerts;
 extern std::vector<DebugTriVertex> gOverlayTriVerts;
+extern std::vector<DebugTriVertex> gSolidTriVerts;
 
 namespace {
 glm::vec4 gCameraWorldOverlay{0.0f};
@@ -155,9 +156,10 @@ void drawFilledBillboard(
     }
 }
 
-void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale)
+static void emitFilledSphere(std::vector<DebugTriVertex>& out,
+                             glm::vec3 center, float radius, glm::vec4 color,
+                             glm::vec3 scale)
 {
-    (void)camera;
     constexpr int LAT_SEGMENTS = 8;
     constexpr int LON_SEGMENTS = 12;
     for (int lat = 0; lat < LAT_SEGMENTS; ++lat)
@@ -181,17 +183,29 @@ void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm:
             glm::vec3 p01 = center + off3;
             glm::vec3 p11 = center + off2;
             if (lat > 0) {
-                gTriVerts.push_back({p00, color});
-                gTriVerts.push_back({p01, color});
-                gTriVerts.push_back({p10, color});
+                out.push_back({p00, color});
+                out.push_back({p01, color});
+                out.push_back({p10, color});
             }
             if (lat < LAT_SEGMENTS - 1) {
-                gTriVerts.push_back({p01, color});
-                gTriVerts.push_back({p11, color});
-                gTriVerts.push_back({p10, color});
+                out.push_back({p01, color});
+                out.push_back({p11, color});
+                out.push_back({p10, color});
             }
         }
     }
+}
+
+void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale)
+{
+    (void)camera;
+    emitFilledSphere(gTriVerts, center, radius, color, scale);
+}
+
+void drawSolidSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale)
+{
+    (void)camera;
+    emitFilledSphere(gSolidTriVerts, center, radius, color, scale);
 }
 
 static void impactBasis(const glm::vec3& direction, const char* localAxis,
@@ -363,6 +377,10 @@ void drawFilledBillboard(const Camera& camera, glm::vec3 position, float size,
 
 void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale) {
     ::drawFilledSphere(camera, center, radius, color, scale);
+}
+
+void drawSolidSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale) {
+    ::drawSolidSphere(camera, center, radius, color, scale);
 }
 
 void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,

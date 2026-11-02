@@ -104,7 +104,9 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
 
         case UtilityGoalKind::MoveToObjective:
             if (ctx.objectiveKnown) {
-                if (ctx.planted && ctx.team == 1)
+                if (ctx.planted && ctx.team == 0 && ctx.isDefuserId)
+                    s.relevance = 1.0f;
+                else if (ctx.planted && ctx.team == 1)
                     s.relevance = ctx.atObjective ? 0.45f : 0.8f;
                 else if (ctx.planted && ctx.team == 0)
                     s.relevance = ctx.atObjective ? 0.55f : 0.9f;
@@ -139,11 +141,16 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.relevance = ctx.canDefuse ? 1.0f : 0.0f;
             s.objectiveState = ctx.objectiveKnown ? 1.0f : 0.0f;
             s.total = s.relevance * health * (0.5f + 0.5f * losOpen);
+            // The designated defuser must keep holding even while shooting at
+            // a nearby enemy. Defuse outranks combat for this one actor.
+            if (ctx.isDefuserId)
+                s.total *= 1.5f;
             break;
 
         case UtilityGoalKind::RetakeSite:
             s.relevance = (ctx.onDefense && ctx.objectiveKnown)
-                ? (ctx.planted ? 0.9f : 0.6f) : 0.0f;
+                ? (ctx.planted ? (ctx.isDefuserId ? 0.0f : 0.9f) : 0.6f)
+                : 0.0f;
             s.objectiveState = ctx.objectiveKnown ? 0.7f : 0.0f;
             s.total = s.relevance * (0.5f + 0.5f * enemyFactor);
             break;
@@ -155,7 +162,10 @@ UtilityGoalScore scoreUtilityGoal(UtilityGoalKind kind, const UtilityContext& ct
             s.objectiveState = ctx.enemyAreaKnown ? 0.5f : 0.0f;
             {
                 float huntBias = std::max(0.0f, ctx.travelHuntBias);
-                if (ctx.objectiveKnown && ctx.team == 1 && !ctx.planted) {
+                if (ctx.isDefuserId) {
+                    // The designated defuser must never abandon the bomb.
+                    huntBias = 0.0f;
+                } else if (ctx.objectiveKnown && ctx.team == 1 && !ctx.planted) {
                     // Terrorists' top priority is reaching the chosen site and
                     // planting; do not divert to enemy reports first.
                     huntBias = 0.0f;

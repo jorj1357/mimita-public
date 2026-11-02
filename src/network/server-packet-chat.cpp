@@ -23,6 +23,7 @@
 #include "network/community-server-config.h"
 #include "gamemode/gamemode.h"
 #include "npc/npc-difficulty-config.h"
+#include "npc/npc.h"
 #include "combat/weapon-registry.h"
 #include "network/network-weapons.h"
 #include "physics/movement/movement-step.h"
@@ -1080,6 +1081,74 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         char ackMessage[96];
         std::snprintf(ackMessage, sizeof(ackMessage),
                       "applied: npc_void count=%zu", moved);
+        ack(true, ackMessage);
+    }
+    else if (commandStr == "npc_unstuck")
+    {
+        if (!npcSystem)
+        {
+            ack(false, "rejected: server npc system unavailable");
+            return;
+        }
+        ServerGamemodeState& match = serverGamemodeState();
+        const glm::vec3 teamSpawn[2] = {
+            match.spawnsAssigned ? match.spawnA : glm::vec3(0.0f),
+            match.spawnsAssigned ? match.spawnB : glm::vec3(0.0f)};
+        int teamIndex[2] = {0, 0};
+        size_t moved = 0;
+        for (Npc& npc : npcSystem->all())
+        {
+            if (npc.body.dead || npc.body.currentHp <= 0) continue;
+            const int team = (npc.body.matchTeam == 1) ? 1 : 0;
+            glm::vec3 spawn = teamSpawn[team];
+            if (glm::length(spawn) < 0.001f)
+                spawn = npc.body.respawnPosition;
+            const int index = teamIndex[team]++;
+            const float angle = (float)index * 2.39996323f;
+            const float radius = 0.9f * std::sqrt((float)index);
+            spawn += glm::vec3(std::cos(angle) * radius,
+                               std::sin(angle) * radius, 0.0f);
+            npc.body.pos = spawn;
+            npc.body.respawnPosition = spawn;
+            npc.body.vel = glm::vec3(0.0f);
+            npc.body.externalImpulse = glm::vec3(0.0f);
+            npc.body.ground.onGround = false;
+            npc.body.ground.stableOnGround = false;
+            npc.body.ground.hasWorldContact = false;
+            npc.body.ground.realWorldContactThisFrame = false;
+            npc.body.collision.supportActorKey = 0;
+            npc.body.collision.supportActorVelocity = glm::vec3(0.0f);
+            npc.finalPose = ActorFinalPoseState{};
+            npc.spawnPosePending = true;
+            npc.serverTargetId = 0;
+            npc.prevHadTarget = false;
+            npc.reactionTimer = 0.0f;
+            npc.wasStuck = false;
+            npc.movementStuckEpisodeActive = false;
+            npc.navigator.reset();
+            npc.body.syncLegacyStateToLayers();
+            npc.body.updateModelWorldTransforms();
+            auto mirrorIt = npcs.find(npc.id);
+            if (mirrorIt != npcs.end())
+            {
+                mirrorIt->second.pos = spawn;
+                mirrorIt->second.vel = glm::vec3(0.0f);
+                ++mirrorIt->second.transformEpoch;
+            }
+            ++moved;
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Important,
+            "npc_unstuck.applied", "all",
+            "teleported living NPCs to team spawn", tick,
+            nlohmann::json{{"count", moved},
+                           {"spawn_team_0", {teamSpawn[0].x, teamSpawn[0].y, teamSpawn[0].z}},
+                           {"spawn_team_1", {teamSpawn[1].x, teamSpawn[1].y, teamSpawn[1].z}}});
+        printf("%s [SERVER COMMAND] npc_unstuck by playerId=%u count=%zu\n",
+               serverTimestamp(), it->second.id, moved);
+        char ackMessage[96];
+        std::snprintf(ackMessage, sizeof(ackMessage),
+                      "applied: npc_unstuck count=%zu", moved);
         ack(true, ackMessage);
     }
     else if (commandStr == "respawn_all")

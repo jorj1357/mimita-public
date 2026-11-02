@@ -151,6 +151,13 @@ ray hits in six directions, and writes `collision.probe` to the canonical
 journal. Use it to distinguish a missing map-collision block from an actor
 being pushed into existing geometry.
 
+`npc_unstuck` is an admin server command. It teleports every living NPC to its
+team's resolved spawn anchor (`spawnA`/`spawnB`) with a small ring offset,
+clears velocity/impulse/support/target/navigation state, revalidates the spawn
+pose on the next tick, and bumps the snapshot transform epoch so clients snap to
+the new position. It writes `npc_unstuck.applied` with the teleported count and
+both team anchors.
+
 The dev loop exposes these through `--ai-match`, which starts a bounded TDM
 match on the requested map, enables `player_control ai`, waits for the requested
 duration, restores human control, and requires journal evidence that actor

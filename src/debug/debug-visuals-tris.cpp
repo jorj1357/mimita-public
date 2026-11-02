@@ -23,19 +23,23 @@ struct DebugTriVertex
 
 extern std::vector<DebugTriVertex> gTriVerts;
 extern std::vector<DebugTriVertex> gOverlayTriVerts;
+std::vector<DebugTriVertex> gSolidTriVerts;
 
 namespace {
 GLuint gTriVao = 0;
 GLuint gTriVbo = 0;
 GLuint gOverlayVao = 0;
 GLuint gOverlayVbo = 0;
+GLuint gSolidVao = 0;
+GLuint gSolidVbo = 0;
 } // anonymous namespace
 
 // Shared helper to upload and draw a tri buffer (used by both regular and overlay flushes).
 static void flushTriBuffer(const Camera& camera,
     std::vector<DebugTriVertex>& verts,
     GLuint& vao, GLuint& vbo,
-    bool depthTest)
+    bool depthTest,
+    bool depthWrite = false)
 {
     if (verts.empty()) return;
     if (!gRenderer || !gRenderer->shaderProgram) { verts.clear(); return; }
@@ -51,7 +55,7 @@ static void flushTriBuffer(const Camera& camera,
         MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
     else
         MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
-    MIMITA_GL_CALL(glDepthMask(GL_FALSE));
+    MIMITA_GL_CALL(glDepthMask(depthWrite ? GL_TRUE : GL_FALSE));
     MIMITA_GL_CALL(glEnable(GL_BLEND));
     MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
 
@@ -94,9 +98,15 @@ void flushOverlayTris(const Camera& camera)
     flushTriBuffer(camera, gOverlayTriVerts, gOverlayVao, gOverlayVbo, false);
 }
 
+void flushSolidTris(const Camera& camera)
+{
+    flushTriBuffer(camera, gSolidTriVerts, gSolidVao, gSolidVbo, true, true);
+}
+
 namespace DebugVis {
 
 void flushTris(const Camera& camera) {
+    ::flushSolidTris(camera);
     ::flushDebugTris(camera);
     ::flushOverlayTris(camera);
 }

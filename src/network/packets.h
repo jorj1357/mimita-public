@@ -30,7 +30,8 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 48: DuelStatePacket adds the shared loss-aftermath phase/effect state.
 // 49: AttackRequestPacket carries validated client-first per-target hitscan
 //     aggregates so shotgun/revolver damage can match local prediction.
-constexpr uint16_t PROTOCOL_VERSION = 49;
+// 50: DuelStatePacket carries the authoritative objective interaction range.
+constexpr uint16_t PROTOCOL_VERSION = 50;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1258,6 +1259,7 @@ struct DuelStatePacket
     float objectiveZ = 0.0f;
     float objectiveProgress = 0.0f; // 0..1 plant or defuse progress
     float objectiveTimerLeft = 0.0f;// seconds until explosion when planted
+    float objectiveInteractionRange = 3.0f; // plant/defuse prompt + server range
     uint8_t objectiveProgressKind = 0; // 0=none, 1=plant, 2=defuse
     uint8_t objectiveInteractionMode = 0; // ObjectiveInteractionMode
     char objectiveId[16] = {};

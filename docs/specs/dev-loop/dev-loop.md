@@ -2362,3 +2362,23 @@ in one checkout:
   live map/mode/room from its actual processes rather than only launch args;
 - AI commands target an explicit lane/client; multi-client matrix runs are one
   lane with N clients.
+
+## Scenario explanation and launch preflight (2026-11-01)
+
+Scenario files are self-describing and must not inherit a sandbox weapon set by
+accident. Every scenario declares its launch map, mode, and weapon set.
+
+Use:
+
+```text
+python devscripts/dev-loop.py --scenario-file <path> --scenario-explain
+```
+
+This prints the scenario purpose, launch config, ordered setup/steps, and
+assertions without launching. A normal run prints the same plan before
+execution and records `scenario.started` with the effective map, launch mode,
+and weapon set. Scenarios should assert those fields so a profile-default
+weapon set cannot silently replace the intended loadout.
+
+`scenario.step` records the matched `wait_for_event` fields under `observed`,
+not `null`, so a timed wait can be diagnosed from the journal alone.

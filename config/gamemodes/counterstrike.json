@@ -104,6 +104,7 @@
       "plant_seconds": 3,
       "defuse_seconds": 5,
       "explosion_seconds": 40,
+      "interaction_range_m": 6.0,
       "interaction_mode": "hold",
       "tap_progress_seconds": 0.1,
       "visual": {

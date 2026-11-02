@@ -86,6 +86,7 @@ public:
         uint16_t requiredTicks = 0; // active interaction duration
         uint16_t tapTicks = 0;      // progress per repeated tap
         float timerLeft = 0.0f;     // seconds to explosion when planted
+        float interactionRange = 3.0f; // plant/defuse prompt + eligibility range
         uint8_t progressKind = 0;   // 0=none, 1=plant, 2=defuse
         uint8_t interactionMode = 0; // ObjectiveInteractionMode
     };

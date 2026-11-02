@@ -1,4 +1,6 @@
-﻿2026 11 01 1728 
+﻿2206 11 01 1841 all npcs on tdmtest3 map  fall thru the map in tdm mode 
+
+2026 11 01 1728 
 50 v 50 on fun coutner strke not good
 need npc behaviro to ebeebn 
 be even more smooth and more perofming better 
@@ -86,6 +88,7 @@ blocking or high-impact work; **P2** is lower-priority follow-up or recheck;
 | OGI-017 | P3 | Deferred | Improve melee as a whole | [Melee weapons](weapons/melee/melee-weapons.md), [weapons](weapons/weapons.md) | Keep one low-priority item; prioritize only after Zombie Tower and current blockers |
 | OGI-018 | P3 | Deferred | Give Godball and HAFS their own behavior specs | [Weapons](weapons/weapons.md), Godball and HAFS entries | Create focused specs when prioritized; current behavior is not specified here |
 | OGI-019 | P3 | Deferred | Make weapons beyond slot 10 easier to equip | [Weapons/loadout owner](weapons/weapons.md) | Resolve as a loadout UX decision; no keybinding or inventory change is authorized here |
+| OGI-020 | P2 | Verify | Fun Counterstrike NPCs should be easier to beat | [Fun Counter Strike](gamemodes/funcounterstrike.md), “Fun Counter Strike NPC rush” | Confirm beginner profile, 25-degree aim error, 120-tick shot floor, reduced dash frequency, and preserved bomb objectives in a live run |
 
 ## Issue details
 
@@ -255,6 +258,25 @@ Melee is still an improvement area but is not a priority now. Godball and HAFS
 need separate behavior specs, also at low priority. Weapon-slot usability
 belongs to loadout design. Keep these visible without competing with Zombie
 Tower or current failures.
+
+### OGI-020 — Fun Counterstrike NPC difficulty
+
+The requested easier mode keeps the shared bomb-objective behavior and changes
+only the `fun_cs_rush` profile: beginner skill tier, 25-degree aim error, a
+120-tick (2-second) minimum accepted-shot gap, and 0.1 probability for an
+optional objective-route dash request when the shared ability is ready.
+Traversal-required gap and large-step dashes remain available. Runtime
+verification should compare loaded profile values, objective decisions,
+accepted shots, and dash events. Human gameplay feel remains to be reviewed.
+
+Build 212 runtime evidence (`logs/2026-11-02/20261102_013203/events.jsonl`):
+the live decisions resolved `skill_tier=beginner`; accepted `npc.shot` records
+used 25-degree maximum aim error and had a minimum same-actor gap of 480 ticks.
+The existing Fun Counterstrike objective scenario passed all seven assertions,
+including a completed NPC plant and defuser assignment. Two NPCs emitted the
+one-time `npc.dash` event during 16,698 server ticks; because that event is
+once per actor, it confirms the path ran but is not a full dash-probability
+distribution. Human feel review remains open.
 
 ## Deferred design work
 

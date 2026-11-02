@@ -143,6 +143,9 @@ namespace DebugVis {
 
     // Solid filled sphere (for production particles — footsteps, dash)
     void drawFilledSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale = glm::vec3(1.0f));
+    // Opaque world volume sphere: depth-tested AND depth-writing so it truly
+    // occludes world/actors behind it (used by smoke).
+    void drawSolidSphere(const Camera& camera, glm::vec3 center, float radius, glm::vec4 color, glm::vec3 scale = glm::vec3(1.0f));
     void drawFilledSphereOriented(const Camera& camera, glm::vec3 center, glm::vec3 direction,
                                   float radius, glm::vec4 color, glm::vec3 scale,
                                   const char* localAxis = "+Z");

@@ -88,7 +88,11 @@ Two interaction modes are supported through the mode objective configuration:
   accumulated progress; dying or leaving the valid area does.
 
 The current Fun Counter Strike durations are **1 second to plant** and
-**5 seconds to defuse**. While a Mode 1 plant is in progress, movement input and
+**5 seconds to defuse**. The plant/defuse interaction range is configurable in
+the objective JSON through `interaction_range_m` (default 3 m; Fun Counter
+Strike ships with 6 m). The same value is authoritative on the server and drives
+the client prompt range; do not hardcode a second range in the HUD. While a
+Mode 1 plant is in progress, movement input and
 movement abilities are blocked but momentum is preserved, so a sliding player
 keeps sliding. Input is restored when the plant completes or is cancelled.
 Mode 2 taps are instantaneous and do not continuously lock movement.
@@ -224,9 +228,10 @@ and physics policy, not a separate gameplay system.
 - **420-tick lifetime** (7 seconds at 60 Hz).
 - Starts bright orange with alpha **0.7**, transitions to dark red with alpha
   **0.3**, then disappears.
-- Deals `10 damage / 5 ticks` to **all actors touching the cylinder, including
-  the thrower**. Damage goes through the shared fixed-tick area-effect and
-  damage paths; there is no separate fire damage path.
+- Deals **1 damage every fixed tick** to every actor whose capsule touches the
+  cylinder, including the thrower and teammates. Intersection is body/capsule
+  based, not a single center-point test. Damage goes through the shared
+  fixed-tick area-effect and damage paths; there is no separate fire damage path.
 - NPCs treat fire as a hazard and path around it instead of entering it.
 
 ### Darkbang
@@ -300,8 +305,17 @@ Counter-Terrorist NPCs:
 Fun Counter Strike NPC rush:
 
 - NPCs use known navigation routes directly instead of searching or wandering.
-- They request dash whenever the shared dash ability is available, and may
-  combine jump/bunny-hop and air-strafe movement to reduce travel time.
+- The default `fun_cs_rush` profile keeps objective rush enabled at elite
+  difficulty. To use the easier alternative, change the single
+  `npc_behavior_profile` setting in `config/gamemodes/funcounterstrike.json`
+  from `fun_cs_rush` to `fun_cs_rush_easy`; change it back to restore elite.
+  The easy profile keeps objective rush enabled with 25-degree aim error, a
+  120-tick minimum gap between shots, and a 0.1 chance for optional
+  objective-route dashes. Dashes required to traverse a gap or large step remain
+  available to preserve valid navigation. The shared dash ability still decides
+  whether a request can be accepted. The two profiles share the same objective,
+  formation, and movement behavior.
+- NPCs may combine jump/bunny-hop and air-strafe movement to reduce travel time.
 - Rush behavior is a Fun Counter Strike behavior-profile choice, not a change to
   human Counter Strike movement.
 - All timing is expressed and logged in fixed ticks; display seconds are derived.
@@ -355,6 +369,7 @@ repeated):
 | Unplanted round timer | 90 s | gamemode JSON |
 | Plant | 1 s | gamemode JSON |
 | Defuse | 5 s | gamemode JSON |
+| Interaction range | 6 m | gamemode JSON `interaction_range_m` |
 | Interaction mode | hold (Mode 1) | gamemode JSON |
 | Tap progress | 0.1 s | gamemode JSON |
 | Countdown | 3 s | gamemode JSON |
@@ -364,7 +379,7 @@ repeated):
 | Respawn | instant (non-zero seconds) | gamemode JSON |
 | Grenade fuse | 120 ticks (2 s) | weapon `grenade_effect.fuse_ticks` |
 | Smoke | 20 m diameter, 600 ticks | smoke weapon JSON |
-| Fire | 10 m diameter, 420 ticks, 10 dmg / 5 ticks, all actors | fire weapon JSON |
+| Fire | 10 m diameter, 420 ticks, 1 dmg / tick, all actors | fire weapon JSON |
 | Frag | 20 m radius, 1000 center / 25 edge, one damage tick | frag weapon JSON |
 | Darkbang | 6 m radius, full within 1 m, 30-tick visual | darkbang weapon JSON |
 | Grenade bounce | restitution ~0.82, friction ~0.12, 30 bounces | per-weapon JSON |

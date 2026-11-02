@@ -55,3 +55,44 @@ the block, for example actor 200005 at `(-588.7, 89.1, 2361.1)` with
 Build 157 probe at that point reports `inside_closed_solid=true`,
 `ground_solid_id=329`. A clean long runtime recovery run is still pending
 because the dev-loop build pipeline was rebuilding other source changes.
+
+---
+
+## Regression Occurrence 2 — repeatable AI-playthrough check (2026-11-02)
+
+### Observed
+
+Human AI-playthrough report on 2026-11-01: an NPC was visibly inside a wall
+during a live AI match. The previous occurrence's reported block point was
+`(-588.7, 89.1, 2361.1)`.
+
+### Expected Behavior
+
+Every NPC remains outside closed static geometry in normal AI play. The first
+failure must be visible in the canonical journal as `npc.pose.reset`,
+`npc.pose.penetration`, or an `inside_closed_solid=true` containment sample.
+
+### Actual / Current Evidence
+
+Added `devscripts/scenarios/npc_wall_containment_v1.json`:
+
+- probes the reported block with `collision_probe` and requires
+  `inside_closed_solid=true` (proves the probe identifies the block);
+- spawns four NPCs beside the block at `(-580,89,2361)`, `(-575,89,2361)`,
+  `(-580,95,2361)`, and `(-575,95,2361)`;
+- soaks for 30 seconds;
+- fails if any `npc.pose.reset` or `npc.pose.penetration` appears.
+
+Current runtime result on build `209`:
+
+- scenario `npc_wall_containment_v1`: PASS, 3 assertions;
+- journal `logs/2026-11-02/20261102_002034/events.jsonl`;
+- no `npc.pose.reset` and no `npc.pose.penetration` in the scenario window.
+
+### Remaining
+
+The live human AI-playthrough replay that first showed the NPC inside the wall
+was not captured. Run the same map/mode/route with the new containment sample
+and attach the first `npc.pose.*` or `inside_closed_solid` event. If it
+reproduces, record the exact actor, position, root correction, and solid id here
+and fix the responsible final-pose/closed-solid owner.

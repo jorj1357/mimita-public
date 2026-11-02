@@ -30,6 +30,17 @@ struct BehaviorProfileDefinition
     float aimErrorDeg = -1.0f;           // <0 = no override
     float reactionDelay = -1.0f;         // <0 = no override
     float fireCadenceMultiplier = 1.0f;  // >1 = faster, <1 = slower
+    // Hard floor between accepted NPC shots, in fixed 60 Hz ticks. <=0 = no
+    // override (weapon/npc-difficulty delay still applies).
+    int fireIntervalTicks = -1;
+    // <0 = use the global NPC dash chance. >1 is allowed for "dash a lot".
+    float dashChance = -1.0f;
+    // <0 = use the existing difficulty formula; >0 = fixed ticks between dashes.
+    int dashCooldownTicks = -1;
+    // Objective formation spacing. <0 = default.
+    int formationSlots = -1;
+    float formationRadiusMeters = -1.0f;
+    float separationMeters = -1.0f;
     float aggression = -1.0f;            // <0 = no override
     float preferredRange = -1.0f;        // <0 = no override
     // Elite tracking knobs. <0 = no override (use legacy difficulty values).
@@ -137,6 +148,12 @@ struct NpcBehaviorTuning
     float aimErrorDeg = -1.0f;
     float reactionDelay = 0.0f;
     float fireCadenceMultiplier = 1.0f;
+    int fireIntervalTicks = -1;
+    float dashChance = -1.0f;
+    int dashCooldownTicks = -1;
+    int formationSlots = -1;
+    float formationRadiusMeters = -1.0f;
+    float separationMeters = -1.0f;
     float aggression = -1.0f;
     float preferredRange = -1.0f;
     float turnSpeedDegPerSec = -1.0f;

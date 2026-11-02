@@ -247,6 +247,19 @@ void readProfile(const json& j, const std::string& fallbackId,
     out.aimErrorDeg = j.value("aim_error_deg", out.aimErrorDeg);
     out.reactionDelay = j.value("reaction_delay", out.reactionDelay);
     out.fireCadenceMultiplier = j.value("fire_cadence_multiplier", out.fireCadenceMultiplier);
+    if (j.contains("fire_interval_ticks") && j["fire_interval_ticks"].is_number_integer())
+        out.fireIntervalTicks = std::clamp(
+            j["fire_interval_ticks"].get<int>(), -1, 600);
+    if (j.contains("dash_chance") && j["dash_chance"].is_number())
+        out.dashChance = std::clamp(j["dash_chance"].get<float>(), -1.0f, 4.0f);
+    if (j.contains("dash_cooldown_ticks") && j["dash_cooldown_ticks"].is_number_integer())
+        out.dashCooldownTicks = std::clamp(
+            j["dash_cooldown_ticks"].get<int>(), -1, 600);
+    if (j.contains("formation_slots") && j["formation_slots"].is_number_integer())
+        out.formationSlots = std::clamp(j["formation_slots"].get<int>(), 0, 12);
+    out.formationRadiusMeters = j.value(
+        "formation_radius_m", out.formationRadiusMeters);
+    out.separationMeters = j.value("separation_m", out.separationMeters);
     out.aggression = j.value("aggression", out.aggression);
     out.preferredRange = j.value("preferred_range", out.preferredRange);
     out.turnSpeedDegPerSec = clampWarn(
@@ -525,6 +538,12 @@ NpcBehaviorTuning resolveNpcBehavior(const std::string& id)
     out.aimErrorDeg = def->aimErrorDeg;
     out.reactionDelay = std::max(0.0f, def->reactionDelay);
     out.fireCadenceMultiplier = std::max(0.1f, def->fireCadenceMultiplier);
+    out.fireIntervalTicks = def->fireIntervalTicks;
+    out.dashChance = def->dashChance;
+    out.dashCooldownTicks = def->dashCooldownTicks;
+    out.formationSlots = def->formationSlots;
+    out.formationRadiusMeters = def->formationRadiusMeters;
+    out.separationMeters = def->separationMeters;
     out.aggression = def->aggression;
     out.preferredRange = def->preferredRange;
     out.turnSpeedDegPerSec = def->turnSpeedDegPerSec;

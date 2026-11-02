@@ -1077,7 +1077,12 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                         (distance - grenade->directEffectDistance) /
                         std::max(0.001f, grenade->maxEffectDistance - grenade->directEffectDistance),
                         0.0f, 1.0f));
-                const float exposure = lookFactor * distanceFactor * lineOfSightFactor;
+                // Inside the configured effect radius with line of sight, the
+                // screen is fully black. Outside it, exposure falls off.
+                const bool insideEffect = distance <= grenade->radius &&
+                    lineOfSightFactor >= 0.5f;
+                const float exposure = insideEffect ? 1.0f
+                    : lookFactor * distanceFactor * lineOfSightFactor;
                 gpPlayer->darkbangIntensity = std::max(
                     gpPlayer->darkbangIntensity, exposure);
                 gpPlayer->darkbangTimer = std::max(
@@ -1647,43 +1652,9 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
-        if (event->damage > 0 && gpPlayer)
-        {
-            const glm::vec3 incoming = glm::length(knockback) > 0.001f
-                ? glm::normalize(knockback) : -hitNormal;
-            gpPlayer->applyHitFlinch(event->damage, hitPosition, incoming);
-            EffectPartSystem::instance().spawnClientBloodFeedback(
-                event->damage, glm::length(knockback));
-        }
-
-        // Show local-victim hit feedback at the real hit point: damage number,
-        // body blood/effects, and elongated sphere. Server NPC/player shots send
-        // the true surface contact point + normal.
-        if (event->damage > 0 && HitEffects::config().core.victimHitEffects)
-        {
-            HitEvent ev;
-            ev.position = hitPosition;
-            ev.normal = hitNormal;
-            ev.direction = glm::length(knockback) > 0.001f
-                ? glm::normalize(knockback)
-                : -ev.normal;
-            ev.hitEntity = true;
-            ev.damage = event->damage;
-            {
-                std::string attackerName = "player_" + std::to_string(event->attackerPlayerId);
-                auto ai = ctx.playerRegistry.find(event->attackerPlayerId);
-                if (ai != ctx.playerRegistry.end())
-                    attackerName = ai->second.name;
-                std::string victimName = "player_" + std::to_string(ctx.localPlayerId);
-                auto vi = ctx.playerRegistry.find(ctx.localPlayerId);
-                if (vi != ctx.playerRegistry.end())
-                    victimName = vi->second.name;
-                ev.attacker = attackerName;
-                ev.victim = victimName;
-            }
-            ev.weaponSource = networkWeaponTypeName(event->weapon);
-            HitEffects::onHit(ev);
-        }
+        // Local-victim flinch, blood, damage number, and impact sphere are
+        // owned by presentConfirmedDamage() so every weapon and damage source
+        // uses one presentation path.
 
         // Health synced to the shot visual: queue a pending change applied in
         // the SAME frame the attacker's body renders past this shot's server
@@ -2637,19 +2608,12 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera)
 {
     for (const ClientSmokeVolume& smoke : gSmokeVolumes) {
-        const float distance = gpPlayer
-            ? glm::length(gpPlayer->pos - smoke.position) : smoke.radius * 0.5f;
-        // The outer 5% of the 20 m smoke diameter is the fade band. Inside the
-        // band the volume stays opaque so it actually blocks vision.
-        const float fadeBand = std::max(0.001f, smoke.radius * 0.05f);
-        const float edgeDistance = smoke.radius - distance;
-        const float alpha = edgeDistance >= fadeBand
-            ? 0.72f
-            : std::clamp(edgeDistance / fadeBand, 0.0f, 1.0f) * 0.72f;
-        const glm::vec4 smokeColor(0.5f, 0.5f, 0.5f, alpha);
+        // Smoke is a solid, depth-writing volume: you cannot see through it
+        // from outside, and inside the camera overlay is fully opaque gray.
+        const glm::vec4 smokeColor(0.5f, 0.5f, 0.5f, 1.0f);
         DebugVis::submitCameraVolumeOverlay(camera, smoke.position,
             smoke.radius, smokeColor, false);
-        DebugVis::drawFilledSphere(camera, smoke.position, smoke.radius,
+        DebugVis::drawSolidSphere(camera, smoke.position, smoke.radius,
             smokeColor);
         if (smoke.remainingTicks > 0) {
             char label[40];

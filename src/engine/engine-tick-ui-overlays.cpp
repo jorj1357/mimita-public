@@ -1049,9 +1049,12 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                             MapConfigRegistry::instance().siteIndexAt(
                                 THE_PLAYER.pos) >= 0;
                         const int defenderTeam = objective.team == 0 ? 1 : 0;
+                        const float objectiveRange =
+                            objective.interactionRange > 0.0f
+                                ? objective.interactionRange : 3.0f;
                         const bool localDefuseRange =
                             objective.state == 3 && localTeam == defenderTeam &&
-                            dist <= 3.0f;
+                            dist <= objectiveRange;
                         const int percent = std::clamp(
                             (int)std::lround(objective.progress * 100.0f), 0, 100);
                         const int totalTaps =
@@ -1108,7 +1111,8 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                                 drawCentered("objectivePrompt",
                                     interactionPrompt("DEFUSE BOMB"));
                         } else if (objective.state == 2 &&
-                                   matchLayout.get("objectivePrompt") && dist <= 3.0f) {
+                                   matchLayout.get("objectivePrompt") &&
+                                   dist <= objectiveRange) {
                             drawCentered("objectivePrompt", std::string("Pick up Bomb"));
                         } else if (objective.state == 2 && matchLayout.get("objectiveStatus")) {
                             drawCentered("objectiveStatus", std::string("BOMB DROPPED"));

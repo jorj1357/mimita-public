@@ -50,7 +50,7 @@
 "recoil": 10.0,
 "recoil_definition": {
     "enabled": true,
-    "pitch_per_shot": 1.0,
+    "pitch_per_shot": -1.0,
     "yaw_per_shot": 1.35,
     "roll_per_shot": 2.0,
     "accumulation_per_shot": 2.0,
@@ -63,7 +63,7 @@
     "viewmodel_back_per_shot": 0.2,
     "viewmodel_pitch_per_shot": 1.0,
     "viewmodel_yaw_per_shot": 0.5,
-    "viewmodel_roll_per_shot": 1.5,
+    "viewmodel_roll_per_shot": -5.5,
     "viewmodel_recovery_rate": 80.0,
     "viewmodel_ads_scale": 0.8,
     "arm_pitch_per_shot": -0.5,
@@ -110,9 +110,9 @@
       0.3
     ],
     "rotation_degrees": [
-      20.0,
-      80.0,
-      -20.0
+      10.0,
+      50.0,
+      -10.0
     ]
   },
 "world_impact": null,

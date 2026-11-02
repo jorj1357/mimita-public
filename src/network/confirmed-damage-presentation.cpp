@@ -21,6 +21,7 @@
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
+#include "effects/effect-part.h"
 #include "effects/hit-effects.h"
 #include "gui/hud/reward-popup.h"
 #include "killfeed/killfeed.h"
@@ -109,11 +110,20 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
              {"event_id", event.eventId}},
             __FILE__, __LINE__, __FUNCTION__);
     }
-    // Local-victim presentation is owned by the projectile damage path so it
-    // can attach blood/flinch to the local body once. Remote observers still
-    // need the same damage numbers and hit effects as the attacker.
-    if (!localAttacker && localVictim)
-        return false;
+    // One confirmed-damage owner for every victim: local victims get flinch and
+    // camera blood, and all victims get the shared damage number/blood/impact
+    // effects. This covers NPC hitscan, projectiles, Deathball, and grenades.
+    if (localVictim && gpPlayer) {
+        const glm::vec3 incoming = glm::length(
+            glm::vec3(event.knockX, event.knockY, event.knockZ)) > 0.001f
+            ? glm::normalize(glm::vec3(event.knockX, event.knockY, event.knockZ))
+            : glm::vec3(0.0f, 0.0f, -1.0f);
+        gpPlayer->applyHitFlinch(event.damage,
+            glm::vec3(event.hitX, event.hitY, event.hitZ), incoming);
+        EffectPartSystem::instance().spawnClientBloodFeedback(
+            event.damage, glm::length(glm::vec3(event.knockX, event.knockY,
+                                                event.knockZ)));
+    }
     if (localAttacker && event.attackerSpawnGeneration != 0 &&
         event.attackerSpawnGeneration != ctx.lastKnownSpawnGeneration)
         return false;

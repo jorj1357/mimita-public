@@ -6,6 +6,7 @@
     "profile": "npc-navigation",
     "launch_mode": 45,
     "map": "dust2cyberiav4",
+    "weapon_set": 30,
     "visibility": "headless",
     "reuse_matching_run": false
   },
@@ -19,6 +20,8 @@
     {"id": "wait_defuser", "wait_for_event": "npc.defuse-assigned", "timeout_seconds": 60}
   ],
   "assertions": [
+    {"type": "event_field_equals", "event": "scenario.started", "field": "weapon_set", "equals": 30},
+    {"type": "event_field_equals", "event": "scenario.started", "field": "map", "equals": "dust2cyberiav4"},
     {"type": "event_present", "event": "team.site-choice"},
     {"type": "event_present", "event": "npc.rush"},
     {"type": "event_present", "event": "objective.planted"},

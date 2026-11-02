@@ -62,6 +62,13 @@ Read these gates before doing anything else:
   repeated diagnostics categorized, useful, and rate-limited.
 - Run relevant validation. If code changed, use the canonical build process
   and inspect its reported status.
+- Before declaring an edit complete, run the mandatory gate:
+  `python devscripts/quality/agent-gate.py` (or the VS Code task
+  `Run agent gate`). The gate runs the canonical build, focused selftests,
+  lint against `devscripts/quality/gate_baseline.json`, JSON sync checks, and
+  the fast runtime scenarios. A red gate means the edit is not complete.
+  Do not hide a new finding by editing the baseline without recording why in
+  the changelog.
 - Record source, build, test, runtime, deployment, and human-review evidence
   as separate claims.
 - Every repository-touching AI session creates exactly one final changelog.

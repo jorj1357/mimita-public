@@ -78,8 +78,13 @@ struct UtilityContext {
     glm::vec3 plantedBombPos{0.0f};
     bool bombDropped = false;           // objective is dropped and recoverable
     bool isRecoverer = false;           // this actor is assigned to recover it
+    bool isCarrier = false;             // this T carries the objective
     bool isDefuserId = false;           // this CT is the designated defuser
     float bombDefendRadius = 15.0f;     // T post-plant defend radius
+    // Deterministic objective formation slot. Exact-role actors (carrier,
+    // recoverer, defuser) ignore this and go to the exact objective point.
+    bool travelSlotKnown = false;
+    glm::vec3 travelSlot{0.0f};
     // Grenade hazard context. One shared snapshot owns these values.
     bool hazardActive = false;
     glm::vec3 hazardPos{0.0f};

@@ -586,6 +586,13 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     float pos = rawPos - aggression * 0.35f + calm * 0.15f + npc.fireRhythmOffset * 0.2f;
     pos = glm::clamp(pos, 0.0f, 1.0f);
     npc.attackCooldown = minDelay + pos * (maxDelay - minDelay);
+    // Hard profile floor: no weapon or cadence setting may fire faster than
+    // this many fixed ticks between accepted NPC shots.
+    if (npc.behavior.active && npc.behavior.fireIntervalTicks > 0) {
+        const float profileFloor =
+            static_cast<float>(npc.behavior.fireIntervalTicks) / 60.0f;
+        npc.attackCooldown = std::max(npc.attackCooldown, profileFloor);
+    }
     Debug::log(Debug::Category::NpcCombat,
         "[NPC FIRE DECISION] npc=%u weapon=%s min=%.3f max=%.1f "
         "aggression=%.2f rhythm=%+.2f pos=%.2f result=%.3f\n",

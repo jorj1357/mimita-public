@@ -3821,6 +3821,23 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
     timeout = float(scenario.get("timeout_seconds", 180) or 180)
     request_id = f"scenario-{scenario_id}-{uuid.uuid4().hex[:8]}"
 
+    launch_cfg = scenario.get("launch") if isinstance(scenario.get("launch"), dict) else {}
+    print(f"[DEV SCENARIO] id={scenario_id}")
+    print(f"[DEV SCENARIO] purpose={scenario.get('description', '')}")
+    print(f"[DEV SCENARIO] launch map={launch_cfg.get('map', '-')} "
+          f"mode={launch_cfg.get('launch_mode', '-')} "
+          f"weapon_set={launch_cfg.get('weapon_set', 'profile-default')}")
+    for index, step in enumerate(steps):
+        operation = "wait_for_event" if "wait_for_event" in step else (
+            "wait_seconds" if "wait_seconds" in step else
+            f"command:{step.get('command', '-')}")
+        detail = step.get("wait_for_event") or step.get("wait_seconds") or step.get("args", "")
+        print(f"[DEV SCENARIO] step[{index}] {step.get('id', '-')} {operation} {detail}")
+    for index, assertion in enumerate(scenario.get("assertions", []) or []):
+        print(f"[DEV SCENARIO] assert[{index}] {assertion}")
+    if getattr(args, "scenario_explain", False):
+        return 0
+
     current = read_current_run() or {}
     port = current.get("control_port")
     token = current.get("control_token")
@@ -4019,7 +4036,7 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
                 "event": str(step.get("wait_for_event", "")),
                 "where": step.get("where", {}),
                 "result": "waited" if ok else "timeout",
-                "observed": _field_path(record, "fields") if ok else None,
+                "observed": (record.get("fields") if ok and record else None),
             }, "scenario wait recorded", f"{request_id}:{index}")
             if not ok:
                 execution_ok = False
@@ -4780,6 +4797,9 @@ def run_control_client(args: argparse.Namespace) -> int:
     current = read_current_run()
     # Mutating/command entry points ensure one watchdog and one daemon before
     # sending work. Stop requests target whatever daemon already exists.
+    if args.scenario_file and getattr(args, "scenario_explain", False):
+        return run_scenario_file(args)
+
     if action in ("command", "scenario-file", "launch", "build") or args.ensure_running:
         current, ensure_events = ensure_running(args.profile, args.launch_mode, visibility)
         for event in ensure_events:
@@ -4894,6 +4914,11 @@ def main() -> int:
     parser.add_argument("--command", "--cmd", dest="command",
                         help="send one terminal command to the running daemon, wait for the result, and exit")
     parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
+    parser.add_argument(
+        "--scenario-explain",
+        action="store_true",
+        help="print the scenario purpose, steps, launch config, and assertions without running it",
+    )
     parser.add_argument(
         "--ai-match",
         action="store_true",

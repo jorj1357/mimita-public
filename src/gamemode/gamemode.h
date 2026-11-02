@@ -115,6 +115,8 @@ struct GamemodeObjectiveDefinition {
     float plantSeconds = 0.0f;
     float defuseSeconds = 0.0f;
     float explosionSeconds = 0.0f;
+    // Radius within which a player/NPC may hold or tap to plant/defuse.
+    float interactionRangeMeters = 3.0f;
     std::string interactionMode = "hold";
     float tapProgressSeconds = 0.1f;
     GamemodeObjectiveVisual visual;

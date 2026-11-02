@@ -1,0 +1,19 @@
+{
+  "_comment": "Accepted pre-existing lint metrics. The gate fails if any metric increases or a new report appears. Update only deliberately, with a changelog entry.",
+  "damage-authority": {
+    "findings": 81
+  },
+  "contact-ownership": {
+    "weapon_id_branches": 41,
+    "duplicate_function_names": 6
+  },
+  "dead-code": {
+    "markers": 8
+  },
+  "duplicate-report": {
+    "repeated_windows": 551
+  },
+  "coverage": {
+    "artifacts": 0
+  }
+}

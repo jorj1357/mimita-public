@@ -1811,6 +1811,26 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             KillfeedManager::instance().onKill(
                 killerName, victimName, weaponDisplay, false,
                 kill->serverTick, eventKey);
+            // Immediate local reward for any authoritative kill credited to
+            // this player. The backend persistence notice may arrive later;
+            // this keeps Deathball/grenade/fire kills from feeling unrewarded.
+            if (ctx.localPlayerId != 0 && kill->killerId == ctx.localPlayerId &&
+                kill->killerId != kill->victimId) {
+                const uint8_t rewardKind =
+                    kill->victimEntityType == ENTITY_NPC ? 1 : 0;
+                RewardPopupSystem::instance().pushProgression(
+                    rewardKind, victimName, "");
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "kill.reward.local", std::to_string(kill->eventId),
+                    "local killer received immediate reward popup",
+                    kill->serverTick,
+                    nlohmann::json{{"killer", kill->killerId},
+                                   {"victim", kill->victimId},
+                                   {"victim_is_npc",
+                                    kill->victimEntityType == ENTITY_NPC},
+                                   {"weapon", weaponDisplay}});
+            }
             Debug::log(Debug::Category::Networking,
                 "[KILL EVENT RX] killer=%s kind=%u victim=%s kind=%u weapon=%s tick=%u event=%u\n",
                 killerName.c_str(), (unsigned)kill->killerEntityType,

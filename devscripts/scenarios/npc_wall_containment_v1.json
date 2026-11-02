@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "npc_wall_containment_v1",
+  "description": "Spawn NPCs beside the reported closed block and require final-pose containment to keep every NPC out of static geometry for 30 seconds.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": 45,
+    "map": "dust2cyberiav4",
+    "weapon_set": 30,
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "probe_reported_block", "command": "collision_probe", "args": ["-588.7,89.1,2361.1"], "delay_ms_after": 300}
+  ],
+  "steps": [
+    {"id": "spawn_wall_a", "command": "npc_spawn_legacy", "args": ["-580", "89", "2361"], "delay_ms_after": 500},
+    {"id": "spawn_wall_b", "command": "npc_spawn_legacy", "args": ["-575", "89", "2361"], "delay_ms_after": 500},
+    {"id": "spawn_wall_c", "command": "npc_spawn_legacy", "args": ["-580", "95", "2361"], "delay_ms_after": 500},
+    {"id": "spawn_wall_d", "command": "npc_spawn_legacy", "args": ["-575", "95", "2361"], "delay_ms_after": 500},
+    {"id": "soak", "wait_seconds": 30}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "collision.probe", "field": "inside_closed_solid", "equals": true},
+    {"type": "event_absent", "event": "npc.pose.reset"},
+    {"type": "event_absent", "event": "npc.pose.penetration"}
+  ],
+  "timeout_seconds": 120
+}

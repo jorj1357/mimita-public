@@ -645,6 +645,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
     mObjective.requiredTicks = packet.objectiveRequiredTicks;
     mObjective.tapTicks = packet.objectiveTapTicks;
     mObjective.timerLeft = packet.objectiveTimerLeft;
+    mObjective.interactionRange = packet.objectiveInteractionRange;
     mPayload.active = packet.payloadActive != 0;
     mPayload.overtime = packet.payloadOvertime != 0;
     mPayload.advancing = packet.payloadAdvancing != 0;

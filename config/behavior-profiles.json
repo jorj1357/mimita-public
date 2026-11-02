@@ -324,13 +324,38 @@
       "travel_target_reached_meters": 4.0
     },
     {
-      // Fun Counter Strike objective rush. Reuses the elite baseline but does
-      // not opt into group focus/swarm; the team already commits to one site.
-      // NPCs use known routes and spend dash whenever the shared ability is
-      // available. Counter Strike typical keeps rage2.
+      // Fun Counter Strike objective rush keeps shared objective behavior but
+      // opts out of group focus/swarm; the team already commits to one site.
+      // Counter Strike typical keeps rage2.
       "id": "fun_cs_rush",
       "skill_tier": "elite",
       "objective_rush": true,
+      "dash_cooldown_ticks": 3,
+      // Spread the team around the objective/defuser instead of stacking.
+      "formation_slots": 6,
+      "formation_radius_m": 5.0,
+      "separation_m": 1.5,
+      "focus_enabled": false,
+      "swarm": false,
+      "information_mode": "memory",
+      "pursuit_mode": "persistent",
+      "continue_through_cover": true,
+      "pursue_last_known_position": true,
+      "after_reaching_last_known": "continue_pursuit"
+    },
+    {
+      // Optional easy alternative for Fun Counter Strike. Select it by changing
+      // funcounterstrike.json npc_behavior_profile to fun_cs_rush_easy.
+      "id": "fun_cs_rush_easy",
+      "skill_tier": "beginner",
+      "objective_rush": true,
+      "aim_error_deg": 25.0,
+      "fire_interval_ticks": 120,
+      "dash_chance": 0.1,
+      "dash_cooldown_ticks": 3,
+      "formation_slots": 6,
+      "formation_radius_m": 5.0,
+      "separation_m": 1.5,
       "focus_enabled": false,
       "swarm": false,
       "information_mode": "memory",
