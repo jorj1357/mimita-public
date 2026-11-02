@@ -1,0 +1,11 @@
+[Unit]
+Description=Check PostgreSQL availability for MiMITA
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+Unit=mimita-postgres-watchdog.service
+
+[Install]
+WantedBy=timers.target

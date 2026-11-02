@@ -255,10 +255,12 @@ The example plan is `devscripts/scenarios/matrix/duel-plan.example.json`.
 An automated gameplay scenario should finish when its configured success or
 failure condition is observed in the matching run's runtime evidence. Return
 the observed condition and its event/tick context so the caller can distinguish
-success from failure. Keep a bounded timeout as a failure fallback when the
-expected event never arrives or the runtime hangs; a timeout is not success.
-This lets an AI-run scenario stop after its result instead of waiting out an
-unrelated fixed duration.
+success from failure. Do not wait a fixed scenario duration after the final
+event. For the requested gameplay-debugging workflow, do not use a
+scenario-level duration or elapsed-time timeout as the completion condition.
+If no result arrives, leave the run pending until an explicit stop or a
+separately identified process failure; elapsed time alone is not a gameplay
+verdict.
 
 This is a target behavior, not a claim that the current runner supports
 arbitrary event-based completion. Scenario definitions and the runner must

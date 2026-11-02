@@ -96,6 +96,7 @@ struct IceRequestCompleteResult {
 // ── TURN temporary credentials ───────────────────────────────────────
 struct TurnCredentials {
     bool ok = false;
+    bool disabled = false;
     std::string host;
     uint16_t port = 3478;
     std::string username;

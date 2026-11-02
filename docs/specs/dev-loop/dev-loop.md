@@ -2382,3 +2382,26 @@ weapon set cannot silently replace the intended loadout.
 
 `scenario.step` records the matched `wait_for_event` fields under `observed`,
 not `null`, so a timed wait can be diagnosed from the journal alone.
+
+## Native dashboard and contributor activity feed — desired
+
+The current terminal dashboard is useful status output, but the desired
+development loop is a simple native Python window with a live terminal view,
+MiMITA build/run status, and a readable activity feed. Keep the existing
+dev-loop process and status/control authority; the window is a presentation
+layer and must not create a competing build/run loop.
+
+The activity feed should show observable work from AI agents and contributors:
+task/session identity when available, current action, files changed, build or
+check started/completed, live game/map, and the result or error. Each entry
+needs a timestamp and source so the user can tell whether an event came from
+the game, dev-loop, a contributor, or an AI tool. Show durable runtime events
+from `events.jsonl` separately from work-status events so “a file was edited”
+cannot be mistaken for “the game behavior passed.” Do not present private
+reasoning or unverified inferred activity as observed status.
+
+Keep the Python entry point focused on orchestration and move independently
+owned UI, activity collection, and status components into separate modules
+when that split is implemented. A GUI library may be selected during that
+implementation if it is available locally and supports the native window and
+responsive status updates without adding an unjustified dependency.

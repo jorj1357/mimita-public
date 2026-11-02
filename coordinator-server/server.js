@@ -13,6 +13,7 @@ const crypto = require("crypto");
 
 const fs = require("fs");
 const path = require("path");
+const { readTurnPolicy, createTurnCredentials } = require("./turn-policy");
 
 // Load env.sh for TURN secret if not already in environment
 const envPath = "/root/mimita-coordinator/env.sh";
@@ -208,29 +209,17 @@ function sdpHasUfragPwd(sdp) {
 // Generate TURN REST credentials using coturn's scheme:
 // username = <unix-timestamp>:<username>
 // credential = base64(HMAC-SHA1(shared_secret, username))
+let warnedTurnPolicyInvalid = false;
 function generateTurnCredentials() {
-    // The TURN relay is coTURN on the VPS (UDP/TCP 3478). The coordinator API is
-    // proxied through nginx at mimita.fun, but Cloudflare/nginx only front HTTP —
-    // they do NOT route UDP 3478. The relay must advertise its raw reachable IP
-    // so ICE candidate gathering can actually reach it. Returning mimita.fun here
-    // made every server/client hang on "gather timeout" and fail to connect.
-    const host = "107.191.48.226";
-    const port = 3478;
-    if (!TURN_SHARED_SECRET) {
-        return { ok: false };
+    const policy = readTurnPolicy();
+    if (!policy.valid && !warnedTurnPolicyInvalid) {
+        console.error("[COORDINATOR] TURN policy unreadable; relay credentials disabled");
+        warnedTurnPolicyInvalid = true;
     }
-    const expiry = Math.floor(Date.now() / 1000) + 3600; // 1 hour
-    const user = "mimita";
-    const username = expiry + ":" + user;
-    const hmac = crypto.createHmac("sha1", TURN_SHARED_SECRET).update(username).digest("base64");
-    return {
-        ok: true,
-        host,
-        port,
-        username,
-        credential: hmac,
-        expires_at: expiry
-    };
+    return createTurnCredentials({
+        enabled: policy.valid && policy.enabled,
+        secret: TURN_SHARED_SECRET
+    });
 }
 
 function roomToLookup(room) {
@@ -705,10 +694,11 @@ const routes = {
     "/api/coordinator/turn-credentials": async (req, res) => {
         const creds = generateTurnCredentials();
         if (!creds.ok) {
-            json(res, 200, { ok: false });
+            json(res, 200, { ok: false, enabled: creds.enabled });
         } else {
             json(res, 200, {
                 ok: true,
+                enabled: true,
                 host: creds.host,
                 port: creds.port,
                 username: creds.username,

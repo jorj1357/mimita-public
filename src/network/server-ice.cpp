@@ -28,6 +28,20 @@ std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
 namespace {
 
+IceConfiguration loadIceConfigForTurnCredentials(const TurnCredentials& credentials)
+{
+    if (credentials.disabled)
+    {
+        IceConfiguration config = loadIceConfig();
+        disableIceTurn(config);
+        return config;
+    }
+    if (credentials.ok && !credentials.credential.empty())
+        return loadIceConfigWithTurn(credentials.host, credentials.port,
+                                     credentials.username, credentials.credential);
+    return loadIceConfig();
+}
+
 struct CoordinatorPollResult
 {
     IceHostPendingRequest pending;
@@ -202,13 +216,10 @@ bool initServerIceListener(ListenServerState& state)
     const uint64_t turnRequestStartedMs = nowMs();
     TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
     logStartupStage("turn_credentials", turnRequestStartedMs,
-                    turnCreds.ok, "TURN credential request completed");
-    IceConfiguration iceConfig;
-    if (turnCreds.ok)
-        iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
-                                           turnCreds.username, turnCreds.credential);
-    else
-        iceConfig = loadIceConfig();
+                    turnCreds.ok || turnCreds.disabled,
+                    turnCreds.disabled ? "coordinator direct-only policy" :
+                        "TURN credential request completed");
+    IceConfiguration iceConfig = loadIceConfigForTurnCredentials(turnCreds);
     if (iceConfig.turn.password.empty())
         printf("[SERVER ICE] WARNING: no TURN credentials; direct connections only\n");
 
@@ -375,12 +386,7 @@ void tickIceCoordinator(ListenServerState& state, size_t playerCount)
             // Get TURN credentials for peer agent.  This is a join-only path;
             // the recurring host poll above is the normal-game stall source.
             TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
-            IceConfiguration iceConfig;
-            if (turnCreds.ok)
-                iceConfig = loadIceConfigWithTurn(turnCreds.host, turnCreds.port,
-                                                   turnCreds.username, turnCreds.credential);
-            else
-                iceConfig = loadIceConfig();
+            IceConfiguration iceConfig = loadIceConfigForTurnCredentials(turnCreds);
 
             auto clientAgent = std::make_unique<IceAgent>();
             if (!clientAgent->initialize(iceConfig))

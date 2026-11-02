@@ -100,9 +100,10 @@ systems first. Use this default order:
 | Entity, component, or ECS migration | `docs/architecture/ecs-entity-etc/ecs.md`, `docs/architecture/ecs-entity-etc/ecs-migration.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/player-npc-systems/player-npc-systems.md` |
 | Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |
-| Persistent progression, rewards, profiles, leaderboards | `docs/specs/data-saving/data-saving.md`, `docs/operations/vps-audit.md`, `docs/operations/persistence-recovery.md` |
+| Persistent progression, rewards, profiles, leaderboards | `docs/specs/data-saving/data-saving.md`, `docs/operations/vps-audit.md`, `docs/operations/todo-sort-these/persistence-recovery.md` |
+| Website architecture, VPS website operations, database availability, and site recovery | `docs/architecture/website/website-architecture.md`, `docs/operations/website-operations.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/vps-audit.md`, `docs/operations/todo-sort-these/persistence-recovery.md` |
 
-Also read `docs/regressions/regressions-v1.md` for any bug or human-reported
+Also read `docs/regressions/README.md` for any bug or human-reported
 break. Read JSON architecture when settings or hot reload are involved.
 
 For active configuration, resolve the runtime-loaded path before inspecting or

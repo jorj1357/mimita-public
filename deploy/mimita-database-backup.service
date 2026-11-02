@@ -1,0 +1,9 @@
+[Unit]
+Description=Verified encrypted MiMITA PostgreSQL backup
+After=network-online.target postgresql@14-main.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mimita-database-backup.sh
+TimeoutStartSec=20min

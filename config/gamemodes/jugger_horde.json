@@ -140,10 +140,10 @@
     "blood_scale": 1.0,
     "blood_lifetime_scale": 1.0,
     "world_impact_decal_scale": 1.0,
-    "world_impact_decal_lifetime_scale": 1.0,
+    "world_impact_decal_lifetime_scale": 0.1,
     "world_impact_decal_alpha_scale": 1.0,
     "world_hit_effect_scale": 1.0,
-    "world_hit_effect_lifetime_scale": 1.0,
+    "world_hit_effect_lifetime_scale": 0.1,
     "friendly_outline_color": [
       0.0,
       255.0,
@@ -230,7 +230,8 @@
   },
   "aim": {
     "mode": "physical",
-    "body_mode": "default",
+    // "body_mode": "default",
+    "body_mode": "hybrid",
     "body_enabled": true
   },
   "bomb_timer_ticks": 900,

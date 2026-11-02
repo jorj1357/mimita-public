@@ -54,17 +54,34 @@ an actionable process status.
 Do not create a new synthetic test as the first response to a gameplay bug.
 Use existing unit/component tests only for behavior they genuinely isolate,
 such as serialization, path construction, or a pure mathematical invariant.
-Classify those tests explicitly. Prefer a runtime scenario for gameplay,
-networking, configuration loading, animation, collision, audio, and visual
-behavior. A runtime log proves that the path executed; human visual or feel
-acceptance remains a separate claim.
+Classify those tests explicitly. For discovering gameplay failures, begin with
+ordinary live play on the real game path and inspect the raw `events.jsonl`
+evidence. Do not make an AI-authored fixed route or a short scripted scenario
+the primary proof that general NPC or collision behavior works. Such a run can
+only cover the actions and geometry it deliberately reaches.
 
-## Automated expected-good scenarios
+Use a human-recorded route when a person has found a specific spot or action
+that should be repeatable. Replay it through the real fixed-tick input and
+collision owners to check whether that known failure returns. A recorded route
+is a focused regression check, not broad proof: keep an unscripted live run for
+behavior the recording did not exercise. A passing run that did not touch the
+relevant map feature is `NOT_COVERED`, not a pass. Runtime logs prove only the
+paths and events they actually capture; human visual or feel acceptance remains
+a separate claim.
 
-Known-good collision behavior must be encoded as versioned scenarios so AI can
-test it without a human driving the game.
+AI may observe and analyze ordinary gameplay and use human-recorded routes for
+repeat checks. Any fixed setup, route, or assertion must be named in the result
+so it is clear which parts were natural play and which were controlled.
 
-A scenario may assert:
+## Recorded regressions and optional focused checks
+
+Do not require a library of AI-authored fixed routes as the main collision
+validation method. When a human finds a real failure, preserve that human
+recording as a versioned route and replay it through the collision path that is
+being tested. A route becomes a useful baseline only after its expected result
+and relevant map feature have been reviewed.
+
+A human-recorded route or other focused check may assert:
 
 - a required event is present;
 - a forbidden event is absent;
@@ -75,23 +92,28 @@ A scenario may assert:
 Known intentional exceptions, such as a real wall stop, a freeze, or a scripted
 teleport, must be declared in the scenario rather than weakened globally.
 
-Baseline scenarios are run on the real executable through the dev loop. The
-runner records the build, executable identity, `EVENTS_JSONL_PATH`, scenario
-inputs, assertions, and terminal verdict. A current run fails when a forbidden
-event appears, a required event disappears, or a metric leaves its accepted
-range. Baseline changes are deliberate and are recorded in the changelog.
+Recorded-route checks run on the real executable through the dev loop. The
+runner records the build, executable identity, `EVENTS_JSONL_PATH`, recording
+identity, assertions, and terminal verdict. A current run fails when a
+forbidden event appears, a required event disappears, or a metric leaves its
+accepted range. Baseline changes are deliberate and recorded in the changelog.
+The analyzer may classify events, but it must not silently excuse a failure or
+replace the runtime journal.
 
-For collision work, the minimum scenario set is:
+For collision changes, run the map where the failure was reported, rotate a
+small set of other supported maps during quick ongoing checks, and run the full
+supported-map set for a collision-wide change. Report which maps and relevant
+features were actually reached. A map or feature not reached is
+`NOT_COVERED`, not a pass. Long map coverage may run in the background while
+short edit checks finish; source/build checks and live gameplay evidence remain
+separate results.
 
-- flat block/ramp seam traversal;
-- straight dash on flat ground;
-- down-dash onto a slope;
-- NPC/monster final-pose containment near walls, blocks, and ramps;
-- forced last-clear recovery for an NPC inside geometry.
-
-The scenario file is the machine-readable contract; the analyzer may classify
-events, but it must not silently excuse a failure or replace the runtime
-journal.
+Complete a run as soon as its decisive runtime result or required coverage is
+observed; do not wait out a fixed duration after the result. A fixed duration
+does not itself prove the feature was exercised. This workflow uses
+event-driven completion without a scenario-level timeout. If the expected event
+never arrives, report the run as still waiting until an explicit stop or
+process failure; do not convert elapsed time into a pass or a gameplay failure.
 
 ## Evidence report
 
@@ -138,6 +160,34 @@ as a failed scenario; there is no snap-back path. A checked-in template is
 Schema 1 recordings remain input-only playable scenarios. Run playback on the
 same map, mode, weapon set, and local dev server; with schema 1, NPC and
 remote-player state can still differ.
+
+### Collision replay limits and requirements
+
+Human-recorded collision routes are useful because they preserve a real input
+sequence and identify the map location where a person saw a problem. They do
+not replace natural live gameplay or establish that unvisited geometry works.
+
+For collision debugging, replay must exercise the collision behavior under
+investigation. Replaying recorded actor transforms as authoritative proxy state
+does not prove that those actors' movement or collision solver would produce
+the same transforms. The report must identify whether each actor was driven by
+recorded input through normal movement, simulated by normal AI, or followed as
+a recorded transform. Do not describe transform-follow playback as a collision
+re-simulation.
+
+The desired collision recording evidence is per fixed server tick and includes
+the real inputs/intents, actor identity and lifecycle, authoritative
+position/velocity before and after movement, grounded and world-support state,
+collision backend, contact identities/normals/penetration, and relevant
+containment or recovery results. Recorded positions and velocities are
+comparison evidence; playback must not force them onto an actor whose collision
+response is being tested. Compare expected and actual outcomes and stop on the
+first unexplained divergence, while retaining the preceding tick window.
+
+Use both kinds of evidence: a natural live run to discover failures that were
+not anticipated, and a human-recorded route to repeat a known failure after a
+change. Do not turn one successful recorded route into a claim that all NPCs,
+actors, or maps are collision-safe.
 
 ## Separate client and server journals
 

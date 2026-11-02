@@ -117,10 +117,12 @@ The following invocation creates a backup and must wait for reviewed deployment
 and explicit operational authorization. The operator first provisions an absolute
 backup directory outside the repository/web root, owned by the invoking account,
 with mode 0700 and sufficient free disk space. Example production destination:
-/root/db_backups. Do not change permissions on a populated directory blindly.
+/root/mimita-db-verified-backups. The existing `/root/db_backups` is owned by
+the PostgreSQL service account and contains historical files; preserve it and
+do not change its ownership or permissions.
 
 ```text
-node website/server/backup-database.mjs --output-dir /root/db_backups
+node website/server/backup-database.mjs --output-dir /root/mimita-db-verified-backups
 ```
 
 The tool resolves website/.env relative to its own file regardless of working

@@ -1,4 +1,37 @@
-﻿2206 11 01 1841 all npcs on tdmtest3 map  fall thru the map in tdm mode 
+﻿2026 11 02 0825
+npcs still are getting stuck inside of walls
+need to ensure 
+we ned to makeit so that blokcs are solid
+like
+u cannot go inside of a block 
+npcs keep goinginside of blocks
+also npc behavior is not as stellar as  intended
+they keep following their teammates even tho idk
+
+in juggernaut horde mode i want them to be  going running to the juggernuat as fast as they acn 
+we should prob do like 
+idk what to do , juggernauts are not easy to see 
+their avatar should be much bigger or we should have less world marks idk 
+im still getting caught on geometry  dust2cyberiav4 map
+we need to make it so we ahve a collision test that AI uses 
+asynchronously as well
+bceause the tests current tests make AI take like 10x longer
+like AI takes so logn to  do edits because its not only doing the edits its waiting to build and run the game 
+we need to maek ti so  that stuf hapepsn faster 
+its like 
+140 min eession yesreday 
+it was like 
+idk prob 10 to 15 min of actual coding 
+80 min of waiitng
+then like 50 min of testing or running tests and then tweaking based on runtime behaviors
+
+and it still
+npcs still are stuck in geometry we havent fies that and it has beedn like 3 days 4 day s
+since we added animations and actor collisiosn things 
+idk what to  do there even 
+asid efom inspect and see whats wrong 
+
+2206 11 01 1841 all npcs on tdmtest3 map  fall thru the map in tdm mode 
 
 2026 11 01 1728 
 50 v 50 on fun coutner strke not good

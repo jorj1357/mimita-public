@@ -1,0 +1,10 @@
+[Unit]
+Description=Bounded PostgreSQL availability recovery for MiMITA
+After=local-fs.target
+
+[Service]
+Type=oneshot
+StateDirectory=mimita-postgres-watchdog
+StateDirectoryMode=0700
+ExecStart=/usr/local/sbin/mimita-postgres-watchdog.sh
+TimeoutStartSec=30s

@@ -22,6 +22,8 @@ import {
     resetFailedAttempts
 } from "./authCore.js"
 import { pool, runMigrations } from "./db.js"
+import { isDatabaseUnavailable } from "./database-errors.js"
+import { createHealthRouter } from "./health.js"
 import {
     sendAccountWelcomeEmail,
     sendNewsletterWelcomeEmail,
@@ -190,6 +192,8 @@ app.use((req, res, next) => {
 
     next()
 })
+
+app.use("/api/health", createHealthRouter({ pool }))
 
 async function withVipUser(user) {
     if (!user) return user
@@ -1529,13 +1533,12 @@ app.use((error, req, res, next) => {
     }
     console.log(`[SERVER ERROR] ${JSON.stringify(logData)}`)
 
-    if (error.code === "ECONNREFUSED") {
-        console.log("[SERVER] Database connection refused.")
-        console.log("[SERVER] Ensure PostgreSQL is running and accessible.")
-        console.log("[SERVER] Check .env for: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME")
-        return res.status(500).json({
+    if (isDatabaseUnavailable(error)) {
+        console.log("[SERVER] Database dependency unavailable.")
+        return res.status(503).json({
             success: false,
-            message: "database connection failed. check server logs."
+            code: "database_unavailable",
+            message: "Account service temporarily unavailable. No account change was confirmed. Please try again later."
         })
     }
 

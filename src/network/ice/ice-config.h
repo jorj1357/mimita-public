@@ -118,6 +118,15 @@ inline IceConfiguration loadIceConfig(const std::string& path)
     return config;
 }
 
+inline void disableIceTurn(IceConfiguration& config)
+{
+    config.turn.host.clear();
+    config.turn.port = 0;
+    config.turn.username.clear();
+    config.turn.password.clear();
+    config.forceRelay = false;
+}
+
 inline IceConfiguration loadIceConfigWithTurn(const std::string& turnHost, uint16_t turnPort,
     const std::string& turnUsername, const std::string& turnCredential)
 {

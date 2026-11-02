@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily verified encrypted MiMITA PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+Unit=mimita-database-backup.service
+
+[Install]
+WantedBy=timers.target

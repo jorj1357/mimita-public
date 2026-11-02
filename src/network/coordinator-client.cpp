@@ -579,7 +579,18 @@ TurnCredentials coordinatorRequestTurnCredentials()
     }
     try {
         auto j = json::parse(response);
-        result.ok = true;
+        result.disabled = j.contains("enabled") && !jsonBool(j, "enabled", true);
+        if (result.disabled) {
+            printf("[TURN CREDENTIALS] disabled by coordinator policy duration=%llums\n",
+                   nowMs() - t0);
+            return result;
+        }
+        result.ok = jsonBool(j, "ok");
+        if (!result.ok) {
+            printf("[TURN CREDENTIALS] unavailable by coordinator duration=%llums\n",
+                   nowMs() - t0);
+            return result;
+        }
         result.host = jsonStr(j, "host", "mimita.fun");
         result.port = (uint16_t)jsonInt(j, "port", 3478);
         result.username = jsonStr(j, "username");

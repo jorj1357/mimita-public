@@ -3830,6 +3830,19 @@ Relay usage can later be reduced through:
 * Bandwidth measurement.
 * Efficient protocols.
 The player should not need to solve network configuration manually.
+
+Temporary global direct-only test mode
+The coordinator owns a repo-managed JSON policy for whether it issues TURN
+relay credentials. When the policy is disabled, clients must discard any local
+TURN credentials and must not gather or select relay candidates for new or
+reconnected sessions. Keep room-code discovery, ICE signaling, and STUN
+available so the test isolates relay fallback. Existing sessions may finish;
+the policy applies to new negotiations. The feature remains enabled in code so
+the operator can turn it back on through the same JSON setting.
+
+Record the actual deployment activation time in UTC and America/New_York. The
+operator requested a test start near 2026-11-02 08:34 EST; do not claim that
+time as the activation unless the coordinator was actually switched then.
 ________________
 
 

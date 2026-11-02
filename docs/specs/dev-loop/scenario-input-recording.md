@@ -217,6 +217,29 @@ distance.
   `scenario.playback.failed` reports readiness, track, or divergence failure.
   `scenario.playback.stopped` remains the user-cancel event.
 
+### Collision re-simulation requirement
+
+The current schema 2 server playback follows recorded actor transforms for
+NPC/remote-player proxies and disables their normal AI. That is useful for
+replaying actor state and contact context, but it does not re-run those actors'
+movement decisions and collision response from recorded inputs. Do not use that
+mode alone to claim NPC collision behavior was re-tested.
+
+For a human-recorded collision route to test a fix, the actor under test must be
+driven by the recorded input/intent through the normal authoritative movement
+and collision path. Per-tick recorded transforms, velocities, contacts, and
+ground-support state are comparison evidence; playback must not force recorded
+transforms onto the actor being tested. Report which actors were re-simulated,
+which followed recorded transforms, and which used ordinary live AI.
+
+The desired server-side collision recording captures per fixed tick: actor
+identity/lifecycle; accepted input or movement intent; position and velocity
+before and after movement; world-support/grounded state; collision backend;
+contact IDs, normals, and penetration; and containment/recovery result. Compare
+the replay result with the human recording and stop at the first unexplained
+divergence while preserving the recent tick window. This replay is a focused
+check of a known route; it does not replace unscripted live gameplay.
+
 ## Structured events
 
 - `scenario.record.started`, `scenario.record.stopped`,

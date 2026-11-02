@@ -1,4 +1,129 @@
-﻿2026 10 10 1800 jorj todo - need to make size limit bc we keephaving std alloc memory error 
+﻿2026 11 02 0948 jorj  talking to chat gpt  
+https://chatgpt.com/s/cx_6ae8a2e653848191ab9cbd4183d3fa61
+
+i think if we get the scenario recording to be muhc much stronger, then we record scenarios that are issues, that might make it easier
+
+so if a scenario always checks all these events.jsonl things 
+or 
+yes i think we should log it into that same events.jsonl not mkae a new logging place , just use 1 place to log things  
+and a scenario can save the exact state fo each grenade each npc at each tick , every actors position and velocit and collisioins and things hteyre touchign etc
+as well as npcs that fall down into the groundn  and stuff 
+
+then we can do code changes and 
+like how there is snappingif u are too far off from the recorded posiison , we can make that allowance bigger? so like, if normall u get caught and snagged, then , u will have a big snap, meaning a differnece in runtime behavior meaning a fix has some kidna  effect 
+so might mean its good directon idk 
+becasue snapping  
+
+if u snap and  
+for exampel fixing snagging, and normaly u are at pos X  at ttick N 
+but after th fix u just continue smoothly , then u would snap back to the  scenario's recorded posiison, even tho u were sliding, so that means like snagging has evidnece that somethign changed in collisions 
+
+we sghould also make it so, ai  doenst make scenarios for now, because scenarios exist to test specific things going wrong or reproduce specific issues like snagging or npcs falling thru the world, but we need to just track 
+we need totracka lot lot lot more
+like in  a scenario beacuse its just playback ticks, we can  get away with worse preformance i think? if that means we are recording absolutely everything 
+
+so 
+for every single tick 
+we record
+
+for every single actor
+their 
+plr origin pos 
+what colision path its using that tick
+what it has equipped
+what weapon set, what acotr preset, waht role it has
+look direction
+velocit
+limb posiion,
+what trinagles on its limbs are hitting what triangle in the world right now 
+what hp it has
+is it shooting not shooting
+primar held not held, etc
+some stuff is already tracked but other things i wnat to trakc as well
+
+and i want to ensure that when doing it in  a secnario we are tracking every single thign
+i would like it if  events.jsonl tracks ever single thing live, liek so AI can get the issues quicker without needing to run a sceanrio 
+but im not sure, 
+mabe ifwe haev one fixed good scenario that capture s the issue, then tahtd mean just test agains that ,
+bc if u juts let ai run as an npc and do whatever it wants then it might end up taking a lot of time to reproduce the actual issue 
+
+for scenario playback can we do full trace level events.jsonl logging 
+or as much as is required to make it so npcs posiitosn all positions are tracked
+and if an npc is inside of gemoetry
+like, are the limbms inside of geoemtry, but plr origin is outside, or are both inside, or are neither inside, etc
+does the game know what is a inside of goemtry vs outside? inblender its just the inside of a part  but idk if ingmae its super accurate 
+
+i think it might be possible to not do those checks every singl time for allthe maps
+ like if we just 
+cuz that again might end up being 
+wait for the npc to do what the intended behavior is, it might it might not
+if we just have liek a single scneario or set of scenarios that shows
+ok , here, ensure npcs do not fall thru the world
+ensure that no snagging happens 
+ensure 
+
+this might relate to TAS like speedrunning things 
+cuz if we can get the speicifc exact state of things and just go back to 
+C:\mimita-v9\docs\specs\tas\tas.md
+if we have save states and stuff and speed up/down then i can get the specific scenario results to happen, but this is just an idea  we might not actually need it 
+
+the priority here is 
+make it so AI can re run the same exact failing scenario over and over until it passes
+and we have more than enough loggign, evidence, etc  so that AI knows if a fix is working/not working
+
+so it can say like
+its fixed and the evidence is 
+we alread explained at exactly tick N , the collision snagging issue happened
+or, i saw an npc fall thru the floor
+or , i fell thru the floor
+
+AI can look at that scenario and its events, which i think 
+idk?
+maybe bound together?
+maybe events.jsonl is a result of running the scenario 
+and AI can check to see
+pass 1 , still failing, ok pass 2, still failing but diffrent, pass 3, working 
+
+i think we shoudl do that 
+
+and then we should not do  random map coverage, or rely purely on AI using npc naviagation mode for the client
+ew should be super foucsed on
+this scenario, at tick N1 N2 and N3 there are failures and we want to have 
+these sepcific numberrs at those ticks  to  be closer to these numbers, 
+
+e.g. tick N1 = snagging issue, vel goes frmo 50 m/s to 0.2 m/s, we want that ti be vel going frmo 50 m/s to like 45-55 m/s like not a snag at all 
+and not end up inside geometry etc
+
+as well as do that for other things like if an npc is stuck inside geometry we can poitn to the exact tick that is failing, and the exact position data issues,
+that i think is a bigger deal , being able to point to the exact line  and exact numbers that show the issue happening
+if AI can run a super strong scenario over and over 
+and i can combine things like 
+idk 
+making 1 super strong scenario idk
+might not need to do that for first versionof this 
+
+but def get more detailed and specific
+like, its not specific enough unless 
+
+AI can 99% confidence say , the previous issue is seen clearly here, path\to\events.jsonl
+line 4859, velocity for actor with local id N1, entity id N2, was 35 m/s, then , line 4861, tick N3, veloc went down to 0.1 m/s, which aligns with the report that  , at this specific tick, a snag occured
+after tests, same tick , same actor same ID same eevrything, events.jsonl, no  special self contained test, a real runtime .exe is running and 
+showed at this exact smae tick, veloc was 33.6 m/s , and showed velocity/move direction was angled off of triangle/face with ID N4, which was part of object iwth ID N5, etc
+
+and, over time i want to mkae it even  more granular more detailed more specific , and we can repeat this kind of logging for any other issues that are in the .exe
+as well as scenarios for AI to use, that a human makes 
+so we can expand later to be like 
+when making vehicles better, or, npc behavior better, etc 
+or anything to do with the .exe which iw ant to eventually include things like a DAW and a video editor and 2d art programs and editor programs etc, we can run scenarios for those things and see the exact tick/client tick/etc , super granular sepcific data that shows the issue 
+
+not a  code path, code is our guess of how to make somethign work
+events.jsonl is the results of our work and the actual real life runtime experiment 
+
+need to write in spec somehwer that , i believe fo rnow its better for AI to run  human made scenarios, because it avoids waiitng for a timeout to finish or NPC behavior to mayb emaybe not find the issue we are trying to test 
+
+and more things like what else do we track 
+
+2026 10 10 1800 jorj todo - need to make size limit bc we keephaving std alloc memory error 
 
 # Implementation plan: one canonical `events.jsonl` log path
 
@@ -30,9 +155,41 @@ event is a failed scenario step, even if command delivery itself succeeded.
 
 ## Collision evidence contract
 
-Collision diagnostics must make the first divergence explainable without
-enabling per-tick trace output in normal play. Records are owned by the existing
-collision/NPC/presentation owners and written through `StructuredLogger`.
+Collision diagnostics must make the first divergence explainable during normal
+live play. Records are owned by the existing collision/NPC/presentation owners
+and written through `StructuredLogger`.
+
+### Always-on collision monitoring
+
+Normal gameplay should continuously check cheap, objective collision invariants
+at the fixed simulation tick. “Always on” means the checks run during ordinary
+play; it does not mean serializing every contact from every actor to
+`events.jsonl` every tick.
+
+- Keep low-cost per-tick evidence in bounded, reusable state. Include actor and
+  tick identity, input intent, position and velocity before/after movement,
+  grounded/world-support state, selected collision backend, and contact or
+  penetration summaries when already available from the owner.
+- Detect suspicious transitions at the first tick they occur, including a
+  large unexplained velocity collapse, lost world support while descending,
+  movement into closed geometry, or fallback to a different collision backend.
+  Distinguish intentional freeze, death, teleport, respawn, and legitimate
+  blocking contact using authoritative state rather than a timer guess.
+- Keep a bounded recent per-tick history for the relevant actor(s). On the
+  first detected anomaly, write one structured event with the triggering tick
+  and enough preceding/nearby context to identify the first divergence.
+  Preserve the first occurrence; summarize repeated ticks by anomaly episode.
+- Use the cached broadphase and reusable scratch storage for hot-path checks.
+  Do not add a full-map scan, heap allocation, or all-contacts JSON serialization
+  to every actor tick. Geometry containment checks must be spatially bounded.
+- Keep full `Trace` contact records available for short, targeted
+  investigations. They are a high-volume capture mode, not the normal
+  always-on mechanism. A missing trace record must not be treated as proof that
+  no contact or failure occurred.
+
+This policy is intended to provide continuous detection with bounded normal
+cost and a useful failure window. The acceptable CPU, memory, and journal-size
+budgets must be measured before enabling a new monitor broadly.
 
 Required bounded events:
 

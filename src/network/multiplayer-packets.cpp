@@ -999,15 +999,23 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
     {
         const uint64_t turnStartMs = nowMs();
         TurnCredentials turnCreds = coordinatorRequestTurnCredentials();
+        const char* turnStageStatus = turnCreds.disabled ? "disabled" :
+            turnCreds.ok && !turnCreds.credential.empty() ? "ok" : "unavailable";
         mpLogConnectStageForRoom(roomCode, "ice", "ice:" + roomCode, 1, 1,
             "turn_credentials",
-            turnCreds.ok && !turnCreds.credential.empty() ? "ok" : "unavailable",
+            turnStageStatus,
             nowMs() - turnStartMs, 5000,
-            turnCreds.ok ? "" : "turn-credentials-unavailable",
+            turnCreds.disabled || turnCreds.ok ? "" : "turn-credentials-unavailable",
+            turnCreds.disabled ? "direct-only policy from coordinator" :
             turnCreds.ok && !turnCreds.credential.empty()
                 ? ""
                 : "direct connections may fail behind symmetric NAT");
-        if (turnCreds.ok && !turnCreds.credential.empty())
+        if (turnCreds.disabled)
+        {
+            disableIceTurn(iceConfig);
+            printf("[ICE CONNECT] coordinator policy disabled TURN; using direct candidates only\n");
+        }
+        else if (turnCreds.ok && !turnCreds.credential.empty())
         {
             iceConfig.turn.host = turnCreds.host;
             iceConfig.turn.port = turnCreds.port;
