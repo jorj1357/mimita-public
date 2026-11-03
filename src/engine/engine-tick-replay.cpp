@@ -379,7 +379,8 @@ void engineTickReplay(Engine& engine, float dt)
             const glm::vec3 positionBeforeTick = player.pos;
             if (!scenarioPlaybackActive)
                 ScenarioRecorder::instance().captureTick(
-                    tickFrame, player, camera, npcSystem, mpContext, weapons);
+                    tickFrame, player, camera, npcSystem, mpContext, weapons,
+                    world);
             simulateTick(simContext, tickFrame);
             if (scheduledMoveTick && (moveStarted || moveEnded)) {
                 const std::string& requestId = scheduledTerminalMoveRequestId();

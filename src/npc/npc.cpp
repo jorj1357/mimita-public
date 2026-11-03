@@ -2777,6 +2777,20 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.lastContainmentKnown = true;
         npc.lastFinalPenetration = poseResult.finalPenetration;
         npc.lastContainmentStage = poseResult.stage;
+        npc.lastFinalPoseContacts.clear();
+        for (const ActorFinalPoseContact& contact : poseResult.contacts)
+        {
+            Npc::FinalPoseContactSnapshot snapshot;
+            snapshot.actorPart = contact.actorPart ? contact.actorPart : "";
+            snapshot.worldTriangle = contact.worldTriangle >= 0
+                ? static_cast<uint32_t>(contact.worldTriangle) : 0u;
+            snapshot.solidId = contact.solidId;
+            snapshot.point = contact.point;
+            snapshot.normal = contact.normal;
+            snapshot.surfaceNormal = contact.surfaceNormal;
+            snapshot.penetration = contact.penetration;
+            npc.lastFinalPoseContacts.push_back(std::move(snapshot));
+        }
         if (poseClear && !hadClearPose)
         {
             StructuredLogger::instance().writeEvent(

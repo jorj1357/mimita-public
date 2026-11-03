@@ -1,4 +1,20 @@
-﻿2026 10 17 1150 jojr todo make this better idk hwo to even bro 
+﻿2026 11 03 1238 jorj roadmap general
+
+since zombie tower total finish is blocked on map editor friction, next thing i believe it map editor? idk
+
+things i could do:
+
+1. make map editor in mimita better
+2. make video editor 
+3. make content with video eidor 
+4. make infinite world system like minecraft
+5. make cops vs robbers vehicle games
+6. make multi plauer vehicle game like GTA?
+7. make infintie dungeon slayer with the monsters that exist right now, get npc behavior to be good and work across the big tower thing idk 
+8. make need for madness mode
+9. make it so npcs dont get stuck IN WALLS AND MKAE IT SO I DONT GET SNAGGED THRU THE SCENARIO RECORDER CMD im doign tha bro 
+
+2026 10 17 1150 jojr todo make this better idk hwo to even bro 
 
 2026 10 06 0952 roadmap general 
 

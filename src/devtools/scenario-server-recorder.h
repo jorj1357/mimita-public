@@ -4,7 +4,9 @@
 #include <fstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 class NpcSystem;
@@ -13,6 +15,7 @@ namespace MimitaNet {
 struct ServerPlayer;
 struct ServerNpc;
 struct ServerProjectile;
+struct HeadlessWorld;
 }
 
 // Owns the authoritative actor track captured beside a client scenario
@@ -32,6 +35,7 @@ public:
         const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
         const NpcSystem& npcSystem,
         const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
+        const MimitaNet::HeadlessWorld& world,
         uint32_t serverTick);
     void captureCheckpoint(
         uint32_t bookmarkNumber,
@@ -77,6 +81,8 @@ private:
 
     bool mActive = false;
     bool mCanonical = false;
+    bool mProbePending = true;
+    bool mProbeDone = false;
     bool mCaptureInvalid = false;
     std::string mCaptureFailure;
     std::string mScenarioId;
@@ -85,6 +91,11 @@ private:
     std::string mSidecarPath;
     uint32_t mStartTick = 0;
     uint32_t mFrames = 0;
+    uint64_t mLastCaptureWriteUs = 0;
+    uint64_t mLastCaptureTotalUs = 0;
     std::unordered_map<std::string, ActorSnapshot> mLastActors;
+    std::unordered_map<std::string, std::pair<glm::vec3, glm::vec3>> mLastPose;
+    std::unordered_map<std::string, bool> mLastGrounded;
+    std::unordered_map<std::string, uint64_t> mLastAnomalyTick;
     std::unordered_map<std::string, bool> mKnownIdentities;
 };

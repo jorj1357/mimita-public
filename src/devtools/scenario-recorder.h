@@ -4,12 +4,15 @@
 #include <fstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
+#include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
 class Player;
 class Camera;
 class NpcSystem;
+struct World;
 class WeaponSystem;
 struct InputFrame;
 namespace MimitaNet { struct MultiplayerContext; }
@@ -46,7 +49,8 @@ public:
                      const Camera& camera,
                      const NpcSystem& npcSystem,
                      const MimitaNet::MultiplayerContext& mpContext,
-                     WeaponSystem& weapons);
+                     WeaponSystem& weapons,
+                     const World& world);
     void poll();
 
 private:
@@ -65,7 +69,8 @@ private:
                             uint32_t tick, const nlohmann::json& fields);
     void markCaptureFailure(const std::string& reason, uint32_t tick);
     nlohmann::json playerEvidenceJson(const Player& player,
-                                      const Camera& camera) const;
+                                      const Camera& camera,
+                                      const World& world) const;
     void writeIdentity(const std::string& trackId,
                        const std::string& kind,
                        uint32_t entityId,
@@ -81,6 +86,8 @@ private:
     bool mStartPending = false;
     bool mNetworked = false;
     bool mCanonical = false;
+    bool mProbePending = true;
+    bool mProbeDone = false;
     bool mMerged = false;
     std::ofstream mOut;
     std::string mPath;
@@ -95,6 +102,9 @@ private:
     uint64_t mStartMs = 0;
     std::unordered_map<std::string, ActorSnapshot> mLastActors;
     std::unordered_map<std::string, bool> mKnownIdentities;
+    std::unordered_map<std::string, std::pair<glm::vec3, glm::vec3>> mLastPose;
+    std::unordered_map<std::string, bool> mLastGrounded;
+    std::unordered_map<std::string, uint64_t> mLastAnomalyTick;
     std::string mScenarioId;
     bool mCaptureInvalid = false;
     std::string mCaptureFailure;

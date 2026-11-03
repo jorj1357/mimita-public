@@ -88,6 +88,16 @@ struct ActorState {
     int rootContainment = 0; // 0 unknown, 1 inside, 2 outside
     float maxPenetration = 0.0f;
     std::string containmentStage;
+    glm::vec3 desiredDirection{0.0f};
+    glm::vec3 desiredVelocity{0.0f};
+    glm::vec3 actualDisplacement{0.0f};
+    float previousSpeed = 0.0f;
+    float actualSpeed = 0.0f;
+    float speedRatio = 1.0f;
+    float progressRatio = 1.0f;
+    float deflectionDegrees = 0.0f;
+    bool expectedGrounded = false;
+    float expectedMaxPenetration = 0.02f;
     int npcState = -1;
     uint32_t npcRngState = 1;
     float npcDashCooldown = 0.0f;
@@ -95,6 +105,7 @@ struct ActorState {
     float npcJumpCooldown = 0.0f;
     float npcAttackCooldown = 0.0f;
     std::vector<ContactEvidence> contacts;
+    std::vector<ContactEvidence> finalPoseContacts;
     std::vector<BodyPartBox> bodyParts;
     WeaponShape shape;
 };

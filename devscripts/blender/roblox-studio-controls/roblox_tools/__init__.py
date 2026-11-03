@@ -1,10 +1,10 @@
 bl_info = {
     "name": "RoTools - Roblox Studio Style Tools",
     "author": "RoTools",
-    "version": (0, 5, 3),
+    "version": (0, 5, 4),
     "blender": (4, 0, 0),
     "location": "View3D > Toolbar",
-    "description": "Roblox Studio style tools with hold-RMB fly navigation and continuous dolly",
+    "description": "Roblox Studio style tools with viewport camera controls and continuous dolly",
     "category": "3D View",
 }
 

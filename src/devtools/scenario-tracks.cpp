@@ -195,6 +195,9 @@ nlohmann::json actorStateJson(const ActorState& state)
     nlohmann::json contacts = nlohmann::json::array();
     for (const ContactEvidence& contact : state.contacts)
         contacts.push_back(contactJson(contact));
+    nlohmann::json finalPoseContacts = nlohmann::json::array();
+    for (const ContactEvidence& contact : state.finalPoseContacts)
+        finalPoseContacts.push_back(contactJson(contact));
     nlohmann::json shape = nullptr;
     if (state.shape.valid)
     {
@@ -239,6 +242,16 @@ nlohmann::json actorStateJson(const ActorState& state)
         {"root_containment", state.rootContainment},
         {"max_penetration_m", state.maxPenetration},
         {"containment_stage", state.containmentStage},
+        {"desired_direction", vec3Json(state.desiredDirection)},
+        {"desired_velocity", vec3Json(state.desiredVelocity)},
+        {"actual_displacement", vec3Json(state.actualDisplacement)},
+        {"previous_speed", state.previousSpeed},
+        {"actual_speed", state.actualSpeed},
+        {"speed_ratio", state.speedRatio},
+        {"progress_ratio", state.progressRatio},
+        {"deflection_degrees", state.deflectionDegrees},
+        {"expected_grounded", state.expectedGrounded},
+        {"expected_max_penetration_m", state.expectedMaxPenetration},
         {"npc_state", state.npcState},
         {"npc_rng", state.npcRngState},
         {"npc_dash_cd", state.npcDashCooldown},
@@ -246,6 +259,7 @@ nlohmann::json actorStateJson(const ActorState& state)
         {"npc_jump_cd", state.npcJumpCooldown},
         {"npc_attack_cd", state.npcAttackCooldown},
         {"contacts", std::move(contacts)},
+        {"final_pose_contacts", std::move(finalPoseContacts)},
         {"parts", std::move(parts)},
         {"shape", std::move(shape)}
     };
@@ -288,6 +302,16 @@ ActorState parseActorState(const nlohmann::json& value)
     state.rootContainment = value.value("root_containment", 0);
     state.maxPenetration = value.value("max_penetration_m", 0.0f);
     state.containmentStage = value.value("containment_stage", "");
+    state.desiredDirection = jsonVec3(value.value("desired_direction", nlohmann::json::array()));
+    state.desiredVelocity = jsonVec3(value.value("desired_velocity", nlohmann::json::array()));
+    state.actualDisplacement = jsonVec3(value.value("actual_displacement", nlohmann::json::array()));
+    state.previousSpeed = value.value("previous_speed", 0.0f);
+    state.actualSpeed = value.value("actual_speed", 0.0f);
+    state.speedRatio = value.value("speed_ratio", 1.0f);
+    state.progressRatio = value.value("progress_ratio", 1.0f);
+    state.deflectionDegrees = value.value("deflection_degrees", 0.0f);
+    state.expectedGrounded = value.value("expected_grounded", false);
+    state.expectedMaxPenetration = value.value("expected_max_penetration_m", 0.02f);
     state.npcState = value.value("npc_state", -1);
     state.npcRngState = value.value("npc_rng", 1u);
     state.npcDashCooldown = value.value("npc_dash_cd", 0.0f);
@@ -297,6 +321,9 @@ ActorState parseActorState(const nlohmann::json& value)
     if (value.contains("contacts") && value["contacts"].is_array())
         for (const auto& contact : value["contacts"])
             state.contacts.push_back(parseContact(contact));
+    if (value.contains("final_pose_contacts") && value["final_pose_contacts"].is_array())
+        for (const auto& contact : value["final_pose_contacts"])
+            state.finalPoseContacts.push_back(parseContact(contact));
     if (value.contains("parts") && value["parts"].is_array())
     {
         for (const auto& part : value["parts"])

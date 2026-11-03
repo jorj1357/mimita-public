@@ -80,9 +80,10 @@ class RoToolsPreferences(bpy.types.AddonPreferences):
     )
 
     camera_move_speed: bpy.props.FloatProperty(
-        name="WASD Camera Speed",
+        name="Editor Move Speed (Blender units/s)",
         description="Base camera movement speed in Blender units per second",
-        default=8.0,
+        # Ten times the original working default of 8 Blender units/second.
+        default=80.0,
         min=0.1,
         max=10000.0,
         precision=2,
@@ -104,6 +105,15 @@ class RoToolsPreferences(bpy.types.AddonPreferences):
         min=1.0,
         max=100.0,
         precision=1,
+    )
+
+    camera_slow_multiplier: bpy.props.FloatProperty(
+        name="Ctrl Slow Multiplier",
+        description="Multiplier applied to camera movement while Ctrl is held",
+        default=0.25,
+        min=0.01,
+        max=1.0,
+        precision=2,
     )
 
     camera_look_sensitivity: bpy.props.FloatProperty(
@@ -148,10 +158,11 @@ class RoToolsPreferences(bpy.types.AddonPreferences):
         col.prop(self, "camera_move_speed")
         col.prop(self, "camera_vertical_multiplier")
         col.prop(self, "camera_fast_multiplier")
+        col.prop(self, "camera_slow_multiplier")
         col.prop(self, "camera_look_sensitivity")
         col.prop(self, "camera_dolly_factor")
         col.prop(self, "camera_min_dolly_step")
-        camera.label(text="Q/E = WASD speed × vertical multiplier; Shift multiplies either speed")
+        camera.label(text="Q/E = 10× vertical speed; Shift speeds up; Ctrl slows down")
 
         box = layout.box()
         box.prop(self, "use_tool_shortcuts")

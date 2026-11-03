@@ -240,6 +240,13 @@ public:
     // Check if a category/level should be logged
     bool shouldLog(StructuredCategory cat, StructuredLevel level) const;
 
+    // In-memory override used only while a scenario recording is active. It
+    // forces collision/NPC movement/physics diagnostics on without changing
+    // config/debuglogger.json or persisting anything after recording stops.
+    void beginScenarioCapture();
+    void endScenarioCapture();
+    bool scenarioCaptureActive() const;
+
     // Get the config (for validation tolerances etc.)
     const StructuredLogConfig& config() const { return mConfig; }
 
@@ -316,6 +323,7 @@ private:
     std::atomic<uint64_t> mFlushMicroseconds{0};
     std::atomic<uint64_t> mMutexWaitMicroseconds{0};
     std::atomic<uint64_t> mQuotaDroppedRecords{0};
+    std::atomic<bool> mScenarioCaptureActive{false};
 };
 
 // ── Convenience: structured log with formatted message ─────────────

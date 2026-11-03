@@ -102,8 +102,8 @@ Use Blender's own Python/API surface and a purpose-built Blender test report. A 
 
 ### Open details to settle during implementation
 
-- Confirm whether Ctrl-slow should be `0.25x` or a different multiplier.
-- Confirm whether the proposed base speed of `10.0` Blender units/second feels right in the user's large map; if not, tune it through Preferences and record the chosen value.
+- Ctrl-slow is implemented as `0.25x`; tune it through Preferences if it feels too slow.
+- The requested base speed is `80.0` Blender units/second (10× the previous `8.0` working default); tune it through Preferences if it feels too fast in the user's large map.
 - Confirm that Roblox Controls mode should be active exactly while the Roblox Select tool is selected. This is the recommended scope because it matches the user's description and avoids changing shortcuts elsewhere in Blender.
 
 ### Blender API references
@@ -112,3 +112,9 @@ Use Blender's own Python/API surface and a purpose-built Blender test report. A 
 - [Blender 5.0 Operator API](https://docs.blender.org/api/5.0/bpy.types.Operator.html) documents modal operators and the event loop used for interactive input.
 - [Blender 5.0 WorkSpaceTool API](https://docs.blender.org/api/5.0/bpy.types.WorkSpaceTool.html) documents workspace tool keymaps.
 - [Blender Add-on Development Setup](https://developer.blender.org/docs/handbook/extensions/addon_dev_setup/) explains that Blender executes scripts in its bundled Python environment and that the IDE interpreter mainly affects language support.
+
+### Implementation status — 2026-11-03
+
+The local source now implements the requested Roblox Select camera bindings, 10× movement default, editable camera preferences, and corrected pitch sign. `tests/test_navigation.py` passes in Blender 5.0 background mode for registration, retained left-click/drag binding, pixel-direction math, WASD/QE direction and speed, Shift, and Ctrl. The installed add-on files were copied and Blender's saved move-speed preference was set to `80.0`.
+
+The open Blender session still reports its already-loaded RoTools 0.4.0 class, despite the installed source files being 0.5.4. The saved move-speed preference is now `80.0`. Safe-mode restrictions prevented reloading add-on code through Blender's scripting bridge. Therefore live proof of A/W shortcut shadowing, continuous held-key movement, RMB physical drag direction/cursor restore, and unchanged block dragging remains outstanding; restart Blender to load the installed source before doing those checks. This status does not claim live behavior is verified.

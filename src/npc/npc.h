@@ -215,6 +215,16 @@ public:
     bool lastContainmentKnown = false;
     float lastFinalPenetration = 0.0f;
     std::string lastContainmentStage;
+    struct FinalPoseContactSnapshot {
+        std::string actorPart;
+        uint32_t worldTriangle = 0;
+        uint32_t solidId = 0;
+        glm::vec3 point{0.0f};
+        glm::vec3 normal{0.0f};
+        glm::vec3 surfaceNormal{0.0f};
+        float penetration = 0.0f;
+    };
+    std::vector<FinalPoseContactSnapshot> lastFinalPoseContacts;
 
     // Bomb tag behavior flags
     bool bombTagActive = false;

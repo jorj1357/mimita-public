@@ -13,7 +13,8 @@ class ROTOOLS_WT_select(WorkSpaceTool):
     bl_description = (
         "Select and drag objects like Roblox Studio (click / shift-add / "
         "ctrl-toggle / drag a part to move it across surfaces / drag empty "
-        "space to box-select; hold RMB to fly and scroll to dolly)"
+        "space to box-select; hold WASD/QE to move the camera, RMB to look, "
+        "and scroll to dolly)"
     )
     bl_icon = "ops.generic.select"
     bl_widget = None
@@ -28,7 +29,15 @@ class ROTOOLS_WT_select(WorkSpaceTool):
         ("rotools.toggle_orientation", {"type": 'L', "value": 'PRESS', "ctrl": True}, None),
         ("rotools.cycle_pivot", {"type": 'L', "value": 'PRESS', "ctrl": True, "shift": True}, None),
         ("rotools.duplicate", {"type": 'D', "value": 'PRESS', "ctrl": True}, None),
-        ("rotools.fly_navigation", {"type": 'RIGHTMOUSE', "value": 'PRESS'}, None),
+        ("rotools.fly_navigation", {"type": 'RIGHTMOUSE', "value": 'PRESS', "any": True}, None),
+        # These tool-scoped bindings intentionally shadow Blender's A select-all
+        # and W tool/menu shortcuts while Roblox Select is active.
+        ("rotools.camera_move", {"type": 'W', "value": 'PRESS', "any": True}, None),
+        ("rotools.camera_move", {"type": 'A', "value": 'PRESS', "any": True}, None),
+        ("rotools.camera_move", {"type": 'S', "value": 'PRESS', "any": True}, None),
+        ("rotools.camera_move", {"type": 'D', "value": 'PRESS', "any": True}, None),
+        ("rotools.camera_move", {"type": 'Q', "value": 'PRESS', "any": True}, None),
+        ("rotools.camera_move", {"type": 'E', "value": 'PRESS', "any": True}, None),
         ("rotools.fly_dolly", {"type": 'WHEELUPMOUSE', "value": 'PRESS'},
          {"properties": [("direction", 1.0)]}),
         ("rotools.fly_dolly", {"type": 'WHEELDOWNMOUSE', "value": 'PRESS'},

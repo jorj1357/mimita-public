@@ -24,6 +24,7 @@ struct ActorFinalPoseContact
     glm::vec3 surfaceNormal{0.0f};
     float penetration = 0.0f;
     int worldTriangle = -1;
+    uint32_t solidId = 0;
 };
 
 struct ActorFinalPoseState

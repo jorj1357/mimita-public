@@ -28,6 +28,7 @@
 #include "input/input-frame.h"
 #include "network/multiplayer-context.h"
 #include "terminal/terminal-state.h"
+#include "world/world.h"
 #include "npc/npc.h"
 
 namespace {
@@ -370,6 +371,11 @@ bool ScenarioRecorder::start(const std::string& name,
     mMergeError.clear();
     mCaptureInvalid = false;
     mCaptureFailure.clear();
+    mProbePending = true;
+    mProbeDone = false;
+    mLastPose.clear();
+    mLastGrounded.clear();
+    mLastAnomalyTick.clear();
     mLastActors.clear();
     mKnownIdentities.clear();
     mStartMs = nowMs();
@@ -383,6 +389,7 @@ bool ScenarioRecorder::start(const std::string& name,
             "scenario_server_record_start " + mPath + " " + mScenarioId);
     }
 
+    StructuredLogger::instance().beginScenarioCapture();
     if (!writeScenarioEvent(
             "scenario.record.started",
             "scenario recording armed; canonical client/server capture begins on the next fixed tick",
@@ -396,6 +403,9 @@ bool ScenarioRecorder::start(const std::string& name,
                            {"networked", mNetworked},
                            {"local_player_id", mLocalPlayerId},
                            {"tick_rate", 60},
+                           {"capture_profile", "scenario_debug_v1"},
+                           {"npc_geometry_coverage", true},
+                           {"required_evidence", {"input", "contacts", "containment", "npc_state", "rng", "grounding", "desired_vs_actual"}},
                            {"journal_path", StructuredLogger::instance().eventsPath()},
                            {"process_role", "client"},
                            {"start", {
@@ -456,7 +466,8 @@ void ScenarioRecorder::markCaptureFailure(const std::string& reason,
 }
 
 nlohmann::json ScenarioRecorder::playerEvidenceJson(const Player& player,
-                                                    const Camera& camera) const
+                                                    const Camera& camera,
+                                                    const World& world) const
 {
     nlohmann::json contacts = nlohmann::json::array();
     const size_t maxContacts = std::min<size_t>(player.movementContacts.size(), 32);
@@ -654,11 +665,13 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
                                    const Camera& camera,
                                    const NpcSystem& npcSystem,
                                    const MimitaNet::MultiplayerContext& mpContext,
-                                   WeaponSystem& weapons)
+                                   WeaponSystem& weapons,
+                                   const World& world)
 {
     if (!mActive || !mOut.is_open())
         return;
 
+    const auto captureStart = std::chrono::steady_clock::now();
     if (mStartPending)
         writeHeader(player, camera);
 
@@ -805,6 +818,58 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
         {"look_pitch", frame.lookPitch},
         {"cam_forward", ScenarioTracks::vec3Json(frame.camForward)}
     };
+    nlohmann::json actorEvidence = playerEvidenceJson(player, camera, world);
+    const uint64_t captureBuildUs =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - captureStart).count());
+
+    if (mProbePending && !mProbeDone)
+    {
+        const auto& parts = actorEvidence["body_parts"];
+        const bool finiteVelocity =
+            std::isfinite(player.vel.x) && std::isfinite(player.vel.y) &&
+            std::isfinite(player.vel.z);
+        const bool contactsPresent =
+            !player.ground.hasWorldContact || !player.movementContacts.empty();
+        nlohmann::json missing = nlohmann::json::array();
+        if (!actorEvidence["body_parts"].is_array() || parts.empty())
+            missing.push_back("body_parts");
+        if (!finiteVelocity)
+            missing.push_back("finite_velocity");
+        if (!contactsPresent)
+            missing.push_back("world_contact_contacts");
+        if (player.dead || player.currentHp <= 0)
+            missing.push_back("alive_player");
+        const bool ok = missing.empty();
+        const bool probeWritten = writeScenarioEvent(
+            "scenario.record.capture_probe",
+            ok ? "client scenario capture probe passed"
+               : "client scenario capture probe failed; recording cannot prove complete evidence",
+            static_cast<uint32_t>(clientTick),
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"process_role", "client"},
+                           {"ok", ok},
+                           {"frame", mFrame},
+                           {"client_tick", clientTick},
+                           {"server_tick", serverTick},
+                           {"body_part_count", parts.is_array() ? parts.size() : 0},
+                           {"contact_count", player.movementContacts.size()},
+                           {"has_world_contact", player.ground.hasWorldContact},
+                           {"grounded", player.ground.onGround},
+                           {"position", ScenarioTracks::vec3Json(player.pos)},
+                           {"velocity", ScenarioTracks::vec3Json(player.vel)},
+                           {"missing", missing}});
+        mProbeDone = true;
+        if (!probeWritten || !ok)
+        {
+            markCaptureFailure(probeWritten ? "capture_probe_failed"
+                                            : "capture_probe_write_refused",
+                               static_cast<uint32_t>(clientTick));
+            stop("capture_failed");
+            return;
+        }
+    }
+
     if (!writeScenarioEvent(
             "scenario.record.client_tick",
             "canonical client input and collision evidence for one fixed tick",
@@ -816,7 +881,8 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
                            {"journal_path", StructuredLogger::instance().eventsPath()},
                            {"process_role", "client"},
                            {"input", inputEvidence},
-                           {"actor", playerEvidenceJson(player, camera)}}))
+                           {"actor", actorEvidence},
+                           {"capture", {{"build_us", captureBuildUs}}}}))
     {
         markCaptureFailure("client_tick_write_refused", static_cast<uint32_t>(clientTick));
         stop("capture_failed");
@@ -910,6 +976,7 @@ void ScenarioRecorder::stop(const char* reason)
         "scenario recording stopped", mFrame,
         fields,
         __FILE__, __LINE__, __FUNCTION__);
+    StructuredLogger::instance().endScenarioCapture();
 }
 
 // Called by the fixed tick loop while a networked recording is finalizing.

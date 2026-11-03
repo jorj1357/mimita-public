@@ -109,7 +109,8 @@ PoseSample sampleFinalPose(Player& actor, const World& world, float standoff)
 }
 
 void copyContacts(const std::vector<RecoveryContact>& source,
-                  ActorFinalPoseResult& result)
+                  ActorFinalPoseResult& result,
+                  const World& world)
 {
     result.contacts.clear();
     result.contacts.reserve(4);
@@ -124,6 +125,10 @@ void copyContacts(const std::vector<RecoveryContact>& source,
         copy.surfaceNormal = contact.surfaceNormal;
         copy.penetration = contact.penetration;
         copy.worldTriangle = contact.triangleIndex;
+        copy.solidId = contact.triangleIndex >= 0 &&
+            static_cast<size_t>(contact.triangleIndex) < world.collisionMesh.solidIds.size()
+                ? world.collisionMesh.solidIds[static_cast<size_t>(contact.triangleIndex)]
+                : 0u;
         result.contacts.push_back(copy);
         if (result.contacts.size() >= 4)
             break;
@@ -292,7 +297,7 @@ bool containActorFinalPose(Player& actor,
     result.initialPenetration = sample.maxPenetration;
     result.finalPenetration = sample.maxPenetration;
     result.budgetExceeded = sample.budgetExceeded;
-    copyContacts(sample.contacts, result);
+    copyContacts(sample.contacts, result, world);
     if (!rootInsideClosedSolid && !sample.budgetExceeded &&
         sample.maxPenetration <= clearTolerance)
     {
@@ -329,7 +334,7 @@ bool containActorFinalPose(Player& actor,
         result.finalPenetration = sample.maxPenetration;
         result.budgetExceeded = result.budgetExceeded ||
             sample.budgetExceeded;
-        copyContacts(sample.contacts, result);
+        copyContacts(sample.contacts, result, world);
         if (!sample.budgetExceeded &&
             !actorRootInsideClosedSolid(world, actor.pos) &&
             sample.maxPenetration <= clearTolerance)

@@ -610,6 +610,55 @@ Rules:
 A separate merge/compare command may join files for analysis, but it must not
 replace the separate live journals.
 
+## Default super-granular capture profile (2026-11-03)
+
+`scenario_startrecord` now activates the `scenario_debug_v1` capture profile by
+default. The profile is in-memory only; it does not rewrite
+`config/debuglogger.json` and is restored when recording stops. It turns on the
+detail needed to explain NPC and player geometry failures without a second
+recording mode:
+
+- one canonical tick row per fixed server tick, with every live actor;
+- accepted input/intent, previous and current pose/velocity, desired direction,
+  desired velocity, actual displacement, speed ratio, progress ratio, and
+  deflection angle;
+- movement contacts with world triangle and solid IDs, plus final-pose
+  contacts with actor part, world triangle, solid ID, normal, surface normal,
+  and penetration;
+- root containment as `inside` / `outside` / `unknown`, final-pose penetration,
+  last-clear/safe-point/reset state, grounding and world-contact state;
+- NPC state, RNG, cooldowns, body-part bounds, and weapon bounds;
+- projectiles and other dynamic collision objects;
+- per-tick capture build/write/total timing.
+
+`scenario.record.capture_probe` runs once at recording start. It requires a
+live player and, when NPCs exist, at least one live NPC with accepted input,
+containment classification, body parts, finite pose/velocity, and no missing
+simulated body. A failed or missing probe marks the recording invalid and
+stops capture. A live NPC that has no simulated body later produces
+`scenario.record.capture_gap` and invalidates the run. `scenario.record.anomaly`
+records speed collapse, support loss while descending, grounded no-progress,
+penetration, and root-inside cases with expected and actual numbers.
+
+Required scenario writes are synchronous and checked. A rejected write stops
+capture and never produces `scenario.record.completed`.
+
+## Future buffered bookmark mode (deferred, documentation only)
+
+Mode 1 remains the existing instant `\` bookmark. A later mode 2 may use the
+same key, prompt for an issue label in the in-game command prompt, and capture
+30 seconds before and 30 seconds after the press. It must store the label and
+full ISO 8601 timestamp, use a filesystem-safe timestamp in the filename, and
+create files collision-safely without overwriting an existing file. It uses one
+bounded rolling pre-event buffer and independent post-event windows for
+overlapping bookmarks, writes only to canonical scenario journals, and obeys
+the existing quota/retention rules. If the complete window cannot be retained,
+the bookmark must be rejected clearly. Mode 2 is not implemented yet.
+
+The future setting belongs in `config/scenario-recording.json`, owned by the
+scenario recorder, with `bookmark_mode` defaulting to `1`. Missing or invalid
+configuration keeps mode 1 behavior.
+
 ## Implementation status 2026-11-02
 
 - `scenario_startrecord` creates a scenario ID and both processes write

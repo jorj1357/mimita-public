@@ -1158,7 +1158,26 @@ void StructuredLogger::pollConfig() {
 
 // ── Should Log ──────────────────────────────────────────────
 
+void StructuredLogger::beginScenarioCapture() {
+    mScenarioCaptureActive.store(true, std::memory_order_relaxed);
+}
+
+void StructuredLogger::endScenarioCapture() {
+    mScenarioCaptureActive.store(false, std::memory_order_relaxed);
+}
+
+bool StructuredLogger::scenarioCaptureActive() const {
+    return mScenarioCaptureActive.load(std::memory_order_relaxed);
+}
+
 bool StructuredLogger::shouldLog(StructuredCategory cat, StructuredLevel level) const {
+    if (mScenarioCaptureActive.load(std::memory_order_relaxed) &&
+        static_cast<int>(level) <= static_cast<int>(StructuredLevel::Important) &&
+        (cat == StructuredCategory::Collision ||
+         cat == StructuredCategory::NpcMovement ||
+         cat == StructuredCategory::Physics)) {
+        return true;
+    }
     if (!mConfig.enabled) return false;
 
     const auto& catCfg = [&]() -> const StructuredLogConfig::CategoryConfig& {
@@ -1212,7 +1231,7 @@ void StructuredLogger::writeVFormatted(StructuredCategory category, StructuredLe
                                        const char* sourceFile, int sourceLine,
                                        const char* functionName, const char* format, va_list args)
 {
-    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return;
+    if (!mInitialized || !shouldLog(category, level)) return;
 
     char message[4096] = {};
     va_list copy;
@@ -1268,7 +1287,7 @@ void StructuredLogger::writeEvent(StructuredCategory category,
                                   int sourceLine,
                                   const char* functionName)
 {
-    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return;
+    if (!mInitialized || !shouldLog(category, level)) return;
     const int idx = static_cast<int>(category);
     if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return;
 
@@ -1308,7 +1327,7 @@ bool StructuredLogger::tryWriteEvent(StructuredCategory category,
                                      int sourceLine,
                                      const char* functionName)
 {
-    if (!mInitialized || !mConfig.enabled || !shouldLog(category, level)) return false;
+    if (!mInitialized || !shouldLog(category, level)) return false;
     const int idx = static_cast<int>(category);
     if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return false;
 

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 #include "network/server-gamemode.h"
 #include "network/server.h"
 #include "npc/npc.h"
+#include "world/world.h"
 #include "ragdoll/ragdoll-replication.h"
 
 namespace {
@@ -127,6 +129,142 @@ nlohmann::json projectileJson(const MimitaNet::ServerProjectile& projectile)
         {"spawn_tick", projectile.spawnTick},
         {"simulation_tick", projectile.simulationTick}
     };
+}
+
+void computeMotionEvidence(
+    ScenarioTracks::ActorState& state,
+    const std::string& track,
+    const InputState& input,
+    float dt,
+    std::unordered_map<std::string, std::pair<glm::vec3, glm::vec3>>& lastPose,
+    std::unordered_map<std::string, bool>& lastGrounded)
+{
+    auto poseIt = lastPose.find(track);
+    if (poseIt != lastPose.end())
+    {
+        state.previousPosition = poseIt->second.first;
+        state.previousVelocity = poseIt->second.second;
+    }
+    else
+    {
+        state.previousPosition = state.position;
+        state.previousVelocity = state.velocity;
+    }
+    auto groundIt = lastGrounded.find(track);
+    state.expectedGrounded = groundIt != lastGrounded.end()
+        ? groundIt->second : state.grounded;
+
+    state.actualDisplacement = state.position - state.previousPosition;
+    state.previousSpeed = glm::length(state.previousVelocity);
+    state.actualSpeed = glm::length(state.velocity);
+    state.speedRatio = state.previousSpeed > 0.01f
+        ? state.actualSpeed / state.previousSpeed : 1.0f;
+
+    glm::vec3 forward = input.camForward;
+    forward.z = 0.0f;
+    if (glm::length(forward) > 0.001f)
+        forward = glm::normalize(forward);
+    const glm::vec3 right(-forward.y, forward.x, 0.0f);
+    const glm::vec2 wish = input.wishMoveXY;
+    if (glm::length(wish) > 0.001f)
+        state.desiredDirection = glm::normalize(right * wish.x + forward * wish.y);
+    state.desiredVelocity = state.desiredDirection * state.previousSpeed;
+
+    if (glm::length(wish) > 0.001f && state.previousSpeed > 0.5f)
+    {
+        const float intendedDistance = state.previousSpeed * dt;
+        const float progress = glm::dot(state.actualDisplacement,
+                                        state.desiredDirection);
+        state.progressRatio = intendedDistance > 0.0001f
+            ? progress / intendedDistance : 1.0f;
+        const glm::vec2 actualDir(state.velocity.x, state.velocity.y);
+        if (glm::length(actualDir) > 0.01f &&
+            glm::length(glm::vec2(state.desiredDirection)) > 0.01f)
+        {
+            const glm::vec2 desiredDir(state.desiredDirection.x,
+                                       state.desiredDirection.y);
+            const float dot = glm::clamp(
+                glm::dot(glm::normalize(actualDir), glm::normalize(desiredDir)),
+                -1.0f, 1.0f);
+            state.deflectionDegrees = glm::degrees(std::acos(dot));
+        }
+    }
+
+    state.expectedMaxPenetration = 0.02f;
+    lastPose[track] = {state.position, state.velocity};
+    lastGrounded[track] = state.grounded;
+}
+
+void appendSimulatedBodyParts(const Npc& npc,
+                              std::vector<ScenarioTracks::BodyPartBox>& out)
+{
+    out.clear();
+    auto append = [&](const std::vector<PhysicalBodyPart>& parts) {
+        for (const PhysicalBodyPart& part : parts)
+        {
+            glm::vec3 low(std::numeric_limits<float>::max());
+            glm::vec3 high = -low;
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const glm::vec3 local(
+                    (corner & 1) ? part.collider.localMax.x : part.collider.localMin.x,
+                    (corner & 2) ? part.collider.localMax.y : part.collider.localMin.y,
+                    (corner & 4) ? part.collider.localMax.z : part.collider.localMin.z);
+                const glm::vec3 world =
+                    glm::vec3(part.worldTransform * glm::vec4(local, 1.0f));
+                low = glm::min(low, world);
+                high = glm::max(high, world);
+            }
+            if (glm::any(glm::greaterThan(low, high)))
+                continue;
+            ScenarioTracks::BodyPartBox box;
+            box.name = part.name;
+            box.center = (low + high) * 0.5f;
+            box.half = (high - low) * 0.5f;
+            out.push_back(std::move(box));
+        }
+    };
+    append(npc.body.physicalBody.parts);
+    append(npc.body.physicalBody.extraParts);
+}
+
+void appendTemplateBodyParts(const Npc& npc,
+                             std::vector<ScenarioTracks::BodyPartBox>& out)
+{
+    const auto* tpl = MimitaNet::standardPlayerBodyTemplate();
+    if (!tpl)
+        return;
+    const float yaw = glm::radians(npc.body.yaw);
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
+    for (const auto& part : *tpl)
+    {
+        const glm::vec3 offset(part.offset.x * c - part.offset.y * s,
+                               part.offset.x * s + part.offset.y * c,
+                               part.offset.z);
+        ScenarioTracks::BodyPartBox box;
+        box.name = part.name;
+        box.center = npc.body.pos + offset * npc.body.sizeScale;
+        box.half = part.half * npc.body.sizeScale;
+        out.push_back(std::move(box));
+    }
+}
+
+std::string movementSubshapeName(int subshape)
+{
+    switch (static_cast<MovementSubshape>(subshape))
+    {
+        case MovementSubshape::RootCapsule: return "root";
+        case MovementSubshape::Head: return "head";
+        case MovementSubshape::Torso: return "torso";
+        case MovementSubshape::LeftArm: return "leftArm";
+        case MovementSubshape::RightArm: return "rightArm";
+        case MovementSubshape::LeftLeg: return "leftLeg";
+        case MovementSubshape::RightLeg: return "rightLeg";
+        case MovementSubshape::Weapon: return "weapon";
+        case MovementSubshape::World: return "world";
+        default: return "";
+    }
 }
 
 void appendReplayBodyParts(const MimitaNet::ServerNpc& npc,
@@ -272,6 +410,9 @@ bool ScenarioServerRecorder::start(const std::string& scenarioPath,
     mFrames = 0;
     mStartTick = 0;
     mLastActors.clear();
+    mLastPose.clear();
+    mLastGrounded.clear();
+    mLastAnomalyTick.clear();
     mKnownIdentities.clear();
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Important,
@@ -304,10 +445,16 @@ bool ScenarioServerRecorder::startCanonical(const std::string& scenarioId,
     mActive = true;
     mCaptureInvalid = false;
     mCaptureFailure.clear();
+    mProbePending = true;
+    mProbeDone = false;
     mFrames = 0;
     mStartTick = 0;
     mLastActors.clear();
+    mLastPose.clear();
+    mLastGrounded.clear();
+    mLastAnomalyTick.clear();
     mKnownIdentities.clear();
+    StructuredLogger::instance().beginScenarioCapture();
     if (!writeScenarioEvent(
             "scenario.server.record.started",
             "authoritative canonical scenario capture armed",
@@ -316,7 +463,10 @@ bool ScenarioServerRecorder::startCanonical(const std::string& scenarioId,
                            {"scenario_path", mScenarioPath},
                            {"journal_path", StructuredLogger::instance().eventsPath()},
                            {"process_role", "server"},
-                           {"tick_rate", 60}}))
+                           {"tick_rate", 60},
+                           {"capture_profile", "scenario_debug_v1"},
+                           {"npc_geometry_coverage", true},
+                           {"required_evidence", {"input", "contacts", "containment", "npc_state", "rng", "grounding", "desired_vs_actual"}}}))
     {
         markCaptureFailure("scenario.server.record.started", 0);
         mActive = false;
@@ -458,19 +608,82 @@ void ScenarioServerRecorder::captureTick(
     const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
     const NpcSystem& npcSystem,
     const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
+    const MimitaNet::HeadlessWorld& world,
     uint32_t serverTick)
 {
     if (!mActive)
         return;
 
+    const auto captureStart = std::chrono::steady_clock::now();
     std::unordered_map<uint32_t, const Npc*> simulated;
     for (const Npc& npc : npcSystem.all())
         simulated[npc.id] = &npc;
 
     std::unordered_map<std::string, ActorSnapshot> current;
     nlohmann::json actors = nlohmann::json::array();
+    uint32_t playerActorCount = 0;
+    uint32_t liveNpcCount = 0;
+    uint32_t simulatedNpcCount = 0;
+    bool eligibleNpcSeen = false;
+    std::string probeNpcTrack;
+    nlohmann::json probeMissing = nlohmann::json::array();
+    auto emitMotionAnomaly = [&](const ScenarioTracks::ActorState& state,
+                                 const std::string& track) {
+        std::string type;
+        if (state.speedRatio < 0.15f && state.previousSpeed > 8.0f)
+            type = "speed_collapse";
+        else if (state.expectedGrounded && !state.grounded &&
+                 state.velocity.z < -1.0f)
+            type = "support_loss_descending";
+        else if (state.hasInput &&
+                 glm::length(state.input.wishMoveXY) > 0.1f &&
+                 state.expectedGrounded && state.progressRatio < 0.1f)
+            type = "no_progress";
+        else if (state.maxPenetration > state.expectedMaxPenetration)
+            type = "penetration";
+        else if (state.rootContainment == 1)
+            type = "root_inside";
+        if (type.empty())
+            return;
+        const std::string key = track + ":" + type;
+        auto previous = mLastAnomalyTick.find(key);
+        if (previous != mLastAnomalyTick.end() &&
+            serverTick - previous->second < 60u)
+            return;
+        mLastAnomalyTick[key] = serverTick;
+        writeScenarioEvent(
+            "scenario.record.anomaly",
+            "scenario capture detected a movement or geometry divergence",
+            serverTick,
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"process_role", "server"},
+                           {"track", track},
+                           {"kind", type},
+                           {"frame", mFrames},
+                           {"server_tick", serverTick},
+                           {"position", ScenarioTracks::vec3Json(state.position)},
+                           {"previous_position", ScenarioTracks::vec3Json(state.previousPosition)},
+                           {"velocity", ScenarioTracks::vec3Json(state.velocity)},
+                           {"previous_velocity", ScenarioTracks::vec3Json(state.previousVelocity)},
+                           {"desired_direction", ScenarioTracks::vec3Json(state.desiredDirection)},
+                           {"actual_displacement", ScenarioTracks::vec3Json(state.actualDisplacement)},
+                           {"previous_speed", state.previousSpeed},
+                           {"actual_speed", state.actualSpeed},
+                           {"speed_ratio", state.speedRatio},
+                           {"progress_ratio", state.progressRatio},
+                           {"deflection_degrees", state.deflectionDegrees},
+                           {"expected_grounded", state.expectedGrounded},
+                           {"actual_grounded", state.grounded},
+                           {"expected_max_penetration_m", state.expectedMaxPenetration},
+                           {"actual_penetration_m", state.maxPenetration},
+                           {"root_containment", state.rootContainment},
+                           {"containment_stage", state.containmentStage}});
+    };
+
     for (const auto& entry : players)
     {
+        if (entry.second.spawned)
+            ++playerActorCount;
         const auto& player = entry.second;
         if (!player.spawned)
             continue;
@@ -489,6 +702,9 @@ void ScenarioServerRecorder::captureTick(
         state.input.camForward = player.input.camForward;
         state.stableGrounded = player.onGround;
         state.hasWorldContact = player.onGround;
+        computeMotionEvidence(state, track, state.input, 1.0f / 60.0f,
+                              mLastPose, mLastGrounded);
+        emitMotionAnomaly(state, track);
         actors.push_back(ScenarioTracks::actorStateJson(state));
         current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
     }
@@ -499,10 +715,56 @@ void ScenarioServerRecorder::captureTick(
         writeIdentity(track, "npc", npc.entityId, npc.name, npc.avatarName,
                       0, npc.transformEpoch);
         ScenarioTracks::ActorState state = captureNpc(npc);
+        const bool liveNpc = npc.health > 0;
+        if (liveNpc)
+            ++liveNpcCount;
         auto simIt = simulated.find(npc.entityId);
         if (simIt != simulated.end() && simIt->second)
         {
+            ++simulatedNpcCount;
             const Npc& sim = *simIt->second;
+            state.bodyParts.clear();
+            appendSimulatedBodyParts(sim, state.bodyParts);
+            if (state.bodyParts.empty())
+                appendTemplateBodyParts(sim, state.bodyParts);
+            const bool sleeping = sim.wakeupTimer > 0.0f || sim.body.dead;
+            if (liveNpc && !sleeping)
+            {
+                bool evidenceOk = true;
+                nlohmann::json missing = nlohmann::json::array();
+                if (!sim.hasLastAcceptedInput)
+                {
+                    evidenceOk = false;
+                    missing.push_back("accepted_input");
+                }
+                if (!sim.lastContainmentKnown)
+                {
+                    evidenceOk = false;
+                    missing.push_back("containment");
+                }
+                if (state.bodyParts.empty())
+                {
+                    evidenceOk = false;
+                    missing.push_back("body_parts");
+                }
+                if (!std::isfinite(state.position.x) ||
+                    !std::isfinite(state.position.y) ||
+                    !std::isfinite(state.position.z) ||
+                    !std::isfinite(state.velocity.x) ||
+                    !std::isfinite(state.velocity.y) ||
+                    !std::isfinite(state.velocity.z))
+                {
+                    evidenceOk = false;
+                    missing.push_back("finite_pose");
+                }
+                if (evidenceOk && !eligibleNpcSeen)
+                {
+                    eligibleNpcSeen = true;
+                    probeNpcTrack = track;
+                }
+                for (const auto& item : missing)
+                    probeMissing.push_back({{"track", track}, {"missing", item}});
+            }
             if (sim.hasLastAcceptedInput)
             {
                 state.hasInput = true;
@@ -522,6 +784,8 @@ void ScenarioServerRecorder::captureTick(
             state.npcDownDashCooldown = sim.downDashCooldown;
             state.npcJumpCooldown = sim.jumpCooldown;
             state.npcAttackCooldown = sim.attackCooldown;
+            computeMotionEvidence(state, track, state.input, 1.0f / 60.0f,
+                                  mLastPose, mLastGrounded);
             const size_t maxContacts =
                 std::min<size_t>(sim.body.movementContacts.size(), 32);
             for (size_t i = 0; i < maxContacts; ++i)
@@ -533,13 +797,21 @@ void ScenarioServerRecorder::captureTick(
                 evidence.sourceEntityId = contact.sourceEntityId;
                 evidence.targetEntityId = contact.targetEntityId;
                 evidence.surfaceId = contact.surfaceId;
-                evidence.worldTriangle = contact.surfaceId;
-                evidence.solidId = contact.surfaceId;
+                const int triangleIndex = contact.surfaceId > 0
+                    ? static_cast<int>(contact.surfaceId - 1u) : -1;
+                evidence.worldTriangle = triangleIndex >= 0
+                    ? static_cast<uint32_t>(triangleIndex) : 0u;
+                evidence.solidId =
+                    triangleIndex >= 0 &&
+                    static_cast<size_t>(triangleIndex) < world.solidIds.size()
+                        ? world.solidIds[static_cast<size_t>(triangleIndex)]
+                        : 0u;
                 evidence.materialId = contact.materialId;
                 evidence.kind = static_cast<int>(contact.kind);
                 evidence.source = static_cast<int>(contact.source);
                 evidence.shape = static_cast<int>(contact.shapeKind);
                 evidence.subshape = static_cast<int>(contact.subshape);
+                evidence.actorPart = movementSubshapeName(evidence.subshape);
                 evidence.point = contact.point;
                 evidence.normal = contact.normal;
                 evidence.sweepVelocity = contact.sweepVelocity;
@@ -547,7 +819,51 @@ void ScenarioServerRecorder::captureTick(
                 evidence.penetration = contact.penetrationDepth;
                 state.contacts.push_back(evidence);
             }
+            for (const Npc::FinalPoseContactSnapshot& contact :
+                 sim.lastFinalPoseContacts)
+            {
+                ScenarioTracks::ContactEvidence evidence;
+                evidence.actorPart = contact.actorPart;
+                evidence.worldTriangle = contact.worldTriangle;
+                evidence.solidId = contact.solidId;
+                evidence.point = contact.point;
+                evidence.normal = contact.normal;
+                evidence.surfaceVelocity = contact.surfaceNormal;
+                evidence.penetration = contact.penetration;
+                evidence.kind = 0;
+                evidence.source = 0;
+                evidence.shape = 0;
+                evidence.subshape = 0;
+                state.finalPoseContacts.push_back(std::move(evidence));
+            }
         }
+        else if (liveNpc)
+        {
+            probeMissing.push_back({{"track", track}, {"missing", "simulated_npc"}});
+            if (mProbeDone && !mCaptureInvalid)
+            {
+                writeScenarioEvent(
+                    "scenario.record.capture_gap",
+                    "live NPC has no simulated body in the authoritative capture; recording cannot prove NPC geometry",
+                    serverTick,
+                    nlohmann::json{{"scenario_id", mScenarioId},
+                                   {"process_role", "server"},
+                                   {"frame", mFrames},
+                                   {"server_tick", serverTick},
+                                   {"track", track},
+                                   {"runtime_id", npc.entityId},
+                                   {"simulated_ids", [&]() {
+                                       nlohmann::json ids = nlohmann::json::array();
+                                       for (const auto& item : simulated)
+                                           ids.push_back(item.first);
+                                       return ids;
+                                   }()}});
+                markCaptureFailure("capture_gap_simulated_npc", serverTick);
+                stop("capture_failed");
+                return;
+            }
+        }
+        emitMotionAnomaly(state, track);
         actors.push_back(ScenarioTracks::actorStateJson(state));
         current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
     }
@@ -556,8 +872,60 @@ void ScenarioServerRecorder::captureTick(
     for (const auto& entry : projectiles)
         objects.push_back(projectileJson(entry.second));
 
+    if (mProbePending && !mProbeDone)
+    {
+        const bool haveLiveNpcs = liveNpcCount > 0;
+        bool probeOk = playerActorCount > 0 &&
+            (!haveLiveNpcs || (eligibleNpcSeen && probeMissing.empty()));
+        if (playerActorCount == 0)
+            probeMissing.push_back({{"track", "player"}, {"missing", "player_actor"}});
+        const bool probeTimeout = haveLiveNpcs && !probeOk && mFrames >= 120;
+        if (probeTimeout)
+        {
+            if (!eligibleNpcSeen)
+                probeMissing.push_back({{"track", "npc"}, {"missing", "no_eligible_live_npc"}});
+            probeOk = false;
+        }
+        if (probeOk || probeTimeout || !haveLiveNpcs)
+        {
+            nlohmann::json simulatedIds = nlohmann::json::array();
+            for (const auto& item : simulated)
+                simulatedIds.push_back(item.first);
+            const bool probeWritten = writeScenarioEvent(
+                "scenario.record.capture_probe",
+                probeOk ? "authoritative scenario capture probe passed"
+                        : "authoritative scenario capture probe failed; NPC geometry evidence is incomplete",
+                serverTick,
+                nlohmann::json{{"scenario_id", mScenarioId},
+                               {"process_role", "server"},
+                               {"ok", probeOk},
+                               {"frame", mFrames},
+                               {"server_tick", serverTick},
+                               {"player_actor_count", playerActorCount},
+                               {"live_npc_count", liveNpcCount},
+                               {"simulated_npc_count", simulatedNpcCount},
+                               {"probe_npc_track", probeNpcTrack},
+                               {"missing", probeMissing},
+                               {"simulated_ids", simulatedIds}});
+            mProbeDone = true;
+            if (!probeWritten || !probeOk)
+            {
+                markCaptureFailure(probeWritten ? "capture_probe_failed"
+                                                : "capture_probe_write_refused",
+                                   serverTick);
+                stop("capture_failed");
+                return;
+            }
+        }
+    }
+
+    const uint64_t captureBuildUs =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - captureStart).count());
+
     if (mCanonical)
     {
+        const auto writeStart = std::chrono::steady_clock::now();
         if (!writeScenarioEvent(
                 "scenario.record.tick",
                 "canonical authoritative actor, contact, and object evidence for one fixed tick",
@@ -568,12 +936,21 @@ void ScenarioServerRecorder::captureTick(
                                {"journal_path", StructuredLogger::instance().eventsPath()},
                                {"process_role", "server"},
                                {"actors", actors},
-                               {"objects", objects}}))
+                               {"objects", objects},
+                               {"capture", {{"build_us", captureBuildUs},
+                                             {"last_write_us", mLastCaptureWriteUs},
+                                             {"last_total_us", mLastCaptureTotalUs}}}}))
         {
             markCaptureFailure("server_tick_write_refused", serverTick);
             stop("capture_failed");
             return;
         }
+        mLastCaptureWriteUs =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - writeStart).count());
+        mLastCaptureTotalUs =
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - captureStart).count());
     }
 
     if (mOut.is_open())
@@ -740,4 +1117,5 @@ void ScenarioServerRecorder::stop(const char* reason)
                        {"frames", mFrames},
                        {"stop_reason", reason ? reason : "unknown"}},
         __FILE__, __LINE__, __FUNCTION__);
+    StructuredLogger::instance().endScenarioCapture();
 }
