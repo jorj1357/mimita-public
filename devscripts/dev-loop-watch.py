@@ -2,7 +2,7 @@
 """Always-on dev-loop watcher/supervisor.
 
 Keeps exactly one checkout-owned dev-loop daemon alive and picks up edited
-`devscripts/dev-loop.py` code. This implements the watcher described in
+`devscripts/dev-loop.py` and `devscripts/dev_loop/*.py` code. This implements the watcher described in
 `docs/specs/dev-loop/dev-loop.md` section 19.4a, using the controlled
 replacement rules in section 19.3.
 
@@ -84,7 +84,15 @@ def write_json(path: Path, value) -> None:
 
 def script_sha256() -> str:
     try:
-        return hashlib.sha256(DEV_LOOP_SCRIPT.read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        sources = [DEV_LOOP_SCRIPT, *sorted(
+            (ROOT / "devscripts" / "dev_loop").glob("*.py"), key=lambda path: path.name)]
+        for source in sources:
+            digest.update(source.name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(source.read_bytes())
+            digest.update(b"\0")
+        return digest.hexdigest()
     except OSError:
         return ""
 

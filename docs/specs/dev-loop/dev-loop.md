@@ -1434,6 +1434,15 @@ window. Hiding the game must leave the dashboard visible. AI command and
 scenario calls use the control socket and do not create a dashboard for each
 request.
 
+On Windows the native dashboard is its own shell application window, separate
+from the daemon and any terminal used to start it. Its unowned top-level HWND
+must carry `WS_EX_APPWINDOW` and clear `WS_EX_TOOLWINDOW`, and its process uses
+the stable AppUserModelID `MiMITA.DevLoop.Dashboard`. Reapply the app-window
+style when the window is restored so it remains available from the taskbar,
+Alt+Tab, and Win+Tab. The GUI event loop stays alive until the person closes
+the dashboard; closing it detaches the view without stopping the daemon or
+game.
+
 The daemon must remain available while the Windows user session and host are
 running, even if the dashboard is closed or restarted. Closing the dashboard
 detaches the view; it does not stop the daemon, client, or server. The existing
@@ -2289,12 +2298,42 @@ baseline is recorded, then becomes blocking for changed files and eventually for
 the full tree. The matrix runner is a separate tool from the normal
 single-client scenario runner; it keeps one journal per client and one server
 journal, linked by run/session IDs.
-## Dev-loop module split (2026-10-29)
+## Dev-loop module split (2026-10-29; incremental extraction)
 
-`devscripts/dev-loop.py` remains the main entry point. The implementation moves
-into `devscripts/dev_loop/` modules for build, launch, control, status, state,
-scenario, matrix, and runtime. The split is for readability and testability; it
-does not add a second launcher or change the public command surface.
+`devscripts/dev-loop.py` remains the stable entry point and the owner of daemon
+orchestration. Responsibilities are extracted incrementally into
+`devscripts/dev_loop/`; this is one implementation, not a second launcher.
+Existing AI-facing flags, control verbs, status fields, scenario inputs, and
+legacy Python import paths remain supported during extraction.
+
+Current module owners:
+
+- `cli.py`: parser and public command-line contract.
+- `artifacts.py`: UTC ID creation, safe folder mapping, artifact ordering,
+  legacy discovery, sidecar validation, and fallback candidate discovery.
+- `build.py`: canonical build subprocess and immutable artifact publication
+  request/result handoff.
+- `launch.py`: verified launch-artifact choice and explicit older-build fallback.
+- `state.py`: atomic JSON status and control-state persistence.
+- `runtime.py`: UTC timestamps, shared journal paths, PE validation, and
+  executable SHA-256 identity.
+- `status.py`: status duration formatting shared by presentation views.
+- `gui.py` and `terminal.py`: dashboard presentation and terminal setup.
+- `dev-loop.py`: stable daemon entry/orchestrator and the still-coupled control,
+  lifecycle, status aggregation, scenario, and matrix behavior. Extract these
+  owners in focused steps without changing their external contracts.
+
+The watcher hashes the stable entry point together with every Python module in
+`devscripts/dev_loop/`, so edits to extracted components trigger the existing
+controlled daemon replacement path. The old `dev_loop_gui.py` and
+`dev_loop_terminal.py` paths remain import-compatible shims.
+
+Build state stores the canonical UTC artifact ID separately from its
+Windows-safe folder selector. Status, launch, and journal metadata report the
+canonical ID; filesystem access uses the folder selector. Launch validation
+checks the executable SHA-256 and sidecar identity, and selects the newest
+valid older artifact with an explicit fallback result if the newest artifact
+fails validation.
 
 The N-client matrix runner is part of this package. It starts one server and N
 clients, each with its own command queue, journal, scenario, assertions, and

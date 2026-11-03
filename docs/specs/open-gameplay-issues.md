@@ -1,4 +1,78 @@
-﻿2026 11 02 0825
+﻿2026 11 03 1048 jojr 
+npcs also 
+in fun cotuner strike ned liek
+reaction time delay
+and much bigger error tolerance aim
+because,
+as soon as u turn a corner u get shot, thats not relaistic
+need like
+idk 200 ms is pro ish level?
+so we should put it to be like that 
+
+2026 11 03 1046 jorj 
+also random gamepla pausing issues
+music still playing but i cant interact with the screen at aoll 
+well i can but after i touch it an interact wiht it 
+like im at  like idk 1 frame per 3 second right now 
+and it sas last packet 1.14 sec ago, somethign to do with patkcets idk why and im 
+and im bouncing up down over nad over 
+
+2026 11 03 1044 jorj 
+we also i think 
+somethign simple, we shoudl do camera culling, and with sepcific modes lik e
+
+hard cut/cull, which is like if its goign to be rendered wihtin like N meters fo the camera, for example 1 meter,just dont render it
+meansu can look thru walls and stuff tho
+
+then soft cull/cut, like
+if its within N meters e.g. 1 meter, then
+
+occluding issue part alpha for exmaple = 1.0
+start meters = 1, means
+at 1 meters, the part is 1.0 alpha
+at 0.5 meters, its 0.5 alpha, 
+at 0 meters, its 0.0 alpha
+
+so fo that itd be like
+
+maybe 2 meters to start, then 0.5 meters to end
+2 meters = 1.0 alhpa part, 0.5 meters = 0.0 alpha part
+configurable in camconfig.json i think 
+
+2026 11 03 1043 jorj
+
+how do we make it so  npcs  elite npcs on fun counter strke mode dont instant kill with revovler
+like aim error not respected for that i think
+
+also need to ensure that  C:\mimita-v9\config\behavior-profiles.json this has a json checker here that ensures all fields have all settings like how weapon configs all configs have all fields at least they should 
+
+i want to note that it hot reloaded dash chance tho in gold documentiaton bc its really good , hot rleoad is emergent from the goal of making it so u can go from idea to reality in as close to 0 sec as possible  too 
+
+i want to use the events.jsonl and scenario running for this too tho  like i want to get that strong beacuse i want to mkae it so npcs do not go into geometry and no avatar issues like teher is jut one random npc that has a ranom avatar and a red enem outline eventho it doesnt shoto me and it spawns on my side even idk 
+
+and girl avatars liek abusive girlheadless doesnt use the animations like how boy avatars like jason use 
+
+as well as grenades need to be much bounciner and throwable further and prob even use their own special grenade models, id like to mkae one model or one shape and make them much bigger and haveatheir own texture 
+and a glow? maybe liek a point light
+
+as well as perfomrance issues idk there is just  a lot of things that i wantto figure out 
+
+like so it overall is better
+and i want to use or strentghthen the scenario runnner and events.jsonl
+
+bceause the method i want to do  is to get it to be like
+i run a scenario and it is so  ridiculously  granular that its near 0% chance for AI to misinterpret what the problem is 
+
+if the rpboelmf or example is that npcs get stuck inside of geometry its kinda  not helpful if we dont know where the npcs even are, or we do but we know only every 60 ticks
+
+if every single tick, for all actors, we print their plr origin position, and their limb posiisons and rotations relative to that position , and if its penetrating or inside geometry, if plr oriring is inside geometry, their velocity, last tick's velocity and pos, delta between those two, etc, it becomes much more  doable to figure ouw wht is making npcs  get stuck in geomgrty, 
+
+but i want to amke ti so the same failing secnario with npcs getting stuck in geometry has a super visible way to show when they dont get stuck like 
+idk, client npc would want to walk forarwd liek normal, but keep getting snapped back to when it was stuck inside geometry, that snap i think should mean that its doing better 
+
+as well as fix like tdmtest3 npcs falling thru the world 
+
+2026 11 02 0825
 npcs still are getting stuck inside of walls
 need to ensure 
 we ned to makeit so that blokcs are solid

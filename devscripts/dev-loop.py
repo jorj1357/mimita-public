@@ -20,7 +20,6 @@ import builtins
 import colorsys
 import ctypes
 import datetime
-import errno
 from collections import deque
 import hashlib
 import json
@@ -29,12 +28,12 @@ import random
 import secrets
 import shutil
 import socket
-import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
-import tempfile
+import traceback
 import uuid
 from queue import Empty, Queue
 from pathlib import Path
@@ -86,10 +85,37 @@ _SCRIPT_DIR = str(Path(__file__).resolve().parent)
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
 
+from dev_loop.artifacts import (
+    build_artifact_id as make_build_artifact_id,
+    identity_for_folder as published_identity_for_folder,
+    newest_valid_build,
+    published_builds as discover_published_builds,
+)
+from dev_loop.build import run_build as run_build_worker
+from dev_loop.launch import select_launch_artifact
+from dev_loop.runtime import (
+    create_shared_events_path as runtime_create_shared_events_path,
+    executable_identity as runtime_executable_identity,
+    executable_snapshot_is_valid as runtime_executable_snapshot_is_valid,
+    invalidate_executable_identity,
+    utc_now as runtime_utc_now,
+)
+from dev_loop.status import duration_text as format_duration
+from dev_loop.state import read_json, write_json
+
 
 def script_sha256(path: Path) -> str:
     try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        digest = hashlib.sha256()
+        sources = ([path, *sorted((ROOT / "devscripts" / "dev_loop").glob("*.py"),
+                                  key=lambda source: source.name)]
+                   if path.resolve() == DEV_LOOP_SCRIPT.resolve() else [path])
+        for source in sources:
+            digest.update(source.name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(source.read_bytes())
+            digest.update(b"\0")
+        return digest.hexdigest()
     except OSError:
         return ""
 DEFAULT_MAP_POOL_PATH = ROOT / "config" / "gamemode-good-maps.json"
@@ -235,7 +261,8 @@ def _windows_launch_snapshot(process_ids: list[int] | None = None) -> dict:
     user32.GetCursorPos(ctypes.byref(point))
     cursor_hwnd = int(user32.WindowFromPoint(point) or 0)
     firewall_terms = (
-        "windows security",
+        "windows security alert",
+        "windows defender firewall",
         "windows firewall",
         "allow public and private",
         "allow access",
@@ -350,51 +377,6 @@ def _set_process_windows_visible(pid: int, visible: bool) -> list[dict]:
 print = dev_print
 
 
-_JSON_WRITE_LOCK = threading.Lock()
-_JSON_REPLACE_RETRIES = 8
-
-
-def write_json(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(value, indent=2) + "\n"
-    temporary = None
-    with _JSON_WRITE_LOCK:
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", newline="\n",
-                dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temporary = Path(handle.name)
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-
-            for attempt in range(_JSON_REPLACE_RETRIES):
-                try:
-                    os.replace(temporary, path)
-                    temporary = None
-                    break
-                except PermissionError as error:
-                    winerror = getattr(error, "winerror", None)
-                    retryable = winerror in (5, 32, 33) or error.errno in (
-                        errno.EACCES, errno.EBUSY, errno.EPERM,
-                    )
-                    if not retryable or attempt + 1 == _JSON_REPLACE_RETRIES:
-                        raise
-                    time.sleep(0.025 * (attempt + 1))
-        finally:
-            if temporary is not None:
-                try:
-                    temporary.unlink()
-                except FileNotFoundError:
-                    pass
-
-
-def read_json(path: Path) -> dict:
-    return load_jsonc(path)
-
-
 def allowed_dev_maps(profile: dict) -> list[str]:
     configured = profile.get("allowed_maps_file", str(DEFAULT_MAP_POOL_PATH))
     path = Path(configured)
@@ -414,53 +396,15 @@ def allowed_dev_maps(profile: dict) -> list[str]:
 
 
 def create_shared_events_path() -> str:
-    """One run directory + events.jsonl shared by the dev server and client."""
-    now = datetime.datetime.now(datetime.timezone.utc)
-    run_dir = ROOT / "logs" / now.strftime("%Y-%m-%d") / now.strftime("%Y%m%d_%H%M%S")
-    suffix = 1
-    base = run_dir
-    while run_dir.exists():
-        run_dir = Path(f"{base}_{suffix:02d}")
-        suffix += 1
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return str(run_dir / "events.jsonl")
+    return runtime_create_shared_events_path()
 
 
 def utc_now() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-
-
-_EXECUTABLE_IDENTITY_CACHE: dict[str, tuple[tuple[int, int], dict]] = {}
+    return runtime_utc_now()
 
 
 def executable_identity(path: Path) -> dict:
-    try:
-        stat = path.stat()
-    except OSError:
-        stat = None
-    key = str(path)
-    signature = (stat.st_size, stat.st_mtime_ns) if stat else None
-    cached = _EXECUTABLE_IDENTITY_CACHE.get(key)
-    if signature is not None and cached and cached[0] == signature:
-        return dict(cached[1])
-    valid, reason, digest = _executable_snapshot_is_valid(path)
-    identity = {
-        "path": str(path),
-        "exists": bool(stat),
-        "valid": valid,
-        "validation": reason,
-        "sha256": digest if valid else "",
-        "created_utc": datetime.datetime.fromtimestamp(
-            stat.st_ctime, datetime.timezone.utc
-        ).isoformat(timespec="milliseconds").replace("+00:00", "Z") if stat else "",
-        "modified_utc": datetime.datetime.fromtimestamp(
-            stat.st_mtime, datetime.timezone.utc
-        ).isoformat(timespec="milliseconds").replace("+00:00", "Z") if stat else "",
-        "size_bytes": stat.st_size if stat else 0,
-    }
-    if signature is not None:
-        _EXECUTABLE_IDENTITY_CACHE[key] = (signature, identity)
-    return dict(identity)
+    return runtime_executable_identity(path)
 
 
 def select_dev_map(profile: dict, requested_map: str = "") -> str:
@@ -780,120 +724,29 @@ def launch_mode_table() -> list[tuple[str, str]]:
     return table
 
 
-def build_artifact_id(now: datetime.datetime | None = None) -> tuple[str, str]:
-    """Return a canonical UTC build ID and a Windows-safe folder name."""
-    timestamp = now or datetime.datetime.now(datetime.timezone.utc)
-    timestamp = timestamp.astimezone(datetime.timezone.utc)
-    while True:
-        artifact_id = timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
-        folder_name = artifact_id.replace(":", "-")
-        if not (BUILD_ROOT / folder_name).exists():
-            return artifact_id, folder_name
-        timestamp += datetime.timedelta(microseconds=1)
-
-
-def _published_build_sort_key(path: Path) -> tuple[int, str]:
-    """Sort timestamp IDs newest first, then legacy numeric folders."""
-    try:
-        timestamp = datetime.datetime.strptime(path.name, "%Y-%m-%dT%H-%M-%S.%fZ")
-        return (1, timestamp.strftime("%Y%m%d%H%M%S%f"))
-    except ValueError:
-        return (0, path.name.zfill(20) if path.name.isdigit() else "")
-
-
 def published_builds() -> list[Path]:
-    if not BUILD_ROOT.is_dir():
-        return []
-    return sorted(
-        (p for p in BUILD_ROOT.iterdir()
-         if p.is_dir() and (p.name.isdigit() or _published_build_sort_key(p)[1])),
-        key=_published_build_sort_key,
-        reverse=True,
-    )
+    return discover_published_builds(BUILD_ROOT)
 
 
 def newest_valid_published_build() -> str | None:
-    """Return the newest timestamped or legacy artifact with a runnable EXE."""
-    for path in published_builds():
-        exe = path / "mimita.exe"
-        try:
-            if exe.is_file() and _executable_snapshot_is_valid(exe)[0]:
-                return path.name
-        except OSError:
-            continue
-    return None
+    """Return the folder selector for the newest fully verified artifact."""
+    selected = newest_valid_build(BUILD_ROOT, executable_identity)
+    return selected[1] if selected else None
+
+
+def newest_published_build() -> str | None:
+    """Return the newest disk artifact even when identity validation fails."""
+    candidates = published_builds()
+    return candidates[0].name if candidates else None
+
+
+def build_artifact_id(now: datetime.datetime | None = None) -> tuple[str, str]:
+    """Return a canonical UTC ID and its Windows-safe artifact folder name."""
+    return make_build_artifact_id(now, BUILD_ROOT)
 
 
 def _executable_snapshot_is_valid(path: Path) -> tuple[bool, str, str]:
-    """Check that a published PE has real executable bytes, not just headers."""
-    try:
-        size = path.stat().st_size
-        with path.open("rb") as handle:
-            header = handle.read(64)
-            if size < 0x1000 or header[:2] != b"MZ":
-                return False, "invalid DOS header or file too small", ""
-            pe_offset = struct.unpack_from("<I", header, 0x3C)[0]
-            if pe_offset + 24 > size:
-                return False, "invalid PE header", ""
-            handle.seek(pe_offset)
-            pe_header = handle.read(24)
-            if pe_header[:4] != b"PE\0\0":
-                return False, "invalid PE header", ""
-            section_count = struct.unpack_from("<H", pe_header, 6)[0]
-            optional_size = struct.unpack_from("<H", pe_header, 20)[0]
-            section_offset = pe_offset + 24 + optional_size
-            if optional_size < 20 or section_offset + section_count * 40 > size:
-                return False, "invalid optional header or section table", ""
-            optional_header = handle.read(optional_size)
-            magic = struct.unpack_from("<H", optional_header)[0]
-            entry_rva = struct.unpack_from("<I", optional_header, 16)[0]
-            if magic not in (0x10B, 0x20B):
-                return False, "invalid optional header or section table", ""
-
-            executable_sections = 0
-            entrypoint_checked = False
-            for index in range(section_count):
-                handle.seek(section_offset + index * 40)
-                section = handle.read(40)
-                virtual_size, virtual_address = struct.unpack_from("<II", section, 8)
-                raw_size, raw_pointer = struct.unpack_from("<II", section, 16)
-                characteristics = struct.unpack_from("<I", section, 36)[0]
-                if not characteristics & 0x20000000:
-                    continue
-                executable_sections += 1
-                if raw_size == 0 or raw_pointer + raw_size > size:
-                    return False, "executable section is outside the file", ""
-                handle.seek(raw_pointer)
-                remaining = raw_size
-                has_code = False
-                while remaining:
-                    chunk = handle.read(min(1024 * 1024, remaining))
-                    if not chunk:
-                        break
-                    if any(chunk):
-                        has_code = True
-                        break
-                    remaining -= len(chunk)
-                if not has_code:
-                    return False, "executable section is entirely zero-filled", ""
-                if virtual_address <= entry_rva < virtual_address + max(virtual_size, raw_size):
-                    handle.seek(raw_pointer + entry_rva - virtual_address)
-                    entry_bytes = handle.read(64)
-                    if len(entry_bytes) < 16 or not any(entry_bytes):
-                        return False, "entrypoint bytes are zero-filled", ""
-                    entrypoint_checked = True
-
-            if executable_sections == 0:
-                return False, "no executable sections", ""
-            if not entrypoint_checked:
-                return False, "entrypoint is not in an executable section", ""
-            handle.seek(0)
-            digest = hashlib.sha256()
-            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(chunk)
-            return True, "ok", digest.hexdigest()
-    except OSError as error:
-        return False, "read failed", str(error)
+    return runtime_executable_snapshot_is_valid(path)
 
 
 def _copy_verified_executable(source: Path, destination: Path) -> None:
@@ -1002,7 +855,7 @@ def activate_stable_launch(stage_dir: Path) -> Path:
             os.replace(backup_dir, STABLE_LAUNCH_DIR)
         raise
 
-    _EXECUTABLE_IDENTITY_CACHE.pop(str(STABLE_LAUNCH_EXE), None)
+    invalidate_executable_identity(STABLE_LAUNCH_EXE)
     if moved_old and backup_dir.resolve().parent == resolved_dev_root:
         shutil.rmtree(backup_dir, ignore_errors=True)
     return STABLE_LAUNCH_EXE
@@ -1121,7 +974,20 @@ class DevLoop:
         self.client_launch_ms: float = 0.0
         self.server_unavailable = False
         self.running_build = None
-        self.latest_build = newest_valid_published_build()
+        self.latest_build_folder = newest_published_build()
+        initial_identity = (
+            published_identity_for_folder(BUILD_ROOT / self.latest_build_folder,
+                                          executable_identity)
+            if self.latest_build_folder else None
+        )
+        initial_metadata = (read_json(BUILD_ROOT / self.latest_build_folder /
+                                      "build-identity.json")
+                            if self.latest_build_folder else {})
+        self.latest_build = str(
+            (initial_identity or {}).get("artifact_id")
+            or (initial_metadata or {}).get("artifact_id")
+            or self.latest_build_folder
+        ) if self.latest_build_folder else None
         self.latest_generation = 0
         # A disk-restored artifact is usable, but it has not been proven
         # against this loop's current source snapshot yet. The initial build
@@ -1335,6 +1201,7 @@ class DevLoop:
             "running_build_id": (self.run_metadata.get("build_id")
                                  or self.server_build_id or None),
             "latest_successful_build": self.latest_build,
+            "latest_artifact_folder": self.latest_build_folder,
             "latest_artifact_id": (latest_identity or {}).get("artifact_id"),
             "latest_successful_build_id": self.build_id(latest_identity),
             "source_generation": self.generation,
@@ -1359,6 +1226,7 @@ class DevLoop:
             "last_build_duration_seconds": build_snapshot["last_build_duration_seconds"],
             "build_requests": build_snapshot["build_requests"],
             "message": self.last_message,
+            "last_control": dict(getattr(self, "last_control", {})),
             "updated_at": utc_now(),
             "run_id": self.run_id,
             "run_started_utc": self.run_started_utc,
@@ -1403,6 +1271,13 @@ class DevLoop:
 
     def record_control_event(self, request: dict, status: str, message: str) -> None:
         """Append control-plane evidence to the active canonical journal."""
+        self.last_control = {
+            "request_id": str(request.get("request_id", "")),
+            "action": str(request.get("action", "")),
+            "status": status,
+            "message": message,
+            "updated_at": utc_now(),
+        }
         if not self.events_path:
             return
         record = {
@@ -1558,6 +1433,26 @@ class DevLoop:
             self.save_state("scenario_rejected")
             return {"accepted": False, "queued": False, "error": message}
 
+    def launch_for_control_request(self, request: dict) -> bool:
+        """Keep launch exceptions visible and the daemon available for retry."""
+        request_id = str(request.get("request_id", ""))
+        try:
+            return self.launch_latest(request_id=request_id)
+        except Exception as error:
+            details = traceback.format_exc(limit=12)
+            self.last_message = f"launch failed with {type(error).__name__}: {error}"
+            self.record_runtime_event(
+                "dev-loop.launch.exception",
+                {
+                    "request_id": request_id,
+                    "exception_type": type(error).__name__,
+                    "traceback": details[-12000:],
+                },
+                self.last_message,
+            )
+            print(f"[DEV] {self.last_message}\n{details}", file=sys.stderr)
+            return False
+
     def observe_launch_windows(self, phase: str) -> dict:
         """Record the current child-window, focus, cursor, and firewall state."""
         pids = [os.getpid()]
@@ -1673,45 +1568,19 @@ class DevLoop:
         )
 
     def latest_executable(self) -> Path:
-        if self.latest_build is None:
+        if self.latest_build_folder is None:
             return BUILD_ROOT / "(none)" / "mimita.exe"
-        return BUILD_ROOT / self.latest_build / "mimita.exe"
+        return BUILD_ROOT / self.latest_build_folder / "mimita.exe"
 
     def latest_build_identity(self) -> dict | None:
-        if self.latest_build is None:
+        if self.latest_build is None or self.latest_build_folder is None:
             return None
-        exe = self.latest_executable()
-        info = executable_identity(exe)
-        info["artifact_id"] = self.latest_build
-        info["build_id"] = f"{self.latest_build}:{info.get('sha256', '')}"
-        info["build_number"] = int(self.latest_build) if self.latest_build.isdigit() else None
-        info["source_generation"] = self.latest_generation
+        info = published_identity_for_folder(BUILD_ROOT / self.latest_build_folder,
+                                             executable_identity)
+        if info is None:
+            return None
+        info.setdefault("source_generation", self.latest_generation)
         info["source_current"] = not self.latest_stale
-        try:
-            metadata = read_json(exe.parent / "build-identity.json")
-            if isinstance(metadata, dict):
-                metadata_id = str(metadata.get("artifact_id") or "")
-                metadata_valid = bool(
-                    metadata_id
-                    and metadata_id.replace(":", "-") == exe.parent.name
-                    and metadata.get("sha256") == info.get("sha256")
-                    and metadata.get("build_id") == f"{metadata_id}:{info.get('sha256', '')}"
-                    and isinstance(metadata.get("source_generation"), int)
-                )
-                info.update(metadata)
-                info["path"] = str(exe)
-                info["valid"] = bool(info.get("valid") and metadata_valid)
-                info["validation"] = ("valid" if info["valid"] else
-                                      "artifact identity metadata mismatch")
-            elif not self.latest_build.isdigit():
-                info["valid"] = False
-                info["validation"] = "timestamped artifact identity metadata is invalid"
-        except (OSError, ValueError, json.JSONDecodeError):
-            # Numbered artifacts predate the metadata sidecar; timestamped
-            # artifacts require it so their source/build identity is explicit.
-            if not self.latest_build.isdigit():
-                info["valid"] = False
-                info["validation"] = "timestamped artifact identity metadata is missing or invalid"
         return info
 
     @staticmethod
@@ -1851,11 +1720,11 @@ class DevLoop:
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
-                    launched = self.launch_latest(request_id=request_id)
-                    self.last_message = (
-                        f"AI launched last successful build {self.latest_build}"
-                        if launched else self.last_message or f"AI launch failed for last successful build {self.latest_build}"
-                    )
+                    launched = self.launch_for_control_request(request)
+                    if not launched:
+                        self.last_message = self.last_message or (
+                            f"AI launch failed for last successful build {self.latest_build}"
+                        )
                     self.record_control_event(
                         request, "completed" if launched else "failed", self.last_message
                     )
@@ -1878,12 +1747,11 @@ class DevLoop:
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
-                    launched = self.launch_latest(request_id=request_id)
-                    self.last_message = (
-                        f"dashboard launched last successful build {self.latest_build}"
-                        + (" (stale while newer build runs)" if self.latest_stale else "")
-                        if launched else self.last_message or f"dashboard launch failed for build {self.latest_build}"
-                    )
+                    launched = self.launch_for_control_request(request)
+                    if not launched:
+                        self.last_message = self.last_message or (
+                            f"dashboard launch failed for build {self.latest_build}"
+                        )
                     self.record_control_event(
                         request, "completed" if launched else "failed", self.last_message
                     )
@@ -2051,74 +1919,15 @@ class DevLoop:
             self.save_state("building")
 
     def run_build(self, requested_generation: int, request_ids: list[str], mode: str) -> None:
-        started = time.monotonic()
-        command = [sys.executable, str(ROOT / "build.py"), "build-only"]
-        if mode == "release":
-            command.append("release")
-        environment = os.environ.copy()
-        ccache = find_ccache()
-        if ccache:
-            environment["MIMITA_CCACHE"] = ccache
-            print(f"[DEV] ccache: {ccache}")
-        else:
-            print("[DEV] ccache: not found; build will still work without it")
-
-        print("[DEV] starting incremental build")
-        output: list[str] = []
-        result = 2
-        destination: Path | None = None
-        artifact_id: str | None = None
-        folder_name: str | None = None
-        error_message = ""
-        try:
-            process = subprocess.Popen(
-                command,
-                cwd=ROOT,
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                creationflags=_CREATE_NO_WINDOW,
-                **({"startupinfo": _hidden_startupinfo()} if os.name == "nt" else {}),
-            )
-            assert process.stdout is not None
-            for line in process.stdout:
-                print(line, end="")
-                output.append(line)
-                self._record_build_output(line)
-            result = process.wait()
-        except OSError as error:
-            error_message = f"could not start canonical build: {error}"
-            self._record_build_output(error_message)
-
-        successful = result == 0 and (
-            "BUILD SUCCESS" in "".join(output)
-            or "Nothing changed." in "".join(output)
+        run_build_worker(
+            self, requested_generation, request_ids, mode,
+            root=ROOT,
+            make_artifact_id=build_artifact_id,
+            publish_build=publish_build,
+            find_ccache=find_ccache,
+            creationflags=_CREATE_NO_WINDOW,
+            hidden_startupinfo=_hidden_startupinfo,
         )
-        if successful:
-            try:
-                artifact_id, folder_name = build_artifact_id()
-                destination = publish_build(artifact_id, folder_name,
-                                            requested_generation, mode)
-            except Exception as error:
-                successful = False
-                error_message = f"publish failed: {error}"
-                self._record_build_output(error_message)
-
-        self.build_completions.put({
-            "generation": requested_generation,
-            "mode": mode,
-            "request_ids": request_ids,
-            "success": successful,
-            "return_code": result,
-            "artifact_id": artifact_id,
-            "folder_name": folder_name,
-            "destination": str(destination) if destination else "",
-            "error": error_message,
-            "duration_seconds": max(0.0, time.monotonic() - started),
-            "output_tail": [line.rstrip()[-240:] for line in output[-10:]],
-        })
 
     def drain_build_completions(self) -> None:
         while True:
@@ -2147,6 +1956,7 @@ class DevLoop:
 
                 if success:
                     self.latest_build = str(result["artifact_id"])
+                    self.latest_build_folder = str(result["folder_name"])
                     self.latest_generation = generation
                     self.latest_stale = self.generation != generation
                     self.last_message = (
@@ -2574,23 +2384,32 @@ class DevLoop:
             self.run_id = launch_run_id
             return stopped
 
-        selected_build = self.latest_build
-        if selected_build is None:
-            self.last_message = "no successfully published build is available to launch"
+        selection = select_launch_artifact(
+            self.latest_build_folder, BUILD_ROOT, executable_identity)
+        selected_build = selection["folder"]
+        identity = selection["identity"]
+        fell_back = bool(selection["fallback"])
+        newest_validation_error = str(selection["validation_error"])
+        if selected_build is None or not identity or not identity.get("valid"):
+            self.last_message = (
+                f"no valid published build; newest artifact "
+                f"{self.latest_build or self.latest_build_folder or '(none)'} failed validation: "
+                f"{newest_validation_error}"
+                if newest_validation_error else
+                "no successfully published build is available to launch"
+            )
             stage("artifact_selection", "failed", self.last_message)
             stage("complete", "failed", self.last_message)
             return False
         build_dir = BUILD_ROOT / selected_build
         exe = build_dir / "mimita.exe"
-        identity = self.latest_build_identity()
-        artifact_id = str((identity or {}).get("artifact_id") or selected_build)
-        if not identity or not identity.get("valid"):
-            self.last_message = f"last successful build {selected_build} failed artifact validation"
-            stage("artifact_validation", "failed", self.last_message)
-            stage("complete", "failed", self.last_message)
-            self.save_state("launch_artifact_invalid")
-            print(f"[DEV] {self.last_message}")
-            return False
+        artifact_id = str(identity.get("artifact_id") or selected_build)
+        if fell_back:
+            self.last_message = (
+                f"newest published build {self.latest_build} failed validation "
+                f"({newest_validation_error or 'artifact identity invalid'}); "
+                f"using previous valid build {artifact_id}"
+            )
         if not exe.is_file():
             self.last_message = f"published executable is missing: {exe}"
             stage("artifact_validation", "failed", self.last_message,
@@ -2601,9 +2420,12 @@ class DevLoop:
             return False
         build_id = self.build_id(identity)
         launch_exe = STABLE_LAUNCH_EXE
-        stage("artifact_selection", "selected", "last successfully published artifact selected",
+        stage("artifact_selection", "selected",
+              "newest valid published artifact selected" if not fell_back
+              else "newest published artifact invalid; previous valid artifact selected",
               artifact_executable=str(exe), launch_executable=str(launch_exe),
               artifact_id=artifact_id,
+              fallback=fell_back,
               source_generation=identity.get("source_generation", self.latest_generation),
               source_current=self.latest_generation == self.generation,
               build_pending=bool(self.build_pending or self.active_build_generation is not None))
@@ -2667,7 +2489,7 @@ class DevLoop:
         self.client_ready = False
         self.builds_match = False
         running_map = self.server_map_name()
-        prelaunch_windows = self.observe_launch_windows("before_server_launch")
+        self.observe_launch_windows("before_server_launch")
         if self.server_health() and not self.server_matches_launch_configuration(
                 launch_exe, map_name, build_id):
             print(f"[DEV SERVER] launch configuration changed; replacing old server "
@@ -3136,6 +2958,12 @@ class DevLoop:
             self.monitor_launch_windows()
         launch_succeeded = bool(self.client_ready and self.builds_match and
                                 connection_ready and mode_ready and npcwaves_ready)
+        if launch_succeeded:
+            self.last_message = (
+                f"launched fallback build {artifact_id} (SHA-256 {identity.get('sha256', '')})"
+                if fell_back else
+                f"launched build {artifact_id} (SHA-256 {identity.get('sha256', '')})"
+            )
         self.save_state("running" if launch_succeeded else
                         ("client_ready" if self.client_ready else "client_logger_missing"))
         self.print_status()
@@ -4416,12 +4244,7 @@ def wait_for_command_result(events_path: str, request_id: str, timeout: float,
 
 
 def _duration_text(seconds) -> str:
-    if seconds is None:
-        return "-"
-    total = max(0, int(seconds))
-    hours, remainder = divmod(total, 3600)
-    minutes, secs = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return format_duration(seconds)
 
 
 def _build_label(executable, artifact_id=None) -> str:
@@ -4687,7 +4510,7 @@ def _read_dashboard_key():
 
 def run_dashboard(args: argparse.Namespace) -> int:
     try:
-        import dev_loop_terminal as term
+        from dev_loop import terminal as term
     except ImportError:
         term = None
 
@@ -4758,7 +4581,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
             return scripted_keys.pop(0), False
         return None, True
 
-    def control(state: dict, action: str, **fields) -> bool:
+    def control(state: dict, action: str, **fields) -> dict | None:
         nonlocal current, view_status
         current = read_current_run() or current or {}
         view_status = f"{action} sending"
@@ -4772,14 +4595,14 @@ def run_dashboard(args: argparse.Namespace) -> int:
             if isinstance(response.get("state"), dict):
                 current = response["state"]
             view_status = f"{action} accepted"
-        return ok
+        return response
 
     def snapshot() -> dict:
         return request_daemon_status(current, timeout=0.25) if current else None
 
     if not args.no_tk:
         try:
-            import dev_loop_gui
+            from dev_loop import gui as dev_loop_gui
             if dev_loop_gui.available():
                 def gui_status():
                     latest = snapshot() or current or {}
@@ -4823,6 +4646,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "stale": bool(latest.get("latest_build_stale")),
                         "source_generation": latest.get("latest_successful_source_generation", "—"),
                         "phase": latest.get("build_status", "unknown"),
+                        "last_control": latest.get("last_control") or {},
                         "elapsed": _duration_text(latest.get("active_build_elapsed_seconds")),
                         "phase_detail": (
                             f"active source generation {latest.get('active_build_generation') or '—'}  ·  "
@@ -4863,8 +4687,8 @@ def run_dashboard(args: argparse.Namespace) -> int:
 
                 def gui_control(action: str):
                     fields = {"explicit_stop": True} if action == "stop" else {}
-                    accepted = control(current, action, **fields)
-                    return {"accepted": accepted, "message": view_status}
+                    response = control(current, action, **fields)
+                    return response or {"accepted": False, "message": view_status}
 
                 return dev_loop_gui.run(
                     gui_status,
@@ -5161,80 +4985,8 @@ def run_control_client(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="MiMITA incremental development loop")
-    parser.add_argument("--profile", default="npc-navigation")
-    parser.add_argument("--auto-restart", action="store_true")
-    parser.add_argument(
-        "--launch-mode",
-        help="numeric dev launch mode from devscripts/dev-launch-modes.json",
-    )
-    visibility = parser.add_mutually_exclusive_group()
-    visibility.add_argument(
-        "--headless",
-        dest="launch_visibility",
-        action="store_const",
-        const="headless",
-        help="hide the game window while keeping the process and journal running",
-    )
-    visibility.add_argument(
-        "--visible",
-        dest="launch_visibility",
-        action="store_const",
-        const="visible",
-        help="show the game window without leaving it focused",
-    )
-    parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
-    parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
-    parser.add_argument("--command", "--cmd", dest="command",
-                        help="send one terminal command to the running daemon, wait for the result, and exit")
-    parser.add_argument("--scenario-file", help="queue a repository-local Markdown/JSON scenario in the running client")
-    parser.add_argument(
-        "--scenario-explain",
-        action="store_true",
-        help="print the scenario purpose, steps, launch config, and assertions without running it",
-    )
-    parser.add_argument(
-        "--ai-match",
-        action="store_true",
-        help="run an unattended TDM match with the local player under AI control",
-    )
-    parser.add_argument("--ai-seconds", type=float, default=90.0,
-                        help="bounded duration for --ai-match")
-    parser.add_argument("--ai-map", default="dust2cyberiav4",
-                        help="map for --ai-match")
-    parser.add_argument("--ai-profile", default="tdm-validation",
-                        help="dev profile for --ai-match")
-    parser.add_argument("--ai-launch-mode", default="41",
-                        help="dev launch mode for --ai-match (default 41 = TDM networking)")
-    parser.add_argument(
-        "--request",
-        choices=("launch", "build", "stop-client", "stop-server", "stop"),
-        help="send a command to the already-running dev-loop daemon and exit",
-    )
-    parser.add_argument("--wait-for-build", action="store_true",
-                        help="with --request build, wait for this build request to finish")
-    parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
-                        help="configuration for --request build")
-    parser.add_argument("--build-timeout", type=float, default=36000.0,
-                        help="maximum seconds to wait with --wait-for-build")
-    parser.add_argument("--ensure-running", action="store_true",
-                        help="ensure the watchdog and daemon exist and exit")
-    parser.add_argument("--daemon", action="store_true",
-                        help="run the dev-loop daemon in this process (used by the watchdog/entry point)")
-    parser.add_argument("--dashboard", action="store_true",
-                        help="open the visible dashboard view attached to the daemon")
-    parser.add_argument("--dev-loop-role", default="",
-                        choices=("", "watchdog", "daemon", "dashboard"),
-                        help="stable role marker recorded in the process command line")
-    parser.add_argument("--no-terminal-relaunch", action="store_true",
-                        help="do not prefer Windows Terminal; render in the current console")
-    parser.add_argument("--no-tk", action="store_true",
-                        help="use the terminal dashboard even when Tkinter is available")
-    parser.add_argument("--dashboard-frames", type=int, default=0,
-                        help="render this many dashboard frames then exit (0 = run until quit)")
-    parser.add_argument("--command-timeout", type=float, default=15.0,
-                        help="seconds to wait for a command result from the client")
-    args = parser.parse_args()
+    from dev_loop.cli import create_parser
+    args = create_parser().parse_args()
 
     control = bool(args.status or args.request or args.command or args.scenario_file
                    or args.ai_match)
