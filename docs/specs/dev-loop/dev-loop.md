@@ -1453,16 +1453,30 @@ script path as well as the PID so the user can match it to Task Manager. Use
 stable human-readable role names: `MiMITA Dev Loop Watchdog`, `MiMITA Dev Loop
 Daemon`, and `MiMITA Dev Loop Dashboard`.
 
-The status display is a fixed, non-scrolling dashboard. Keep each status field
-on a stable row and update that row in place; never append the full status block
-again just because uptime or another value changed. A compact layout should
-make it easy to select and copy the text. Provide a dashboard-only pause/freeze
-control so the user can select or copy a stable snapshot while the watchdog,
-daemon, game, and scenario continue running. Resuming the display must refresh
-from current state and mark when the view was refreshed; it must not present a
-frozen `RUNNING` value as current. Put meaningful new activity in a separate
-bounded output area, rather than mixing repeated status refreshes into the
-scrollback.
+Keep each status field stable and update it in place; never append the full
+status block again just because uptime or another value changed. The native
+window opens restored at 400x500 and remains resizable. Use a custom black
+title bar with minimize, maximize/restore, and close controls, plus resize edges.
+At compact sizes, show a concise build/runtime summary and the latest ten lines
+of build or loop activity; reveal full hashes, scenario evidence, and journal
+details as the window grows. Keep launch/build controls visible. The activity
+area is bounded and may scroll independently; status refreshes never enter its
+scrollback. Provide a dashboard-only pause/freeze control so the user can
+select or copy a stable snapshot while the watchdog, daemon, game, and scenario
+continue running. Resuming refreshes from current state and marks when the view
+was refreshed; it must not present a frozen `RUNNING` value as current.
+
+Use a pure black background, red labels and outlines, and the local MingLiU
+font at `C:\\important\\mingliu-font\\mingliu.ttf` when available. Keep the
+controls plain and sharply bordered. Emphasized build/runtime values, including
+mode and map values, cycle through rainbow colors over four seconds; their
+labels remain red. Show the running artifact separately from the latest
+published artifact. When both identify the same executable SHA-256, show both
+identities in green. A completed `published_current` state reads `UP TO DATE`
+with the latest build's UTC ISO 8601 ID and no elapsed timer. Show elapsed time
+only for pending or active builds. At compact sizes, show a short hash prefix
+and let a click copy the full timestamp and SHA-256; reveal the complete values
+when expanded.
 
 On Windows, a Python process normally remains `python.exe` in Task Manager's
 Image Name column. Do not pretend that a script can rename that executable
@@ -2390,14 +2404,14 @@ terminal dashboard remains an explicit fallback. Keep the existing dev-loop
 process and status/control authority; the window is a presentation layer and
 must not create a competing build/run loop.
 
-The activity feed should show observable work from AI agents and contributors:
-task/session identity when available, current action, files changed, build or
-check started/completed, live game/map, and the result or error. Each entry
-needs a timestamp and source so the user can tell whether an event came from
-the game, dev-loop, a contributor, or an AI tool. Show durable runtime events
-from `events.jsonl` separately from work-status events so “a file was edited”
-cannot be mistaken for “the game behavior passed.” Do not present private
-reasoning or unverified inferred activity as observed status.
+The activity feed shows the latest ten available build-output lines and recent
+loop/runtime events, with build and loop sources labeled separately. Include
+source-generation changes and hot-reload events when they are recorded. Show
+task/session identity and changed files only when an existing event provides
+them; do not infer an author or claim a file edit from a generation change.
+Keep build output and runtime events distinct so “a file was edited” cannot be
+mistaken for “the game behavior passed.” Do not present private reasoning or
+unverified inferred activity as observed status.
 
 For scenario work, show recording/replay identity, current frame and tick,
 active map, checkpoint progress, canonical journal path, capture completeness,

@@ -1133,7 +1133,7 @@ class DevLoop:
         self.active_build_started_utc: str | None = None
         self.active_build_started_monotonic: float | None = None
         self.active_build_detail = "waiting for build worker"
-        self.build_output_tail: deque[str] = deque(maxlen=4)
+        self.build_output_tail: deque[str] = deque(maxlen=10)
         self.build_last_progress_save = 0.0
         self.build_worker: threading.Thread | None = None
         self.build_completions: Queue[dict] = Queue()
@@ -1332,6 +1332,8 @@ class DevLoop:
             "profile": self.profile.get("name", "unnamed"),
             "launch_mode": self.launch_mode_id,
             "running_build": self.running_build,
+            "running_build_id": (self.run_metadata.get("build_id")
+                                 or self.server_build_id or None),
             "latest_successful_build": self.latest_build,
             "latest_artifact_id": (latest_identity or {}).get("artifact_id"),
             "latest_successful_build_id": self.build_id(latest_identity),
@@ -2115,7 +2117,7 @@ class DevLoop:
             "destination": str(destination) if destination else "",
             "error": error_message,
             "duration_seconds": max(0.0, time.monotonic() - started),
-            "output_tail": [line.rstrip()[-240:] for line in output[-4:]],
+            "output_tail": [line.rstrip()[-240:] for line in output[-10:]],
         })
 
     def drain_build_completions(self) -> None:
@@ -3406,7 +3408,7 @@ class DevLoop:
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
             f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
-            f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
+            f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build_id') or snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
             f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
             f"[DEV STATUS] ROOM CODE: {snapshot.get('room_code') or 'waiting for coordinator'}",
@@ -4436,7 +4438,7 @@ def _build_label(executable, artifact_id=None) -> str:
     return os.path.basename(str(executable)) or "-"
 
 
-def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
+def _recent_activity(events_path: str, limit: int = 10) -> list[str]:
     if not events_path:
         return []
     try:
@@ -4462,11 +4464,14 @@ def _recent_activity(events_path: str, limit: int = 3) -> list[str]:
         except json.JSONDecodeError:
             continue
         name = str(record.get("event", ""))
-        if not (name.startswith("dev-loop.") or name.startswith("scenario.")):
+        lowered_name = name.lower()
+        if not (name.startswith("dev-loop.") or name.startswith("scenario.")
+                or "hot" in lowered_name or "reload" in lowered_name):
             continue
         fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
         reason = str(fields.get("reason") or fields.get("message") or "")
-        found.append(f"{record.get('wall_time', '')} {name} {reason}".strip()[:140])
+        source = str(record.get("source") or "runtime")
+        found.append(f"{record.get('wall_time', '')} [{source}] {name} {reason}".strip()[:180])
         if len(found) >= limit:
             break
     return list(reversed(found))
@@ -4600,10 +4605,10 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"elapsed={DevLoop._duration_text(state.get('active_build_elapsed_seconds'))}",
         f"Build detail: {state.get('active_build_detail') or state.get('last_build_result') or '-'}",
         *[f"Build output: {line}" for line in (state.get('build_output_tail') or [])[-2:]],
-        f"Runtime  : build={state.get('running_build') or '-'}  match={state.get('builds_match')}",
+        f"Runtime  : build={state.get('running_build_id') or state.get('running_build') or '-'}  match={state.get('builds_match')}",
         f"Server   : {'alive' if server_alive else 'dead'}  pid={state.get('server_pid') or '-'}  "
         f"uptime={_duration_text(state.get('server_uptime_seconds'))}  "
-        f"build={_build_label(state.get('server_executable'), (state.get('run_metadata') or {}).get('artifact_id') or (state.get('run_metadata') or {}).get('build_number'))}  "
+        f"build={_build_label(state.get('server_executable'), (state.get('run_metadata') or {}).get('build_id') or (state.get('run_metadata') or {}).get('artifact_id') or (state.get('run_metadata') or {}).get('build_number'))}  "
         f"room={state.get('room_code') or 'waiting'}",
         f"Client   : {'alive' if client_pids else 'dead'}  pids={client_pids or '-'}  "
         f"uptime={_duration_text(state.get('client_uptime_seconds'))}",
@@ -4784,9 +4789,18 @@ def run_dashboard(args: argparse.Namespace) -> int:
                     scenario["map"] = scenario.get("map") if scenario.get("map") != "—" else latest.get("map") or "—"
                     scenario["log_usage"] = _journal_usage_text(str(latest.get("events_path") or ""))
                     runtime_alive = bool(latest.get("run_alive"))
-                    runtime_build_id = ((latest.get("run_metadata") or {}).get("build_id")
+                    run_metadata = latest.get("run_metadata") or {}
+                    runtime_identity = run_metadata.get("build_identity") or {}
+                    runtime_build_id = (latest.get("running_build_id")
+                                        or run_metadata.get("build_id")
                                         or latest.get("server_build_id")
                                         or latest.get("running_build") or "—")
+                    runtime_artifact = (run_metadata.get("artifact_id")
+                                        or runtime_identity.get("artifact_id")
+                                        or latest.get("running_build") or "—")
+                    runtime_sha256 = str(runtime_identity.get("sha256") or "—")
+                    if runtime_sha256 == "—" and ":" in str(runtime_build_id):
+                        runtime_sha256 = str(runtime_build_id).rsplit(":", 1)[-1]
                     sha256 = str(identity.get("sha256") or "—")
                     build_display = identity.get("build_id")
                     if not build_display and identity.get("build_number") is not None:
@@ -4802,6 +4816,10 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "build_id": build_display,
                         "artifact_id": artifact_display or latest.get("latest_successful_build") or "—",
                         "sha256": sha256,
+                        "identity_valid": bool(identity.get("valid")),
+                        "running_build_id": runtime_build_id,
+                        "running_artifact_id": runtime_artifact,
+                        "running_sha256": runtime_sha256,
                         "stale": bool(latest.get("latest_build_stale")),
                         "source_generation": latest.get("latest_successful_source_generation", "—"),
                         "phase": latest.get("build_status", "unknown"),
@@ -4813,6 +4831,14 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         ),
                         "build_output": latest.get("build_output_tail") or [],
                         "runtime": "RUNNING" if runtime_alive else "NOT RUNNING",
+                        "server_status": ("server ready" if latest.get("server_ready")
+                                          else "server stopped" if not latest.get("server_alive")
+                                          else "server starting"),
+                        "client_status": ("client ready" if latest.get("client_ready")
+                                          else "client stopped" if not (latest.get("client_pids") or [])
+                                          else "client starting"),
+                        "mode": latest.get("launch_mode_name") or latest.get("launch_mode") or "—",
+                        "map": latest.get("map") or "—",
                         "runtime_detail": (
                             f"build {runtime_build_id}  ·  "
                             f"server {'ready' if latest.get('server_ready') else 'not ready'} "
@@ -4826,13 +4852,23 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "scenario": scenario,
                         "journal": latest.get("events_path") or "(none)",
                         "recent": _recent_activity(str(latest.get("events_path") or "")),
+                        "source_activity": (
+                            str(latest.get("message") or "")
+                            if "source changed" in str(latest.get("message") or "").lower()
+                            else (f"source generation {latest.get('source_generation')} is newer than "
+                                  f"published generation {latest.get('latest_successful_source_generation')}"
+                                  if latest.get("latest_build_stale") else "")
+                        ),
                     }
+
+                def gui_control(action: str):
+                    fields = {"explicit_stop": True} if action == "stop" else {}
+                    accepted = control(current, action, **fields)
+                    return {"accepted": accepted, "message": view_status}
+
                 return dev_loop_gui.run(
                     gui_status,
-                    lambda action: {
-                        "accepted": control(current, action),
-                        "message": view_status,
-                    },
+                    gui_control,
                     title)
         except Exception:
             # Fall through to the terminal dashboard; a presentation failure
@@ -4916,7 +4952,7 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
         f"[DEV STATUS] mode={current.get('launch_mode')} "
         f"active_source={current.get('active_build_generation')} "
         f"elapsed={DevLoop._duration_text(current.get('active_build_elapsed_seconds'))} "
-        f"runtime_build={current.get('running_build')} "
+        f"runtime_build_id={current.get('running_build_id')} "
         f"latest_build_id={current.get('latest_successful_build_id')} "
         f"latest_artifact_id={current.get('latest_artifact_id')} "
         f"latest_source={current.get('latest_successful_source_generation')} "

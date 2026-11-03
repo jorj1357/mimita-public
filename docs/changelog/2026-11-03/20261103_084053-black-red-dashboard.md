@@ -1,0 +1,24 @@
+# Black and red responsive dev-loop dashboard
+
+- **Local time:** 2026-11-03 08:40:53 EST
+- **Branch / HEAD:** `20261011zt` / `45d82800ac923a105305facb96b155fc67c7f9f3` (`v1 of the dev loop pthon script aweosme`). No commit was created for this update.
+- **Pre-existing changes:** `devscripts/blender-ai` and an earlier `devscripts/dev-loop.py` diff were present before this update. `config/analytics.json` gained a `launch_count` increment while validation was in progress; it was left untouched because ownership of that concurrent-looking update is uncertain.
+
+## Changes
+
+- `devscripts/dev_loop_gui.py` (`_private_font`, `_artifact_key`, `run`, `make_card`, `reflow`, `refresh`, `animate_values`): replaced the 1120x680 maximized teal dashboard with a 400x500 black window, red labels/outlines, private MingLiU font loading, custom minimize/maximize/close caption, and manually resizable edges. Compact layout shows separate running/latest artifacts, ten recent build/loop lines, and launch/build controls. More space reveals full SHA-256 values and scenario/journal evidence; clicking an identity copies its full timestamp and hash. Emphasized values cycle rainbow colors over four seconds, with matching runtime/latest identities shown green. Finished `published_current` state reads `UP TO DATE` with the artifact UTC ID; invalid identity is red and does not appear current.
+- `devscripts/dev-loop.py` (`DevLoop.build_output_tail`, `_recent_activity`, `gui_status`, `gui_control`): retains ten build output lines, surfaces timestamped loop/hot-reload events and observed source-generation changes, provides separate runtime and latest build IDs/hashes/readiness/mode/map to the UI, and sends an explicit stop intent for the existing daemon stop control.
+- `docs/specs/dev-loop/dev-loop.md` §19.4 and “Native dashboard and contributor activity feed — desired”: replaced the fixed-window contract with the requested theme, responsive identity details, compact feed, and status/timer behavior.
+
+## Evidence
+
+- `python -m py_compile devscripts/dev-loop.py devscripts/dev_loop_gui.py`: passed after the final source changes.
+- `git diff --check`: passed; Git reported only LF-to-CRLF normalization notices.
+- `python devscripts/quality/agent-gate.py --no-build --skip-scenarios`: exit 0. The gate source confirms these flags omit the build and runtime scenarios; its selftests, lint gate, and JSON sync checks passed. This is not full build or scenario evidence.
+- Opened a dashboard-only sample preview and closed that process without sending controls. The window-inspection interface did not expose the custom borderless preview, so I could not visually inspect or resize it; visual acceptance remains open.
+- The live status changed during validation from run `20261103_130745` to `20261103_133923`. At the final read, the latest run was stopped, server/client PIDs were absent, and status reported `FIREWALL_PROMPT_DETECTED`; its timestamped latest artifact path was missing/invalid and had no SHA-256. Cause was not established. No game, daemon, or artifact was restarted or repaired.
+
+## Focused documentation review and open notes
+
+- Read `docs/ROUTER.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/specs/dev-loop/quality-gates.md`, `docs/specs/gui/guiv2.md`, `docs/specs/gui/gui-general.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/architecture/terminal-commands/terminal-commands.md`, `docs/operations/task-completion/task-completion.md`, and `docs/skills/gui-hardcoding-checker-v1.md`. The dashboard is a desktop status/control surface, so MiMITA in-game JSON GUI presentation rules do not own its Tk widgets.
+- Repository TODO notes were left untouched: `docs/specs/gui/guiv2.md:1` (“todo - cant press buttons”) should be reconciled with the eventual button/cursor fix; `docs/specs/gui/guiv2.md:23` should define the terminal-first shared-action architecture; `docs/specs/dev-loop/dev-loop.md:7` should replace the general “make this doc better” note with specific sections to expand; `docs/specs/dev-loop/dev-loop.md:2227` should enumerate and explain the referenced dev-loop problems; `docs/specs/weapons/tool-weapon-ideas.md:1` should explain how idea entries relate to implemented weapon contracts; `docs/specs/visuals/visuals.md:1` should state the intended player-readability direction and open choices; `docs/specs/actor-presets/actor-presets.md:264` should explain role-to-preset selection with a small example; `docs/specs/gamemodes/gamemodes.md:440` should explain the referenced mode concept or remove the historical note; `docs/architecture/player-npc-systems/npc-movement.md:22` should describe the intended NPC navigation behavior/owner; `docs/specs/terminal/terminal.md:3` should identify the missing terminal contract; and `docs/specs/weapons/weapons.md:74` should clarify the intended revolver behavior/tuning question.
