@@ -1288,6 +1288,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                          uint32_t tick, uint64_t& totalPacketsOut,
                          NpcSystem* npcSystem = nullptr);
 

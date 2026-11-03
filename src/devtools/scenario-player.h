@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -49,7 +51,7 @@ public:
 
     bool active() const { return mActive; }
     bool waitingForStart() const { return mWaitingForStart; }
-    bool schema2() const { return mSchemaVersion == ScenarioTracks::kSchemaV2; }
+    bool schema2() const { return mSchemaVersion >= ScenarioTracks::kSchemaV2; }
     const std::string& path() const { return mPath; }
     const std::string& map() const { return mMap; }
     const std::string& mode() const { return mMode; }
@@ -67,6 +69,9 @@ private:
     ScenarioPlayer() = default;
 
     bool loadLines(const std::string& path, std::string* error);
+    bool loadCanonical(const std::string& journalPath,
+                       const std::string& scenarioId,
+                       std::string* error);
     void applyRecordedEquipment(const Tick& tick);
     void finish(const char* reason);
     void fail(const std::string& reason);
@@ -86,11 +91,14 @@ private:
     int mSavedMaxFrames = 0;
     std::string mFailureReason;
     std::string mPath;
+    std::string mScenarioId;
     std::string mMap;
     std::string mMode;
     int mWeaponSet = 0;
     StartState mStart;
     std::vector<Tick> mTicks;
+    std::map<uint32_t, Tick> mCheckpointLocal;
+    std::set<uint32_t> mAppliedCheckpoints;
     std::vector<ScenarioTracks::MeleeRevision> mRevisions;
     InputFrame mNeutral;
     InputFrame mCurrent;

@@ -86,6 +86,103 @@ glm::vec3 jsonVec3(const nlohmann::json& value)
                      value[2].get<float>());
 }
 
+namespace {
+
+nlohmann::json inputStateJson(const InputState& input)
+{
+    return {
+        {"wish", {input.wishMoveXY.x, input.wishMoveXY.y}},
+        {"jump_held", input.jumpHeld},
+        {"jump_pressed", input.jumpPressed},
+        {"dash_pressed", input.dashPressed},
+        {"down_dash_pressed", input.downDashPressed},
+        {"freeze_held", input.freezeHeld},
+        {"freeze_pressed", input.freezePressed},
+        {"crouch_held", input.crouchHeld},
+        {"interact_held", input.interactHeld},
+        {"movement_pressed", input.movementPressed},
+        {"movement_just_pressed", input.movementJustPressed},
+        {"movement_held_duration", input.movementHeldDuration},
+        {"cam_forward", vec3Json(input.camForward)}
+    };
+}
+
+InputState parseInputState(const nlohmann::json& value)
+{
+    InputState input;
+    if (!value.is_object())
+        return input;
+    if (value.contains("wish") && value["wish"].is_array() &&
+        value["wish"].size() >= 2)
+        input.wishMoveXY = glm::vec2(value["wish"][0].get<float>(),
+                                     value["wish"][1].get<float>());
+    input.jumpHeld = value.value("jump_held", false);
+    input.jumpPressed = value.value("jump_pressed", false);
+    input.dashPressed = value.value("dash_pressed", false);
+    input.downDashPressed = value.value("down_dash_pressed", false);
+    input.freezeHeld = value.value("freeze_held", false);
+    input.freezePressed = value.value("freeze_pressed", false);
+    input.crouchHeld = value.value("crouch_held", false);
+    input.interactHeld = value.value("interact_held", false);
+    input.movementPressed = value.value("movement_pressed", false);
+    input.movementJustPressed = value.value("movement_just_pressed", false);
+    input.movementHeldDuration = value.value("movement_held_duration", 0.0f);
+    input.camForward = jsonVec3(value.value("cam_forward", nlohmann::json::array()));
+    return input;
+}
+
+nlohmann::json contactJson(const ContactEvidence& contact)
+{
+    return {
+        {"contact_id", contact.contactId},
+        {"source_event_id", contact.sourceEventId},
+        {"source_entity_id", contact.sourceEntityId},
+        {"target_entity_id", contact.targetEntityId},
+        {"surface_id", contact.surfaceId},
+        {"world_triangle", contact.worldTriangle},
+        {"solid_id", contact.solidId},
+        {"material_id", contact.materialId},
+        {"actor_part", contact.actorPart},
+        {"kind", contact.kind},
+        {"source", contact.source},
+        {"shape", contact.shape},
+        {"subshape", contact.subshape},
+        {"point", vec3Json(contact.point)},
+        {"normal", vec3Json(contact.normal)},
+        {"sweep_velocity", vec3Json(contact.sweepVelocity)},
+        {"surface_velocity", vec3Json(contact.surfaceVelocity)},
+        {"penetration_m", contact.penetration}
+    };
+}
+
+ContactEvidence parseContact(const nlohmann::json& value)
+{
+    ContactEvidence contact;
+    contact.contactId = value.value("contact_id", 0ull);
+    contact.sourceEventId = value.value("source_event_id", 0ull);
+    contact.sourceEntityId = value.value("source_entity_id", 0u);
+    contact.targetEntityId = value.value("target_entity_id", 0u);
+    contact.surfaceId = value.value("surface_id", 0u);
+    contact.worldTriangle = value.value("world_triangle", 0u);
+    contact.solidId = value.value("solid_id", 0u);
+    contact.materialId = value.value("material_id", 0u);
+    contact.actorPart = value.value("actor_part", "");
+    contact.kind = value.value("kind", 0);
+    contact.source = value.value("source", 0);
+    contact.shape = value.value("shape", 0);
+    contact.subshape = value.value("subshape", 0);
+    contact.point = jsonVec3(value.value("point", nlohmann::json::array()));
+    contact.normal = jsonVec3(value.value("normal", nlohmann::json::array()));
+    contact.sweepVelocity =
+        jsonVec3(value.value("sweep_velocity", nlohmann::json::array()));
+    contact.surfaceVelocity =
+        jsonVec3(value.value("surface_velocity", nlohmann::json::array()));
+    contact.penetration = value.value("penetration_m", 0.0f);
+    return contact;
+}
+
+} // namespace
+
 nlohmann::json actorStateJson(const ActorState& state)
 {
     nlohmann::json parts = nlohmann::json::array();
@@ -95,6 +192,9 @@ nlohmann::json actorStateJson(const ActorState& state)
                          {"c", vec3Json(part.center)},
                          {"h", vec3Json(part.half)}});
     }
+    nlohmann::json contacts = nlohmann::json::array();
+    for (const ContactEvidence& contact : state.contacts)
+        contacts.push_back(contactJson(contact));
     nlohmann::json shape = nullptr;
     if (state.shape.valid)
     {
@@ -111,6 +211,8 @@ nlohmann::json actorStateJson(const ActorState& state)
         {"k", state.kind},
         {"p", vec3Json(state.position)},
         {"v", vec3Json(state.velocity)},
+        {"pp", vec3Json(state.previousPosition)},
+        {"pv", vec3Json(state.previousVelocity)},
         {"a", vec3Json(state.aim)},
         {"yaw", state.yaw},
         {"size", state.sizeScale},
@@ -119,6 +221,8 @@ nlohmann::json actorStateJson(const ActorState& state)
         {"team", state.team},
         {"dead", state.dead},
         {"ground", state.grounded},
+        {"stable_ground", state.stableGrounded},
+        {"world_contact", state.hasWorldContact},
         {"gen", state.spawnGeneration},
         {"epoch", state.transformEpoch},
         {"weapon", state.weaponId},
@@ -129,6 +233,19 @@ nlohmann::json actorStateJson(const ActorState& state)
         {"astart", state.actionStartTick},
         {"aphase", state.actionPhaseTick},
         {"next", state.nextAllowedTick},
+        {"input", state.hasInput ? inputStateJson(state.input) : nlohmann::json(nullptr)},
+        {"collision_backend", state.collisionBackend},
+        {"collision_fallback", state.collisionFallbackReason},
+        {"root_containment", state.rootContainment},
+        {"max_penetration_m", state.maxPenetration},
+        {"containment_stage", state.containmentStage},
+        {"npc_state", state.npcState},
+        {"npc_rng", state.npcRngState},
+        {"npc_dash_cd", state.npcDashCooldown},
+        {"npc_down_dash_cd", state.npcDownDashCooldown},
+        {"npc_jump_cd", state.npcJumpCooldown},
+        {"npc_attack_cd", state.npcAttackCooldown},
+        {"contacts", std::move(contacts)},
         {"parts", std::move(parts)},
         {"shape", std::move(shape)}
     };
@@ -141,6 +258,8 @@ ActorState parseActorState(const nlohmann::json& value)
     state.kind = value.value("k", "");
     state.position = jsonVec3(value.value("p", nlohmann::json::array()));
     state.velocity = jsonVec3(value.value("v", nlohmann::json::array()));
+    state.previousPosition = jsonVec3(value.value("pp", nlohmann::json::array()));
+    state.previousVelocity = jsonVec3(value.value("pv", nlohmann::json::array()));
     state.aim = jsonVec3(value.value("a", nlohmann::json::array()));
     state.yaw = value.value("yaw", 0.0f);
     state.sizeScale = value.value("size", 1.0f);
@@ -149,6 +268,8 @@ ActorState parseActorState(const nlohmann::json& value)
     state.team = value.value("team", -1);
     state.dead = value.value("dead", false);
     state.grounded = value.value("ground", false);
+    state.stableGrounded = value.value("stable_ground", false);
+    state.hasWorldContact = value.value("world_contact", false);
     state.spawnGeneration = value.value("gen", 0u);
     state.transformEpoch = static_cast<uint16_t>(value.value("epoch", 0u));
     state.weaponId = value.value("weapon", "");
@@ -159,6 +280,23 @@ ActorState parseActorState(const nlohmann::json& value)
     state.actionStartTick = value.value("astart", 0u);
     state.actionPhaseTick = value.value("aphase", 0);
     state.nextAllowedTick = value.value("next", 0u);
+    state.hasInput = value.contains("input") && value["input"].is_object();
+    if (state.hasInput)
+        state.input = parseInputState(value["input"]);
+    state.collisionBackend = value.value("collision_backend", "");
+    state.collisionFallbackReason = value.value("collision_fallback", "");
+    state.rootContainment = value.value("root_containment", 0);
+    state.maxPenetration = value.value("max_penetration_m", 0.0f);
+    state.containmentStage = value.value("containment_stage", "");
+    state.npcState = value.value("npc_state", -1);
+    state.npcRngState = value.value("npc_rng", 1u);
+    state.npcDashCooldown = value.value("npc_dash_cd", 0.0f);
+    state.npcDownDashCooldown = value.value("npc_down_dash_cd", 0.0f);
+    state.npcJumpCooldown = value.value("npc_jump_cd", 0.0f);
+    state.npcAttackCooldown = value.value("npc_attack_cd", 0.0f);
+    if (value.contains("contacts") && value["contacts"].is_array())
+        for (const auto& contact : value["contacts"])
+            state.contacts.push_back(parseContact(contact));
     if (value.contains("parts") && value["parts"].is_array())
     {
         for (const auto& part : value["parts"])

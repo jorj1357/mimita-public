@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -27,6 +28,27 @@ Npc* findNpc(NpcSystem& npcSystem, uint32_t id)
     return nullptr;
 }
 
+std::vector<std::filesystem::path> journalSegments(
+    const std::filesystem::path& journal)
+{
+    std::vector<std::filesystem::path> sealed;
+    std::error_code ec;
+    const auto dir = journal.parent_path();
+    for (std::filesystem::directory_iterator it(dir, ec), end; it != end;
+         it.increment(ec))
+    {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const std::string name = it->path().filename().string();
+        if (name.rfind("events-", 0) == 0 &&
+            name.size() > 12 && name.substr(name.size() - 6) == ".jsonl")
+            sealed.push_back(it->path());
+    }
+    std::sort(sealed.begin(), sealed.end());
+    sealed.push_back(journal);
+    return sealed;
+}
+
 } // namespace
 
 ScenarioServerPlayback& ScenarioServerPlayback::instance()
@@ -37,7 +59,35 @@ ScenarioServerPlayback& ScenarioServerPlayback::instance()
 
 bool ScenarioServerPlayback::load(const std::string& path, std::string* error)
 {
+    if (path.size() >= 5 && path.substr(path.size() - 5) == ".json")
+    {
+        std::ifstream definitionIn(path);
+        if (!definitionIn.is_open())
+        {
+            if (error) *error = "cannot_open_scenario_definition";
+            return false;
+        }
+        nlohmann::json definition;
+        try
+        {
+            definitionIn >> definition;
+        }
+        catch (const std::exception&)
+        {
+            if (error) *error = "invalid_scenario_definition";
+            return false;
+        }
+        const std::string journal = definition.value("journal", "");
+        const std::string scenarioId = definition.value("scenario_id", "");
+        if (journal.empty() || scenarioId.empty())
+        {
+            if (error) *error = "scenario_definition_missing_journal_or_id";
+            return false;
+        }
+        return loadCanonical(journal, scenarioId, error);
+    }
     mServerTicks.clear();
+    mScenarioId.clear();
     mIdentities.clear();
     mRevisions.clear();
     mLocalPlayerTrack.clear();
@@ -156,6 +206,120 @@ bool ScenarioServerPlayback::load(const std::string& path, std::string* error)
                             mLocalPlayerId = static_cast<uint32_t>(
                                 std::stoul(actor.trackId.substr(colon + 1)));
                     }
+                    break;
+                }
+    }
+    if (mLocalPlayerTrack.empty())
+    {
+        if (error) *error = "missing_local_player_track";
+        return false;
+    }
+    return true;
+}
+
+bool ScenarioServerPlayback::loadCanonical(const std::string& journalPath,
+                                           const std::string& scenarioId,
+                                           std::string* error)
+{
+    mServerTicks.clear();
+    mScenarioId = scenarioId;
+    mCheckpoints.clear();
+    mAppliedCheckpoints.clear();
+    mIdentities.clear();
+    mRevisions.clear();
+    mLocalPlayerTrack.clear();
+    mLocalPlayerId = 0;
+    mFirstTrackTick = 0;
+    mLastTrackTick = 0;
+
+    bool sawHeader = false;
+    for (const auto& segment : journalSegments(journalPath))
+    {
+        std::ifstream in(segment);
+        if (!in.is_open())
+            continue;
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.empty())
+                continue;
+            nlohmann::json value;
+            try
+            {
+                value = nlohmann::json::parse(line);
+            }
+            catch (const std::exception&)
+            {
+                continue; // live journal tail can be mid-write
+            }
+            const std::string event = value.value("event", "");
+            if (!value.contains("fields") || !value["fields"].is_object())
+                continue;
+            const auto& fields = value["fields"];
+            if (fields.value("scenario_id", "") != scenarioId)
+                continue;
+            if (event == "scenario.record.started")
+            {
+                sawHeader = true;
+                mMap = fields.value("map", "");
+                mMode = fields.value("mode", "");
+                mWeaponSet = fields.value("weapon_set", 0);
+                mLocalPlayerId = fields.value("local_player_id", 0u);
+                if (mLocalPlayerId != 0)
+                    mLocalPlayerTrack = "player:" + std::to_string(mLocalPlayerId);
+                if (fields.contains("start") && fields["start"].is_object())
+                {
+                    // Start restoration is explicit; generation/epoch are
+                    // comparison context, not a gate that prevents replaying a
+                    // human recording after a live respawn.
+                    mStartSpawnGeneration = 0;
+                    mStartTransformEpoch = 0;
+                }
+            }
+            else if (event == "scenario.record.tick")
+            {
+                const uint32_t tick = fields.value("server_tick", 0u);
+                if (tick == 0 || !fields.contains("actors") ||
+                    !fields["actors"].is_array())
+                    continue;
+                if (mFirstTrackTick == 0 || tick < mFirstTrackTick)
+                    mFirstTrackTick = tick;
+                mLastTrackTick = std::max(mLastTrackTick, tick);
+                std::vector<ScenarioTracks::ActorState> states;
+                for (const auto& actor : fields["actors"])
+                    states.push_back(ScenarioTracks::parseActorState(actor));
+                mServerTicks[tick] = std::move(states);
+            }
+            else if (event == "scenario.record.checkpoint")
+            {
+                const uint32_t tick = fields.value("server_tick", 0u);
+                if (tick == 0 || !fields.contains("actors") ||
+                    !fields["actors"].is_array())
+                    continue;
+                std::vector<ScenarioTracks::ActorState> states;
+                for (const auto& actor : fields["actors"])
+                    states.push_back(ScenarioTracks::parseActorState(actor));
+                mCheckpoints[tick] = std::move(states);
+            }
+        }
+    }
+    if (!sawHeader)
+    {
+        if (error) *error = "scenario_canonical_header_missing";
+        return false;
+    }
+    if (mServerTicks.empty())
+    {
+        if (error) *error = "scenario_canonical_no_ticks";
+        return false;
+    }
+    if (mLocalPlayerTrack.empty())
+    {
+        for (const auto& entry : mServerTicks)
+            for (const auto& actor : entry.second)
+                if (actor.kind == "player")
+                {
+                    mLocalPlayerTrack = actor.trackId;
                     break;
                 }
     }
@@ -296,7 +460,7 @@ bool ScenarioServerPlayback::prepare(
         "scenario.playback.server_ready", "scenario-server-playback",
         "authoritative target proxies prepared from the recorded track",
         mFirstTrackTick,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"proxy_count", mProxies.size()},
                        {"first_track_tick", mFirstTrackTick},
                        {"last_track_tick", mLastTrackTick},
@@ -348,7 +512,7 @@ bool ScenarioServerPlayback::begin(
         StructuredCategory::General, StructuredLevel::Important,
         "scenario.playback.server_began", "scenario-server-playback",
         "authoritative proxy track started", serverTick,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"server_tick", serverTick},
                        {"first_track_tick", mFirstTrackTick},
                        {"proxy_count", mProxies.size()}},
@@ -409,13 +573,28 @@ bool ScenarioServerPlayback::applyActor(
         npc->avatarName = proxy.avatar;
     npc->body.username = proxy.name.empty() ? state.trackId : proxy.name;
     npc->body.isNpcActor = true;
-    npc->body.pos = state.position;
-    npc->body.vel = state.velocity;
-    npc->body.yaw = state.yaw;
-    npc->body.ground.onGround = state.grounded;
-    npc->body.ground.stableOnGround = state.grounded;
+    npc->replayUseRecordedIntent = state.hasInput;
+    npc->hasReplayInput = state.hasInput;
+    if (state.hasInput)
+        npc->replayInput = state.input;
+    // Intent replay must not force the recorded transform onto the actor whose
+    // collision response is under test. Only the initial state is restored.
+    if (firstApply || !state.hasInput)
+    {
+        npc->body.pos = state.position;
+        npc->body.vel = state.velocity;
+        npc->body.yaw = state.yaw;
+        npc->body.ground.onGround = state.grounded;
+        npc->body.ground.stableOnGround = state.grounded;
+    }
     npc->body.sizeScale = state.sizeScale;
     npc->body.matchTeam = state.team;
+    if (state.npcRngState != 0)
+        npc->rngState = state.npcRngState;
+    npc->dashCooldown = state.npcDashCooldown;
+    npc->downDashCooldown = state.npcDownDashCooldown;
+    npc->jumpCooldown = state.npcJumpCooldown;
+    npc->attackCooldown = state.npcAttackCooldown;
     npc->transformEpoch = state.transformEpoch != 0
         ? state.transformEpoch : npc->transformEpoch;
     npc->body.equippedWeaponId = state.weaponId;
@@ -430,13 +609,16 @@ bool ScenarioServerPlayback::applyActor(
         (mActive ? mPlaybackStartServerTick : mFirstTrackTick) + actionOffset;
     (void)actionStart;
     npc->replayBodyParts.clear();
-    for (const auto& part : state.bodyParts)
+    if (!state.hasInput)
     {
-        Npc::ReplayBodyPart replay;
-        replay.name = part.name;
-        replay.center = part.center;
-        replay.half = part.half;
-        npc->replayBodyParts.push_back(std::move(replay));
+        for (const auto& part : state.bodyParts)
+        {
+            Npc::ReplayBodyPart replay;
+            replay.name = part.name;
+            replay.center = part.center;
+            replay.half = part.half;
+            npc->replayBodyParts.push_back(std::move(replay));
+        }
     }
     npc->hasReplayWeaponShape = state.shape.valid;
     npc->replayBladePreviousA = state.shape.previousA;
@@ -536,6 +718,54 @@ void ScenarioServerPlayback::tick(
             mProxies[state.trackId] = proxy;
         }
     }
+    auto checkpointIt = mCheckpoints.find(trackTick);
+    if (checkpointIt != mCheckpoints.end() &&
+        mAppliedCheckpoints.insert(trackTick).second)
+    {
+        nlohmann::json before = nlohmann::json::array();
+        for (const auto& entry : mProxies)
+        {
+            Npc* npc = findNpc(npcSystem, entry.second.proxyId);
+            if (npc)
+                before.push_back({{"track", entry.first},
+                                  {"position", {npc->body.pos.x, npc->body.pos.y,
+                                                npc->body.pos.z}},
+                                  {"velocity", {npc->body.vel.x, npc->body.vel.y,
+                                                npc->body.vel.z}}});
+        }
+        nlohmann::json after = nlohmann::json::array();
+        for (const auto& state : checkpointIt->second)
+        {
+            if (state.trackId == mLocalPlayerTrack)
+                continue;
+            auto proxyIt = mProxies.find(state.trackId);
+            if (proxyIt == mProxies.end())
+                continue;
+            applyActor(proxyIt->second, state, npcSystem, serverTick, true);
+            Npc* npc = findNpc(npcSystem, proxyIt->second.proxyId);
+            if (npc)
+                after.push_back({{"track", state.trackId},
+                                 {"position", {npc->body.pos.x, npc->body.pos.y,
+                                               npc->body.pos.z}},
+                                 {"velocity", {npc->body.vel.x, npc->body.vel.y,
+                                               npc->body.vel.z}}});
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "scenario.replay.restore", "scenario-server-playback",
+            "restored recorded checkpoint after judging the preceding segment",
+            serverTick,
+            nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
+                           {"track_tick", trackTick},
+                           {"server_tick", serverTick},
+                           {"before", std::move(before)},
+                           {"after", std::move(after)},
+                           {"local_player_restore", "client_owned"},
+                           {"restored_components", {"actors", "npc_ai", "rng"}},
+                           {"unrestored_components", {"world_mutable", "projectiles"}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     for (auto& entry : mProxies)
     {
         Proxy& proxy = entry.second;
@@ -546,6 +776,8 @@ void ScenarioServerPlayback::tick(
             continue;
         }
         applyActor(proxy, *state, npcSystem, serverTick, false);
+        if (state->hasInput)
+            continue;
         const glm::vec3 expected = state->position;
         Npc* npc = findNpc(npcSystem, proxy.proxyId);
         if (npc && glm::distance(npc->body.pos, expected) > 0.01f)
@@ -586,7 +818,7 @@ void ScenarioServerPlayback::stop(const char* reason, NpcSystem& npcSystem)
                       : "scenario.playback.server_stopped",
             "scenario-server-playback",
             "authoritative scenario proxy track stopped", 0,
-            nlohmann::json{{"path", mPath},
+            nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                            {"reason", reason ? reason : "unknown"},
                            {"was_active", wasActive}},
             __FILE__, __LINE__, __FUNCTION__);

@@ -7,6 +7,11 @@
 
   "default_level": "off",
 
+  "storage_limits": {
+    "per_segment_bytes": 100000000,
+    "total_log_tree_bytes": 1000000000
+  },
+
   "categories": {
     "general": { "level": "important", "file_output": false },
     "glb": { "level": "off", "file_output": false },

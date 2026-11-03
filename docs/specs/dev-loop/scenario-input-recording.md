@@ -6,10 +6,18 @@ Record the local player's per-tick input while playing, then replay that input
 through the same fixed-tick gameplay path to investigate movement, dashing,
 weapon collisions, seams, edges, and other physics changes.
 
-This is input playback, not a full deterministic world replay. NPC state,
-remote players, and server corrections can differ between the recording and
-playback runs. Run playback on the same map, mode, weapon set, and local dev
-server when comparing collision behavior.
+The current implementation is input playback with partial actor tracks. The
+target for collision debugging is a human-recorded runtime regression that can
+be replayed through the real movement/collision path, measured in the canonical
+`events.jsonl` journals, and restored at reviewed checkpoints. Current behavior
+and compatibility details later in this document are explicitly labeled; they
+do not weaken the target contract below.
+
+The expected physical behavior remains owned by
+`docs/architecture/collision/collision.md` and
+`docs/specs/movement/movement.md`; this document specifies how human-observed
+failures are recorded, replayed, and judged. NPCs and human-driven actors use
+the shared server movement/collision path, with input source as the distinction.
 
 ## Commands
 
@@ -32,16 +40,215 @@ scenario_stop
 Recording and playback are mutually exclusive. Recording is rejected during
 visual replay or playback. Playback is rejected during recording.
 
-## File location and naming
+## Current recording storage
 
-Recordings are local-only and live under:
+Implementation status 2026-11-02: new recordings also write canonical
+`scenario.record.started`, `scenario.record.client_tick`,
+`scenario.record.tick`, `scenario.record.checkpoint`, and completion/invalid
+events through `StructuredLogger`. The client and server share one journal in
+the dev loop; process role, scenario ID, and tick identities correlate them.
+The legacy per-scenario JSONL file is still written as a local playback
+artifact, but the canonical journal is the authoritative evidence.
+
+Current local recordings live under:
 
 ```text
 devscripts/scenarios/user/scenario-YYYYMMDD_HHMMSS[-name].jsonl
 ```
 
 `devscripts/scenarios/user/*.jsonl` is gitignored. To keep a recording as a
-regression, move it out of `user/` and reference it from a checked-in scenario.
+regression, define a scenario definition JSON that references the canonical
+journal and scenario ID:
+
+```json
+{"journal":"logs/2026-11-02/20261102_162354/events.jsonl",
+ "scenario_id":"scn-20261102_162440-27460-quick",
+ "require_checkpoint":true}
+```
+
+`scenario_play <definition.json>` loads the canonical recording. Older schema
+1/2 `.jsonl` recordings remain readable.
+
+## Single-journal collision recording target
+
+Collision recording and playback must use the process's canonical
+`events.jsonl` through `StructuredLogger`; do not add a second per-scenario
+event file or another collision log sink. Client and authoritative server
+processes keep their own canonical journals, linked by run, scenario, process,
+actor, and tick identities. A scenario recording begins and ends with
+`scenario.record.started` and `scenario.record.stopped` boundaries. Every
+captured event carries a `scenario_id`/recording identity so the analyzer can
+select that run's evidence from the ordinary journal. Preserve the exact
+journal path, rotated segment, line, event ID, server tick, and actor identity
+when reporting a failure; a line number without run and event identity is not
+stable evidence.
+
+The `\\` bookmark action remains a human annotation control. During an active
+scenario it associates the bookmark with the recording ID, current scenario
+frame, server/client tick, actor IDs, and canonical journal locations. It must
+show a visible notification containing the bookmark/scenario identity and
+journal location, then return directly to gameplay without opening a text
+prompt. Outside scenario recording, it may continue to create an ordinary
+runtime bookmark. Keep bookmarked collision recordings until a human
+explicitly removes them. When journal quota is exhausted, do not prune a
+bookmarked run to make room.
+
+The human-selected scenario definition may identify a recording by run ID and
+event range, but it must not duplicate the telemetry into another log. Do not
+have AI invent collision scenarios for the initial implementation. A human
+records and names the real failure; AI replays it, evaluates the stated
+invariants, and reports the evidence. AI may suggest additional cases for
+human review later.
+
+### Detailed per-tick collision capture
+
+Scenario capture is the high-detail mode. It records every fixed server tick
+for every relevant actor and dynamic collision object, even when no anomaly is
+detected. At minimum, reconstruct the following state for each actor tick:
+
+- stable scenario track ID plus current entity/player ID, actor kind, spawn
+  generation, role/preset, team, and weapon-set identity;
+- player origin/root position, orientation/look direction, velocity, movement
+  intent and accepted input (including primary/secondary held state), alive/HP
+  state, equipped weapon, and whether an attack was actually accepted;
+- selected collision backend and fallback reason, grounded/world-support
+  state, position and velocity before/after the solve, and collision correction;
+- final body-part/limb transforms or collision-mesh bounds, held-weapon bounds,
+  and each actual actor-triangle/world-triangle contact with actor part and
+  triangle IDs, world triangle/solid IDs, point, normal, penetration, and
+  response;
+- separate root containment, body-part contact/penetration, actor-pair contact,
+  and recovery results. Do not collapse them into one `inside` boolean.
+
+Record stable role, preset, weapon-set, and loadout facts when the actor spawns
+or those facts change; include their stable IDs in each tick row so state is
+reconstructible without repeating large unchanged definitions. Record each
+grenade and other dynamic collision object per tick with stable identity, kind,
+transform, velocity, physics state, fuse/lifetime, and contacts/impacts. Record
+map identity and collision-mesh revision in the scenario header.
+
+Root-in-solid and limb-contact results must distinguish `inside`, `outside`,
+and `unknown`. `outside` is valid only when the queried geometry is a recognized
+closed solid with trustworthy solid identity. A point with no matching solid
+ID, an open/decorative surface, or missing collision geometry is `unknown`,
+not proof of being outside. For a body part, report actual mesh/world contacts
+and containment classification separately; lack of a triangle intersection
+does not prove an entire limb is outside an enclosing solid.
+
+Capture every-tick detail only in the human-recorded scenario mode initially.
+It may reduce wall-clock throughput, but it must retain the fixed 60 Hz
+simulation tick and must never silently drop rows. Record capture overhead and
+logger drop/quota status. If the journal cannot keep the complete capture, mark
+the scenario run incomplete/invalid rather than passing it. Normal live play
+uses always-on low-cost anomaly monitors and event-triggered context; broad
+all-actor per-tick logging can be considered after its cost and journal limits
+are measured.
+
+The recorded actor is a server gameplay actor regardless of whether its input
+came from a human or NPC decision. Human and NPC intents must reach the same
+authoritative movement/collision path; do not create fake network clients for
+NPCs. For all relevant actors, the per-tick trace includes stable track and
+runtime IDs, spawn generation, actor kind, origin, orientation/look, velocity,
+accepted input/intent, equipped item and loadout identity, role/preset/team,
+health/alive state, action/attack acceptance, collision backend, support,
+body/limb transforms or bounds, actual triangle contacts, and separate
+root/body containment outcomes. Grenades and other dynamic collision objects
+receive equivalent identity, transform, velocity, physics, fuse/lifetime, and
+contact records. Record values needed to reconstruct a tick, not just a summary
+of the expected failure.
+
+### Human bookmarks and checkpoint restore
+
+A bookmark is a restore-after checkpoint, not a point that skips the recorded
+failure immediately before it. Replay naturally simulates the segment from the
+previous checkpoint through the bookmark, compares and records its evidence,
+then restores the complete recorded authoritative gameplay state at that
+bookmark and continues. Never teleport the actor back on every divergent tick.
+Emit `scenario.checkpoint.restored` with checkpoint/frame/tick, restored entity
+and world-state counts, and verification result. A checkpoint must cover all
+relevant authoritative state needed for the next segment: actors and their
+movement/action state, dynamic collision objects, world changes, and required
+random-generator state. If any required state cannot be captured or restored,
+mark the next segment non-comparable instead of claiming deterministic replay.
+
+The replay must not stop merely because position differs from the reference.
+It records expected/actual position, velocity, support, contacts, and
+containment, continues through the current checkpoint to expose the whole
+failure, then restores at that checkpoint. Preserve pre-restore divergence
+evidence and label post-restore frames as a new aligned segment. A missing or
+failed checkpoint restore invalidates later comparisons but does not erase
+already captured evidence.
+
+Scenario completion is event-driven: process the recording through its final
+event and finish. Do not use an elapsed-time scenario timeout. A hung run stays
+pending until an explicit stop or process failure; do not convert elapsed time
+into a gameplay verdict. A finite recording end is a completion event.
+
+### Capture integrity and retention
+
+The logger must report whether every required scenario record was accepted and
+written. If a write, rotation, quota reservation, checkpoint, or required state
+capture fails, stop the capture cleanly, mark it incomplete/invalid, and show
+the reason in the runtime journal and dev-loop status. Never silently drop a
+required per-tick row or turn an incomplete trace into a pass. Retain
+bookmarked scenario evidence until explicit human removal. Log segment and
+tree byte limits come from `config/debuglogger.json`; the defaults are
+100,000,000 bytes per segment and 1,000,000,000 bytes for the logs tree. These
+are decimal byte counts. Configuration belongs in JSON, not the dashboard.
+
+### Replay and comparison behavior
+
+For collision diagnosis, replay recorded inputs or accepted movement intents
+through the normal authoritative movement/collision path. Replay recorded NPC
+decision outputs as intents when necessary to avoid waiting for variable NPC
+navigation to rediscover the same event. Do not force recorded positions,
+velocities, or collision results onto actors whose collision response is under
+test.
+
+At each recorded input tick, compare the actual state to the captured reference
+and emit divergence events with expected/actual values. Collision replay must
+continue after position divergence through the next bookmark or recording end
+to finish gathering evidence; it must never snap the actor back to the recorded
+path during that segment. Results after a large spatial divergence are marked
+unaligned with the original geometry and cannot count as proof that later
+contacts were reproduced. The checkpoint restore is the only replay snap-back.
+
+Compare by scenario-relative input frame and stable actor track ID, while also
+recording the current authoritative server tick and runtime entity ID. Replay
+must restore or verify the relevant map/collision revision, mode, loadout,
+actor spawns, and random seeds before calling the run comparable. If the start
+state cannot be matched, report `NOT_REPRODUCED` instead of judging the fix.
+At the frame where the human observed the issue, evaluate the reviewed
+invariants (for example, expected speed retention, no unexpected support loss,
+and no confirmed penetration). A changed trajectory in the desired direction
+is evidence, but it is not an automatic pass. Later frames may be spatially
+unaligned after a successful correction; report them separately rather than
+forcing positional equality or treating the useful divergence as a failure.
+
+Current playback does not snap the player back: it stops when position error
+exceeds 2 m. Raising that threshold alone would only move the stop point; it
+would not improve replay or correct the actor's position. The diagnostic
+continue mode above is a separate target behavior.
+
+The first validation priority is the human-recorded failure on its reported
+map and geometry, not random map selection or an AI navigation soak. Add other
+human-recorded failing cases as separate scenarios over time. One scenario may
+bundle multiple failures only when the starting state and route make their
+results independently attributable.
+
+TAS-style save states, pause/step, and wall-clock speed controls may help restore
+complex initial conditions later. They are optional future work, not a
+requirement for the first reliable human-recorded collision replay. Simulation
+logic remains fixed at 60 Hz even when scenario playback runs slower in wall
+time.
+
+## Legacy format and current storage (compatibility only)
+
+The format, schema, separate scenario files, sidecars, and merged files in the
+remainder of this document describe the legacy implementation and existing
+recordings. They are retained for compatibility; new collision recording must
+follow the single-journal target above. Do not describe legacy transform-follow
+playback as collision re-simulation.
 
 ## Format
 
@@ -154,11 +361,25 @@ runner must not suppress evidence globally.
 
 ### Automated baseline runs
 
-Known-good scenarios are versioned with expected event/metric ranges. AI runs
-the scenario on the real executable and compares the current `events.jsonl`
-against the baseline. A scenario fails when a forbidden event appears, a required
-event disappears, or a bounded metric falls outside its accepted range. Baseline
-updates are deliberate and must be justified in the scenario and changelog.
+For collision debugging, baselines begin as human-recorded real failures and
+human-reviewed expected results. AI runs those recordings on the real
+executable and compares the current canonical journal against the captured
+reference and explicit invariants. AI does not invent collision routes for the
+initial implementation. A replay fails when a forbidden event appears, a
+required capture is missing, or a metric is outside its accepted range. A
+change in behavior is evidence to inspect, not automatically a fix; the first
+failure tick and all later unaligned state must be reported. Baseline changes
+are deliberate and reviewed.
+
+Each iteration records the scenario/recording ID, source revision, executable
+build ID, run ID, iteration number, initial-state match result, first failure
+tick, expected/actual metric values, and the canonical journal path plus event
+identity. AI repeats the same human recording after a candidate change and
+reports each attempt in order (for example, still failing, changed failure, or
+all required checks passed). A pass requires complete capture and matched
+starting conditions; if repeated runs disagree, report the variation instead
+of claiming a stable fix. Human review follows as soon as a candidate meets the
+recorded invariants.
 
 ### Recording finalization and headless soak
 
@@ -167,10 +388,12 @@ collision investigation must not accept a client-only partial file as complete
 evidence. The recorder must either finalize automatically at the configured
 limit/exit path or mark the file explicitly as incomplete.
 
-Headless soak scenarios may run without human input. They must launch on a
-dev-loop-owned server, run for a bounded duration, and assert forbidden events
-such as unresolved NPC penetration or downward recovery beyond the allowed
-distance.
+Headless soak runs are optional supplemental coverage, not a replacement for a
+human-recorded failure. Collision debugging runs finish on a decisive scenario
+event, completion of the recorded input, or explicit stop; elapsed duration is
+not a pass/fail condition. If required events never arrive, leave the run
+pending until explicit stop or process failure and report that no verdict was
+observed.
 
 ## Recording behavior
 
@@ -217,6 +440,13 @@ distance.
   `scenario.playback.failed` reports readiness, track, or divergence failure.
   `scenario.playback.stopped` remains the user-cancel event.
 
+The readiness timeout and recording length cap above describe the current
+implementation. The requested collision-debugging workflow does not use a
+fixed elapsed-time timeout as a result: it waits for readiness/completion
+events, an explicit stop, or process failure. Any storage/resource cap must
+mark a recording incomplete rather than silently presenting a partial capture
+as a valid scenario.
+
 ### Collision re-simulation requirement
 
 The current schema 2 server playback follows recorded actor transforms for
@@ -236,9 +466,10 @@ The desired server-side collision recording captures per fixed tick: actor
 identity/lifecycle; accepted input or movement intent; position and velocity
 before and after movement; world-support/grounded state; collision backend;
 contact IDs, normals, and penetration; and containment/recovery result. Compare
-the replay result with the human recording and stop at the first unexplained
-divergence while preserving the recent tick window. This replay is a focused
-check of a known route; it does not replace unscripted live gameplay.
+the replay result with the human recording, continue through the next bookmark
+or recording end after divergence, and preserve the complete tick window. This
+replay is a focused check of a known route; it does not replace unscripted live
+gameplay.
 
 ## Structured events
 
@@ -272,6 +503,11 @@ A scenario can use a first-class playback step:
   "timeout_seconds": 120
 }
 ```
+
+This is the current runner format. The requested collision-debugging runner
+must not require `timeout_seconds` for scenario completion; it terminates on
+the matching completion/failure event, full recorded input consumption, or
+explicit stop/process failure.
 
 The runner reads the recording header before launch, uses its map and weapon
 set, ensures a live ready client on a non-stale build, sends `scenario_play`,
@@ -330,7 +566,7 @@ crossing, one slope junction). Longer segments accumulate server/NPC/state
 differences and make the position error less useful. Inspect the collision
 events around the probe rather than expecting the whole trajectory to match.
 
-## Position divergence policy
+## Position divergence policy — legacy implementation
 
 Playback never snaps the player back onto the recorded path. The player compares
 its position to the next recorded tick position; the first error above `2 m`
@@ -373,6 +609,32 @@ Rules:
 
 A separate merge/compare command may join files for analysis, but it must not
 replace the separate live journals.
+
+## Implementation status 2026-11-02
+
+- `scenario_startrecord` creates a scenario ID and both processes write
+  canonical scenario events to the shared run journal.
+- Per-tick records include actor identity, input/intent, pre/post pose,
+  grounding/support, contacts, containment, NPC state/RNG, and projectile state.
+- `\` bookmarks the active scenario, writes `bookmark.created` and a server
+  `scenario.record.checkpoint`, pins the run against pruning, and shows an
+  in-game notification. It no longer opens the terminal.
+- `scenario_play <definition.json>` loads the canonical recording, replays
+  local input and NPC intents through the normal movement/collision path, logs
+  divergence and continues, and restores actor checkpoints at bookmarks.
+- `config/debuglogger.json` owns `storage_limits.per_segment_bytes` and
+  `storage_limits.total_log_tree_bytes`; limits apply at process launch.
+- `devscripts/scenario_replay_report.py` reports the verdict and exact journal
+  path, line, event ID, tick, first divergence, and checkpoint restores.
+- `devscripts/dev_loop_gui.py` renders a native Tkinter dashboard when
+  available, with a terminal fallback.
+
+Known limits of this slice: projectile/world-mutable checkpoint restoration is
+reported as `unrestored_components`, not silently claimed. A recording whose
+live starting life cannot be matched is reported as `NOT_REPRODUCED`/failed
+readiness rather than judged as a fix. A forced-quota live run is verified: a
+32,768-byte segment limit produced server and client invalid records and no
+completed marker.
 
 ## Multi-client matrix
 

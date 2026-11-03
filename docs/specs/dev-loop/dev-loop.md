@@ -91,7 +91,7 @@ The loop owns this sequence:
 observe source change
  -> debounce and queue a build
  -> invoke the canonical build system
- -> publish an immutable, numbered build artifact
+ -> publish an immutable, UTC-identified build artifact
  -> report build identity and result
  -> on explicit launch request, select the newest valid artifact
  -> reconcile only identifiable dev-loop processes
@@ -106,7 +106,7 @@ The desired developer experience is:
 2. The current runtime is not interrupted merely because a file changed.
 3. A failed build is visible; the last successfully published artifact remains
    available for an explicit launch, with its source age clearly shown.
-4. A successful build receives a unique build number and identity.
+4. A successful build receives a unique UTC timestamp ID and executable hash.
 5. An explicit launch request immediately uses the last successfully published
    verified build, even while a newer build is pending or running.
 6. A server and client never silently use different build identities.
@@ -134,12 +134,12 @@ Definitions:
 | Term | Required meaning |
 |---|---|
 | source generation | Monotonically increasing loop-local count of detected input changes. |
-| build number | Monotonically increasing numeric identifier for a published artifact directory. |
-| published build | `build/.dev/builds/<number>/mimita.exe` plus its copied runtime files and identity metadata. |
+| artifact ID | UTC ISO 8601 timestamp with microseconds, such as `2026-11-03T14:05:27.123456Z`. |
+| published build | `.dev/builds/<UTC timestamp folder>/mimita.exe` plus copied runtime files and `build-identity.json`. The Windows-safe folder replaces timestamp colons with hyphens. |
 | valid build | Published artifact with a real runnable PE executable and complete identity information. |
 | current build | Valid build produced from the loop's latest source generation. |
 | stale build | Previously published build that has not been proven against the current source generation. |
-| build identity | At minimum build number, executable path, SHA-256, source generation, and source snapshot metadata. |
+| build identity | At minimum artifact ID, combined artifact ID and SHA-256 build ID, executable path, source generation, and source snapshot metadata. |
 | dev-loop server | A server launched by this loop and marked with the dev-loop process/environment identity. |
 | unrelated process | A process not provably launched by this loop for this checkout and run. |
 | launch request | Explicit `[1]`, control request `launch`, or an equivalent documented user action. |
@@ -199,7 +199,7 @@ arguments. Effective arguments must be retained in status and launch events.
 Configuration changes follow the same source-generation/build rules as code
 changes when they affect the executable or launch behavior. A changed launch
 mode or effective server configuration invalidates an existing incompatible
-server even if its executable build number is current.
+server even if its executable build ID is current.
 
 ## 5. Source watching and build state machine
 
@@ -300,7 +300,7 @@ Current source has several distinct waits and costs:
 - `run_build()` invokes `build.py build-only`; actual C++ compile/link time
   depends on changed files, compiler cache hits, and build state.
 - `publish_build()` validates and copies the executable and runtime DLLs into
-  a numbered build directory after compilation.
+  a UTC timestamped build directory after compilation.
 - process-identity/liveness helpers (`powershell Get-CimInstance`) are invoked
   from the status render path. When the server is adopted (daemon restart while
   a persistent server keeps running), this once spawned a helper process per
@@ -390,26 +390,33 @@ exit code. A build is successful only when the canonical build system reports
 success or an explicitly supported no-change result and the expected artifact
 can be validated.
 
-After success the loop must publish a new numbered artifact directory. The
-published artifact must include:
+After success the loop must publish a new artifact directory named from the
+UTC build timestamp. New artifact IDs use `YYYY-MM-DDTHH:MM:SS.ffffffZ` in
+metadata and the colon-free form `YYYY-MM-DDTHH-MM-SS.ffffffZ` in the Windows
+path. If that path already exists, advance the timestamp by one microsecond
+until it is unique. The published artifact must include:
 
 - `mimita.exe`;
 - required runtime DLLs/assets according to the build procedure;
-- build number;
+- canonical UTC artifact ID and timestamp;
 - executable path;
 - SHA-256 or equivalent content identity;
 - source generation and source snapshot identity;
 - build result and timestamp.
 
-For Windows launches, DevLoop keeps that numbered artifact immutable and
+For Windows launches, DevLoop keeps that timestamped artifact immutable and
 starts its server and client through the fixed path
 `.dev/current/mimita.exe`. It stages the executable and runtime DLLs as
-hardlinks from the selected numbered artifact, then swaps the fixed directory
+hardlinks from the selected artifact, then swaps the fixed directory
 only after any older server using it has stopped. The fixed path is the
 Windows Firewall app identity; a one-time app-specific allow rule therefore
-covers future numbered builds. The process arguments and run metadata record
+covers future builds. The process arguments and run metadata record
 the fixed launch path, while `build_identity.path`, `artifact_executable`,
-build number, and build ID continue to identify the selected numbered artifact.
+artifact ID and build ID continue to identify the selected artifact. `build_id`
+is `<artifact-id>:<sha256>`. The deprecated `build_number` field is null for
+new artifacts and remains populated only when reading a legacy numeric folder.
+Existing numeric artifact folders remain discoverable and launchable; new
+builds never reuse their sequence.
 Before reusing a server, DevLoop must compare its persisted build ID as well as
 its launch path and effective arguments. Persist the room code and local
 gameplay port with the server owner marker so a daemon restart can reconnect
@@ -418,7 +425,7 @@ without treating a same-path server from another build as current.
 The last successfully published valid artifact remains selectable while a
 newer build is pending, running, or has failed. An explicit `[1]` request may
 launch that artifact immediately as specified in §7; the dashboard and run
-metadata must identify its build number and source generation and clearly mark
+metadata must identify its artifact ID and source generation and clearly mark
 it stale relative to the current source generation. This does not claim that
 the selected artifact contains the newer source. Automatic recovery must not
 silently roll a process back to an older build. A failed build must be reported
@@ -435,9 +442,9 @@ and record the retention reason.
 for an in-progress build to finish.
 
 When at least one valid build has been successfully published, `[1]` must
-immediately select the highest-numbered successful artifact, even if it is
+immediately select the newest successful artifact by UTC ID, even if it is
 stale relative to current source or a newer build is pending/running. The
-selected artifact's exact build number, executable identity, and source
+selected artifact's exact ID, executable identity, and source
 generation must be shown as stale/current in the dashboard, run metadata, and
 launch records. A healthy matching server/client pair must be reused; a
 different owned pair may be replaced only through the ownership, identity, and
@@ -525,7 +532,7 @@ to networking, build identity, or client cleanup without evidence.
 
 Every server and client launch must receive:
 
-- build number and content hash;
+- UTC build ID and content hash;
 - source generation;
 - run ID;
 - process role;
@@ -722,7 +729,7 @@ changes.
 
 - Source changes mark the latest published build stale and queue a background
   build after debounce.
-- Background builds publish numbered artifacts but do not replace the running
+- Background builds publish timestamped artifacts but do not replace the running
   client or server unless an explicit launch request is pending.
 - `[1]` selects the last successfully published artifact immediately, including
   while a newer build is pending or running. If no successful artifact exists,
@@ -1117,9 +1124,9 @@ The implementation must therefore add bounded terminal evidence:
 | Event | Meaning | Required fields |
 |---|---|---|
 | `dev-loop.command.request` | the Python/control side accepted a request | request ID, command text, run ID, target client PID |
-| `terminal.command.received` | the client received text and entered `Terminal::execute` | request ID, command text, build number, client tick |
+| `terminal.command.received` | the client received text and entered `Terminal::execute` | request ID, command text, build ID, client tick |
 | `terminal.command.resolved` | command lookup found a registered handler | request ID, command name, argument list |
-| `terminal.command.unknown` | lookup failed | request ID, command name, build number |
+| `terminal.command.unknown` | lookup failed | request ID, command name, build ID |
 | `terminal.command.completed` | handler returned | request ID, command name, success/failure, client tick |
 | `avatar.command.dispatch` | the agent adapter accepted validated arguments | request ID, normalized arguments |
 | `avatar.command.assert` | the requested gameplay state was checked | request ID, assertion, expected, actual, tolerance, passed |
@@ -1153,7 +1160,7 @@ The daemon must reject the request unless all of the following are true:
   asks to queue behind it.
 
 The control response must return `accepted`, `queued`, `request_id`, the
-client PID, build number, run ID, and journal path. The caller then waits for
+client PID, build ID, run ID, and journal path. The caller then waits for
 the matching terminal/result event, not for a fixed sleep.
 
 ### 18.4 Make the command implementation use the real game owners
@@ -1335,7 +1342,7 @@ The status record must therefore identify both:
 
 - the daemon source identity: script path, script hash, daemon start time,
   daemon PID, and implementation/status schema version;
-- the game identity: build number, executable path, executable hash, source
+- the game identity: build ID, executable path, executable hash, source
   generation, client PID, server PID, run ID, and journal path.
 
 Before interpreting a runtime result, compare the requested source identity
@@ -1379,27 +1386,25 @@ controlled replacement. The important contract is that the old interpreter
 cannot continue presenting itself as the current daemon after its source
 identity changed.
 
-### 19.4 Visible terminal dashboard, daemon, and watchdog
+### 19.4 Visible native dashboard, daemon, and watchdog
 
 The intended desktop experience is: the user opens the existing shortcut to
-`devscripts/dev-loop.py`, sees a real terminal window with a live rainbow status
-display, and can leave that window open to watch builds and game runs. The
-display must show whether a build is running, the latest and active build IDs,
-whether the game client and server are alive, the selected mode, and the exact
-`events.jsonl` path. It must be a readable terminal, not a transparent or blank
-window. This is a separate window from the MiMITA game.
+`devscripts/dev-loop.py`, sees a native status window, and can leave it open to
+watch builds and game runs. The window shows selected and active build IDs,
+whether the client and server are alive, the selected mode, scenario evidence,
+and the exact `events.jsonl` path. It is a separate window from the MiMITA game.
 
 The system has three distinct roles. Keep `devscripts/dev-loop.py` as the
 canonical entry point and the single owner of build/run/control state. Keep
 `devscripts/dev-loop-watch.py` as the detached watchdog that ensures the
-dev-loop daemon is running. Add a dashboard view that attaches to the daemon
-status; it may be a mode of the existing script or a small presentation helper,
-but it must not become a second build/game owner. Do not add a second watchdog
+dev-loop daemon is running. The native dashboard attaches to daemon status; it
+is a mode of the existing script or a small presentation helper, but it is not
+a second build/game owner. Do not add a second watchdog
 or competing daemon architecture.
 
 ```text
 Desktop shortcut -> dev-loop.py entry point -> ensure watchdog + one daemon
-                 -> open/attach one visible terminal dashboard
+                 -> open/attach one visible native dashboard
 
 dev-loop-watch.py (background watchdog) -> restart one failed/stale daemon
 
@@ -1407,20 +1412,14 @@ AI calls dev-loop.py --command / --scenario-file
   -> connect to that same daemon; do not open another dashboard
   -> daemon runs normal build/game/scenario owners
   -> events.jsonl records correlated evidence
-  -> dashboard shows current status and recent output
+  -> dashboard shows build identity, runtime/scenario evidence, and recent output
 ```
 
-The desktop shortcut must not rely on Windows' `.py` file association or
-inherited stdout to decide whether a terminal appears. Its normal launch must
-explicitly open or attach to a supported Windows terminal/console host and
-connect the dashboard to the one daemon. Prefer Windows Terminal with a
-dedicated opaque profile; use a standard Windows console if that host is
-unavailable or cannot guarantee readable output. Do not use `pythonw.exe` or a
-transparent terminal profile for the visible dashboard. Enable
-virtual-terminal color/control support when available. If rainbow rendering is
-unsupported, show the same complete status in plain text. Refresh the status in
-place instead of printing the same status block on each poll. Give the window a
-stable title containing the checkout name and run ID.
+The desktop shortcut opens a visible native window without relying on inherited
+console output. The GUI attaches to the one daemon and refreshes structured
+status in place. If Tkinter is unavailable or the GUI cannot start, the
+terminal dashboard remains a readable fallback. Give the window a stable title
+containing the checkout name and run ID.
 
 Dashboard and game visibility are independent:
 
@@ -2355,7 +2354,7 @@ in one checkout:
 - each lane has its own selected artifact/build identity, server, client set,
   run ID, room/port, journal, command queue, visibility, and process cap;
 - one compiler/linker job remains global; lanes do not run competing builds;
-- published numbered artifacts stay immutable; a lane selects an artifact and
+- published timestamped artifacts stay immutable; a lane selects an artifact and
   never rewrites another lane's executable;
 - process reaping is scoped to the lane that requested it;
 - status separates `build_pipeline` from `lanes[]`, and each lane reports the
@@ -2385,11 +2384,11 @@ not `null`, so a timed wait can be diagnosed from the journal alone.
 
 ## Native dashboard and contributor activity feed — desired
 
-The current terminal dashboard is useful status output, but the desired
-development loop is a simple native Python window with a live terminal view,
-MiMITA build/run status, and a readable activity feed. Keep the existing
-dev-loop process and status/control authority; the window is a presentation
-layer and must not create a competing build/run loop.
+The default desktop entry point opens a readable native Python window with
+MiMITA build/run status, recent activity, and clear build/launch controls. The
+terminal dashboard remains an explicit fallback. Keep the existing dev-loop
+process and status/control authority; the window is a presentation layer and
+must not create a competing build/run loop.
 
 The activity feed should show observable work from AI agents and contributors:
 task/session identity when available, current action, files changed, build or
@@ -2399,6 +2398,13 @@ the game, dev-loop, a contributor, or an AI tool. Show durable runtime events
 from `events.jsonl` separately from work-status events so “a file was edited”
 cannot be mistaken for “the game behavior passed.” Do not present private
 reasoning or unverified inferred activity as observed status.
+
+For scenario work, show recording/replay identity, current frame and tick,
+active map, checkpoint progress, canonical journal path, capture completeness,
+and effective log usage/quota. A failed journal write or checkpoint restore
+must be visible as an incomplete/invalid run, not hidden behind a green build
+status. The dashboard presents configured limits and status; limits remain
+owned by `config/debuglogger.json`.
 
 Keep the Python entry point focused on orchestration and move independently
 owned UI, activity collection, and status components into separate modules

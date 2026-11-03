@@ -1,9 +1,20 @@
 import { Router } from "express"
-import { statfsSync } from "node:fs"
+import { readFileSync, statfsSync } from "node:fs"
 
 const WARNING_USED_PERCENT = 80
 const CRITICAL_USED_PERCENT = 90
 const MIN_READY_FREE_BYTES = 5 * 1024 * 1024 * 1024
+const BACKUP_STATUS_PATH = "/var/lib/mimita-database-backup/status"
+const MAX_BACKUP_AGE_SECONDS = 26 * 60 * 60
+
+export function hasFreshVerifiedBackup(statusText, nowMs = Date.now()) {
+    const match = /^(success|failure) ([0-9]+)$/.exec(statusText.trim())
+    if (!match || match[1] !== "success") return false
+    const timestamp = Number(match[2])
+    const nowSeconds = Math.floor(nowMs / 1000)
+    return Number.isSafeInteger(timestamp) && timestamp <= nowSeconds &&
+        nowSeconds - timestamp <= MAX_BACKUP_AGE_SECONDS
+}
 
 function readStorage(rootPath, statfs) {
     const stats = statfs(rootPath)
@@ -24,7 +35,13 @@ function status(res, available) {
     })
 }
 
-export function createHealthRouter({ pool, rootPath = "/", statfs = statfsSync } = {}) {
+export function createHealthRouter({
+    pool,
+    rootPath = "/",
+    statfs = statfsSync,
+    backupStatusPath = BACKUP_STATUS_PATH,
+    now = Date.now
+} = {}) {
     const router = Router()
 
     router.get("/ready", async (_req, res) => {
@@ -52,6 +69,15 @@ export function createHealthRouter({ pool, rootPath = "/", statfs = statfsSync }
         try {
             return status(res,
                 readStorage(rootPath, statfs).usedPercent < CRITICAL_USED_PERCENT)
+        } catch {
+            return status(res, false)
+        }
+    })
+
+    router.get("/backup", (_req, res) => {
+        try {
+            return status(res, hasFreshVerifiedBackup(
+                readFileSync(backupStatusPath, "utf8"), now()))
         } catch {
             return status(res, false)
         }

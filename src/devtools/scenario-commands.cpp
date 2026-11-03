@@ -100,8 +100,11 @@ void RegisterScenarioCommands()
             if (ScenarioRecorder::instance().merged())
             {
                 Terminal::instance().addLog(
-                    "[SCENARIO] recording stopped and merged: " +
-                    ScenarioRecorder::instance().path());
+                    ScenarioRecorder::instance().canonical()
+                        ? "[SCENARIO] recording stopped; canonical journal scenario_id=" +
+                              ScenarioRecorder::instance().scenarioId()
+                        : "[SCENARIO] recording stopped and merged: " +
+                              ScenarioRecorder::instance().path());
             }
             else
             {
@@ -126,6 +129,11 @@ void RegisterScenarioCommands()
                 << " networked=" << (ScenarioRecorder::instance().networked() ? 1 : 0)
                 << " merged=" << (ScenarioRecorder::instance().merged() ? 1 : 0)
                 << " merge_error=" << ScenarioRecorder::instance().mergeError()
+                << " scenario_id=" << ScenarioRecorder::instance().scenarioId()
+                << " capture_invalid="
+                << (ScenarioRecorder::instance().captureInvalid() ? 1 : 0)
+                << " capture_failure="
+                << ScenarioRecorder::instance().captureFailure()
                 << " path=" << ScenarioRecorder::instance().path()
                 << " playback="
                 << (ScenarioPlayer::instance().active() ? 1 : 0)

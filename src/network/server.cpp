@@ -999,7 +999,7 @@ int runServer(const LaunchOptions& options)
                     pushPositionHistory(kv.second, tick);
             const uint64_t npcUs = elapsedMicroseconds(npcStart);
             ScenarioServerRecorder::instance().captureTick(
-                players, npcs, npcSystem, tick);
+                players, npcs, npcSystem, projectiles, tick);
             const auto projectileStart = std::chrono::steady_clock::now();
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
@@ -1595,7 +1595,8 @@ static void simulateOneServerTick(ListenServerState& state)
             if (!kv.second.connectionStale)
                 pushPositionHistory(kv.second, state.tick);
         ScenarioServerRecorder::instance().captureTick(
-            state.players, state.npcs, *state.npcSystem, state.tick);
+            state.players, state.npcs, *state.npcSystem, state.projectiles,
+            state.tick);
         tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
                               state.world, SERVER_DT, state.tick,
                               state.totalPacketsOut);

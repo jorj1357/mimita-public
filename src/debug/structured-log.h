@@ -101,6 +101,11 @@ struct StructuredLogConfig {
         float quaternionMagnitudeTolerance = 0.0001f;
         float audioVideoSyncToleranceMs = 50.0f;
     } replayValidation;
+
+    struct StorageLimits {
+        uint64_t perSegmentBytes = 100000000ULL;
+        uint64_t totalLogTreeBytes = 1000000000ULL;
+    } storageLimits;
 };
 
 enum class StructuredCategory {
@@ -183,6 +188,25 @@ public:
                     int sourceLine = 0,
                     const char* functionName = nullptr);
 
+    // Blocking required write used by scenario capture. It deliberately ignores
+    // category level filtering but still obeys the configured journal limits.
+    // Returns false when the record could not be written. Callers that cannot
+    // tolerate a partial capture must stop and mark the run invalid.
+    bool writeEventChecked(StructuredCategory category, StructuredLevel level,
+                           const std::string& eventName,
+                           const std::string& correlationId,
+                           const std::string& reason,
+                           uint32_t tick,
+                           const nlohmann::json& fields = nlohmann::json::object(),
+                           const char* sourceFile = nullptr,
+                           int sourceLine = 0,
+                           const char* functionName = nullptr);
+
+    // Pin the active run against automatic pruning. Used by scenario bookmarks
+    // so a human-recorded regression cannot be deleted by quota maintenance.
+    bool pinCurrentRun(const std::string& scenarioId, uint32_t bookmarkNumber);
+    bool unpinCurrentRun();
+
     // Best-effort nonblocking event write for watchdogs that must not stall
     // behind a possibly stuck frame thread or cross-process logger mutex.
     bool tryWriteEvent(StructuredCategory category, StructuredLevel level,
@@ -223,6 +247,9 @@ public:
     const std::string& logDir() const { return mLogDir; }
     const std::string& runId() const { return mRunId; }
     const std::string& eventsPath() const { return mEventsPath; }
+    uint64_t maxLogFileBytes() const { return mConfig.storageLimits.perSegmentBytes; }
+    uint64_t maxLogTreeBytes() const { return mConfig.storageLimits.totalLogTreeBytes; }
+    uint64_t eventsBytes() const;
 
     struct IoStats {
         uint64_t eventsWritten = 0;
@@ -253,7 +280,7 @@ private:
     std::string categoryDirName(StructuredCategory cat) const;
     std::string timestamp() const;
     std::string runTimestamp() const;
-    void writeJsonLine(const nlohmann::json& record, bool flush = true);
+    bool writeJsonLine(const nlohmann::json& record, bool flush = true);
     bool tryWriteJsonLine(const nlohmann::json& record, bool flush = true);
 
     StructuredLogConfig mConfig;

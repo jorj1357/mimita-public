@@ -28,6 +28,8 @@
 #include "game/spawn-override.h"
 #include "network/server.h"
 #include "debug/structured-log.h"
+#include "devtools/scenario-recorder.h"
+#include "network/multiplayer-context.h"
 #include "hot-reload/hot-reload-system.h"
 
 namespace {
@@ -112,60 +114,55 @@ void createBookmark()
     const uint64_t clientTick = ticks.clientTick;
     const uint32_t serverTick = ticks.serverTick;
 
+    ScenarioRecorder& recorder = ScenarioRecorder::instance();
+    const std::string scenarioId = recorder.active() ? recorder.scenarioId() : "";
+    const uint32_t frame = recorder.active() ? recorder.frames() : 0;
+    const std::string journalPath = StructuredLogger::instance().eventsPath();
+    const bool recording = recorder.active();
+
     nlohmann::json fields = {
         {"bookmark_number", bookmarkNumber},
+        {"scenario_id", scenarioId},
+        {"frame", frame},
+        {"recording_active", recording},
         {"client_tick", clientTick},
         {"server_tick", serverTick},
         {"server_tick_source", ticks.serverTickSource},
         {"iso8601_time", isoTime},
-        {"detail", ""}
+        {"journal_path", journalPath},
+        {"pinned", false}
     };
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::Collision,
+    if (recording)
+        fields["pinned"] = StructuredLogger::instance().pinCurrentRun(
+            scenarioId, bookmarkNumber);
+    StructuredLogger::instance().writeEventChecked(
+        StructuredCategory::General,
         StructuredLevel::Important,
         "bookmark.created",
-        "slope-edge-investigation",
-        "manual bookmark captured before optional detail input",
+        scenarioId.empty() ? "manual-bookmark" : scenarioId,
+        recording ? "bookmark linked to the active scenario recording"
+                  : "manual bookmark created without an active recording",
         static_cast<uint32_t>(clientTick),
         fields,
         __FILE__, __LINE__, __FUNCTION__);
 
-    Terminal& terminal = Terminal::instance();
-    terminal.addLog("Bookmark " + std::to_string(bookmarkNumber) +
-                    " saved: server tick " + std::to_string(serverTick) +
-                    ", client tick " + std::to_string(clientTick) +
-                    ", iso 8601 time: " + isoTime);
+    if (recording && MP_CONTEXT.active)
+    {
+        MimitaNet::mpSendServerCommand(
+            MP_CONTEXT,
+            "scenario_server_bookmark " + std::to_string(bookmarkNumber) +
+                " " + std::to_string(clientTick));
+    }
+
     DevOverlay::instance().showNotification(
-        "Bookmark saved: server tick " + std::to_string(serverTick) +
-        ", client tick " + std::to_string(clientTick) +
-        ", iso 8601 time: " + isoTime, 6.0f);
-
-    if (!terminal.isOpen())
-        terminal.toggle();
-
-    terminal.requestInput(
-        "Write more detail here...",
-        [bookmarkNumber, clientTick, serverTick, isoTime](const std::string& detail) {
-            if (!detail.empty()) {
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Collision,
-                    StructuredLevel::Important,
-                    "bookmark.annotated",
-                    "slope-edge-investigation",
-                    "manual bookmark detail submitted",
-                    static_cast<uint32_t>(clientTick),
-                    nlohmann::json{
-                        {"bookmark_number", bookmarkNumber},
-                        {"client_tick", clientTick},
-                        {"server_tick", serverTick},
-                        {"iso8601_time", isoTime},
-                        {"detail", detail}
-                    },
-                    __FILE__, __LINE__, __FUNCTION__);
-            }
-            if (Terminal::instance().isOpen())
-                Terminal::instance().toggle();
-        });
+        recording
+            ? "Bookmark " + std::to_string(bookmarkNumber) +
+                " saved for scenario " + scenarioId +
+                " (frame " + std::to_string(frame) +
+                ", server tick " + std::to_string(serverTick) + ")"
+            : "Bookmark " + std::to_string(bookmarkNumber) +
+                " saved (no active scenario)",
+        6.0f);
 }
 
 void printVersionInfo()

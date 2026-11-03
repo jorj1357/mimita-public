@@ -180,3 +180,39 @@ This recovery is operational only. No website/coordinator source or service
 configuration was deployed. Coturn verbose logging and the public monitor setup
 remain pending the reviewed deployment. PostgreSQL's original stop cause is
 still unproven; disk pressure remains a suspected contributor.
+
+### Database backup integrity failure — 2026-11-02
+
+The website database was online, but the legacy offsite backup job was not
+producing usable database copies. Read-only metadata checks found
+`full_dump-2026-11-01.sql` and `full_dump-2026-11-02.sql` in Drive at zero bytes;
+both dated compressed files were only 20 bytes. The matching local files had
+the same sizes. These artifacts are not recoverable backups.
+
+The VPS root crontab had two full-database jobs scheduled for 03:00 UTC. The
+direct pipeline wrote `/root/db_backups/backup-<date>.sql.gz`, and
+`/root/scripts/dump-all-dbs.sh` wrote that same path. The latter used a
+`localhost` PostgreSQL connection; the schema backup log contained repeated
+connection failures, and the job did not record successful completion. The
+direct crontab pipeline sent `pg_dumpall` through `gzip` without `pipefail`, so
+a failed dump could still leave a valid 20-byte empty gzip stream and let the
+later decompression create a zero-byte `.sql` file. This is the confirmed
+failure mechanism; retained logs cannot identify which concurrent process
+wrote each exact November 1–2 artifact.
+
+A bounded live probe confirmed that `pg_isready` and a local `SELECT 1`
+succeeded, but both legacy `pg_dumpall` variants exceeded a 25-second timeout.
+The existing 7,178,142-byte custom-format archive passed `pg_restore --list`,
+but has not been restore-tested. No encrypted Drive remote or new scheduled
+backup service is active yet. The repo implementation now requires archive
+validation, encrypted upload, download verification, and a fresh-success health
+marker before retention cleanup. Keep the legacy entries until the new
+encrypted schedule succeeds; then remove only the duplicate full-database jobs
+and their old `/root/db_backups` pruning command.
+
+Do not count the existing plain `gdrive:` SQL files as database protection.
+Keep the database and existing VPS snapshots. Storage pressure remains only a
+suspected cause of PostgreSQL's earlier outage.
+
+Follow-up implementation and latest VPS evidence: [2026-11-02 VPS storage and
+verified Drive backup follow-up](../../changelog/2026-11-02/20261102_154606-vps-storage-drive-backup-followup.md).

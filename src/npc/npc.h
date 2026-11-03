@@ -203,6 +203,19 @@ public:
     glm::vec3 replayBladeCurrentB{0.0f};
     float replayBladeRadius = 0.0f;
 
+    // Canonical scenario capture/replay. The accepted intent is the same
+    // InputState the shared movement kernel consumed this fixed tick.
+    bool hasLastAcceptedInput = false;
+    InputState lastAcceptedInput;
+    bool replayUseRecordedIntent = false;
+    bool hasReplayInput = false;
+    InputState replayInput;
+    // Last final-pose containment result, retained as scenario evidence.
+    bool lastRootInsideClosedSolid = false;
+    bool lastContainmentKnown = false;
+    float lastFinalPenetration = 0.0f;
+    std::string lastContainmentStage;
+
     // Bomb tag behavior flags
     bool bombTagActive = false;
     bool bombTagHasBomb = false;

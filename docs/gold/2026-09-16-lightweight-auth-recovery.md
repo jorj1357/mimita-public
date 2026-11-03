@@ -39,3 +39,22 @@ model can trace the path without reconstructing hidden behavior.
 - Recovery instructions that exist only in an AI conversation.
 - Auth fallbacks that pretend signup/signin succeeded without database proof.
 - Website edits that remove or bypass health, watchdog, or recovery evidence.
+
+## Follow-up evidence — 2026-11-02
+
+The user reported that keeping a regression record helped and that the latest
+website database outage was resolved in about one or two prompts, with GPT-6
+Luna at Medium. This is user-reported experience, not an independently
+measured prompt count or verified model-session record. The user gave the time
+as 2026-11-02 09:54 without a timezone; treating that as New York local time
+(EST on this date) gives approximately 2026-11-02T14:54:00Z.
+
+Operational evidence recorded for the recovery: PostgreSQL accepted
+connections, a read-only `SELECT 1` succeeded, the public homepage returned
+HTTP 200, an invalid sign-in returned the expected HTTP 401, and a 7,178,142
+byte custom-format database archive passed its archive listing check. These
+checks show recovery and database reachability; the archive has not been
+restore-tested, and no human sign-in/signup acceptance was recorded. The new
+website source health endpoint and recovery/storage services are not yet
+deployed. See the [recurrence record](../regressions/2026-09-16/2026-09-16-website-auth-database-outage.md)
+and [2026-11-02 recovery changelog](../changelog/2026-11-02/20261102_142003-website-database-storage-turn-plan.md).

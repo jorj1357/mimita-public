@@ -1669,9 +1669,9 @@ void simulateSharedNpcs(SOCKET sock,
         && npcDifficulty.freezeDuringWaveBanner;
     for (Npc& n : npcSystem.all())
     {
-        // Replay-controlled target proxies are driven by the scenario track,
-        // not AI, targeting, navigation, or normal physics.
-        if (n.replayControlled)
+        // Transform-follow proxies are driven by the recorded track. Intent
+        // replay proxies still run the normal movement/collision path.
+        if (n.replayControlled && !n.replayUseRecordedIntent)
             continue;
         if (n.body.dead || n.body.currentHp <= 0)
             continue;
@@ -2136,7 +2136,7 @@ void simulateSharedNpcs(SOCKET sock,
     const bool npcWaveMode = serverGamemodeState().npcWaves;
     for (Npc& n : npcSystem.all())
     {
-        if (n.replayControlled) continue;
+        if (n.replayControlled && !n.replayUseRecordedIntent) continue;
         if (!n.body.dead) continue;
         if (!serverActorRespawnsEnabled(n.id)) continue;
         // NPC Waves actors are one-life per wave. Reviving them makes the wave

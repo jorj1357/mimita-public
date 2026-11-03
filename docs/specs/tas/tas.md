@@ -77,4 +77,20 @@ idk
 
 i do tihnk we should log only to 1 events.jsonl
 
-idk this need smore explantion 
+idk this need smore explantion
+
+## Relationship to human-recorded runtime regressions
+
+Collision debugging needs a human-recorded failure to replay through the real
+fixed-tick movement and collision owners, with the resulting evidence written
+to the canonical `events.jsonl` journals. Human bookmarks are restore-after
+checkpoints: replay and analyze the segment through the bookmark, then restore
+the complete recorded gameplay state and continue. This collision-specific
+checkpoint contract is required for reliable repeat runs; it is distinct from
+the broader TAS save-state feature below.
+
+General TAS controls may later help inspect or recreate a difficult captured
+state: reset, pause, single-step, and change wall-clock playback speed while
+preserving the fixed 60 Hz simulation tick. General-purpose save states remain
+a broader optional capability. Do not treat a saved visual position or a
+transform-follow replay as a restored physics state.

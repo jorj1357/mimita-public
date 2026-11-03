@@ -32,6 +32,16 @@ Use:
 The Windows development machine may display Eastern local time, but local time
 is display context, not the canonical stored value.
 
+## Build artifact identities
+
+New dev-loop build identities store the full UTC timestamp with microseconds,
+for example `2026-11-03T14:05:27.123456Z`. Include the executable SHA-256 in
+the combined build identity. Filesystem artifact folder names use the same
+UTC value with `:` replaced by `-` for Windows compatibility; metadata and
+status retain the canonical ISO 8601 value. Do not use a resettable sequence
+number as the identity of a new build. Legacy numeric artifact folders remain
+readable as historical builds.
+
 ## Folder format
 
 New date-based folders use:

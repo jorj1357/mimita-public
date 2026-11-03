@@ -2,16 +2,34 @@
 set -euo pipefail
 
 readonly backup_dir=/root/mimita-db-verified-backups
+readonly status_dir=/var/lib/mimita-database-backup
+readonly status_file="$status_dir/status"
 readonly remote_dir=gdrive-crypt:mimita-database-backups
 readonly minimum_free_kib=$((5 * 1024 * 1024))
 
+record_status() {
+    local state=$1
+    local temporary
+    temporary=$(mktemp "$status_dir/.status.XXXXXX")
+    printf '%s %s\n' "$state" "$(date +%s)" > "$temporary"
+    chmod 0644 "$temporary"
+    mv -f -- "$temporary" "$status_file"
+}
+
 fail() {
-    logger -t mimita-database-backup "category=$1"
+    local category=$1
+    trap - ERR TERM INT HUP
+    record_status failure 2>/dev/null || true
+    logger -t mimita-database-backup "category=$category"
     exit 1
 }
 
+trap 'fail backup_unexpected_failure' ERR
+trap 'fail backup_interrupted' TERM INT HUP
+
 [[ -d "$backup_dir" && ! -L "$backup_dir" ]] || fail backup_directory_unavailable
 [[ "$(stat -c '%a:%u' "$backup_dir")" == "700:0" ]] || fail backup_directory_permissions
+[[ -d "$status_dir" && ! -L "$status_dir" && "$(stat -c '%a:%u' "$status_dir")" == "755:0" ]] || fail backup_status_directory_unavailable
 command -v node >/dev/null && command -v pg_restore >/dev/null && command -v rclone >/dev/null && command -v jq >/dev/null || fail backup_tools_missing
 available_kib=$(df -Pk / | awk 'NR == 2 { print $4 }')
 [[ "$available_kib" =~ ^[0-9]+$ ]] && (( available_kib >= minimum_free_kib )) || fail backup_skipped_disk_floor
@@ -19,9 +37,9 @@ config_output=$(rclone config file) || fail rclone_config_unavailable
 config_file=$(printf '%s\n' "$config_output" | tail -n 1)
 [[ "$config_file" == /* && -f "$config_file" && ! -L "$config_file" ]] || fail rclone_config_unavailable
 [[ "$(stat -c '%a:%u' "$config_file")" == "600:0" ]] || fail rclone_config_permissions
-rclone listremotes | grep -Fxq 'gdrive-crypt:' || fail encrypted_remote_missing
+rclone listremotes 2>/dev/null | grep -Fxq 'gdrive-crypt:' || fail encrypted_remote_missing
 rclone config dump | jq -e '.["gdrive-crypt"].type == "crypt" and (.["gdrive-crypt"].remote | startswith("gdrive:"))' >/dev/null || fail encrypted_remote_invalid
-rclone config userinfo gdrive: | grep -Fq 'contact@ravgrowth.com' || fail drive_account_unverified
+rclone config userinfo gdrive: 2>/dev/null | grep -Fq 'contact@ravgrowth.com' || fail drive_account_unverified
 
 node /root/mimita-site/website/server/backup-database.mjs --output-dir "$backup_dir" || fail database_archive_failed
 
@@ -32,10 +50,11 @@ pg_restore --list "$latest" >/dev/null 2>&1 || fail archive_listing_failed
 
 filename=${latest##*/}
 remote_archive="$remote_dir/$filename"
-rclone copyto "$latest" "$remote_archive" || fail encrypted_upload_failed
+rclone copyto "$latest" "$remote_archive" >/dev/null 2>&1 || fail encrypted_upload_failed
 rclone check --download "$latest" "$remote_archive" >/dev/null 2>&1 || fail encrypted_upload_verification_failed
 
 # Retention runs only after the new encrypted copy was verified.
-rclone delete --min-age 30d --include 'mimita-*.dump' "$remote_dir" || fail remote_retention_failed
+rclone delete --min-age 30d --include 'mimita-*.dump' "$remote_dir" >/dev/null 2>&1 || fail remote_retention_failed
 find "$backup_dir" -maxdepth 1 -type f -name 'mimita-*.dump' ! -name "$filename" -delete
-logger -t mimita-database-backup "category=backup_archive_and_remote_verified"
+record_status success
+logger -t mimita-database-backup "category=backup_archive_and_remote_verified" || true

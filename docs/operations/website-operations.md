@@ -32,9 +32,31 @@ deploying it; do not assume its directory is a repository clone.
 Run from PowerShell on the development machine:
 
 ```powershell
+# Public website response (does not prove the database is healthy).
+curl.exe -sS -o NUL -w "homepage HTTP %{http_code}; total %{time_total}s`n" https://mimita.fun/
+
+# These readiness routes become available after the reviewed website revision is deployed.
+curl.exe -sS -i https://mimita.fun/api/health/ready
+curl.exe -sS -i https://mimita.fun/api/health/storage-warning
+curl.exe -sS -i https://mimita.fun/api/health/storage-critical
+curl.exe -sS -i https://mimita.fun/api/health/backup
+
+# VPS database, disk, and service status.
 ssh -T -o BatchMode=yes -o ConnectTimeout=10 root@107.191.48.226 'date -Is; df -h /; pg_lsclusters; pg_isready; systemctl is-active nginx; pm2 status'
+
+# Largest top-level log and root-directory consumers (stay on the root filesystem).
 ssh -T -o BatchMode=yes -o ConnectTimeout=10 root@107.191.48.226 'sudo du -xhd1 /var/log /root 2>/dev/null | sort -h | tail -n 20'
+
+# Recent service messages when the public check or database check fails.
+ssh -T -o BatchMode=yes -o ConnectTimeout=10 root@107.191.48.226 'journalctl -u postgresql@14-main -u nginx --since "1 hour ago" --no-pager -n 100'
 ```
+
+At the 2026-11-02 check, the homepage returned HTTP 200 and PostgreSQL accepted
+connections, while `/api/health/ready` returned HTTP 404. The readiness routes
+are in the local source but are not live until that reviewed revision is
+deployed. Until then, use the VPS checks above; a homepage 200 only proves the
+web server returned a page. Review logs before sharing them and remove any
+account identifiers or other sensitive values.
 
 Use `df -h /` for free bytes and percentage. Use bounded directory/file-size
 summaries to identify the producer before cleanup. Do not run broad recursive
@@ -50,15 +72,28 @@ relay diagnostic cannot consume the database's free space.
 
 The tracked `deploy/journald-mimita-storage.conf` caps journald at 200 MB and
 preserves 5 GB free where possible. Install it only through a reviewed pull,
-then run `systemctl restart systemd-journald`. Reconcile the VPS's existing
-rsyslog logrotate stanza to `daily`, `rotate 7`, `maxsize 100M`, `compress`, and
-`delaycompress`; edit the existing distro stanza rather than adding a duplicate
-rule for `/var/log/syslog`. Validate it with
-`logrotate --debug /etc/logrotate.conf` before its next rotation.
-Remove only the standalone `verbose` directive from the inspected Coturn config;
-preserve its listener, realm, authentication, and STUN settings. Check the
-service's active sessions and schedule its restart after they can finish, since
-restarting Coturn could interrupt current relay sessions.
+then run the guarded repo-managed policy helper. It updates the existing rsyslog
+stanza to `daily`, `rotate 7`, `maxsize 100M`, `compress`, and `delaycompress`
+instead of adding a duplicate rule. It validates the complete logrotate config
+and keeps a root-only copy of the previous stanza. The same helper installs the
+tracked journald limit and restarts only journald. Remove only the standalone
+`verbose` directive from the inspected Coturn config; the helper preserves its
+secret values and every other setting and keeps a root-only pre-change copy. It
+does not restart Coturn. Check `ss -uapn` for active relay allocations and wait
+for them to drain before restarting; a restart can interrupt current relay
+sessions. If Coturn does not start, restore the exact root-only backup with the
+helper before restarting again.
+
+The Ubuntu package indexes include duplicate definitions for
+`archive.ubuntu.com` and `ubuntu.mirror.constant.com`. The guarded helper removes
+mirror entries only when their suite, components, architecture options, and
+repository path exactly match a canonical entry. It preserves the canonical
+source and NodeSource. Do not run it while APT or dpkg holds a package lock.
+Afterwards run `apt-get update` and `apt-get clean`, then verify APT completes
+successfully and the Ubuntu indexes have refreshed. To prune Snap storage, first
+capture `snap list --all`; remove only rows marked `disabled` with Snap's own
+`snap remove <name> --revision=<revision>` command. Never manually delete APT or
+Snap files.
 
 ## Install the tracked safeguards
 
@@ -76,22 +111,85 @@ The tracked service files install from the pulled repository as follows:
 
 ```bash
 install -d -o root -g root -m 0700 /root/mimita-db-verified-backups
+install -d -o root -g root -m 0755 /var/lib/mimita-database-backup
 install -o root -g root -m 0750 deploy/mimita-postgres-watchdog.sh /usr/local/sbin/mimita-postgres-watchdog.sh
 install -o root -g root -m 0750 deploy/mimita-database-backup.sh /usr/local/sbin/mimita-database-backup.sh
 install -o root -g root -m 0644 deploy/mimita-postgres-watchdog.service /etc/systemd/system/
 install -o root -g root -m 0644 deploy/mimita-postgres-watchdog.timer /etc/systemd/system/
 install -o root -g root -m 0644 deploy/mimita-database-backup.service /etc/systemd/system/
 install -o root -g root -m 0644 deploy/mimita-database-backup.timer /etc/systemd/system/
-install -D -o root -g root -m 0644 deploy/journald-mimita-storage.conf /etc/systemd/journald.conf.d/50-mimita-storage.conf
 systemctl daemon-reload
-systemctl restart systemd-journald
 systemctl enable --now mimita-postgres-watchdog.timer
 ```
 
+Apply the tracked logging policy after the pull:
+
+```bash
+python3 deploy/vps_storage_config.py --log-policy
+```
+
+The helper writes the root-only configuration backups and restarts journald.
+For the duplicate Ubuntu source, wait until all APT work has finished, then run
+the guarded helper followed by a metadata refresh and package-cache cleanup:
+
+```bash
+python3 deploy/vps_storage_config.py --apt-mirror
+apt-get update
+apt-get clean
+```
+
+The helper refuses to edit the source if the mirror definitions are not exact
+duplicates or if APT/dpkg holds a package lock. To change Coturn logging, first
+check `ss -uapn` for active relay allocations, then run:
+
+```bash
+python3 deploy/vps_storage_config.py --coturn
+systemctl restart coturn
+systemctl is-active coturn
+ss -uapn | grep -E 'turnserver|:3478|:5349'
+```
+
+The helper prints the root-only backup filename without printing config
+contents. If Coturn fails to start, restore it using
+`python3 deploy/vps_storage_config.py --restore-coturn-backup <printed-name>`
+and restart the service.
+
 Enable `mimita-database-backup.timer` only after the remote identity and
 encryption checks above pass, PostgreSQL is healthy, and one full archive has
-been verified locally. Check the first encrypted upload and `rclone check`
-result before relying on scheduled retention. The watchdog will not start
+been verified locally. Test the first encrypted upload and `rclone check`, then
+enable the daily schedule:
+
+```bash
+systemctl start mimita-database-backup.service
+systemctl status mimita-database-backup.service --no-pager
+journalctl -t mimita-database-backup --since '2 days ago' --no-pager
+rclone lsf gdrive-crypt:mimita-database-backups --files-only | sort | tail -n 5
+systemctl enable --now mimita-database-backup.timer
+systemctl list-timers --all mimita-database-backup.timer
+```
+
+After the timer has fired on schedule and that timer-triggered encrypted upload
+has completed and been verified (a manual service run does not prove the
+schedule works), retire only the duplicate root-crontab database dump and its
+old `/root/db_backups` prune entry:
+
+```bash
+python3 deploy/vps_storage_config.py --retire-legacy-db-cron
+```
+
+The command refuses to proceed unless the new timer is enabled and active and
+its verified success marker is newer than 26 hours. It saves the original root
+crontab with mode 0600 in the protected backup directory. It leaves the
+03:15 VPS snapshot sync, the schema-only PostgreSQL schedule, and unrelated
+cron jobs untouched.
+
+The backup job writes only `success <unix-time>` or `failure <unix-time>` to
+`/var/lib/mimita-database-backup/status`; the public health response reveals
+only healthy/unavailable. The endpoint is unavailable if no verified upload
+exists, the last success is older than 26 hours, or the latest attempt failed.
+Configure its external monitor after the first verified upload makes
+`/api/health/backup` return HTTP 200, and verify down/recovery email alerts to
+`contact@ravgrowth.com`. The watchdog will not start
 PostgreSQL with less than 5 GB free and makes one automatic start attempt per
 outage. If it fails, it waits for operator action; a healthy database clears
 the attempt marker for a future outage.
@@ -146,6 +244,24 @@ The old `/root/db_backups` directory is owned by the PostgreSQL service account
 and contains historical small/empty files. Preserve it; the verified archive
 tool uses a separate root-owned mode-0700 directory.
 
+The 2026-11-02 read-only Drive audit found `full_dump-2026-11-02.sql` and
+`full_dump-2026-11-01.sql` at zero bytes, with corresponding 20-byte compressed
+files. These are not backups. The VPS has two overlapping 03:00 database dump
+cron entries; one script logs repeated localhost connection failures, and a
+local-socket `pg_dumpall` attempt timed out while `pg_isready` and a simple
+local query succeeded. This points to a broken legacy dump path, but does not
+prove which concurrent command produced each empty artifact. Keep those old
+files for investigation and do not count the plain `gdrive:` copies as current,
+valid backups. Disable only the confirmed redundant database cron entries
+after the new encrypted job has completed successfully.
+
+At that audit the VPS had one fresh 7,178,142-byte local custom-format archive
+whose `pg_restore --list` check passed, but `restoreValidated=false`. The VPS
+had only `gdrive:` configured; there was no encrypted `gdrive-crypt:` remote,
+the Drive account identity was not verified, and the new backup timer was
+absent. Treat the local archive as verified for structure, not yet as
+restore-proven.
+
 ## External alerts
 
 Configure an external HTTPS monitor for:
@@ -154,13 +270,14 @@ Configure an external HTTPS monitor for:
 - `https://mimita.fun/api/health/ready` — database query and minimum disk headroom.
 - `https://mimita.fun/api/health/storage-warning` — 80% storage warning.
 - `https://mimita.fun/api/health/storage-critical` — 90% storage critical state.
+- `https://mimita.fun/api/health/backup` — recent encrypted database backup verified.
 
 Use down and recovery email alerts to `contact@ravgrowth.com`. The health paths
 return only a generic status, never database or host details. The external
 monitor can still alert when the VPS/API itself is unavailable.
 
 The selected monitor is UptimeRobot. Create separate HTTPS monitors for the
-four URLs above, use HTTP status checks, and configure down/up email
+five URLs above, use HTTP status checks, and configure down/up email
 notifications to `contact@ravgrowth.com`. Do not treat this as configured until
 both a forced down alert and a recovery alert arrive. The provider account
 configuration remains an external setup step.

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -41,6 +42,27 @@ glm::vec3 jsonVec3(const nlohmann::json& value)
                      value[2].get<float>());
 }
 
+std::vector<std::filesystem::path> journalSegments(
+    const std::filesystem::path& journal)
+{
+    std::vector<std::filesystem::path> sealed;
+    std::error_code ec;
+    const auto dir = journal.parent_path();
+    for (std::filesystem::directory_iterator it(dir, ec), end; it != end;
+         it.increment(ec))
+    {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const std::string name = it->path().filename().string();
+        if (name.rfind("events-", 0) == 0 &&
+            name.size() > 12 && name.substr(name.size() - 6) == ".jsonl")
+            sealed.push_back(it->path());
+    }
+    std::sort(sealed.begin(), sealed.end());
+    sealed.push_back(journal);
+    return sealed;
+}
+
 } // namespace
 
 ScenarioPlayer& ScenarioPlayer::instance()
@@ -61,13 +83,236 @@ bool ScenarioPlayer::load(const std::string& path, std::string* error)
         if (error) *error = "path_traversal_rejected";
         return false;
     }
-    if (path.size() < 6 || path.substr(path.size() - 6) != ".jsonl")
+    if (path.size() >= 5 && path.substr(path.size() - 5) == ".json")
     {
-        if (error) *error = "expected_jsonl_scenario";
+        std::ifstream definitionIn(path);
+        if (!definitionIn.is_open())
+        {
+            if (error) *error = "cannot_open_scenario_definition";
+            return false;
+        }
+        nlohmann::json definition;
+        try
+        {
+            definitionIn >> definition;
+        }
+        catch (const std::exception&)
+        {
+            if (error) *error = "invalid_scenario_definition";
+            return false;
+        }
+        const std::string journal = definition.value("journal", "");
+        const std::string scenarioId = definition.value("scenario_id", "");
+        if (journal.empty() || scenarioId.empty())
+        {
+            if (error) *error = "scenario_definition_missing_journal_or_id";
+            return false;
+        }
+        if (!loadCanonical(journal, scenarioId, error))
+            return false;
+        mPath = path;
+    }
+    else
+    {
+        if (path.size() < 6 || path.substr(path.size() - 6) != ".jsonl")
+        {
+            if (error) *error = "expected_jsonl_scenario";
+            return false;
+        }
+        if (!loadLines(path, error))
+            return false;
+    }
+    if (mTicks.empty())
+    {
+        if (error) *error = "scenario_has_no_ticks";
         return false;
     }
-    if (!loadLines(path, error))
+    return true;
+}
+
+bool ScenarioPlayer::loadCanonical(const std::string& journalPath,
+                                   const std::string& scenarioId,
+                                   std::string* error)
+{
+    mTicks.clear();
+    mScenarioId = scenarioId;
+    mCheckpointLocal.clear();
+    mAppliedCheckpoints.clear();
+    mRevisions.clear();
+    mMap.clear();
+    mMode.clear();
+    mWeaponSet = 0;
+    mSchemaVersion = 4;
+    mStart = StartState{};
+    mIndex = 0;
+    mMaxPositionError = 0.0f;
+    mFirstDivergenceFrame = 0xFFFFFFFFu;
+    mFirstDivergenceError = 0.0f;
+    mFirstDivergenceExpected = glm::vec3(0.0f);
+    mFirstDivergenceActual = glm::vec3(0.0f);
+    mFailureReason.clear();
+    mServerPrepared = false;
+    mServerBeginAck = false;
+    mServerRejected = false;
+    mServerCommandSent = false;
+    mBeginSent = false;
+    mServerError.clear();
+    mPath = journalPath + "#" + scenarioId;
+    mNetworked = true;
+
+    bool sawHeader = false;
+    uint32_t localId = 0;
+    for (const auto& segment : journalSegments(journalPath))
+    {
+        std::ifstream in(segment);
+        if (!in.is_open())
+            continue;
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.empty())
+                continue;
+            nlohmann::json value;
+            try
+            {
+                value = nlohmann::json::parse(line);
+            }
+            catch (const std::exception&)
+            {
+                continue;
+            }
+            if (!value.contains("fields") || !value["fields"].is_object())
+                continue;
+            const auto& fields = value["fields"];
+            if (fields.value("scenario_id", "") != scenarioId)
+                continue;
+            const std::string event = value.value("event", "");
+            if (event == "scenario.record.started")
+            {
+                sawHeader = true;
+                mMap = fields.value("map", "");
+                mMode = fields.value("mode", "");
+                mWeaponSet = fields.value("weapon_set", 0);
+                localId = fields.value("local_player_id", 0u);
+                if (fields.contains("start") && fields["start"].is_object())
+                {
+                    const auto& start = fields["start"];
+                    mStart.position = jsonVec3(start.value("position", nlohmann::json::array()));
+                    mStart.velocity = jsonVec3(start.value("velocity", nlohmann::json::array()));
+                    mStart.camForward = jsonVec3(start.value("cam_forward", nlohmann::json::array()));
+                    mStart.yaw = start.value("yaw", -90.0f);
+                    mStart.pitch = start.value("pitch", 0.0f);
+                    mStart.grounded = start.value("grounded", false);
+                    mStart.health = start.value("health", 100);
+                    mStart.weapon = start.value("equipped_weapon", "");
+                    mStart.slot = start.value("equipped_slot", 0);
+                    // Start pose is restored explicitly; do not gate on the
+                    // live spawn generation after a respawn.
+                    mStart.spawnGeneration = 0;
+                    mStart.transformEpoch = 0;
+                }
+            }
+            else if (event == "scenario.record.tick")
+            {
+                if (!fields.contains("actors") || !fields["actors"].is_array())
+                    continue;
+                const auto& actors = fields["actors"];
+                const nlohmann::json* local = nullptr;
+                for (const auto& actor : actors)
+                {
+                    const std::string kind = actor.value("k", "");
+                    if (kind != "player")
+                        continue;
+                    if (localId != 0 &&
+                        actor.value("id", "") != "player:" + std::to_string(localId))
+                        continue;
+                    local = &actor;
+                    break;
+                }
+                if (!local)
+                    continue;
+                ScenarioTracks::ActorState state =
+                    ScenarioTracks::parseActorState(*local);
+                Tick tick;
+                tick.equippedWeapon = state.weaponId;
+                tick.equippedSlot = state.equippedSlot;
+                tick.position = state.position;
+                tick.velocity = state.velocity;
+                tick.health = state.health;
+                tick.grounded = state.grounded;
+                tick.serverTick = fields.value("server_tick", 0u);
+                if (state.hasInput)
+                {
+                    const float yaw = glm::radians(state.yaw);
+                    const glm::vec2 forward(std::cos(yaw), std::sin(yaw));
+                    const glm::vec2 right(-forward.y, forward.x);
+                    tick.input.wishSide = state.input.wishMoveXY.x;
+                    tick.input.wishForward = state.input.wishMoveXY.y;
+                    const glm::vec2 world =
+                        right * state.input.wishMoveXY.x +
+                        forward * state.input.wishMoveXY.y;
+                    tick.input.moveX = world.x;
+                    tick.input.moveY = world.y;
+                    tick.input.jump = state.input.jumpHeld;
+                    tick.input.jumpPressed = state.input.jumpPressed;
+                    tick.input.dashPressed = state.input.dashPressed;
+                    tick.input.downDashPressed = state.input.downDashPressed;
+                    tick.input.freezeHeld = state.input.freezeHeld;
+                    tick.input.freezePressed = state.input.freezePressed;
+                    tick.input.crouchHeld = state.input.crouchHeld;
+                    tick.input.interactHeld = state.input.interactHeld;
+                    tick.input.camForward = state.input.camForward;
+                    tick.input.lookYaw = state.yaw;
+                }
+                tick.input.movementPressed =
+                    std::abs(tick.input.moveX) > 0.0001f ||
+                    std::abs(tick.input.moveY) > 0.0001f;
+                tick.input.movementJustPressed = tick.input.movementPressed;
+                if (!sawHeader && mTicks.empty())
+                {
+                    mStart.position = state.position;
+                    mStart.velocity = state.velocity;
+                    mStart.grounded = state.grounded;
+                    mStart.health = state.health;
+                    mStart.weapon = state.weaponId;
+                    mStart.slot = state.equippedSlot;
+                }
+                mTicks.push_back(tick);
+            }
+            else if (event == "scenario.record.checkpoint")
+            {
+                const uint32_t serverTick = fields.value("server_tick", 0u);
+                if (serverTick == 0 || !fields.contains("actors") ||
+                    !fields["actors"].is_array())
+                    continue;
+                for (const auto& actor : fields["actors"])
+                {
+                    if (actor.value("k", "") != "player")
+                        continue;
+                    if (localId != 0 &&
+                        actor.value("id", "") != "player:" + std::to_string(localId))
+                        continue;
+                    ScenarioTracks::ActorState state =
+                        ScenarioTracks::parseActorState(actor);
+                    Tick tick;
+                    tick.equippedWeapon = state.weaponId;
+                    tick.equippedSlot = state.equippedSlot;
+                    tick.position = state.position;
+                    tick.velocity = state.velocity;
+                    tick.health = state.health;
+                    tick.grounded = state.grounded;
+                    tick.serverTick = serverTick;
+                    mCheckpointLocal[serverTick] = tick;
+                    break;
+                }
+            }
+        }
+    }
+    if (!sawHeader)
+    {
+        if (error) *error = "scenario_canonical_header_missing";
         return false;
+    }
     if (mTicks.empty())
     {
         if (error) *error = "scenario_has_no_ticks";
@@ -86,6 +331,7 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
     }
 
     mTicks.clear();
+    mScenarioId.clear();
     mRevisions.clear();
     mMap.clear();
     mMode.clear();
@@ -180,9 +426,11 @@ bool ScenarioPlayer::loadLines(const std::string& path, std::string* error)
                 mStart.health = start.value("health", 100);
                 mStart.weapon = start.value("equipped_weapon", "");
                 mStart.slot = start.value("equipped_slot", 0);
-                mStart.spawnGeneration = start.value("spawn_generation", 0u);
-                mStart.transformEpoch = static_cast<uint16_t>(
-                    start.value("transform_epoch", 0u));
+                // The replay restores the recorded start pose explicitly. A
+                // stale live spawn generation must not block replaying a human
+                // recording on a fresh life.
+                mStart.spawnGeneration = 0;
+                mStart.transformEpoch = 0;
             }
         }
         else if (kind == "tick")
@@ -290,7 +538,7 @@ bool ScenarioPlayer::begin()
         StructuredCategory::General, StructuredLevel::Important,
         "scenario.playback.started", "scenario-player",
         "scenario playback started; waiting for recorded start state", 0,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"schema", mSchemaVersion},
                        {"map", mMap},
                        {"mode", mMode},
@@ -319,7 +567,7 @@ void ScenarioPlayer::applyRecordedEquipment(const Tick& tick)
         StructuredCategory::General, StructuredLevel::Important,
         "scenario.playback.equipment", "scenario-player",
         "applied recorded weapon change during playback", mIndex,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"frame", mIndex},
                        {"weapon", weapon},
                        {"equipped_slot", tick.equippedSlot}},
@@ -426,7 +674,7 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
                 "scenario.playback.start_ready", "scenario-player",
                 "recorded start state and server proxies reached; playback frames begin",
                 0,
-                nlohmann::json{{"path", mPath},
+                nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                                {"start_restored", true},
                                {"position_ready", positionReady},
                                {"server_position_ready", serverPositionReady},
@@ -456,7 +704,7 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
                 StructuredCategory::General, StructuredLevel::Errors,
                 "scenario.playback.start_ready", "scenario-player",
                 "recorded start state was not ready before timeout", 0,
-                nlohmann::json{{"path", mPath},
+                nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                                {"start_restored", false},
                                {"reason", reason},
                                {"position_ready", positionReady},
@@ -508,7 +756,7 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
                         "scenario.playback.divergence", "scenario-player",
                         "recorded input playback diverged from the recorded pose",
                         mIndex,
-                        nlohmann::json{{"path", mPath},
+                        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                                        {"frame", mIndex},
                                        {"server_tick", next.serverTick},
                                        {"expected_position", {mFirstDivergenceExpected.x,
@@ -521,11 +769,56 @@ void ScenarioPlayer::advance(Player& player, Camera& camera)
                                        {"threshold_m", kDivergenceFailM}},
                         __FILE__, __LINE__, __FUNCTION__);
                 }
-                fail("position_divergence");
-                return;
+                if (mSchemaVersion < ScenarioTracks::kSchemaV4)
+                {
+                    fail("position_divergence");
+                    return;
+                }
+                // Canonical collision replay continues after divergence so the
+                // tool can gather evidence and reach bookmarks. Later contacts
+                // are marked unaligned by the runner.
             }
         }
         ++mIndex;
+    }
+    if (mIndex < mTicks.size())
+    {
+        const uint32_t checkpointTick = mTicks[mIndex].serverTick;
+        auto checkpoint = mCheckpointLocal.find(checkpointTick);
+        if (checkpoint != mCheckpointLocal.end() &&
+            mAppliedCheckpoints.insert(checkpointTick).second)
+        {
+            const glm::vec3 before = player.pos;
+            const Tick& restore = checkpoint->second;
+            player.pos = restore.position;
+            player.vel = restore.velocity;
+            player.currentHp = restore.health;
+            player.ground.onGround = restore.grounded;
+            player.ground.stableOnGround = restore.grounded;
+            player.ground.hasWorldContact = restore.grounded;
+            player.lastValidWorldCollisionPosition = restore.position;
+            player.hasLastValidWorldCollisionPosition = true;
+            player.updateModelWorldTransforms();
+            if (!restore.equippedWeapon.empty() &&
+                restore.equippedWeapon != player.equippedWeaponId)
+                Terminal::instance().execute("equipweapon " + restore.equippedWeapon);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "scenario.replay.restore", "scenario-player",
+                "restored recorded local-player checkpoint after the bookmark segment",
+                mIndex,
+                nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
+                               {"server_tick", checkpointTick},
+                               {"frame", mIndex},
+                               {"before_position", {before.x, before.y, before.z}},
+                               {"after_position", {player.pos.x, player.pos.y,
+                                                   player.pos.z}},
+                               {"before_velocity", {player.vel.x, player.vel.y,
+                                                    player.vel.z}},
+                               {"restored_components", {"player_pose", "health", "equipment"}},
+                               {"unrestored_components", {"npc_proxies_server_owned"}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     if (mIndex >= mTicks.size())
         finish("complete");
@@ -575,7 +868,7 @@ void ScenarioPlayer::fail(const std::string& reason)
         "scenario.playback.failed", "scenario-player",
         "scenario playback invalidated without snapping to the recorded path",
         mIndex,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"valid", false},
                        {"reason", reason},
                        {"frames_played", mIndex},
@@ -613,7 +906,7 @@ void ScenarioPlayer::finish(const char* reason)
         "scenario-player",
         completed ? "scenario playback finished" : "scenario playback stopped",
         mIndex,
-        nlohmann::json{{"path", mPath},
+        nlohmann::json{{"scenario_id", mScenarioId}, {"path", mPath},
                        {"completed", completed},
                        {"valid", mValid},
                        {"end_reason", reason ? reason : "unknown"},

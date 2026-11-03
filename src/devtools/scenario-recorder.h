@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <nlohmann/json.hpp>
+
 class Player;
 class Camera;
 class NpcSystem;
@@ -30,9 +32,13 @@ public:
 
     bool active() const { return mActive; }
     const std::string& path() const { return mPath; }
+    const std::string& scenarioId() const { return mScenarioId; }
     uint32_t frames() const { return mFrame; }
     bool networked() const { return mNetworked; }
     bool merged() const { return mMerged; }
+    bool captureInvalid() const { return mCaptureInvalid; }
+    bool canonical() const { return mCanonical; }
+    const std::string& captureFailure() const { return mCaptureFailure; }
     const std::string& mergeError() const { return mMergeError; }
 
     void captureTick(const InputFrame& frame,
@@ -55,6 +61,11 @@ private:
     void writeHeader(const Player& player, const Camera& camera);
     void writeFooter(const char* reason);
     void flushIfNeeded();
+    bool writeScenarioEvent(const std::string& event, const std::string& reason,
+                            uint32_t tick, const nlohmann::json& fields);
+    void markCaptureFailure(const std::string& reason, uint32_t tick);
+    nlohmann::json playerEvidenceJson(const Player& player,
+                                      const Camera& camera) const;
     void writeIdentity(const std::string& trackId,
                        const std::string& kind,
                        uint32_t entityId,
@@ -69,6 +80,7 @@ private:
     bool mActive = false;
     bool mStartPending = false;
     bool mNetworked = false;
+    bool mCanonical = false;
     bool mMerged = false;
     std::ofstream mOut;
     std::string mPath;
@@ -83,4 +95,7 @@ private:
     uint64_t mStartMs = 0;
     std::unordered_map<std::string, ActorSnapshot> mLastActors;
     std::unordered_map<std::string, bool> mKnownIdentities;
+    std::string mScenarioId;
+    bool mCaptureInvalid = false;
+    std::string mCaptureFailure;
 };

@@ -262,6 +262,14 @@ If no result arrives, leave the run pending until an explicit stop or a
 separately identified process failure; elapsed time alone is not a gameplay
 verdict.
 
+For human-recorded collision regressions, the decisive event is completion of
+the recorded input through the next checkpoint or recording end. Position
+divergence is evidence to capture, not an automatic stop. The run compares and
+logs the segment through its bookmark, restores the complete recorded world
+state at that bookmark, emits `scenario.checkpoint.restored`, and continues.
+This checkpoint behavior and complete per-tick evidence are specified in
+`scenario-input-recording.md`; a partial trace or failed restore cannot pass.
+
 This is a target behavior, not a claim that the current runner supports
 arbitrary event-based completion. Scenario definitions and the runner must
 identify which server/client journals the condition applies to.

@@ -191,6 +191,32 @@ This policy is intended to provide continuous detection with bounded normal
 cost and a useful failure window. The acceptable CPU, memory, and journal-size
 budgets must be measured before enabling a new monitor broadly.
 
+### Human-recorded collision trace mode — desired
+
+Human-recorded collision scenarios are the explicit exception to the
+low-volume normal-play policy above. While recording or replaying one, capture
+the required actor and dynamic-object state on every fixed server tick through
+`StructuredLogger` into each process's canonical `events.jsonl`. Do not create
+a scenario-specific event sink. The scenario spec defines required fields and
+replay/checkpoint behavior. A scenario analyzer selects records by
+scenario/run/process/actor/tick identity; the journal remains the source of
+truth.
+
+Every required trace write must return an acceptance result to the recorder.
+If a required row cannot be serialized, reserved, written, or retained, mark
+the scenario incomplete/invalid and surface that status in the runtime journal
+and dev-loop status. Never pass from a partial trace. Ordinary low-priority
+aggregation/drop rules do not silently apply to required scenario rows.
+
+The file and tree quotas are configurable in `config/debuglogger.json`, with
+defaults of 100,000,000 decimal bytes per journal segment and 1,000,000,000
+decimal bytes for the logs tree. All cooperating journal writers enforce the
+same effective limits. Bookmarked scenario evidence is retained until a human
+explicitly removes it; quota exhaustion must not prune it. If no safe capacity
+remains, fail the capture loudly as incomplete rather than losing evidence or
+exceeding configured limits. The dashboard displays effective limits, current
+usage, and incomplete capture status, but does not edit the configuration.
+
 Required bounded events:
 
 - `collision.solve.summary` — sampled solve result, actor, position, leading
@@ -224,7 +250,18 @@ Rules:
 - The event schema must be shared with the scenario recorder/analyzer rather
   than parsed from free-form text.
 
-Status: partial implementation. `StructuredLogger` now enforces a 100,000,000
+Status update 2026-11-02: `config/debuglogger.json` now supplies
+`storage_limits.per_segment_bytes` (default 100,000,000) and
+`storage_limits.total_log_tree_bytes` (default 1,000,000,000), validated at
+launch. Hot reload preserves the launch-time limits. `StructuredLogger` also
+has a blocking checked-write path used by scenario capture and run pinning for
+bookmarked recordings. A forced-quota live run on build 250 with
+`per_segment_bytes=32768` produced server and client
+`scenario.record.invalid` events with `valid=false`; no completed marker was
+written.
+
+Status: partial implementation. `StructuredLogger` currently enforces
+a 100,000,000
 byte canonical file ceiling and a 1,000,000,000 byte `logs` tree ceiling,
 tracks concurrent processes with shared Windows coordination, prunes eligible
 completed run directories, and counts records it cannot accept. The source was
@@ -232,6 +269,12 @@ compiled into published build 2429 on 2026-10-16. Runtime quota enforcement,
 retention under live writers, and behavior when the quota is exhausted have
 not yet been verified in a fresh game/server run. This is not completion of the
 canonical-writer migration below.
+
+The numeric limits in the current implementation are hard-coded; configurable
+limits and scenario-specific fail-loud behavior above are desired work, not
+claims about current runtime behavior. Legacy low-priority drop rules below
+apply to ordinary diagnostics only and do not permit silently dropping required
+scenario trace rows.
 
 ### Current evidence status — 2026-10-16
 
@@ -276,11 +319,15 @@ files, feature-specific debug files, `printf`/`fprintf` diagnostic sinks, or
 parallel JSONL journals under `logs/`. Terminal display may remain as a
 presentation of the same structured record, but it is not a second file sink.
 
-The desired storage invariant is absolute, not best-effort:
+The desired storage invariant is absolute, not best-effort. Limits are
+configurable in `config/debuglogger.json`; the defaults below preserve the
+current 100,000,000-byte segment and 1,000,000,000-byte tree ceilings. The
+configured values, not hard-coded constants, define the effective ceiling:
 
-1. The complete `logs` directory tree must never exceed exactly
-   `1,000,000,000` bytes of regular-file content.
-2. No individual log file may exceed exactly `100,000,000` bytes.
+1. The complete `logs` directory tree must never exceed its configured byte
+   limit (default `1,000,000,000`) of regular-file content.
+2. No individual log segment may exceed its configured byte limit (default
+   `100,000,000`).
 3. The quota must hold while client and server processes write concurrently,
    not only at startup or shutdown.
 4. A write that would violate either limit must be rejected, summarized, or
@@ -304,8 +351,8 @@ below. These are known gaps and must remain visible in validation and
 user-facing storage claims.
 
 The exact byte units are decimal bytes, not MiB/GiB. The implementation may
-reserve internal headroom below 1,000,000,000 bytes, but the specification's
-observable ceiling remains 1,000,000,000 bytes.
+reserve internal headroom below the configured tree ceiling, but it must never
+write beyond either configured limit.
 
 ## Proposed ownership and migration order
 

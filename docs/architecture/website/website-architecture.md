@@ -30,7 +30,10 @@ PostgreSQL accepts a query.
 The production debug router is intentionally unavailable in production. Use
 the public, detail-free `/api/health/ready` response for external monitoring;
 it checks a database query and disk headroom without returning host paths,
-database names, configuration, or exception text.
+database names, configuration, or exception text. `/api/health/backup` reports
+only whether a full database archive was uploaded and verified within the last
+26 hours; its status comes from a root-written marker and does not expose the
+backup name, timestamp, Drive path, or error details.
 
 ## Room-code multiplayer path
 
@@ -63,6 +66,7 @@ fallback. Record the real activation time; do not backdate it.
 | nginx | Public HTTP/HTTPS proxy and static frontend | External HTTPS probe and `systemctl is-active nginx` |
 | `mimita-api` | Website API, port 3002 | `/api/health/ready`, API response, and PM2 status |
 | `postgresql@14-main` | Website/account database, port 5432 | `pg_isready` plus API `SELECT 1` check |
+| `mimita-database-backup.timer` | Daily verified PostgreSQL archive and encrypted Drive copy | `/api/health/backup`, timer status, and remote content verification |
 | `mimita-coordinator` | Room-code discovery and ICE signaling, port 3001 | PM2 status and a bounded coordinator probe |
 | Coturn | STUN and optional TURN relay, port 3478 | Service status and candidate-path evidence from the game |
 

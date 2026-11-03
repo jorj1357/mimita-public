@@ -47,3 +47,13 @@ This document tracks phased, testable implementation milestones for `ZOMBIE_TOWE
 ## Current limits
 
 The existing mode logic has an extensive first-playable contract, and GLB6 contains many floors, but neither the current map nor this first content slice proves a connected 10-floor route. GLB6 lacks named floors 1–19, 99, and 100. It has explicit stair nodes on floors 26–97; floors 20–25 need route inspection. The slice currently adds gameplay markers only, not procedural floor geometry.
+
+## Blender blockout milestone — 2026-11-02
+
+- [x] Create a saved 100-floor blockout in `C:\important\quiet\blender-projects\mimita zomb tower ai 2.blend` from the named spec.
+- [x] Add the 500 m × 500 m × 10 m foundation (bottom Z=20 m, top Z=30 m), 100 numbered floors, 100 continuous ramp loops, varied floor treatments, and an open-air rooftop at Z=5030 m.
+- [x] Add 100 solid 100 m × 100 m decks with a ramp-aligned passage, 32 m-wide main ramps and landing routes, at least 3.8 m clear headroom, and four-sided floor enclosures.
+- [ ] Verify in MiMITA runtime that falling stops on the current floor's deck and that every ramp-to-landing seam is traversable; Blender geometry checks do not prove collision behavior.
+- [ ] Export/convert the blockout into the MiMITA runtime map format and verify actual player and NPC traversal. The Blender scene is visual/design evidence only.
+- [x] Convert the existing 1,008-unit room in `mimita zombie tower only with ai.blend` into a tiled boss arena with one base floor, surf obstacles, and a stair-aligned roof opening.
+- [ ] Validate boss-arena collision, player traversal, and fall recovery in MiMITA runtime.

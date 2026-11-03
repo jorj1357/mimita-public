@@ -780,32 +780,45 @@ def launch_mode_table() -> list[tuple[str, str]]:
     return table
 
 
-def next_build_number() -> int:
-    numbers = []
-    if BUILD_ROOT.is_dir():
-        for path in BUILD_ROOT.iterdir():
-            if path.is_dir() and path.name.isdigit():
-                numbers.append(int(path.name))
-    return max(numbers, default=0) + 1
+def build_artifact_id(now: datetime.datetime | None = None) -> tuple[str, str]:
+    """Return a canonical UTC build ID and a Windows-safe folder name."""
+    timestamp = now or datetime.datetime.now(datetime.timezone.utc)
+    timestamp = timestamp.astimezone(datetime.timezone.utc)
+    while True:
+        artifact_id = timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
+        folder_name = artifact_id.replace(":", "-")
+        if not (BUILD_ROOT / folder_name).exists():
+            return artifact_id, folder_name
+        timestamp += datetime.timedelta(microseconds=1)
+
+
+def _published_build_sort_key(path: Path) -> tuple[int, str]:
+    """Sort timestamp IDs newest first, then legacy numeric folders."""
+    try:
+        timestamp = datetime.datetime.strptime(path.name, "%Y-%m-%dT%H-%M-%S.%fZ")
+        return (1, timestamp.strftime("%Y%m%d%H%M%S%f"))
+    except ValueError:
+        return (0, path.name.zfill(20) if path.name.isdigit() else "")
 
 
 def published_builds() -> list[Path]:
     if not BUILD_ROOT.is_dir():
         return []
     return sorted(
-        (p for p in BUILD_ROOT.iterdir() if p.is_dir() and p.name.isdigit()),
-        key=lambda p: int(p.name),
+        (p for p in BUILD_ROOT.iterdir()
+         if p.is_dir() and (p.name.isdigit() or _published_build_sort_key(p)[1])),
+        key=_published_build_sort_key,
         reverse=True,
     )
 
 
-def newest_valid_published_build() -> int | None:
-    """Return the newest numbered artifact that contains a runnable EXE."""
+def newest_valid_published_build() -> str | None:
+    """Return the newest timestamped or legacy artifact with a runnable EXE."""
     for path in published_builds():
         exe = path / "mimita.exe"
         try:
             if exe.is_file() and _executable_snapshot_is_valid(exe)[0]:
-                return int(path.name)
+                return path.name
         except OSError:
             continue
     return None
@@ -930,16 +943,16 @@ def stable_launch_matches(build_exe: Path) -> bool:
 
 
 def stage_stable_launch(build_exe: Path, expected_sha256: str) -> Path:
-    """Stage hardlinks from one immutable numbered artifact for stable-path launch."""
+    """Stage hardlinks from one immutable published artifact for stable-path launch."""
     source_root = BUILD_ROOT.resolve()
     resolved_exe = build_exe.resolve()
     if not resolved_exe.is_relative_to(source_root):
-        raise RuntimeError(f"refusing stable launch from outside numbered builds: {build_exe}")
+        raise RuntimeError(f"refusing stable launch from outside published builds: {build_exe}")
 
     valid, reason, digest = _executable_snapshot_is_valid(resolved_exe)
     if not valid or digest != expected_sha256:
         raise RuntimeError(
-            f"numbered artifact changed before stable launch staging ({reason})"
+            f"published artifact changed before stable launch staging ({reason})"
         )
 
     DEV_ROOT.mkdir(parents=True, exist_ok=True)
@@ -950,7 +963,7 @@ def stage_stable_launch(build_exe: Path, expected_sha256: str) -> Path:
         for name in RUNTIME_DLLS:
             source_dll = resolved_exe.parent / name
             if not source_dll.is_file():
-                raise RuntimeError(f"numbered artifact is missing runtime DLL: {source_dll}")
+                raise RuntimeError(f"published artifact is missing runtime DLL: {source_dll}")
             os.link(source_dll, stage_dir / name)
 
         staged_identity = executable_identity(stage_dir / "mimita.exe")
@@ -967,7 +980,7 @@ def stage_stable_launch(build_exe: Path, expected_sha256: str) -> Path:
 
 
 def activate_stable_launch(stage_dir: Path) -> Path:
-    """Atomically point the constant firewall path at a staged numbered build."""
+    """Atomically point the constant firewall path at a staged build."""
     resolved_dev_root = DEV_ROOT.resolve()
     resolved_stage = stage_dir.resolve()
     if resolved_stage.parent != resolved_dev_root:
@@ -995,13 +1008,14 @@ def activate_stable_launch(stage_dir: Path) -> Path:
     return STABLE_LAUNCH_EXE
 
 
-def publish_build(number: int) -> Path:
+def publish_build(artifact_id: str, folder_name: str, source_generation: int,
+                  mode: str) -> Path:
     source_exe = ROOT / "mimita.exe"
     if not source_exe.is_file():
         raise RuntimeError("build succeeded but mimita.exe was not produced")
 
-    destination = BUILD_ROOT / f"{number:04d}"
-    destination.mkdir(parents=True, exist_ok=True)
+    destination = BUILD_ROOT / folder_name
+    destination.mkdir(parents=True, exist_ok=False)
     _copy_verified_executable(source_exe, destination / "mimita.exe")
 
     runtime_sources = {name: ROOT / name for name in RUNTIME_DLLS}
@@ -1022,6 +1036,20 @@ def publish_build(number: int) -> Path:
             shutil.copy2(source, destination / name)
         else:
             print(f"[DEV] published build missing runtime DLL: {source}")
+
+    published_identity = executable_identity(destination / "mimita.exe")
+    metadata = {
+        "artifact_id": artifact_id,
+        "build_id": f"{artifact_id}:{published_identity.get('sha256', '')}",
+        "created_utc": artifact_id,
+        "sha256": published_identity.get("sha256", ""),
+        "source_generation": source_generation,
+        "build_mode": mode,
+        "executable": str(destination / "mimita.exe"),
+    }
+    (destination / "build-identity.json").write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+    )
 
     for old in published_builds()[KEEP_BUILDS:]:
         shutil.rmtree(old, ignore_errors=True)
@@ -1121,7 +1149,7 @@ class DevLoop:
         self.launch_after_build = False
         self.shutting_down = False
         self.last_message = (
-            f"restored published build {self.latest_build:04d}; validating current source"
+            f"restored published build {self.latest_build}; validating current source"
             if self.latest_build is not None
             else "starting; no published build found"
         )
@@ -1299,13 +1327,17 @@ class DevLoop:
         build_elapsed = (max(0.0, time.monotonic() - build_snapshot["active_build_started_monotonic"])
                          if build_snapshot["active_build_started_monotonic"] is not None
                          else build_snapshot["last_build_duration_seconds"])
+        latest_identity = self.latest_build_identity()
         return {
             "profile": self.profile.get("name", "unnamed"),
             "launch_mode": self.launch_mode_id,
             "running_build": self.running_build,
             "latest_successful_build": self.latest_build,
+            "latest_artifact_id": (latest_identity or {}).get("artifact_id"),
+            "latest_successful_build_id": self.build_id(latest_identity),
             "source_generation": self.generation,
-            "latest_successful_source_generation": self.latest_generation,
+            "latest_successful_source_generation": (latest_identity or {}).get(
+                "source_generation", self.latest_generation),
             "latest_build_stale": self.latest_stale,
             "auto_restart": self.auto_restart,
             "launch_visibility": self.launch_visibility,
@@ -1353,7 +1385,7 @@ class DevLoop:
             "build_mismatch_reason": mismatch_reason,
             "firewall_result": self.firewall_result,
             "map": self.current_map,
-            "build_identity": self.latest_build_identity(),
+            "build_identity": latest_identity,
             "launch_mode_name": self.launch_mode.get("name", "unnamed"),
             "launch_mode_config": str(LAUNCH_MODE_PATH),
             "daemon_pid": os.getpid(),
@@ -1641,23 +1673,51 @@ class DevLoop:
     def latest_executable(self) -> Path:
         if self.latest_build is None:
             return BUILD_ROOT / "(none)" / "mimita.exe"
-        return BUILD_ROOT / f"{self.latest_build:04d}" / "mimita.exe"
+        return BUILD_ROOT / self.latest_build / "mimita.exe"
 
     def latest_build_identity(self) -> dict | None:
         if self.latest_build is None:
             return None
         exe = self.latest_executable()
         info = executable_identity(exe)
-        info["build_number"] = self.latest_build
+        info["artifact_id"] = self.latest_build
+        info["build_id"] = f"{self.latest_build}:{info.get('sha256', '')}"
+        info["build_number"] = int(self.latest_build) if self.latest_build.isdigit() else None
         info["source_generation"] = self.latest_generation
         info["source_current"] = not self.latest_stale
+        try:
+            metadata = read_json(exe.parent / "build-identity.json")
+            if isinstance(metadata, dict):
+                metadata_id = str(metadata.get("artifact_id") or "")
+                metadata_valid = bool(
+                    metadata_id
+                    and metadata_id.replace(":", "-") == exe.parent.name
+                    and metadata.get("sha256") == info.get("sha256")
+                    and metadata.get("build_id") == f"{metadata_id}:{info.get('sha256', '')}"
+                    and isinstance(metadata.get("source_generation"), int)
+                )
+                info.update(metadata)
+                info["path"] = str(exe)
+                info["valid"] = bool(info.get("valid") and metadata_valid)
+                info["validation"] = ("valid" if info["valid"] else
+                                      "artifact identity metadata mismatch")
+            elif not self.latest_build.isdigit():
+                info["valid"] = False
+                info["validation"] = "timestamped artifact identity metadata is invalid"
+        except (OSError, ValueError, json.JSONDecodeError):
+            # Numbered artifacts predate the metadata sidecar; timestamped
+            # artifacts require it so their source/build identity is explicit.
+            if not self.latest_build.isdigit():
+                info["valid"] = False
+                info["validation"] = "timestamped artifact identity metadata is missing or invalid"
         return info
 
     @staticmethod
     def build_id(identity: dict | None) -> str:
         if not identity:
             return ""
-        return f"{identity.get('build_number', '')}:{identity.get('sha256', '')}"
+        return str(identity.get("build_id") or
+                   f"{identity.get('artifact_id', identity.get('build_number', ''))}:{identity.get('sha256', '')}")
 
     def start_control_server(self) -> None:
         if self.control_socket is not None:
@@ -2005,7 +2065,8 @@ class DevLoop:
         output: list[str] = []
         result = 2
         destination: Path | None = None
-        build_number: int | None = None
+        artifact_id: str | None = None
+        folder_name: str | None = None
         error_message = ""
         try:
             process = subprocess.Popen(
@@ -2035,8 +2096,9 @@ class DevLoop:
         )
         if successful:
             try:
-                build_number = next_build_number()
-                destination = publish_build(build_number)
+                artifact_id, folder_name = build_artifact_id()
+                destination = publish_build(artifact_id, folder_name,
+                                            requested_generation, mode)
             except Exception as error:
                 successful = False
                 error_message = f"publish failed: {error}"
@@ -2048,7 +2110,8 @@ class DevLoop:
             "request_ids": request_ids,
             "success": successful,
             "return_code": result,
-            "build_number": build_number,
+            "artifact_id": artifact_id,
+            "folder_name": folder_name,
             "destination": str(destination) if destination else "",
             "error": error_message,
             "duration_seconds": max(0.0, time.monotonic() - started),
@@ -2081,7 +2144,7 @@ class DevLoop:
                     self.build_requests[request_id] = self.last_build_result
 
                 if success:
-                    self.latest_build = int(result["build_number"])
+                    self.latest_build = str(result["artifact_id"])
                     self.latest_generation = generation
                     self.latest_stale = self.generation != generation
                     self.last_message = (
@@ -2471,6 +2534,7 @@ class DevLoop:
         launch_journal_path = self.events_path
         launch_run_id = self.run_id or Path(launch_journal_path).parent.name
         build_id = ""
+        artifact_id = ""
         map_name = ""
 
         def stage(name: str, result: str, reason: str = "",
@@ -2483,7 +2547,9 @@ class DevLoop:
                     "result": result,
                     "request_id": request_id,
                     "run_id": launch_run_id,
-                    "build_number": selected_build,
+                    "build_number": (int(selected_build)
+                                     if str(selected_build or "").isdigit() else None),
+                    "artifact_id": artifact_id,
                     "build_id": build_id,
                     "launch_mode": self.launch_mode_id,
                     "map": map_name,
@@ -2512,9 +2578,10 @@ class DevLoop:
             stage("artifact_selection", "failed", self.last_message)
             stage("complete", "failed", self.last_message)
             return False
-        build_dir = BUILD_ROOT / f"{selected_build:04d}"
+        build_dir = BUILD_ROOT / selected_build
         exe = build_dir / "mimita.exe"
         identity = self.latest_build_identity()
+        artifact_id = str((identity or {}).get("artifact_id") or selected_build)
         if not identity or not identity.get("valid"):
             self.last_message = f"last successful build {selected_build} failed artifact validation"
             stage("artifact_validation", "failed", self.last_message)
@@ -2534,7 +2601,8 @@ class DevLoop:
         launch_exe = STABLE_LAUNCH_EXE
         stage("artifact_selection", "selected", "last successfully published artifact selected",
               artifact_executable=str(exe), launch_executable=str(launch_exe),
-              source_generation=self.latest_generation,
+              artifact_id=artifact_id,
+              source_generation=identity.get("source_generation", self.latest_generation),
               source_current=self.latest_generation == self.generation,
               build_pending=bool(self.build_pending or self.active_build_generation is not None))
         stage("artifact_validation", "succeeded", "published artifact identity is valid",
@@ -2707,12 +2775,14 @@ class DevLoop:
             self.builds_match = False
             metadata = {
                 "run_id": self.run_id,
-                "build_number": selected_build,
+                "build_number": int(selected_build) if selected_build.isdigit() else None,
+                "artifact_id": artifact_id,
+                "artifact_folder": selected_build,
                 "build_id": build_id,
                 "server_build_id": build_id,
                 "client_build_id": build_id,
                 "build_identity": identity,
-                "source_generation": self.latest_generation,
+                "source_generation": identity.get("source_generation", self.latest_generation),
                 "source_current": self.latest_generation == self.generation,
                 "launch_mode": self.launch_mode_id,
                 "launch_mode_name": self.launch_mode.get("name", "unnamed"),
@@ -2904,7 +2974,9 @@ class DevLoop:
             self.run_started_utc = self.run_started_utc or utc_now()
             self.run_metadata = {
                 "run_id": self.run_id,
-                "build_number": selected_build,
+                "build_number": int(selected_build) if selected_build.isdigit() else None,
+                "artifact_id": artifact_id,
+                "artifact_folder": selected_build,
                 "build_id": build_id,
                 "server_build_id": build_id,
                 "client_build_id": build_id,
@@ -2922,6 +2994,8 @@ class DevLoop:
         else:
             self.run_metadata["server_build_id"] = build_id
             self.run_metadata["client_build_id"] = build_id
+            self.run_metadata["artifact_id"] = artifact_id
+            self.run_metadata["artifact_folder"] = selected_build
             self.run_metadata["build_identity"] = identity
             self.run_metadata["executable"] = str(launch_exe)
             self.run_metadata["artifact_executable"] = str(exe)
@@ -3330,7 +3404,7 @@ class DevLoop:
         client_pids = snapshot.get("client_pids", [])
         return [
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
-            f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest={snapshot.get('latest_successful_build') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
+            f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
             f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
@@ -4348,10 +4422,10 @@ def _duration_text(seconds) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def _build_label(executable, build_number=None) -> str:
-    """Show the immutable build number even when launched through a stable path."""
-    if build_number is not None:
-        return str(build_number)
+def _build_label(executable, artifact_id=None) -> str:
+    """Show an artifact ID even when launched through a stable path."""
+    if artifact_id is not None:
+        return str(artifact_id)
     if not executable:
         return "-"
     parts = Path(str(executable)).parts
@@ -4404,6 +4478,99 @@ DASHBOARD_CONTROLS_LINE = (
 )
 
 
+def _storage_limit_text() -> str:
+    try:
+        raw = json.loads((ROOT / "config" / "debuglogger.json").read_text(encoding="utf-8"))
+        limits = raw.get("storage_limits") or {}
+        per_segment = int(limits.get("per_segment_bytes", 100000000))
+        total = int(limits.get("total_log_tree_bytes", 1000000000))
+        return f"segment<={per_segment} tree<={total}"
+    except (OSError, ValueError, TypeError):
+        return "segment<=100000000 tree<=1000000000"
+
+
+def _journal_usage_text(events_path: str) -> str:
+    try:
+        size = Path(events_path).stat().st_size
+        return f"active journal {size:,} bytes; {_storage_limit_text()}"
+    except OSError:
+        return f"active journal unavailable; {_storage_limit_text()}"
+
+
+def _scenario_state(events_path: str) -> dict:
+    if not events_path:
+        return {"id": "-", "state": "No scenario recorded", "verdict": "—",
+                "frame": "—", "tick": "—", "checkpoint": "—", "build_id": "—",
+                "complete": "unknown", "journal": "(none)"}
+    try:
+        active = Path(events_path)
+        size = active.stat().st_size
+        with open(active, "rb") as journal:
+            journal.seek(max(0, size - 262144))
+            lines = journal.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return {"id": "-", "state": "Journal unavailable", "verdict": "UNKNOWN",
+                "frame": "—", "tick": "—", "checkpoint": "—", "build_id": "—",
+                "complete": "unknown", "journal": events_path}
+    result = {"id": "-", "state": "No scenario recorded", "verdict": "—",
+              "frame": "—", "tick": "—", "checkpoint": "—", "build_id": "—",
+              "checkpoint_progress": "—", "map": "—", "complete": "unknown",
+              "journal": events_path}
+    for line in reversed(lines):
+        try:
+            record = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        event = str(record.get("event") or "")
+        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        if not (event.startswith("scenario.") or event == "bookmark.created"):
+            continue
+        scenario_id = str(fields.get("scenario_id") or record.get("correlation_id") or "-")
+        if result["id"] != "-" and scenario_id != "-" and scenario_id != result["id"]:
+            continue
+        if result["id"] == "-" or fields.get("scenario_id") or record.get("correlation_id"):
+            result["id"] = scenario_id
+        if result["state"] == "No scenario recorded":
+            result["state"] = event
+        for key, candidates in {
+            "frame": ("frame", "frame_index", "frame_count", "completed_frames"),
+            "tick": ("server_tick", "client_tick", "tick"),
+            "checkpoint": ("checkpoint_id", "bookmark_number", "checkpoint"),
+            "build_id": ("build_id",),
+            "checkpoint_progress": ("checkpoint_index", "checkpoint_count"),
+            "map": ("map", "map_name"),
+        }.items():
+            value = next((fields[name] for name in candidates if fields.get(name) is not None), None)
+            if value is not None and result[key] == "—":
+                result[key] = str(value)
+        if event in ("scenario.record.started", "scenario.playback.started"):
+            result["verdict"] = "RUNNING"
+            result["complete"] = "in progress"
+        elif event.endswith((".completed", ".failed", ".invalid")) or event == "scenario.playback.stopped":
+            failed = any(word in event for word in ("failed", "invalid")) or event == "scenario.playback.stopped"
+            complete = fields.get("valid", fields.get("complete", not failed))
+            result["verdict"] = "FAIL" if failed or complete is False else "PASS"
+            result["complete"] = "incomplete" if failed or complete is False else "complete"
+            break
+        elif result["verdict"] == "—" and event not in (
+                "scenario.record.stopped", "bookmark.created"):
+            result["verdict"] = "RUNNING"
+            result["complete"] = "in progress"
+        elif fields.get("valid") is False or fields.get("complete") is False:
+            result["verdict"] = "INCOMPLETE"
+            result["complete"] = "incomplete"
+            break
+    return result
+
+
+def _scenario_state_text(events_path: str) -> str:
+    scenario = _scenario_state(events_path)
+    return (f"scenario={scenario['id']} state={scenario['state']} "
+            f"verdict={scenario['verdict']} frame={scenario['frame']} "
+            f"tick={scenario['tick']} build={scenario['build_id']} "
+            f"journal={scenario['journal']}")
+
+
 def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str,
                      recent: list[str], picker: dict | None = None) -> list[str]:
     client_pids = state.get("client_pids") or []
@@ -4428,7 +4595,7 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Build    : phase={build_phase} {'FAIL' if build_failed else ''}  "
         f"active-source={state.get('active_build_generation') if state.get('active_build_generation') is not None else '-'}  "
         f"queued={'yes' if state.get('build_pending') else 'no'}  "
-        f"latest={state.get('latest_successful_build') or '-'}@{state.get('latest_successful_source_generation', '-')}  "
+        f"latest={state.get('latest_successful_build_id') or state.get('latest_successful_build') or '-'}@{state.get('latest_successful_source_generation', '-')}  "
         f"stale={state.get('latest_build_stale')}  "
         f"elapsed={DevLoop._duration_text(state.get('active_build_elapsed_seconds'))}",
         f"Build detail: {state.get('active_build_detail') or state.get('last_build_result') or '-'}",
@@ -4436,7 +4603,7 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"Runtime  : build={state.get('running_build') or '-'}  match={state.get('builds_match')}",
         f"Server   : {'alive' if server_alive else 'dead'}  pid={state.get('server_pid') or '-'}  "
         f"uptime={_duration_text(state.get('server_uptime_seconds'))}  "
-        f"build={_build_label(state.get('server_executable'), (state.get('run_metadata') or {}).get('build_number'))}  "
+        f"build={_build_label(state.get('server_executable'), (state.get('run_metadata') or {}).get('artifact_id') or (state.get('run_metadata') or {}).get('build_number'))}  "
         f"room={state.get('room_code') or 'waiting'}",
         f"Client   : {'alive' if client_pids else 'dead'}  pids={client_pids or '-'}  "
         f"uptime={_duration_text(state.get('client_uptime_seconds'))}",
@@ -4444,6 +4611,9 @@ def _dashboard_lines(state: dict, watch: dict, role_pids: dict, view_status: str
         f"visibility={state.get('launch_visibility') or '-'}  map={state.get('map') or '-'}",
         f"Last     : {state.get('message') or '-'}",
         f"Journal  : {state.get('events_path') or '(none)'}",
+        f"Limits   : {_storage_limit_text()}",
+        f"Scenario : {_scenario_state_text(str(state.get('events_path') or ''))}",
+        f"Log use  : {_journal_usage_text(str(state.get('events_path') or ''))}",
         f"View     : {view_status}",
         DASHBOARD_CONTROLS_LINE,
         "Recent   :",
@@ -4602,6 +4772,73 @@ def run_dashboard(args: argparse.Namespace) -> int:
     def snapshot() -> dict:
         return request_daemon_status(current, timeout=0.25) if current else None
 
+    if not args.no_tk:
+        try:
+            import dev_loop_gui
+            if dev_loop_gui.available():
+                def gui_status():
+                    latest = snapshot() or current or {}
+                    identity = latest.get("build_identity") or {}
+                    scenario = _scenario_state(str(latest.get("events_path") or ""))
+                    scenario["build_id"] = scenario.get("build_id") or identity.get("build_id") or "—"
+                    scenario["map"] = scenario.get("map") if scenario.get("map") != "—" else latest.get("map") or "—"
+                    scenario["log_usage"] = _journal_usage_text(str(latest.get("events_path") or ""))
+                    runtime_alive = bool(latest.get("run_alive"))
+                    runtime_build_id = ((latest.get("run_metadata") or {}).get("build_id")
+                                        or latest.get("server_build_id")
+                                        or latest.get("running_build") or "—")
+                    sha256 = str(identity.get("sha256") or "—")
+                    build_display = identity.get("build_id")
+                    if not build_display and identity.get("build_number") is not None:
+                        build_display = f"LEGACY #{identity['build_number']}:{sha256}"
+                    build_display = build_display or latest.get("latest_successful_build") or "—"
+                    artifact_display = identity.get("artifact_id")
+                    if not artifact_display and identity.get("build_number") is not None:
+                        artifact_display = f"LEGACY #{identity['build_number']}"
+                    return {
+                        "checkout": str(ROOT),
+                        "daemon_pid": latest.get("daemon_pid") or role_pids.get("daemon"),
+                        "updated_at": latest.get("updated_at") or "—",
+                        "build_id": build_display,
+                        "artifact_id": artifact_display or latest.get("latest_successful_build") or "—",
+                        "sha256": sha256,
+                        "stale": bool(latest.get("latest_build_stale")),
+                        "source_generation": latest.get("latest_successful_source_generation", "—"),
+                        "phase": latest.get("build_status", "unknown"),
+                        "elapsed": _duration_text(latest.get("active_build_elapsed_seconds")),
+                        "phase_detail": (
+                            f"active source generation {latest.get('active_build_generation') or '—'}  ·  "
+                            f"current source generation {latest.get('source_generation', '—')}\n"
+                            f"{latest.get('active_build_detail') or latest.get('message') or ''}"
+                        ),
+                        "build_output": latest.get("build_output_tail") or [],
+                        "runtime": "RUNNING" if runtime_alive else "NOT RUNNING",
+                        "runtime_detail": (
+                            f"build {runtime_build_id}  ·  "
+                            f"server {'ready' if latest.get('server_ready') else 'not ready'} "
+                            f"(PID {latest.get('server_pid') or '—'})  ·  "
+                            f"client {'ready' if latest.get('client_ready') else 'not ready'} "
+                            f"(PID {', '.join(map(str, latest.get('client_pids') or [])) or '—'})\n"
+                            f"mode {latest.get('launch_mode_name') or latest.get('launch_mode') or '—'}  ·  "
+                            f"map {latest.get('map') or '—'}  ·  "
+                            f"build match {'yes' if latest.get('builds_match') else 'no'}"
+                        ),
+                        "scenario": scenario,
+                        "journal": latest.get("events_path") or "(none)",
+                        "recent": _recent_activity(str(latest.get("events_path") or "")),
+                    }
+                return dev_loop_gui.run(
+                    gui_status,
+                    lambda action: {
+                        "accepted": control(current, action),
+                        "message": view_status,
+                    },
+                    title)
+        except Exception:
+            # Fall through to the terminal dashboard; a presentation failure
+            # must not stop the daemon or hide status.
+            pass
+
     try:
         last_status_refresh = 0.0
         while True:
@@ -4680,7 +4917,8 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
         f"active_source={current.get('active_build_generation')} "
         f"elapsed={DevLoop._duration_text(current.get('active_build_elapsed_seconds'))} "
         f"runtime_build={current.get('running_build')} "
-        f"latest_build={current.get('latest_successful_build')} "
+        f"latest_build_id={current.get('latest_successful_build_id')} "
+        f"latest_artifact_id={current.get('latest_artifact_id')} "
         f"latest_source={current.get('latest_successful_source_generation')} "
         f"stale={current.get('latest_build_stale')} detail={current.get('active_build_detail') or current.get('last_build_result')}"
     )
@@ -4954,6 +5192,8 @@ def main() -> int:
                         help="stable role marker recorded in the process command line")
     parser.add_argument("--no-terminal-relaunch", action="store_true",
                         help="do not prefer Windows Terminal; render in the current console")
+    parser.add_argument("--no-tk", action="store_true",
+                        help="use the terminal dashboard even when Tkinter is available")
     parser.add_argument("--dashboard-frames", type=int, default=0,
                         help="render this many dashboard frames then exit (0 = run until quit)")
     parser.add_argument("--command-timeout", type=float, default=15.0,

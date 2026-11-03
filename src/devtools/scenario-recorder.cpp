@@ -11,6 +11,8 @@
 #include <limits>
 #include <sstream>
 
+#include <windows.h>
+
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
@@ -82,6 +84,57 @@ std::string buildIdentity()
         std::getline(in, value);
     return value;
 }
+
+bool journalHasServerInvalid(const std::string& journalPath,
+                             const std::string& scenarioId)
+{
+    if (journalPath.empty() || scenarioId.empty())
+        return false;
+    const std::filesystem::path active(journalPath);
+    std::vector<std::filesystem::path> segments;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(active.parent_path(), ec), end;
+         it != end; it.increment(ec))
+    {
+        if (ec) { ec.clear(); continue; }
+        if (!it->is_regular_file(ec) || ec) { ec.clear(); continue; }
+        const std::string name = it->path().filename().string();
+        if (name.rfind("events-", 0) == 0 &&
+            name.size() > 12 && name.substr(name.size() - 6) == ".jsonl")
+            segments.push_back(it->path());
+    }
+    segments.push_back(active);
+    for (const auto& segment : segments)
+    {
+        std::ifstream in(segment);
+        if (!in.is_open())
+            continue;
+        std::string line;
+        while (std::getline(in, line))
+        {
+            if (line.find(scenarioId) == std::string::npos)
+                continue;
+            try
+            {
+                const auto value = nlohmann::json::parse(line);
+                const std::string event = value.value("event", "");
+                if (event != "scenario.record.invalid" &&
+                    event != "scenario.server.record.invalid")
+                    continue;
+                const auto& fields = value["fields"];
+                if (fields.value("scenario_id", "") == scenarioId &&
+                    value.value("process", "") == "server")
+                    return true;
+            }
+            catch (const std::exception&)
+            {
+                continue;
+            }
+        }
+    }
+    return false;
+}
+
 
 void appendBodyParts(const Player& player,
                      std::vector<ScenarioTracks::BodyPartBox>& out)
@@ -246,8 +299,6 @@ bool ScenarioRecorder::start(const std::string& name,
                              const Camera& camera,
                              std::string* error)
 {
-    (void)player;
-    (void)camera;
     if (mActive)
     {
         if (error) *error = "recording_already_active";
@@ -292,6 +343,9 @@ bool ScenarioRecorder::start(const std::string& name,
             ? "scenario-" + stamp + ".jsonl"
             : "scenario-" + stamp + "-" + cleanName + ".jsonl";
     const std::filesystem::path path = root / file;
+    mScenarioId = "scn-" + stamp + "-" + std::to_string(GetCurrentProcessId());
+    if (!cleanName.empty())
+        mScenarioId += "-" + cleanName;
 
     mOut.open(path, std::ios::out | std::ios::trunc);
     if (!mOut.is_open())
@@ -308,11 +362,14 @@ bool ScenarioRecorder::start(const std::string& name,
     mFrame = 0;
     mStartPending = true;
     mActive = true;
+    mCanonical = true;
     mLocalPlayerId = MP_CONTEXT.active ? MP_CONTEXT.localPlayerId : 0;
     mNetworked = MP_CONTEXT.active && mLocalPlayerId != 0;
     mServerTrackStartTick = 0;
     mMerged = false;
     mMergeError.clear();
+    mCaptureInvalid = false;
+    mCaptureFailure.clear();
     mLastActors.clear();
     mKnownIdentities.clear();
     mStartMs = nowMs();
@@ -320,25 +377,151 @@ bool ScenarioRecorder::start(const std::string& name,
     if (mNetworked)
     {
         // The server owns the authoritative actor sidecar. It is merged into
-        // this file when recording stops.
+        // this file when recording stops. The scenario id links the canonical
+        // client/server events in the shared journal.
         MimitaNet::mpSendServerCommand(MP_CONTEXT,
-            "scenario_server_record_start " + mPath);
+            "scenario_server_record_start " + mPath + " " + mScenarioId);
     }
 
-    StructuredLogger::instance().writeEvent(
-        StructuredCategory::General, StructuredLevel::Important,
-        "scenario.record.started", "scenario-recorder",
-        "scenario recording armed; header is written on the next fixed tick", 0,
-        nlohmann::json{{"path", mPath},
-                       {"schema", mNetworked ? 2 : 1},
-                       {"map", mMap},
-                       {"mode", mMode},
-                       {"weapon_set", mWeaponSet},
-                       {"networked", mNetworked},
-                       {"local_player_id", mLocalPlayerId},
-                       {"tick_rate", 60}},
-        __FILE__, __LINE__, __FUNCTION__);
+    if (!writeScenarioEvent(
+            "scenario.record.started",
+            "scenario recording armed; canonical client/server capture begins on the next fixed tick",
+            0,
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"path", mPath},
+                           {"schema", 4},
+                           {"map", mMap},
+                           {"mode", mMode},
+                           {"weapon_set", mWeaponSet},
+                           {"networked", mNetworked},
+                           {"local_player_id", mLocalPlayerId},
+                           {"tick_rate", 60},
+                           {"journal_path", StructuredLogger::instance().eventsPath()},
+                           {"process_role", "client"},
+                           {"start", {
+                               {"position", ScenarioTracks::vec3Json(player.pos)},
+                               {"velocity", ScenarioTracks::vec3Json(player.vel)},
+                               {"yaw", camera.yaw},
+                               {"pitch", camera.pitch},
+                               {"cam_forward", ScenarioTracks::vec3Json(camera.front)},
+                               {"grounded", player.ground.onGround},
+                               {"health", player.currentHp},
+                               {"equipped_weapon", player.equippedWeaponId},
+                               {"equipped_slot", player.equippedSlot},
+                               {"spawn_generation", player.spawnGeneration},
+                               {"transform_epoch", player.networkTransformEpoch}}}}))
+    {
+        markCaptureFailure("scenario.record.started", 0);
+        mActive = false;
+        if (mOut.is_open())
+            mOut.close();
+        if (error) *error = "journal_refused_record_start";
+        return false;
+    }
     return true;
+}
+
+bool ScenarioRecorder::writeScenarioEvent(const std::string& event,
+                                          const std::string& reason,
+                                          uint32_t tick,
+                                          const nlohmann::json& fields)
+{
+    return StructuredLogger::instance().writeEventChecked(
+        StructuredCategory::General, StructuredLevel::Important,
+        event, mScenarioId, reason, tick, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void ScenarioRecorder::markCaptureFailure(const std::string& reason,
+                                          uint32_t tick)
+{
+    if (mCaptureInvalid)
+        return;
+    mCaptureInvalid = true;
+    mCaptureFailure = reason;
+    // A compact failure record is attempted immediately. If the journal is
+    // completely exhausted, scenario_status/dev-loop status still exposes the
+    // failure; the run never emits a completed marker.
+    writeScenarioEvent(
+        "scenario.record.invalid",
+        "required scenario evidence could not be written; capture stopped",
+        tick,
+        nlohmann::json{{"scenario_id", mScenarioId},
+                       {"path", mPath},
+                       {"frame", mFrame},
+                       {"reason", reason},
+                       {"last_complete_frame", mFrame},
+                       {"journal_path", StructuredLogger::instance().eventsPath()},
+                       {"process_role", "client"}});
+}
+
+nlohmann::json ScenarioRecorder::playerEvidenceJson(const Player& player,
+                                                    const Camera& camera) const
+{
+    nlohmann::json contacts = nlohmann::json::array();
+    const size_t maxContacts = std::min<size_t>(player.movementContacts.size(), 32);
+    for (size_t i = 0; i < maxContacts; ++i)
+    {
+        const MovementContact& contact = player.movementContacts[i];
+        contacts.push_back({
+            {"contact_id", contact.contactId},
+            {"source_event_id", contact.sourceEventId},
+            {"source_entity_id", contact.sourceEntityId},
+            {"target_entity_id", contact.targetEntityId},
+            {"surface_id", contact.surfaceId},
+            {"world_triangle", contact.surfaceId},
+            {"solid_id", contact.surfaceId},
+            {"material_id", contact.materialId},
+            {"kind", static_cast<int>(contact.kind)},
+            {"source", static_cast<int>(contact.source)},
+            {"shape", static_cast<int>(contact.shapeKind)},
+            {"subshape", static_cast<int>(contact.subshape)},
+            {"point", ScenarioTracks::vec3Json(contact.point)},
+            {"normal", ScenarioTracks::vec3Json(contact.normal)},
+            {"sweep_velocity", ScenarioTracks::vec3Json(contact.sweepVelocity)},
+            {"surface_velocity", ScenarioTracks::vec3Json(contact.surfaceVelocity)},
+            {"penetration_m", contact.penetrationDepth}
+        });
+    }
+    const int rootContainment = player.finalPose.hasClearPose ? 2 : 0;
+    return nlohmann::json{
+        {"track", "player:" + std::to_string(mLocalPlayerId)},
+        {"runtime_id", mLocalPlayerId},
+        {"kind", "player"},
+        {"name", player.username},
+        {"avatar", player.avatarName()},
+        {"spawn_generation", player.spawnGeneration},
+        {"transform_epoch", player.networkTransformEpoch},
+        {"position", ScenarioTracks::vec3Json(player.pos)},
+        {"velocity", ScenarioTracks::vec3Json(player.vel)},
+        {"yaw", player.yaw},
+        {"aim", ScenarioTracks::vec3Json(camera.front)},
+        {"health", player.currentHp},
+        {"max_health", player.maxHp},
+        {"dead", player.dead},
+        {"grounded", player.ground.onGround},
+        {"stable_grounded", player.ground.stableOnGround},
+        {"world_contact", player.ground.hasWorldContact},
+        {"collision_backend", "player_movement"},
+        {"root_containment", rootContainment},
+        {"containment_stage", player.finalPose.hasClearPose ? "last_clear" : "unknown"},
+        {"body_parts", [&]() {
+            std::vector<ScenarioTracks::BodyPartBox> parts;
+            appendBodyParts(player, parts);
+            nlohmann::json out = nlohmann::json::array();
+            for (const auto& part : parts)
+                out.push_back({{"name", part.name},
+                               {"center", ScenarioTracks::vec3Json(part.center)},
+                               {"half", ScenarioTracks::vec3Json(part.half)}});
+            return out;
+        }()},
+        {"contacts", std::move(contacts)},
+        {"contact_count", player.movementContacts.size()},
+        {"duplicate_contact_count", player.movementContacts.duplicateCount},
+        {"overflow_contact_count", player.movementContacts.overflowCount},
+        {"equipped_weapon", player.equippedWeaponId},
+        {"equipped_slot", player.equippedSlot}
+    };
 }
 
 void ScenarioRecorder::writeHeader(const Player& player, const Camera& camera)
@@ -602,6 +785,44 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
             mServerTrackStartTick = serverTick;
     }
 
+    const nlohmann::json inputEvidence{
+        {"wish", {frame.wishSide, frame.wishForward}},
+        {"move_world", {frame.moveX, frame.moveY}},
+        {"jump_held", frame.jump},
+        {"jump_pressed", frame.jumpPressed},
+        {"dash_pressed", frame.dashPressed},
+        {"down_dash_pressed", frame.downDashPressed},
+        {"freeze_held", frame.freezeHeld},
+        {"freeze_pressed", frame.freezePressed},
+        {"crouch_held", frame.crouchHeld},
+        {"interact_held", frame.interactHeld},
+        {"reload_pressed", frame.reloadPressed},
+        {"primary_held", frame.primaryHeld},
+        {"secondary_held", frame.secondaryHeld},
+        {"shield_held", frame.shieldHeld},
+        {"grab_held", frame.grabHeld},
+        {"look_yaw", frame.lookYaw},
+        {"look_pitch", frame.lookPitch},
+        {"cam_forward", ScenarioTracks::vec3Json(frame.camForward)}
+    };
+    if (!writeScenarioEvent(
+            "scenario.record.client_tick",
+            "canonical client input and collision evidence for one fixed tick",
+            static_cast<uint32_t>(clientTick),
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"frame", mFrame},
+                           {"client_tick", clientTick},
+                           {"server_tick", serverTick},
+                           {"journal_path", StructuredLogger::instance().eventsPath()},
+                           {"process_role", "client"},
+                           {"input", inputEvidence},
+                           {"actor", playerEvidenceJson(player, camera)}}))
+    {
+        markCaptureFailure("client_tick_write_refused", static_cast<uint32_t>(clientTick));
+        stop("capture_failed");
+        return;
+    }
+
     mOut << tick.dump() << '\n';
     ++mFrame;
     flushIfNeeded();
@@ -651,19 +872,43 @@ void ScenarioRecorder::stop(const char* reason)
     }
     else
         writeFooter(reason);
+    // Canonical recordings are complete in the shared journal; there is no
+    // server sidecar to merge.
+    if (mCanonical)
+        mMerged = true;
 
     if (mNetworked)
         MimitaNet::mpSendServerCommand(MP_CONTEXT,
-            "scenario_server_record_stop " + mPath);
+            "scenario_server_record_stop " + mPath + " " + mScenarioId);
 
+    if (!mCaptureInvalid &&
+        journalHasServerInvalid(StructuredLogger::instance().eventsPath(),
+                                mScenarioId))
+    {
+        mCaptureInvalid = true;
+        mCaptureFailure = "server_capture_invalid";
+    }
+    const nlohmann::json fields{
+        {"scenario_id", mScenarioId},
+        {"path", mPath},
+        {"frames", mFrame},
+        {"networked", mNetworked},
+        {"stop_reason", reason ? reason : "unknown"},
+        {"valid", !mCaptureInvalid},
+        {"capture_failure", mCaptureFailure},
+        {"journal_path", StructuredLogger::instance().eventsPath()},
+        {"process_role", "client"}
+    };
+    writeScenarioEvent(
+        mCaptureInvalid ? "scenario.record.invalid" : "scenario.record.completed",
+        mCaptureInvalid ? "scenario recording stopped without complete evidence"
+                        : "scenario recording stopped with complete client evidence",
+        mFrame, fields);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Important,
-        "scenario.record.stopped", "scenario-recorder",
+        "scenario.record.stopped", mScenarioId,
         "scenario recording stopped", mFrame,
-        nlohmann::json{{"path", mPath},
-                       {"frames", mFrame},
-                       {"networked", mNetworked},
-                       {"stop_reason", reason ? reason : "unknown"}},
+        fields,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
@@ -671,7 +916,7 @@ void ScenarioRecorder::stop(const char* reason)
 void ScenarioRecorder::poll()
 {
     static uint64_t sStopAtMs = 0;
-    if (!mNetworked || mMerged || mActive || mStartPending)
+    if (mCanonical || !mNetworked || mMerged || mActive || mStartPending)
     {
         sStopAtMs = 0;
         return;

@@ -108,7 +108,7 @@ deployment. Historical branch labels are not approved deployment targets.
 |---|---|---|---|
 | `/root/mimita-site` (Git clone; application under `website/`) | Website API (Node.js) | 3002 | Yes; verify current branch and commit |
 | `/root/mimita-coordinator/server.js` (standalone) | ICE Coordinator (Node.js) | 3001 | **Moved to `coordinator-server/server.js` in repo** |
-| `/etc/turnserver.conf` | coTURN STUN/TURN | 3478 | No — config provided in repo |
+| `/etc/turnserver.conf` | coTURN STUN/TURN | 3478 | Runtime-secret config; the repo-managed storage helper edits only the exact `verbose` directive and preserves all other settings |
 | nginx (system service) | Reverse proxy | 80 / 443 | Config not yet in repo |
 
 ### Deployment preparation

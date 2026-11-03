@@ -17,6 +17,7 @@
 #include <fstream>
 #include <io.h>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 #include <nlohmann/json.hpp>
 
@@ -61,10 +62,10 @@ HANDLE eventsFileMutex() {
     return handle;
 }
 
-constexpr uint64_t kMaxLogFileBytes = 100000000ULL;
-constexpr uint64_t kMaxLogTreeBytes = 1000000000ULL;
-constexpr uint64_t kStartupLogTargetBytes =
-    kMaxLogTreeBytes - kMaxLogFileBytes;
+constexpr uint64_t kDefaultMaxLogFileBytes = 100000000ULL;
+constexpr uint64_t kDefaultMaxLogTreeBytes = 1000000000ULL;
+constexpr uint64_t kMinimumLogLimitBytes = 32768ULL;
+constexpr const char* kBookmarkPinFile = ".scenario-bookmark-pin";
 
 struct SharedLogQuotaState {
     volatile LONG initialized;
@@ -135,6 +136,11 @@ std::filesystem::path logRootForEventsPath(const std::string& eventsPath) {
 
 bool runHasJournalSegment(const std::filesystem::path& runDir);
 
+bool runHasBookmarkPin(const std::filesystem::path& runDir) {
+    std::error_code ec;
+    return std::filesystem::exists(runDir / kBookmarkPinFile, ec) && !ec;
+}
+
 std::string runLeaseName(const std::filesystem::path& root,
                          const std::string& runId) {
     std::error_code ec;
@@ -180,7 +186,8 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
              runIt != runEnd; runIt.increment(ec)) {
             if (ec) { ec.clear(); continue; }
             if (runIt->is_directory(ec) && !ec && !samePath(runIt->path(), activeRunDir) &&
-                runHasJournalSegment(runIt->path()) && !ec)
+                runHasJournalSegment(runIt->path()) &&
+                !runHasBookmarkPin(runIt->path()) && !ec)
                 completedLogs.push_back(runIt->path());
             // Legacy LogManager files sit directly in date folders. They are
             // included in the tree quota, so completed ones must be eligible
@@ -612,6 +619,38 @@ void StructuredLogger::loadConfig() {
                 cfg.replayValidation.audioVideoSyncToleranceMs = r["audio_video_sync_tolerance_ms"].get<float>();
         }
 
+        if (j.contains("storage_limits")) {
+            const auto& limits = j["storage_limits"];
+            if (!limits.is_object())
+                throw std::runtime_error("storage_limits must be an object");
+            auto readLimit = [&](const char* key, uint64_t fallback) {
+                if (!limits.contains(key))
+                    return fallback;
+                const auto& value = limits[key];
+                if (!value.is_number_integer())
+                    throw std::runtime_error(std::string("storage_limits.") + key +
+                                             " must be an integer byte count");
+                const long long parsed = value.get<long long>();
+                if (parsed < static_cast<long long>(kMinimumLogLimitBytes))
+                    throw std::runtime_error(std::string("storage_limits.") + key +
+                                             " is below the minimum");
+                return static_cast<uint64_t>(parsed);
+            };
+            cfg.storageLimits.perSegmentBytes =
+                readLimit("per_segment_bytes", kDefaultMaxLogFileBytes);
+            cfg.storageLimits.totalLogTreeBytes =
+                readLimit("total_log_tree_bytes", kDefaultMaxLogTreeBytes);
+            if (cfg.storageLimits.perSegmentBytes >
+                cfg.storageLimits.totalLogTreeBytes)
+                throw std::runtime_error(
+                    "storage_limits.per_segment_bytes must not exceed total_log_tree_bytes");
+        }
+
+        // Limits are launch-time policy. Hot reload may change categories but
+        // must not silently change the active journal ceiling.
+        if (mInitialized) {
+            cfg.storageLimits = mConfig.storageLimits;
+        }
         mConfig = cfg;
         mConfigReloadErrors = 0;
     }
@@ -946,8 +985,14 @@ void StructuredLogger::init() {
             // Reconcile once so legacy or externally-created files still
             // count toward the ceiling, then reuse that exact total below.
             reconcileQuotaState(*quota.state, logRoot);
+            const uint64_t startupTarget =
+                mConfig.storageLimits.totalLogTreeBytes >
+                    mConfig.storageLimits.perSegmentBytes
+                    ? mConfig.storageLimits.totalLogTreeBytes -
+                        mConfig.storageLimits.perSegmentBytes
+                    : 0ULL;
             const uint64_t reclaimed = pruneCompletedRuns(
-                logRoot, std::filesystem::path(mLogDir), kStartupLogTargetBytes,
+                logRoot, std::filesystem::path(mLogDir), startupTarget,
                 quota.state->totalBytes);
             quota.state->totalBytes = reclaimed > quota.state->totalBytes
                 ? 0 : quota.state->totalBytes - reclaimed;
@@ -1292,18 +1337,94 @@ bool StructuredLogger::tryWriteEvent(StructuredCategory category,
                                   static_cast<int>(StructuredLevel::Important));
 }
 
-void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
+bool StructuredLogger::writeEventChecked(StructuredCategory category,
+                                         StructuredLevel level,
+                                         const std::string& eventName,
+                                         const std::string& correlationId,
+                                         const std::string& reason,
+                                         uint32_t tick,
+                                         const nlohmann::json& fields,
+                                         const char* sourceFile,
+                                         int sourceLine,
+                                         const char* functionName)
 {
-    if (!mEventsFile) return;
+    if (!mInitialized) return false;
+    const int idx = static_cast<int>(category);
+    if (idx < 0 || idx >= static_cast<int>(StructuredCategory::Count)) return false;
+
+    const uint64_t sequence = mEventCounters[idx].fetch_add(
+        1, std::memory_order_relaxed) + 1;
+    nlohmann::json record = {
+        {"wall_time", wallTimestampUtc()},
+        {"t", nowSeconds()},
+        {"seq", mSequence.fetch_add(1, std::memory_order_relaxed) + 1},
+        {"run_id", mRunId},
+        {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
+        {"process", processRole()},
+        {"level", levelToString(level)},
+        {"category", categoryName(category)},
+        {"event", eventName},
+        {"event_id", categoryName(category) + "_" + std::to_string(sequence)},
+        {"tick", tick},
+        {"source", sourceFile ? sourceFile : ""},
+        {"line", sourceLine},
+        {"func", functionName ? functionName : ""},
+        {"fields", fields}
+    };
+    if (!correlationId.empty()) record["correlation_id"] = correlationId;
+    if (!reason.empty()) record["reason"] = reason;
+    // Required records ignore optional category-level filtering. Quota refusal
+    // is still authoritative and is returned to the caller.
+    return writeJsonLine(record, true);
+}
+
+bool StructuredLogger::pinCurrentRun(const std::string& scenarioId,
+                                     uint32_t bookmarkNumber)
+{
+    if (!mInitialized || mLogDir.empty()) return false;
+    const std::filesystem::path pin =
+        std::filesystem::path(mLogDir) / kBookmarkPinFile;
+    std::ofstream out(pin, std::ios::out | std::ios::trunc);
+    if (!out.is_open()) return false;
+    out << nlohmann::json{
+        {"run_id", mRunId},
+        {"scenario_id", scenarioId},
+        {"bookmark_number", bookmarkNumber},
+        {"pinned_utc", wallTimestampUtc()},
+        {"events_path", mEventsPath}
+    }.dump() << '\n';
+    out.flush();
+    return out.good();
+}
+
+bool StructuredLogger::unpinCurrentRun()
+{
+    if (mLogDir.empty()) return false;
+    std::error_code ec;
+    return std::filesystem::remove(
+        std::filesystem::path(mLogDir) / kBookmarkPinFile, ec) && !ec;
+}
+
+uint64_t StructuredLogger::eventsBytes() const
+{
+    if (mEventsPath.empty()) return 0;
+    std::error_code ec;
+    const auto size = std::filesystem::file_size(mEventsPath, ec);
+    return ec ? 0 : static_cast<uint64_t>(size);
+}
+
+bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
+{
+    if (!mEventsFile) return false;
     static std::mutex writeMutex;
     std::lock_guard<std::mutex> lock(writeMutex);
     HANDLE named = eventsFileMutex();
     if (!named) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        return;
+        return false;
     }
     const auto waitStart = std::chrono::steady_clock::now();
-    if (named) WaitForSingleObject(named, INFINITE);
+    WaitForSingleObject(named, INFINITE);
     const auto waitEnd = std::chrono::steady_clock::now();
     mMutexWaitMicroseconds.fetch_add(static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(waitEnd - waitStart).count()),
@@ -1313,8 +1434,8 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     SharedLogQuota& quota = sharedLogQuota(root);
     if (!quota.state) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        if (named) ReleaseMutex(named);
-        return;
+        ReleaseMutex(named);
+        return false;
     }
     initializeQuotaState(*quota.state, root);
 
@@ -1324,10 +1445,10 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
     if (previouslyDropped)
         outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
     const std::string line = outputRecord.dump() + "\n";
-    if (line.size() > kMaxLogFileBytes) {
+    if (line.size() > mConfig.storageLimits.perSegmentBytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        if (named) ReleaseMutex(named);
-        return;
+        ReleaseMutex(named);
+        return false;
     }
 
     auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
@@ -1341,37 +1462,37 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
         }
     }
     if (fileEntry && fileEntry->bytes > 0 &&
-        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
         if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
             mSegmentGeneration = quota.state->segmentGeneration;
             fileEntry = quotaFileEntry(*quota.state, mEventsPath);
         }
     }
-    if (!fileEntry || fileEntry->bytes > kMaxLogFileBytes ||
-        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+    if (!fileEntry || fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
+        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        if (named) ReleaseMutex(named);
-        return;
+        ReleaseMutex(named);
+        return false;
     }
 
-    if (line.size() > kMaxLogTreeBytes -
-            std::min<uint64_t>(quota.state->totalBytes, kMaxLogTreeBytes)) {
+    if (line.size() > mConfig.storageLimits.totalLogTreeBytes -
+            std::min<uint64_t>(quota.state->totalBytes, mConfig.storageLimits.totalLogTreeBytes)) {
         // Reconcile non-logger files and remove eligible completed runs only
         // when an incoming record would cross the folder ceiling.
         reconcileQuotaState(*quota.state, root);
         const uint64_t reclaimed = pruneCompletedRuns(
-            root, std::filesystem::path(mLogDir), kMaxLogTreeBytes - line.size(),
+            root, std::filesystem::path(mLogDir), mConfig.storageLimits.totalLogTreeBytes - line.size(),
             quota.state->totalBytes);
         quota.state->totalBytes = reclaimed > quota.state->totalBytes
             ? 0 : quota.state->totalBytes - reclaimed;
         fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        if (!fileEntry || quota.state->totalBytes > kMaxLogTreeBytes ||
-            line.size() > kMaxLogTreeBytes - quota.state->totalBytes ||
-            fileEntry->bytes > kMaxLogFileBytes ||
-            line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        if (!fileEntry || quota.state->totalBytes > mConfig.storageLimits.totalLogTreeBytes ||
+            line.size() > mConfig.storageLimits.totalLogTreeBytes - quota.state->totalBytes ||
+            fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
+            line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
             mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-            if (named) ReleaseMutex(named);
-            return;
+            ReleaseMutex(named);
+            return false;
         }
     }
 
@@ -1381,8 +1502,8 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
         std::fflush(mEventsFile);
         _chsize_s(_fileno(mEventsFile), oldFileBytes);
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        if (named) ReleaseMutex(named);
-        return;
+        ReleaseMutex(named);
+        return false;
     }
     fileEntry->bytes += line.size();
     quota.state->totalBytes += line.size();
@@ -1399,7 +1520,8 @@ void StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
             std::chrono::duration_cast<std::chrono::microseconds>(flushEnd - flushStart).count()),
             std::memory_order_relaxed);
     }
-    if (named) ReleaseMutex(named);
+    ReleaseMutex(named);
+    return true;
 }
 
 bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush)
@@ -1444,17 +1566,17 @@ bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush
         }
     }
     if (fileEntry && fileEntry->bytes > 0 &&
-        line.size() > kMaxLogFileBytes - fileEntry->bytes) {
+        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
         if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
             mSegmentGeneration = quota.state->segmentGeneration;
             fileEntry = quotaFileEntry(*quota.state, mEventsPath);
         }
     }
-    if (line.size() > kMaxLogFileBytes || !fileEntry ||
-        fileEntry->bytes > kMaxLogFileBytes ||
-        line.size() > kMaxLogFileBytes - fileEntry->bytes ||
-        quota.state->totalBytes > kMaxLogTreeBytes ||
-        line.size() > kMaxLogTreeBytes - quota.state->totalBytes) {
+    if (line.size() > mConfig.storageLimits.perSegmentBytes || !fileEntry ||
+        fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
+        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes ||
+        quota.state->totalBytes > mConfig.storageLimits.totalLogTreeBytes ||
+        line.size() > mConfig.storageLimits.totalLogTreeBytes - quota.state->totalBytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
         ReleaseMutex(named);
         return false;

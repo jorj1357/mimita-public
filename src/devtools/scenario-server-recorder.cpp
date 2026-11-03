@@ -57,6 +57,78 @@ ScenarioTracks::WeaponShape shapeFrom(const WeaponExecution::PhysicalContactShap
     return out;
 }
 
+nlohmann::json inputStateJson(const InputState& input)
+{
+    return {
+        {"wish", {input.wishMoveXY.x, input.wishMoveXY.y}},
+        {"jump_held", input.jumpHeld},
+        {"jump_pressed", input.jumpPressed},
+        {"dash_pressed", input.dashPressed},
+        {"down_dash_pressed", input.downDashPressed},
+        {"freeze_held", input.freezeHeld},
+        {"freeze_pressed", input.freezePressed},
+        {"crouch_held", input.crouchHeld},
+        {"interact_held", input.interactHeld},
+        {"movement_pressed", input.movementPressed},
+        {"movement_just_pressed", input.movementJustPressed},
+        {"movement_held_duration", input.movementHeldDuration},
+        {"cam_forward", ScenarioTracks::vec3Json(input.camForward)}
+    };
+}
+
+nlohmann::json contactJson(const MovementContact& contact)
+{
+    return {
+        {"contact_id", contact.contactId},
+        {"source_event_id", contact.sourceEventId},
+        {"source_entity_id", contact.sourceEntityId},
+        {"target_entity_id", contact.targetEntityId},
+        {"surface_id", contact.surfaceId},
+        {"world_triangle", contact.surfaceId},
+        {"solid_id", contact.surfaceId},
+        {"material_id", contact.materialId},
+        {"kind", static_cast<int>(contact.kind)},
+        {"source", static_cast<int>(contact.source)},
+        {"shape", static_cast<int>(contact.shapeKind)},
+        {"subshape", static_cast<int>(contact.subshape)},
+        {"point", ScenarioTracks::vec3Json(contact.point)},
+        {"normal", ScenarioTracks::vec3Json(contact.normal)},
+        {"sweep_velocity", ScenarioTracks::vec3Json(contact.sweepVelocity)},
+        {"surface_velocity", ScenarioTracks::vec3Json(contact.surfaceVelocity)},
+        {"penetration_m", contact.penetrationDepth}
+    };
+}
+
+nlohmann::json projectileJson(const MimitaNet::ServerProjectile& projectile)
+{
+    return {
+        {"track", "object:" + std::to_string(projectile.id)},
+        {"runtime_id", projectile.id},
+        {"kind", "projectile"},
+        {"weapon_type", projectile.weaponType},
+        {"owner_player_id", projectile.ownerPlayerId},
+        {"owner_npc_id", projectile.ownerNpcId},
+        {"fire_serial", projectile.fireSerial},
+        {"position", ScenarioTracks::vec3Json(projectile.position)},
+        {"previous_position", ScenarioTracks::vec3Json(projectile.previousPosition)},
+        {"velocity", ScenarioTracks::vec3Json(projectile.velocity)},
+        {"rotation", {projectile.rotation.w, projectile.rotation.x,
+                      projectile.rotation.y, projectile.rotation.z}},
+        {"angular_velocity", ScenarioTracks::vec3Json(projectile.angularVelocity)},
+        {"age", projectile.age},
+        {"lifetime", projectile.lifetime},
+        {"radius", projectile.radius},
+        {"splash_radius", projectile.splashRadius},
+        {"bounce_count", projectile.bounceCount},
+        {"max_bounce_count", projectile.maxBounceCount},
+        {"penetrations_remaining", projectile.penetrationsRemaining},
+        {"exploded", projectile.exploded},
+        {"world_touched", projectile.worldTouched},
+        {"spawn_tick", projectile.spawnTick},
+        {"simulation_tick", projectile.simulationTick}
+    };
+}
+
 void appendReplayBodyParts(const MimitaNet::ServerNpc& npc,
                            std::vector<ScenarioTracks::BodyPartBox>& out)
 {
@@ -193,6 +265,10 @@ bool ScenarioServerRecorder::start(const std::string& scenarioPath,
         return false;
     }
     mActive = true;
+    mCanonical = false;
+    mCaptureInvalid = false;
+    mCaptureFailure.clear();
+    mScenarioId = scenarioPath;
     mFrames = 0;
     mStartTick = 0;
     mLastActors.clear();
@@ -205,6 +281,79 @@ bool ScenarioServerRecorder::start(const std::string& scenarioPath,
                        {"sidecar_path", mSidecarPath}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;
+}
+
+bool ScenarioServerRecorder::startCanonical(const std::string& scenarioId,
+                                            const std::string& scenarioPath,
+                                            std::string* error)
+{
+    if (mActive)
+    {
+        if (error) *error = "server_recording_already_active";
+        return false;
+    }
+    if (scenarioId.empty())
+    {
+        if (error) *error = "missing_scenario_id";
+        return false;
+    }
+    mScenarioId = scenarioId;
+    mScenarioPath = scenarioPath;
+    mSidecarPath.clear();
+    mCanonical = true;
+    mActive = true;
+    mCaptureInvalid = false;
+    mCaptureFailure.clear();
+    mFrames = 0;
+    mStartTick = 0;
+    mLastActors.clear();
+    mKnownIdentities.clear();
+    if (!writeScenarioEvent(
+            "scenario.server.record.started",
+            "authoritative canonical scenario capture armed",
+            0,
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"scenario_path", mScenarioPath},
+                           {"journal_path", StructuredLogger::instance().eventsPath()},
+                           {"process_role", "server"},
+                           {"tick_rate", 60}}))
+    {
+        markCaptureFailure("scenario.server.record.started", 0);
+        mActive = false;
+        if (error) *error = "journal_refused_server_record_start";
+        return false;
+    }
+    return true;
+}
+
+bool ScenarioServerRecorder::writeScenarioEvent(const std::string& event,
+                                                const std::string& reason,
+                                                uint32_t tick,
+                                                const nlohmann::json& fields)
+{
+    return StructuredLogger::instance().writeEventChecked(
+        StructuredCategory::General, StructuredLevel::Important,
+        event, mScenarioId, reason, tick, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void ScenarioServerRecorder::markCaptureFailure(const std::string& reason,
+                                                uint32_t tick)
+{
+    if (mCaptureInvalid)
+        return;
+    mCaptureInvalid = true;
+    mCaptureFailure = reason;
+    writeScenarioEvent(
+        "scenario.record.invalid",
+        "required authoritative scenario evidence could not be written",
+        tick,
+        nlohmann::json{{"scenario_id", mScenarioId},
+                       {"frame", mFrames},
+                       {"last_complete_frame", mFrames},
+                       {"reason", reason},
+                       {"journal_path", StructuredLogger::instance().eventsPath()},
+                       {"process_role", "server"}});
 }
 
 void ScenarioServerRecorder::writeHeader(uint32_t serverTick)
@@ -308,13 +457,15 @@ void ScenarioServerRecorder::captureTick(
     const std::unordered_map<uint32_t, MimitaNet::ServerPlayer>& players,
     const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
     const NpcSystem& npcSystem,
+    const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
     uint32_t serverTick)
 {
-    (void)npcSystem;
-    if (!mActive || !mOut.is_open())
+    if (!mActive)
         return;
-    if (mFrames == 0)
-        writeHeader(serverTick);
+
+    std::unordered_map<uint32_t, const Npc*> simulated;
+    for (const Npc& npc : npcSystem.all())
+        simulated[npc.id] = &npc;
 
     std::unordered_map<std::string, ActorSnapshot> current;
     nlohmann::json actors = nlohmann::json::array();
@@ -327,6 +478,17 @@ void ScenarioServerRecorder::captureTick(
         writeIdentity(track, "player", player.id, player.name, player.avatarName,
                       player.spawnGeneration, player.transformEpoch);
         ScenarioTracks::ActorState state = capturePlayer(player);
+        state.hasInput = true;
+        state.input.wishMoveXY = player.input.wish;
+        state.input.jumpHeld = player.input.jumpHeld;
+        state.input.dashPressed = player.input.dashPressed;
+        state.input.downDashPressed = player.input.downDashPressed;
+        state.input.freezeHeld = player.input.freezeHeld;
+        state.input.crouchHeld = player.input.crouchHeld;
+        state.input.interactHeld = player.input.interactHeld;
+        state.input.camForward = player.input.camForward;
+        state.stableGrounded = player.onGround;
+        state.hasWorldContact = player.onGround;
         actors.push_back(ScenarioTracks::actorStateJson(state));
         current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
     }
@@ -337,20 +499,197 @@ void ScenarioServerRecorder::captureTick(
         writeIdentity(track, "npc", npc.entityId, npc.name, npc.avatarName,
                       0, npc.transformEpoch);
         ScenarioTracks::ActorState state = captureNpc(npc);
+        auto simIt = simulated.find(npc.entityId);
+        if (simIt != simulated.end() && simIt->second)
+        {
+            const Npc& sim = *simIt->second;
+            if (sim.hasLastAcceptedInput)
+            {
+                state.hasInput = true;
+                state.input = sim.lastAcceptedInput;
+            }
+            state.previousPosition = sim.body.actorCollisionPreviousPos;
+            state.stableGrounded = sim.body.ground.stableOnGround;
+            state.hasWorldContact = sim.body.ground.hasWorldContact;
+            state.rootContainment = sim.lastRootInsideClosedSolid ? 1 : 2;
+            if (!sim.lastContainmentKnown)
+                state.rootContainment = 0;
+            state.maxPenetration = sim.lastFinalPenetration;
+            state.containmentStage = sim.lastContainmentStage;
+            state.npcState = static_cast<int>(sim.stateMachine.currentState);
+            state.npcRngState = sim.rngState;
+            state.npcDashCooldown = sim.dashCooldown;
+            state.npcDownDashCooldown = sim.downDashCooldown;
+            state.npcJumpCooldown = sim.jumpCooldown;
+            state.npcAttackCooldown = sim.attackCooldown;
+            const size_t maxContacts =
+                std::min<size_t>(sim.body.movementContacts.size(), 32);
+            for (size_t i = 0; i < maxContacts; ++i)
+            {
+                const MovementContact& contact = sim.body.movementContacts[i];
+                ScenarioTracks::ContactEvidence evidence;
+                evidence.contactId = contact.contactId;
+                evidence.sourceEventId = contact.sourceEventId;
+                evidence.sourceEntityId = contact.sourceEntityId;
+                evidence.targetEntityId = contact.targetEntityId;
+                evidence.surfaceId = contact.surfaceId;
+                evidence.worldTriangle = contact.surfaceId;
+                evidence.solidId = contact.surfaceId;
+                evidence.materialId = contact.materialId;
+                evidence.kind = static_cast<int>(contact.kind);
+                evidence.source = static_cast<int>(contact.source);
+                evidence.shape = static_cast<int>(contact.shapeKind);
+                evidence.subshape = static_cast<int>(contact.subshape);
+                evidence.point = contact.point;
+                evidence.normal = contact.normal;
+                evidence.sweepVelocity = contact.sweepVelocity;
+                evidence.surfaceVelocity = contact.surfaceVelocity;
+                evidence.penetration = contact.penetrationDepth;
+                state.contacts.push_back(evidence);
+            }
+        }
         actors.push_back(ScenarioTracks::actorStateJson(state));
         current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
     }
 
-    updateLifecycle(current, serverTick);
-    mOut << nlohmann::json{
-        {"kind", "server_tick"},
-        {"tick", serverTick},
-        {"server_tick", serverTick},
-        {"actors", std::move(actors)}
-    }.dump() << '\n';
+    nlohmann::json objects = nlohmann::json::array();
+    for (const auto& entry : projectiles)
+        objects.push_back(projectileJson(entry.second));
+
+    if (mCanonical)
+    {
+        if (!writeScenarioEvent(
+                "scenario.record.tick",
+                "canonical authoritative actor, contact, and object evidence for one fixed tick",
+                serverTick,
+                nlohmann::json{{"scenario_id", mScenarioId},
+                               {"frame", mFrames},
+                               {"server_tick", serverTick},
+                               {"journal_path", StructuredLogger::instance().eventsPath()},
+                               {"process_role", "server"},
+                               {"actors", actors},
+                               {"objects", objects}}))
+        {
+            markCaptureFailure("server_tick_write_refused", serverTick);
+            stop("capture_failed");
+            return;
+        }
+    }
+
+    if (mOut.is_open())
+    {
+        if (mFrames == 0)
+            writeHeader(serverTick);
+        updateLifecycle(current, serverTick);
+        mOut << nlohmann::json{
+            {"kind", "server_tick"},
+            {"tick", serverTick},
+            {"server_tick", serverTick},
+            {"actors", std::move(actors)}
+        }.dump() << '\n';
+        if (mFrames % 6 == 0)
+            mOut.flush();
+    }
     ++mFrames;
-    if (mFrames % 6 == 0)
-        mOut.flush();
+}
+
+void ScenarioServerRecorder::captureCheckpoint(
+    uint32_t bookmarkNumber,
+    uint32_t clientTick,
+    const std::unordered_map<uint32_t, MimitaNet::ServerPlayer>& players,
+    const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
+    const NpcSystem& npcSystem,
+    const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
+    uint32_t serverTick)
+{
+    if (!mActive || !mCanonical)
+        return;
+
+    std::unordered_map<uint32_t, const Npc*> simulated;
+    for (const Npc& npc : npcSystem.all())
+        simulated[npc.id] = &npc;
+
+    nlohmann::json actors = nlohmann::json::array();
+    for (const auto& entry : players)
+    {
+        const auto& player = entry.second;
+        if (!player.spawned)
+            continue;
+        ScenarioTracks::ActorState state = capturePlayer(player);
+        state.hasInput = true;
+        state.input.wishMoveXY = player.input.wish;
+        state.input.jumpHeld = player.input.jumpHeld;
+        state.input.dashPressed = player.input.dashPressed;
+        state.input.downDashPressed = player.input.downDashPressed;
+        state.input.freezeHeld = player.input.freezeHeld;
+        state.input.crouchHeld = player.input.crouchHeld;
+        state.input.interactHeld = player.input.interactHeld;
+        state.input.camForward = player.input.camForward;
+        actors.push_back(ScenarioTracks::actorStateJson(state));
+    }
+    for (const auto& entry : npcs)
+    {
+        ScenarioTracks::ActorState state = captureNpc(entry.second);
+        auto simIt = simulated.find(entry.second.entityId);
+        if (simIt != simulated.end() && simIt->second)
+        {
+            const Npc& sim = *simIt->second;
+            if (sim.hasLastAcceptedInput)
+            {
+                state.hasInput = true;
+                state.input = sim.lastAcceptedInput;
+            }
+            state.previousPosition = sim.body.actorCollisionPreviousPos;
+            state.stableGrounded = sim.body.ground.stableOnGround;
+            state.hasWorldContact = sim.body.ground.hasWorldContact;
+            state.rootContainment = sim.lastContainmentKnown
+                ? (sim.lastRootInsideClosedSolid ? 1 : 2) : 0;
+            state.maxPenetration = sim.lastFinalPenetration;
+            state.containmentStage = sim.lastContainmentStage;
+            state.npcState = static_cast<int>(sim.stateMachine.currentState);
+            state.npcRngState = sim.rngState;
+            state.npcDashCooldown = sim.dashCooldown;
+            state.npcDownDashCooldown = sim.downDashCooldown;
+            state.npcJumpCooldown = sim.jumpCooldown;
+            state.npcAttackCooldown = sim.attackCooldown;
+        }
+        actors.push_back(ScenarioTracks::actorStateJson(state));
+    }
+    nlohmann::json objects = nlohmann::json::array();
+    for (const auto& entry : projectiles)
+        objects.push_back(projectileJson(entry.second));
+
+    nlohmann::json fields{
+        {"scenario_id", mScenarioId},
+        {"bookmark_number", bookmarkNumber},
+        {"frame", mFrames},
+        {"client_tick", clientTick},
+        {"server_tick", serverTick},
+        {"journal_path", StructuredLogger::instance().eventsPath()},
+        {"process_role", "server"},
+        {"actors", std::move(actors)},
+        {"objects", std::move(objects)},
+        {"rng", nlohmann::json::array()},
+        {"world_mutable", nlohmann::json{{"policy", "static_collision_cases"},
+                                          {"restored", false}}},
+        {"complete", true}
+    };
+    for (const auto& entry : npcs)
+    {
+        auto simIt = simulated.find(entry.second.entityId);
+        if (simIt == simulated.end() || !simIt->second)
+            continue;
+        fields["rng"].push_back({{"track", "npc:" + std::to_string(entry.second.entityId)},
+                                 {"rng_state", simIt->second->rngState}});
+    }
+    if (!writeScenarioEvent(
+            "scenario.record.checkpoint",
+            "complete authoritative simulation checkpoint at bookmark",
+            serverTick, fields))
+    {
+        markCaptureFailure("checkpoint_write_refused", serverTick);
+        stop("capture_failed");
+    }
 }
 
 void ScenarioServerRecorder::writeFooter(const char* reason)
@@ -374,11 +713,29 @@ void ScenarioServerRecorder::stop(const char* reason)
         return;
     mActive = false;
     writeFooter(reason);
+    if (mCanonical)
+    {
+        writeScenarioEvent(
+            mCaptureInvalid ? "scenario.record.invalid"
+                            : "scenario.server.record.completed",
+            mCaptureInvalid ? "authoritative recording stopped without complete evidence"
+                            : "authoritative scenario recording stopped with complete evidence",
+            static_cast<uint32_t>(mFrames),
+            nlohmann::json{{"scenario_id", mScenarioId},
+                           {"scenario_path", mScenarioPath},
+                           {"frames", mFrames},
+                           {"valid", !mCaptureInvalid},
+                           {"capture_failure", mCaptureFailure},
+                           {"journal_path", StructuredLogger::instance().eventsPath()},
+                           {"process_role", "server"},
+                           {"stop_reason", reason ? reason : "unknown"}});
+    }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General, StructuredLevel::Important,
-        "scenario.server.record.stopped", "scenario-server-recorder",
+        "scenario.server.record.stopped", mScenarioId,
         "authoritative actor track finalized", mFrames,
-        nlohmann::json{{"scenario_path", mScenarioPath},
+        nlohmann::json{{"scenario_id", mScenarioId},
+                       {"scenario_path", mScenarioPath},
                        {"sidecar_path", mSidecarPath},
                        {"frames", mFrames},
                        {"stop_reason", reason ? reason : "unknown"}},

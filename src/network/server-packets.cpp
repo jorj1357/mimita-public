@@ -2403,7 +2403,7 @@ ServerPacketProcessResult processServerPacket(
     else if (header->type == PACKET_SERVER_COMMAND)
     {
         handleServerCommand(sock, from, buffer, bytes, players, npcs,
-                            tick, totalPacketsOut, npcSystem);
+                            projectiles, tick, totalPacketsOut, npcSystem);
         result.handled = true;
     }
     else if (header->type == PACKET_DUEL_REMATCH_REQUEST)

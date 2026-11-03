@@ -7,12 +7,15 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include "input/input-state.h"
+
 // Shared schema-2 scenario track vocabulary. Client recording, server
 // authoritative capture, merge, and playback all use this one representation so
 // an actor track cannot silently change meaning between the two processes.
 namespace ScenarioTracks {
 
 constexpr int kSchemaV2 = 2;
+constexpr int kSchemaV4 = 4;
 constexpr int kTickRate = 60;
 
 struct BodyPartBox {
@@ -30,11 +33,34 @@ struct WeaponShape {
     float radius = 0.0f;
 };
 
+struct ContactEvidence {
+    uint64_t contactId = 0;
+    uint64_t sourceEventId = 0;
+    uint32_t sourceEntityId = 0;
+    uint32_t targetEntityId = 0;
+    uint32_t surfaceId = 0;
+    uint32_t worldTriangle = 0;
+    uint32_t solidId = 0;
+    uint32_t materialId = 0;
+    std::string actorPart;
+    int kind = 0;
+    int source = 0;
+    int shape = 0;
+    int subshape = 0;
+    glm::vec3 point{0.0f};
+    glm::vec3 normal{0.0f, 0.0f, 1.0f};
+    glm::vec3 sweepVelocity{0.0f};
+    glm::vec3 surfaceVelocity{0.0f};
+    float penetration = 0.0f;
+};
+
 struct ActorState {
     std::string trackId;
     std::string kind; // "player" or "npc"
     glm::vec3 position{0.0f};
     glm::vec3 velocity{0.0f};
+    glm::vec3 previousPosition{0.0f};
+    glm::vec3 previousVelocity{0.0f};
     glm::vec3 aim{1.0f, 0.0f, 0.0f};
     float yaw = 0.0f;
     float sizeScale = 1.0f;
@@ -43,6 +69,8 @@ struct ActorState {
     int team = -1;
     bool dead = false;
     bool grounded = false;
+    bool stableGrounded = false;
+    bool hasWorldContact = false;
     uint32_t spawnGeneration = 0;
     uint16_t transformEpoch = 0;
     std::string weaponId;
@@ -53,6 +81,20 @@ struct ActorState {
     uint32_t actionStartTick = 0;
     int actionPhaseTick = 0;
     uint32_t nextAllowedTick = 0;
+    bool hasInput = false;
+    InputState input;
+    std::string collisionBackend;
+    std::string collisionFallbackReason;
+    int rootContainment = 0; // 0 unknown, 1 inside, 2 outside
+    float maxPenetration = 0.0f;
+    std::string containmentStage;
+    int npcState = -1;
+    uint32_t npcRngState = 1;
+    float npcDashCooldown = 0.0f;
+    float npcDownDashCooldown = 0.0f;
+    float npcJumpCooldown = 0.0f;
+    float npcAttackCooldown = 0.0f;
+    std::vector<ContactEvidence> contacts;
     std::vector<BodyPartBox> bodyParts;
     WeaponShape shape;
 };

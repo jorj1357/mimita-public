@@ -31,7 +31,9 @@ For every behavior change or investigation:
 7. Inspect the journal live and after completion. Confirm that the changed
    path was reached and locate the first expected/actual mismatch.
 8. Adjust only the responsible owner, rebuild, rerun, and compare the same
-   scenario and evidence.
+   scenario and evidence. For collision replay, preserve divergence evidence
+   through the next human bookmark, then restore the full checkpoint and
+   continue; divergence alone is not a stop condition.
 
 ## Scenario shape
 
@@ -100,13 +102,13 @@ accepted range. Baseline changes are deliberate and recorded in the changelog.
 The analyzer may classify events, but it must not silently excuse a failure or
 replace the runtime journal.
 
-For collision changes, run the map where the failure was reported, rotate a
-small set of other supported maps during quick ongoing checks, and run the full
-supported-map set for a collision-wide change. Report which maps and relevant
-features were actually reached. A map or feature not reached is
-`NOT_COVERED`, not a pass. Long map coverage may run in the background while
-short edit checks finish; source/build checks and live gameplay evidence remain
-separate results.
+For collision debugging, prioritize the human-recorded failure and its exact
+map/features. Do not substitute random map selection or an NPC-navigation soak
+for replaying the known failure. Report which actors and geometry were reached;
+an event or map feature not reached is `NOT_COVERED`, not a pass. Longer
+additional human-recorded cases may run in the background while short edit
+checks finish; source/build checks and live gameplay evidence remain separate
+results.
 
 Complete a run as soon as its decisive runtime result or required coverage is
 observed; do not wait out a fixed duration after the result. A fixed duration
@@ -152,9 +154,11 @@ and leaves live connected humans under their own control. Inspect
 and `server.damage.applied` together to correlate an apparent hit with the
 authoritative contact and damage outcome.
 
-Playback is invalid if readiness times out or the player diverges by more than
-2 m. The runner must treat `scenario.playback.failed` or an invalid completion
-as a failed scenario; there is no snap-back path. A checked-in template is
+In the current legacy player, playback is invalid if readiness times out or
+the player diverges by more than 2 m. The runner must treat
+`scenario.playback.failed` or an invalid completion as a failed scenario; it
+does not snap back. This is current implementation behavior, not the target
+collision replay contract above. A checked-in template is
 `devscripts/scenarios/recorded_input_playback.example.json`.
 
 Schema 1 recordings remain input-only playable scenarios. Run playback on the
@@ -168,12 +172,14 @@ sequence and identify the map location where a person saw a problem. They do
 not replace natural live gameplay or establish that unvisited geometry works.
 
 For collision debugging, replay must exercise the collision behavior under
-investigation. Replaying recorded actor transforms as authoritative proxy state
-does not prove that those actors' movement or collision solver would produce
-the same transforms. The report must identify whether each actor was driven by
-recorded input through normal movement, simulated by normal AI, or followed as
-a recorded transform. Do not describe transform-follow playback as a collision
-re-simulation.
+investigation. The desired human-recorded trace replays actor inputs/intents
+through the shared authoritative movement/collision path; a human or NPC input
+source does not select a different collision solver. Replaying recorded actor
+transforms as authoritative proxy state does not prove that those actors'
+movement or collision solver would produce the same transforms. The report
+must identify whether each actor was re-simulated, simulated by live AI, or
+followed as a recorded transform. Do not describe transform-follow playback
+as collision re-simulation.
 
 The desired collision recording evidence is per fixed server tick and includes
 the real inputs/intents, actor identity and lifecycle, authoritative
@@ -181,8 +187,10 @@ position/velocity before and after movement, grounded and world-support state,
 collision backend, contact identities/normals/penetration, and relevant
 containment or recovery results. Recorded positions and velocities are
 comparison evidence; playback must not force them onto an actor whose collision
-response is being tested. Compare expected and actual outcomes and stop on the
-first unexplained divergence, while retaining the preceding tick window.
+response is being tested. Compare expected and actual outcomes and continue
+through the current human bookmark after divergence, retaining the full tick
+evidence. Then restore the complete recorded authoritative state at that
+bookmark and continue. Never snap an actor back on every tick.
 
 Use both kinds of evidence: a natural live run to discover failures that were
 not anticipated, and a human-recorded route to repeat a known failure after a

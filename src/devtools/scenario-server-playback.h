@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -57,6 +58,9 @@ private:
     ScenarioServerPlayback() = default;
 
     bool load(const std::string& path, std::string* error);
+    bool loadCanonical(const std::string& journalPath,
+                       const std::string& scenarioId,
+                       std::string* error);
     bool applyActor(Proxy& proxy,
                     const ScenarioTracks::ActorState& state,
                     NpcSystem& npcSystem,
@@ -70,6 +74,7 @@ private:
     bool mPrepared = false;
     bool mActive = false;
     std::string mPath;
+    std::string mScenarioId;
     std::string mLocalPlayerTrack;
     uint32_t mLocalPlayerId = 0;
     uint32_t mFirstTrackTick = 0;
@@ -84,5 +89,7 @@ private:
     std::vector<ScenarioTracks::MeleeRevision> mRevisions;
     std::vector<ScenarioTracks::ActorIdentity> mIdentities;
     std::map<uint32_t, std::vector<ScenarioTracks::ActorState>> mServerTicks;
+    std::map<uint32_t, std::vector<ScenarioTracks::ActorState>> mCheckpoints;
+    std::set<uint32_t> mAppliedCheckpoints;
     std::map<std::string, Proxy> mProxies;
 };

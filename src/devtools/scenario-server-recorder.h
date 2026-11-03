@@ -5,11 +5,14 @@
 #include <string>
 #include <unordered_map>
 
+#include <nlohmann/json.hpp>
+
 class NpcSystem;
 
 namespace MimitaNet {
 struct ServerPlayer;
 struct ServerNpc;
+struct ServerProjectile;
 }
 
 // Owns the authoritative actor track captured beside a client scenario
@@ -20,14 +23,30 @@ public:
     static ScenarioServerRecorder& instance();
 
     bool start(const std::string& scenarioPath, std::string* error);
+    bool startCanonical(const std::string& scenarioId,
+                        const std::string& scenarioPath,
+                        std::string* error);
     void stop(const char* reason);
     void captureTick(
         const std::unordered_map<uint32_t, MimitaNet::ServerPlayer>& players,
         const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
         const NpcSystem& npcSystem,
+        const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
+        uint32_t serverTick);
+    void captureCheckpoint(
+        uint32_t bookmarkNumber,
+        uint32_t clientTick,
+        const std::unordered_map<uint32_t, MimitaNet::ServerPlayer>& players,
+        const std::unordered_map<uint32_t, MimitaNet::ServerNpc>& npcs,
+        const NpcSystem& npcSystem,
+        const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
         uint32_t serverTick);
 
     bool active() const { return mActive; }
+    bool canonical() const { return mCanonical; }
+    bool captureInvalid() const { return mCaptureInvalid; }
+    const std::string& captureFailure() const { return mCaptureFailure; }
+    const std::string& scenarioId() const { return mScenarioId; }
     const std::string& scenarioPath() const { return mScenarioPath; }
     const std::string& sidecarPath() const { return mSidecarPath; }
 
@@ -42,6 +61,9 @@ private:
 
     void writeHeader(uint32_t serverTick);
     void writeFooter(const char* reason);
+    bool writeScenarioEvent(const std::string& event, const std::string& reason,
+                            uint32_t tick, const nlohmann::json& fields);
+    void markCaptureFailure(const std::string& reason, uint32_t tick);
     void writeIdentity(const std::string& trackId,
                        const std::string& kind,
                        uint32_t entityId,
@@ -54,6 +76,10 @@ private:
         uint32_t serverTick);
 
     bool mActive = false;
+    bool mCanonical = false;
+    bool mCaptureInvalid = false;
+    std::string mCaptureFailure;
+    std::string mScenarioId;
     std::ofstream mOut;
     std::string mScenarioPath;
     std::string mSidecarPath;

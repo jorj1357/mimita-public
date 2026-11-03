@@ -411,6 +411,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
                          const char* buffer, int bytes,
                          std::unordered_map<uint32_t, ServerPlayer>& players,
                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                         std::unordered_map<uint32_t, ServerProjectile>& projectiles,
                          uint32_t tick, uint64_t& totalPacketsOut,
                          NpcSystem* npcSystem)
 {
@@ -784,8 +785,26 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     constexpr const char* scenarioPlayBegin = "scenario_server_play_begin ";
     if (commandStr.rfind(scenarioRecordStart, 0) == 0)
     {
-        const std::string path = commandStr.substr(std::strlen(scenarioRecordStart));
+        const std::string rest =
+            commandStr.substr(std::strlen(scenarioRecordStart));
+        const size_t split = rest.find_last_of(' ');
+        const std::string path =
+            split == std::string::npos ? rest : rest.substr(0, split);
+        const std::string scenarioId =
+            split == std::string::npos ? std::string() : rest.substr(split + 1);
         std::string error;
+        if (!scenarioId.empty())
+        {
+            if (!ScenarioServerRecorder::instance().startCanonical(
+                    scenarioId, path, &error))
+            {
+                ack(false, ("scenario record rejected: " + error).c_str());
+                return;
+            }
+            ack(true, ("scenario canonical record started: " +
+                       scenarioId).c_str());
+            return;
+        }
         if (!ScenarioServerRecorder::instance().start(path, &error))
         {
             ack(false, ("scenario record rejected: " + error).c_str());
@@ -793,6 +812,27 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         }
         ack(true, ("scenario record started: " +
                    ScenarioServerRecorder::instance().sidecarPath()).c_str());
+        return;
+    }
+    constexpr const char* scenarioBookmark = "scenario_server_bookmark ";
+    if (commandStr.rfind(scenarioBookmark, 0) == 0)
+    {
+        const std::string rest = commandStr.substr(std::strlen(scenarioBookmark));
+        std::istringstream in(rest);
+        uint32_t bookmarkNumber = 0;
+        uint32_t clientTick = 0;
+        in >> bookmarkNumber >> clientTick;
+        if (!in || !npcSystem ||
+            !ScenarioServerRecorder::instance().active() ||
+            !ScenarioServerRecorder::instance().canonical())
+        {
+            ack(false, "scenario bookmark rejected: no canonical recording");
+            return;
+        }
+        ScenarioServerRecorder::instance().captureCheckpoint(
+            bookmarkNumber, clientTick, players, npcs, *npcSystem,
+            projectiles, tick);
+        ack(true, "scenario checkpoint captured");
         return;
     }
     if (commandStr == scenarioRecordStop ||

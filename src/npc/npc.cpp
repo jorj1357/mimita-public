@@ -2714,9 +2714,23 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
-    InputState input = buildInputState(npc, moveDir, jump, dash, attack, wantDownDash, safeDt);
-    input.freezeHeld = freeze;
-    input.groundReturnPressed = false;
+    InputState input;
+    if (npc.replayControlled && npc.replayUseRecordedIntent && npc.hasReplayInput)
+    {
+        // Human-recorded collision replay: the recorded accepted intent is fed
+        // through the same shared movement/collision kernel. The actor is not
+        // snapped to the recorded transform.
+        input = npc.replayInput;
+    }
+    else
+    {
+        input = buildInputState(npc, moveDir, jump, dash, attack,
+                                wantDownDash, safeDt);
+        input.freezeHeld = freeze;
+        input.groundReturnPressed = false;
+    }
+    npc.lastAcceptedInput = input;
+    npc.hasLastAcceptedInput = true;
     if (input.dashPressed)
         npc.dashCommandConsumed = true;
 
@@ -2759,6 +2773,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         const bool poseClear =
             containActorFinalPose(npc.body, world, npc.finalPose,
                                   poseResult, 0.02f, "post_animation");
+        npc.lastRootInsideClosedSolid = poseResult.rootInsideClosedSolid;
+        npc.lastContainmentKnown = true;
+        npc.lastFinalPenetration = poseResult.finalPenetration;
+        npc.lastContainmentStage = poseResult.stage;
         if (poseClear && !hadClearPose)
         {
             StructuredLogger::instance().writeEvent(

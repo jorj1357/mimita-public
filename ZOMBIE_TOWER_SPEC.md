@@ -7,7 +7,10 @@ This document records permanent Zombie Tower project requirements. It does not c
 ## Tower and traversal
 
 - The finished tower has 100 floors. Each floor occupies approximately 100 m × 100 m; typical perimeter or partition walls are about 50 m high.
+- Every floor has a solid 100 m × 100 m bottom deck (10,000 m² plan area) that catches a falling player on that floor. Its only opening follows the ramp crossing and landing; the ramp surface bridges that passage. Floors are stacked 50 m higher per floor; do not leave a fall-through shaft.
 - Players progress from the bottom to the top. Every floor has at least one traversable connection to the next, and floor 100 ends in an open-air rooftop arena.
+- A continuous ascending route connects floors through a wide, flush landing passage. The main route and passage are at least 32 m wide and provide at least 3.8 m of vertical clearance for a 1.8 m-tall character plus 2 m headroom.
+- Each floor is enclosed by walls around all four sides; the tower must not alternate between closed and open sides. Floor 1 may have a framed entrance, and the floor-100 roof can remain open to the sky while retaining its perimeter walls.
 - At least 75% of floors use non-standard layouts. The layout vocabulary includes tunnels, curved and spiral paths, long corridors, lava pits, narrow bridges, obstacles, floating platforms, vertical chambers, broken architecture, and alternate routes.
 - Floating platforms may be 5–50 m apart only where the traversal capabilities available to the intended actors make the gap reachable.
 - Fast movement, jumping, dashing, projectiles, collision, and NPC navigation must work on the authored geometry. Players and NPCs use shared movement, collision, and navigation owners where practical; NPCs may use only abilities available to their role.
@@ -31,3 +34,24 @@ This document records permanent Zombie Tower project requirements. It does not c
 ## Does not define
 
 This document does not replace the detailed existing mode specification, define new monster attacks, or claim that the current GLBs are connected or that the movement/NPC acceptance gates have passed.
+
+## Initial Blender blockout dimensions
+
+The first Blender prototype uses these concrete values to make the 100-floor concept visible and traversable as one continuous blockout:
+
+- Foundation: a centered 500 m × 500 m × 10 m block with its bottom at Z=20 m and its top at Z=30 m.
+- Tower floor 1 starts on the foundation top at Z=30 m. Floor indices run upward from 1 through 100 with no omitted levels.
+- The blockout uses a 50 m vertical rise per floor. Floor 1 spans Z=30–80 m; floor 100 spans Z=4980–5030 m. The 100 m × 100 m tower footprint fits wholly on the foundation.
+- Each level has a solid 100 m × 100 m deck (10,000 m² plan area) with a 2 m blockout thickness. Its top is the level start elevation; the next level starts 50 m higher. The deck passage follows the ramp crossing and is bridged by the ramp landing.
+- A continuous square-spiral ramp wraps the tower once per floor. Its 32 m clear width and 32 m centerline radius fit within the 100 m footprint while rising 50 m per loop. The L-shaped deck passage follows the incoming segment, turn, and outgoing segment, leaving at least 3.8 m headroom along the passage.
+- Typical perimeter walls rise 50 m and enclose all four sides. Openings and distinct architecture vary by floor; at least 75 floors are assigned a non-standard layout treatment.
+- 200, 300, and 500 m/s are movement-scale reference speeds for long hallways, gaps, and playtesting. They are not a promise that every role or NPC can use those speeds or cross every gap. Any optional shortcut must be checked against actual available movement abilities.
+- Floor 100 ends on an open-air rooftop arena.
+
+These are version-one blockout choices. The tower geometry is for visual and route prototyping; Blender collision preview does not establish MiMITA collision, runtime connectivity, NPC navigation, or gameplay acceptance.
+
+## Boss arena blockout
+
+- Boss arenas may use broad, angled, stretched cylinders, spheres, cones, and launch surfaces for run, jump, dash, and surf-style traversal.
+- Keep one ground landing area, remove intermediate floor plates inside the arena volume, and build the enclosure from the tower's wall materials. Leave a clear, stair-aligned route through the ceiling for vertical progression.
+- Blender meshes document the intended route only. Actual player collision, fall recovery, and NPC navigation still require MiMITA runtime validation.
