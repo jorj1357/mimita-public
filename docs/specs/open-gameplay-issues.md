@@ -1,4 +1,60 @@
-﻿2026 11 03 1048 jojr 
+﻿2026 11 03 1422
+
+can u look into the code and see what is going wrong   2026-11-03T19:09:55.016045Z  SHA-256 487ecbeb9ba80e2e9808cd9498a0d2f7145950022822d154e61633a8998c0df7  this build  the events jsonl  
+
+hz is not at 60hz at all thats true
+
+alsi i think we should add  regressions like 
+maybe  regressions\master\(regresion)
+
+then we have like 
+regressions networking, regrssions performance, regressions collisions
+
+so we have all inside of 1 file what is going wrogn about collisions 
+unless regressions is ez to track right now 
+
+cuz doing it per date makes it liek changelogs but i wnat to look at it like  
+
+collisions, add idk entry 11 where  the issue was npcs fall thru floor on tdmtest3 map, cause was xyz, fix was xyz, evidence was xyz, 
+
+but here i want to amke it so server is at 60hz fixed no more  lagging 
+as well as  npcs are floating in the air in tdmtest3 map, but i wnat them to just behave like normal like how they used to 
+
+just walking around and sliding like
+2026 11 03 1420  like 2026 11 02 git commits the npcs were working good i wnat them to behave like that 
+
+as well as collisions
+still egtting caught snagging on surfaces
+need to ensure that the scenario recorder is working, full detial, and does not dip the game to   below 240fps at all, or server below 60hz , just keep consistnet workign performacne, while also logging all the important htings 
+maybe can eget away with less logging just log every single tick instaed of skippign ticks 
+
+2026 11 03 1410
+
+dev loop daemon unavialbel
+why
+
+umm what else
+
+tdmtest3 uncofnimred to be working with npcs
+get npcs unstuck out of  geometr uncofnirmd
+
+is scenario eesting wokringbetter
+
+low hz what is the pobrlemmmmmm npcs floating 
+
+2026 11 03 1245 
+after  scenarrio bulletpfoofing
+framt times liek 1 fps 
+not good
+idk whats rwong 
+cant do consoel comands we shoudl prob put liek athing that makes i tso  u can run commands otuside of the game not needitng to to be in th egame
+but the game oerall shoudl be good enouh taht it doenst need that  and u can just  run commands in it bc its not at 1 fps ever 
+
+phsics is taking 1551 ms and netowking is 381 ms it 
+cpuu is at 3402 ms 
+its phsics and netowkring idk wht th eproblem is 
+
+2026 11 03 1048 jojr 
 npcs also 
 in fun cotuner strike ned liek
 reaction time delay

@@ -165,6 +165,17 @@ bool samePath(const std::filesystem::path& a, const std::filesystem::path& b) {
     return _stricmp(aa.c_str(), bb.c_str()) == 0;
 }
 
+bool quotaPruneAllowed() {
+    static thread_local auto lastAttempt =
+        std::chrono::steady_clock::time_point::min();
+    const auto now = std::chrono::steady_clock::now();
+    if (lastAttempt != std::chrono::steady_clock::time_point::min() &&
+        now - lastAttempt < std::chrono::seconds(5))
+        return false;
+    lastAttempt = now;
+    return true;
+}
+
 uint64_t pruneCompletedRuns(const std::filesystem::path& root,
                             const std::filesystem::path& activeRunDir,
                             uint64_t targetBytes,
@@ -1352,8 +1363,10 @@ bool StructuredLogger::tryWriteEvent(StructuredCategory category,
     };
     if (!correlationId.empty()) record["correlation_id"] = correlationId;
     if (!reason.empty()) record["reason"] = reason;
-    return tryWriteJsonLine(record, static_cast<int>(level) <=
-                                  static_cast<int>(StructuredLevel::Important));
+    // Durability is provided by the bounded per-tick flush. Do not flush every
+    // Important record: per-record fflush under the cross-process journal
+    // mutex turns ordinary diagnostics into fixed-tick stalls.
+    return tryWriteJsonLine(record, false);
 }
 
 bool StructuredLogger::writeEventChecked(StructuredCategory category,
@@ -1393,8 +1406,9 @@ bool StructuredLogger::writeEventChecked(StructuredCategory category,
     if (!correlationId.empty()) record["correlation_id"] = correlationId;
     if (!reason.empty()) record["reason"] = reason;
     // Required records ignore optional category-level filtering. Quota refusal
-    // is still authoritative and is returned to the caller.
-    return writeJsonLine(record, true);
+    // is still authoritative and is returned to the caller. The fixed-tick
+    // flush makes the accepted row durable without an fflush per row.
+    return writeJsonLine(record, false);
 }
 
 bool StructuredLogger::pinCurrentRun(const std::string& scenarioId,
@@ -1432,11 +1446,26 @@ uint64_t StructuredLogger::eventsBytes() const
     return ec ? 0 : static_cast<uint64_t>(size);
 }
 
+static std::mutex gEventsWriteMutex;
+
+void StructuredLogger::flushEvents()
+{
+    if (!mInitialized || !mEventsFile) return;
+    std::lock_guard<std::mutex> lock(gEventsWriteMutex);
+    const auto flushStart = std::chrono::steady_clock::now();
+    std::fflush(mEventsFile);
+    const auto flushEnd = std::chrono::steady_clock::now();
+    mFlushCount.fetch_add(1, std::memory_order_relaxed);
+    mFlushMicroseconds.fetch_add(static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            flushEnd - flushStart).count()),
+        std::memory_order_relaxed);
+}
+
 bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return false;
-    static std::mutex writeMutex;
-    std::lock_guard<std::mutex> lock(writeMutex);
+    std::lock_guard<std::mutex> lock(gEventsWriteMutex);
     HANDLE named = eventsFileMutex();
     if (!named) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
@@ -1496,6 +1525,11 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 
     if (line.size() > mConfig.storageLimits.totalLogTreeBytes -
             std::min<uint64_t>(quota.state->totalBytes, mConfig.storageLimits.totalLogTreeBytes)) {
+        if (!quotaPruneAllowed()) {
+            mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+            ReleaseMutex(named);
+            return false;
+        }
         // Reconcile non-logger files and remove eligible completed runs only
         // when an incoming record would cross the folder ceiling.
         reconcileQuotaState(*quota.state, root);
@@ -1546,8 +1580,7 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return false;
-    static std::mutex writeMutex;
-    std::unique_lock<std::mutex> lock(writeMutex, std::try_to_lock);
+    std::unique_lock<std::mutex> lock(gEventsWriteMutex, std::try_to_lock);
     if (!lock.owns_lock()) return false;
     HANDLE named = eventsFileMutex();
     if (!named) {
@@ -1704,6 +1737,19 @@ void StructuredLogger::tick() {
         if (throttle > 0.0f && now - tb.lastFlushTime >= (double)throttle)
             flushThrottled(catIdx);
     }
+
+    // Bounded durability: every accepted row is already appended to the
+    // journal buffer. Flush at most ten times per second instead of once per
+    // row so logging never becomes a fixed-tick hazard.
+    static std::atomic<uint64_t> lastFlushMs{0};
+    const uint64_t nowMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    uint64_t previous = lastFlushMs.load(std::memory_order_relaxed);
+    if (nowMs - previous >= 100 &&
+        lastFlushMs.compare_exchange_strong(previous, nowMs,
+                                            std::memory_order_relaxed))
+        flushEvents();
 }
 
 // ── Audio buffer analysis ───────────────────────────────────

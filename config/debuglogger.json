@@ -9,7 +9,7 @@
 
   "storage_limits": {
     "per_segment_bytes": 100000000,
-    "total_log_tree_bytes": 1000000000
+    "total_log_tree_bytes": 1500000000
   },
 
   "categories": {

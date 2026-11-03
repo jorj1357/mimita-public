@@ -951,6 +951,24 @@ void ScenarioServerRecorder::captureTick(
         mLastCaptureTotalUs =
             static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - captureStart).count());
+        if ((mFrames % 60u) == 0u)
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "scenario.record.performance", mScenarioId,
+                "scenario capture cost for one journal-only recording",
+                serverTick,
+                nlohmann::json{
+                    {"scenario_id", mScenarioId},
+                    {"frame", mFrames},
+                    {"server_tick", serverTick},
+                    {"process_role", "server"},
+                    {"build_us", captureBuildUs},
+                    {"write_us", mLastCaptureWriteUs},
+                    {"total_us", mLastCaptureTotalUs},
+                    {"journal_only", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     if (mOut.is_open())
@@ -1117,5 +1135,6 @@ void ScenarioServerRecorder::stop(const char* reason)
                        {"frames", mFrames},
                        {"stop_reason", reason ? reason : "unknown"}},
         __FILE__, __LINE__, __FUNCTION__);
+    StructuredLogger::instance().flushEvents();
     StructuredLogger::instance().endScenarioCapture();
 }

@@ -348,20 +348,15 @@ bool ScenarioRecorder::start(const std::string& name,
     if (!cleanName.empty())
         mScenarioId += "-" + cleanName;
 
-    mOut.open(path, std::ios::out | std::ios::trunc);
-    if (!mOut.is_open())
-    {
-        if (error) *error = "cannot_open_recording_file";
-        return false;
-    }
-
+    // Canonical recordings live only in this executable's events.jsonl. The
+    // old per-scenario sidecar is not a second source of truth.
     mPath = path.generic_string();
     mServerPath = mPath + ".server.jsonl";
     mMap = map;
     mMode = mode;
     mWeaponSet = weaponSet;
     mFrame = 0;
-    mStartPending = true;
+    mStartPending = false;
     mActive = true;
     mCanonical = true;
     mLocalPlayerId = MP_CONTEXT.active ? MP_CONTEXT.localPlayerId : 0;
@@ -608,6 +603,8 @@ void ScenarioRecorder::writeIdentity(const std::string& trackId,
     identity.avatar = avatar;
     identity.spawnGeneration = spawnGeneration;
     identity.transformEpoch = transformEpoch;
+    if (!mOut.is_open())
+        return;
     nlohmann::json line = ScenarioTracks::identityJson(identity);
     line["kind"] = "actor_identity";
     mOut << line.dump() << '\n';
@@ -639,7 +636,8 @@ void ScenarioRecorder::updateLifecycle(
         event.spawnGeneration = now.spawnGeneration;
         event.transformEpoch = now.transformEpoch;
         event.health = now.health;
-        mOut << ScenarioTracks::lifecycleJson(event).dump() << '\n';
+        if (mOut.is_open())
+            mOut << ScenarioTracks::lifecycleJson(event).dump() << '\n';
     }
     for (const auto& entry : mLastActors)
     {
@@ -653,7 +651,8 @@ void ScenarioRecorder::updateLifecycle(
         event.spawnGeneration = entry.second.spawnGeneration;
         event.transformEpoch = entry.second.transformEpoch;
         event.health = entry.second.health;
-        mOut << ScenarioTracks::lifecycleJson(event).dump() << '\n';
+        if (mOut.is_open())
+            mOut << ScenarioTracks::lifecycleJson(event).dump() << '\n';
     }
     mLastActors.clear();
     for (const auto& entry : current)
@@ -668,105 +667,34 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
                                    WeaponSystem& weapons,
                                    const World& world)
 {
-    if (!mActive || !mOut.is_open())
+    if (!mActive)
         return;
 
     const auto captureStart = std::chrono::steady_clock::now();
-    if (mStartPending)
+    if (mStartPending && mOut.is_open())
         writeHeader(player, camera);
 
     const uint32_t serverTick = mpContext.active
         ? static_cast<uint32_t>(mpContext.latestServerTick) : 0;
     const uint64_t clientTick = static_cast<uint64_t>(player.movementSimulationTick);
 
-    nlohmann::json tick{
-        {"kind", "tick"},
-        {"frame", mFrame},
-        {"client_tick", clientTick},
-        {"server_tick", serverTick},
-        {"wish", {frame.wishSide, frame.wishForward}},
-        {"move_world", {frame.moveX, frame.moveY}},
-        {"jump", frame.jump},
-        {"jump_pressed", frame.jumpPressed},
-        {"dash_pressed", frame.dashPressed},
-        {"down_dash_pressed", frame.downDashPressed},
-        {"freeze_held", frame.freezeHeld},
-        {"freeze_pressed", frame.freezePressed},
-        {"crouch_held", frame.crouchHeld},
-        {"interact_held", frame.interactHeld},
-        {"reload_pressed", frame.reloadPressed},
-        {"primary_held", frame.primaryHeld},
-        {"secondary_held", frame.secondaryHeld},
-        {"shield_held", frame.shieldHeld},
-        {"grab_held", frame.grabHeld},
-        {"look_yaw", frame.lookYaw},
-        {"look_pitch", frame.lookPitch},
-        {"cam_forward", ScenarioTracks::vec3Json(frame.camForward)},
-        {"equipped_weapon", player.equippedWeaponId},
-        {"equipped_slot", player.equippedSlot},
-        {"position", ScenarioTracks::vec3Json(player.pos)},
-        {"velocity", ScenarioTracks::vec3Json(player.vel)},
-        {"health", player.currentHp},
-        {"grounded", player.ground.onGround},
-        {"spawn_generation", player.spawnGeneration},
-        {"transform_epoch", player.networkTransformEpoch},
-        {"cam_yaw", camera.yaw},
-        {"cam_pitch", camera.pitch}
-    };
-
-    nlohmann::json collisionContacts = nlohmann::json::array();
-    const size_t maxCollisionContacts =
-        std::min<size_t>(player.movementContacts.size(), 8);
-    for (size_t i = 0; i < maxCollisionContacts; ++i)
-    {
-        const MovementContact& contact = player.movementContacts[i];
-        collisionContacts.push_back({
-            {"kind", static_cast<int>(contact.kind)},
-            {"source", static_cast<int>(contact.source)},
-            {"shape", static_cast<int>(contact.shapeKind)},
-            {"subshape", static_cast<int>(contact.subshape)},
-            {"point", ScenarioTracks::vec3Json(contact.point)},
-            {"normal", ScenarioTracks::vec3Json(contact.normal)},
-            {"sweep_velocity", ScenarioTracks::vec3Json(contact.sweepVelocity)},
-            {"penetration_m", contact.penetrationDepth},
-            {"surface_id", contact.surfaceId},
-            {"source_entity_id", contact.sourceEntityId}
-        });
-    }
-    tick["collision"] = {
-        {"on_ground", player.ground.onGround},
-        {"stable_on_ground", player.ground.stableOnGround},
-        {"has_world_contact", player.ground.hasWorldContact},
-        {"contact_count", player.movementContacts.size()},
-        {"duplicate_contact_count", player.movementContacts.duplicateCount},
-        {"overflow_contact_count", player.movementContacts.overflowCount},
-        {"contacts", std::move(collisionContacts)}
-    };
-
     if (mNetworked)
     {
         std::unordered_map<std::string, ActorSnapshot> current;
-        nlohmann::json actors = nlohmann::json::array();
-
         const std::string localTrack = "player:" + std::to_string(mLocalPlayerId);
         writeIdentity(localTrack, "player", mLocalPlayerId, player.username,
                       player.avatarName(), player.spawnGeneration,
                       player.networkTransformEpoch);
-        ScenarioTracks::ActorState local = captureActor(
-            player, localTrack, "player", true, weapons);
-        actors.push_back(ScenarioTracks::actorStateJson(local));
-        current[localTrack] = {local.spawnGeneration, local.transformEpoch, local.health};
+        current[localTrack] = {player.spawnGeneration,
+                               player.networkTransformEpoch,
+                               player.currentHp};
 
         for (const Npc& npc : npcSystem.all())
         {
             const std::string track = "npc:" + std::to_string(npc.id);
             writeIdentity(track, "npc", npc.id, npc.body.username,
                           npc.avatarName, 0, npc.transformEpoch);
-            ScenarioTracks::ActorState state = captureActor(
-                npc.body, track, "npc", false, weapons);
-            state.transformEpoch = npc.transformEpoch;
-            actors.push_back(ScenarioTracks::actorStateJson(state));
-            current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
+            current[track] = {0, npc.transformEpoch, npc.body.currentHp};
         }
         for (const auto& entry : mpContext.remotePlayers)
         {
@@ -775,10 +703,9 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
             writeIdentity(track, "player", entry.first, remote.username,
                           remote.avatarName(), remote.spawnGeneration,
                           remote.networkTransformEpoch);
-            ScenarioTracks::ActorState state = captureActor(
-                remote, track, "player", false, weapons);
-            actors.push_back(ScenarioTracks::actorStateJson(state));
-            current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
+            current[track] = {remote.spawnGeneration,
+                              remote.networkTransformEpoch,
+                              remote.currentHp};
         }
         for (const auto& entry : mpContext.remoteNpcs)
         {
@@ -786,13 +713,8 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
             const std::string track = "npc:" + std::to_string(entry.first);
             writeIdentity(track, "npc", entry.first, remote.username,
                           remote.avatarName(), 0, remote.networkTransformEpoch);
-            ScenarioTracks::ActorState state = captureActor(
-                remote, track, "npc", false, weapons);
-            state.transformEpoch = remote.networkTransformEpoch;
-            actors.push_back(ScenarioTracks::actorStateJson(state));
-            current[track] = {state.spawnGeneration, state.transformEpoch, state.health};
+            current[track] = {0, remote.networkTransformEpoch, remote.currentHp};
         }
-        tick["actors"] = std::move(actors);
         updateLifecycle(current, serverTick, clientTick);
         if (mServerTrackStartTick == 0 && serverTick != 0)
             mServerTrackStartTick = serverTick;
@@ -889,9 +811,25 @@ void ScenarioRecorder::captureTick(const InputFrame& frame,
         return;
     }
 
-    mOut << tick.dump() << '\n';
     ++mFrame;
-    flushIfNeeded();
+
+    if ((mFrame % 60u) == 0u)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "scenario.record.performance", mScenarioId,
+            "scenario capture cost for one journal-only recording",
+            static_cast<uint32_t>(clientTick),
+            nlohmann::json{
+                {"scenario_id", mScenarioId},
+                {"frame", mFrame},
+                {"client_tick", clientTick},
+                {"server_tick", serverTick},
+                {"process_role", "client"},
+                {"build_us", captureBuildUs},
+                {"journal_only", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     if (mFrame >= kMaxFrames)
         stop("limit");
@@ -976,6 +914,7 @@ void ScenarioRecorder::stop(const char* reason)
         "scenario recording stopped", mFrame,
         fields,
         __FILE__, __LINE__, __FUNCTION__);
+    StructuredLogger::instance().flushEvents();
     StructuredLogger::instance().endScenarioCapture();
 }
 

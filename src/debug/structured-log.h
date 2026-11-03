@@ -226,7 +226,10 @@ public:
                          const char* sourceFile, int sourceLine,
                          const char* functionName, const char* format, va_list args);
 
-    // Tick: flush throttled buffers
+    // Flush accepted journal rows. Called by the bounded per-tick flush policy.
+    void flushEvents();
+
+    // Tick: flush throttled buffers and bounded journal flush
     void tick();
 
     // Convenience: numeric assertion

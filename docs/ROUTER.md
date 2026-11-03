@@ -25,7 +25,8 @@ This is the map for the project documentation.
   live-`events.jsonl` workflow for behavior investigations and changes.
 - `docs/operations/`: build, deployment, assets, and completion procedures.
 - `docs/skills/`: focused review checklists used for the task.
-- `docs/regressions/`: confirmed failures and their permanent lessons.
+- `docs/regressions/`: confirmed failures and their permanent lessons;
+  `docs/regressions/master/` is the domain index, dated files own detail.
 - `docs/changelog/`: one final record for every AI work session.
 - `docs/features/`: stable feature records linking goals, owners, tests, logs,
   changelogs, regressions, and human acceptance.

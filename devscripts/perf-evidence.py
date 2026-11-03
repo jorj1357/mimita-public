@@ -53,6 +53,10 @@ def main() -> int:
     session_growth: list[dict[str, Any]] = []
     audits: list[dict[str, Any]] = []
     spikes: list[dict[str, Any]] = []
+    server_tick_windows: list[dict[str, Any]] = []
+    server_tick_stalls: list[dict[str, Any]] = []
+    post_pair_phases: list[dict[str, Any]] = []
+    final_pose_phases: list[dict[str, Any]] = []
     movement_corrections: list[dict[str, Any]] = []
     bounce_events: list[dict[str, Any]] = []
     npc_traces: list[dict[str, Any]] = []
@@ -85,6 +89,14 @@ def main() -> int:
                 audits.append(fields)
             elif name in {"PERFORMANCE_SPIKE", "PERFORMANCE_SPIKE_REPORT"}:
                 spikes.append(fields)
+            elif name == "performance.server-tick-window":
+                server_tick_windows.append(fields)
+            elif name == "performance.server-tick-stall":
+                server_tick_stalls.append(fields)
+            elif name.startswith("npc.post-pair."):
+                post_pair_phases.append(fields | {"_event": name})
+            elif name.startswith("npc.final-pose.safe-point."):
+                final_pose_phases.append(fields | {"_event": name})
             elif name == "movement.server-position-corrected":
                 movement_corrections.append(fields)
             elif name == "collision.bounce.applied":
@@ -108,6 +120,10 @@ def main() -> int:
         "events:",
         f"performance_frames={len(frames)}",
         f"frame_slices={len(slices)}",
+        f"server_tick_windows={len(server_tick_windows)}",
+        f"server_tick_stalls={len(server_tick_stalls)}",
+        f"post_pair_phases={len(post_pair_phases)}",
+        f"final_pose_phases={len(final_pose_phases)}",
         f"combat_growth={len(growth)}",
         f"session_growth={len(session_growth)}",
         f"movement_corrections={len(movement_corrections)}",
@@ -167,6 +183,36 @@ def main() -> int:
         logger_bytes = sum(int(f.get("logger_bytes_delta", 0) or 0) for f in tail)
         print(f"  logger_last_windows: events={logger_delta} bytes={logger_bytes}")
 
+    if server_tick_windows:
+        print("\nrecent server tick windows:")
+        for item in server_tick_windows[-min(5, len(server_tick_windows)):]:
+            print(
+                "  "
+                f"ticks={item.get('tick_count', '')} "
+                f"avg={number(item.get('total_avg_ms')):.3f}ms "
+                f"p50={number(item.get('total_p50_ms')):.3f}ms "
+                f"p95={number(item.get('total_p95_ms')):.3f}ms "
+                f"p99={number(item.get('total_p99_ms')):.3f}ms "
+                f"max={number(item.get('total_max_ms')):.3f}ms "
+                f"over100={item.get('over_100ms_count', '')} "
+                f"npc_max={number(item.get('npc_max_ms')):.3f}ms "
+                f"snapshot_max={number(item.get('snapshot_max_ms')):.3f}ms"
+            )
+
+    if server_tick_stalls:
+        print("\nserver tick stalls:")
+        for item in server_tick_stalls[-min(8, len(server_tick_stalls)):]:
+            print(
+                "  "
+                f"tick={item.get('tick', '')} "
+                f"total={number(item.get('total_ms')):.3f}ms "
+                f"npc={number(item.get('npc_ms')):.3f}ms "
+                f"snapshot={number(item.get('snapshot_ms')):.3f}ms "
+                f"gamemode={number(item.get('gamemode_ms')):.3f}ms "
+                f"players={item.get('players', '')} "
+                f"npcs={item.get('npcs', '')}"
+            )
+
     if slices:
         print("\nrecent 200ms slices:")
         for item in slices[-min(5, len(slices)):]:
@@ -214,6 +260,36 @@ def main() -> int:
                 f"reported={item.get('reported_position', '')} "
                 f"accepted={item.get('accepted_position', '')} "
                 f"input={item.get('move_axes', '')}"
+            )
+
+    if post_pair_phases:
+        print("\nNPC post-pair phases:")
+        for item in post_pair_phases[-min(12, len(post_pair_phases)):]:
+            print(
+                "  "
+                f"event={item.get('_event', '')} "
+                f"actor={item.get('actor', '')} "
+                f"stage={item.get('stage', '')} "
+                f"elapsed={number(item.get('elapsed_ms')):.3f}ms "
+                f"corrected={item.get('corrected', '')} "
+                f"pushed={item.get('pushed', '')} "
+                f"mesh_tris={item.get('actor_mesh_triangles', '')} "
+                f"pairs={item.get('candidate_pairs', '')}"
+            )
+
+    if final_pose_phases:
+        print("\nNPC final-pose safe-point phases:")
+        for item in final_pose_phases[-min(12, len(final_pose_phases)):]:
+            print(
+                "  "
+                f"event={item.get('_event', '')} "
+                f"actor={item.get('actor', '')} "
+                f"stage={item.get('stage', '')} "
+                f"elapsed={number(item.get('elapsed_ms')):.3f}ms "
+                f"candidates={item.get('candidate_count', '')} "
+                f"samples={item.get('sample_count', '')} "
+                f"found={item.get('found', '')} "
+                f"penetration={number(item.get('initial_penetration_m')):.3f}"
             )
 
     if bounce_events:

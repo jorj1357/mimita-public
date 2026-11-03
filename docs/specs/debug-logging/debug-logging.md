@@ -260,6 +260,13 @@ bookmarked recordings. A forced-quota live run on build 250 with
 `scenario.record.invalid` events with `valid=false`; no completed marker was
 written.
 
+Status update 2026-11-03: journal durability uses a bounded flush. Every
+accepted row is appended immediately, but `fflush` runs at most once per 100 ms
+from `StructuredLogger::tick()` instead of once per `Important` or checked row.
+Crash-sensitive paths and scenario stop still flush explicitly. A per-row
+`fflush` under the cross-process journal mutex turned ordinary diagnostics into
+fixed-tick stalls; that is forbidden.
+
 Status: partial implementation. `StructuredLogger` currently enforces
 a 100,000,000
 byte canonical file ceiling and a 1,000,000,000 byte `logs` tree ceiling,

@@ -10,6 +10,29 @@ Normal AI work history belongs in:
 
 Do not use regression records as a general changelog.
 
+## Master ledgers
+
+Use `docs/regressions/master/` as the human-facing index by domain:
+
+- `collisions-REG.md`
+- `performance-REG.md`
+- `networking-REG.md`
+- `npc-movement-REG.md`
+- `dev-loop-REG.md`
+- `gameplay-REG.md`
+
+The master ledgers are append-only. Each numbered entry links to the dated
+detail file in `docs/regressions/YYYY-MM-DD/`. The dated file remains the owner
+of the full observed/expected/cause/fix/proof record.
+
+When a regression is confirmed:
+
+1. add one numbered entry to the matching master ledger;
+2. add or update the dated detail file;
+3. keep both append-only.
+
+The full backfill of earlier regressions is indexed in the master ledgers.
+
 ---
 
 ## Directory Structure

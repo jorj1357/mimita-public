@@ -7,6 +7,8 @@
     "mm": "server_start_preset melee_1",
     "zt1": "server_start_preset zombie_tower_1",
     "melee": "modestart 14",
+    "ev": "entity_visibility 1",
+    "ee": "entity_visibility 0",
     "startmelee": "modestart 14",
     "cs": "crate_spawn",
     "fa": "fullscreen 6",

@@ -233,6 +233,25 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     for (size_t i = 0; i < hw.triangles.size(); ++i)
         if (i >= hw.solidIds.size() || hw.solidIds[i] != UINT32_MAX)
             npcWorld.collisionMesh.triangles.push_back(hw.triangles[i]);
+
+    // A map whose solid ids are all UINT32_MAX (or whose solid-id array is
+    // absent) is still valid collision geometry. The sentinel means "removed
+    // by the face-cleanup pass", not "not collision". Filtering every triangle
+    // left the server NPC world empty on tdmtest3, so NPC navigation reported
+    // collision_mesh_empty and NPC physics had no support surface. Fall back to
+    // the complete headless triangle set rather than simulating against nothing.
+    if (npcWorld.collisionMesh.triangles.empty() && !hw.triangles.empty())
+    {
+        npcWorld.collisionMesh.triangles = hw.triangles;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.collision-world.solid-id-fallback", "server",
+            "headless collision triangles were all marked removed; using the full triangle set",
+            0,
+            nlohmann::json{{"triangle_count", hw.triangles.size()},
+                           {"solid_id_count", hw.solidIds.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     for (const auto& active : hw.activeDestructibleNodes)
     {
         const PhysicalEntity* entity =

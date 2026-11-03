@@ -247,6 +247,18 @@ case emits `npc.pose.reset`. The same owner covers players, including a second
 pass after the current weapon pose is published. Body and weapon contacts both
 participate in lift/support; a weapon resting on a ledge may hold the actor up.
 
+### Headless NPC asset boundary — 2026-11-03
+
+A headless server NPC does not own a real avatar collision mesh. Do not build
+body-part colliders from the shared player template for it. Template boxes are
+not aligned by the NPC animation owner and produced phantom penetration,
+100 m-scale contacts, and containment reset loops. Headless NPCs use the shared
+capsule movement path plus the bounded ground clamp. Body-part final-pose
+containment applies only when an actor owns real avatar collision meshes. The
+headless NPC world still needs valid static support geometry; when the map
+loader marks every triangle removed, `buildNpcWorldCollision()` falls back to
+the complete headless triangle set rather than simulating against nothing.
+
 ### Static-world collision
 
 - Players, NPCs, monsters, and bosses use their final body-part and held-weapon

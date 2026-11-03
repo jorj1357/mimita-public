@@ -83,6 +83,12 @@ journal path, rotated segment, line, event ID, server tick, and actor identity
 when reporting a failure; a line number without run and event identity is not
 stable evidence.
 
+Status 2026-11-03: canonical client capture no longer opens or writes a
+per-tick scenario file. Each executable writes exactly one `events.jsonl`.
+Legacy schema 1/2 files remain readable for old recordings, but new canonical
+capture has no sidecar and does not merge one. A stop-time export from the
+journal is not implemented yet; the journal is the recording.
+
 The `\\` bookmark action remains a human annotation control. During an active
 scenario it associates the bookmark with the recording ID, current scenario
 frame, server/client tick, actor IDs, and canonical journal locations. It must

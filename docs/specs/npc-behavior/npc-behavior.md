@@ -260,6 +260,14 @@ Root-only correction, last-clear restore, bounded safe-point fallback, and the
 server no-valid-pose respawn hook are implemented. That last case logs
 `npc.pose.reset`.
 
+Headless server NPC status (2026-11-03): a headless NPC has no real avatar
+collision mesh. It must not fabricate body-part colliders from the player
+template. Headless NPCs use the shared capsule movement path plus the bounded
+ground clamp, which is the Nov 2 behavior. Final-pose body containment applies
+only when the actor actually owns avatar collision meshes. The server NPC world
+must still contain valid map support geometry; the solid-id fallback in
+`buildNpcWorldCollision()` covers maps whose triangles are all marked removed.
+
 ### Spawn pose and avatar order (2026-11-01)
 
 A spawn is not accepted merely because its root point and a capsule fit. The

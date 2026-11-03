@@ -109,6 +109,10 @@ struct ServerTickTiming
     uint64_t maxProjectileUs = 0;
     uint64_t contactWeaponUs = 0;
     uint64_t maxContactWeaponUs = 0;
+    std::array<uint64_t, 600> totalSamplesUs{};
+    uint32_t sampleCount = 0;
+    uint32_t sampleWrite = 0;
+    uint64_t over100MsCount = 0;
 };
 
 uint64_t elapsedMicroseconds(const std::chrono::steady_clock::time_point& start)
@@ -125,16 +129,36 @@ void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
     const auto avgMs = [](uint64_t us, uint64_t count) {
         return count == 0 ? 0.0 : static_cast<double>(us) / count / 1000.0;
     };
+    const uint32_t sampleCount = std::min<uint32_t>(
+        timing.sampleCount,
+        static_cast<uint32_t>(timing.totalSamplesUs.size()));
+    std::array<uint64_t, 600> sorted = timing.totalSamplesUs;
+    std::sort(sorted.begin(), sorted.begin() + sampleCount);
+    const auto percentileMs = [&](double percentile) {
+        if (sampleCount == 0)
+            return 0.0;
+        const size_t index = static_cast<size_t>(std::ceil(
+            percentile * static_cast<double>(sampleCount - 1)));
+        return static_cast<double>(sorted[index]) / 1000.0;
+    };
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Performance, StructuredLevel::Important,
         "performance.server-tick-window", "server", "fixed-tick-stage-timing",
         tick,
         nlohmann::json{
             {"tick_count", timing.tickCount},
+            {"sample_count", sampleCount},
             {"players", players},
             {"npcs", npcs},
             {"total_avg_ms", avgMs(timing.totalUs, timing.tickCount)},
             {"total_max_ms", static_cast<double>(timing.maxTotalUs) / 1000.0},
+            {"total_p50_ms", percentileMs(0.50)},
+            {"total_p95_ms", percentileMs(0.95)},
+            {"total_p99_ms", percentileMs(0.99)},
+            {"over_100ms_count", timing.over100MsCount},
+            {"over_100ms_percent", timing.tickCount == 0 ? 0.0 :
+                static_cast<double>(timing.over100MsCount) * 100.0 /
+                    static_cast<double>(timing.tickCount)},
             {"npc_avg_ms", avgMs(timing.npcUs, timing.tickCount)},
             {"npc_max_ms", static_cast<double>(timing.maxNpcUs) / 1000.0},
             {"snapshot_avg_ms", avgMs(timing.snapshotUs, timing.tickCount)},
@@ -1093,6 +1117,33 @@ int runServer(const LaunchOptions& options)
             tickTiming.maxProjectileUs = std::max(tickTiming.maxProjectileUs, projectileUs);
             tickTiming.contactWeaponUs += contactWeaponUs;
             tickTiming.maxContactWeaponUs = std::max(tickTiming.maxContactWeaponUs, contactWeaponUs);
+            tickTiming.totalSamplesUs[tickTiming.sampleWrite] = totalTickUs;
+            tickTiming.sampleWrite = static_cast<uint32_t>(
+                (tickTiming.sampleWrite + 1) %
+                tickTiming.totalSamplesUs.size());
+            if (tickTiming.sampleCount < static_cast<uint32_t>(
+                    tickTiming.totalSamplesUs.size()))
+                ++tickTiming.sampleCount;
+            if (totalTickUs > 100000)
+            {
+                ++tickTiming.over100MsCount;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "performance.server-tick-stall", "server",
+                    "fixed tick exceeded 100 ms", tick,
+                    nlohmann::json{
+                        {"tick", tick},
+                        {"total_ms", static_cast<double>(totalTickUs) / 1000.0},
+                        {"npc_ms", static_cast<double>(npcUs) / 1000.0},
+                        {"snapshot_ms", static_cast<double>(snapshotUs) / 1000.0},
+                        {"gamemode_ms", static_cast<double>(gamemodeUs) / 1000.0},
+                        {"projectile_ms", static_cast<double>(projectileUs) / 1000.0},
+                        {"contact_weapon_ms", static_cast<double>(contactWeaponUs) / 1000.0},
+                        {"players", players.size()},
+                        {"npcs", npcs.size()},
+                        {"steps", steps}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
 
             accumulator -= (double)SERVER_DT;
             ++tick;
