@@ -26,10 +26,12 @@ only when the mode omits a value.
 
 ## Mode specifications
 
+- [SSBM](supersmashbrosmelee.md)
 - [General Objective and Round HUD](objective-hud.md)
 - [Skatepark](skatepark.md)
 - [Survive the Disasters](survive-the-disasters.md)
 - [Need for Madness](need-for-madness.md)
+- [Vehicle Arena](vehicle-arena.md)
 - [Cops vs. Robbers / Police Chase](vehicles/police-chase.md)
 - [SWAT](swat.md) and [Bodycam](bodycam.md)
 - [Zombie Tower](zombie-tower/zombie-tower.md)
@@ -74,22 +76,23 @@ switches to mode N through the results screen and then the new mode's default
 enters its countdown after the five-second live-switch results screen. There is
 no `modepick` command.
 
-### `startmelee` command contract
+### `startssbm` command contract
 
-`startmelee` is a named Melee launch action, not a numeric alias for
+`startssbm` is the named SSBM launch action, not a numeric alias for
 `modestart`. If the local player is already connected, it requests the
-authoritative server to switch that room to the stable gamemode ID `melee`.
-If disconnected, it starts the configured Melee server preset and connects the
+authoritative server to switch that room to the stable gamemode ID `ssbm`.
+If disconnected, it starts the configured `melee_1` SSBM server preset and connects the
 local host client as soon as that authoritative server is ready; coordinator
 registration continues in parallel so remote players can join by room code.
 The path must never fall back to sandbox or report joining before the
-connection is confirmed. Its initial map comes from the Melee preset; the
+connection is confirmed. Its initial map comes from the SSBM preset; the
 normal GUI map picker remains the way to choose another map. Command receipt, handler result,
 server acceptance/rejection, room registration, connection transition, active
 mode, and actor roster are separate evidence; sending the command is not proof
-that the server applied it.
+that the server applied it. The old `startmelee` command and `melee` mode ID
+remain aliases to SSBM; the GUI lists only the canonical `SSBM` mode.
 
-The first playable Melee preset starts one human and exactly one Melee NPC.
+The first playable SSBM preset starts one human and exactly one SSBM NPC.
 Both are assigned the `falcon` role and resolve the same `captain_falcon`
 weapon set and `captain_falcon_moveset` equipped definition. The NPC must not
 retain or fall back to ordinary guns. Do not add a second NPC in a launch
@@ -98,11 +101,20 @@ spawn. A mode change must reconcile generic startup NPCs to the mode's declared
 roster; while the first-version Melee roster is active, reject or prevent
 additional NPC spawns instead of silently adding unassigned, gun-equipped
 actors. Reapply and log the same effective loadout on respawn. The launch
-scenario must assert one human, one NPC, the active `melee` mode, and matching
+scenario must assert one human, one NPC, the active `ssbm` mode, and matching
 role, weapon-set, and equipped definition identity for both fighters.
 
-An explicit weapon set selected in the GUI or at runtime takes precedence over
-the `weapon_set_id` fallback in a gamemode JSON file.
+The GUI weapon-set picker offers `Auto (mode set)` and explicit named sets.
+Auto uses the selected gamemode's `weapon_set_id` (SSBM uses the Captain Falcon
+set; TDM uses the TDM set). A concrete GUI selection or host runtime selection
+takes precedence over the mode default.
+
+For every managed gamemode, an explicit host-selected weapon set is the shared
+effective loadout for all human and NPC actors. It overrides role and actor
+preset weapon sets for that match, controls the available inventory and attack
+authorization, and is reapplied on spawn and respawn. With no explicit host
+selection, the mode's configured set and role-specific loadouts retain their
+existing precedence.
 
 ## Engine-wide actor and session rules
 
@@ -340,6 +352,11 @@ World-geometry destruction and physical contact are separate. Disabling
 destructible world geometry does not disable ordinary collision between
 actors, vehicles, weapons, or props. Vehicle damage is controlled by the
 shared damage and physical-object rules.
+
+Vehicle Arena adds mode-owned data for its ball, goals, kickoff layout, and
+scoring. That data selects and configures shared physical entities; it does not
+add a mode-specific vehicle solver. See
+[`vehicle-arena.md`](vehicle-arena.md).
 
 These are desired mode-data interfaces; the current gamemode JSON schema and
 runtime do not yet implement all of them. Add schema validation and runtime

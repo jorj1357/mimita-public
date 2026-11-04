@@ -3,7 +3,15 @@
 Time created: 2026-11-03T19:09:00Z
 Time last updated: 2026-11-03T19:09:00Z
 
-Status: ATTEMPTED FIX (1) — journal-only source path; runtime review pending
+Status: ATTEMPTED FIX (2) — full scenario file restored under
+`devscripts/scenarios/user/`; journal keeps compact summaries only; runtime
+review pending
+
+Correction 2026-11-03: journal-only canonical capture made recordings hard to
+find and let log quota failures abort them. The full recording now lives in
+`devscripts/scenarios/user/` with the server sidecar merged at stop. The journal
+keeps only start/stop/invalid summaries. `devscripts/scenario_export.py`
+recovers the journal-only recordings already captured.
 
 Related specification: `docs/specs/dev-loop/scenario-input-recording.md`,
 `docs/specs/debug-logging/debug-logging.md`

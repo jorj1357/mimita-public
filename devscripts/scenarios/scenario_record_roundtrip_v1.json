@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "scenario_record_roundtrip_v1",
+  "description": "Start a real client recording, stop it, and require a valid merged scenario file with a server header and no retry loop.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": 1,
+    "map": "dust2cyberiav4",
+    "weapon_set": 30,
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "wait_client_spawn", "wait_for_event": "client.actor.spawn_activated.received", "timeout_seconds": 120},
+    {"id": "settle_spawn", "wait_seconds": 3}
+  ],
+  "steps": [
+    {"id": "start_record", "command": "scenario_startrecord", "args": ["gate-record-roundtrip"], "delay_ms_after": 500},
+    {"id": "record_soak", "wait_seconds": 3},
+    {"id": "stop_record", "command": "scenario_endrecord", "args": [], "delay_ms_after": 1500},
+    {"id": "settle", "wait_seconds": 30}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "scenario.record.started"},
+    {"type": "event_present", "event": "scenario.record.merged"},
+    {"type": "event_absent", "event": "scenario.record.invalid"},
+    {"type": "event_absent", "event": "scenario.record.merge_failed"}
+  ],
+  "timeout_seconds": 600
+}

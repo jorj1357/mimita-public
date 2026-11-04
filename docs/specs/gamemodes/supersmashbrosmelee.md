@@ -38,7 +38,7 @@ soidk wew could do grabs but whatevre
 
 ---
 
-# Melee-inspired arena fighter: clarified proposal
+# SSBM: Melee-inspired arena fighter
 
 Status: Historical proposal summary. Where it differs from the current
 decisions and requirements below, the numbered specification below is current.
@@ -232,7 +232,7 @@ When shield durability reaches zero from a hit or natural exhaustion after 300 h
 
 ## 34. Player and NPC participation
 
-**DECIDED:** NPCs and players use the same move-set, animation, collision, prediction, hit confirmation, percent, and knockback path; only the input/decision producer differs. **First playable match:** exactly one human player versus exactly one NPC, both assigned the `falcon` role and both using the same `captain_falcon` profile, weapon-set ID 12 (`captain_falcon`), and equipped definition ID `captain_falcon_moveset`. The NPC starts with that moveset equipped and must not retain or fall back to revolver, shotgun, rocket launcher, or another ordinary weapon. The roster count includes every startup or runtime-spawned NPC: entering Melee must reconcile the room to one NPC, and further NPC-spawn requests while the first-version roster is active must be rejected or otherwise prevented from adding another fighter. Reapply the same role and moveset on every NPC and player respawn; neither fighter should need to re-equip it. The first playable scenario is exactly one human plus exactly one NPC. This is the first test scope, not a limit on later fighter selection. **OPEN:** how reusable moves map into non-Melee modes.
+**DECIDED:** NPCs and players use the same move-set, animation, collision, prediction, hit confirmation, percent, and knockback path; only the input/decision producer differs. **First playable match:** exactly one human player versus exactly one NPC, both assigned the `falcon` role and both using the same `captain_falcon` profile, weapon-set ID 12 (`captain_falcon`), and equipped definition ID `captain_falcon_moveset`. The NPC starts with that moveset equipped and must not retain or fall back to revolver, shotgun, rocket launcher, or another ordinary weapon. The roster count includes every startup or runtime-spawned NPC: entering SSBM must reconcile the room to one NPC, and further NPC-spawn requests while the first-version roster is active must be rejected or otherwise prevented from adding another fighter. Reapply the same role and moveset on every NPC and player respawn; neither fighter should need to re-equip it. The first playable scenario is exactly one human plus exactly one NPC. This is the first test scope, not a limit on later fighter selection. **OPEN:** how reusable moves map into non-SSBM modes.
 
 **DECIDED: hot-reloadable NPC attack behavior.** The Melee NPC reads its attack settings from its resolved NPC `behavior_profile` in `config/behavior-profiles.json`; `config/roles.json` selects the profile for the `falcon` role. Do not put attack cadence or move-choice policy in the actor preset: actor presets describe an actor recipe, while behavior profiles own NPC decisions. Every decision to begin a new Melee action reads the current profile revision, so edits affect the next decision without a rebuild or NPC respawn; an action already underway keeps its original move data until interrupted. The profile exposes `preferred_range`, `melee_attack_gap_min_ticks`, `melee_attack_gap_max_ticks`, `melee_attack_range_meters`, and `melee_move_weights` keyed by exact action IDs from the equipped move set. When the NPC is in attack range and has a live target, it picks an inclusive integer start-to-start interval from the configured minimum and maximum, each clamped to 1–30 fixed 60 Hz ticks. The picked interval is used for that attack; the profile is read again at the next attack decision. When that tick arrives, the NPC immediately starts its newly selected move even if the previous move is still in windup, active, or recovery; this interrupts and replaces the prior action and animation. Missing or invalid range values use the legacy `melee_attack_gap_ticks` fixed interval when supplied, otherwise a 20-tick fallback; if only one range endpoint is valid, it is used for both, and if maximum is below minimum, maximum is raised to minimum. **NPC combat behavior:** While its target is alive and reachable, the Melee NPC must keep closing distance until it can attack, then repeatedly choose and perform attacks on this interval. It must not deliberately run away, orbit, or strafe away from the target as a combat tactic. When an attack is out of range, it should approach the target rather than abandon the attack loop. A close-combat profile with `preferred_range` at or below 2 m implements this behavior by excluding Circle, Strafe, and Retreat choices. `melee_attack_range_meters` controls how far away the NPC may begin an attack; the initial profile uses 4.5 m. Weights for actions absent from the selected moveset are ignored. The initial `melee_aggressive` profile uses a 1.5 m preferred distance, a 10–30 tick start-to-start interval, and mostly quick attacks with low-weight specials. Edit `melee_attack_gap_min_ticks` and `melee_attack_gap_max_ticks` to change the interval range, and edit `melee_move_weights` to change which configured attacks it prefers. The active config location is `config/behavior-profiles.json`, field names `preferred_range`, `melee_attack_gap_min_ticks`, `melee_attack_gap_max_ticks`, `melee_attack_range_meters`, and `melee_move_weights`.
 
@@ -536,7 +536,7 @@ chat with the fighter's name and exact stocks remaining. Losing the last stock
 announces the elimination and the surviving fighter as the round winner. The
 server ends the match when one fighter remains, shows the winner in chat and
 on the results HUD for exactly five seconds, then returns to intermission
-before the next match. The Melee mode's `results_seconds` is 5. A fighter with
+before the next match. The SSBM mode's `results_seconds` is 5. A fighter with
 no lives is eliminated. Protection does not disable movement; its exact blocked
 effects follow the open question in section 55. No other death cause is
 allowed.
@@ -688,10 +688,10 @@ spawn selection, hazard percent/knockback without hazard kills, per-action
 sound defaults/assets, shared lag-compensation policy, and immediate hot-reload
 activation are already decided above.
 
-## 56. Starting Melee from the terminal
+## 56. Starting SSBM from the terminal
 
-`startmelee` has two explicit paths. While connected to a room, it requests that
-room's server to switch to the stable `melee` ID and begins the usual mode
+`startssbm` has two explicit paths. While connected to a room, it requests that
+room's server to switch to the stable `ssbm` ID and begins the usual mode
 intermission. While disconnected, it starts the configured `melee_1` server
 preset and joins the room after server registration supplies its room code. The
 preset provides a default map; choosing a different map remains part of the
@@ -701,6 +701,11 @@ must not silently start sandbox. A successful local command handler only means
 the request or launch handoff was accepted. Server mode configuration and the
 client's connected state are the proof that the requested match actually
 started.
+
+`melee` remains a compatibility alias for the `ssbm` gamemode ID, and
+`startmelee` remains a compatibility alias for `startssbm`. New mode state,
+configuration, and GUI display use `ssbm` / `SSBM`; weapon behavior and event
+names that describe melee combat retain their existing names.
 
 Acceptance requires one scenario for the connected mode-switch path and one for
 the disconnected start-and-join path. Both verify the server's active mode,
@@ -852,7 +857,7 @@ we also need to make it like
 per gamemode or per actor mode like 
 rmb down should not aim in  for melee mode
 like, we need to have that disabled in the gamemodeperset 
-C:\mimita-v9\config\gamemodes\melee.json
+C:\mimita-v9\config\gamemodes\ssbm.json
 like here put like
 aimbdoy.json fov enabled = false
 like rmb down does not haev a effect on ur fov 

@@ -60,4 +60,11 @@ void drawVehicleHud()
         state->handbrake > 0.05f ? glm::vec4(1.0f, 0.55f, 0.2f, 1.0f)
                                  : glm::vec4(0.9f, 0.9f, 0.9f, 1.0f);
     uiDrawText(line, x, y, 0.30f, color);
+    y += 20.0f;
+
+    std::snprintf(line, sizeof(line),
+                  "THROTTLE %d%%  BRAKE %d%%  STEER %+.2f  SEATED",
+                  (int)(state->throttle * 100.0f + 0.5f),
+                  (int)(state->brake * 100.0f + 0.5f), state->steer);
+    uiDrawText(line, x, y, 0.28f, {0.8f, 0.85f, 0.9f, 1.0f});
 }

@@ -32,6 +32,20 @@ todo 9 8 2026 1039 est jorj - do we need map editor fo rthis?
 
 # Physical Moving Objects
 
+## Vehicles and arena balls use this owner (2026-11-03)
+
+Vehicles and the Vehicle Arena ball are assemblies of the same shared
+`PhysicalEntity` bodies, collision shapes, impulses, and fixed-tick rules
+described here. A vehicle chassis is not a second physics world; a ball is not a
+mode-specific collision solver.
+
+- The server owns authoritative motion and replication.
+- Clients interpolate authoritative bodies and do not run a competing solver.
+- Authored map placement and the in-game builder create data for these shared
+  bodies; they do not bypass this owner.
+- See `docs/specs/vehicles/vehicles.md` and
+  `docs/specs/gamemodes/vehicle-arena.md`.
+
 ## User-reported weapon/world collision issue — 2026-10-16
 
 The user reports that on Juggernaut4, the Juggernaut's large machine gun can

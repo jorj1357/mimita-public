@@ -72,10 +72,12 @@ journal and scenario ID:
 ## Single-journal collision recording target
 
 Collision recording and playback must use the process's canonical
-`events.jsonl` through `StructuredLogger`; do not add a second per-scenario
-event file or another collision log sink. Client and authoritative server
-processes keep their own canonical journals, linked by run, scenario, process,
-actor, and tick identities. A scenario recording begins and ends with
+`events.jsonl` through `StructuredLogger` for live diagnostics. The human-facing
+full scenario recording is the explicit exception: it is written to
+`devscripts/scenarios/user/` as a per-scenario file, with the authoritative
+server track merged from its `.server.jsonl` sidecar at stop. Do not create any
+other collision log sink. Client and server journals remain linked by run,
+scenario, process, actor, and tick identities. A scenario recording begins and ends with
 `scenario.record.started` and `scenario.record.stopped` boundaries. Every
 captured event carries a `scenario_id`/recording identity so the analyzer can
 select that run's evidence from the ordinary journal. Preserve the exact
@@ -83,11 +85,18 @@ journal path, rotated segment, line, event ID, server tick, and actor identity
 when reporting a failure; a line number without run and event identity is not
 stable evidence.
 
-Status 2026-11-03: canonical client capture no longer opens or writes a
-per-tick scenario file. Each executable writes exactly one `events.jsonl`.
-Legacy schema 1/2 files remain readable for old recordings, but new canonical
-capture has no sidecar and does not merge one. A stop-time export from the
-journal is not implemented yet; the journal is the recording.
+Status 2026-11-03: the full scenario recording is saved under
+`devscripts/scenarios/user/`. The client writes every fixed tick to
+`scenario-YYYYMMDD_HHMMSS-name.jsonl`; the authoritative server track is written
+to the temporary `.server.jsonl` sidecar beside it and merged at stop. The run
+journal keeps only compact `scenario.record.started`,
+`scenario.record.completed`/`invalid`, and merge summaries. Journal quota or
+rotation must never abort or delete a scenario file.
+
+After a successful stop, the terminal prints the exact saved path and the
+`scenario_play <path>` command first; the in-game tip/notification repeats the
+same saved path. A failed or partial stop still prints and keeps the partial
+file with its failure reason.
 
 The `\\` bookmark action remains a human annotation control. During an active
 scenario it associates the bookmark with the recording ID, current scenario

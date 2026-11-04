@@ -262,10 +262,16 @@ void registerVehicleCommands()
                     spawnGroundZ = groundZ;
                     position.x = target.x;
                     position.y = target.y;
-                    // Ride height for the 5x3x1 template: hub offset
-                    // (0.3) + rest length (0.2) + radius (0.3) minus a small
-                    // static spring compression.
-                    position.z = groundZ + 0.72f;
+                    // Ride height is data-driven so editing wheel radius,
+                    // hub, or rest length in config/vehicles/*.json keeps the
+                    // terminal spawn on the ground.
+                    float rideHeight = 0.0f;
+                    for (const VehicleWheelSpec& wheel : spec->wheels)
+                        rideHeight = std::max(
+                            rideHeight,
+                            -wheel.hub.z + wheel.restLength + wheel.radius);
+                    rideHeight = std::max(0.2f, rideHeight - 0.05f);
+                    position.z = groundZ + rideHeight;
                 }
                 yaw = std::atan2(forward.y, forward.x);
             }
@@ -378,6 +384,15 @@ void registerVehicleCommands()
                 Terminal::instance().addLog("[VEHICLE] no vehicle found");
                 return;
             }
+            const VehicleState* state = vehicles.find(id);
+            if (MP_CONTEXT.active && state && state->serverMirror)
+            {
+                vehicles.requestSeat(id, seat, false);
+                Terminal::instance().addLog(
+                    "[VEHICLE] requested server seat id=" + std::to_string(id) +
+                    " seat=" + std::to_string(seat));
+                return;
+            }
             if (!vehicles.enterLocalDriver(id, seat))
             {
                 Terminal::instance().addLog("[VEHICLE] enter failed");
@@ -397,6 +412,16 @@ void registerVehicleCommands()
             if (!VehicleSystem::instance().hasLocalDriver())
             {
                 Terminal::instance().addLog("[VEHICLE] not in a vehicle");
+                return;
+            }
+            const uint32_t localId =
+                VehicleSystem::instance().localVehicleId();
+            const VehicleState* state =
+                VehicleSystem::instance().find(localId);
+            if (MP_CONTEXT.active && state && state->serverMirror)
+            {
+                VehicleSystem::instance().requestSeat(localId, -1, true);
+                Terminal::instance().addLog("[VEHICLE] requested server exit");
                 return;
             }
             VehicleSystem::instance().exitLocalDriver();

@@ -158,7 +158,36 @@ bool InteractionSystem::handleKey(GLFWwindow* window, const Camera& camera)
     if (!pressed)
         return false;
 
-    return activateSelected(camera);
+    const InteractionTarget* target = selected(camera);
+    const bool activated = target && target->activate
+                               ? target->activate(InteractionContext{&camera})
+                               : false;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "interaction.key", target ? target->owner : "interaction-key",
+        "F interaction key edge processed", 0,
+        {{"held", held},
+         {"selected", target != nullptr},
+         {"target_id", target ? target->id : 0},
+         {"target_owner", target ? target->owner : std::string()},
+         {"target_label", target ? target->label : std::string()},
+         {"activated", activated},
+         {"player_pos", {THE_PLAYER.pos.x, THE_PLAYER.pos.y,
+                         THE_PLAYER.pos.z}},
+         {"camera_pos", {camera.pos.x, camera.pos.y, camera.pos.z}},
+         {"sticky_target", mStickyTarget}},
+        __FILE__, __LINE__, __func__);
+    if (target && activated)
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "interaction.activated", target->owner,
+            "interaction action executed", 0,
+            {{"targetId", target->id},
+             {"owner", target->owner},
+             {"label", target->label},
+             {"activated", true}},
+            __FILE__, __LINE__, __func__);
+    return activated;
 }
 
 void InteractionSystem::draw(const Camera& camera)

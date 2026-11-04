@@ -855,6 +855,7 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
                        {"old_spawn_generation", oldGen},
                        {"new_spawn_generation", spawn->spawnGeneration},
                        {"transform_epoch", spawn->transformEpoch},
+                       {"community_weapon_set_id", spawn->communityWeaponSetId},
                        {"previous_snapshot_health", previousServerHealth},
                        {"spawn_health", spawn->health},
                        {"position", {spawn->posX, spawn->posY, spawn->posZ}},
@@ -2317,6 +2318,40 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 reinterpret_cast<const PhysicalEntityStatePacket*>(buffer);
             mpProcessPhysicalEntityStatePacket(ctx, state);
         }
+        else if (header->type == PACKET_VEHICLE_SPAWN_EVENT &&
+                 bytes >= (int)sizeof(VehicleSpawnEventPacket))
+        {
+            const VehicleSpawnEventPacket* spawn =
+                reinterpret_cast<const VehicleSpawnEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, spawn->eventId,
+                                          spawn->eventSessionId))
+                mpProcessVehicleSpawnEventPacket(ctx, spawn);
+        }
+        else if (header->type == PACKET_VEHICLE_DESPAWN_EVENT &&
+                 bytes >= (int)sizeof(VehicleDespawnEventPacket))
+        {
+            const VehicleDespawnEventPacket* despawn =
+                reinterpret_cast<const VehicleDespawnEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, despawn->eventId,
+                                          despawn->eventSessionId))
+                mpProcessVehicleDespawnEventPacket(ctx, despawn);
+        }
+        else if (header->type == PACKET_VEHICLE_SEAT_EVENT &&
+                 bytes >= (int)sizeof(VehicleSeatEventPacket))
+        {
+            const VehicleSeatEventPacket* seat =
+                reinterpret_cast<const VehicleSeatEventPacket*>(buffer);
+            if (mpAcceptReliableEventOnce(ctx, seat->eventId,
+                                          seat->eventSessionId))
+                mpProcessVehicleSeatEventPacket(ctx, seat);
+        }
+        else if (header->type == PACKET_VEHICLE_STATE &&
+                 bytes >= (int)sizeof(VehicleStatePacket))
+        {
+            const VehicleStatePacket* state =
+                reinterpret_cast<const VehicleStatePacket*>(buffer);
+            mpProcessVehicleStatePacket(ctx, state);
+        }
     };
 
     // ── Poll ICE transport (if available) ──
@@ -2779,6 +2814,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         }
 
     }
+
+    if (ctx.connected && ctx.localPlayerId)
+        mpSendVehicleInput(ctx, static_cast<uint32_t>(currentMs));
 
     // ── Limb / ragdoll state replication (~15 Hz, unreliable) ───────────
     // Sends the local six-limb pose whenever a physical body or ragdoll is

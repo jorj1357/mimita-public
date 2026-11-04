@@ -56,7 +56,6 @@ class NpcSystem;
 class Npc;
 struct World;
 struct Player;
-
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -64,6 +63,19 @@ struct Player;
 #include <ws2tcpip.h>
 
 namespace MimitaNet {
+
+struct ListenServerState;
+
+// Server-authoritative vehicle lifecycle state shared by the dedicated and
+// listen-server tick paths. The vehicle bodies themselves live in VehicleSystem.
+struct ServerVehicleState
+{
+    std::string mapId;
+    uint64_t mapRevision = 0;
+    uint64_t vehicleHash = 0;
+    bool mapInitialized = false;
+    std::unordered_map<uint32_t, std::unordered_set<uint32_t>> knownVehicles;
+};
 
 // Bookkeeping for destructible physical-entity replication. Defined near
 // ListenServerState; declared early because post-tick helpers above that
@@ -312,6 +324,11 @@ struct ServerPlayer
     glm::vec3 pos{0.0f};
     glm::vec3 vel{0.0f};
     float yaw = 0.0f;
+    // Server-authoritative vehicle seat. 0 = on foot.
+    uint32_t seatedVehicleId = 0;
+    int8_t seatedSeat = -1;
+    uint32_t lastVehicleSeatRequestSerial = 0;
+    uint32_t lastLoggedVehicleSeatRequestSerial = 0;
     int health = 100;
     // Role-resolved life maximum (includes any healthall override at spawn).
     // Used by kill-heal and damage clamping so role health is not overwritten.
@@ -1391,6 +1408,26 @@ void serverReplicatePhysicalEntities(SOCKET sock,
                                      uint32_t tick, uint64_t& totalPacketsOut,
                                      PhysicalEntityReplicationState& state);
 
+// Server-authoritative vehicles: map spawning, shared fixed-tick motion, seat
+// requests, and replication. All are no-ops unless VehicleSystem is in server
+// process mode.
+void serverTickVehicles(ServerVehicleState& vehicleState,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
+                        World* npcWorld, uint32_t& nextEntityId, uint32_t tick);
+void serverReplicateVehicles(SOCKET sock, ServerVehicleState& vehicleState,
+                             std::unordered_map<uint32_t, ServerPlayer>& players,
+                             uint32_t tick, uint64_t& totalPacketsOut);
+void handleVehicleInputPacket(const char* buffer, int bytes,
+                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                              const sockaddr_in* from,
+                              const TransportConnectionId* connectionId,
+                              uint32_t serverTick);
+void handleVehicleSeatRequest(SOCKET sock, const char* buffer, int bytes,
+                              std::unordered_map<uint32_t, ServerPlayer>& players,
+                              const sockaddr_in* from,
+                              const TransportConnectionId* connectionId,
+                              uint32_t serverTick, uint64_t& totalPacketsOut);
+
 void logSnapshotEntity(const SnapshotEntity& entity);
 
 // Send a disagreement event to all connected players.
@@ -1496,6 +1533,7 @@ struct ServerLaunchSettings
     bool duelMode = false;
     std::string gamemodeId = "duel";
     int weaponSetId = 1;
+    bool weaponSetExplicit = false;
     bool autoMapRotation = true;
     uint32_t mapRotationMinutes = 15;
     bool discordNotification = true;
@@ -1548,6 +1586,7 @@ struct ListenServerState
     std::string gameMode = "sandbox";
     uint32_t maxPlayers = 999;
     int weaponSetId = 1;
+    bool weaponSetExplicit = false;
     bool autoMapRotation = true;
     uint32_t mapRotationMinutes = 15;
     bool discordNotification = true;
@@ -1566,6 +1605,7 @@ struct ListenServerState
     std::string hostSessionId;
     DisagreementRetransmitState disagreementRetransmit;
     PhysicalEntityReplicationState physicalEntityReplication;
+    ServerVehicleState vehicleState;
 
     // ── Real NPC simulation (reuses the client NpcSystem) ─────────
     std::unique_ptr<NpcSystem> npcSystem;

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import colorsys
 import ctypes
+import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +20,72 @@ FONT_PATH = Path(r"C:\important\mingliu-font\mingliu.ttf")
 MIN_WIDTH = 400
 MIN_HEIGHT = 500
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
+
+
+def _configured_launch_modes() -> list[dict[str, str]]:
+    path = Path(__file__).resolve().parents[2] / "devscripts" / "dev-launch-modes.json"
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    modes = config.get("modes") if isinstance(config, dict) else None
+    if not isinstance(modes, dict):
+        return []
+    ordered = sorted(modes, key=lambda value: (
+        not str(value).isdigit(),
+        int(str(value)) if str(value).isdigit() else str(value),
+    ))
+    return [
+        {"id": str(mode_id),
+         "name": str(modes[mode_id].get("name", "unnamed"))
+         if isinstance(modes[mode_id], dict) else "unnamed"}
+        for mode_id in ordered
+    ]
+
+
+def _launch_timing_from_journal(events_path: str, request_id: str,
+                                launch_started_epoch: float,
+                                allow_unmatched: bool = False) -> dict:
+    if not events_path or not request_id:
+        return {}
+    try:
+        with open(events_path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            tail_size = min(size, 262144)
+            handle.seek(size - tail_size)
+            lines = handle.read(tail_size).decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+    stages = {}
+    for line in lines[-600:]:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("event") != "dev-loop.launch.stage":
+            continue
+        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        event_request_id = str(fields.get("request_id") or "")
+        if event_request_id != request_id and not (allow_unmatched and not event_request_id):
+            continue
+        stage_name = str(fields.get("stage") or "")
+        try:
+            event_epoch = datetime.fromisoformat(
+                str(record.get("wall_time", "")).replace("Z", "+00:00")
+            ).timestamp()
+        except ValueError:
+            event_epoch = time.time()
+        elapsed = max(0.0, event_epoch - launch_started_epoch)
+        if stage_name == "client_process_start" and fields.get("result") == "started":
+            stages["client_start_seconds"] = elapsed
+        elif stage_name == "process_reuse" and fields.get("result") == "reused":
+            stages["client_reused"] = True
+        elif stage_name == "complete":
+            stages["status"] = "succeeded" if fields.get("result") == "succeeded" else "failed"
+            stages["readiness_seconds"] = elapsed
+            stages["message"] = str(record.get("reason") or "")
+    return stages
 
 
 def available() -> bool:
@@ -48,7 +116,7 @@ def _artifact_key(value: str) -> str:
         return str(int(value))
     return value
 def run(status_provider: Callable[[], dict],
-        control: Callable[[str], dict | bool],
+        control: Callable[..., dict | bool],
         title: str) -> int:
     import tkinter as tk
 
@@ -96,6 +164,18 @@ def run(status_provider: Callable[[], dict],
         "animation_id": None,
         "minimized": False,
         "pending_request_id": "",
+        "launch_started_monotonic": None,
+        "launch_started_epoch": None,
+        "current_events_path": "",
+        "launch_events_path_before": "",
+        "launch_request_id": "",
+        "launch_client_started_elapsed": None,
+        "launch_client_reused": False,
+        "launch_readiness_elapsed": None,
+        "launch_timing_status": "",
+        "launch_timing_message": "",
+        "launch_modes": [],
+        "active_mode": "",
     }
 
     def frame(parent, *, padx=0, pady=0, **kwargs):
@@ -398,9 +478,21 @@ def run(status_provider: Callable[[], dict],
     controls.grid_columnconfigure(1, weight=1)
     controls.grid_columnconfigure(2, weight=1)
 
-    def send(action: str) -> None:
+    def send(action: str, **fields) -> None:
+        launch_start = time.monotonic() if action == "build-or-launch" else None
+        if launch_start is not None:
+            state["launch_started_monotonic"] = launch_start
+            state["launch_started_epoch"] = time.time()
+            state["launch_events_path_before"] = state["current_events_path"]
+            state["launch_request_id"] = ""
+            state["launch_client_started_elapsed"] = None
+            state["launch_client_reused"] = False
+            state["launch_readiness_elapsed"] = None
+            state["launch_timing_status"] = "pending"
+            state["launch_timing_message"] = "Waiting for the dev loop"
+            action_status.configure(text="Launch request sending…")
         try:
-            response = control(action)
+            response = control(action, **fields)
             if isinstance(response, dict):
                 accepted = bool(response.get("accepted"))
                 message = response.get("message")
@@ -411,11 +503,21 @@ def run(status_provider: Callable[[], dict],
                 request_id = ""
             if accepted:
                 state["pending_request_id"] = request_id
+                if launch_start is not None:
+                    state["launch_request_id"] = request_id
+            elif launch_start is not None:
+                state["launch_timing_status"] = "failed"
+                state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
+                state["launch_timing_message"] = str(message or "Launch request was not accepted")
             action_status.configure(text=message or
                                     (f"{action}: queued · request {request_id}" if request_id
                                      else f"{action}: {'accepted' if accepted else 'not accepted'}"))
         except Exception as error:
             action_status.configure(text=f"{action}: {error}")
+            if launch_start is not None:
+                state["launch_timing_status"] = "failed"
+                state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
+                state["launch_timing_message"] = str(error)
         refresh()
 
     launch_button = button(controls, "Launch latest stable MiMITA.exe",
@@ -437,16 +539,97 @@ def run(status_provider: Callable[[], dict],
     options_menu.add_command(label="Toggle game visibility", command=lambda: send("toggle-visibility"))
     options_menu.add_command(label="Toggle auto-restart", command=lambda: send("toggle-auto-restart"))
     options_menu.add_separator()
+    def show_mode_picker() -> None:
+        modes = state["launch_modes"] or _configured_launch_modes()
+        active_mode = str(state["active_mode"] or "")
+        popup = tk.Toplevel(root)
+        popup.title("Select launch mode")
+        popup.configure(bg=BLACK)
+        popup.transient(root)
+        popup.resizable(True, True)
+        popup.minsize(300, 280)
+        popup.geometry("340x390")
+        popup.grid_columnconfigure(0, weight=1)
+        popup.grid_rowconfigure(1, weight=1)
+
+        label(popup, "SELECT LAUNCH MODE", size=9, bold=True).grid(
+            row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        list_frame = tk.Frame(popup, bg=BLACK)
+        list_frame.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+        list_frame.grid_rowconfigure(0, weight=1)
+        list_frame.grid_columnconfigure(0, weight=1)
+        mode_list = tk.Listbox(
+            list_frame, bg=BLACK, fg=RED, selectbackground="#330000",
+            selectforeground=WHITE, activestyle="none", selectmode="browse",
+            exportselection=False, relief="flat", bd=0, highlightthickness=1,
+            highlightbackground=RED, highlightcolor=RED,
+            font=(family, 9), height=14)
+        scrollbar = tk.Scrollbar(
+            list_frame, orient="vertical", command=mode_list.yview,
+            bg=BLACK, troughcolor=BLACK, activebackground=RED,
+            highlightbackground=RED, bd=1)
+        mode_list.configure(yscrollcommand=scrollbar.set)
+        mode_list.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        selected_index = None
+        for index, item in enumerate(modes):
+            mode_id = str(item.get("id", ""))
+            name = str(item.get("name", "unnamed"))
+            marker = "✓" if mode_id == active_mode else " "
+            mode_list.insert("end", f"{marker}  {mode_id}  ·  {name}")
+            if mode_id == active_mode:
+                selected_index = index
+        if selected_index is not None:
+            mode_list.selection_set(selected_index)
+            mode_list.activate(selected_index)
+            mode_list.see(selected_index)
+        if not modes:
+            mode_list.insert("end", "No launch modes available")
+            mode_list.configure(state="disabled")
+
+        actions = tk.Frame(popup, bg=BLACK)
+        actions.grid(row=2, column=0, sticky="ew", padx=8, pady=(4, 8))
+        actions.grid_columnconfigure(0, weight=1)
+        actions.grid_columnconfigure(1, weight=1)
+
+        def select_mode() -> None:
+            selection = mode_list.curselection()
+            if not selection or not modes:
+                action_status.configure(text="Select a configured launch mode")
+                return
+            mode_id = str(modes[int(selection[0])].get("id", ""))
+            send("set-launch-mode", launch_mode=mode_id)
+            popup.destroy()
+
+        button(actions, "Select mode", select_mode).grid(
+            row=0, column=0, sticky="ew", padx=(0, 3))
+        button(actions, "Cancel", popup.destroy).grid(
+            row=0, column=1, sticky="ew", padx=(3, 0))
+        mode_list.bind("<Double-Button-1>", lambda _event: select_mode())
+        popup.bind("<Return>", lambda _event: select_mode())
+        popup.bind("<Escape>", lambda _event: popup.destroy())
+        popup.protocol("WM_DELETE_WINDOW", popup.destroy)
+        popup.update_idletasks()
+        x = root.winfo_rootx() + max(0, (root.winfo_width() - popup.winfo_width()) // 2)
+        y = root.winfo_rooty() + max(0, (root.winfo_height() - popup.winfo_height()) // 2)
+        popup.geometry(f"+{x}+{y}")
+        popup.grab_set()
+        mode_list.focus_set()
+
+    options_menu.add_command(label="Launch mode…", command=show_mode_picker)
+    options_menu.add_separator()
 
     def toggle_freeze():
         state["frozen"] = not state["frozen"]
-        options_menu.entryconfigure(3, label="Resume dashboard view" if state["frozen"]
+        options_menu.entryconfigure(pause_menu_index, label="Resume dashboard view" if state["frozen"]
                                     else "Pause dashboard view")
         action_status.configure(text=("Dashboard paused; game and daemon continue"
                                       if state["frozen"] else "Dashboard view resumed"))
         if not state["frozen"]:
             refresh()
 
+    pause_menu_index = options_menu.index("end") + 1
     options_menu.add_command(label="Pause dashboard view", command=toggle_freeze)
     options_menu.add_separator()
     options_menu.add_command(label="Stop daemon", command=lambda: send("stop"))
@@ -486,6 +669,7 @@ def run(status_provider: Callable[[], dict],
             value.configure(wraplength=card_wrap)
             detail.configure(wraplength=card_wrap)
         subtitle.configure(wraplength=max(240, width - 30))
+        action_status.configure(wraplength=max(240, width - 30))
         if not layout_changed:
             return
         for card in (running_card, latest_card, activity_card, runtime_card, scenario_card):
@@ -511,6 +695,84 @@ def run(status_provider: Callable[[], dict],
         if not state["frozen"]:
             try:
                 model = status_provider() or {}
+                modes = _configured_launch_modes()
+                modes_changed = modes != state["launch_modes"]
+                if modes_changed:
+                    state["launch_modes"] = modes
+                active_mode = str(model.get("launch_mode") or "")
+                state["active_mode"] = active_mode
+
+                events_path = str(model.get("journal") or "")
+                state["current_events_path"] = events_path
+                launch = (
+                    _launch_timing_from_journal(
+                        events_path, state["launch_request_id"],
+                        float(state["launch_started_epoch"] or time.time()),
+                        allow_unmatched=bool(
+                            events_path and events_path != state["launch_events_path_before"]))
+                    if state["launch_timing_status"] == "pending" else {}
+                )
+                last_control = model.get("last_control") or {}
+                if (state["launch_request_id"]
+                        and last_control.get("request_id") == state["launch_request_id"]
+                        and last_control.get("status") in ("failed", "rejected")
+                        and not launch.get("status")):
+                    launch = {
+                        "status": "failed",
+                        "readiness_seconds": max(
+                            0.0, time.monotonic() - state["launch_started_monotonic"]),
+                        "message": str(last_control.get("message") or "Launch request failed"),
+                    }
+                if state["launch_request_id"] and launch:
+                    client_started = launch.get("client_start_seconds")
+                    client_reused = bool(launch.get("client_reused"))
+                    readiness = launch.get("readiness_seconds")
+                    if client_started is not None and state["launch_client_started_elapsed"] is None:
+                        state["launch_client_started_elapsed"] = float(client_started)
+                    if readiness is not None and state["launch_readiness_elapsed"] is None:
+                        state["launch_readiness_elapsed"] = float(readiness)
+                    state["launch_client_reused"] = client_reused
+                    state["launch_timing_status"] = str(launch.get("status") or "pending")
+                    state["launch_timing_message"] = str(launch.get("message") or "")
+                elif (state["launch_timing_status"] == "pending"
+                      and str(model.get("phase") or "").lower() in ("failed", "build_failed")
+                      and str(model.get("artifact_id") or "—") == "—"):
+                    state["launch_timing_status"] = "failed"
+                    state["launch_readiness_elapsed"] = max(
+                        0.0, time.monotonic() - state["launch_started_monotonic"])
+                    state["launch_timing_message"] = str(
+                        model.get("message") or "Build failed before a client could launch")
+
+                if state["launch_timing_status"] == "pending" and state["launch_started_monotonic"] is not None:
+                    elapsed = max(0.0, time.monotonic() - state["launch_started_monotonic"])
+                    client = state["launch_client_started_elapsed"]
+                    ready = state["launch_readiness_elapsed"]
+                    if ready is not None:
+                        client_text = (f"client {client:.2f}s" if client is not None else
+                                       "client reused" if state["launch_client_reused"] else
+                                       "client not started")
+                        launch_text = f"Launch: {client_text}  ·  readiness {ready:.2f}s"
+                    elif client is not None:
+                        launch_text = f"Launch: client {client:.2f}s  ·  readiness {elapsed:.2f}s…"
+                    elif state["launch_client_reused"]:
+                        launch_text = f"Launch: client reused  ·  readiness {elapsed:.2f}s…"
+                    else:
+                        launch_text = f"Launch: waiting for client  ·  {elapsed:.2f}s"
+                    action_status.configure(text=launch_text)
+                elif state["launch_timing_status"] in ("succeeded", "failed"):
+                    client = state["launch_client_started_elapsed"]
+                    ready = state["launch_readiness_elapsed"]
+                    client_text = (f"client {client:.2f}s" if client is not None else
+                                   "client reused" if state["launch_client_reused"] else
+                                   "client not started")
+                    ready_text = f"readiness {ready:.2f}s" if ready is not None else "readiness unavailable"
+                    message = state["launch_timing_message"]
+                    message_text = f"  ·  {message[:100]}" if (
+                        state["launch_timing_status"] == "failed" and message) else ""
+                    action_status.configure(text=(
+                        f"Launch {state['launch_timing_status']}: {client_text}  ·  "
+                        f"{ready_text}{message_text}"))
+
                 artifact = str(model.get("artifact_id") or "—")
                 latest_hash = str(model.get("sha256") or "—")
                 latest_id = str(model.get("build_id") or "—")
@@ -635,9 +897,11 @@ def run(status_provider: Callable[[], dict],
                 pending_request = state.get("pending_request_id")
                 if (pending_request and last_control.get("request_id") == pending_request
                         and last_control.get("status") in ("completed", "failed", "rejected")):
-                    action_status.configure(text=last_control.get("message") or
-                                             f"{last_control.get('action', 'action')}: "
-                                             f"{last_control.get('status')}")
+                    if not (pending_request == state["launch_request_id"]
+                            and state["launch_timing_status"] in ("succeeded", "failed")):
+                        action_status.configure(text=last_control.get("message") or
+                                                 f"{last_control.get('action', 'action')}: "
+                                                 f"{last_control.get('status')}")
                     state["pending_request_id"] = ""
             except Exception as error:
                 action_status.configure(text=f"Status refresh failed: {error}")

@@ -555,7 +555,7 @@ public:
     MimitaVip::VipStyleDetail vipStyleDetail;
     int currentHp = 100;
     int maxHp = 100;
-    // Melee damage meter (percent). Melee mode displays this instead of the
+    // Melee damage meter (percent). SSBM mode displays this instead of the
     // healthbar; it is not ordinary health. Reset to 0 on respawn.
     float percent = 0.0f;
     // Replicated Melee shield presentation state. The authoritative durability

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 namespace ScenarioTracks {
@@ -459,28 +460,78 @@ bool mergeClientAndServer(const std::string& clientPath,
                           const std::string& outputPath,
                           std::string* error)
 {
-    std::vector<nlohmann::json> clientLines;
     std::vector<nlohmann::json> serverLines;
-    if (!readLines(clientPath, clientLines, error))
-        return false;
     if (!readLines(serverPath, serverLines, error))
         return false;
 
-    const nlohmann::json* clientHeader = findHeader(clientLines);
+    // First client pass: header, footer, actor identities, and tick count only.
+    // The client recording can be hundreds of MB; never load every parsed row.
+    nlohmann::json clientHeaderJson;
+    nlohmann::json clientFooter;
+    uint32_t clientFrames = 0;
+    std::map<std::string, nlohmann::json> identities;
+    auto addIdentity = [&](const nlohmann::json& value) {
+        if (!value.is_object())
+            return;
+        const std::string id = value.value("id", "");
+        if (!id.empty())
+            identities[id] = value;
+    };
+    auto addIdentities = [&](const nlohmann::json& source) {
+        if (!source.is_array())
+            return;
+        for (const auto& value : source)
+            addIdentity(value);
+    };
+    {
+        std::ifstream clientIn(clientPath, std::ios::in | std::ios::binary);
+        if (!clientIn.is_open())
+        {
+            if (error) *error = "cannot_open_client_scenario";
+            return false;
+        }
+        std::string line;
+        while (std::getline(clientIn, line))
+        {
+            if (line.empty())
+                continue;
+            nlohmann::json value;
+            try
+            {
+                value = nlohmann::json::parse(line);
+            }
+            catch (const std::exception&)
+            {
+                if (error) *error = "invalid_client_scenario_line";
+                return false;
+            }
+            const std::string kind = value.value("kind", "");
+            if (kind == "header")
+            {
+                clientHeaderJson = std::move(value);
+                if (clientHeaderJson.contains("actors"))
+                    addIdentities(clientHeaderJson["actors"]);
+            }
+            else if (kind == "footer")
+                clientFooter = std::move(value);
+            else if (kind == "actor_identity")
+                addIdentity(value);
+            else if (kind == "tick")
+                ++clientFrames;
+        }
+    }
+    const nlohmann::json* clientHeader =
+        clientHeaderJson.is_object() ? &clientHeaderJson : nullptr;
     const nlohmann::json* serverHeader = findHeader(serverLines);
     if (!clientHeader)
     {
         if (error) *error = "missing_client_header";
         return false;
     }
-    if (!serverHeader)
-    {
-        if (error) *error = "missing_server_header";
-        return false;
-    }
 
     std::vector<nlohmann::json> serverRecords;
     nlohmann::json serverFooter = nullptr;
+    nlohmann::json synthesizedServerHeader;
     for (const auto& line : serverLines)
     {
         const std::string kind = line.value("kind", "");
@@ -493,6 +544,28 @@ bool mergeClientAndServer(const std::string& clientPath,
     {
         if (error) *error = "server_track_empty";
         return false;
+    }
+    if (!serverHeader)
+    {
+        // A sidecar can lose its header when it was created by an older
+        // recorder or by a checkpoint before the first fixed tick. If it has
+        // real server rows, synthesize the header from the client identity
+        // instead of failing the whole recording.
+        synthesizedServerHeader = {
+            {"kind", "header"},
+            {"schema", kSchemaV2},
+            {"created_utc", utcTimestamp()},
+            {"tick_rate", clientHeader->value("tick_rate", 60)},
+            {"map", clientHeader->value("map", "")},
+            {"mode", clientHeader->value("mode", "")},
+            {"weapon_set", clientHeader->value("weapon_set", 0)},
+            {"build_id", clientHeader->value("build_id", "")},
+            {"start_server_tick", serverRecords.front().value("server_tick", 0u)},
+            {"tracks", nlohmann::json::array({"server_actors"})},
+            {"synthetic_header", true},
+            {"actors", nlohmann::json::array()}
+        };
+        serverHeader = &synthesizedServerHeader;
     }
     std::stable_sort(serverRecords.begin(), serverRecords.end(),
         [](const nlohmann::json& a, const nlohmann::json& b) {
@@ -511,32 +584,14 @@ bool mergeClientAndServer(const std::string& clientPath,
         {"map", serverHeader->value("map", "")},
         {"mode", serverHeader->value("mode", "")},
         {"weapon_set", serverHeader->value("weapon_set", 0)},
-        {"frame_count", serverHeader->value("frame_count", 0u)}
+        {"frame_count", serverHeader->value("frame_count", 0u)},
+        {"synthetic_header", serverHeader->value("synthetic_header", false)}
     };
     if (serverHeader->contains("melee_revisions"))
         header["melee_revisions"] = (*serverHeader)["melee_revisions"];
 
-    std::map<std::string, nlohmann::json> identities;
-    auto addIdentity = [&](const nlohmann::json& value) {
-        if (!value.is_object())
-            return;
-        const std::string id = value.value("id", "");
-        if (!id.empty())
-            identities[id] = value;
-    };
-    auto addIdentities = [&](const nlohmann::json& source) {
-        if (!source.is_array())
-            return;
-        for (const auto& value : source)
-            addIdentity(value);
-    };
-    if (header.contains("actors"))
-        addIdentities(header["actors"]);
     if (serverHeader->contains("actors"))
         addIdentities((*serverHeader)["actors"]);
-    for (const auto& line : clientLines)
-        if (line.value("kind", "") == "actor_identity")
-            addIdentity(line);
     for (const auto& line : serverLines)
         if (line.value("kind", "") == "actor_identity")
             addIdentity(line);
@@ -568,24 +623,36 @@ bool mergeClientAndServer(const std::string& clientPath,
         }
     };
 
-    uint32_t clientFrames = 0;
     uint32_t serverTicks = 0;
-    nlohmann::json clientFooter = nullptr;
-    for (const auto& line : clientLines)
     {
-        const std::string kind = line.value("kind", "");
-        if (kind == "header")
-            continue;
-        if (kind == "footer")
+        std::ifstream clientIn(clientPath, std::ios::in | std::ios::binary);
+        if (!clientIn.is_open())
         {
-            clientFooter = line;
-            continue;
+            if (error) *error = "cannot_open_client_scenario";
+            return false;
         }
-        if (kind == "tick")
-            ++clientFrames;
-        const uint32_t key = line.value("server_tick", 0u);
-        flushServerThrough(key);
-        out << line.dump() << '\n';
+        std::string raw;
+        while (std::getline(clientIn, raw))
+        {
+            if (raw.empty())
+                continue;
+            nlohmann::json value;
+            try
+            {
+                value = nlohmann::json::parse(raw);
+            }
+            catch (const std::exception&)
+            {
+                if (error) *error = "invalid_client_scenario_line";
+                return false;
+            }
+            const std::string kind = value.value("kind", "");
+            if (kind == "header" || kind == "footer")
+                continue;
+            const uint32_t key = value.value("server_tick", 0u);
+            flushServerThrough(key);
+            out << raw << '\n';
+        }
     }
     flushServerThrough(0xFFFFFFFFu);
     for (const auto& line : serverRecords)
@@ -609,17 +676,22 @@ bool mergeClientAndServer(const std::string& clientPath,
         return false;
     }
 
+    // Windows antivirus/indexers can hold a freshly closed recording for a
+    // short moment. Retry the replace instead of failing the whole merge.
     std::error_code ec;
-    std::filesystem::remove(output, ec);
-    ec.clear();
-    std::filesystem::rename(temp, output, ec);
-    if (ec)
+    for (int attempt = 0; attempt < 20; ++attempt)
     {
-        std::filesystem::remove(temp, ec);
-        if (error) *error = "merged_scenario_replace_failed";
-        return false;
+        ec.clear();
+        std::filesystem::remove(output, ec);
+        ec.clear();
+        std::filesystem::rename(temp, output, ec);
+        if (!ec)
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
-    return true;
+    std::filesystem::remove(temp, ec);
+    if (error) *error = "merged_scenario_replace_failed";
+    return false;
 }
 
 } // namespace ScenarioTracks

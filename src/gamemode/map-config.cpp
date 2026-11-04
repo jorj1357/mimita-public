@@ -237,6 +237,26 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
         }
 
+        if (root.contains("vehicles") && root["vehicles"].is_array()) {
+            for (const auto& item : root["vehicles"]) {
+                if (!item.is_object()) continue;
+                MapVehicleSpawn vehicle;
+                vehicle.id = item.value("id", std::string{});
+                if (vehicle.id.empty()) continue;
+                vehicle.templateId = item.value("template", std::string{"car_sedan"});
+                if (item.contains("position") && item["position"].is_array() &&
+                    item["position"].size() >= 3) {
+                    vehicle.position = glm::vec3(
+                        item["position"][0].get<float>(),
+                        item["position"][1].get<float>(),
+                        item["position"][2].get<float>());
+                }
+                vehicle.yaw = item.value("yaw", 0.0f);
+                vehicle.enabled = item.value("enabled", true);
+                next.vehicles.push_back(std::move(vehicle));
+            }
+        }
+
         if (root.contains("glb_objects") && root["glb_objects"].is_array()) {
             for (const auto& item : root["glb_objects"]) {
                 if (!item.is_object()) continue;
@@ -415,6 +435,11 @@ std::string MapConfigRegistry::uniqueId(const std::string& prefix) const
                 if (point.id == id) { used = true; break; }
             }
         }
+        if (!used) {
+            for (const auto& vehicle : mCurrent.vehicles) {
+                if (vehicle.id == id) { used = true; break; }
+            }
+        }
         if (!used) return id;
     }
 }
@@ -498,6 +523,56 @@ bool MapConfigRegistry::deleteBlock(const std::string& id)
         [&](const AuthoredBlock& block) { return block.id == id; });
     if (it == mCurrent.blocks.end()) return false;
     mCurrent.blocks.erase(it, mCurrent.blocks.end());
+    markChanged();
+    return true;
+}
+
+const MapVehicleSpawn* MapConfigRegistry::findVehicle(const std::string& id) const
+{
+    for (const auto& vehicle : mCurrent.vehicles)
+        if (vehicle.id == id) return &vehicle;
+    return nullptr;
+}
+
+MapVehicleSpawn* MapConfigRegistry::findVehicleMutable(const std::string& id)
+{
+    for (auto& vehicle : mCurrent.vehicles)
+        if (vehicle.id == id) return &vehicle;
+    return nullptr;
+}
+
+std::string MapConfigRegistry::createVehicle(const std::string& templateId,
+                                             const glm::vec3& position,
+                                             float yaw,
+                                             const std::string& requestedId)
+{
+    std::string id = requestedId.empty() ? uniqueId("vehicle") : requestedId;
+    if (findVehicle(id)) return {};
+    MapVehicleSpawn vehicle;
+    vehicle.id = id;
+    vehicle.templateId = templateId.empty() ? "car_sedan" : templateId;
+    vehicle.position = position;
+    vehicle.yaw = yaw;
+    mCurrent.vehicles.push_back(std::move(vehicle));
+    markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-vehicle.created", id, "map editor authored vehicle placement", 0,
+        nlohmann::json{{"map", mCurrent.mapId}, {"vehicle_id", id},
+                       {"template", templateId},
+                       {"position", {position.x, position.y, position.z}},
+                       {"yaw", yaw},
+                       {"source", "map_editor"}},
+        __FILE__, __LINE__, __FUNCTION__);
+    return id;
+}
+
+bool MapConfigRegistry::deleteVehicle(const std::string& id)
+{
+    const auto it = std::remove_if(mCurrent.vehicles.begin(), mCurrent.vehicles.end(),
+        [&](const MapVehicleSpawn& vehicle) { return vehicle.id == id; });
+    if (it == mCurrent.vehicles.end()) return false;
+    mCurrent.vehicles.erase(it, mCurrent.vehicles.end());
     markChanged();
     return true;
 }
@@ -848,6 +923,16 @@ bool MapConfigRegistry::save(bool withBackup)
         };
         b["tags"] = block.tags;
         root["blocks"].push_back(std::move(b));
+    }
+    root["vehicles"] = json::array();
+    for (const auto& vehicle : mCurrent.vehicles) {
+        root["vehicles"].push_back({
+            {"id", vehicle.id},
+            {"template", vehicle.templateId},
+            {"position", {vehicle.position.x, vehicle.position.y, vehicle.position.z}},
+            {"yaw", vehicle.yaw},
+            {"enabled", vehicle.enabled}
+        });
     }
     root["glb_objects"] = json::array();
     for (const auto& object : mCurrent.glbObjects) {
@@ -1265,6 +1350,8 @@ bool mapEntityConfigSelfTest(std::string& report)
   "glb_objects":[{"id":"node:2","name":"TestNode","position":[4,5,6]}],
   "blocks":[{"id":"b1","shape":"box","position":[1,2,3],"size":[4,5,6],
              "rotationEuler":[0,0,15],"material":"","enabled":true,"tags":["a"]}],
+  "vehicles":[{"id":"v1","template":"car_sedan","position":[10,11,12],
+               "yaw":30,"enabled":true}],
   "payload":{"cart_origin":{"position":[7,8,9],"yaw":45},
              "cart_size":[2,1.5,1],
              "route":[{"id":"r1","position":[1,1,1],"radius":2,"order":0},
@@ -1276,6 +1363,13 @@ bool mapEntityConfigSelfTest(std::string& report)
         fail("block/route selftest map failed to load");
     if (reg.current().blocks.size() != 1)
         fail("block was not parsed");
+    if (reg.current().vehicles.size() != 1)
+        fail("vehicle placement was not parsed");
+    else if (reg.current().vehicles[0].id != "v1" ||
+             reg.current().vehicles[0].templateId != "car_sedan" ||
+             std::abs(reg.current().vehicles[0].position.z - 12.0f) > 0.001f ||
+             std::abs(reg.current().vehicles[0].yaw - 30.0f) > 0.001f)
+        fail("vehicle placement fields were not parsed");
     if (reg.current().glbObjects.size() != 1)
         fail("glb object override was not parsed");
     else if (reg.current().glbObjects[0].id != "node:2" ||
@@ -1307,6 +1401,8 @@ bool mapEntityConfigSelfTest(std::string& report)
                 fail("payload cart size missing after save");
             if (!root.contains("glb_objects") || root["glb_objects"].size() != 1)
                 fail("glb object override missing after save");
+            if (!root.contains("vehicles") || root["vehicles"].size() != 1)
+                fail("vehicle placement missing after save");
         } catch (const std::exception& e) {
             fail(std::string("block/route saved json unparsable: ") + e.what());
         }

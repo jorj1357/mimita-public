@@ -85,34 +85,16 @@ void RegisterScenarioCommands()
                 return;
             }
             ScenarioRecorder::instance().stop("command");
-            // A networked recording is not complete until the server sidecar
-            // has been merged. Wait here so closing the game immediately after
-            // scenario_endrecord cannot leave a client-only file.
-            const auto deadline = std::chrono::steady_clock::now() +
-                std::chrono::seconds(6);
-            while (!ScenarioRecorder::instance().merged() &&
-                   ScenarioRecorder::instance().mergeError().empty() &&
-                   std::chrono::steady_clock::now() < deadline)
-            {
-                ScenarioRecorder::instance().poll();
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-            if (ScenarioRecorder::instance().merged())
-            {
-                Terminal::instance().addLog(
-                    ScenarioRecorder::instance().canonical()
-                        ? "[SCENARIO] recording stopped; canonical journal scenario_id=" +
-                              ScenarioRecorder::instance().scenarioId()
-                        : "[SCENARIO] recording stopped and merged: " +
-                              ScenarioRecorder::instance().path());
-            }
-            else
-            {
-                Terminal::instance().addLog(
-                    "[SCENARIO] recording stopped WITHOUT server track: " +
-                    ScenarioRecorder::instance().mergeError() +
-                    " path=" + ScenarioRecorder::instance().path());
-            }
+            // Never block the client main loop waiting for the merge. The
+            // server sidecar arrives asynchronously; the fixed-tick poll owns
+            // the background merge and prints the final saved path. Blocking
+            // here starved network heartbeats and disconnected the client.
+            Terminal::instance().addLog(
+                ScenarioRecorder::instance().canonical()
+                    ? "[SCENARIO] recording stopped; canonical journal scenario_id=" +
+                          ScenarioRecorder::instance().scenarioId()
+                    : "[SCENARIO] recording stopped; merging server track in the background: " +
+                          ScenarioRecorder::instance().path());
         },
         "2026-10-25", CommandCategory::Debug
     });

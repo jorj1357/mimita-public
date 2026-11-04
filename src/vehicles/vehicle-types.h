@@ -82,6 +82,9 @@ struct VehicleSeatSpec {
     std::string name;
     glm::vec3 anchor{0.0f};
     std::string pose = "sit";
+    // Local offset applied to the actor origin after the seat anchor. Keeps the
+    // seated animation/collision root above the cushion instead of inside it.
+    glm::vec3 riderOffset{0.0f, 0.0f, 0.35f};
 };
 
 struct VehicleSpec {
@@ -92,7 +95,9 @@ struct VehicleSpec {
     glm::vec3 halfExtents{2.2f, 0.9f, 0.6f};
     float drag = 0.32f;
     float downforce = 0.0f;
-    float interactionRadius = 3.0f;
+    // F-interaction radius. The vehicle prompt uses this directly and the
+    // authoritative seat request allows this plus a small network margin.
+    float interactionRadius = 15.0f;
     std::string bodyTexture = "assets/textureshq/240sx.png";
     std::string wheelTexture = "assets/textureshq/dark1.png";
     std::string engineSound =
@@ -119,6 +124,7 @@ struct VehicleWheelState {
     float steerAngle = 0.0f;
     float compression = 0.0f;
     float previousCompression = 0.0f;
+    float compressionVelocity = 0.0f;
     float load = 0.0f;
     float slipRatio = 0.0f;
     float slipAngle = 0.0f;
@@ -129,6 +135,7 @@ struct VehicleWheelState {
     float suspensionLength = 0.0f;
     glm::vec3 contactPoint{0.0f};
     glm::vec3 contactNormal{0.0f, 0.0f, 1.0f};
+    int contactTriangleId = -1;
     glm::vec3 worldCenter{0.0f};
     glm::vec3 spinAxisWorld{0.0f, 1.0f, 0.0f};
     glm::vec3 steerAxisWorld{0.0f, 0.0f, 1.0f};
@@ -153,6 +160,18 @@ struct VehicleState {
     uint32_t id = 0;
     std::string templateId;
     uint32_t entityId = 0;
+    // Server-assigned identity for the chassis mirror. 0 on a purely local
+    // offline vehicle.
+    uint32_t chassisNetworkId = 0;
+    // True on the dedicated server's authoritative vehicle.
+    bool serverAuthoritative = false;
+    // True on a client mirror. Mirrors never apply suspension/tire/engine
+    // forces and never run the drivetrain locally.
+    bool serverMirror = false;
+    // Audio/interaction presentation is disabled for the dedicated server.
+    bool presentationEnabled = true;
+    // Actor id (server player/NPC id) per seat, or 0 when empty.
+    std::vector<int> seatOccupants;
 
     VehicleControlMode mode = VehicleControlMode::Manual;
     bool engineOn = false;

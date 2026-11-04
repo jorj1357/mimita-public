@@ -63,6 +63,7 @@ private:
 
     ScenarioServerRecorder() = default;
 
+    void ensureHeader(uint32_t serverTick);
     void writeHeader(uint32_t serverTick);
     void writeFooter(const char* reason);
     bool writeScenarioEvent(const std::string& event, const std::string& reason,
@@ -89,6 +90,7 @@ private:
     std::ofstream mOut;
     std::string mScenarioPath;
     std::string mSidecarPath;
+    bool mHeaderWritten = false;
     uint32_t mStartTick = 0;
     uint32_t mFrames = 0;
     uint64_t mLastCaptureWriteUs = 0;

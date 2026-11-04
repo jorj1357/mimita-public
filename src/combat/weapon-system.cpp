@@ -68,6 +68,43 @@ bool serverAuthHits()
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 
+// World rays use the shared broadphase. Never rescan every map triangle from a
+// per-frame crosshair/laser path.
+bool raycastWorldNearest(const World& world, const glm::vec3& origin,
+                         const glm::vec3& direction, float maxDistance,
+                         float& outDistance, glm::vec3& outNormal)
+{
+    if (world.collisionMesh.triangles.empty() || maxDistance <= 0.0f)
+        return false;
+    static thread_local std::vector<int> candidates;
+    candidates.clear();
+    const glm::vec3 end = origin + direction * maxDistance;
+    AABB bounds{glm::min(origin, end), glm::max(origin, end)};
+    bounds.min -= glm::vec3(0.01f);
+    bounds.max += glm::vec3(0.01f);
+    appendChunkTrianglesForAABB(world, bounds, 0.01f, candidates, "weaponRay");
+    float nearest = maxDistance;
+    bool hit = false;
+    for (int index : candidates)
+    {
+        if (index < 0 ||
+            static_cast<size_t>(index) >= world.collisionMesh.triangles.size())
+            continue;
+        float distance = 0.0f;
+        if (WeaponFire::rayTriangle(origin, direction,
+                world.collisionMesh.triangles[(size_t)index], distance) &&
+            distance < nearest)
+        {
+            nearest = distance;
+            outNormal = world.collisionMesh.triangles[(size_t)index].normal;
+            hit = true;
+        }
+    }
+    if (hit)
+        outDistance = nearest;
+    return hit;
+}
+
 } // anonymous namespace
 
 static float weaponParamOr(const WeaponDefinition& def, const char* key, float fallback)
@@ -275,12 +312,12 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
         glm::vec3 hitPoint = muzzlePos + shotDir * MAX_DIST;
         glm::vec3 hitNormal = glm::vec3(0.0f, 0.0f, 1.0f);
 
-        for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-            float d = 0.0f;
-            if (WeaponFire::rayTriangle(muzzlePos, shotDir, tri, d) && d < nearest) {
-                nearest = d;
-                hitPoint = muzzlePos + shotDir * d;
-                hitNormal = tri.normal;
+        {
+            float worldDistance = 0.0f;
+            if (raycastWorldNearest(world, muzzlePos, shotDir, MAX_DIST,
+                                    worldDistance, hitNormal)) {
+                nearest = worldDistance;
+                hitPoint = muzzlePos + shotDir * worldDistance;
             }
         }
         for (Npc& npc : npcs.all()) {
@@ -575,14 +612,11 @@ void WeaponSystem::update(Camera& camera, Player& player, NpcSystem& npcs, const
                 DebugConfig::COOL_SHOT_LINE_COLOR_B,
                 1.0f);
 
-            // Raycast along beam to find world obstruction
+            // Raycast along beam to find world obstruction.
             float hitDist = beamLen;
-            for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
-                float d = 0.0f;
-                if (WeaponFire::rayTriangle(beamOrigin, beamDir, tri, d) && d < hitDist) {
-                    hitDist = d;
-                }
-            }
+            glm::vec3 beamNormal(0.0f);
+            raycastWorldNearest(world, beamOrigin, beamDir, beamLen,
+                                hitDist, beamNormal);
 
             // Draw segmented tapered beam
             constexpr int SEGMENTS = 32;

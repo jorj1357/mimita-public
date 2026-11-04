@@ -27,6 +27,7 @@
 #include "map/map-authored-geometry.h"
 #include "network/packets.h"
 #include "physics/physical-entity.h"
+#include "vehicles/vehicle-system.h"
 
 namespace MimitaNet {
 namespace {
@@ -201,6 +202,7 @@ void mpProcessPhysicalEntityDespawnEventPacket(
         event->networkId);
     if (PhysicalEntitySystem::instance().removeByNetworkId(event->networkId))
         printf("[PHYS CLIENT] despawn networkId=%u\n", event->networkId);
+    VehicleSystem::instance().despawnByChassisNetworkId(event->networkId);
 }
 
 void mpProcessPhysicalEntityStatePacket(MultiplayerContext&,

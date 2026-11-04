@@ -77,7 +77,10 @@ LaunchOptions parseLaunchOptions(int argc, char** argv)
         else if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc)
             options.gameMode = argv[++i];
         else if (std::strcmp(argv[i], "--weapon-set") == 0 && i + 1 < argc)
+        {
             options.weaponSetId = std::max(1, std::atoi(argv[++i]));
+            options.weaponSetExplicit = true;
+        }
         else if (std::strcmp(argv[i], "--no-map-rotation") == 0)
             options.autoMapRotation = false;
         else if (std::strcmp(argv[i], "--no-discord-notification") == 0)

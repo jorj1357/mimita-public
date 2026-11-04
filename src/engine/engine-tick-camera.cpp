@@ -1062,9 +1062,9 @@ void engineTickCamera(Engine& engine, float dt)
             MimitaNet::CommunityMatchClient::instance();
         const Gamemode& fovMode = GamemodeRegistry::instance().get(fovMatch.mode());
 
-        // Reset the blend on a mode change, leaving the match, or a death/
-        // respawn (the local actor leaves Alive). The spectator camera block
-        // above is not touched.
+        // Reset the blend on a mode change, leaving the match, a death/
+        // respawn (the local actor leaves Alive), or entering ragdoll mode.
+        // The spectator camera block above is not touched.
         static float aimFovBlend = 0.0f;
         static std::string aimFovLastMode;
         static bool aimFovLastActive = false;
@@ -1073,7 +1073,11 @@ void engineTickCamera(Engine& engine, float dt)
             ? fovMatch.localActorState(mpContext.localPlayerId)
             : (uint8_t)MimitaNet::ActorState::Alive;
         const bool actorAlive = actorState == (uint8_t)MimitaNet::ActorState::Alive;
-        if (fovMatch.mode() != aimFovLastMode || matchActive != aimFovLastActive || !actorAlive)
+        // In ragdoll mode RMB extends the right arm; it must not narrow the
+        // camera FOV. Keep the blend at zero and ignore the held input.
+        const bool ragdollSuppressAimFov = player.ragdollModeActive;
+        if (fovMatch.mode() != aimFovLastMode || matchActive != aimFovLastActive ||
+            !actorAlive || ragdollSuppressAimFov)
             aimFovBlend = 0.0f;
         aimFovLastMode = fovMatch.mode();
         aimFovLastActive = matchActive;
@@ -1095,10 +1099,32 @@ void engineTickCamera(Engine& engine, float dt)
             duration = AimBodyConfig::instance().rightArmPointingFovDuration();
             easing = AimBodyConfig::instance().rightArmPointingFovEasing();
         }
-        if (player.usesMeleeAuthoredPose()) held = false;
+        if (player.usesMeleeAuthoredPose() || ragdollSuppressAimFov) held = false;
         aimFovBlend = updateAimFovBlend(aimFovBlend, held, dt, duration);
-        camera.fov = applyAimFov(CamConfig::instance().data().fov, multiplier,
-                                 aimFovEase(easing, aimFovBlend));
+        const float fovBase = CamConfig::instance().data().fov;
+        camera.fov = applyAimFov(fovBase, multiplier, aimFovEase(easing, aimFovBlend));
+
+        static bool aimFovRagdollSuppressLogged = false;
+        if (ragdollSuppressAimFov != aimFovRagdollSuppressLogged) {
+            aimFovRagdollSuppressLogged = ragdollSuppressAimFov;
+            if (StructuredLogger::instance().shouldLog(
+                    StructuredCategory::Ragdoll, StructuredLevel::Important)) {
+                nlohmann::json fields = {
+                    {"ragdoll_active", ragdollSuppressAimFov},
+                    {"rmb_held", rmbHeld},
+                    {"aim_fov_held", held},
+                    {"base_fov", fovBase},
+                    {"applied_fov", camera.fov}
+                };
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Ragdoll, StructuredLevel::Important,
+                    "ragdoll.aim_fov_suppressed", "CAMERA_AIM_FOV",
+                    ragdollSuppressAimFov
+                        ? "Ragdoll suppresses RMB aim-FOV; FOV stays at base"
+                        : "Ragdoll ended; RMB aim-FOV allowed again",
+                    0, fields, __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
     }
 
     // Debug: final camera state after all evaluation

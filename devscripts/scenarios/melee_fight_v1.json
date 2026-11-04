@@ -11,11 +11,11 @@
   },
   "setup": [],
   "steps": [
-    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 2000},
+    {"id": "start_melee", "command": "startssbm", "args": [], "delay_ms_after": 2000},
     {"id": "wait_for_fight", "command": "agent.snapshot", "args": ["fight_wait"], "delay_ms_after": 15000}
   ],
   "assertions": [
-    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "ssbm"},
     {"type": "event_field_count_at_least", "event": "melee.action.start", "field": "actor_is_npc", "equals": true, "minimum": 1}
   ],
   "timeout_seconds": 180

@@ -289,12 +289,53 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             if (VehicleSystem::instance().localSeatWorld(seatPosition,
                                                          seatForward))
             {
+                const glm::vec3 previousPos = sim.player->pos;
+                if (sim.tick % 6 == 0)
+                {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Physics, StructuredLevel::Important,
+                        "vehicle.seat.anchor", "vehicle-seat-anchor",
+                        "seated actor origin is asserted to the seat anchor",
+                        static_cast<uint32_t>(sim.tick),
+                        {{"actor_previous", {previousPos.x, previousPos.y,
+                                             previousPos.z}},
+                         {"seat", {seatPosition.x, seatPosition.y,
+                                   seatPosition.z}},
+                         {"snap_distance",
+                          glm::length(previousPos - seatPosition)},
+                         {"forward", {seatForward.x, seatForward.y,
+                                      seatForward.z}},
+                         {"crouching", sim.player->crouching},
+                         {"has_local_driver",
+                          VehicleSystem::instance().hasLocalDriver()},
+                         {"seated_entity_id", sim.player->seatedVehicleId},
+                         {"server_position",
+                          std::vector<float>{
+                              mpContext.localServerPosition.x,
+                              mpContext.localServerPosition.y,
+                              mpContext.localServerPosition.z}},
+                         {"server_minus_previous",
+                          std::vector<float>{
+                              mpContext.localServerPosition.x - previousPos.x,
+                              mpContext.localServerPosition.y - previousPos.y,
+                              mpContext.localServerPosition.z - previousPos.z}},
+                         {"vehicle_id",
+                          VehicleSystem::instance().localVehicleId()}});
+                }
                 sim.player->pos = seatPosition;
                 sim.player->vel = glm::vec3(0.0f);
                 sim.player->externalImpulse = glm::vec3(0.0f);
                 sim.player->inputWishMove = glm::vec2(0.0f);
+                // Reuse the authored crouch clip as the held seated pose. The
+                // origin remains the actor's collision root; the seat owner
+                // supplies the upward riderOffset.
+                sim.player->crouching = true;
+                sim.player->ground.onGround = true;
+                sim.player->ground.stableOnGround = true;
             }
             InputState seatedInput = inputStateFromFrame(tickFrame);
+            sim.player->updateProceduralAnimation(
+                TICK_DT, seatedInput.camForward, THE_CAMERA.pos, false);
             const WeaponDefinition* seatedDef = WeaponRegistry::instance().get(
                 sim.player->equippedWeaponId);
             const bool seatedArmRagdoll = seatedDef &&
@@ -406,7 +447,11 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                                                   THE_CAMERA.pos, false);
     } }
 
-    if (!sim.player->dead && !sim.player->ragdollModeActive)
+    // The seated actor is contained by the vehicle seat, not by the on-foot
+    // capsule. Running world containment here pushes the capsule out of the
+    // occupied chassis and produces the repeating 0.7-1.1 m seat snap.
+    if (!sim.player->dead && !sim.player->ragdollModeActive &&
+        !VehicleSystem::instance().hasLocalDriver())
         containAndLogPlayerFinalPose(*sim.player, *sim.world, "post_animation");
 
     {
@@ -535,7 +580,8 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
             static_cast<int>(collisionStats.candidatePairs);
         Perf::state().current.charVsChar += collisionStats.totalMs;
 
-        if (!localRagdollStatic)
+        if (!localRagdollStatic &&
+            !VehicleSystem::instance().hasLocalDriver())
         {
             const ActorPairCollisionOutput& out = collisionOutputs[0];
             sim.player->pos = out.pos;

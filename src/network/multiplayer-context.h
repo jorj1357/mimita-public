@@ -112,7 +112,7 @@ struct SnapshotTransform
     glm::vec3 velocity{0.0f};
     float yaw = 0.0f;
     int health = 100;
-    // Melee percent meter (0 in non-Melee modes).
+    // Melee percent meter (0 outside SSBM).
     float percent = 0.0f;
     float meleeShieldFraction = 0.0f;
     bool onGround = false;
@@ -1081,6 +1081,17 @@ void mpProcessPhysicalEntityStatePacket(MultiplayerContext& ctx,
                                         const PhysicalEntityStatePacket* event);
 void mpProcessEntityCutEventPacket(MultiplayerContext& ctx,
                                    const PhysicalEntityCutEventPacket* event);
+
+// Server-authoritative vehicle replication (vehicle-networking.cpp)
+void mpProcessVehicleSpawnEventPacket(MultiplayerContext& ctx,
+                                      const VehicleSpawnEventPacket* event);
+void mpProcessVehicleDespawnEventPacket(MultiplayerContext& ctx,
+                                        const VehicleDespawnEventPacket* event);
+void mpProcessVehicleStatePacket(MultiplayerContext& ctx,
+                                 const VehicleStatePacket* event);
+void mpProcessVehicleSeatEventPacket(MultiplayerContext& ctx,
+                                     const VehicleSeatEventPacket* event);
+void mpSendVehicleInput(MultiplayerContext& ctx, uint32_t currentMs);
 void mpReleaseTimelineEvents(MultiplayerContext& ctx);
 void mpUpdateNetworkProjectiles(MultiplayerContext& ctx, float dt, const class World& world);
 void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& camera);

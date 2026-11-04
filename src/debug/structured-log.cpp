@@ -141,6 +141,40 @@ bool runHasBookmarkPin(const std::filesystem::path& runDir) {
     return std::filesystem::exists(runDir / kBookmarkPinFile, ec) && !ec;
 }
 
+// Pinned scenario runs are retained until a human removes them, so they must
+// not consume the rolling journal quota. Otherwise a few pinned recordings
+// permanently suppress every new active journal, including gate evidence.
+uint64_t quotaCountedFileBytes(const std::filesystem::path& root) {
+    std::error_code ec;
+    uint64_t total = 0;
+    if (!std::filesystem::exists(root, ec) || ec) return 0;
+    for (std::filesystem::directory_iterator dayIt(root, ec), dayEnd;
+         dayIt != dayEnd; dayIt.increment(ec)) {
+        if (ec) { ec.clear(); continue; }
+        if (dayIt->is_regular_file(ec) && !ec) {
+            const uint64_t size = dayIt->file_size(ec);
+            if (!ec) total = (UINT64_MAX - total < size) ? UINT64_MAX : total + size;
+            ec.clear();
+            continue;
+        }
+        if (!dayIt->is_directory(ec) || ec) { ec.clear(); continue; }
+        for (std::filesystem::directory_iterator runIt(dayIt->path(), ec), runEnd;
+             runIt != runEnd; runIt.increment(ec)) {
+            if (ec) { ec.clear(); continue; }
+            const bool directory = runIt->is_directory(ec) && !ec;
+            ec.clear();
+            if (directory && runHasBookmarkPin(runIt->path()))
+                continue;
+            const uint64_t size = directory ? directoryFileBytes(runIt->path()) :
+                runIt->file_size(ec);
+            if (!ec) total = (UINT64_MAX - total < size) ? UINT64_MAX : total + size;
+            ec.clear();
+        }
+        ec.clear();
+    }
+    return total;
+}
+
 std::string runLeaseName(const std::filesystem::path& root,
                          const std::string& runId) {
     std::error_code ec;
@@ -260,7 +294,7 @@ uint64_t pruneCompletedRuns(const std::filesystem::path& root,
 void initializeQuotaState(SharedLogQuotaState& state,
                           const std::filesystem::path& root) {
     if (InterlockedCompareExchange(&state.initialized, 0, 0) == 0) {
-        state.totalBytes = directoryFileBytes(root);
+        state.totalBytes = quotaCountedFileBytes(root);
         MemoryBarrier();
         InterlockedExchange(&state.initialized, 1);
     }
@@ -268,7 +302,7 @@ void initializeQuotaState(SharedLogQuotaState& state,
 
 void reconcileQuotaState(SharedLogQuotaState& state,
                          const std::filesystem::path& root) {
-    state.totalBytes = std::max<uint64_t>(state.totalBytes, directoryFileBytes(root));
+    state.totalBytes = quotaCountedFileBytes(root);
     for (auto& entry : state.files) {
         if (!entry.path[0]) continue;
         std::error_code ec;

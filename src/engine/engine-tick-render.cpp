@@ -432,8 +432,8 @@ static void drawScreenOverlay(Engine& engine, const glm::vec4& color)
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
 {
     DebugVis::resetCameraVolumeOverlays();
-    // Mode 1 restores the original per-frame shadow map update. Mode 2 keeps
-    // the later alternating-frame optimization available for future use.
+    // Full-rate shadow refresh avoids stale shadow depth between moving frames.
+    // Mode 2 remains available for performance comparisons when fullscreen visuals are stable.
     constexpr int kShadowUpdateMode = 1;
     Player& player = THE_PLAYER;
     Camera& camera = THE_CAMERA;
@@ -449,7 +449,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     { MIMITA_PERF_SCOPE("Rendering::Prepare::MeleeRules");
       MimitaMeleeRules::Config::instance().pollReload(); }
     const bool meleePresentation =
-        MimitaNet::CommunityMatchClient::instance().mode() == "melee";
+        MimitaNet::CommunityMatchClient::instance().mode() == "ssbm";
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
     const bool isExporting = getReplayExportJob().state == ReplayExportJob::Capturing;

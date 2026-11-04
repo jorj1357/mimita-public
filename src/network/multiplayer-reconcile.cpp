@@ -10,6 +10,7 @@
 
 #include "network/multiplayer-context.h"
 #include "network/server.h"
+#include "vehicles/vehicle-system.h"
 #include "network/disagreement-visuals.h"
 #include "combat/weapon-runtime.h"
 #include "effects/effect-part.h"
@@ -32,6 +33,14 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
 {
     (void)dt;
     if (!ctx.connected || !ctx.hasLocalServerPosition)
+        return;
+
+    // A seated actor is owned by the vehicle seat, not by the on-foot
+    // movement snapshot (which is a capsule position). Reconciling it here
+    // re-inserts the capsule offset and makes the actor snap between the seat
+    // and the snapshot every tick.
+    if (player.seatedVehicleId != 0 ||
+        VehicleSystem::instance().hasLocalDriver())
         return;
 
     // ── Epoch changed: apply authoritative transform immediately ──────

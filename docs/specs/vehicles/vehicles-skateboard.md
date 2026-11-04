@@ -3,7 +3,8 @@
 **Purpose:** define the arcade trick-vehicle direction for skateboards and BMX
 bikes.
 **Audience:** vehicle physics, animation, input, map, and gamemode contributors.
-**Status:** desired behavior; tuning and visual acceptance are pending.
+**Status:** deferred desired behavior; tuning and visual acceptance are pending.
+Skateboards and BMX are not part of the first online car slice (2026-11-03).
 **Does not:** require simulation-grade skateboarding, define a complete trick
 scoring system, or make a separate physics engine for each vehicle.
 
@@ -71,6 +72,29 @@ not an acceptance requirement for the first board or bike.
 ## Related specifications
 
 - [Vehicles](vehicles.md)
+- [BMX](vehicles-bmx.md)
 - [Skatepark](../gamemodes/skatepark.md)
 - [Replay](../replay/replay.md)
 - [Moving physical objects](../moving-physical-objects/moving-physical-objects.md)
+
+## Shared vehicle-platform requirements (2026-11-04)
+
+The skateboard is a future assembly on the same general vehicle platform as the
+car. The online-car slice established these requirements for it:
+
+- Wheels remain analytic suspension units with scalar spin; do not model a
+  skateboard wheel as an ordinary body primitive.
+- The board/rider assembly must use server-authoritative motion and the shared
+  physical-entity replication path.
+- Seat/attachment occupancy, entering, and exiting must use the shared
+  occupancy and interaction owners, not a skateboard-only seat path.
+- The primitive builder (`box`, `slope`, `sphere`, `cylinder`) provides the
+  visual/collision body; wheels and trucks are authoring attachments.
+- The map editor places board instances; the builder edits the reusable
+  template. Neither path may create a second physics world.
+- A client mirror never simulates authoritative board forces. It interpolates
+  the replicated chassis and visual wheel/truck state.
+- A missing template or malformed board spawn fails closed with a diagnostic.
+
+These requirements prevent the skateboard/BMX work from duplicating networking,
+seat, or collision code when their first playable slice begins.

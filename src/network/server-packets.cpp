@@ -567,7 +567,9 @@ static bool isKnownPacketType(uint8_t type)
     return type == PACKET_AVATAR_MANIFEST ||
            type == PACKET_AVATAR_ASSET_REQUEST ||
            type == PACKET_AVATAR_ASSET_CHUNK ||
-           type == PACKET_RAGDOLL_STATE;
+           type == PACKET_RAGDOLL_STATE ||
+           type == PACKET_VEHICLE_INPUT ||
+           type == PACKET_VEHICLE_SEAT_REQUEST;
 }
 
 static void countPacketType(ServerPacketStats& stats, uint8_t type)
@@ -627,7 +629,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
         int bestWorldTriangle = -1;
         for (size_t i = 0; i < world.triangles.size(); ++i)
         {
-            if (i < world.solidIds.size() && world.solidIds[i] == UINT32_MAX)
+            if (i < world.solidIds.size() && world.solidIds[i] == kRemovedCollisionSolidId)
                 continue;
             const CollisionTriangle& tri = world.triangles[i];
             float d;
@@ -750,7 +752,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                         for (int triIdx : scIt->second)
                         {
                             if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-                            if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+                            if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
                             if (s_triGen.size() <= (size_t)triIdx)
                                 s_triGen.resize((size_t)triIdx + 1, 0);
                             if (s_triGen[triIdx] == s_gen) continue;
@@ -775,7 +777,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
                 for (int triIdx : it->second)
                 {
                     if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-                    if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+                    if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
                     if (s_triGen.size() <= (size_t)triIdx)
                         s_triGen.resize((size_t)triIdx + 1, 0);
                     if (s_triGen[triIdx] == s_gen) continue;
@@ -819,7 +821,7 @@ bool serverRaycastWorld(const glm::vec3& origin, const glm::vec3& direction,
     for (int triIdx : world.collisionLargeTriangles)
     {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
         if (s_triGen.size() <= (size_t)triIdx)
             s_triGen.resize((size_t)triIdx + 1, 0);
         if (s_triGen[triIdx] == s_gen) continue;
@@ -961,7 +963,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
                     for (int triIdx : scIt->second)
                     {
                         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-                        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+                        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
                         if (s_triGen.size() <= (size_t)triIdx)
                             s_triGen.resize((size_t)triIdx + 1, 0);
                         if (s_triGen[triIdx] == s_gen) continue;
@@ -985,7 +987,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
             for (int triIdx : it->second)
             {
                 if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-                if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+                if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
                 if (s_triGen.size() <= (size_t)triIdx)
                     s_triGen.resize((size_t)triIdx + 1, 0);
                 if (s_triGen[triIdx] == s_gen) continue;
@@ -1007,7 +1009,7 @@ bool serverSweptSphereWorld(const glm::vec3& origin, const glm::vec3& direction,
     for (int triIdx : world.collisionLargeTriangles)
     {
         if (triIdx < 0 || triIdx >= (int)world.triangles.size()) continue;
-        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == UINT32_MAX) continue;
+        if ((size_t)triIdx < world.solidIds.size() && world.solidIds[(size_t)triIdx] == kRemovedCollisionSolidId) continue;
         if (s_triGen.size() <= (size_t)triIdx)
             s_triGen.resize((size_t)triIdx + 1, 0);
         if (s_triGen[triIdx] == s_gen) continue;
@@ -1522,7 +1524,7 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
         return;
 
     // Melee is a one-human-versus-one-NPC mode: cap the total to one live NPC.
-    if (serverGamemodeState().matchMode == "melee") {
+    if (serverGamemodeState().matchMode == "ssbm") {
         int liveNpcs = 0;
         for (const auto& kv : npcs)
             if (kv.second.health > 0)
@@ -2286,6 +2288,18 @@ ServerPacketProcessResult processServerPacket(
         handleInputPacket(buffer, bytes, players, world, nextEntityId, npcs,
                           &from, tick, sourceConnection, sock, &totalPacketsOut,
                           retransmitState);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_VEHICLE_INPUT)
+    {
+        handleVehicleInputPacket(buffer, bytes, players, &from,
+                                 sourceConnection, tick);
+        result.handled = true;
+    }
+    else if (header->type == PACKET_VEHICLE_SEAT_REQUEST)
+    {
+        handleVehicleSeatRequest(sock, buffer, bytes, players, &from,
+                                 sourceConnection, tick, totalPacketsOut);
         result.handled = true;
     }
     else if (header->type == PACKET_DISCONNECT)

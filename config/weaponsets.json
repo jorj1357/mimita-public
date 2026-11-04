@@ -292,6 +292,13 @@
       "description": "Jason's chainsaw-only loadout.",
       "role_only": true,
       "weapons": ["chainsaw", "nothing"]
+    },
+    {
+      "id": 32,
+      "key": "melee_only",
+      "name": "Melee Only",
+      "description": "Chainsaw, Mace, and Swordsword only.",
+      "weapons": ["chainsaw", "mace", "swordsword", "nothing"]
     }
   ]
 }

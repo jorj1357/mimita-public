@@ -142,13 +142,15 @@ bool CommunityServerConfig::pollReload()
 
 const CommunityMode* CommunityServerConfig::modeById(const std::string& id) const
 {
-    for (const auto& mode : modes_) if (mode.id == id) return &mode;
+    for (const auto& mode : modes_)
+        if (mode.id == id || (id == "melee" && mode.id == "ssbm")) return &mode;
     return modes_.empty() ? nullptr : &modes_.front();
 }
 
 const CommunityMode* CommunityServerConfig::modeByName(const std::string& name) const
 {
     for (const auto& mode : modes_) if (mode.name == name) return &mode;
+    if (name == "Melee") return modeById("ssbm");
     return modeById(name);
 }
 

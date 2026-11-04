@@ -25,6 +25,7 @@
 #include "combat/melee-rules-config.h"
 #include "entities/aimbody-config.h"
 #include "entities/player-avatar-animations.h"
+#include "vehicles/vehicle-system.h"
 #include "config/networking-config.h"
 #include "config/spawn-velocity-config.h"
 #include "debug/debug-log.h"
@@ -620,8 +621,9 @@ bool serverPickSafeSpawn(const HeadlessWorld* world, uint32_t playerId,
 
 // ── Initial inventory ────────────────────────────────────────────────
 // Community servers derive the inventory from the effective weapon set. The
-// role's weapon_set (resolved by the caller) wins; otherwise the gamemode's
-// community set applies. Set 5 is the explicit opt-in for restricted weapons.
+// resolved actor profile supplies the effective set (including an explicit
+// host override); otherwise the gamemode's community set applies. Set 5 is the
+// explicit opt-in for restricted weapons.
 static void getInitialInventory(std::vector<std::string>& out, int setId)
 {
     out.clear();
@@ -734,10 +736,12 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
         // A declared disaster owns the per-actor loadout for this life. The
         // assignment is deterministic from the replicated round seed, so this
         // is a data lookup, not a mode-name branch.
-        if (const std::string* disasterWeapon =
+        if (!serverGamemodeState().communityWeaponSetExplicit) {
+            if (const std::string* disasterWeapon =
                 MimitaGamemode::disasterWeaponForActor(serverGamemodeState().disaster, player.id)) {
-            player.ownedWeaponIds.clear();
-            player.ownedWeaponIds.push_back(*disasterWeapon);
+                player.ownedWeaponIds.clear();
+                player.ownedWeaponIds.push_back(*disasterWeapon);
+            }
         }
         player.weaponRuntimes.clear();
     }
@@ -823,6 +827,10 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
     player.lastPhysicalWeaponDefNetworkId = 0;
     player.nextPhysicalContactSerial = 1;
     player.physicalContactEpisodes.clear();
+    if (player.seatedVehicleId != 0)
+        VehicleSystem::instance().exitSeatByActor(player.id);
+    player.seatedVehicleId = 0;
+    player.seatedSeat = -1;
     player.input = {};
     player.inputStateFlags = 0;
     player.attackQueued = false;
@@ -1063,6 +1071,49 @@ void simulatePlayer(ServerPlayer& p, const HeadlessWorld& world)
                    "clientStateUpdated=%d\n",
                    p.id, p.input.yaw, p.yaw, p.input.yaw, (int)p.clientStateUpdated);
             lastLookApplyLogMs = nowLookApply;
+        }
+    }
+
+    // A dead or removed occupant must not keep a seat. The seat owner clears
+    // the occupant and the server releases the player's seat fields.
+    if (p.seatedVehicleId != 0 &&
+        (p.dead || !VehicleSystem::instance().find(p.seatedVehicleId)))
+    {
+        VehicleSystem::instance().exitSeatByActor(p.id);
+        p.seatedVehicleId = 0;
+        p.seatedSeat = -1;
+    }
+
+    // Seated actors are owned by the seat. The server re-asserts the seat pose
+    // every tick and skips locomotion/collision; aim, fire, and reload remain
+    // on the normal weapon path.
+    if (p.seatedVehicleId != 0 && !p.dead)
+    {
+        glm::vec3 seatPosition(0.0f);
+        glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
+        if (!VehicleSystem::instance().seatWorld(p.seatedVehicleId,
+                                                 p.seatedSeat,
+                                                 seatPosition, seatForward))
+        {
+            VehicleSystem::instance().exitSeatByActor(p.id);
+            p.seatedVehicleId = 0;
+            p.seatedSeat = -1;
+        }
+        else
+        {
+            p.pos = seatPosition;
+            p.vel = glm::vec3(0.0f);
+            p.movement.externalImpulse = glm::vec3(0.0f);
+            p.onGround = false;
+            p.input.wish = glm::vec2(0.0f);
+            p.input.jumpHeld = false;
+            p.input.dashPressed = false;
+            p.input.downDashPressed = false;
+            p.projectileFireCooldown =
+                std::max(0.0f, p.projectileFireCooldown - SERVER_DT);
+            p.clientStateUpdated = false;
+            syncServerMovementRuntime(p, false);
+            return;
         }
     }
 

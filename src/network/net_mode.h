@@ -46,6 +46,7 @@ struct LaunchOptions
     std::string gamemodeId = "duel";
     std::string gameMode = "sandbox";
     int weaponSetId = 1;
+    bool weaponSetExplicit = false;
     bool autoMapRotation = true;
     uint32_t mapRotationMinutes = 15;
     bool discordNotification = true;

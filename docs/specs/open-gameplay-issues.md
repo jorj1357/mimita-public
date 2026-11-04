@@ -1,4 +1,158 @@
-﻿2026 11 03 1422
+﻿2026 11 03 1646 
+npcs on atdm map
+falling thru the floor
+not good
+like psheres
+falling thru spheres
+why
+stop
+how to 
+
+2026 11 03 1606
+
+fire doenst do damage to me thru normal  self dmg presntation
+neither does  deathball
+from other people
+grenades need better presetnation and stuff to be  moer like
+visibly a big deal 
+grendaes need to be cyceld I KNOW
+I KNOW u r suposed to bind each to its own thing
+iiiiiii odnt acre
+
+inventory mode:?
+
+hmmm
+it should be like
+press i for inventory?
+but that might be bound to smth eklse bro idk
+
+cmd = inventory_*
+self alias = inv
+
+inventory_open
+
+close the terminal and open the inventor gui
+with all the weapons u are having in the game
+click it = equip it 
+
+deathball does show me damage ?
+hmm idk
+
+holy crap
+the darkbang that is so sick i wnat to do more darkbang
+
+make it so rocket laucnher explosion decals dont 
+I JUST ASW A NPC SINK THRU THE FLOOR bro omg 2026 11 03 1609 working on it with opencode
+
+we found the issues causes etc and its fixing things
+but i jsut saw bro sink
+ito the ground
+stop
+do not do that  ever ever again bro 
+
+we need to mkae it easier and clearer for AI to send commands
+the need ot work same as me sending them 
+
+
+2026 11 03 1555
+But its fun , to shoot ppl in teh head
+We could do like retrograd juggernuat actual mode?
+I want to do like 
+Wait we lowk could
+Actor collision need to be much smaller
+And weapon collisiosn need to be much smaller too
+todo add to gamemodes like, per gamemode actor colision settings 
+
+
+2026 11 03 1553 
+
+dev loop needs mode picker in the gui
+also 
+make it so pressing 1 = start , launch latest stable mimita exe
+
+add to spec that we would like  a developer mimita exe and a stable mimita exe but that is just for later dont need right now as of 2026 11 03 1553 
+
+pressing 1 = launch stable exe
+and show a timer like in x.xx format
+
+0.94, 1.42, 2.58
+how much seconds between pressing it and how much before it launches it 
+
+need mode picker in the window, add to the "more" button thats what the mode picker  is 
+
+2026 11 03 1545
+
+npcs stuck in geomegrt on tdm mode  dust2cberia map
+i am getting snagging like witht eh rocekt launcher against some places in the map
+
+npcs need to not get stuck in geometry whatsoever , what isg ogin wrogn there, need to track all the npcs posiisons and what is happenign with them
+
+and how to make it so  weapon collisiosn are woking just like actor bod parts vs the world
+
+no npcs can get stuck inside geometry and i cannot get snagged on the little ramp in dust2cyberiav4
+
+then i end the recording and i am at  1 fps again 
+and it sais dhte  scenario is invalid
+missing_server_header 
+
+
+2026 11 03 1526
+
+
+jorj ok 
+
+issues is  
+scenarios
+if its fixed
+then
+u run it again
+and then u snap ack
+that is a  good sign i tink
+
+huamn 
+human review 
+i dont want 
+
+we also need to put into spec that bounce hapepsn all the time
+after we  confirm tis good 
+
+also snagging
+me vs world 
+vs me weapon vs world
+vs me weapon vs actor
+vs me vs actor
+allneed to bounce 
+mkay
+mmkkay
+whats next
+
+wow omg finaly i dont ahve  to freakin do 
+zombie tower modlering bro
+
+vehicles mmmmm
+infinnite world mmmmmm
+i wnana do that
+infinnite generated world
+
+well
+vehicel seems to be best next
+cuz
+its the newest and most complex?
+needs some tuning to get right
+but
+
+if we can get vehicles good to acth hhow i mean forhtem to act 
+well i mean thats just peachy ;)
+
+then
+infinite world after
+
+but
+
+nees planning 
+and not writing about roe v wadebro 
+
+2026 11 03 1422
 
 can u look into the code and see what is going wrong   2026-11-03T19:09:55.016045Z  SHA-256 487ecbeb9ba80e2e9808cd9498a0d2f7145950022822d154e61633a8998c0df7  this build  the events jsonl  
 
@@ -124,7 +278,10 @@ if the rpboelmf or example is that npcs get stuck inside of geometry its kinda  
 if every single tick, for all actors, we print their plr origin position, and their limb posiisons and rotations relative to that position , and if its penetrating or inside geometry, if plr oriring is inside geometry, their velocity, last tick's velocity and pos, delta between those two, etc, it becomes much more  doable to figure ouw wht is making npcs  get stuck in geomgrty, 
 
 but i want to amke ti so the same failing secnario with npcs getting stuck in geometry has a super visible way to show when they dont get stuck like 
-idk, client npc would want to walk forarwd liek normal, but keep getting snapped back to when it was stuck inside geometry, that snap i think should mean that its doing better 
+idk, client npc would want to walk forarwd liek normal, but keep getting snapped back to when it was stuck inside ge
+7ometry, that snap i think should mean that its doing better 
+
+
 
 as well as fix like tdmtest3 npcs falling thru the world 
 
@@ -252,6 +409,7 @@ blocking or high-impact work; **P2** is lower-priority follow-up or recheck;
 | OGI-018 | P3 | Deferred | Give Godball and HAFS their own behavior specs | [Weapons](weapons/weapons.md), Godball and HAFS entries | Create focused specs when prioritized; current behavior is not specified here |
 | OGI-019 | P3 | Deferred | Make weapons beyond slot 10 easier to equip | [Weapons/loadout owner](weapons/weapons.md) | Resolve as a loadout UX decision; no keybinding or inventory change is authorized here |
 | OGI-020 | P2 | Verify | Fun Counterstrike NPCs should be easier to beat | [Fun Counter Strike](gamemodes/funcounterstrike.md), “Fun Counter Strike NPC rush” | Confirm beginner profile, 25-degree aim error, 120-tick shot floor, reduced dash frequency, and preserved bomb objectives in a live run |
+| OGI-021 | P1 | Verify | Explicit GUI/CLI weapon-set overrides apply across managed modes; Auto uses each gamemode's configured set | [Gamemodes](gamemodes/gamemodes.md), GUI weapon-set precedence contract | Confirm Auto selects SSBM/TDM defaults and complete human GUI review; explicit TDM, SSBM, NPC, rejected-weapon, and respawn evidence is recorded in the regression detail |
 
 ## Issue details
 

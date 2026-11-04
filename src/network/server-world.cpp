@@ -370,7 +370,7 @@ void buildHeadlessCollisionChunks(HeadlessWorld& world)
     for (int i = 0; i < (int)world.triangles.size(); ++i)
     {
         if (i < (int)world.solidIds.size() &&
-            world.solidIds[i] == UINT32_MAX)
+            world.solidIds[i] == kRemovedCollisionSolidId)
             continue;
         AABB tb = makeTriangleAABB(world.triangles[i]);
         glm::ivec3 c0 = collisionChunkCoord(tb.min, CS);

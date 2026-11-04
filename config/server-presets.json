@@ -42,9 +42,9 @@
       "join_host": true
     },
     "melee_1": {
-      "server_name": "Melee 1",
+      "server_name": "SSBM 1",
       "map": "xxity2",
-      "mode": "funworld3",
+      "mode": "ssbm",
       "max_players": 2,
       "startup_npcs": true,
       "npc_count": 1,

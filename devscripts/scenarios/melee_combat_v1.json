@@ -11,7 +11,7 @@
   },
   "setup": [],
   "steps": [
-    {"id": "start_melee", "command": "modestart", "args": ["14"], "delay_ms_after": 1500},
+    {"id": "start_melee", "command": "startssbm", "args": [], "delay_ms_after": 1500},
     {"id": "equip_moveset", "command": "equipslot", "args": ["1"], "delay_ms_after": 500},
     {"id": "npc_spawn", "command": "npc_spawn", "args": ["1"], "delay_ms_after": 800},
     {"id": "attack_air_kick", "command": "meleeattack", "args": ["a_air_kick"], "delay_ms_after": 800},

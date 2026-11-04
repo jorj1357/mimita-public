@@ -630,7 +630,6 @@ bool unionStaticSolidGroups(
         return false;
     }
 
-    constexpr uint32_t kUnionSolidId = 0xFFFFFFFFu;
     std::vector<CollisionTriangle> out;
     std::vector<uint32_t> outSolidIds;
     out.reserve(united.triangleCount() + raw.size());
@@ -662,7 +661,7 @@ bool unionStaticSolidGroups(
         triangle.c = c;
         triangle.normal = normal;
         out.push_back(triangle);
-        outSolidIds.push_back(kUnionSolidId);
+        outSolidIds.push_back(kUnionCollisionSolidId);
     }
 
     for (const auto& entry : raw)

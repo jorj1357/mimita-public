@@ -42,10 +42,10 @@ uint32_t nearestSolid(const HeadlessWorld& world,
         impact.targetEntityId <= world.solidIds.size())
     {
         uint32_t id = world.solidIds[impact.targetEntityId - 1];
-        if (id == UINT32_MAX &&
+        if (id == kRemovedCollisionSolidId &&
             impact.targetEntityId <= world.destructionBaselineSolidIds.size())
             id = world.destructionBaselineSolidIds[impact.targetEntityId - 1];
-        if (id != 0 && id != UINT32_MAX)
+        if (id != 0 && id != kRemovedCollisionSolidId)
             return id;
     }
 
@@ -65,10 +65,10 @@ uint32_t nearestSolid(const HeadlessWorld& world,
             (size_t)index >= world.solidIds.size())
             continue;
         uint32_t id = world.solidIds[index];
-        if (id == UINT32_MAX &&
+        if (id == kRemovedCollisionSolidId &&
             (size_t)index < world.destructionBaselineSolidIds.size())
             id = world.destructionBaselineSolidIds[index];
-        if (id == 0 || id == UINT32_MAX)
+        if (id == 0 || id == kRemovedCollisionSolidId)
             continue;
         const CollisionTriangle& tri = world.triangles[index];
         const float plane = std::abs(glm::dot(impact.worldPoint - tri.a,
@@ -110,9 +110,9 @@ uint32_t serverWorldSolidIdAtTriangle(const HeadlessWorld& world, size_t index)
     if (index >= world.solidIds.size())
         return 0;
     uint32_t id = world.solidIds[index];
-    if (id == UINT32_MAX && index < world.destructionBaselineSolidIds.size())
+    if (id == kRemovedCollisionSolidId && index < world.destructionBaselineSolidIds.size())
         id = world.destructionBaselineSolidIds[index];
-    return id == UINT32_MAX ? 0u : id;
+    return id == kRemovedCollisionSolidId ? 0u : id;
 }
 
 void submitExplosionWorldImpacts(const HeadlessWorld& world,

@@ -217,6 +217,7 @@ static void readServerSettingsFromBindings()
     gServerWeaponSetAuto = weaponSet.rfind("Auto", 0) == 0 || weaponSet.empty();
     gServerLaunchSettings.weaponSetId = weaponSet.rfind("Set ", 0) == 0
         ? std::max(1, std::atoi(weaponSet.c_str() + 4)) : 1;
+    gServerLaunchSettings.weaponSetExplicit = !gServerWeaponSetAuto;
     gServerLaunchSettings.autoMapRotation =
         b.get("server.auto_map_rotation", "true") == "true";
     gServerLaunchSettings.mapRotationMinutes =

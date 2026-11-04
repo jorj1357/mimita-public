@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "weapon_set_override_ssbm_v1",
+  "description": "Launch SSBM with an explicit alternate set, then use the legacy startmelee command and verify canonical SSBM match rules retain the selected inventory.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "1",
+    "map": "xxity2",
+    "weapon_set": 32,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [],
+  "steps": [
+    {"id": "wait_for_spawn_sync", "wait_seconds": 10},
+    {"id": "start_legacy_alias", "command": "startmelee", "args": [], "delay_ms_after": 5000},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["ssbm_override_end"]}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "ssbm"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "weapon_set_id", "equals": 32},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "weapon_set_source", "equals": "host_override"},
+    {"type": "event_field_count_at_least", "event": "actor.loadout.resolved", "field": "weapon_set_id", "equals": 32, "minimum": 1}
+  ],
+  "timeout_seconds": 150
+}

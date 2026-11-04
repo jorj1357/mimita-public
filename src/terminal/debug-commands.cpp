@@ -91,20 +91,20 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
-        "startmelee", "Start and join a Melee room, or switch the connected room to Melee.", "startmelee",
+        "startssbm", "Start and join an SSBM room, or switch the connected room to SSBM.", "startssbm",
         [](const std::vector<std::string>&) {
             if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
-                MimitaNet::serverCommunitySetMode("melee");
-                MimitaNet::serverCommunityStartMatch(false, "melee");
-                Terminal::instance().addLog("[STARTMELEE] started melee");
+                MimitaNet::serverCommunitySetMode("ssbm");
+                MimitaNet::serverCommunityStartMatch(false, "ssbm");
+                Terminal::instance().addLog("[STARTSSBM] started SSBM");
             } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "startmelee");
-                Terminal::instance().addLog("[STARTMELEE] requested Melee from the connected server; waiting for its authoritative result");
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "startssbm");
+                Terminal::instance().addLog("[STARTSSBM] requested SSBM from the connected server; waiting for its authoritative result");
             } else {
                 MimitaNet::ServerPreset preset;
                 std::string error;
                 if (!MimitaNet::loadServerPreset("melee_1", preset, error)) {
-                    Terminal::instance().addLog("[STARTMELEE] failed to load melee_1: " + error);
+                    Terminal::instance().addLog("[STARTSSBM] failed to load melee_1: " + error);
                     return;
                 }
 
@@ -123,10 +123,10 @@ void registerDebugCommands()
                 settings.hostPlayerName = AuthSystem::instance().displayName();
 
                 if (!launchServerPresetAndJoin(settings)) {
-                    Terminal::instance().addLog("[STARTMELEE] failed to start and join preset melee_1; check the current server and client state");
+                    Terminal::instance().addLog("[STARTSSBM] failed to start and join preset melee_1; check the current server and client state");
                     return;
                 }
-                Terminal::instance().addLog("[STARTMELEE] starting and joining Melee room: map=" +
+                Terminal::instance().addLog("[STARTSSBM] starting and joining SSBM room: map=" +
                     preset.mapName + " mode=" + preset.gameMode + " startup_npcs=" +
                     std::to_string(preset.startupNpcsEnabled ? preset.startupNpcCount : 0));
             }

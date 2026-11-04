@@ -409,6 +409,8 @@ bool ScenarioServerRecorder::start(const std::string& scenarioPath,
     mScenarioId = scenarioPath;
     mFrames = 0;
     mStartTick = 0;
+    mHeaderWritten = false;
+    ensureHeader(MimitaNet::serverGamemodeState().currentServerTick);
     mLastActors.clear();
     mLastPose.clear();
     mLastGrounded.clear();
@@ -449,6 +451,7 @@ bool ScenarioServerRecorder::startCanonical(const std::string& scenarioId,
     mProbeDone = false;
     mFrames = 0;
     mStartTick = 0;
+    mHeaderWritten = false;
     mLastActors.clear();
     mLastPose.clear();
     mLastGrounded.clear();
@@ -504,6 +507,14 @@ void ScenarioServerRecorder::markCaptureFailure(const std::string& reason,
                        {"reason", reason},
                        {"journal_path", StructuredLogger::instance().eventsPath()},
                        {"process_role", "server"}});
+}
+
+void ScenarioServerRecorder::ensureHeader(uint32_t serverTick)
+{
+    if (mHeaderWritten || !mOut.is_open())
+        return;
+    writeHeader(serverTick);
+    mHeaderWritten = true;
 }
 
 void ScenarioServerRecorder::writeHeader(uint32_t serverTick)
@@ -613,6 +624,7 @@ void ScenarioServerRecorder::captureTick(
 {
     if (!mActive)
         return;
+    ensureHeader(serverTick);
 
     const auto captureStart = std::chrono::steady_clock::now();
     std::unordered_map<uint32_t, const Npc*> simulated;
@@ -973,8 +985,7 @@ void ScenarioServerRecorder::captureTick(
 
     if (mOut.is_open())
     {
-        if (mFrames == 0)
-            writeHeader(serverTick);
+        ensureHeader(serverTick);
         updateLifecycle(current, serverTick);
         mOut << nlohmann::json{
             {"kind", "server_tick"},
@@ -997,8 +1008,9 @@ void ScenarioServerRecorder::captureCheckpoint(
     const std::unordered_map<uint32_t, MimitaNet::ServerProjectile>& projectiles,
     uint32_t serverTick)
 {
-    if (!mActive || !mCanonical)
+    if (!mActive)
         return;
+    ensureHeader(serverTick);
 
     std::unordered_map<uint32_t, const Npc*> simulated;
     for (const Npc& npc : npcSystem.all())

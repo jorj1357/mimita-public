@@ -298,6 +298,22 @@ different approach sector, hold back, or use wall-avoidance instead of walking
 into a crowd that is already occupying one corner. This uses existing
 approach-sector and navigation knowledge; it does not grant collision immunity.
 
+### Out-of-bounds and inaccessible-perch recovery (spec only, not implemented)
+
+A player report on the `badhouse` map showed NPCs getting stuck outside the map
+on the roof. This is a different failure from being inside a closed solid: the
+root can be outside all collision volumes yet still be on an unreachable or
+out-of-bounds perch. The desired recovery owner must eventually distinguish:
+
+- inside a recognized closed solid (push out through the nearest enclosing face);
+- below the map floor for a bounded duration (respawn at a validated spawn);
+- outside the playable bounds or on a surface the navigation graph cannot reach
+  (return to a validated reachable spawn without waiting for normal navigation).
+
+Do not implement the out-of-bounds/perch checker as part of the 2026-11-03
+solid-interior fix. This paragraph records the required behavior and the human
+report so it is not lost.
+
 **Monster avatar shapes:** tall, wide, thin, and multi-limb monster models use
 their actual body/weapon collision geometry for static-world contact. A capsule
 profile may remain the actor-vs-actor first slice, but it must not silently

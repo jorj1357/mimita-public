@@ -624,6 +624,9 @@ LMB held = actively extend left arm
 RMB held = actively extend right arm
 ```
 
+While ragdolled, RMB does not narrow the camera FOV; the FOV stays at the
+configured base value and must not zoom in while RMB is down.
+
 Releasing the button removes that active extension target.
 
 Then the arm becomes passive again.

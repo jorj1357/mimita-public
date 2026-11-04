@@ -954,3 +954,48 @@ complete save/export is detected, how geometry and map data are validated, how
 the game avoids loading a partial asset, how live reload errors are shown, and
 how local edits reach an authorized remote server. Keep this workflow connected
 to the in-game editor and shared asset-management rules.
+
+## Vehicle placement and the vehicle builder (2026-11-03)
+
+The map editor places vehicle instances. It does not author arbitrary vehicle
+geometry as map blocks.
+
+Map-authored vehicle data lives in the map JSON `vehicles` array:
+
+```json
+"vehicles": [
+  {
+    "id": "vehicle_1",
+    "template": "car_sedan",
+    "position": [12.0, 4.0, -31.0],
+    "yaw": 0.0,
+    "enabled": true
+  }
+]
+```
+
+The viewport editor can add, select, move, delete, and spawn these placements
+through the shared selection, gizmo, undo, and save paths. A vehicle placement
+is authored data; a spawned vehicle is a runtime object and is never serialized
+as a second map entry.
+
+The vehicle builder edits a reusable template in `config/vehicles/<id>.json`.
+It is the next slice on the same editor tools:
+
+- primitive parts (`box`, `slope`, `sphere`, `cylinder`),
+- mass, density, and center of mass,
+- wheel hub, radius, width, spin/steer/suspension axes,
+- seats and named attachments.
+
+Wheels stay on the analytic vehicle path and are edited as wheel records, not
+ordinary body parts. The editor shows wheel hubs and dimensions so authors can
+see what they are tuning. Arbitrary vertex, edge, or face editing is out of
+scope.
+
+The first editor slice exposes wheel editing through commands:
+
+```text
+mapeditor vehicle_wheel <index> hub <x> <y> <z>
+mapeditor vehicle_wheel <index> radius <m>
+mapeditor vehicle_wheel <index> width <m>
+```

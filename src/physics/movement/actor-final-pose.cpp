@@ -1,6 +1,7 @@
 #include "physics/movement/actor-final-pose.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 
@@ -16,18 +17,14 @@
 #include "physics/ray-utils.h"
 #include "world/world.h"
 
-bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point)
+bool pointInsideSolidId(const World& world, const glm::vec3& point,
+                        std::uint32_t solidId)
 {
+    if (solidId == 0 || solidId == kRemovedCollisionSolidId)
+        return false;
     const auto& mesh = world.collisionMesh;
-    if (mesh.triangles.empty() || mesh.solidIds.size() != mesh.triangles.size())
-        return false;
-    const int floorTriangle =
-        selectWorldTriangle(world, point, glm::vec3(0.0f, 0.0f, -1.0f));
-    if (floorTriangle < 0 ||
-        static_cast<std::size_t>(floorTriangle) >= mesh.solidIds.size())
-        return false;
-    const std::uint32_t solidId = mesh.solidIds[floorTriangle];
-    if (solidId == 0)
+    auto interior = mesh.solidInteriorSolid.find(solidId);
+    if (interior != mesh.solidInteriorSolid.end() && !interior->second)
         return false;
     const glm::vec3 direction =
         glm::normalize(glm::vec3(1.0f, 0.3713907f, 0.193f));
@@ -41,6 +38,121 @@ bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point)
             ++hits;
     }
     return (hits % 2) != 0;
+}
+
+namespace {
+
+void collectContainingSolidCandidates(const World& world,
+                                      const glm::vec3& point,
+                                      std::vector<std::uint32_t>& out)
+{
+    const auto& mesh = world.collisionMesh;
+    out.clear();
+    if (!mesh.solidBounds.empty()) {
+        for (const auto& entry : mesh.solidBounds) {
+            if (entry.first == 0 || entry.first == kRemovedCollisionSolidId)
+                continue;
+            auto interior = mesh.solidInteriorSolid.find(entry.first);
+            if (interior != mesh.solidInteriorSolid.end() && !interior->second)
+                continue;
+            const AABB& bounds = entry.second;
+            if (glm::any(glm::lessThan(point, bounds.min)) ||
+                glm::any(glm::greaterThan(point, bounds.max)))
+                continue;
+            out.push_back(entry.first);
+        }
+        return;
+    }
+    for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
+        const std::uint32_t id = mesh.solidIds[i];
+        if (id == 0 || id == kRemovedCollisionSolidId)
+            continue;
+        const CollisionTriangle& tri = mesh.triangles[i];
+        const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+        const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        if (glm::any(glm::lessThan(point, mn)) ||
+            glm::any(glm::greaterThan(point, mx)))
+            continue;
+        if (std::find(out.begin(), out.end(), id) == out.end())
+            out.push_back(id);
+    }
+}
+
+} // namespace
+
+bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point)
+{
+    const auto& mesh = world.collisionMesh;
+    if (mesh.triangles.empty() || mesh.solidIds.size() != mesh.triangles.size())
+        return false;
+    static thread_local std::vector<std::uint32_t> candidates;
+    collectContainingSolidCandidates(world, point, candidates);
+    std::sort(candidates.begin(), candidates.end(),
+        [&mesh](std::uint32_t a, std::uint32_t b) {
+            const auto ia = mesh.solidBounds.find(a);
+            const auto ib = mesh.solidBounds.find(b);
+            const glm::vec3 sa = ia != mesh.solidBounds.end()
+                ? ia->second.max - ia->second.min : glm::vec3(0.0f);
+            const glm::vec3 sb = ib != mesh.solidBounds.end()
+                ? ib->second.max - ib->second.min : glm::vec3(0.0f);
+            return sa.x * sa.y * sa.z < sb.x * sb.y * sb.z;
+        });
+    for (std::uint32_t id : candidates)
+        if (pointInsideSolidId(world, point, id))
+            return true;
+    return false;
+}
+
+bool findSolidPushOut(const World& world, const glm::vec3& point,
+                      float standoff, glm::vec3& outDelta,
+                      std::uint32_t& outSolidId)
+{
+    const auto& mesh = world.collisionMesh;
+    if (mesh.triangles.empty() || mesh.solidIds.size() != mesh.triangles.size())
+        return false;
+    static thread_local std::vector<std::uint32_t> candidates;
+    collectContainingSolidCandidates(world, point, candidates);
+
+    constexpr float kMaxSolidPushOut = 2.0f;
+    constexpr float kPushSkin = 0.02f;
+    float bestPush = kMaxSolidPushOut;
+    glm::vec3 bestDelta(0.0f);
+    std::uint32_t bestSolid = 0;
+    for (std::uint32_t id : candidates) {
+        if (!pointInsideSolidId(world, point, id))
+            continue;
+        glm::vec3 center(0.0f);
+        auto boundsIt = mesh.solidBounds.find(id);
+        if (boundsIt != mesh.solidBounds.end())
+            center = (boundsIt->second.min + boundsIt->second.max) * 0.5f;
+        for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
+            if (mesh.solidIds[i] != id)
+                continue;
+            const CollisionTriangle& tri = mesh.triangles[i];
+            glm::vec3 normal = tri.normal;
+            const float length = glm::length(normal);
+            if (length < 1.0e-5f)
+                continue;
+            normal /= length;
+            if (boundsIt != mesh.solidBounds.end() &&
+                glm::dot(normal, tri.a - center) < 0.0f)
+                normal = -normal;
+            const float signedDistance = glm::dot(point - tri.a, normal);
+            if (signedDistance >= 0.0f)
+                continue;
+            const float push = -signedDistance + std::max(standoff, kPushSkin);
+            if (push < bestPush) {
+                bestPush = push;
+                bestDelta = normal * push;
+                bestSolid = id;
+            }
+        }
+    }
+    if (bestSolid == 0)
+        return false;
+    outDelta = bestDelta;
+    outSolidId = bestSolid;
+    return true;
 }
 
 namespace {
@@ -214,6 +326,10 @@ bool findBoundedSafePoint(Player& actor, const World& world,
     // Larger lifts made wall overlaps teleport actors 8-12 m upward and then
     // reset repeatedly. If the nearby search fails, use last-clear/respawn.
     constexpr float kLifts[] = {0.0f, 0.25f, 0.5f, 1.0f, 2.0f};
+    constexpr int kMaxSafePointCandidates = 24;
+    constexpr auto kMaxSafePointTime = std::chrono::milliseconds(2);
+    const auto safePointStarted = std::chrono::steady_clock::now();
+    int testedCandidates = 0;
     for (float ring : kRings)
     {
         for (int direction = 0; direction < 8; ++direction)
@@ -226,6 +342,11 @@ bool findBoundedSafePoint(Player& actor, const World& world,
                                        std::sin(angle) * ring, 0.0f);
             for (float lift : kLifts)
             {
+                if (testedCandidates >= kMaxSafePointCandidates ||
+                    std::chrono::steady_clock::now() - safePointStarted >
+                        kMaxSafePointTime)
+                    return false;
+                ++testedCandidates;
                 const glm::vec3 candidate = base + horizontal +
                     glm::vec3(0.0f, 0.0f, lift);
                 if (actorRootInsideClosedSolid(world, candidate))
@@ -260,6 +381,20 @@ bool findBoundedSafePoint(Player& actor, const World& world,
 }
 
 } // namespace
+
+bool pushActorRootOutOfSolid(Player& actor, const World& world,
+                             float standoff, glm::vec3* outCorrection,
+                             uint32_t* outSolidId)
+{
+    glm::vec3 pushDelta(0.0f);
+    uint32_t solidId = 0;
+    if (!findSolidPushOut(world, actor.pos, standoff, pushDelta, solidId))
+        return false;
+    translateRoot(actor, pushDelta);
+    if (outCorrection) *outCorrection = pushDelta;
+    if (outSolidId) *outSolidId = solidId;
+    return true;
+}
 
 bool containActorFinalPose(Player& actor,
                            const World& world,
@@ -303,6 +438,36 @@ bool containActorFinalPose(Player& actor,
     {
         acceptClearPose(actor, state);
         return true;
+    }
+
+    // A root fully inside a closed solid may have no surface contact at all.
+    // Push it out through the nearest enclosing face first; contacts, last
+    // clear, safe point, and respawn remain the ordered fallbacks.
+    if (rootInsideClosedSolid)
+    {
+        glm::vec3 pushDelta(0.0f);
+        std::uint32_t pushSolid = 0;
+        if (findSolidPushOut(world, actor.pos, standoff, pushDelta, pushSolid))
+        {
+            translateRoot(actor, pushDelta);
+            result.pushedOut = true;
+            result.pushSolidId = pushSolid;
+            result.pushCorrection = pushDelta;
+            result.corrected = true;
+            result.correction += pushDelta;
+            sample = sampleFinalPose(actor, world, standoff);
+            result.finalPenetration = sample.maxPenetration;
+            result.budgetExceeded = result.budgetExceeded || sample.budgetExceeded;
+            copyContacts(sample.contacts, result, world);
+            if (!sample.budgetExceeded &&
+                !actorRootInsideClosedSolid(world, actor.pos) &&
+                sample.maxPenetration <= clearTolerance)
+            {
+                result.clear = true;
+                acceptClearPose(actor, state);
+                return true;
+            }
+        }
     }
 
     glm::vec3 totalCorrection(0.0f);

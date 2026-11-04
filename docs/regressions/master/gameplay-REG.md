@@ -187,3 +187,10 @@ Entries: 26
 - Status: see detail
 - Summary: When Payload changes maps, the cart uses that map's authored origin, route, dimensions, facing, and interaction box. It must not travel along a route from the map that was active before the change.
 - Detail: `docs/regressions/2026-10-26/payload-cart-keeps-previous-map-route-REG.md`
+
+## Entry 27 — GUI weapon-set override was replaced by the gamemode default
+
+- Recorded: 2026-11-03T23:04:29Z
+- Status: ATTEMPTED FIX (1) — explicit TDM/SSBM runtime override evidence recorded; Auto and GUI review pending
+- Summary: docs/specs/gamemodes/gamemodes.md, GUI server-launch settings
+- Detail: `docs/regressions/2026-11-03/gui-weapon-set-override-REG.md`

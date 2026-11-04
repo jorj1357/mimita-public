@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "npc_dust2_corner_containment_v1",
+  "description": "Probe the reported dust2 block corner near -738,144,2353, spawn NPCs there, and require no containment reset, penetration, or below-map fall for 30 seconds.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": 1,
+    "map": "dust2cyberiav4",
+    "weapon_set": 30,
+    "visibility": "headless",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "wait_client_spawn", "wait_for_event": "client.actor.spawn_activated.received", "timeout_seconds": 120},
+    {"id": "settle_spawn", "wait_seconds": 3},
+    {"id": "probe_corner", "command": "collision_probe", "args": ["-738,144,2353"], "delay_ms_after": 300}
+  ],
+  "steps": [
+    {"id": "spawn_corner_a", "command": "npc_spawn_legacy", "args": ["-738", "144", "2353"], "delay_ms_after": 500},
+    {"id": "spawn_corner_b", "command": "npc_spawn_legacy", "args": ["-735", "144", "2353"], "delay_ms_after": 500},
+    {"id": "spawn_corner_c", "command": "npc_spawn_legacy", "args": ["-738", "147", "2353"], "delay_ms_after": 500},
+    {"id": "spawn_corner_d", "command": "npc_spawn_legacy", "args": ["-735", "147", "2353"], "delay_ms_after": 500},
+    {"id": "soak", "wait_seconds": 30}
+  ],
+  "assertions": [
+    {"type": "event_absent", "event": "npc.pose.reset"},
+    {"type": "event_absent", "event": "npc.pose.penetration"},
+    {"type": "event_absent", "event": "npc.below-map.respawned"}
+  ],
+  "timeout_seconds": 180
+}

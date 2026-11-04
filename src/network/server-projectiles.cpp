@@ -78,7 +78,7 @@ void gatherHeadlessTrianglesForAABB(
 {
     const auto isHidden = [&world](int index) {
         return index >= 0 && (size_t)index < world.solidIds.size() &&
-            world.solidIds[(size_t)index] == UINT32_MAX;
+            world.solidIds[(size_t)index] == kRemovedCollisionSolidId;
     };
     if (world.collisionChunks.empty() || world.collisionChunkSize <= 0.001f)
     {

@@ -58,6 +58,7 @@
     "collision_skin": 0.05,
     "bounce_mode": "inherit_actor",
     "player_bounce": 0.99,
+    // "player_bounce": 50.0,
     // "player_bounce": 0.3,
     // "player_bounce": 0.01,
     "source": "boxes",

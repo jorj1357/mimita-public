@@ -12,6 +12,7 @@ inline constexpr int kMaxChunksPerTriangle = 256;
 
 void buildCollisionMeshFromRenderMesh(World& world);
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics = nullptr);
+void rebuildCollisionSolidBounds(CollisionMeshCache& mesh);
 // Refresh collision after a pure translation of one or more GLB object ranges.
 // Falls back to a full chunk rebuild when triangle count/order changes or the
 // affected area contains a large triangle.

@@ -708,7 +708,7 @@ Exact input semantics remain configurable.
 
 19. Crouch
 
-Counter-Strike requires the shared crouch action. Melee mode has established
+Counter-Strike requires the shared crouch action. SSBM has established
 Left Ctrl as the first crouch/down input; the remaining work is to make that
 same input, actor state, and crouch animation available in every gamemode.
 When grounded, holding Left Ctrl enters crouch and plays the crouch animation;

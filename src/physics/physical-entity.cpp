@@ -409,7 +409,8 @@ bool PhysicalEntitySystem::remove(uint32_t id)
     return false;
 }
 
-void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
+void PhysicalEntitySystem::advanceKinematics(float dt, const World& world,
+                                             bool authoritativeOnly)
 {
     if (dt <= 0.0f)
         return;
@@ -428,7 +429,7 @@ void PhysicalEntitySystem::advanceKinematics(float dt, const World& world)
                 callback((float)kFixedDt, world);
         for (PhysicalEntity& e : mEntities)
         {
-            if (e.serverDriven ||
+            if (e.serverDriven || (authoritativeOnly && !e.serverSimulated) ||
                 ((e.motion != PhysicalEntityMotion::Kinematic &&
                   e.motion != PhysicalEntityMotion::Dynamic) || e.sleeping))
                 continue;

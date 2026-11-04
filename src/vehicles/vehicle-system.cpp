@@ -20,6 +20,7 @@
 #include "impact/destructible-world-config.h"
 #include "input/input-commands.h"
 #include "interaction/interaction-system.h"
+#include "network/multiplayer-context.h"
 #include "camera.h"
 #include "perf/perf-spike.h"
 #include "physics/movement/physics-collision.h"
@@ -34,6 +35,38 @@
 namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
+
+void logVehicleWheelSpec(const VehicleState& state, const VehicleSpec& spec)
+{
+    nlohmann::json wheels = nlohmann::json::array();
+    for (size_t i = 0; i < spec.wheels.size(); ++i)
+    {
+        const VehicleWheelSpec& wheel = spec.wheels[i];
+        wheels.push_back({
+            {"index", i},
+            {"hub", {wheel.hub.x, wheel.hub.y, wheel.hub.z}},
+            {"radius", wheel.radius},
+            {"width", wheel.width},
+            {"restLength", wheel.restLength},
+            {"travel", wheel.travel},
+            {"springRate", wheel.springRate},
+            {"damperRate", wheel.damperRate},
+            {"steer", wheel.steer},
+            {"drive", wheel.drive},
+            {"brake", wheel.brake},
+        });
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.wheel.spec", std::to_string(state.id),
+        "wheel geometry loaded from the vehicle template", 0,
+        {{"vehicle_id", state.id},
+         {"template", state.templateId},
+         {"edit_file", "config/vehicles/" + state.templateId + ".json"},
+         {"wheelSegments", spec.wheelSegments},
+         {"wheels", wheels}},
+        __FILE__, __LINE__, __func__);
+}
 
 void vehicleFixedTick(float dt, const World& world)
 {
@@ -82,10 +115,12 @@ bool raycastWorldCached(const World& world, const glm::vec3& origin,
 bool raycastCandidates(const World& world, const glm::vec3& origin,
                        const glm::vec3& direction, float maxDistance,
                        const std::vector<int>& candidates,
-                       float& hitDistance, glm::vec3& hitNormal)
+                       float& hitDistance, glm::vec3& hitNormal,
+                       int* hitTriangleId = nullptr)
 {
     float nearest = maxDistance;
     bool found = false;
+    int nearestId = -1;
     for (int index : candidates)
     {
         if (index < 0 ||
@@ -100,11 +135,16 @@ bool raycastCandidates(const World& world, const glm::vec3& origin,
         {
             nearest = distance;
             hitNormal = triangle.normal;
+            nearestId = index;
             found = true;
         }
     }
     if (found)
+    {
         hitDistance = nearest;
+        if (hitTriangleId)
+            *hitTriangleId = nearestId;
+    }
     return found;
 }
 
@@ -245,6 +285,24 @@ uint32_t VehicleSystem::spawn(const std::string& templateId,
                               const glm::mat4& transform,
                               uint32_t driverActorId)
 {
+    return spawnInternal(templateId, transform, driverActorId, 0, false);
+}
+
+uint32_t VehicleSystem::spawnAuthoritative(const std::string& templateId,
+                                           const glm::mat4& transform,
+                                           uint32_t chassisNetworkId,
+                                           uint32_t driverActorId)
+{
+    return spawnInternal(templateId, transform, driverActorId,
+                         chassisNetworkId, true);
+}
+
+uint32_t VehicleSystem::spawnInternal(const std::string& templateId,
+                                      const glm::mat4& transform,
+                                      uint32_t driverActorId,
+                                      uint32_t chassisNetworkId,
+                                      bool authoritative)
+{
     const VehicleSpec* spec =
         VehicleConfigRegistry::instance().find(templateId);
     if (!spec)
@@ -278,6 +336,9 @@ uint32_t VehicleSystem::spawn(const std::string& templateId,
     entity->sleepAngularThreshold = 0.15f;
     entity->sleepRequiredTicks = 80;
     entity->persistenceId = "vehicle-" + std::to_string(entityId);
+    entity->networkId = chassisNetworkId;
+    entity->replicate = chassisNetworkId != 0;
+    entity->serverSimulated = authoritative;
     entity->modelPath = "generated:vehicle-box";
     entity->texturePath = spec->bodyTexture.empty()
                               ? "assets/textureshq/240sx.png"
@@ -291,13 +352,138 @@ uint32_t VehicleSystem::spawn(const std::string& templateId,
     state.id = mNextId++;
     state.templateId = templateId;
     state.entityId = entityId;
+    state.chassisNetworkId = chassisNetworkId;
+    state.serverAuthoritative = authoritative;
+    state.serverMirror = false;
+    state.presentationEnabled = !authoritative;
     state.driverActorId = driverActorId;
     state.mode = VehicleControlMode::Manual;
     state.gear = 1;
     state.spawnOrigin = glm::vec3(transform[3]);
     state.massKg = spec->massKg;
     state.wheels.resize(spec->wheels.size());
+    state.seatOccupants.assign(spec->seats.size(), 0);
+    if (driverActorId != 0 && !state.seatOccupants.empty())
+    {
+        state.seatOccupants[0] = static_cast<int>(driverActorId);
+        state.driverSeat = 0;
+    }
     mVehicles.push_back(std::move(state));
+
+    VehicleState& created = mVehicles.back();
+    if (!authoritative)
+    {
+        InteractionTarget target;
+        target.owner = "vehicle:" + std::to_string(created.id);
+        target.label = "enter driver seat";
+        target.promptOrigin = glm::vec3(transform[3]) +
+                              glm::vec3(0.0f, 0.0f, spec->halfExtents.z + 1.0f);
+        target.interactOrigin = glm::vec3(transform[3]);
+        target.radius = std::max(1.0f, spec->interactionRadius);
+        target.priority = 10;
+        const uint32_t vehicleId = created.id;
+        target.activate = [vehicleId](const InteractionContext& context) {
+            return VehicleSystem::instance().activateVehicleInteraction(
+                vehicleId, context.camera);
+        };
+        created.interactionTargetId = InteractionSystem::instance().add(target);
+    }
+
+    Debug::log(Debug::Category::Physics,
+               "[VEHICLE] spawned id=%u template=%s entity=%u network=%u "
+               "authoritative=%d\n",
+               mVehicles.back().id, templateId.c_str(), entityId,
+               chassisNetworkId, authoritative ? 1 : 0);
+    logVehicleWheelSpec(mVehicles.back(), *spec);
+
+    return mVehicles.back().id;
+}
+
+bool VehicleSystem::spawnMirror(uint32_t vehicleId,
+                                const std::string& templateId,
+                                uint32_t chassisNetworkId,
+                                const glm::mat4& transform,
+                                const std::vector<int>& occupants)
+{
+    if (vehicleId == 0 || chassisNetworkId == 0)
+        return false;
+    const VehicleSpec* spec =
+        VehicleConfigRegistry::instance().find(templateId);
+    if (!spec)
+    {
+        Debug::warn(Debug::Category::Physics,
+                    "[VEHICLE NET] mirror rejected: unknown template %s\n",
+                    templateId.c_str());
+        return false;
+    }
+    if (VehicleState* existing = find(vehicleId))
+    {
+        existing->templateId = templateId;
+        existing->chassisNetworkId = chassisNetworkId;
+        existing->seatOccupants = occupants;
+        if (PhysicalEntity* entity =
+                PhysicalEntitySystem::instance().find(existing->entityId))
+        {
+            entity->transform = transform;
+            entity->previousTransform = transform;
+            entity->orientation =
+                glm::normalize(glm::quat_cast(glm::mat3(transform)));
+        }
+        return true;
+    }
+
+    PhysicalEntitySystem& entities = PhysicalEntitySystem::instance();
+    PhysicalEntity* entity = entities.findByNetworkId(chassisNetworkId);
+    uint32_t entityId = 0;
+    if (entity)
+    {
+        entityId = entity->id;
+        entity->transform = transform;
+        entity->previousTransform = transform;
+        entity->orientation =
+            glm::normalize(glm::quat_cast(glm::mat3(transform)));
+    }
+    else
+    {
+        std::vector<CollisionTriangle> triangles;
+        buildBoxCollisionTriangles(triangles, glm::vec3(0.0f),
+                                   spec->halfExtents);
+        entityId = entities.addReplicated(chassisNetworkId, triangles,
+                                          transform,
+                                          PhysicalEntityMotion::Dynamic, 0);
+        if (entityId == 0)
+            return false;
+        entity = entities.find(entityId);
+        if (!entity)
+            return false;
+        entity->halfExtents = spec->halfExtents;
+        entity->shape = PhysicalEntityShape::Box;
+        entity->density = spec->density;
+        entity->texturePath = spec->bodyTexture;
+        entity->modelPath = "generated:vehicle-box";
+    }
+
+    VehicleState state;
+    state.id = vehicleId;
+    state.templateId = templateId;
+    state.entityId = entityId;
+    state.chassisNetworkId = chassisNetworkId;
+    state.serverAuthoritative = true;
+    state.serverMirror = true;
+    state.presentationEnabled = true;
+    state.mode = VehicleControlMode::Manual;
+    state.gear = 1;
+    state.spawnOrigin = glm::vec3(transform[3]);
+    state.origin = state.spawnOrigin;
+    state.orientation =
+        glm::normalize(glm::quat_cast(glm::mat3(transform)));
+    state.massKg = spec->massKg;
+    state.wheels.resize(spec->wheels.size());
+    state.seatOccupants = occupants;
+    state.seatOccupants.resize(spec->seats.size(), 0);
+    mVehicles.push_back(std::move(state));
+    if (mNextId <= vehicleId)
+        mNextId = vehicleId + 1;
 
     VehicleState& created = mVehicles.back();
     InteractionTarget target;
@@ -308,18 +494,31 @@ uint32_t VehicleSystem::spawn(const std::string& templateId,
     target.interactOrigin = glm::vec3(transform[3]);
     target.radius = std::max(1.0f, spec->interactionRadius);
     target.priority = 10;
-    const uint32_t vehicleId = created.id;
-    target.activate = [vehicleId](const InteractionContext& context) {
+    const uint32_t mirrorVehicleId = created.id;
+    target.activate = [mirrorVehicleId](const InteractionContext& context) {
         return VehicleSystem::instance().activateVehicleInteraction(
-            vehicleId, context.camera);
+            mirrorVehicleId, context.camera);
     };
     created.interactionTargetId = InteractionSystem::instance().add(target);
 
     Debug::log(Debug::Category::Physics,
-               "[VEHICLE] spawned id=%u template=%s entity=%u\n",
-               mVehicles.back().id, templateId.c_str(), entityId);
+               "[VEHICLE NET] mirror spawned id=%u template=%s network=%u "
+               "entity=%u\n",
+               vehicleId, templateId.c_str(), chassisNetworkId, entityId);
+    logVehicleWheelSpec(created, *spec);
+    return true;
+}
 
-    return mVehicles.back().id;
+bool VehicleSystem::despawnByChassisNetworkId(uint32_t chassisNetworkId)
+{
+    uint32_t vehicleId = 0;
+    for (const VehicleState& state : mVehicles)
+        if (state.chassisNetworkId == chassisNetworkId)
+        {
+            vehicleId = state.id;
+            break;
+        }
+    return vehicleId != 0 ? despawn(vehicleId) : false;
 }
 
 bool VehicleSystem::despawn(uint32_t vehicleId)
@@ -372,6 +571,16 @@ const VehicleState* VehicleSystem::find(uint32_t vehicleId) const
     return nullptr;
 }
 
+VehicleState* VehicleSystem::findByChassisNetworkId(uint32_t chassisNetworkId)
+{
+    if (chassisNetworkId == 0)
+        return nullptr;
+    for (VehicleState& state : mVehicles)
+        if (state.chassisNetworkId == chassisNetworkId)
+            return &state;
+    return nullptr;
+}
+
 void VehicleSystem::setInput(uint32_t vehicleId, const VehicleInput& input)
 {
     if (VehicleState* state = find(vehicleId))
@@ -381,15 +590,18 @@ void VehicleSystem::setInput(uint32_t vehicleId, const VehicleInput& input)
     }
 }
 
-bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat)
+bool VehicleSystem::enterLocalDriver(uint32_t vehicleId, int seat,
+                                     uint32_t actorId)
 {
     VehicleState* state = find(vehicleId);
     if (!state)
         return false;
     state->localDriver = true;
     state->driverSeat = seat;
-    state->driverActorId = 1;
+    state->driverActorId = static_cast<int>(actorId);
     state->inputOverride = false;
+    if (seat >= 0 && seat < static_cast<int>(state->seatOccupants.size()))
+        state->seatOccupants[seat] = static_cast<int>(actorId);
     mLocalVehicleId = vehicleId;
     InteractionSystem::instance().setStickyTarget(
         state->interactionTargetId);
@@ -428,6 +640,187 @@ void VehicleSystem::exitLocalDriver()
             {{"vehicleId", vehicleId}}, __FILE__, __LINE__, __func__);
 }
 
+bool VehicleSystem::seatOccupied(uint32_t vehicleId, int seat,
+                                 uint32_t* actorId) const
+{
+    const VehicleState* state = find(vehicleId);
+    if (!state || seat < 0 ||
+        seat >= static_cast<int>(state->seatOccupants.size()))
+        return false;
+    const int occupant = state->seatOccupants[seat];
+    if (actorId) *actorId = occupant > 0 ? static_cast<uint32_t>(occupant) : 0;
+    return occupant > 0;
+}
+
+bool VehicleSystem::seatWorld(uint32_t vehicleId, int seat,
+                              glm::vec3& outPosition,
+                              glm::vec3& outForward) const
+{
+    const VehicleState* state = find(vehicleId);
+    if (!state)
+        return false;
+    const VehicleSpec* spec =
+        VehicleConfigRegistry::instance().find(state->templateId);
+    const PhysicalEntity* entity =
+        PhysicalEntitySystem::instance().find(state->entityId);
+    if (!spec || !entity || spec->seats.empty())
+        return false;
+    if (seat < 0 || seat >= static_cast<int>(spec->seats.size()))
+        seat = 0;
+    const VehicleSeatSpec& seatSpec = spec->seats[seat];
+    const glm::vec3 riderAnchor =
+        seatSpec.anchor + seatSpec.riderOffset;
+    outPosition = glm::vec3(
+        entity->transform * glm::vec4(riderAnchor, 1.0f));
+    outForward = glm::normalize(entity->orientation *
+                                glm::vec3(1.0f, 0.0f, 0.0f));
+    return true;
+}
+
+bool VehicleSystem::enterSeat(uint32_t vehicleId, int seat, uint32_t actorId)
+{
+    VehicleState* state = find(vehicleId);
+    if (!state || actorId == 0)
+        return false;
+    const VehicleSpec* spec =
+        VehicleConfigRegistry::instance().find(state->templateId);
+    if (!spec || seat < 0 || seat >= static_cast<int>(spec->seats.size()))
+        return false;
+    if (state->seatOccupants.size() < spec->seats.size())
+        state->seatOccupants.resize(spec->seats.size(), 0);
+    if (seat >= 0 && state->seatOccupants[seat] != 0 &&
+        state->seatOccupants[seat] != static_cast<int>(actorId))
+        return false;
+
+    // One vehicle per actor. A driver cannot occupy two cars.
+    exitSeatByActor(actorId);
+
+    state->seatOccupants[seat] = static_cast<int>(actorId);
+    if (seat == 0)
+    {
+        state->driverActorId = static_cast<int>(actorId);
+        state->driverSeat = 0;
+    }
+    if (state->serverAuthoritative)
+    {
+        if (PhysicalEntity* entity =
+                PhysicalEntitySystem::instance().find(state->entityId))
+        {
+            entity->sleeping = false;
+            entity->sleepTicks = 0;
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.seat.entered", std::to_string(vehicleId),
+        "actor entered vehicle seat", 0,
+        {{"vehicleId", vehicleId},
+         {"seat", seat},
+         {"actorId", actorId},
+         {"driver", seat == 0}},
+        __FILE__, __LINE__, __func__);
+    return true;
+}
+
+bool VehicleSystem::exitSeat(uint32_t vehicleId, int seat, uint32_t actorId)
+{
+    VehicleState* state = find(vehicleId);
+    if (!state || seat < 0 ||
+        seat >= static_cast<int>(state->seatOccupants.size()))
+        return false;
+    if (state->seatOccupants[seat] != static_cast<int>(actorId))
+        return false;
+    state->seatOccupants[seat] = 0;
+    if (seat == 0)
+    {
+        state->driverActorId = 0;
+        state->driverSeat = -1;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.seat.exited", std::to_string(vehicleId),
+        "actor left vehicle seat", 0,
+        {{"vehicleId", vehicleId}, {"seat", seat}, {"actorId", actorId}},
+        __FILE__, __LINE__, __func__);
+    return true;
+}
+
+uint32_t VehicleSystem::exitSeatByActor(uint32_t actorId)
+{
+    if (actorId == 0)
+        return 0;
+    for (VehicleState& state : mVehicles)
+    {
+        for (size_t seat = 0; seat < state.seatOccupants.size(); ++seat)
+        {
+            if (state.seatOccupants[seat] != static_cast<int>(actorId))
+                continue;
+            state.seatOccupants[seat] = 0;
+            if (seat == 0)
+            {
+                state.driverActorId = 0;
+                state.driverSeat = -1;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.seat.exited", std::to_string(state.id),
+                "actor left vehicle seat", 0,
+                {{"vehicleId", state.id},
+                 {"seat", static_cast<int>(seat)},
+                 {"actorId", actorId}},
+                __FILE__, __LINE__, __func__);
+            return state.id;
+        }
+    }
+    return 0;
+}
+
+bool VehicleSystem::isDriver(uint32_t vehicleId, uint32_t actorId) const
+{
+    const VehicleState* state = find(vehicleId);
+    return state && state->driverActorId != 0 &&
+           static_cast<uint32_t>(state->driverActorId) == actorId &&
+           state->driverSeat == 0;
+}
+
+VehicleInput VehicleSystem::sampleLocalInput()
+{
+    VehicleState* state = find(mLocalVehicleId);
+    if (!state || !state->localDriver)
+        return VehicleInput{};
+    if (state->inputOverride)
+    {
+        VehicleInput input = state->pendingInput;
+        state->pendingInput.engineToggle = false;
+        state->pendingInput.modeToggle = false;
+        state->pendingInput.shiftUp = false;
+        state->pendingInput.shiftDown = false;
+        return input;
+    }
+    if (state->serverMirror)
+        return VehicleInput{};
+    return readLocalInput(*state);
+}
+
+void VehicleSystem::requestSeat(uint32_t vehicleId, int seat, bool exit)
+{
+    ++mSeatRequestSerial;
+    if (mSeatRequestSerial == 0)
+        mSeatRequestSerial = 1;
+    mSeatRequestPending = true;
+    mSeatRequestVehicleId = vehicleId;
+    mSeatRequestSeat = seat;
+    mSeatRequestExit = exit;
+}
+
+void VehicleSystem::clearSeatRequest()
+{
+    mSeatRequestPending = false;
+    mSeatRequestVehicleId = 0;
+    mSeatRequestSeat = -1;
+    mSeatRequestExit = false;
+}
+
 uint32_t VehicleSystem::localVehicleEntityId() const
 {
     const VehicleState* state = find(mLocalVehicleId);
@@ -437,9 +830,51 @@ uint32_t VehicleSystem::localVehicleEntityId() const
 bool VehicleSystem::activateVehicleInteraction(uint32_t vehicleId,
                                                const Camera* camera)
 {
+    (void)camera;
     VehicleState* state = find(vehicleId);
     if (!state)
         return false;
+
+    // F should put the local actor in the car. Prefer the driver seat; only
+    // fall through to another seat when the driver seat is occupied by another
+    // actor (remote passenger support remains data-driven).
+    const auto chooseSeat = [&]() {
+        const uint32_t localActor =
+            MP_CONTEXT.active ? MP_CONTEXT.localPlayerId : 1u;
+        uint32_t occupant = 0;
+        if (!seatOccupied(vehicleId, 0, &occupant) ||
+            occupant == localActor || occupant == 0)
+            return 0;
+        for (size_t i = 1; i < state->seatOccupants.size(); ++i)
+        {
+            uint32_t other = 0;
+            if (!seatOccupied(vehicleId, static_cast<int>(i), &other) ||
+                other == 0 || other == localActor)
+                return static_cast<int>(i);
+        }
+        return 0;
+    };
+
+    // Only server-mirrored vehicles go through the authoritative seat request.
+    // A vehicle created by the local `vehicle_spawn` test command has no server
+    // record, so requesting that id is always rejected; it must use the local
+    // seat path instead.
+    if (MP_CONTEXT.active && state->serverMirror)
+    {
+        if (state->localDriver)
+        {
+            requestSeat(vehicleId, state->driverSeat, true);
+            return true;
+        }
+        const VehicleSpec* spec =
+            VehicleConfigRegistry::instance().find(state->templateId);
+        const PhysicalEntity* entity =
+            PhysicalEntitySystem::instance().find(state->entityId);
+        if (!spec || !entity)
+            return false;
+        requestSeat(vehicleId, chooseSeat(), false);
+        return true;
+    }
 
     if (state->localDriver)
     {
@@ -462,13 +897,10 @@ bool VehicleSystem::activateVehicleInteraction(uint32_t vehicleId,
         VehicleConfigRegistry::instance().find(state->templateId);
     const PhysicalEntity* entity =
         PhysicalEntitySystem::instance().find(state->entityId);
-    if (!spec || !entity || !camera)
+    if (!spec || !entity)
         return false;
 
-    int seat = bestSeatForCamera(*spec, *entity, *camera);
-    if (seat < 0)
-        seat = 0;
-    return enterLocalDriver(vehicleId, seat);
+    return enterLocalDriver(vehicleId, chooseSeat());
 }
 
 void VehicleSystem::checkVoidDeath(Player& player, float killZ)
@@ -520,23 +952,10 @@ bool VehicleSystem::localSeatWorld(glm::vec3& outPosition,
     const VehicleState* state = find(mLocalVehicleId);
     if (!state)
         return false;
-    const VehicleSpec* spec =
-        VehicleConfigRegistry::instance().find(state->templateId);
-    const PhysicalEntity* entity =
-        PhysicalEntitySystem::instance().find(state->entityId);
-    if (!spec || !entity)
-        return false;
-    int seatIndex = state->driverSeat;
-    if (seatIndex < 0 || seatIndex >= static_cast<int>(spec->seats.size()))
-        seatIndex = 0;
-    if (spec->seats.empty())
-        return false;
-
-    outPosition = glm::vec3(
-        entity->transform * glm::vec4(spec->seats[seatIndex].anchor, 1.0f));
-    outForward = glm::normalize(entity->orientation *
-                                glm::vec3(1.0f, 0.0f, 0.0f));
-    return true;
+    // One seat-anchor owner: local, server, camera, and exit all use the same
+    // anchor plus rider offset.
+    return seatWorld(mLocalVehicleId, state->driverSeat, outPosition,
+                     outForward);
 }
 
 glm::vec3 VehicleSystem::localVehiclePosition() const
@@ -749,9 +1168,12 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
         wheelSpec.restLength + wheelSpec.travel + wheelSpec.radius + 0.5f;
     float hitDistance = 0.0f;
     glm::vec3 normal(0.0f, 0.0f, 1.0f);
+    int hitTriangleId = -1;
     const bool hit = raycastCandidates(world, hub, axis, maxDistance,
-                                       candidates, hitDistance, normal);
+                                       candidates, hitDistance, normal,
+                                       &hitTriangleId);
     wheel.rayHit = hit;
+    wheel.contactTriangleId = hitTriangleId;
     wheel.rayDistance = hit ? hitDistance : 0.0f;
     wheel.rayMaxDistance = maxDistance;
     wheel.suspensionLength = hit ? hitDistance - wheelSpec.radius : 0.0f;
@@ -777,7 +1199,8 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
             std::clamp(rawCompression, 0.0f, wheelSpec.travel);
         const float compressionVelocity =
             std::clamp((wheel.compression - wheel.previousCompression) / dt,
-                       -15.0f, 15.0f);
+                       -5.0f, 5.0f);
+        wheel.compressionVelocity = compressionVelocity;
         float springForce = wheelSpec.springRate * state.springScale *
                                 wheel.compression +
                             wheelSpec.damperRate * state.damperScale *
@@ -786,13 +1209,16 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
         {
             const float bump = std::min(rawCompression - wheelSpec.travel,
                                         wheelSpec.travel);
-            springForce += wheelSpec.springRate * state.springScale * 4.0f *
+            springForce += wheelSpec.springRate * state.springScale * 2.0f *
                            bump;
         }
-        springForce = std::clamp(springForce, 0.0f,
-                                 spec.massKg * 40.0f);
+        // Rebound damping must be allowed to pull the chassis down. Clamping
+        // the spring force at zero removed rebound entirely and produced a
+        // 60 Hz pogo/roll oscillation; the tire still only sees positive load.
+        springForce = std::clamp(springForce, -spec.tire.nominalLoad,
+                                 spec.massKg * 100.0f);
         wheel.grounded = true;
-        wheel.load = springForce;
+        wheel.load = std::max(springForce, 0.0f);
         wheel.contactPoint = hub + axis * hitDistance;
         wheel.contactNormal = normal;
 
@@ -883,6 +1309,7 @@ void VehicleSystem::updateWheel(VehicleState& state, const VehicleSpec& spec,
     else
     {
         wheel.compression = 0.0f;
+        wheel.compressionVelocity = 0.0f;
     }
 
     // Drivetrain and brakes act on the wheel spin even in the air.
@@ -972,7 +1399,7 @@ void VehicleSystem::update(float dt, const World& world)
         if (state.wheels.size() != spec->wheels.size())
             state.wheels.resize(spec->wheels.size());
 
-        if (state.interactionTargetId != 0)
+        if (state.presentationEnabled && state.interactionTargetId != 0)
         {
             const glm::vec3 origin(entity->transform[3]);
             const glm::vec3 promptOrigin =
@@ -994,6 +1421,35 @@ void VehicleSystem::update(float dt, const World& world)
             InteractionSystem::instance().updateTarget(
                 state.interactionTargetId, promptOrigin, origin, label,
                 spec->interactionRadius, true);
+        }
+
+        if (state.serverMirror)
+        {
+            // Chassis motion and wheel presentation come from the server.
+            // Never apply suspension/tire/engine forces to a mirror.
+            state.origin = glm::vec3(entity->transform[3]);
+            state.orientation = entity->orientation;
+            state.originVelocity = entity->velocity;
+            state.originAngularVelocity = entity->angularVelocity;
+            state.distanceFromSpawn =
+                glm::length(state.origin - state.spawnOrigin);
+            state.massKg = entity->mass;
+            // Smooth visual wheel spin between 30 Hz state packets. The
+            // authoritative spin velocity and the next packet correct drift.
+            for (VehicleWheelState& wheel : state.wheels)
+            {
+                wheel.spinAngle += wheel.spinVelocity * dt;
+                if (wheel.spinAngle > 2.0f * kPi)
+                    wheel.spinAngle -= 2.0f * kPi;
+                else if (wheel.spinAngle < -2.0f * kPi)
+                    wheel.spinAngle += 2.0f * kPi;
+            }
+            if (state.presentationEnabled)
+            {
+                updateVehicleEngineAudio(state, *spec, state.origin,
+                                         simulationTick);
+            }
+            continue;
         }
 
         VehicleInput input = (state.localDriver && !state.inputOverride)
@@ -1081,13 +1537,108 @@ void VehicleSystem::update(float dt, const World& world)
                 }
             }
             if (!first)
+            {
                 appendChunkTrianglesForAABB(world, wheelBox, 0.0f,
                                             sWheelCandidates,
                                             "vehicleWheel", true);
+                // Large floor/ground triangles live in the world tree rather
+                // than a chunk. Wheel rays must see both owners or a vehicle
+                // can rest on its chassis while all four wheels report air.
+                world.collisionTree.query(wheelBox, sWheelCandidates);
+            }
         }
 
         for (int i = 0; i < static_cast<int>(spec->wheels.size()); ++i)
             updateWheel(state, *spec, i, dt, world, sWheelCandidates);
+
+        // Anti-roll bars: couple the left/right wheels of each axle. Without
+        // this, a small roll excites one side to the bump stop while the other
+        // side unloads, producing a sustained 60 Hz rock even on flat ground.
+        {
+            const glm::vec3 up = state.orientation * glm::vec3(0.0f, 0.0f, 1.0f);
+            for (size_t i = 0; i < spec->wheels.size(); ++i)
+            {
+                if (i >= state.wheels.size())
+                    break;
+                const VehicleWheelSpec& a = spec->wheels[i];
+                if (a.antiRoll <= 0.0f)
+                    continue;
+                for (size_t j = i + 1; j < spec->wheels.size(); ++j)
+                {
+                    if (j >= state.wheels.size())
+                        break;
+                    const VehicleWheelSpec& b = spec->wheels[j];
+                    if (std::fabs(a.hub.x - b.hub.x) > 0.05f)
+                        continue;
+                    if (a.hub.y * b.hub.y >= 0.0f)
+                        continue;
+                    const float delta =
+                        state.wheels[i].compression -
+                        state.wheels[j].compression;
+                    const float velocityDelta =
+                        state.wheels[i].compressionVelocity -
+                        state.wheels[j].compressionVelocity;
+                    const float rate = std::min(a.antiRoll, b.antiRoll);
+                    const float force = std::clamp(
+                        rate * delta + rate * 0.20f * velocityDelta,
+                        -spec->massKg * 10.0f, spec->massKg * 10.0f);
+                    if (std::fabs(force) <= 0.01f)
+                        continue;
+                    const glm::vec3 hubA = glm::vec3(
+                        entity->transform * glm::vec4(a.hub, 1.0f));
+                    const glm::vec3 hubB = glm::vec3(
+                        entity->transform * glm::vec4(b.hub, 1.0f));
+                    applyPhysicalEntityImpulse(*entity, (up * force) * dt,
+                                               hubA);
+                    applyPhysicalEntityImpulse(*entity, (-up * force) * dt,
+                                               hubB);
+                }
+            }
+        }
+
+        // Stability damping: an all-wheel-grounded chassis should not keep
+        // oscillating vertically or rolling after a landing. Damp only the
+        // unsupported motion so throttle, steer, and jumps remain untouched.
+        {
+            int grounded = 0;
+            for (const VehicleWheelState& wheel : state.wheels)
+                if (wheel.grounded)
+                    ++grounded;
+            if (grounded > 0)
+            {
+                const bool allGrounded =
+                    grounded == static_cast<int>(state.wheels.size());
+                const float verticalDamping = allGrounded ? 8.0f : 1.0f;
+                entity->velocity.z *= std::max(
+                    0.0f, 1.0f - verticalDamping * dt);
+                if (allGrounded)
+                {
+                    const float angularDamping = 8.0f;
+                    entity->angularVelocity *= std::max(
+                        0.0f, 1.0f - angularDamping * dt);
+
+                    // Idle settle: no throttle/brake/steer means the car is
+                    // parked. Kill residual suspension pogo and roll instead
+                    // of letting the explicit 60 Hz contact loop sustain it.
+                    const bool idleInput =
+                        state.throttle < 0.01f && state.brake < 0.01f &&
+                        std::fabs(state.steer) < 0.01f &&
+                        state.handbrake < 0.01f;
+                    if (idleInput &&
+                        glm::length(glm::vec2(entity->velocity.x,
+                                              entity->velocity.y)) < 2.0f)
+                    {
+                        entity->velocity.x *= 0.80f;
+                        entity->velocity.y *= 0.80f;
+                        entity->velocity.z *= 0.10f;
+                        entity->angularVelocity.x *= 0.10f;
+                        entity->angularVelocity.y *= 0.10f;
+                        entity->angularVelocity.z *= 0.90f;
+                    }
+                }
+            }
+        }
+
         updateChassisAero(state, *spec, dt);
 
         // Origin and per-part telemetry. The same data will be replicated by
@@ -1135,6 +1686,83 @@ void VehicleSystem::update(float dt, const World& world)
                 *entity, wheel.worldCenter);
         }
 
+        const uint64_t bounceTick =
+            PhysicalEntitySystem::instance().simulationTick();
+        if (state.serverAuthoritative && bounceTick % 6u == 0u)
+        {
+            const glm::vec3 up = state.orientation * glm::vec3(0.0f, 0.0f, 1.0f);
+            nlohmann::json wheelTrace = nlohmann::json::array();
+            int groundedCount = 0;
+            float minSuspension = 0.0f;
+            float maxCompression = 0.0f;
+            for (size_t i = 0; i < state.wheels.size(); ++i)
+            {
+                const VehicleWheelState& wheel = state.wheels[i];
+                if (wheel.grounded)
+                    ++groundedCount;
+                minSuspension = std::min(minSuspension,
+                                         wheel.suspensionLength);
+                maxCompression = std::max(maxCompression,
+                                          wheel.compression);
+                glm::vec3 hub(0.0f);
+                if (i < spec->wheels.size())
+                    hub = glm::vec3(entity->transform *
+                                    glm::vec4(spec->wheels[i].hub, 1.0f));
+                wheelTrace.push_back({
+                    {"index", i},
+                    {"grounded", wheel.grounded},
+                    {"hub", {hub.x, hub.y, hub.z}},
+                    {"contactPoint", {wheel.contactPoint.x,
+                                      wheel.contactPoint.y,
+                                      wheel.contactPoint.z}},
+                    {"contactNormal", {wheel.contactNormal.x,
+                                       wheel.contactNormal.y,
+                                       wheel.contactNormal.z}},
+                    {"normalUpDot", glm::dot(wheel.contactNormal, up)},
+                    {"triangleId", wheel.contactTriangleId},
+                    {"rayDistance", wheel.rayDistance},
+                    {"compression", wheel.compression},
+                    {"suspensionLength", wheel.suspensionLength},
+                    {"load", wheel.load},
+                    {"slipRatio", wheel.slipRatio},
+                    {"spinVelocity", wheel.spinVelocity},
+                });
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "vehicle.bounce", std::to_string(state.id),
+                "numerical chassis/wheel bounce sample", bounceTick,
+                {{"vehicle_id", state.id},
+                 {"origin", {state.origin.x, state.origin.y, state.origin.z}},
+                 {"velocity", {state.originVelocity.x,
+                               state.originVelocity.y,
+                               state.originVelocity.z}},
+                 {"angularVelocity", {state.originAngularVelocity.x,
+                                      state.originAngularVelocity.y,
+                                      state.originAngularVelocity.z}},
+                 {"orientation", {state.orientation.w, state.orientation.x,
+                                  state.orientation.y, state.orientation.z}},
+                 {"up", {up.x, up.y, up.z}},
+                 {"speed", state.speed},
+                 {"throttle", state.throttle},
+                 {"clutch", state.clutch},
+                 {"gear", state.gear},
+                 {"engineOn", state.engineOn},
+                 {"sleeping", entity->sleeping},
+                 {"sleepTicks", entity->sleepTicks},
+                 {"serverSimulated", entity->serverSimulated},
+                 {"serverDriven", entity->serverDriven},
+                 {"motion", static_cast<int>(entity->motion)},
+                 {"entityMass", entity->mass},
+                 {"groundedCount", groundedCount},
+                 {"allWheelsGrounded", groundedCount ==
+                                           static_cast<int>(state.wheels.size())},
+                 {"minSuspension", minSuspension},
+                 {"maxCompression", maxCompression},
+                 {"wheels", wheelTrace}},
+                __FILE__, __LINE__, __func__);
+        }
+
         if (state.engineOn || state.throttle > 0.01f ||
             state.brake > 0.01f || state.steer != 0.0f ||
             std::fabs(state.speed) > 0.05f)
@@ -1145,8 +1773,11 @@ void VehicleSystem::update(float dt, const World& world)
         if (!entity->sleeping)
             ++awakeVehicles;
 
-        updateVehicleEngineAudio(state, *spec, state.origin,
-                                 simulationTick);
+        if (state.presentationEnabled)
+        {
+            updateVehicleEngineAudio(state, *spec, state.origin,
+                                     simulationTick);
+        }
 
         if (simulationTick - state.lastSummaryTick >= 60)
         {

@@ -16,7 +16,7 @@
     {"id": "after_npc_death", "command": "agent.snapshot", "args": ["after_npc_death"], "delay_ms_after": 3000}
   ],
   "assertions": [
-    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "ssbm"},
     {"type": "event_present", "event": "melee.stock_lost"},
     {"type": "event_present", "event": "melee.spawn_protection"}
   ],

@@ -12,6 +12,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 
 using json = nlohmann::json;
@@ -189,6 +190,107 @@ VehicleGearboxSpec parseGearbox(const json& root)
     return spec;
 }
 
+json vec3Json(const glm::vec3& value)
+{
+    return json::array({value.x, value.y, value.z});
+}
+
+json vehicleSpecJson(const VehicleSpec& spec)
+{
+    json root = json::object();
+    root["id"] = spec.id;
+    root["massKg"] = spec.massKg;
+    root["density"] = spec.density;
+    root["centerOfMass"] = vec3Json(spec.centerOfMass);
+    root["length"] = spec.halfExtents.x * 2.0f;
+    root["width"] = spec.halfExtents.y * 2.0f;
+    root["height"] = spec.halfExtents.z * 2.0f;
+    root["drag"] = spec.drag;
+    root["downforce"] = spec.downforce;
+    root["interactionRadius"] = spec.interactionRadius;
+    root["bodyTexture"] = spec.bodyTexture;
+    root["wheelTexture"] = spec.wheelTexture;
+    root["engineSound"] = spec.engineSound;
+    root["wheelSegments"] = spec.wheelSegments;
+
+    root["wheels"] = json::array();
+    for (const VehicleWheelSpec& wheel : spec.wheels)
+    {
+        root["wheels"].push_back({
+            {"hub", vec3Json(wheel.hub)},
+            {"radius", wheel.radius},
+            {"width", wheel.width},
+            {"suspensionAxis", vec3Json(wheel.suspensionAxis)},
+            {"spinAxis", vec3Json(wheel.spinAxis)},
+            {"steerAxis", vec3Json(wheel.steerAxis)},
+            {"restLength", wheel.restLength},
+            {"travel", wheel.travel},
+            {"springRate", wheel.springRate},
+            {"damperRate", wheel.damperRate},
+            {"antiRoll", wheel.antiRoll},
+            {"unsprungMass", wheel.unsprungMass},
+            {"steer", wheel.steer},
+            {"drive", wheel.drive},
+            {"brake", wheel.brake},
+        });
+    }
+
+    root["tire"] = {
+        {"mu", spec.tire.mu},
+        {"loadSensitivity", spec.tire.loadSensitivity},
+        {"nominalLoad", spec.tire.nominalLoad},
+        {"peakSlipRatio", spec.tire.peakSlipRatio},
+        {"peakSlipAngle", spec.tire.peakSlipAngle},
+        {"frictionCircle", spec.tire.frictionCircle},
+        {"lowSpeed", spec.tire.lowSpeed},
+    };
+    root["engine"] = {
+        {"inertia", spec.engine.inertia},
+        {"idleRpm", spec.engine.idleRpm},
+        {"redlineRpm", spec.engine.redlineRpm},
+        {"frictionTorque", spec.engine.frictionTorque},
+        {"torqueCurve", json::array()},
+        {"turbo", {
+            {"maxBoost", spec.engine.turboMaxBoost},
+            {"spoolRate", spec.engine.turboSpoolRate},
+            {"lag", spec.engine.turboLag},
+        }},
+    };
+    for (const glm::vec2& point : spec.engine.torqueCurve)
+        root["engine"]["torqueCurve"].push_back(json::array({point.x, point.y}));
+
+    root["gearbox"] = {
+        {"ratios", spec.gearbox.ratios},
+        {"finalDrive", spec.gearbox.finalDrive},
+        {"shiftTime", spec.gearbox.shiftTime},
+        {"clutchCapacity", spec.gearbox.clutchCapacity},
+    };
+    root["differential"] = {
+        {"type", spec.differential.type},
+        {"frontRearSplit", spec.differential.frontRearSplit},
+    };
+    root["steering"] = {
+        {"maxAngleDeg", spec.steering.maxAngleDeg},
+        {"speedFalloff", spec.steering.speedFalloff},
+        {"returnRate", spec.steering.returnRate},
+    };
+    root["brakes"] = {
+        {"maxTorque", spec.brakes.maxTorque},
+        {"handbrakeTorque", spec.brakes.handbrakeTorque},
+    };
+    root["seats"] = json::array();
+    for (const VehicleSeatSpec& seat : spec.seats)
+    {
+        root["seats"].push_back({
+            {"name", seat.name},
+            {"anchor", vec3Json(seat.anchor)},
+            {"pose", seat.pose},
+            {"riderOffset", vec3Json(seat.riderOffset)},
+        });
+    }
+    return root;
+}
+
 } // namespace
 
 VehicleConfigRegistry& VehicleConfigRegistry::instance()
@@ -229,7 +331,7 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
     spec.drag = readFloat(root, "drag", spec.drag, 0.0f, 10.0f);
     spec.downforce = readFloat(root, "downforce", spec.downforce, 0.0f, 10.0f);
     spec.interactionRadius = readFloat(root, "interactionRadius",
-                                       spec.interactionRadius, 1.0f, 12.0f);
+                                       spec.interactionRadius, 1.0f, 50.0f);
     spec.bodyTexture = readString(root, "bodyTexture", spec.bodyTexture);
     spec.wheelTexture = readString(root, "wheelTexture", spec.wheelTexture);
     spec.engineSound = readString(root, "engineSound", spec.engineSound);
@@ -298,6 +400,8 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
             seatSpec.name = readString(seat, "name", "seat");
             seatSpec.anchor = readVec3(seat, "anchor", seatSpec.anchor);
             seatSpec.pose = readString(seat, "pose", seatSpec.pose);
+            seatSpec.riderOffset =
+                readVec3(seat, "riderOffset", seatSpec.riderOffset);
             spec.seats.push_back(seatSpec);
         }
     }
@@ -319,6 +423,7 @@ bool VehicleConfigRegistry::loadDirectory(const std::string& directory)
 {
     mDirectory = directory;
     std::unordered_map<std::string, VehicleSpec> specs;
+    std::unordered_map<std::string, std::string> specPaths;
     std::unordered_map<std::string, int64_t> times;
 
     std::error_code ec;
@@ -328,6 +433,7 @@ bool VehicleConfigRegistry::loadDirectory(const std::string& directory)
                     "[VEHICLE CONFIG] missing directory %s\n",
                     directory.c_str());
         mSpecs.clear();
+        mSpecPaths.clear();
         mFileTimes.clear();
         ++mRevision;
         return false;
@@ -349,10 +455,12 @@ bool VehicleConfigRegistry::loadDirectory(const std::string& directory)
             continue;
         }
         times[entry.path().string()] = modifiedTime(entry.path().string());
+        specPaths[spec.id] = entry.path().string();
         specs[spec.id] = std::move(spec);
     }
 
     mSpecs = std::move(specs);
+    mSpecPaths = std::move(specPaths);
     mFileTimes = std::move(times);
     ++mRevision;
     Debug::log(Debug::Category::Physics,
@@ -394,6 +502,71 @@ const VehicleSpec* VehicleConfigRegistry::find(const std::string& id) const
 {
     auto it = mSpecs.find(id);
     return it != mSpecs.end() ? &it->second : nullptr;
+}
+
+VehicleSpec* VehicleConfigRegistry::findMutable(const std::string& id)
+{
+    auto it = mSpecs.find(id);
+    return it != mSpecs.end() ? &it->second : nullptr;
+}
+
+bool VehicleConfigRegistry::saveTemplate(const std::string& id,
+                                         std::string* error)
+{
+    const VehicleSpec* spec = find(id);
+    const auto pathIt = mSpecPaths.find(id);
+    if (!spec || pathIt == mSpecPaths.end())
+    {
+        if (error) *error = "template not loaded";
+        return false;
+    }
+
+    json root = json::object();
+    std::ifstream existing(pathIt->second);
+    if (existing.is_open())
+    {
+        try
+        {
+            const json parsed = parseJsonConfig(existing);
+            if (parsed.is_object())
+                root = parsed;
+        }
+        catch (const std::exception&)
+        {
+            // Keep the current file content recoverable through the normal
+            // map/vehicle backup path; writing a valid template is better than
+            // leaving a half-edited file.
+        }
+    }
+
+    const json serialized = vehicleSpecJson(*spec);
+    for (auto it = serialized.begin(); it != serialized.end(); ++it)
+        root[it.key()] = it.value();
+
+    std::ofstream out(pathIt->second, std::ios::trunc);
+    if (!out.is_open())
+    {
+        if (error) *error = "could not open template file";
+        return false;
+    }
+    out << root.dump(2) << "\n";
+    if (!out.good())
+    {
+        if (error) *error = "could not write template file";
+        return false;
+    }
+
+    mFileTimes[pathIt->second] = modifiedTime(pathIt->second);
+    ++mRevision;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Physics, StructuredLevel::Important,
+        "vehicle.config.saved", id, "vehicle template saved from authoring",
+        0, nlohmann::json{{"template", id}, {"path", pathIt->second}},
+        __FILE__, __LINE__, __func__);
+    Debug::log(Debug::Category::Physics,
+               "[VEHICLE CONFIG] saved template %s path=%s\n",
+               id.c_str(), pathIt->second.c_str());
+    return true;
 }
 
 std::vector<std::string> VehicleConfigRegistry::ids() const

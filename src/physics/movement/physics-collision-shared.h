@@ -146,15 +146,6 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
     }
 
     const bool hasIdentity = (actorPart != nullptr && worldTriangle >= 0);
-    // Ordinary root/ground support contacts are not impacts. Bouncing them
-    // launches actors on every ground contact (the confirmed high-bounce path
-    // from the block/NPC fallback collision). Keep configured bounce for
-    // identified limb/body/weapon contacts, walls, ceilings, and rolling avatars.
-    if (!hasIdentity && !p.rollLowFriction &&
-        normal.z > MAX_WALKABLE_SLOPE_DOT) {
-        projectVelocityAgainstNormal(p, normal);
-        return;
-    }
     if (hasIdentity)
     {
         // Dedupe by contact identity, not by a global timer: a duplicate of the
@@ -182,6 +173,16 @@ inline void respondVelocityAgainstNormal(Player& p, const glm::vec3& normal,
 
     const float partInto = std::max(0.0f, -glm::dot(partVelocity, normal));
     const float impact = std::max(totalInto, partInto);
+
+    // A flat floor that is already carrying the actor is support, not a new
+    // impact. Keep it project-only so ordinary walking does not micro-bounce.
+    // Every other surface, including walkable slopes, takes the bounce path.
+    if (!hasIdentity && !p.rollLowFriction && normal.z > 0.995f &&
+        (p.ground.onGround || p.ground.stableOnGround))
+    {
+        projectVelocityAgainstNormal(p, normal);
+        return;
+    }
 
     if (impact < cfg.bounceMinSpeed())
     {

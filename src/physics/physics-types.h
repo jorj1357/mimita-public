@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <limits>
 
 // Absolute sanity limit for one world-space coordinate. The chunk broadphase
@@ -27,6 +28,11 @@
 // clip legitimate large maps (bhop1's spawn is near x = -21855).
 inline constexpr float kMaxWorldExtent = 1.0e7f;
 inline constexpr float kMaxWorldAABBSize = kMaxWorldExtent * 2.0f;
+
+// Collision solid identity sentinels. These are distinct: a removed/destructible
+// solid must not be collidable, while union output is real static collision.
+inline constexpr uint32_t kRemovedCollisionSolidId = 0xFFFFFFFFu;
+inline constexpr uint32_t kUnionCollisionSolidId = 0xFFFFFFFEu;
 
 struct Capsule
 {
@@ -159,6 +165,12 @@ struct CollisionMeshCache
     // that came from one authored solid so static hidden-face removal can avoid
     // comparing faces belonging to the same object. Zero means unknown.
     std::vector<uint32_t> solidIds;
+    // Cached bounds per nonzero/union solid identity. Rebuilt with the chunks.
+    std::unordered_map<uint32_t, AABB> solidBounds;
+    // True when the solid's triangles enclose the solid volume (outward
+    // normals). Enclosing room shells are inward-wound and must not classify
+    // their playable interior as solid.
+    std::unordered_map<uint32_t, bool> solidInteriorSolid;
     // Parallel visibility for map nodes replaced by a destructible entity.
     // Empty or size-mismatched means every triangle is visible.
     std::vector<uint8_t> hidden;
@@ -185,6 +197,8 @@ struct CollisionMeshCache
     {
         triangles.clear();
         solidIds.clear();
+        solidBounds.clear();
+        solidInteriorSolid.clear();
         hidden.clear();
         triangleAABBs.clear();
         triangleOBBs.clear();

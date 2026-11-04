@@ -112,6 +112,7 @@ public:
     glm::vec3 movementStuckEpisodeStartPos{0.0f};
     ActorFinalPoseState finalPose;
     uint64_t finalPoseLastPenetrationLogTick = 0;
+    uint64_t finalPoseLastPushoutLogTick = 0;
     bool finalPosePenetrating = false;
     // Set by spawn finalization; the first authoritative tick validates the
     // final animated body/weapon pose before AI movement or combat begins.

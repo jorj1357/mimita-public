@@ -221,7 +221,7 @@ bool serverAftermathActive()
 bool serverMeleeActorProtected(uint32_t actorId)
 {
     const ServerGamemodeState& d = serverGamemodeState();
-    if (d.matchMode != "melee" && !d.payloadMode)
+    if (d.matchMode != "ssbm" && !d.payloadMode)
         return false;
     auto it = d.meleeSpawnProtectionUntilTick.find(actorId);
     return it != d.meleeSpawnProtectionUntilTick.end() &&
@@ -237,7 +237,7 @@ void serverActorNoteSpawn(uint32_t actorId, uint32_t protectionTicks)
         d.actorLives.find(actorId) == d.actorLives.end()) {
         d.actorLives[actorId] = std::max(1, d.actorLivesDefault);
     }
-    if (d.matchMode != "melee" && !d.payloadMode)
+    if (d.matchMode != "ssbm" && !d.payloadMode)
         return;
     if (protectionTicks == 0)
         return;
@@ -344,6 +344,15 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
 {
     ActorSpawnProfile out;
     const ServerGamemodeState& d = serverGamemodeState();
+    auto applyExplicitWeaponSet = [&]() {
+        if (!d.enabled || !d.communityWeaponSetExplicit) return;
+        const CommunityWeaponSet* set =
+            CommunityServerConfig::instance().weaponSetById(d.communityWeaponSetId);
+        if (!set) return;
+        out.weaponSetId = set->id;
+        out.weapons = set->weapons;
+    };
+    applyExplicitWeaponSet();
     // Mode-wide avatar policy is the shared outer filter. Role/actor-preset
     // policy may refine it below; explicit role lists still win.
     {
@@ -363,7 +372,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // Every Melee actor also uses the mode-forced movement profile
     // (supersmashbrosmelee.md §12), so this is forced here — the single owner
     // that already special-cases the Melee avatar.
-    if (d.matchMode == "melee") {
+    if (d.matchMode == "ssbm") {
         out.avatarName = "captainfalcon";
         out.avatarForced = true;
     }
@@ -401,6 +410,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                     }
                     for (const auto& entry : def->weaponAmmo)
                         out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
+                    applyExplicitWeaponSet();
                     return out;
                 }
             }
@@ -491,7 +501,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // to every actor, regardless of any random/assigned avatar. The mode-forced
     // movement profile is re-applied after the role block so a non-Falcon role
     // cannot silently leave a Melee actor on default movement.
-    if (d.matchMode == "melee") {
+    if (d.matchMode == "ssbm") {
         out.avatarName = "captainfalcon";
         out.avatarForced = true;
     }
@@ -597,9 +607,11 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
                 out.weaponAmmo[entry.first] = {entry.second.magazine, entry.second.reserve};
         }
     }
-    // Team modes own the shared player/NPC loadout. A role or actor preset may
-    // not replace it with a different set; only an explicit host override does.
-    if (d.enabled && gm.id == "tdm" && (gm.weaponSetId > 0 || d.communityWeaponSetExplicit)) {
+    // An explicit host-selected set is shared by every actor in every managed
+    // mode. It overrides role/preset loadouts as well as the mode fallback.
+    // TDM retains its built-in mode-set behavior when no host override exists.
+    if (d.enabled && (d.communityWeaponSetExplicit ||
+                      (gm.id == "tdm" && gm.weaponSetId > 0))) {
         const int effectiveSet = d.communityWeaponSetExplicit
             ? d.communityWeaponSetId : gm.weaponSetId;
         if (const CommunityWeaponSet* set =
@@ -688,7 +700,7 @@ bool serverActivateActorPreset(const std::string& presetId)
     d.actorPresetOverrideId = preset->id;
     d.cameraFov = preset->forceFov ? preset->cameraFov : d.cameraFov;
     if (preset->forceFirstPerson) d.forceFirstPerson = true;
-    if (!preset->weaponSet.empty()) {
+    if (!d.communityWeaponSetExplicit && !preset->weaponSet.empty()) {
         if (const CommunityWeaponSet* set =
                 CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet)) {
             d.communityWeaponSetId = set->id;
@@ -721,7 +733,7 @@ void serverResetActorPreset()
         if (const MatchRoleDefinition* preset =
                 MatchRoleRegistry::instance().getActorPreset(mode.actorPresetId)) {
             ActorPresetWeapons::apply(*preset);
-            if (!preset->weaponSet.empty()) {
+            if (!d.communityWeaponSetExplicit && !preset->weaponSet.empty()) {
                 if (const CommunityWeaponSet* set =
                         CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet))
                     d.communityWeaponSetId = set->id;
@@ -729,7 +741,8 @@ void serverResetActorPreset()
         }
     } else {
         ActorPresetWeapons::clear();
-        d.communityWeaponSetId = mode.weaponSetId > 0 ? mode.weaponSetId : 1;
+        if (!d.communityWeaponSetExplicit)
+            d.communityWeaponSetId = mode.weaponSetId > 0 ? mode.weaponSetId : 1;
     }
     d.appliedCommunityWeaponSetId = 0;
     d.stateVersion++;
@@ -744,6 +757,7 @@ void serverStartMode(const ServerGamemodeState& rules)
     d.mode = rules.matchMode == "tdm" ? ServerMode::TeamDeathmatch
         : rules.matchMode == "ffa" ? ServerMode::FreeForAll
         : rules.matchMode == "duel" ? ServerMode::Duel : ServerMode::Sandbox;
+    d.matchMode = rules.matchMode == "melee" ? "ssbm" : rules.matchMode;
     d.communityMode = "sandbox";
     d.communityWeaponSetId = 1;
     d.appliedCommunityWeaponSetId = 0;
@@ -881,6 +895,7 @@ bool serverCommunityWeaponAllowed(const std::string& weaponId)
 {
     const ServerGamemodeState& state = serverGamemodeState();
     const bool communityMode = state.communityMode == "sandbox"
+        || state.communityWeaponSetExplicit
         || state.communityMode == "free_for_all"
         || state.communityMode == "team_deathmatch"
         || state.communityMode == "npc_waves"
@@ -956,7 +971,8 @@ void serverCommunitySetMode(const std::string& modeId)
     if (!state.enabled || modeId.empty()) return;
     CommunityServerConfig& config = CommunityServerConfig::instance();
     if (config.modes().empty()) config.load();
-    state.communityMode = modeId;
+    const CommunityMode* selectedMode = config.modeById(modeId);
+    state.communityMode = selectedMode ? selectedMode->id : modeId;
     state.communityScores.clear();
     state.communityTeams.clear();
     state.communityTeamScore[0] = state.communityTeamScore[1] = 0;
@@ -1100,6 +1116,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
     const CommunityServerConfig& communityConfig = CommunityServerConfig::instance();
     const CommunityMode* cm = communityConfig.modeById(d.communityMode);
     if (!cm) return;  // unknown mode — cannot start
+    d.communityMode = cm->id;
 
     // Use gamemode_id to look up the actual gamemode config.
     // This bridges onlinemodes.json (community menu) to gamemodes/*.json (gameplay rules).
@@ -1141,6 +1158,10 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
 
     // Load gamemode config using the resolved gamemode_id
     const Gamemode& gm = GamemodeRegistry::instance().get(resolvedGamemodeId);
+    // Resolve Auto to the gamemode default before writing the configuration
+    // event; an explicit GUI/host selection has already been staged.
+    if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)
+        d.communityWeaponSetId = gm.weaponSetId;
     // Durable match-configuration evidence: proves which mode/win condition
     // started without needing the server console.
     nlohmann::json teamCapacities = nlohmann::json::array();
@@ -1155,6 +1176,9 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
         d.currentServerTick,
         nlohmann::json{{"mode", resolvedGamemodeId},
                        {"community_mode", d.communityMode},
+                       {"weapon_set_id", d.communityWeaponSetId},
+                       {"weapon_set_source", d.communityWeaponSetExplicit
+                            ? "host_override" : "gamemode_default"},
                        {"win_condition", gm.winCondition},
                        {"goal_value", gm.goalValue},
                        {"time_limit_seconds", gm.timeLimitSeconds},
@@ -1172,9 +1196,6 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                        {"music_pool", gm.musicRandomPool.size()},
                        {"skip_intermission", skipIntermission}});
     d.goalValue = gm.goalValue;
-    // An explicit GUI/runtime selection wins over the gamemode default.
-    if (!d.communityWeaponSetExplicit && gm.weaponSetId > 0)
-        d.communityWeaponSetId = gm.weaponSetId;
     d.timeLimitSeconds = gm.timeLimitSeconds;
     d.respawnSeconds = gm.respawnSeconds;
     d.killHeals = gm.killHeals;
@@ -1460,7 +1481,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                 MatchRoleRegistry::instance().getActorPreset(gm.actorPresetId)) {
             if (preset->forceFov) d.cameraFov = preset->cameraFov;
             if (preset->forceFirstPerson) d.forceFirstPerson = true;
-            if (!preset->weaponSet.empty()) {
+            if (!d.communityWeaponSetExplicit && !preset->weaponSet.empty()) {
                 if (const CommunityWeaponSet* set =
                         CommunityServerConfig::instance().weaponSetByKey(preset->weaponSet))
                     d.communityWeaponSetId = set->id;
@@ -1859,7 +1880,7 @@ void broadcastDuelState(SOCKET sock,
     }
     // Reuse the existing replicated name slot for Melee's result banner. The
     // Melee HUD consumes this only as a winner label, not as an FFA leaderboard.
-    if (d.matchMode == "melee" && d.matchOver &&
+    if (d.matchMode == "ssbm" && d.matchOver &&
         d.phase == DUEL_PHASE_RESULTS && d.winnerPlayerId != 0) {
         pkt.ffaLeaderIds[0] = d.winnerPlayerId;
         auto winnerNameIt = d.participantNames.find(d.winnerPlayerId);
@@ -4549,7 +4570,7 @@ void updateActorStates(ServerGamemodeState& d, SOCKET sock,
         if (d.livesEnabled && before == ActorState::Alive && dead &&
             serverActorLivesApplyToTeam(desc.teamId)) {
             serverActorConsumeLife(kv.first);
-            if (d.matchMode == "melee") {
+            if (d.matchMode == "ssbm") {
                 const auto stockIt = d.actorLives.find(kv.first);
                 const int stocksLeft = stockIt == d.actorLives.end()
                     ? 0 : std::max(0, stockIt->second);

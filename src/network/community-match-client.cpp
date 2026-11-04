@@ -400,7 +400,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     mMatchId = packet.duelId;
     mStateVersion = packet.stateVersion;
-    mMode = packet.matchMode;
+    mMode = packet.matchMode == "melee" ? "ssbm" : packet.matchMode;
     if (mMode != "juggernaut" || packet.phase == DUEL_PHASE_RESULTS) {
         mFighterWeaponChoiceRoundVersion = packet.roundVersion;
         mFighterWeaponChoice = -1;
@@ -714,7 +714,7 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
 
     MatchLeaderboard& hud = MatchLeaderboard::instance();
     hud.setMode(mMode, mGoal);
-    if (mMode == "melee") hud.updateFFA({});
+    if (mMode == "ssbm") hud.updateFFA({});
     else if (mMode != "tdm") hud.updateFFA(leaders);
     else if (mMode == "tdm") {
         bool isRed = false;

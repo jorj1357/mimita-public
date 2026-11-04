@@ -73,6 +73,23 @@ static bool containServerNpcFinalPose(Npc& npc, const World& world,
     const bool clear = containActorFinalPose(
         npc.body, world, npc.finalPose, result, 0.02f, stage);
     const uint32_t tick = static_cast<uint32_t>(npc.body.movementSimulationTick);
+    if (result.pushedOut &&
+        tick - npc.finalPoseLastPushoutLogTick >= 30)
+    {
+        npc.finalPoseLastPushoutLogTick = tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.root.pushout", std::to_string(npc.id), stage, tick,
+            {{"npc_id", npc.id},
+             {"solid_id", result.pushSolidId},
+             {"correction", {result.pushCorrection.x,
+                              result.pushCorrection.y,
+                              result.pushCorrection.z}},
+             {"clear", result.clear},
+             {"root_inside_closed_solid",
+              actorRootInsideClosedSolid(world, npc.body.pos)}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     const bool reset = result.restored || result.usedSafePoint || result.failed;
     const bool penetration = result.initialPenetration > 0.02f;
     if (!reset && !result.budgetExceeded &&
@@ -229,28 +246,27 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     // map loader. Re-decimating that output collapses union vertices and can
     // create open seams/T-junctions that the client never sees. Reuse it as-is.
     npcWorld.collisionMesh.triangles.clear();
+    npcWorld.collisionMesh.solidIds.clear();
     npcWorld.collisionMesh.triangles.reserve(hw.triangles.size());
+    npcWorld.collisionMesh.solidIds.reserve(hw.triangles.size());
+    size_t removedTriangles = 0;
+    size_t unionTriangles = 0;
+    size_t unknownSolidTriangles = 0;
     for (size_t i = 0; i < hw.triangles.size(); ++i)
-        if (i >= hw.solidIds.size() || hw.solidIds[i] != UINT32_MAX)
-            npcWorld.collisionMesh.triangles.push_back(hw.triangles[i]);
-
-    // A map whose solid ids are all UINT32_MAX (or whose solid-id array is
-    // absent) is still valid collision geometry. The sentinel means "removed
-    // by the face-cleanup pass", not "not collision". Filtering every triangle
-    // left the server NPC world empty on tdmtest3, so NPC navigation reported
-    // collision_mesh_empty and NPC physics had no support surface. Fall back to
-    // the complete headless triangle set rather than simulating against nothing.
-    if (npcWorld.collisionMesh.triangles.empty() && !hw.triangles.empty())
     {
-        npcWorld.collisionMesh.triangles = hw.triangles;
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::NpcMovement, StructuredLevel::Important,
-            "npc.collision-world.solid-id-fallback", "server",
-            "headless collision triangles were all marked removed; using the full triangle set",
-            0,
-            nlohmann::json{{"triangle_count", hw.triangles.size()},
-                           {"solid_id_count", hw.solidIds.size()}},
-            __FILE__, __LINE__, __FUNCTION__);
+        const uint32_t solidId =
+            i < hw.solidIds.size() ? hw.solidIds[i] : 0u;
+        if (solidId == kRemovedCollisionSolidId)
+        {
+            ++removedTriangles;
+            continue;
+        }
+        if (solidId == kUnionCollisionSolidId)
+            ++unionTriangles;
+        else if (solidId == 0)
+            ++unknownSolidTriangles;
+        npcWorld.collisionMesh.triangles.push_back(hw.triangles[i]);
+        npcWorld.collisionMesh.solidIds.push_back(solidId);
     }
     for (const auto& active : hw.activeDestructibleNodes)
     {
@@ -265,7 +281,24 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
         npcWorld.collisionMesh.triangles.insert(
             npcWorld.collisionMesh.triangles.end(), triangles.begin(),
             triangles.end());
+        npcWorld.collisionMesh.solidIds.insert(
+            npcWorld.collisionMesh.solidIds.end(), triangles.size(), 0u);
     }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.collision-world.summary", "server",
+        "NPC collision world copied with source solid identity",
+        0,
+        nlohmann::json{
+            {"headless_triangles", hw.triangles.size()},
+            {"npc_triangles", npcWorld.collisionMesh.triangles.size()},
+            {"removed_triangles", removedTriangles},
+            {"union_triangles", unionTriangles},
+            {"unknown_solid_triangles", unknownSolidTriangles},
+            {"solid_ids_aligned",
+             npcWorld.collisionMesh.solidIds.size() ==
+                 npcWorld.collisionMesh.triangles.size()}},
+        __FILE__, __LINE__, __FUNCTION__);
     npcWorld.collisionChunkSize = hw.collisionChunkSize;
     ++npcWorld.renderRevision;
 
@@ -357,9 +390,24 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
         npcIdsAlive.insert(kv.first);
         if (!alreadySimulated)
         {
+            const glm::vec3 rawSpawn = kv.second.pos;
             const glm::vec3 safeSpawn = resolveSafeStandingSpawn(
-                world, kv.second.pos, 0.60f, 2.0f);
+                world, rawSpawn, 0.60f, 2.0f);
             npcSystem.spawnNpc(kv.first, kv.second.difficulty, safeSpawn);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.spawn.resolved", std::to_string(kv.first),
+                "npc startup spawn validated against static geometry",
+                0,
+                nlohmann::json{
+                    {"npc_id", kv.first},
+                    {"mode", serverGamemodeState().matchMode},
+                    {"raw", {rawSpawn.x, rawSpawn.y, rawSpawn.z}},
+                    {"safe", {safeSpawn.x, safeSpawn.y, safeSpawn.z}},
+                    {"raw_inside_solid", worldPointInsideSolid(world, rawSpawn)},
+                    {"safe_inside_solid", worldPointInsideSolid(world, safeSpawn)},
+                    {"corrected_m", glm::length(safeSpawn - rawSpawn)}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
         // Map-mode startup NPCs can exist before the managed match roster is
         // built. Give them the configured NPC team role before resolving their
@@ -412,6 +460,9 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 {"actor_preset", profile.actorPresetId},
                 {"mode", modeState.matchMode},
                 {"mode_preset", mode.actorPresetId},
+                {"weapon_set_id", profile.weaponSetId},
+                {"weapon_count", profile.weapons.size()},
+                {"weapons", profile.weapons},
                 {"source", "serverResolveActorSpawnProfile"}},
             __FILE__, __LINE__, __FUNCTION__);
         // Apply the healthall override to the newly adopted real NPC body.
@@ -447,10 +498,12 @@ static void adoptNewServerNpcs(const std::unordered_map<uint32_t, ServerNpc>& np
                 applyRoleStartingAmmo(n, profile);
                 // A declared disaster owns the NPC loadout for this life. Pure
                 // data lookup from replicated state; never a mode-name branch.
-                if (const std::string* disasterWeapon =
-                        MimitaGamemode::disasterWeaponForActor(
-                            serverGamemodeState().disaster, n.id))
-                    npcApplyLoadout(n, {*disasterWeapon}, *disasterWeapon);
+                if (!serverGamemodeState().communityWeaponSetExplicit) {
+                    if (const std::string* disasterWeapon =
+                            MimitaGamemode::disasterWeaponForActor(
+                                serverGamemodeState().disaster, n.id))
+                        npcApplyLoadout(n, {*disasterWeapon}, *disasterWeapon);
+                }
                 finalizeServerNpcSpawn(n, ActorSpawnReason::NpcCreate);
             }
         }
@@ -591,6 +644,20 @@ static void respawnServerNpc(Npc& npc, const World& world)
 {
     const glm::vec3 rawSpawn = effectiveServerSpawn(npc.body.respawnPosition);
     const glm::vec3 spawnPos = resolveSafeStandingSpawn(world, rawSpawn, 0.60f, 2.0f);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Important,
+        "npc.spawn.resolved", std::to_string(npc.id),
+        "npc respawn validated against static geometry",
+        static_cast<uint32_t>(npc.body.movementSimulationTick),
+        nlohmann::json{
+            {"npc_id", npc.id},
+            {"mode", serverGamemodeState().matchMode},
+            {"raw", {rawSpawn.x, rawSpawn.y, rawSpawn.z}},
+            {"safe", {spawnPos.x, spawnPos.y, spawnPos.z}},
+            {"raw_inside_solid", worldPointInsideSolid(world, rawSpawn)},
+            {"safe_inside_solid", worldPointInsideSolid(world, spawnPos)},
+            {"corrected_m", glm::length(spawnPos - rawSpawn)}},
+        __FILE__, __LINE__, __FUNCTION__);
     npc.body.pos = spawnPos;
     npc.body.respawnPosition = spawnPos;
     // New life: bump the lifecycle counter so clients detect the respawn.
@@ -656,9 +723,11 @@ static void respawnServerNpc(Npc& npc, const World& world)
     if (!profile.weapons.empty())
         npcApplyLoadout(npc, profile.weapons, profile.startingWeapon);
     // A declared disaster owns the NPC loadout for this life (data lookup).
-    if (const std::string* disasterWeapon =
-            MimitaGamemode::disasterWeaponForActor(serverGamemodeState().disaster, npc.id))
-        npcApplyLoadout(npc, {*disasterWeapon}, *disasterWeapon);
+    if (!serverGamemodeState().communityWeaponSetExplicit) {
+        if (const std::string* disasterWeapon =
+                MimitaGamemode::disasterWeaponForActor(serverGamemodeState().disaster, npc.id))
+            npcApplyLoadout(npc, {*disasterWeapon}, *disasterWeapon);
+    }
     npc.body.killedBy.clear();
     npc.body.spawnFlashTimer = 10.0f;
     npc.attackCooldown = npcSpawnFireDelaySeconds(npc);
@@ -1544,6 +1613,19 @@ static void resolveServerActorPairCollisions(
     }
 }
 
+static bool npcRootInsideWorld(const World& world, const glm::vec3& pos)
+{
+    if (actorRootInsideClosedSolid(world, pos))
+        return true;
+    // Global parity is only a fallback for a world with no usable solid
+    // identity. The enclosing room shell can otherwise make an outside point
+    // look inside and trigger endless recovery.
+    if (world.collisionMesh.solidIds.size() !=
+        world.collisionMesh.triangles.size())
+        return worldPointInsideSolid(world, pos);
+    return false;
+}
+
 void simulateSharedNpcs(SOCKET sock,
                         std::unordered_map<uint32_t, ServerPlayer>& players,
                         std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -1719,6 +1801,8 @@ void simulateSharedNpcs(SOCKET sock,
                  {"restored", spawnPose.restored},
                  {"used_safe_point", spawnPose.usedSafePoint},
                  {"failed", spawnPose.failed},
+                 {"pushed_out", spawnPose.pushedOut},
+                 {"push_solid_id", spawnPose.pushSolidId},
                  {"root_inside_closed_solid", spawnPose.rootInsideClosedSolid},
                  {"reset_reason", spawnPose.resetReason}},
                 __FILE__, __LINE__, __FUNCTION__);
@@ -2078,6 +2162,8 @@ void simulateSharedNpcs(SOCKET sock,
         if (!allNpcs.empty()) {
             static size_t recoveryCursor = 0;
             static std::unordered_map<uint32_t, uint32_t> recoveryCooldownTick;
+            static std::unordered_map<uint32_t, uint32_t> rootInsideFailures;
+            static std::unordered_map<uint32_t, uint32_t> belowMapSinceTick;
             const size_t start = recoveryCursor % allNpcs.size();
             for (size_t offset = 0; offset < allNpcs.size(); ++offset) {
                 const size_t index = (start + offset) % allNpcs.size();
@@ -2085,6 +2171,46 @@ void simulateSharedNpcs(SOCKET sock,
                 if (candidate.replayControlled || candidate.body.dead ||
                     candidate.body.currentHp <= 0)
                     continue;
+                const float mapFloorZ = world.collisionMesh.boundsMin.z;
+                const bool belowMap = !world.collisionMesh.triangles.empty() &&
+                    candidate.body.pos.z < mapFloorZ - 2.0f;
+                if (belowMap)
+                {
+                    auto since = belowMapSinceTick.find(candidate.id);
+                    if (since == belowMapSinceTick.end())
+                    {
+                        belowMapSinceTick.emplace(candidate.id, tick);
+                        since = belowMapSinceTick.find(candidate.id);
+                    }
+                    if (tick - since->second >= 60u)
+                    {
+                        const glm::vec3 before = candidate.body.pos;
+                        belowMapSinceTick.erase(candidate.id);
+                        rootInsideFailures.erase(candidate.id);
+                        respawnServerNpc(candidate, world);
+                        recoveryCooldownTick[candidate.id] = tick + 60u;
+                        recoveryCursor = index + 1;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "npc.below-map.respawned",
+                            std::to_string(candidate.id),
+                            "npc stayed below the map floor and was respawned",
+                            tick,
+                            {{"npc_id", candidate.id},
+                             {"map_floor_z", mapFloorZ},
+                             {"from", {before.x, before.y, before.z}},
+                             {"to", {candidate.body.pos.x,
+                                     candidate.body.pos.y,
+                                     candidate.body.pos.z}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                        break;
+                    }
+                }
+                else
+                {
+                    belowMapSinceTick.erase(candidate.id);
+                }
                 const auto cooldownIt = recoveryCooldownTick.find(candidate.id);
                 if (cooldownIt != recoveryCooldownTick.end() &&
                     tick < cooldownIt->second)
@@ -2098,45 +2224,96 @@ void simulateSharedNpcs(SOCKET sock,
                 if (!stuck && !periodic)
                     continue;
                 recoveryCursor = index + 1;
-                if (actorRootInsideClosedSolid(world, candidate.body.pos)) {
+                if (npcRootInsideWorld(world, candidate.body.pos)) {
                     const glm::vec3 before = candidate.body.pos;
-                    ActorFinalPoseResult result;
-                    const bool clear = containActorFinalPose(
-                        candidate.body, world, candidate.finalPose, result,
-                        0.02f, "post_recovery");
-                    recoveryCooldownTick[candidate.id] = tick + 120u;
-                    const bool moved =
-                        glm::length(candidate.body.pos - before) > 0.001f;
-                    if (moved || result.restored || result.usedSafePoint)
+                    glm::vec3 pushDelta(0.0f);
+                    uint32_t pushSolidId = 0;
+                    if (pushActorRootOutOfSolid(candidate.body, world, 0.02f,
+                                                &pushDelta, &pushSolidId))
                     {
-                        candidate.body.vel = glm::vec3(0.0f);
+                        recoveryCooldownTick[candidate.id] = tick + 30u;
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::Collision,
                             StructuredLevel::Important,
-                            "npc.capsule.recovered",
-                            std::to_string(candidate.id),
-                            "npc final pose recovered without a downward floor search",
+                            "npc.root.pushout", std::to_string(candidate.id),
+                            "npc root was pushed out through the nearest enclosing solid face",
                             tick,
                             {{"npc_id", candidate.id},
-                             {"stage", result.stage},
-                             {"reason", result.resetReason},
+                             {"solid_id", pushSolidId},
                              {"from", {before.x, before.y, before.z}},
                              {"to", {candidate.body.pos.x,
                                      candidate.body.pos.y,
                                      candidate.body.pos.z}},
-                             {"initial_penetration_m",
-                              result.initialPenetration},
-                             {"final_penetration_m",
-                              result.finalPenetration},
-                             {"budget_exceeded", result.budgetExceeded}},
+                             {"correction", {pushDelta.x, pushDelta.y,
+                                              pushDelta.z}}},
                             __FILE__, __LINE__, __FUNCTION__);
+                        if (!npcRootInsideWorld(world, candidate.body.pos))
+                        {
+                            rootInsideFailures.erase(candidate.id);
+                            break;
+                        }
                     }
-                    if (!clear &&
-                        (result.failed ||
-                         actorRootInsideClosedSolid(world, candidate.body.pos)))
-                    {
-                        respawnServerNpc(candidate, world);
+                    const glm::vec3 safe = resolveSafeStandingSpawn(
+                        world, before, 0.60f, 2.0f);
+                    if (!npcRootInsideWorld(world, safe)) {
+                        candidate.body.pos = safe;
+                        candidate.body.vel = glm::vec3(0.0f);
+                        candidate.body.externalImpulse = glm::vec3(0.0f);
+                        candidate.body.ground.onGround = true;
+                        candidate.body.ground.wasOnGround = true;
+                        candidate.body.ground.stableOnGround = true;
+                        candidate.body.ground.hasWorldContact = true;
+                        candidate.body.ground.realWorldContactThisFrame = true;
+                        candidate.body.updateModelWorldTransforms();
+                        rootInsideFailures.erase(candidate.id);
+                        recoveryCooldownTick[candidate.id] = tick + 60u;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "npc.root.recovered",
+                            std::to_string(candidate.id),
+                            "npc root was inside solid geometry and was moved to a validated standing point",
+                            tick,
+                            {{"npc_id", candidate.id},
+                             {"from", {before.x, before.y, before.z}},
+                             {"to", {candidate.body.pos.x,
+                                     candidate.body.pos.y,
+                                     candidate.body.pos.z}},
+                             {"velocity", {candidate.body.vel.x,
+                                           candidate.body.vel.y,
+                                           candidate.body.vel.z}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    } else {
+                        const uint32_t failures =
+                            ++rootInsideFailures[candidate.id];
+                        recoveryCooldownTick[candidate.id] = tick + 30u;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "npc.root.inside",
+                            std::to_string(candidate.id),
+                            "npc root is inside solid geometry and no nearby safe standing point was found",
+                            tick,
+                            {{"npc_id", candidate.id},
+                             {"position", {before.x, before.y, before.z}},
+                             {"failures", failures}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                        if (failures >= 3) {
+                            rootInsideFailures.erase(candidate.id);
+                            respawnServerNpc(candidate, world);
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Collision,
+                                StructuredLevel::Important,
+                                "npc.root.respawned",
+                                std::to_string(candidate.id),
+                                "npc root stayed inside solid geometry; respawned at a validated spawn",
+                                tick,
+                                {{"npc_id", candidate.id}},
+                                __FILE__, __LINE__, __FUNCTION__);
+                        }
                     }
+                } else {
+                    rootInsideFailures.erase(candidate.id);
                 }
                 // At most one deep inside-solid check per server tick.
                 break;
@@ -2212,6 +2389,42 @@ void simulateSharedNpcs(SOCKET sock,
             }
             Debug::warn(Debug::Category::NpcCombat,
                 "[SERVER NPC FIRE-STATE] %s\n", summary.c_str());
+        }
+    }
+
+    {
+        static uint64_t lastNpcTrace = 0;
+        const uint64_t nowTrace = nowMs();
+        if (nowTrace - lastNpcTrace >= 1000)
+        {
+            lastNpcTrace = nowTrace;
+            nlohmann::json actors = nlohmann::json::array();
+            for (const Npc& n : npcSystem.all())
+            {
+                actors.push_back({
+                    {"id", n.id},
+                    {"team", n.body.matchTeam},
+                    {"role", n.actorPresetId},
+                    {"pos", {n.body.pos.x, n.body.pos.y, n.body.pos.z}},
+                    {"vel", {n.body.vel.x, n.body.vel.y, n.body.vel.z}},
+                    {"grounded", n.body.ground.onGround},
+                    {"world_contact", n.body.ground.hasWorldContact},
+                    {"stuck", NpcNavigation::isStuck(n) ||
+                              n.movementStuckEpisodeActive},
+                    {"inside_solid",
+                     actorRootInsideClosedSolid(world, n.body.pos)},
+                    {"state", npcStateName(n.stateMachine.currentState)}});
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.trace", serverGamemodeState().matchMode,
+                "one-second NPC position and containment summary",
+                tick,
+                nlohmann::json{{"mode", serverGamemodeState().matchMode},
+                               {"map", serverGamemodeState().mapId},
+                               {"count", actors.size()},
+                               {"npcs", std::move(actors)}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

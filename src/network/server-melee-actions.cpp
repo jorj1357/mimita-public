@@ -960,7 +960,7 @@ void tickServerMeleeActions(SOCKET sock,
             g_meleeActionSnapshots.erase(attacker.id);
         }
         const bool animationOnly = moveSet && moveSet->animationOnly;
-        if (!animationOnly && serverGamemodeState().matchMode != "melee")
+        if (!animationOnly && serverGamemodeState().matchMode != "ssbm")
             continue;
 
         // Shield decay/recovery and the grab pull run every Melee tick, whether
@@ -1163,7 +1163,7 @@ void tickServerMeleeActions(SOCKET sock,
     // data-driven actions, percent, and knockback as a player.
     tickServerWeaponAnimationActions(players, npcs, tick);
 
-    if (serverGamemodeState().matchMode == "melee") {
+    if (serverGamemodeState().matchMode == "ssbm") {
         for (auto& nEntry : npcs) {
             ServerNpc& npc = nEntry.second;
             NpcMeleeState& st = g_npcMelee[npc.entityId];

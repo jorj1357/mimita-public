@@ -971,12 +971,11 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
             ack(true, ("started at intermission: " + mode.id + " (" + mode.name + ")").c_str());
         }
     }
-    else if (commandStr == "startmelee")
+    else if (commandStr == "startmelee" || commandStr == "startssbm")
     {
-        // Robust by-id shortcut so agents/hosts do not depend on the numeric
-        // index of `melee` in config/onlinemodes.json.
-        serverCommunityStartMatch(false, "melee");
-        ack(true, "started at intermission: melee");
+        // Keep the old command as an alias while the stable mode ID is SSBM.
+        serverCommunityStartMatch(false, "ssbm");
+        ack(true, "started at intermission: ssbm");
     }
     else if (commandStr.rfind("startnow ", 0) == 0 ||
              commandStr.rfind("start ", 0) == 0)

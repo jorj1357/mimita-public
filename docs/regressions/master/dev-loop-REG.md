@@ -131,3 +131,15 @@ Entries: 17
 - Status: ATTEMPTED FIX (1) — journal-only source path; runtime review pending
 - Summary: The client wrote the per-tick scenario file and the journal, while the server wrote a separate canonical journal copy; each executable now has one events.jsonl sink.
 - Detail: `docs/regressions/2026-11-03/scenario-journal-only-REG.md`
+
+Correction 2026-11-03: the journal-only sink was reversed. The full recording is
+saved under `devscripts/scenarios/user/`, the server sidecar is merged at stop,
+and the journal keeps only compact start/stop/invalid summaries. See the
+correction in the detail file.
+
+## Entry 19 — Recording stop blocked the client into a reconnect
+
+- Recorded: 2026-11-04T01:00:00Z
+- Status: ATTEMPTED FIX (1) — async merge and streaming source; long human session pending
+- Summary: `scenario_endrecord` busy-waited six seconds in the client main loop and merged synchronously, starving network heartbeats. The command now returns immediately and merge runs in the background with a streaming two-pass read.
+- Detail: `docs/regressions/2026-11-04/recording-stop-client-disconnect-REG.md`

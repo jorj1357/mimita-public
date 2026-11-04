@@ -9,6 +9,8 @@
 */
 
 #include "network/server.h"
+#include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-system.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "procedural/procedural-world.h"
@@ -232,7 +234,9 @@ bool isKnownPacketType(uint8_t type)
     if (type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION)
         return true;
     // Newer gameplay packets above the legacy numeric range. Add each here.
-    return type == PACKET_RAGDOLL_STATE;
+    return type == PACKET_RAGDOLL_STATE ||
+           type == PACKET_VEHICLE_INPUT ||
+           type == PACKET_VEHICLE_SEAT_REQUEST;
 }
 
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
@@ -401,6 +405,9 @@ int runServer(const LaunchOptions& options)
 
     // Disable audio on dedicated server — it only wastes resources
     setServerAudioMode(true);
+    VehicleSystem::instance().setServerProcess(true);
+    VehicleSystem::instance().loadConfig("config/vehicles");
+    VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
     auto logServerExit = [&](int exitCode, const char* reason,
@@ -620,6 +627,7 @@ int runServer(const LaunchOptions& options)
     ServerPacketStats transportStats;
     DisagreementRetransmitState disagreementRetransmit;
     PhysicalEntityReplicationState physicalEntityReplication;
+    ServerVehicleState dedicatedVehicleState;
 
     // A dev-loop/CLI procedural mode becomes active for the first real client
     // instead of starting before a player exists. This lets the existing
@@ -675,9 +683,9 @@ int runServer(const LaunchOptions& options)
                                 options.mapRotationMinutes,
                                 options.weaponSetId);
         serverCommunitySetMode(options.gameMode);
-        // Sandbox keeps the host-selected set. Team/mode-owned modes apply the
-        // mode's weapon_set_id; a live host command can still override it.
-        if (options.gameMode == "sandbox")
+        // Auto leaves the mode's weapon_set_id in control. A concrete GUI/CLI
+        // choice overrides that default for every managed gamemode.
+        if (options.weaponSetExplicit)
             serverCommunitySetWeaponSet(options.weaponSetId);
         if (options.gameMode != "sandbox")
             serverCommunityStartMatch(false);
@@ -1073,11 +1081,21 @@ int runServer(const LaunchOptions& options)
                                     tick, totalPacketsIn, totalPacketsOut,
                                     &transportStats, &disagreementRetransmit);
 
+            if (!npcWorldCollisionReady &&
+                !MapConfigRegistry::instance().current().vehicles.empty())
+            {
+                buildNpcWorldCollision(npcWorld, world);
+                npcWorldCollisionReady = true;
+            }
+            serverTickVehicles(dedicatedVehicleState, players, &npcWorld,
+                               nextEntityId, tick);
             const auto snapshotStart = std::chrono::steady_clock::now();
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
             const uint64_t snapshotUs = elapsedMicroseconds(snapshotStart);
             serverReplicatePhysicalEntities(sock, players, tick, totalPacketsOut,
                                             physicalEntityReplication);
+            serverReplicateVehicles(sock, dedicatedVehicleState, players, tick,
+                                    totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
             const auto gamemodeStart = std::chrono::steady_clock::now();
@@ -1397,6 +1415,12 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.mirrorPlayer = std::make_unique<Player>();
     state.npcIdsAlive.clear();
 
+    if (VehicleSystem::instance().isServerProcess())
+    {
+        VehicleSystem::instance().loadConfig("config/vehicles");
+        VehicleSystem::instance().registerFixedTick();
+    }
+
     state.publicIp = publicIp;
     state.hostSessionId = hostSessionId;
     state.active = true;
@@ -1409,6 +1433,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.nextEntityId = 1000;
     state.nextProjectileId = 1;
     state.tick = 0;
+    state.vehicleState = ServerVehicleState{};
     state.lastLog = 0;
     state.totalPacketsIn = 0;
     state.totalPacketsOut = 0;
@@ -1421,6 +1446,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         state.gameMode = settings->gameMode;
         state.maxPlayers = settings->maxPlayers;
         state.weaponSetId = settings->weaponSetId;
+        state.weaponSetExplicit = settings->weaponSetExplicit;
         state.autoMapRotation = settings->autoMapRotation;
         state.mapRotationMinutes = settings->mapRotationMinutes;
         state.discordNotification = settings->discordNotification;
@@ -1433,6 +1459,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                                 state.autoMapRotation,
                                 state.mapRotationMinutes,
                                 state.weaponSetId);
+    if (settings && !settings->duelMode && state.weaponSetExplicit)
         serverCommunitySetWeaponSet(state.weaponSetId);
     if (settings && !settings->duelMode)
         serverCommunitySetMode(settings->gameMode);
@@ -1697,11 +1724,15 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.totalPacketsOut, nullptr,
                                 &state.disagreementRetransmit);
 
+        serverTickVehicles(state.vehicleState, state.players,
+                           state.npcWorld.get(), state.nextEntityId, state.tick);
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
                              state.tick, state.totalPacketsOut);
         serverReplicatePhysicalEntities(state.sock, state.players, state.tick,
                                         state.totalPacketsOut,
                                         state.physicalEntityReplication);
+        serverReplicateVehicles(state.sock, state.vehicleState, state.players,
+                                state.tick, state.totalPacketsOut);
 
         tickDisagreementRetransmit(state.sock, state.players,
                                    state.disagreementRetransmit,
@@ -1899,6 +1930,7 @@ int runServerWithSettings(const ServerLaunchSettings& settings)
     opts.gamemodeId = settings.gamemodeId;
     opts.gameMode = settings.gameMode;
     opts.weaponSetId = settings.weaponSetId;
+    opts.weaponSetExplicit = settings.weaponSetExplicit;
     opts.autoMapRotation = settings.autoMapRotation;
     opts.mapRotationMinutes = settings.mapRotationMinutes;
     opts.discordNotification = settings.discordNotification;

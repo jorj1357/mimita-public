@@ -131,3 +131,15 @@ Entries: 15
 - Status: UNRESOLVED
 - Summary: Live tdmtest3 evidence still contains 2037 speed collapses, 3577 bounce responses, 1330 last-valid rollbacks, and 7 progress stalls; the first divergent contact has not yet been traced.
 - Detail: `docs/regressions/2026-11-03/surface-snagging-REG.md`
+
+Correction 2026-11-03: the snag recording was recovered to
+`devscripts/scenarios/user/scenario-20261103_195642-tdmsnag.jsonl`. The first
+grounded collapses are ticks 8929 and 9534 on surfaces 263/311. Bounce now
+applies to walkable slope impacts; runtime replay is still pending.
+
+## Entry 19 — NPC world dropped union triangles and solid identity
+
+- Recorded: 2026-11-04T01:00:00Z
+- Status: ATTEMPTED FIX (1) — source changed; runtime review pending
+- Summary: Union output used the same sentinel as removed solids, so 6,654 of 51,879 atdm triangles were dropped from the NPC world; solid IDs were not copied, disabling closed-solid containment. NPCs fell through spheres and could not be detected inside blocks.
+- Detail: `docs/regressions/2026-11-03/tdmtest3-npc-world-fall-REG.md` occurrence 2

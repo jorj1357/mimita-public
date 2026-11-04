@@ -608,7 +608,7 @@ ________________
 
 ## Melee-specific selectable jump input
 
-The Melee mode may select one of two jump-input policies in its movement
+The SSBM mode may select one of two jump-input policies in its movement
 profile, intended to be stored in `config/movement/movement-smash.json`:
 
 - `press`: the existing behavior; the jump starts immediately on a valid
@@ -1461,3 +1461,9 @@ must not turn one impact into repeated artificial impulses or suppress its
 bounce. The exact response magnitudes and how sustained resting contact differs
 from a new impact remain tuning decisions and must be verified with representative
 runtime scenarios.
+
+Status 2026-11-03: bounce applies to every impact surface, including walkable
+slopes. A flat floor that is already supporting the actor is treated as support,
+not a new impact, so ordinary walking does not micro-bounce. Slopes and walls
+use the configured bounce normal; tangential velocity is retained according to
+`bounce.friction`. Do not project a walkable slope impact to a near-stop.

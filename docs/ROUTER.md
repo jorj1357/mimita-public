@@ -73,7 +73,7 @@ systems first. Use this default order:
 | Documentation | the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
-| Vehicles, skateboards, BMX, and vehicle controls | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/gamemodes/gamemodes.md` |
+| Vehicles, skateboards, BMX, vehicle controls, and the vehicle arena | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/vehicles/vehicles-bmx.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/gamemodes/vehicle-arena.md` |
 | Replay, in-game video creation, or distribution | `docs/specs/replay/replay.md`, `docs/specs/creator-tools/video-editor.md`, `docs/specs/distribution/distribution.md`, `docs/specs/performance/performance.md` |
 | Generated character speech or voice chat | `docs/specs/live-voice-generation/live-voice-generation.md`, `docs/specs/ingame-chat/voice-chat.md`, `docs/specs/moderation/moderation.md` |
 | Damage, weapons, knockback | `docs/specs/weapons/weapons.md`, `docs/specs/networking/networking.md`, `docs/specs/networking/contact-authority.md` |

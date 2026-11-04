@@ -32,6 +32,10 @@ void registerInteractionCommands()
                     target.enabled ? 1 : 0, target.promptOrigin.x,
                     target.promptOrigin.y, target.promptOrigin.z);
                 Terminal::instance().addLog(buffer);
+            }
+        }
+    });
+
     Terminal::instance().registerCommand({
         "interaction_activate",
         "Activate the currently selected interaction target (same action as F)",
@@ -42,9 +46,6 @@ void registerInteractionCommands()
             Terminal::instance().addLog(
                 ok ? "[INTERACTION] activated selected target"
                    : "[INTERACTION] no target in range");
-        }
-    });
-}
         }
     });
 }

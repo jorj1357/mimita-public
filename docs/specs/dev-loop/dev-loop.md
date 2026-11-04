@@ -1475,6 +1475,16 @@ select or copy a stable snapshot while the watchdog, daemon, game, and scenario
 continue running. Resuming refreshes from current state and marks when the view
 was refreshed; it must not present a frozen `RUNNING` value as current.
 
+The **More** menu contains a **Launch mode** picker populated from
+`dev-launch-modes.json`. The picker uses a scrollable list with a vertical
+scrollbar, marks the daemon's selected mode, and changes the next launch
+through the authenticated `set-launch-mode` control. The launch
+control and key `1` use the latest valid published artifact through the current
+stable launch path. Show elapsed seconds with two decimals from the dashboard
+keypress to client-process creation and to completion of launch readiness
+checks. While pending, show elapsed time and the current milestone. If launch
+fails before either milestone, show available timing and the failure reason.
+
 Use a pure black background, red labels and outlines, and the local MingLiU
 font at `C:\\important\\mingliu-font\\mingliu.ttf` when available. Keep the
 controls plain and sharply bordered. Emphasized build/runtime values, including
@@ -2163,6 +2173,17 @@ the initial key feedback.
 | `P` | Pause/freeze the view so the text can be selected/copied; the watchdog, daemon, game, and scenarios keep running. | `View` |
 | `R` | Resume the frozen view, refresh from current state, and mark when the view was refreshed. | `View` |
 
+The **More → Launch mode** picker lists each configured mode by ID and name in
+a scrollable list with a vertical scrollbar. It marks the daemon's selected
+mode and submits a `set-launch-mode` request when a mode is selected. The
+displayed selection updates from daemon status after acceptance.
+The `1` launch action reports two elapsed times to two decimal places: from the
+dashboard keypress to client-process creation, and from the keypress until the
+configured launch readiness checks complete. A pending launch shows elapsed
+time and progress; a failed launch shows completed timings when available and
+the failure message. If no published build exists, the timer includes the wait
+for the first successful build.
+
 The dashboard shows this control list and the current settings (`auto-restart`,
 `next-launch` visibility, selected launch mode) on fixed rows.
 
@@ -2176,6 +2197,20 @@ dashboard keypress (1 / 2 / V / A / Q)
   -> events.jsonl records the correlated dev-loop.control event
   -> dashboard shows the resulting state on its fixed rows
 ```
+
+`1` records the dashboard press time and correlates it with the daemon launch
+request. The daemon reports client-start and readiness milestones for that
+request; the dashboard uses them to freeze both elapsed values. The existing
+terminal picker on `2` remains available alongside the native-window picker
+under **More**.
+
+#### Deferred developer and stable executables
+
+The user would like separate developer and stable MiMITA executables in the
+future. This is deferred artifact and launch-path design work and does not
+change the current behavior. Until that design is implemented, key `1` and the
+window launch button use the latest valid published executable through the
+existing stable launch path.
 
 Because the keys are delivered over the control socket, they work whenever the
 dashboard is open. They do not depend on the daemon owning an interactive

@@ -23,6 +23,7 @@ struct MapGLBObject;
 enum class EditorObjectKind {
     Entity,
     Block,
+    Vehicle,
     BombSite,
     PayloadRoutePoint,
     PayloadCartOrigin,
@@ -89,6 +90,13 @@ public:
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
     std::string addBlock(const std::string& id = {});
+    std::string addVehicle(const std::string& templateId = "car_sedan",
+                           const std::string& id = {});
+    bool spawnSelectedVehicle();
+    bool editSelectedVehicleWheel(int wheelIndex, const std::string& field,
+                                  const glm::vec3& hub);
+    bool editSelectedVehicleWheel(int wheelIndex, const std::string& field,
+                                  float value);
     std::string addBombSite(const std::string& id = {}, float radius = 4.0f);
     void setSelectedBombSiteRadius(float radius);
     std::string addRoutePoint(const std::string& id = {});
@@ -116,9 +124,11 @@ private:
         std::string id;
         MapEntity entity;
         AuthoredBlock block;
+        MapVehicleSpawn vehicle;
         PayloadRoutePoint route;
         bool hasEntity = false;
         bool hasBlock = false;
+        bool hasVehicle = false;
         bool hasRoute = false;
         glm::vec3 cartOrigin{0.0f};
         float cartYaw = 0.0f;
@@ -205,6 +215,7 @@ private:
     bool isSelected(const EditorObjectRef& ref) const;
     const MapEntity* entityFor(const EditorObjectRef& ref) const;
     const AuthoredBlock* blockFor(const EditorObjectRef& ref) const;
+    const MapVehicleSpawn* vehicleFor(const EditorObjectRef& ref) const;
     const PayloadRoutePoint* routeFor(const EditorObjectRef& ref) const;
     MapGLBObject* mapObjectFor(const EditorObjectRef& ref) const;
 

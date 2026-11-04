@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "weapon_set_override_tdm_v1",
+  "description": "Launch TDM with the explicit Melee Only set and verify the managed mode keeps TDM rules while reporting the host-selected inventory.",
+  "launch": {
+    "profile": "tdm-validation",
+    "launch_mode": "31",
+    "map": "atdm",
+    "weapon_set": 32,
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [],
+  "steps": [
+    {"id": "wait_for_match", "wait_for_event": "gamemode.match.configured", "timeout_seconds": 90},
+    {"id": "wait_for_initial_spawn", "wait_seconds": 10},
+    {"id": "snapshot_end", "command": "agent.snapshot", "args": ["tdm_melee_override_end"]}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "tdm"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "weapon_set_id", "equals": 32},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "weapon_set_source", "equals": "host_override"},
+    {"type": "event_field_count_at_least", "event": "actor.loadout.resolved", "field": "weapon_set_id", "equals": 32, "minimum": 1},
+    {"type": "event_field_equals", "event": "client.actor.spawn_packet_applied", "field": "community_weapon_set_id", "equals": 32},
+    {"type": "event_field_count_at_least", "event": "npc.roster-profile-resolved", "field": "weapon_set_id", "equals": 32, "minimum": 1},
+    {"type": "event_field_equals", "event": "npc.roster-profile-resolved", "field": "weapons", "equals": ["chainsaw", "mace", "swordsword", "nothing"]}
+  ],
+  "timeout_seconds": 150
+}

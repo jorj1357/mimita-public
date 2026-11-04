@@ -133,9 +133,9 @@
       "score_limit": 0
     },
     {
-      "id": "melee",
-      "gamemode_id": "melee",
-      "name": "Melee",
+      "id": "ssbm",
+      "gamemode_id": "ssbm",
+      "name": "SSBM",
       "description": "Captain Falcon stocks. Knock opponents into the void. Four lives each.",
       "teams": 0,
       "score_limit": 0

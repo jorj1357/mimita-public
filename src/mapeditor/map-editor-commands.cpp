@@ -14,7 +14,7 @@ void registerMapEditorCommands()
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|bombsite|route|cart> [id]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart> [id]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -78,7 +78,7 @@ void registerMapEditorCommands()
                 if (!editor.active() && !editor.setActive(true)) return;
                 if (args.size() < 2) {
                     Terminal::instance().addLog(
-                        "[MAPEDIT] select_kind <entity|block|bombsite|route|cart|glb|all>");
+                        "[MAPEDIT] select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>");
                     return;
                 }
                 editor.selectKind(args[1]);
@@ -169,6 +169,12 @@ void registerMapEditorCommands()
                     editor.addEntity(args[2], args.size() > 3 ? args[3] : "");
                 } else if (kind == "block") {
                     editor.addBlock(args.size() > 2 ? args[2] : "");
+                } else if (kind == "vehicle" || kind == "car") {
+                    const std::string templateId =
+                        args.size() > 2 ? args[2] : "car_sedan";
+                    const std::string vehicleId =
+                        args.size() > 3 ? args[3] : "";
+                    editor.addVehicle(templateId, vehicleId);
                 } else if (kind == "bombsite" || kind == "site") {
                     float radius = 4.0f;
                     if (args.size() > 3) {
@@ -182,6 +188,53 @@ void registerMapEditorCommands()
                     editor.addCartOrigin();
                 } else {
                     Terminal::instance().addLog("[MAPEDIT] unknown add kind " + kind);
+                }
+                return;
+            }
+            if (command == "spawn_vehicle") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() > 1)
+                    editor.selectObject(args[1]);
+                editor.spawnSelectedVehicle();
+                return;
+            }
+            if (command == "vehicle_wheel") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 3) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] vehicle_wheel <index> <hub x y z|radius|width> [values]");
+                    return;
+                }
+                int wheelIndex = -1;
+                try {
+                    wheelIndex = std::stoi(args[1]);
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid wheel index");
+                    return;
+                }
+                const std::string& field = args[2];
+                try {
+                    if (field == "hub") {
+                        if (args.size() < 6) {
+                            Terminal::instance().addLog(
+                                "[MAPEDIT] vehicle_wheel <index> hub <x> <y> <z>");
+                            return;
+                        }
+                        editor.editSelectedVehicleWheel(
+                            wheelIndex, field,
+                            glm::vec3(std::stof(args[3]), std::stof(args[4]),
+                                      std::stof(args[5])));
+                    } else {
+                        if (args.size() < 4) {
+                            Terminal::instance().addLog(
+                                "[MAPEDIT] vehicle_wheel <index> radius|width <value>");
+                            return;
+                        }
+                        editor.editSelectedVehicleWheel(
+                            wheelIndex, field, std::stof(args[3]));
+                    }
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid wheel value");
                 }
                 return;
             }
@@ -276,7 +329,8 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] Ctrl+C/V/X | Ctrl+D duplicate | Del delete | Ctrl+A select all");
                 Terminal::instance().addLog("[MAPEDIT] Ctrl+Z undo | Ctrl+Shift+Z redo | Ctrl+S save");
                 Terminal::instance().addLog("[MAPEDIT] V vertex snap | G grid snap | F frame | Esc back");
-                Terminal::instance().addLog("[MAPEDIT] mapeditor add entity <type> [id] | add block [id] | add route [id] | add cart");
+                Terminal::instance().addLog("[MAPEDIT] mapeditor add entity <type> [id] | add block [id] | add vehicle [template] [id] | add route [id] | add cart");
+                Terminal::instance().addLog("[MAPEDIT] mapeditor spawn_vehicle [id] | vehicle_wheel <index> hub <x> <y> <z> | radius <m> | width <m>");
                 Terminal::instance().addLog("[MAPEDIT] select route: route_checkpoint/final/enabled <0|1> | route_radius <m>");
                 Terminal::instance().addLog("[MAPEDIT] route_bonus <sec> | route_wait <ticks> | route_move <up|down> | route_validate");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | select_kind route | select_route | copy | paste | cut | duplicate | delete | undo | redo");

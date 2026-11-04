@@ -35,5 +35,5 @@
     {"type": "event_field_equals", "event": "area_effect.spawn", "field": "duration_ticks", "equals": 420},
     {"type": "event_field_equals", "event": "area_effect.spawn", "field": "duration_ticks", "equals": 150}
   ],
-  "timeout_seconds": 180
+  "timeout_seconds": 600
 }

@@ -142,8 +142,9 @@ void engineTickCombat(Engine& engine, float dt)
     if (!replayPlaybackActive && !player.dead && !player.ragdollModeActive)
     {
         ActorFinalPoseResult weaponPose;
-        containActorFinalPose(player, world, player.finalPose, weaponPose,
-                              0.02f, "post_weapon");
+        { MIMITA_PERF_SCOPE("Combat::PostWeaponContainment");
+          containActorFinalPose(player, world, player.finalPose, weaponPose,
+                                0.02f, "post_weapon"); }
         static uint64_t lastWeaponPoseLogTick = 0;
         const uint64_t tick = player.movementSimulationTick;
         if ((weaponPose.corrected || weaponPose.restored ||

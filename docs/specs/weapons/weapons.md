@@ -464,7 +464,7 @@ This is the first damage-falloff behavior to implement for the revolver and
 other weapons. The note that the behavior is already working is user-reported
 as of 2026-10-20; it is not a runtime verification in this specification edit.
 
-### Melee mode: one equipped move-set definition
+### SSBM mode: one equipped move-set definition
 
 **DECIDED direction for Captain Falcon Melee:** represent the entire A/B move
 set as one stable item/definition ID, `captain_falcon_moveset`, with all attack
@@ -478,7 +478,7 @@ boundaries; do not duplicate timing or per-phase clip references here.
 The selected `config/weaponsets.json` loadout references this one definition;
 it must not duplicate its move data or list each attack as an equipable weapon.
 The fighter keeps this moveset active for the whole match and across respawns.
-The first playable Melee NPC receives that exact same weapon-set reference and
+The first playable SSBM NPC receives that exact same weapon-set reference and
 equipped definition ID/revision as the human fighter. It uses the shared melee
 action system and may not inherit a generic NPC weapon inventory or fall back
 to revolver, shotgun, rocket launcher, or another conventional weapon. The
@@ -2685,3 +2685,20 @@ foundation floor  -> extreme material threshold/resistance
 The only legitimate way to make a weapon "arcade heavy" is to author heavy
 physical values. The only legitimate way to make a material tough is to author
 tough material values.
+
+## Seated actor weapon use (2026-11-03)
+
+Weapons remain owned by the existing weapon, aim-body, muzzle, contact,
+projectile, damage, and feedback systems while an actor is seated in a vehicle.
+
+- Aim, fire, and reload stay available to a seated driver or passenger unless a
+  mode or weapon explicitly disables them.
+- The firing origin is the normal weapon muzzle and the trace uses the normal
+  world/actor collision path. A vehicle does not gain a car-center or
+  through-geometry firing exception.
+- Recoil, hit feedback, ammo, cooldown, and damage confirmation use the same
+  shared owners as on foot.
+- Vehicle-mounted weapons are deferred. Do not add a vehicle-specific weapon
+  owner for the first online car slice.
+- Driving suppresses jump, dash, down-dash, freeze, crouch, and melee; it does
+  not suppress weapon aim/fire/reload.

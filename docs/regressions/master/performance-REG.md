@@ -2,7 +2,7 @@
 
 Append-only master ledger. Each entry links to the detailed dated record that owns the full evidence.
 
-Entries: 5
+Entries: 8
 
 ---
 
@@ -54,3 +54,10 @@ Entries: 5
 - Status: ATTEMPTED FIX (1) — canonical capture is journal-only in source; runtime review pending
 - Summary: Canonical recording wrote both the executable journal and a per-tick scenario sidecar, doubling serialization and hiding capture cost inside the replay scope.
 - Detail: `docs/regressions/2026-11-03/scenario-journal-only-REG.md`
+
+## Entry 8 — Fullscreen shadow cadence flicker
+
+- Recorded: 2026-11-04T00:13:49Z
+- Status: ATTEMPTED FIX (2) — source cadence restored; mode 6 visual review pending
+- Summary: Fullscreen mode 6 world flicker recurred after shadow-map updates were switched back to alternating frames for performance.
+- Detail: `docs/regressions/2026-11-04/fullscreen-shadow-cadence-flicker-REG.md`

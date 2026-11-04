@@ -4646,6 +4646,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "stale": bool(latest.get("latest_build_stale")),
                         "source_generation": latest.get("latest_successful_source_generation", "—"),
                         "phase": latest.get("build_status", "unknown"),
+                        "message": latest.get("message") or "",
                         "last_control": latest.get("last_control") or {},
                         "elapsed": _duration_text(latest.get("active_build_elapsed_seconds")),
                         "phase_detail": (
@@ -4661,6 +4662,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         "client_status": ("client ready" if latest.get("client_ready")
                                           else "client stopped" if not (latest.get("client_pids") or [])
                                           else "client starting"),
+                        "launch_mode": latest.get("launch_mode") or "",
                         "mode": latest.get("launch_mode_name") or latest.get("launch_mode") or "—",
                         "map": latest.get("map") or "—",
                         "runtime_detail": (
@@ -4685,8 +4687,9 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         ),
                     }
 
-                def gui_control(action: str):
-                    fields = {"explicit_stop": True} if action == "stop" else {}
+                def gui_control(action: str, **fields):
+                    if action == "stop":
+                        fields["explicit_stop"] = True
                     response = control(current, action, **fields)
                     return response or {"accepted": False, "message": view_status}
 

@@ -473,7 +473,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                         "anim.melee.clip_missing", avatarName(),
                         "Melee clip missing; using profile fallback", 0,
                         {{"avatar", avatarName()}, {"missing_clip", lockedClip},
-                         {"fallback_clip", fallback}, {"mode", "melee"}});
+                         {"fallback_clip", fallback}, {"mode", "ssbm"}});
                 }
                 lockedClip = (fallback != lockedClip && clipFromAvatar(fallback))
                     ? fallback : std::string();
@@ -955,7 +955,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                 "anim.melee.authored_pose", avatarName(),
                 "Melee exclusive authored pose active", (uint32_t)movementSimulationTick,
                 {{"actor", username},
-                 {"mode", "melee"},
+                 {"mode", "ssbm"},
                  {"avatar", avatarName()},
                  {"clip", activeAnim},
                  {"pose_policy", "authored_only"},
@@ -1061,7 +1061,7 @@ void Player::updateProceduralAnimation(float dt, const glm::vec3& camForward, co
                     "anim.melee.clip_missing", avatarName(),
                     "Melee state clip missing; using profile fallback", 0,
                     {{"avatar", avatarName()}, {"missing_clip", activeAnim},
-                     {"fallback_clip", fallback}, {"mode", "melee"}});
+                     {"fallback_clip", fallback}, {"mode", "ssbm"}});
             }
             activeClip = fbClip;
         }

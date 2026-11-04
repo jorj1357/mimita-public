@@ -4998,3 +4998,24 @@ Normative rules:
 
 The 240 FPS and diagnostics requirements in the destructible-world spec apply to
 the client receive/apply path as well as the server publisher.
+
+## Vehicle authority and replication (2026-11-03)
+
+The vehicle contract is owned by `docs/specs/vehicles/vehicles.md` section 14.
+The networking rules that must not be duplicated or bypassed are:
+
+- The server owns vehicle spawn/despawn, chassis motion, seat occupancy,
+  drivetrain state, and the vehicle fixed tick.
+- Reliable events create/remove vehicles and enter/exit seats.
+- The chassis uses the existing physical-entity state replication. Vehicle
+  visual state uses a compact unreliable packet at the established vehicle
+  cadence.
+- A seated actor's authoritative origin is the seat. Movement validation and
+  correction bypass that actor while seated.
+- Clients send the same vehicle actions through the shared input/action surface;
+  they do not mutate server-owned vehicle state directly.
+- Seated weapon use goes through the normal attack/contact authority. The
+  vehicle path must not create a second muzzle, trace, damage, or knockback
+  owner.
+- A missing template or malformed vehicle spawn fails closed with a diagnostic;
+  clients do not invent a fallback vehicle.

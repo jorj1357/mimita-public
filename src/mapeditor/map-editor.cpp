@@ -38,6 +38,8 @@
 #include "physics/physics-types.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
+#include "vehicles/vehicle-config.h"
+#include "vehicles/vehicle-system.h"
 #include "world/world.h"
 
 extern Renderer* gRenderer;
@@ -295,6 +297,12 @@ const AuthoredBlock* MapEditor::blockFor(const EditorObjectRef& ref) const
         ? MapConfigRegistry::instance().findBlock(ref.id) : nullptr;
 }
 
+const MapVehicleSpawn* MapEditor::vehicleFor(const EditorObjectRef& ref) const
+{
+    return ref.kind == EditorObjectKind::Vehicle
+        ? MapConfigRegistry::instance().findVehicle(ref.id) : nullptr;
+}
+
 const PayloadRoutePoint* MapEditor::routeFor(const EditorObjectRef& ref) const
 {
     return ref.kind == EditorObjectKind::PayloadRoutePoint
@@ -323,6 +331,7 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
     if (const auto* object = mapObjectFor(ref)) return glm::vec3(object->transform[3]);
     if (const auto* entity = entityFor(ref)) return entity->position;
     if (const auto* block = blockFor(ref)) return block->position;
+    if (const auto* vehicle = vehicleFor(ref)) return vehicle->position;
     if (const auto* route = routeFor(ref)) return route->position;
     return glm::vec3(0.0f);
 }
@@ -369,6 +378,13 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
     if (ref.kind == EditorObjectKind::Block) {
         if (auto* block = reg.findBlockMutable(ref.id)) {
             block->position = position;
+            reg.markChanged();
+        }
+        return;
+    }
+    if (ref.kind == EditorObjectKind::Vehicle) {
+        if (auto* vehicle = reg.findVehicleMutable(ref.id)) {
+            vehicle->position = position;
             reg.markChanged();
         }
         return;
@@ -581,6 +597,20 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
                    block.rotationEuler, distance) && distance < best) {
             best = distance;
             bestRef = {EditorObjectKind::Block, block.id};
+            found = true;
+        }
+    }
+    for (const auto& vehicle : config.vehicles) {
+        if (!vehicle.enabled) continue;
+        const VehicleSpec* spec =
+            VehicleConfigRegistry::instance().find(vehicle.templateId);
+        const glm::vec3 half = spec ? spec->halfExtents : glm::vec3(2.5f, 1.5f, 0.5f);
+        float distance = 0.0f;
+        if (rayOBB(origin, direction, vehicle.position, half * 2.0f,
+                   glm::vec3(0.0f, 0.0f, glm::degrees(vehicle.yaw)), distance) &&
+            distance < best) {
+            best = distance;
+            bestRef = {EditorObjectKind::Vehicle, vehicle.id};
             found = true;
         }
     }
@@ -906,6 +936,7 @@ std::string MapEditor::kindName(EditorObjectKind kind)
     switch (kind) {
         case EditorObjectKind::Entity: return "entity";
         case EditorObjectKind::Block: return "block";
+        case EditorObjectKind::Vehicle: return "vehicle";
         case EditorObjectKind::BombSite: return "bombsite";
         case EditorObjectKind::PayloadRoutePoint: return "route";
         case EditorObjectKind::PayloadCartOrigin: return "cart";
@@ -948,6 +979,9 @@ void MapEditor::copySelection()
         } else if (const auto* block = blockFor(ref)) {
             item.block = *block;
             item.hasBlock = true;
+        } else if (const auto* vehicle = vehicleFor(ref)) {
+            item.vehicle = *vehicle;
+            item.hasVehicle = true;
         } else if (const auto* route = routeFor(ref)) {
             item.route = *route;
             item.hasRoute = true;
@@ -973,6 +1007,8 @@ void MapEditor::deleteSelection()
             MapConfigRegistry::instance().deleteEntity(ref.id);
         else if (ref.kind == EditorObjectKind::Block)
             MapConfigRegistry::instance().deleteBlock(ref.id);
+        else if (ref.kind == EditorObjectKind::Vehicle)
+            MapConfigRegistry::instance().deleteVehicle(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadRoutePoint)
             MapConfigRegistry::instance().deletePayloadRoutePoint(ref.id);
         else if (ref.kind == EditorObjectKind::BombSite)
@@ -1002,6 +1038,8 @@ void MapEditor::cutSelection()
             MapConfigRegistry::instance().deleteEntity(ref.id);
         else if (ref.kind == EditorObjectKind::Block)
             MapConfigRegistry::instance().deleteBlock(ref.id);
+        else if (ref.kind == EditorObjectKind::Vehicle)
+            MapConfigRegistry::instance().deleteVehicle(ref.id);
         else if (ref.kind == EditorObjectKind::PayloadRoutePoint)
             MapConfigRegistry::instance().deletePayloadRoutePoint(ref.id);
         else if (ref.kind == EditorObjectKind::BombSite)
@@ -1056,6 +1094,20 @@ void MapEditor::pasteClipboard()
             }
             pasted.push_back({EditorObjectKind::Block, id});
             addedBlock = true;
+        } else if (item.hasVehicle) {
+            MapVehicleSpawn vehicle = item.vehicle;
+            vehicle.position += offset;
+            const std::string id = MapConfigRegistry::instance().createVehicle(
+                vehicle.templateId, vehicle.position, vehicle.yaw);
+            if (id.empty()) continue;
+            MapVehicleSpawn* created =
+                MapConfigRegistry::instance().findVehicleMutable(id);
+            if (created) {
+                const std::string keptId = created->id;
+                *created = vehicle;
+                created->id = keptId;
+            }
+            pasted.push_back({EditorObjectKind::Vehicle, id});
         } else if (item.hasRoute) {
             PayloadRoutePoint route = item.route;
             route.position += offset;
@@ -1144,6 +1196,11 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
     for (const auto& block : config.blocks) {
         if (block.enabled && matches(block.id + " block"))
             out.push_back({EditorObjectKind::Block, block.id});
+    }
+    for (const auto& vehicle : config.vehicles) {
+        if (vehicle.enabled &&
+            matches(vehicle.id + " " + vehicle.templateId + " vehicle car"))
+            out.push_back({EditorObjectKind::Vehicle, vehicle.id});
     }
 }
 
@@ -1687,6 +1744,163 @@ std::string MapEditor::addBlock(const std::string& id)
     return created;
 }
 
+std::string MapEditor::addVehicle(const std::string& templateId,
+                                  const std::string& id)
+{
+    if (!VehicleConfigRegistry::instance().find(templateId)) {
+        notify("add vehicle failed: unknown template " + templateId);
+        return {};
+    }
+    pushUndo("add vehicle");
+    const glm::vec3 position = THE_CAMERA.pos + THE_CAMERA.front * 8.0f;
+    float yaw = 0.0f;
+    if (glm::dot(THE_CAMERA.front, THE_CAMERA.front) > 1e-6f)
+        yaw = std::atan2(THE_CAMERA.front.y, THE_CAMERA.front.x);
+    const std::string created = MapConfigRegistry::instance().createVehicle(
+        templateId, position, yaw, id);
+    if (created.empty()) {
+        notify("add vehicle failed: id exists or is invalid");
+        return {};
+    }
+    selectOnly({EditorObjectKind::Vehicle, created});
+    notify("added vehicle " + created + " template=" + templateId);
+    return created;
+}
+
+bool MapEditor::spawnSelectedVehicle()
+{
+    if (mSelection.empty()) {
+        notify("spawn_vehicle: select a vehicle first");
+        return false;
+    }
+    const MapVehicleSpawn* vehicle = vehicleFor(mSelection.front());
+    if (!vehicle) {
+        notify("spawn_vehicle: selection is not a vehicle placement");
+        return false;
+    }
+    const VehicleSpec* spec =
+        VehicleConfigRegistry::instance().find(vehicle->templateId);
+    if (!spec) {
+        notify("spawn_vehicle: unknown template " + vehicle->templateId);
+        return false;
+    }
+    const glm::mat4 transform =
+        glm::translate(glm::mat4(1.0f), vehicle->position) *
+        glm::mat4_cast(glm::angleAxis(vehicle->yaw, glm::vec3(0.0f, 0.0f, 1.0f)));
+    const uint32_t spawned =
+        VehicleSystem::instance().spawn(vehicle->templateId, transform);
+    if (spawned == 0) {
+        notify("spawn_vehicle: spawn failed");
+        return false;
+    }
+    notify("spawned vehicle " + std::to_string(spawned) + " from " +
+           vehicle->id + " template=" + vehicle->templateId);
+    return true;
+}
+
+bool MapEditor::editSelectedVehicleWheel(int wheelIndex,
+                                         const std::string& field,
+                                         const glm::vec3& hub)
+{
+    if (mSelection.empty()) {
+        notify("vehicle_wheel: select a vehicle first");
+        return false;
+    }
+    const MapVehicleSpawn* placement = vehicleFor(mSelection.front());
+    if (!placement) {
+        notify("vehicle_wheel: selection is not a vehicle placement");
+        return false;
+    }
+    VehicleSpec* spec =
+        VehicleConfigRegistry::instance().findMutable(placement->templateId);
+    if (!spec) {
+        notify("vehicle_wheel: unknown template " + placement->templateId);
+        return false;
+    }
+    if (wheelIndex < 0 || wheelIndex >= static_cast<int>(spec->wheels.size())) {
+        notify("vehicle_wheel: wheel index out of range");
+        return false;
+    }
+    if (field != "hub") {
+        notify("vehicle_wheel: expected hub <x> <y> <z>");
+        return false;
+    }
+    spec->wheels[wheelIndex].hub = hub;
+    std::string error;
+    if (!VehicleConfigRegistry::instance().saveTemplate(spec->id, &error)) {
+        notify("vehicle_wheel save failed: " + error);
+        return false;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.vehicle-wheel", placement->id,
+        "vehicle template wheel hub edited in the map editor", 0,
+        {{"vehicle_id", placement->id},
+         {"template", spec->id},
+         {"wheel_index", wheelIndex},
+         {"field", "hub"},
+         {"hub", {hub.x, hub.y, hub.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+    notify("wheel " + std::to_string(wheelIndex) + " hub set and saved");
+    return true;
+}
+
+bool MapEditor::editSelectedVehicleWheel(int wheelIndex,
+                                         const std::string& field,
+                                         float value)
+{
+    if (mSelection.empty()) {
+        notify("vehicle_wheel: select a vehicle first");
+        return false;
+    }
+    const MapVehicleSpawn* placement = vehicleFor(mSelection.front());
+    if (!placement) {
+        notify("vehicle_wheel: selection is not a vehicle placement");
+        return false;
+    }
+    VehicleSpec* spec =
+        VehicleConfigRegistry::instance().findMutable(placement->templateId);
+    if (!spec) {
+        notify("vehicle_wheel: unknown template " + placement->templateId);
+        return false;
+    }
+    if (wheelIndex < 0 || wheelIndex >= static_cast<int>(spec->wheels.size())) {
+        notify("vehicle_wheel: wheel index out of range");
+        return false;
+    }
+    if (!std::isfinite(value)) {
+        notify("vehicle_wheel: value must be finite");
+        return false;
+    }
+    if (field == "radius")
+        spec->wheels[wheelIndex].radius = std::clamp(value, 0.05f, 2.0f);
+    else if (field == "width")
+        spec->wheels[wheelIndex].width = std::clamp(value, 0.02f, 1.5f);
+    else {
+        notify("vehicle_wheel: expected radius or width");
+        return false;
+    }
+    std::string error;
+    if (!VehicleConfigRegistry::instance().saveTemplate(spec->id, &error)) {
+        notify("vehicle_wheel save failed: " + error);
+        return false;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.vehicle-wheel", placement->id,
+        "vehicle template wheel value edited in the map editor", 0,
+        {{"vehicle_id", placement->id},
+         {"template", spec->id},
+         {"wheel_index", wheelIndex},
+         {"field", field},
+         {"value", field == "radius" ? spec->wheels[wheelIndex].radius
+                                     : spec->wheels[wheelIndex].width}},
+        __FILE__, __LINE__, __FUNCTION__);
+    notify("wheel " + std::to_string(wheelIndex) + " " + field +
+           " set and saved");
+    return true;
+}
+
 std::string MapEditor::addBombSite(const std::string& id, float radius)
 {
     pushUndo("add bombsite");
@@ -1957,6 +2171,8 @@ bool MapEditor::selectKind(const std::string& kind)
     EditorObjectKind want;
     if (normalized == "entity") want = EditorObjectKind::Entity;
     else if (normalized == "block") want = EditorObjectKind::Block;
+    else if (normalized == "vehicle" || normalized == "car")
+        want = EditorObjectKind::Vehicle;
     else if (normalized == "bombsite" || normalized == "site")
         want = EditorObjectKind::BombSite;
     else if (normalized == "route" || normalized == "payload")
@@ -1964,7 +2180,7 @@ bool MapEditor::selectKind(const std::string& kind)
     else if (normalized == "cart") want = EditorObjectKind::PayloadCartOrigin;
     else if (normalized == "glb") want = EditorObjectKind::MapGLBObject;
     else {
-        notify("select_kind expects entity, block, bombsite, route, cart, glb, or all");
+        notify("select_kind expects entity, block, vehicle, bombsite, route, cart, glb, or all");
         return false;
     }
     std::vector<EditorObjectRef> objects;
@@ -2193,6 +2409,38 @@ void MapEditor::renderWorld(Camera& camera)
             block.id.c_str(), color);
     }
 
+    for (const auto& vehicle : config.vehicles) {
+        if (!vehicle.enabled) continue;
+        const bool selected = isSelected({EditorObjectKind::Vehicle, vehicle.id});
+        const bool hovered = mHoverValid && mHover.kind == EditorObjectKind::Vehicle &&
+                             mHover.id == vehicle.id;
+        const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+            : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                      : glm::vec4(0.9f, 0.55f, 0.2f, 1);
+        const VehicleSpec* spec =
+            VehicleConfigRegistry::instance().find(vehicle.templateId);
+        const glm::vec3 half = spec ? spec->halfExtents : glm::vec3(2.5f, 1.5f, 0.5f);
+        const glm::quat yawRotation =
+            glm::angleAxis(vehicle.yaw, glm::vec3(0.0f, 0.0f, 1.0f));
+        DebugVis::drawWireBox(camera, vehicle.position, half, color);
+        if (spec) {
+            for (size_t i = 0; i < spec->wheels.size(); ++i) {
+                const VehicleWheelSpec& wheel = spec->wheels[i];
+                const glm::vec3 hub = vehicle.position + yawRotation * wheel.hub;
+                const glm::vec3 axle = yawRotation * wheel.spinAxis;
+                DebugVis::drawFilledCylinder(
+                    camera, hub, axle, wheel.radius, wheel.width,
+                    glm::vec4(0.75f, 0.78f, 0.82f, selected ? 0.9f : 0.55f));
+                DebugVis::drawWireSphere(camera, hub,
+                    std::max(0.08f, wheel.radius * 0.2f), color);
+            }
+        }
+        if (showLabel({EditorObjectKind::Vehicle, vehicle.id}, hovered))
+            DebugVis::drawWorldLabel(
+                vehicle.position + glm::vec3(0, 0, half.z + 0.6f),
+                (vehicle.id + " " + vehicle.templateId).c_str(), color);
+    }
+
     for (const auto& entity : config.entities) {
         if (!entity.enabled) continue;
         const bool selected = isSelected({EditorObjectKind::Entity, entity.id});
@@ -2328,6 +2576,7 @@ void MapEditor::renderUI(GLFWwindow* window)
                 case EditorObjectKind::PayloadRoutePoint: color = {1, 0.55f, 0.2f, 1}; break;
                 case EditorObjectKind::PayloadCartOrigin: color = {1, 0.75f, 0.2f, 1}; break;
                 case EditorObjectKind::Block: color = {0.4f, 0.8f, 1, 1}; break;
+                case EditorObjectKind::Vehicle: color = {1, 0.65f, 0.25f, 1}; break;
                 case EditorObjectKind::Entity: color = {0.7f, 0.8f, 1, 1}; break;
             }
         }
@@ -2382,6 +2631,17 @@ void MapEditor::renderUI(GLFWwindow* window)
             scale = block->size;
             details = block->shape + " material=" +
                 (block->material.empty() ? "default" : block->material);
+        } else if (const MapVehicleSpawn* vehicle = vehicleFor(ref)) {
+            rotation.z = glm::degrees(vehicle->yaw);
+            if (const VehicleSpec* spec =
+                    VehicleConfigRegistry::instance().find(vehicle->templateId)) {
+                scale = spec->halfExtents * 2.0f;
+                details = "template=" + vehicle->templateId +
+                    " wheels=" + std::to_string(spec->wheels.size()) +
+                    " seats=" + std::to_string(spec->seats.size());
+            } else {
+                details = "MISSING template=" + vehicle->templateId;
+            }
         } else if (const MapEntity* entity = entityFor(ref)) {
             rotation.z = entity->yaw;
             scale = entity->size;

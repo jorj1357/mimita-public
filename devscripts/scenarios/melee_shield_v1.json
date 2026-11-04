@@ -19,7 +19,7 @@
     {"id": "shield_released", "command": "agent.snapshot", "args": ["shield_released"]}
   ],
   "assertions": [
-    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "melee"},
+    {"type": "event_field_equals", "event": "gamemode.match.configured", "field": "mode", "equals": "ssbm"},
     {"type": "event_present", "event": "melee.spawn_protection"}
   ],
   "timeout_seconds": 120

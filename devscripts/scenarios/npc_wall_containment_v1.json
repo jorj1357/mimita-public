@@ -4,13 +4,15 @@
   "description": "Spawn NPCs beside the reported closed block and require final-pose containment to keep every NPC out of static geometry for 30 seconds.",
   "launch": {
     "profile": "npc-navigation",
-    "launch_mode": 45,
+    "launch_mode": 1,
     "map": "dust2cyberiav4",
     "weapon_set": 30,
     "visibility": "headless",
     "reuse_matching_run": false
   },
   "setup": [
+    {"id": "wait_client_spawn", "wait_for_event": "client.actor.spawn_activated.received", "timeout_seconds": 120},
+    {"id": "settle_spawn", "wait_seconds": 3},
     {"id": "probe_reported_block", "command": "collision_probe", "args": ["-588.7,89.1,2361.1"], "delay_ms_after": 300}
   ],
   "steps": [
@@ -25,5 +27,5 @@
     {"type": "event_absent", "event": "npc.pose.reset"},
     {"type": "event_absent", "event": "npc.pose.penetration"}
   ],
-  "timeout_seconds": 120
+  "timeout_seconds": 600
 }

@@ -532,9 +532,54 @@ void buildSmoothSeamTopology(World& world)
     }
 }
 
+void rebuildCollisionSolidBounds(CollisionMeshCache& mesh)
+{
+    mesh.solidBounds.clear();
+    mesh.solidInteriorSolid.clear();
+    if (mesh.solidIds.size() != mesh.triangles.size())
+        return;
+    for (size_t i = 0; i < mesh.triangles.size(); ++i)
+    {
+        const uint32_t id = mesh.solidIds[i];
+        if (id == 0 || id == kRemovedCollisionSolidId)
+            continue;
+        const CollisionTriangle& tri = mesh.triangles[i];
+        const glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
+        const glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
+        auto it = mesh.solidBounds.find(id);
+        if (it == mesh.solidBounds.end())
+            mesh.solidBounds.emplace(id, AABB{mn, mx});
+        else
+        {
+            it->second.min = glm::min(it->second.min, mn);
+            it->second.max = glm::max(it->second.max, mx);
+        }
+    }
+    // Outward-facing closed solids enclose their interior. Enclosing room
+    // shells have inward normals; testing parity against them would classify
+    // the entire playable room as solid.
+    std::unordered_map<uint32_t, float> orientation;
+    for (size_t i = 0; i < mesh.triangles.size(); ++i)
+    {
+        const uint32_t id = mesh.solidIds[i];
+        if (id == 0 || id == kRemovedCollisionSolidId)
+            continue;
+        auto boundsIt = mesh.solidBounds.find(id);
+        if (boundsIt == mesh.solidBounds.end())
+            continue;
+        const glm::vec3 center =
+            (boundsIt->second.min + boundsIt->second.max) * 0.5f;
+        orientation[id] += glm::dot(mesh.triangles[i].normal,
+                                   mesh.triangles[i].a - center);
+    }
+    for (const auto& entry : orientation)
+        mesh.solidInteriorSolid[entry.first] = entry.second > 0.0f;
+}
+
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
     buildSmoothSeamTopology(world);
+    rebuildCollisionSolidBounds(world.collisionMesh);
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
 
@@ -657,6 +702,19 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
         for (size_t i = 0; i < allTriangleIds.size(); ++i)
             allTriangleIds[i] = (int)i;
         world.collisionTree.build(allTriangleIds, world.collisionMesh.triangleAABBs);
+    }
+
+    world.collisionMesh.boundsMin = glm::vec3(0.0f);
+    world.collisionMesh.boundsMax = glm::vec3(0.0f);
+    if (!world.collisionMesh.triangleAABBs.empty())
+    {
+        world.collisionMesh.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        world.collisionMesh.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (const AABB& bounds : world.collisionMesh.triangleAABBs)
+        {
+            world.collisionMesh.boundsMin = glm::min(world.collisionMesh.boundsMin, bounds.min);
+            world.collisionMesh.boundsMax = glm::max(world.collisionMesh.boundsMax, bounds.max);
+        }
     }
 
     printf("[WORLD GLB COLLISION] chunks=%zu chunkSize=%.2f totalRefs=%llu maxChunksPerTri=%llu maxBounds=%.1f largeTris=%d treeNodes=%zu\n",

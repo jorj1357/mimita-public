@@ -2,8 +2,8 @@
 // config/gamemodes/masterlist/gamemode-masterlist.json
 // null means inherit the shared config/playervisuals.json value.
 {
-  "id": "melee",
-  "name": "Melee",
+  "id": "ssbm",
+  "name": "SSBM",
   "description": "Captain Falcon stocks. Knock opponents into the void. Four lives each.",
   "team_names": [],
   "goal_value": 0,

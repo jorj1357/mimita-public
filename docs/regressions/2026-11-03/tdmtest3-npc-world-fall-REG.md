@@ -50,3 +50,37 @@ the current fix.
 Source change only at this time. Runtime proof must show the
 `npc.collision-world.solid-id-fallback` event with a valid triangle count and
 NPCs grounded on tdmtest3 for at least 60 seconds.
+
+---
+
+## Regression Occurrence 2 — union output dropped from NPC world (2026-11-04)
+
+Time: 2026-11-04T01:00:00Z
+
+### Observed
+
+Human recording `devscripts/scenarios/user/scenario-20261103_214709-atdmfall.jsonl`:
+8 of 9 NPCs reached `z ≈ -502`; four ended the recording still falling with
+`v.z ≈ -175`. The server log showed 51,879 headless triangles but only
+45,227 NPC-world triangles.
+
+### Confirmed Cause
+
+`src/map/map-static-union.cpp` marked all 6,654 union-output triangles with
+`UINT32_MAX`, while `buildNpcWorldCollision()` treated `UINT32_MAX` as a removed
+solid and filtered the union geometry out. The NPC world also did not copy
+`solidIds`, so `actorRootInsideClosedSolid()` returned false for every NPC.
+
+### Corrected Code
+
+Distinct removed/union solid sentinels; NPC world copies triangles and solid
+IDs; union triangles are collidable and raycastable; collision world bounds are
+rebuilt after chunk construction. `npc.collision-world.summary` now reports
+alignment and union counts.
+
+### Proof
+
+30 s `atdm` run: `headless_triangles=51879`, `npc_triangles=51879`,
+`union_triangles=6652`, `solid_ids_aligned=true`; all final NPC traces were
+above the map with `inside_solid=false`. Runtime proof on `tdmtest3` itself for
+60 seconds remains pending.

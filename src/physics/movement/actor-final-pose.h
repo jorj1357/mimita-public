@@ -45,6 +45,9 @@ struct ActorFinalPoseResult
     bool failed = false;
     bool budgetExceeded = false;
     bool rootInsideClosedSolid = false;
+    bool pushedOut = false;
+    uint32_t pushSolidId = 0;
+    glm::vec3 pushCorrection{0.0f};
     const char* stage = "final";
     int partCount = 0;
     int extraPartCount = 0;
@@ -70,3 +73,11 @@ bool actorFinalPoseSelfTest(std::string* outSummary = nullptr);
 // inside the map's enclosing room shell. Uses the nearest floor triangle's
 // solid id and tests parity against that solid only.
 bool actorRootInsideClosedSolid(const World& world, const glm::vec3& point);
+
+// Push an actor root out through the nearest enclosing closed-solid face.
+// Returns false when no bounded face push exists; callers keep last-clear,
+// safe-point, and respawn as ordered fallbacks.
+bool pushActorRootOutOfSolid(Player& actor, const World& world,
+                             float standoff = 0.02f,
+                             glm::vec3* outCorrection = nullptr,
+                             uint32_t* outSolidId = nullptr);

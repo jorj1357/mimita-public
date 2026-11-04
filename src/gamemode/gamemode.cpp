@@ -1000,7 +1000,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
 GamemodeRegistry::LoadedMode* GamemodeRegistry::findSlot(const std::string& id)
 {
     for (auto& slot : modes_) {
-        if (slot.mode.id == id)
+        if (slot.mode.id == id || (id == "melee" && slot.mode.id == "ssbm"))
             return &slot;
     }
     return nullptr;
@@ -1009,7 +1009,7 @@ GamemodeRegistry::LoadedMode* GamemodeRegistry::findSlot(const std::string& id)
 const GamemodeRegistry::LoadedMode* GamemodeRegistry::findSlot(const std::string& id) const
 {
     for (const auto& slot : modes_) {
-        if (slot.mode.id == id)
+        if (slot.mode.id == id || (id == "melee" && slot.mode.id == "ssbm"))
             return &slot;
     }
     return nullptr;

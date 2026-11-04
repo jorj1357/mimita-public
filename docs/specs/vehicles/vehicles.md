@@ -1,10 +1,82 @@
+2026 11 03 1627 jorj1357 jornal
+Vehicles
+Gamemode: 
+Need for madness?
+Cops vs robbers?
+Demolition derby ?
+Car tdm?
+Wait this is sick
+Each person has their own car
+And its a huge big ass map
+And u can drift and shoot at people?
+Or it should be ur car ahs teh weapons i like that more
+ROCKET LEAGUE
+Rocket lauge.
+Rocket league.
+We neee dto do rkct elauge 
+Vehicles are entities, physical objects, 
+All ahve mass, center of mass, etc,
+Attachments
+Realistic suspension and gear switching and RPM and stuff 
+Make it like beamng
+
+
 # Vehicles
 
-**Status:** active specification (2026-10-27)
+**Status:** active specification; implementation is partial and phased
+(2026-11-03)
 **Parent specification:** `docs/specs/moving-physical-objects/moving-physical-objects.md`
 **Related:** `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`,
 `docs/specs/destructible-world/destructible-world.md`,
-`docs/specs/network/networking.md`, `docs/specs/entity-editor/entity-editor.md`
+`docs/specs/networking/networking.md`, `docs/specs/entity-editor/entity-editor.md`,
+`docs/specs/weapons/weapons.md`, `docs/specs/gamemodes/vehicle-arena.md`,
+`docs/specs/vehicles/vehicles-skateboard.md`,
+`docs/specs/vehicles/vehicles-bmx.md`
+
+## 0. Current direction (2026-11-03)
+
+The first playable target is an **online, weaponized car**:
+
+1. a car exists and has readable wheels,
+2. a player enters the driver seat with the shared F interaction,
+3. the car drives, steers, brakes, and recovers,
+4. the same vehicle is server-owned and observed by multiple clients,
+5. the seated driver aims and fires existing weapons through the normal weapon
+   muzzle and collision path,
+6. a reusable template can be built from primitive parts and tuned in JSON,
+7. NPCs can drive the same vehicles through the same input surface,
+8. a later arena mode adds a ball, goals, and scoring.
+
+The car must be fun to drive before visual polish, the builder UI, NPC driving,
+or the arena are treated as complete. The order is a dependency order, not a
+claim that every intermediate step must ship separately.
+
+The existing journal at the top of this file is preserved as original intake.
+It is historical context, not an additional requirement.
+
+### 0.1 First-playable acceptance
+
+- A car is placed from the map editor and can be spawned from that authored
+  placement.
+- Looking at the driver seat and pressing F enters it; F exits.
+- The driver can accelerate, steer, brake, reverse, and recover.
+- Wheels are visible in the world and visible in the map editor.
+- The car can be tuned from `config/vehicles/*.json` and the behavior changes
+  without code edits.
+- Server authority, weapon use from the seat, NPC driving, and arena rules are
+  separate acceptance gates described in the phase table.
+
+### 0.2 Deferred capabilities
+
+- aircraft and flight controllers,
+- motorcycles, skateboards, scooters, and BMX,
+- vehicle-mounted weapons,
+- arbitrary vertex/edge/face mesh editing,
+- soft-body deformation and BeamNG-style continuum simulation,
+- advanced per-part destruction and detached wheels.
+
+Deferred items stay in the general library design, but are not first-playable
+requirements.
 
 ## 1. Purpose
 
@@ -14,8 +86,8 @@ The same primitives must support:
 
 - cars and trucks with different mass and density,
 - payload carts and drivable payload vehicles,
-- motorcycles, skateboards, scooters, and BMX bikes,
-- future air vehicles such as jets and helicopters,
+- motorcycles, skateboards, scooters, and BMX bikes (deferred),
+- future air vehicles such as jets and helicopters (deferred),
 - doors, drawbridges, turntables, and moving machinery,
 - ragdoll limbs and grabs (through the same constraint layer).
 
@@ -33,19 +105,20 @@ The original wishlist that motivated this work is preserved in section 19.
 
 ## 2. Goals
 
-1. A convincing simulation-grade driving feel at the fixed 60 Hz gameplay tick:
+1. A convincing sim-lite driving feel at the fixed 60 Hz gameplay tick:
    suspension, weight transfer, tire grip, engine inertia, turbo spool, and
    gear changes.
 2. Data-driven tuning. A neutral sedan is the first template. Car and truck
    presets differ by JSON mass, density, suspension, tire, and engine values,
    not by code.
-3. General authoring. Cars are defined in `config/vehicles/*.json` and placed
-   from the map editor or console.
+3. General authoring. Cars are defined in `config/vehicles/*.json`, placed from
+   the map editor, and built from reusable primitive parts.
 4. General constraints. Hinge, slider/spring, point, and motor constraints are
    first-class and reusable outside vehicles.
 5. Server authority and replication from the first playable slice.
 6. Console-complete: every important vehicle and constraint action is reachable
    through the terminal using the same shared actions as the GUI and input.
+7. NPC drivers use the same vehicle input and physics surface as players.
 
 ## 3. Non-goals
 
@@ -54,8 +127,6 @@ The original wishlist that motivated this work is preserved in section 19.
   body without changing the ownership boundaries.
 - External physics engines. MiMITA keeps one in-house collision world so server
   authority, prediction, and `PhysicalEntity` replication stay consistent.
-- Full vehicle assembly in the map editor in the first slice. Templates and
-  placement ship first; visual assembly can follow.
 - Full destruction in the first slice. Hooks ship first; CSG deformation and
   detached wheels follow.
 
@@ -183,12 +254,21 @@ A vehicle is one chassis `PhysicalEntity` plus `N` suspension/wheel units:
 
 ```text
 Vehicle
-├── chassis              (PhysicalEntity, Dynamic)
+├── parts[]              (box, slope, sphere, cylinder primitives)
+├── attachments[]        (named local frames: seats, wheels, equipment)
 ├── suspensionUnit[0..N] (unsprung mass, spring/damper, analytic cylinder)
 ├── drivetrain           (engine, turbo, clutch, gearbox, differential)
-├── seats[]              (anchor, offset, occupant, pose)
+├── seats[]              (attachment reference, occupant, pose)
 └── damage               (part health, detachable parts; later slice)
 ```
+
+Parts contribute render geometry, collision triangles, and mass/center of mass.
+A part may be marked visual-only. Spheres and cylinders are tessellated for the
+triangle collision path; they do not introduce a second collision world.
+
+Wheels are **not** ordinary body parts. They stay on the analytic cylinder and
+suspension path so grip, spin, and steering remain stable. Wheels are visible
+and editable as named attachments in the authoring surface.
 
 Wheel count is data. Four wheels is a sedan template, not an engine rule. The
 same assembly supports two wheels (bike), six wheels (truck), or thrusters
@@ -209,6 +289,7 @@ Templates live in `config/vehicles/*.json` and are hot reloadable.
 ```json
 {
   "id": "car_sedan",
+  "source": "template",
   "massKg": 1400,
   "density": 120,
   "centerOfMass": [0.0, 0.0, -0.10],
@@ -217,8 +298,37 @@ Templates live in `config/vehicles/*.json` and are hot reloadable.
   "height": 1.0,
   "drag": 0.32,
   "downforce": 0.0,
+  "interactionRadius": 15.0,
   "bodyTexture": "assets/textureshq/240sx.png",
   "wheelTexture": "assets/textureshq/dark1.png",
+  "parts": [
+    {
+      "id": "body",
+      "shape": "box",
+      "position": [0.0, 0.0, 0.0],
+      "size": [5.0, 3.0, 1.0],
+      "rotationEuler": [0.0, 0.0, 0.0],
+      "material": "car_body",
+      "visualOnly": false
+    },
+    {
+      "id": "nose_slope",
+      "shape": "slope",
+      "position": [2.2, 0.0, 0.35],
+      "size": [0.8, 3.0, 0.4],
+      "rotationEuler": [0.0, 0.0, 0.0],
+      "material": "car_body",
+      "visualOnly": false
+    }
+  ],
+  "attachments": [
+    {
+      "id": "seat_driver",
+      "position": [-0.38, 0.25, 0.10],
+      "rotationEuler": [0.0, 0.0, 0.0],
+      "kind": "seat"
+    }
+  ],
   "wheels": [
     {
       "hub": [1.5, 1.2, -0.3],
@@ -282,7 +392,36 @@ Templates live in `config/vehicles/*.json` and are hot reloadable.
 ```
 
 Validation clamps non-finite or negative values, requires at least two wheels for
-a driveable template, and retains the last valid values on reload failure.
+a driveable template, requires at least one chassis part when `parts` is present,
+rejects unknown primitive shapes, and retains the last valid values on reload
+failure. The legacy `length`/`width`/`height` box remains the fallback when a
+template has no `parts` array.
+
+### 7.1 Primitive parts
+
+The builder and the map editor share one primitive model:
+
+| Shape | Authoring fields | Collision | Rendering |
+|---|---|---|---|
+| `box` | position, size, rotation | box triangles | textured box |
+| `slope` | position, size, rotation, slope axis | wedge triangles | textured wedge |
+| `sphere` | position, radius | tessellated sphere triangles | smooth sphere |
+| `cylinder` | position, radius, height, axis | tessellated cylinder triangles | smooth cylinder |
+
+Each part has a stable id and an optional `visualOnly` flag. Parts contribute
+mass and center of mass unless `visualOnly` is true. Body-part rendering may
+merge coplanar surfaces, but collision always uses the generated triangles.
+
+### 7.2 Attachments and seats
+
+Attachments are named local frames. The first kinds are `seat`, `wheel`, and
+`equipment`. A seat may reference an attachment or keep its own anchor for
+legacy templates. Attachments use the shared constraint layer for future
+detachable or articulated parts; the first builder only stores them.
+
+Wheels remain analytic suspension units. The authoring surface must show each
+wheel hub, radius, width, spin axis, steer axis, and suspension axis so a creator
+can see and edit them without turning them into body parts.
 
 ---
 
@@ -419,8 +558,28 @@ physics owner.
 
 ## 12. Seats, ragdoll, and weapons
 
-Seat entry sets the actor's origin to `seat position + offset` and applies the
-seat pose while seated and not ragdolled. The locomotion kernel is bypassed.
+Seat entry sets the actor's origin to `seat position + riderOffset` and applies
+the seat pose while seated and not ragdolled. The locomotion kernel is bypassed.
+The first playable acceptance gate is the driver seat. Occupancy is modeled
+generically so a passenger seat can be added without a second seat owner.
+
+`riderOffset` is a local-space seat field in `config/vehicles/<template>.json`.
+The same anchor (anchor + riderOffset) is used by the client origin, the server
+`ServerPlayer.pos`, the camera, and the exit position. The actor's collision
+root stays at that origin so the seated actor keeps its own world collisions,
+but local-player network reconciliation, pose containment, and actor-pair
+position writes are skipped while seated or they re-insert the on-foot capsule
+offset and produce a repeating seat snap.
+
+The sitting pose reuses the authored `crouch`/`crouchIn` clip and holds it while
+seated. If no crouch clip exists, the existing deterministic pose fallback is
+used. Leaving the seat clears the held crouch through the normal animation
+state input.
+
+Weapons are held and fired by the seated actor through the existing weapon
+system. The weapon muzzle, aim body, projectile/hitscan trace, world collision,
+damage, and feedback paths remain the normal ones; a seated actor must not gain
+a car-center firing origin. Vehicle-mounted weapons are deferred.
 
 When the occupant ragdolls:
 
@@ -454,37 +613,86 @@ All drawings reuse the existing HUD text/render path; no new UI framework.
 
 ## 14. Networking
 
-- The server owns the chassis `PhysicalEntity`, constraints, seats, and the
-  drivetrain state.
-- The client sends the same vehicle input it renders locally.
+- The server owns vehicle instances, the chassis `PhysicalEntity`, seat
+  occupancy, constraints, and drivetrain state.
+- The server runs the shared fixed tick for vehicles. The client does not run an
+  authoritative vehicle solver.
 - Spawn/despawn and seat enter/exit are reliable.
-- Chassis motion uses the existing physical-entity state replication.
-- Wheel spin, steer, RPM, gear, mode, engine state, and occupant are sent in a
-  compact vehicle state packet at the existing unreliable cadence.
-- Clients interpolate; they do not simulate an authoritative vehicle.
-- Actor snapshots identify the occupied vehicle and seat so remote players
-  appear seated.
+- The client sends vehicle actions through the shared input/action surface; the
+  server validates range, seat availability, lifecycle state, and occupancy.
+- Chassis motion uses the existing physical-entity state replication. Vehicle
+  state (template identity, occupants/seats, engine, gear, RPM, boost, speed,
+  wheel spin/steer/compression) uses a compact unreliable packet at the
+  established vehicle cadence.
+- Clients interpolate the chassis and visual wheel state; local input may be
+  predicted for responsiveness, but the server state is the correction target.
+- While seated, the server owns the actor origin and bypasses normal movement
+  validation/correction for that actor.
+- Remote occupants appear seated through the replicated seat/occupant state and
+  authoritative actor transform.
+- A client must reject a vehicle spawn whose template is missing and log the
+  mismatch; it must not invent a fallback vehicle state.
+
+This section strengthens the existing physical-entity replication owner. It
+does not create a second vehicle networking system.
+
+### 14.1 Implemented online slice (2026-11-04)
+
+The first online slice uses these compact packet families:
+
+- `VehicleInputPacket` (client to server, unreliable): sequence, vehicle id,
+  throttle, brake, steer, clutch, handbrake, and one-shot engine/mode/shift
+  flags.
+- `VehicleSeatRequestPacket` (client to server): request serial, vehicle id,
+  seat, and enter/exit action. The client retries until a reliable answer.
+- `VehicleSpawnEventPacket` and `VehicleDespawnEventPacket` (reliable):
+  template identity, vehicle id, chassis network id, initial transform, and
+  occupants.
+- `VehicleSeatEventPacket` (reliable): vehicle id, actor id, seat, and
+  enter/exit/reject. Rejection clears the client's pending request.
+- `VehicleStatePacket` (unreliable): engine/gear/RPM/axes plus wheel spin,
+  steer, and compression.
+
+The dedicated server owns an authored map vehicle list. A stable hash of that
+list decides when to spawn or replace server vehicles, so unrelated map config
+revisions do not respawn every car. The server advances only
+`PhysicalEntity::serverSimulated` bodies through the shared fixed tick.
+Reliable spawn/despawn/seat events are queued per player; the existing
+physical-entity replication carries chassis transforms.
+
+A client mirror is marked `serverMirror`: it never applies suspension, tire, or
+drivetrain forces. Local driver input is sent to the server and reflected back
+through the state packet. A seated actor's server origin is the seat, and
+normal locomotion is skipped while seated.
 
 ---
 
 ## 15. Map editor authoring
 
-First slice:
+The map editor and the vehicle builder share the same transform, selection,
+snapping, undo, and save tools. They own different data:
 
-- place a vehicle from the editor by adding a `vehicle` map entity that
-  references a template,
+- the **map editor** places a vehicle instance in the map and spawns it,
+- the **vehicle builder** edits a reusable template in
+  `config/vehicles/<id>.json`.
+
+First map-editor slice:
+
+- add a `vehicle` placement that references a template,
 - select/move it with the existing translate tools,
-- edit per-instance overrides by numeric fields,
-- author constraints by selecting A, selecting B, choosing a type and axis from
-  a dropdown, and entering numeric limits/spring values,
-- persist to `config/maps/<mapId>.json`.
+- spawn the selected placement into the running world,
+- persist it in the map's `vehicles` array,
+- show the template's wheels in the editor so hub, radius, and width are
+  inspectable,
+- edit wheel hub/radius/width through the editor command surface.
+
+Full visual assembly (spawn parts, parent, rotate, live physics preview) is the
+next slice on the same data model. Arbitrary vertex/edge/face editing is not in
+scope.
 
 Constraints are stored in a `constraints` array. Vehicles are stored in a
 `vehicles` array. Runtime-only actors remain outside the editor, as specified in
 `entity-editor.md`.
-
-Full visual assembly (spawn parts, parent, rotate, live physics preview) is a
-later slice on the same data model.
 
 ---
 
@@ -513,6 +721,11 @@ later slice on the same data model.
 | `vehicle_debug [suspension|tires|forces|off]` | Debug overlay |
 | `vehicle_reset [id]` | Reset pose and motion |
 | `vehicle_teleport <x y z> [yaw]` | Move the occupied vehicle |
+| `mapeditor add vehicle [template] [id]` | Add an authored vehicle placement |
+| `mapeditor spawn_vehicle [id]` | Spawn the selected authored vehicle |
+| `mapeditor vehicle_wheel <index> hub <x> <y> <z>` | Edit the selected template's wheel hub |
+| `mapeditor vehicle_wheel <index> radius <m>` | Edit the selected template's wheel radius |
+| `mapeditor vehicle_wheel <index> width <m>` | Edit the selected template's wheel width |
 | `constraint_create <type> <a> <b> ...` | Create a constraint |
 | `constraint_list` | List constraints |
 | `constraint_delete <id>` | Remove a constraint |
@@ -543,17 +756,17 @@ mutate server-owned state directly from a client.
 | `src/vehicles/vehicle-commands.cpp` | console surface |
 | `src/vehicles/vehicle-authoring.*` | map editor placement |
 
-Implementation order:
+Implementation order (updated 2026-11-03):
 
-1. Generalized constraints + analytic cylinder + hinge demo.
-2. Templates, spawn, HUD skeleton.
-3. Suspension, weight transfer, tires.
-4. Drivetrain and the control contract.
-5. Seats, ragdoll/weapon behavior, camera, networking.
-6. Editor placement/tuning and destruction hooks.
+1. Spec, shared primitive/template contract, and map-authored vehicle placement.
+2. Local car vertical slice: spawn, F enter, drive, exit, wheels visible.
+3. Server authority, occupancy, input, weapon use from the seat, and replication.
+4. Primitive builder, reusable templates, and visual body authoring.
+5. NPC driver profiles through the shared vehicle input surface.
+6. Vehicle arena mode: ball, goals, scoring, and exact reference tuning.
 
 Each phase reports build evidence, runtime `events.jsonl` evidence, and human
-acceptance separately.
+acceptance separately. Build success never counts as gameplay acceptance.
 
 ---
 
@@ -600,7 +813,7 @@ Interaction is a general world-anchored capability, not a car-only path.
 - The prompt origin comes from the object itself (for a vehicle, the chassis
   origin plus a readable roof offset). It is not a hardcoded screen position.
 - The interaction origin is range-checked around the player. Every radius is
-  clamped to at least **1 m**; a car template defaults to **3 m**.
+  clamped to at least **1 m**; a car template defaults to **15 m**.
 - The prompt is a camera-facing screen-space billboard projected from the
   object origin. It is deliberately large: key cap, dark background, bright
   border, and a minimum on-screen font scale.
@@ -612,15 +825,52 @@ Interaction is a general world-anchored capability, not a car-only path.
   flicker as the car moves.
 - Prompt shown/hidden is logged on target change, not per frame.
 
+### 21.1 Interaction range and how to change it
+
+The vehicle F-prompt radius is the template field
+`interactionRadius` in `config/vehicles/<id>.json`. The current
+`car_sedan.json` uses **15 m** (five times the old 3 m default).
+
+```json
+{
+  "id": "car_sedan",
+  "interactionRadius": 15.0
+}
+```
+
+- `VehicleSpec::interactionRadius` defaults to `15.0f` when a template omits
+  the field.
+- `VehicleConfigRegistry` accepts values from `1.0` to `50.0` metres.
+- The client uses the value directly for the interaction target radius.
+- The authoritative server allows a seat request at
+  `interactionRadius + 2 m` (network margin), so changing the template changes
+  both the prompt and the server acceptance range.
+- `InteractionSystem` still enforces a 1 m minimum and only draws the prompt
+  within 30 m.
+- Pressing F prefers the driver seat. If the driver seat is occupied by another
+  actor, the interaction chooses the first free seat.
+
+To make a car easier or harder to enter, edit that one JSON field and run
+`vehicle_reload`, or restart the server/client so the template reloads.
+
 ## 22. Car dimensions and visible wheels (2026-10-27)
 
 The current first template is a deliberately simple block:
 
 - length **5 m** (X), width **3 m** (Y), height **1 m** (Z);
-- wheel radius **0.3 m**, width 0.25 m;
-- wheel hub positions `x ±1.5`, `y ±1.2`, `z -0.3`;
+- wheel radius **0.55 m**, width 0.38 m;
+- wheel hub positions `x ±1.5`, `y ±1.2`, `z -0.25`;
+- seat `riderOffset` **1.11 m** upward (capsule-center origin; this is seat cushion + capsule half-height).
 - body texture `assets/textureshq/240sx.png`;
 - wheel texture `assets/textureshq/dark1.png`.
+
+Wheel size is edited in `config/vehicles/car_sedan.json` under `wheels[]`:
+`hub`, `radius`, `width`, `restLength`, and `travel`. `vehicle.wheel.spec` logs
+the loaded geometry (and the `edit_file` path) once per spawn. The ride height
+used by `vehicle_spawn` is derived from those same fields, so changing the wheel
+size does not require editing the terminal command or the map spawn by hand.
+The dedicated server also ray-settles authored map spawns so every wheel starts
+with its resting contact patch just above the surface.
 
 Wheels are drawn as smooth textured cylinders (32 segments by default), not
 authored Blender triangles. Visual spin and steering axes are per-wheel JSON
@@ -665,6 +915,14 @@ Each fixed tick records:
   world velocity.
 
 `vehicle.tick.summary` is emitted at most once per second per vehicle.
+`vehicle.bounce` samples chassis origin/velocity/orientation, grounded count,
+and per-wheel hub, contact point/normal, contact triangle id, suspension,
+compression, load, and slip at 10 Hz so bounce is numerically provable.
+`vehicle.wheel.spec` logs the loaded wheel geometry and edit file once per spawn.
+`vehicle.seat.anchor` logs the seated origin, previous position, snap distance,
+and crouch flag. `vehicle.input.local` and `vehicle.input.server` log the input
+axes/edges at the client and after server application.
+
 `vehicle.performance` records vehicle count, awake count, update milliseconds,
 and physical-entity count. Spawn, enter, exit, tune, void, and audio transitions
 are Important events. JSON construction is gated so a high-frequency summary

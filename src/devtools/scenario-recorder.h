@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <future>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -65,6 +66,7 @@ private:
     void writeHeader(const Player& player, const Camera& camera);
     void writeFooter(const char* reason);
     void flushIfNeeded();
+    void notifySaveResult();
     bool writeScenarioEvent(const std::string& event, const std::string& reason,
                             uint32_t tick, const nlohmann::json& fields);
     void markCaptureFailure(const std::string& reason, uint32_t tick);
@@ -93,6 +95,8 @@ private:
     std::string mPath;
     std::string mServerPath;
     std::string mMergeError;
+    std::future<std::pair<bool, std::string>> mMergeFuture;
+    bool mMergeInFlight = false;
     std::string mMap;
     std::string mMode;
     int mWeaponSet = 0;
@@ -107,5 +111,6 @@ private:
     std::unordered_map<std::string, uint64_t> mLastAnomalyTick;
     std::string mScenarioId;
     bool mCaptureInvalid = false;
+    bool mSaveNotified = false;
     std::string mCaptureFailure;
 };

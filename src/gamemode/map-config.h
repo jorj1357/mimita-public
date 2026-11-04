@@ -75,6 +75,17 @@ struct AuthoredBlock
     std::vector<std::string> tags;
 };
 
+// One authored vehicle placement. The template owns chassis/wheel/tuning data;
+// this record owns only where an instance starts in the map.
+struct MapVehicleSpawn
+{
+    std::string id;
+    std::string templateId = "car_sedan";
+    glm::vec3 position{0.0f};
+    float yaw = 0.0f;
+    bool enabled = true;
+};
+
 struct PayloadRoutePoint
 {
     std::string id;
@@ -144,6 +155,7 @@ struct MapObjectiveConfig
     std::vector<BombSite> bombSites;
     std::vector<MapEntity> entities;
     std::vector<AuthoredBlock> blocks;
+    std::vector<MapVehicleSpawn> vehicles;
     std::vector<MapGLBObjectOverride> glbObjects;
     PayloadConfig payload;
     float plantSeconds = 3.0f;
@@ -203,6 +215,15 @@ public:
     std::string createBlock(const glm::vec3& position, const glm::vec3& size,
                             const std::string& requestedId = "");
     bool deleteBlock(const std::string& id);
+
+    const MapVehicleSpawn* findVehicle(const std::string& id) const;
+    MapVehicleSpawn* findVehicleMutable(const std::string& id);
+    const std::vector<MapVehicleSpawn>& vehicles() const { return mCurrent.vehicles; }
+    std::vector<MapVehicleSpawn>& vehiclesMutable() { return mCurrent.vehicles; }
+    std::string createVehicle(const std::string& templateId,
+                              const glm::vec3& position, float yaw,
+                              const std::string& requestedId = "");
+    bool deleteVehicle(const std::string& id);
 
     const std::vector<MapGLBObjectOverride>& glbObjects() const { return mCurrent.glbObjects; }
     std::vector<MapGLBObjectOverride>& glbObjectsMutable() { return mCurrent.glbObjects; }

@@ -53,6 +53,10 @@ struct PhysicalEntity {
     // marked serverDriven so they are never simulated locally.
     uint32_t networkId = 0;
     bool serverDriven = false;
+    // Dedicated-server fixed-tick simulation opt-in. The server's shared
+    // physical tick advances only flagged bodies (vehicles, arena ball), so
+    // enabling authoritative physics does not activate unrelated props.
+    bool serverSimulated = false;
     // Non-destructible gameplay bodies (the Payload cart) opt into replication
     // explicitly. Destruction replication remains gated by destructible.enabled.
     bool replicate = false;
@@ -143,7 +147,10 @@ public:
 
     // Advances every kinematic entity that has a nonzero velocity by velocity*dt,
     // and snaps previousTransform to the pre-move pose. Called once per tick.
-    void advanceKinematics(float dt, const World& world);
+    // `authoritativeOnly` is used by the dedicated server: only bodies with
+    // serverSimulated set are integrated. Client calls keep the default false.
+    void advanceKinematics(float dt, const World& world,
+                           bool authoritativeOnly = false);
 
     // One fixed-step hook for systems that apply forces to entities before the
     // entity integration pass (vehicles, future controllers). The hook is called

@@ -485,7 +485,7 @@ void PostFX::applyPreset(const std::string& name)
         p.glitchStrength = 0.5f; p.chromaticAberration = 0.6f;
         p.lensDistortion = 0.1f; p.filmGrain = 0.3f;
     }
-    else if (name == "competitive" || name == "melee")
+    else if (name == "competitive" || name == "ssbm" || name == "melee")
     {
         p.contrast = 1.15f; p.brightness = 0.95f; p.saturation = 1.1f;
         p.gamma = 2.0f; p.vignette = 0.15f; p.shadowBoost = 0.2f;
