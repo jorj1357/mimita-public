@@ -161,7 +161,18 @@ void resolveWorldContactVelocity(PhysicalEntity& e,
         return;
     const float desiredTangentImpulse = -glm::dot(postNormalVelocity, tangent) /
                                         tangentMass;
-    const float frictionLimit = e.friction * normalImpulse;
+    const bool wallContact = std::fabs(normal.z) < 0.5f;
+    const float contactFriction =
+        (wallContact && e.wallFriction >= 0.0f) ? e.wallFriction
+                                                : e.friction;
+    if (wallContact)
+    {
+        e.lastWallContactTick =
+            static_cast<float>(PhysicalEntitySystem::instance().simulationTick());
+        e.lastWallContactNormal = normal;
+        e.lastWallImpactSpeed = std::fabs(normalSpeed);
+    }
+    const float frictionLimit = contactFriction * normalImpulse;
     const float tangentImpulse = normalImpulse > 0.0f
         ? glm::clamp(desiredTangentImpulse, -frictionLimit, frictionLimit)
         : desiredTangentImpulse;

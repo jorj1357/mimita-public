@@ -93,6 +93,11 @@ from dev_loop.artifacts import (
 )
 from dev_loop.build import run_build as run_build_worker
 from dev_loop.launch import select_launch_artifact
+from dev_loop.instances import (
+    RunLayout,
+    create_run_layout as runtime_create_run_layout,
+    write_run_manifest,
+)
 from dev_loop.runtime import (
     create_shared_events_path as runtime_create_shared_events_path,
     executable_identity as runtime_executable_identity,
@@ -1020,10 +1025,18 @@ class DevLoop:
             else "starting; no published build found"
         )
         self.last_status_line = None
+        self.last_state_save_monotonic = 0.0
         self.room_file_path: Path | None = None
         self.room_code = None
-        # Shared canonical events.jsonl for the server and its client. Created
-        # once when the durable server starts and reused across client launches.
+        # Run layout: one run folder with a dev-loop journal and one canonical
+        # journal per game executable.
+        self.run_layout: RunLayout | None = None
+        self.manifest_path: str | None = None
+        self.server_journal_path: str | None = None
+        self.client_journal_path: str | None = None
+        self.launch_id: str | None = None
+        self.instances: list[dict] = []
+        # Legacy alias: the dev-loop journal. Kept for control/status readers.
         self.events_path: str | None = None
         self.run_id: str | None = None
         self.run_started_utc: str | None = None
@@ -1086,6 +1099,22 @@ class DevLoop:
         self.server_launch_ms = float(marker.get("launch_ms", 0.0) or 0.0)
         self.run_id = str(marker.get("run_id", "")) or self.run_id
         self.events_path = str(marker.get("events_path", "")) or self.events_path
+        self.manifest_path = str(marker.get("manifest_path", "")) or self.manifest_path
+        self.server_journal_path = (str(marker.get("server_journal_path", "")) or
+                                    self.server_journal_path)
+        self.client_journal_path = (str(marker.get("client_journal_path", "")) or
+                                    self.client_journal_path)
+        self.launch_id = str(marker.get("launch_id", "")) or self.launch_id
+        run_dir = str(marker.get("run_dir", "")) or ""
+        if run_dir:
+            self.run_layout = RunLayout(
+                run_dir=Path(run_dir),
+                run_id=self.run_id or Path(run_dir).name,
+                manifest_path=Path(self.manifest_path or (Path(run_dir) / "run.json")),
+                dev_loop_journal=Path(self.events_path or (Path(run_dir) / "dev-loop" / "events.jsonl")),
+                server_journal=Path(self.server_journal_path or (Path(run_dir) / "server-01" / "events.jsonl")),
+                client_journal=Path(self.client_journal_path or (Path(run_dir) / "client-01" / "events.jsonl")),
+            )
         self.last_message = f"adopted verified dev-loop server pid={pid}"
         self.record_runtime_event(
             "dev-loop.process.adopted",
@@ -1114,6 +1143,11 @@ class DevLoop:
             "room_code": self.room_code or "",
             "run_id": self.run_id,
             "events_path": self.events_path,
+            "run_dir": str(self.run_layout.run_dir) if self.run_layout else "",
+            "manifest_path": self.manifest_path,
+            "server_journal_path": self.server_journal_path,
+            "client_journal_path": self.client_journal_path,
+            "launch_id": self.launch_id,
             "server_ready": self.server_ready,
             "launch_ms": self.server_launch_ms,
             "updated_utc": utc_now(),
@@ -1133,6 +1167,153 @@ class DevLoop:
                 SERVER_MARKER_PATH.unlink()
             except FileNotFoundError:
                 pass
+
+    def _ensure_run_layout(self) -> RunLayout:
+        if self.run_layout is None:
+            layout = runtime_create_run_layout()
+            self.run_layout = layout
+            self.events_path = str(layout.dev_loop_journal)
+            self.manifest_path = str(layout.manifest_path)
+            self.server_journal_path = str(layout.server_journal)
+            self.client_journal_path = str(layout.client_journal)
+            self.run_id = layout.run_id
+        return self.run_layout
+
+    def _journal_read_paths(self) -> list[str]:
+        paths = [self.server_journal_path, self.client_journal_path,
+                 self.events_path]
+        return [path for path in paths if path]
+
+    @staticmethod
+    def _tail_records(path: str | None, max_bytes: int = 262144) -> list[dict]:
+        if not path:
+            return []
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                size = handle.tell()
+                handle.seek(max(0, size - max_bytes))
+                raw = handle.read()
+        except OSError:
+            return []
+        records = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+        return records
+
+    def _journal_last(self, path: str | None, events: set[str] | None = None,
+                      max_bytes: int = 262144) -> dict | None:
+        for record in reversed(self._tail_records(path, max_bytes)):
+            if events is None or str(record.get("event", "")) in events:
+                return record
+        return None
+
+    @staticmethod
+    def _age_ms(record: dict | None, now_ms: float) -> float | None:
+        if not record:
+            return None
+        value = record.get("wall_time")
+        if not isinstance(value, str):
+            return None
+        try:
+            from datetime import datetime, timezone
+            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return max(0.0, now_ms - stamp.timestamp() * 1000.0)
+        except ValueError:
+            return None
+
+    def _instance_records(self) -> list[dict]:
+        now_ms = time.time() * 1000.0
+        server_alive = bool(self.server_pid and self.server_health())
+        clients = [p for p in self.processes if p.poll() is None]
+        server_last = self._journal_last(self.server_journal_path)
+        client_last = self._journal_last(self.client_journal_path)
+        snapshot = self._journal_last(
+            self.client_journal_path, {"network.client-snapshot-window"},
+            max_bytes=4 * 1024 * 1024)
+        server_event_age = self._age_ms(server_last, now_ms)
+        client_event_age = self._age_ms(client_last, now_ms)
+        snapshot_age = self._age_ms(snapshot, now_ms)
+        snapshot_tick = (snapshot or {}).get("fields", {}).get("server_tick") \
+            if isinstance((snapshot or {}).get("fields"), dict) else None
+        if not server_alive:
+            server_state = "stopped" if self.server_unavailable else "offline"
+        elif not self.server_ready:
+            server_state = "starting"
+        elif self.build_mismatch_reason:
+            server_state = "mismatch"
+        else:
+            server_state = "online"
+        if not clients:
+            client_state = "offline"
+        elif snapshot_age is not None and snapshot_age <= 3000.0:
+            client_state = "online"
+        elif not server_alive:
+            client_state = "frozen"
+        else:
+            client_state = "stale"
+        server = {
+            "instance_id": "server-01",
+            "role": "server",
+            "label": self.profile.get("server_name", "server"),
+            "pid": self.server_pid,
+            "executable": self.server_exe,
+            "build_id": self.server_build_id or self.run_metadata.get("server_build_id"),
+            "launch_id": self.launch_id,
+            "state": server_state,
+            "bind": (f"127.0.0.1:{self.server_local_port}"
+                     if self.server_local_port else ""),
+            "room_code": self.room_code or "",
+            "map": self.current_map,
+            "mode": self.launch_mode.get("name", self.launch_mode_id),
+            "journal_path": self.server_journal_path,
+            "last_event_utc": (server_last or {}).get("wall_time"),
+            "event_age_ms": server_event_age,
+            "roster_count": 1 if (server_alive and self.client_ready) else 0,
+            "build_match": bool(self.builds_match),
+        }
+        client = {
+            "instance_id": "client-01",
+            "role": "client",
+            "label": self.profile.get("client_name", "client"),
+            "pid": clients[0].pid if clients else None,
+            "executable": (self.client_args[0] if self.client_args else None),
+            "build_id": self.run_metadata.get("client_build_id"),
+            "launch_id": self.launch_id,
+            "state": client_state,
+            "server_instance_id": "server-01",
+            "connected_address": (f"127.0.0.1:{self.server_local_port}"
+                                  if self.server_local_port else ""),
+            "journal_path": self.client_journal_path,
+            "last_event_utc": (client_last or {}).get("wall_time"),
+            "event_age_ms": client_event_age,
+            "last_snapshot_tick": snapshot_tick,
+            "snapshot_age_ms": snapshot_age,
+            "build_match": bool(self.builds_match),
+        }
+        return [server, client]
+
+    def _write_manifest(self) -> None:
+        layout = self.run_layout
+        if layout is None:
+            return
+        manifest = {
+            "checkout_root": str(ROOT),
+            "created_utc": self.run_started_utc,
+            "build_id": self.run_metadata.get("build_id"),
+            "artifact_id": self.run_metadata.get("artifact_id"),
+            "source_generation": self.run_metadata.get("source_generation"),
+            "instances": self._instance_records(),
+        }
+        try:
+            write_run_manifest(layout, manifest)
+        except OSError as error:
+            print(f"[DEV] manifest write failed: {error}")
 
     def state(self, status: str = "idle") -> dict:
         client_executable = self.client_args[0] if self.client_args else None
@@ -1231,6 +1412,11 @@ class DevLoop:
             "run_id": self.run_id,
             "run_started_utc": self.run_started_utc,
             "run_metadata": dict(self.run_metadata),
+            "run_dir": str(self.run_layout.run_dir) if self.run_layout else None,
+            "manifest_path": self.manifest_path,
+            "server_journal_path": self.server_journal_path,
+            "client_journal_path": self.client_journal_path,
+            "instances": self._instance_records(),
             "events_path": self.events_path,
             "control_port": self.control_port,
             "control_token": self.control_token if self.control_port else None,
@@ -1268,6 +1454,7 @@ class DevLoop:
         snapshot = self.state(status)
         write_json(STATE_PATH, snapshot)
         write_json(CURRENT_RUN_PATH, snapshot)
+        self._write_manifest()
 
     def record_control_event(self, request: dict, status: str, message: str) -> None:
         """Append control-plane evidence to the active canonical journal."""
@@ -1697,8 +1884,7 @@ class DevLoop:
             request_id = str(request.get("request_id", ""))
             print(f"[DEV CONTROL] request={request_id or '(none)'} action={action}")
             if action in ("launch", "build-or-launch") and not self.events_path:
-                self.events_path = create_shared_events_path()
-                self.run_id = Path(self.events_path).parent.name
+                self._ensure_run_layout()
             if action == "launch":
                 requested_mode = request.get("launch_mode")
                 if requested_mode is not None:
@@ -2190,8 +2376,8 @@ class DevLoop:
         self.server_ready = False
         self.builds_match = False
         self.server_adopted = False
-        self.events_path = None
-        self.run_metadata = {}
+        # Keep the run layout and journals after an explicit server stop so the
+        # dashboard can still show the stopped instance and its evidence.
         self.cleanup_room_file()
         if not stopped:
             self.last_message = f"refused to replace server pid={process.pid if process else '(none)'}; process remains alive"
@@ -2211,21 +2397,22 @@ class DevLoop:
                     f"(exit_code={process.returncode})"
                 )
                 return False
-            try:
-                with open(self.events_path, "r", encoding="utf-8") as journal:
-                    for line in journal:
-                        try:
-                            event = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if event.get("event") != "logger.started":
-                            continue
-                        fields = event.get("fields", {})
-                        if (fields.get("pid") == pid and
-                                fields.get("process_role", fields.get("process")) == role):
-                            return True
-            except OSError:
-                pass
+            for journal_path in self._journal_read_paths():
+                try:
+                    with open(journal_path, "r", encoding="utf-8") as journal:
+                        for line in journal:
+                            try:
+                                event = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if event.get("event") != "logger.started":
+                                continue
+                            fields = event.get("fields", {})
+                            if (fields.get("pid") == pid and
+                                    fields.get("process_role", fields.get("process")) == role):
+                                return True
+                except OSError:
+                    pass
             time.sleep(0.1)
         return False
 
@@ -2238,21 +2425,22 @@ class DevLoop:
             process = self.server_process
             if process is not None and process.poll() is not None:
                 return 0
-            try:
-                with open(self.events_path, "r", encoding="utf-8") as journal:
-                    for line in journal:
-                        try:
-                            event = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if (event.get("event") != "network.server.local-gameplay-ready" or
-                                event.get("pid") != pid):
-                            continue
-                        port = int(event.get("fields", {}).get("port", 0) or 0)
-                        if 0 < port <= 65535:
-                            return port
-            except OSError:
-                pass
+            for journal_path in self._journal_read_paths():
+                try:
+                    with open(journal_path, "r", encoding="utf-8") as journal:
+                        for line in journal:
+                            try:
+                                event = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if (event.get("event") != "network.server.local-gameplay-ready" or
+                                    event.get("pid") != pid):
+                                continue
+                            port = int(event.get("fields", {}).get("port", 0) or 0)
+                            if 0 < port <= 65535:
+                                return port
+                except OSError:
+                    pass
             time.sleep(0.05)
         return 0
 
@@ -2336,15 +2524,17 @@ class DevLoop:
         launch_started = time.monotonic()
         self.last_message = ""
         self.reap_stray_mimita_processes()
-        # Every launch starts a fresh journal. Reusing a full/capped journal is
-        # what made logger.started disappear and readiness time out while the
-        # replacement server stayed alive.
-        self.events_path = create_shared_events_path()
-        self.run_id = Path(self.events_path).parent.name
+        # Every explicit launch starts a fresh run folder with one journal per
+        # executable. Reusing a full/capped journal is what made logger.started
+        # disappear and readiness time out while the replacement server stayed
+        # alive.
+        self.run_layout = None
+        self._ensure_run_layout()
+        self.launch_id = utc_now()
         self.run_started_utc = utc_now()
         self.run_metadata = {}
         launch_journal_path = self.events_path
-        launch_run_id = self.run_id or Path(launch_journal_path).parent.name
+        launch_run_id = self.run_id
         build_id = ""
         artifact_id = ""
         map_name = ""
@@ -2580,14 +2770,11 @@ class DevLoop:
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
             server_args = self.build_server_args(launch_exe, map_name, self.room_file_path)
-            # One shared canonical events.jsonl for this server and its client.
             if not self.events_path:
-                self.events_path = create_shared_events_path()
-                self.run_id = Path(self.events_path).parent.name
+                self._ensure_run_layout()
             launch_journal_path = self.events_path
-            launch_run_id = self.run_id or Path(self.events_path).parent.name
+            launch_run_id = self.run_id
             self.command_queue_path = None
-            self.run_id = Path(self.events_path).parent.name
             # The first prelaunch snapshot above may predate creation of the
             # canonical journal. Record the same state again once the journal
             # exists so every fresh launch has a durable before-launch record.
@@ -2612,6 +2799,10 @@ class DevLoop:
                 "launch_mode_name": self.launch_mode.get("name", "unnamed"),
                 "map": map_name,
                 "events_path": self.events_path,
+                "run_dir": str(self.run_layout.run_dir) if self.run_layout else None,
+                "manifest_path": self.manifest_path,
+                "server_journal_path": self.server_journal_path,
+                "client_journal_path": self.client_journal_path,
                 "executable": str(launch_exe),
                 "artifact_executable": str(exe),
                 "started_utc": self.run_started_utc,
@@ -2619,7 +2810,9 @@ class DevLoop:
             self.run_metadata = metadata
             common_env = {
                 **os.environ,
-                "MIMITA_EVENTS_FILE": self.events_path,
+                "MIMITA_EVENTS_FILE": self.server_journal_path or self.events_path,
+                "MIMITA_INSTANCE_ID": "server-01",
+                "MIMITA_LAUNCH_ID": self.launch_id or "",
                 "MIMITA_RUN_ID": self.run_id,
                 "MIMITA_BUILD_ID": build_id,
                 "MIMITA_RUN_METADATA": json.dumps(metadata, separators=(",", ":")),
@@ -2653,7 +2846,7 @@ class DevLoop:
                 print(f"[DEV] {self.last_message}")
                 return False
             print(f"[DEV] launching build {selected_build} server")
-            print(f"[DEV] shared events file: {self.events_path}")
+            print(f"[DEV] server journal: {self.server_journal_path or self.events_path}")
             self.record_runtime_event(
                 "dev-loop.launch.args",
                 {
@@ -2791,9 +2984,9 @@ class DevLoop:
         ])
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
-            self.events_path = create_shared_events_path()
+            self._ensure_run_layout()
         if not self.run_id:
-            self.run_id = Path(self.events_path).parent.name
+            self.run_id = self.run_layout.run_id if self.run_layout else None
         if self.run_metadata.get("build_id") != build_id:
             self.run_started_utc = self.run_started_utc or utc_now()
             self.run_metadata = {
@@ -2833,7 +3026,9 @@ class DevLoop:
         # the dev-loop instead, so the client must never claim ownership of it.
         client_env = {
             **os.environ,
-            "MIMITA_EVENTS_FILE": self.events_path,
+            "MIMITA_EVENTS_FILE": self.client_journal_path or self.events_path,
+            "MIMITA_INSTANCE_ID": "client-01",
+            "MIMITA_LAUNCH_ID": self.launch_id or "",
             "MIMITA_DEV_LOOP_SERVER": "1",
             "MIMITA_RUN_ID": self.run_id or Path(self.events_path).parent.name,
             "MIMITA_EXPECTED_RUN_ID": self.run_id or Path(self.events_path).parent.name,
@@ -2843,7 +3038,7 @@ class DevLoop:
             "MIMITA_PROCESS_ROLE": "client",
         }
         print(f"[DEV] launching build {selected_build} client")
-        print(f"[DEV] shared events file: {self.events_path}")
+        print(f"[DEV] client journal: {self.client_journal_path or self.events_path}")
         self.record_runtime_event(
             "dev-loop.launch.args",
             {
@@ -3011,29 +3206,30 @@ class DevLoop:
                                timeout: float = 45.0,
                                field_key: str = "",
                                field_value: str = "") -> dict | None:
-        """Wait for one matching event in this run's shared journal."""
+        """Wait for one matching event in any journal owned by this run."""
         if not self.events_path:
             return None
         deadline = time.time() + timeout
         while time.time() < deadline:
-            for segment in _journal_segment_paths(self.events_path):
-                try:
-                    with open(segment, "r", encoding="utf-8", errors="replace") as journal:
-                        for line in journal:
-                            try:
-                                event = json.loads(line)
-                            except json.JSONDecodeError:
-                                continue
-                            if event.get("event") != event_name:
-                                continue
-                            if pids and event.get("pid") not in pids:
-                                continue
-                            fields = event.get("fields", {})
-                            if field_key and fields.get(field_key) != field_value:
-                                continue
-                            return event
-                except OSError:
-                    pass
+            for journal_path in self._journal_read_paths():
+                for segment in _journal_segment_paths(journal_path):
+                    try:
+                        with open(segment, "r", encoding="utf-8", errors="replace") as journal:
+                            for line in journal:
+                                try:
+                                    event = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                if event.get("event") != event_name:
+                                    continue
+                                if pids and event.get("pid") not in pids:
+                                    continue
+                                fields = event.get("fields", {})
+                                if field_key and fields.get(field_key) != field_value:
+                                    continue
+                                return event
+                    except OSError:
+                        pass
             time.sleep(0.1)
         return None
 
@@ -3232,7 +3428,7 @@ class DevLoop:
     def _status_lines(self, snapshot: dict) -> list[str]:
         running = bool(snapshot.get("run_alive"))
         client_pids = snapshot.get("client_pids", [])
-        return [
+        lines = [
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
             f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
@@ -3240,9 +3436,19 @@ class DevLoop:
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
             f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
             f"[DEV STATUS] ROOM CODE: {snapshot.get('room_code') or 'waiting for coordinator'}",
-            f"[DEV STATUS] EVENTS: {_terminal_file_link(snapshot.get('events_path'))}",
-            "[DEV STATUS] CONTROLS: [1] launch latest  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit",
+            f"[DEV STATUS] MANIFEST: {snapshot.get('manifest_path') or '-'}",
         ]
+        for inst in snapshot.get("instances", []):
+            snapshot_age = inst.get("snapshot_age_ms")
+            age_text = f"{snapshot_age / 1000.0:.1f}s" if snapshot_age is not None else "-"
+            journal = str(inst.get("journal_path") or "-")
+            lines.append(
+                f"[DEV STATUS] {inst.get('instance_id')} {inst.get('role')} "
+                f"{inst.get('state')} pid={inst.get('pid') or '-'} "
+                f"snap={age_text} journal={journal}")
+        lines.append(
+            "[DEV STATUS] CONTROLS: [1] launch latest  [2] mode  [V] visible/headless  [A] auto-start  [Q] quit")
+        return lines
 
     def _render_status(self, snapshot: dict | None = None) -> None:
         global _status_rendering
@@ -3302,6 +3508,9 @@ class DevLoop:
                         if self.active_build_generation is None:
                             self.build_status = "pending"
                 self.print_status()
+                if time.monotonic() - self.last_state_save_monotonic >= 1.0:
+                    self.last_state_save_monotonic = time.monotonic()
+                    self.save_state(self.last_status_value)
                 self.refresh_status_animation()
         finally:
             self.stop_event.set()
@@ -4203,40 +4412,41 @@ _COMMAND_DONE_EVENTS = (
 )
 
 
-def wait_for_command_result(events_path: str, request_id: str, timeout: float,
+def wait_for_command_result(events_path, request_id: str, timeout: float,
                             start_offset: int | None = None) -> dict:
     """Wait for the client to execute a queued command; return a summary.
 
-    The caller should pass the journal offset captured *before* sending the
-    request: the daemon's control reply is built synchronously (including a
-    status snapshot) and can arrive after the client already executed the
-    command, so stat-ing the file after the reply can miss the events.
+    `events_path` may be one journal or a list. Delivery is recorded in the
+    dev-loop journal while execution is recorded in the client journal, so the
+    caller normally passes both.
     """
     result = {"delivered": False, "completed": False, "event": "", "tick": None,
               "reason": ""}
-    if not events_path or not request_id:
+    paths = events_path if isinstance(events_path, (list, tuple)) else [events_path]
+    paths = [str(path) for path in paths if path]
+    if not paths or not request_id:
         return result
-    cursor = _JournalCursor(events_path)
+    cursors = [_JournalCursor(path) for path in paths]
     deadline = time.time() + timeout
     while time.time() < deadline:
-        batch = cursor.read()
-        for record in batch:
-            if not _record_request_id(record).startswith(request_id):
-                continue
-            name = str(record.get("event", ""))
-            if name == "dev-loop.command.delivered":
-                result["delivered"] = True
-            if name in _COMMAND_DONE_EVENTS:
-                result["completed"] = True
-                result["event"] = name
-                result["tick"] = record.get("tick")
-            elif name == "dev-loop.control":
-                fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
-                status = str(fields.get("status", ""))
-                if status in ("rejected", "queue_rejected", "scenario_rejected"):
+        for cursor in cursors:
+            for record in cursor.read():
+                if not _record_request_id(record).startswith(request_id):
+                    continue
+                name = str(record.get("event", ""))
+                if name == "dev-loop.command.delivered":
+                    result["delivered"] = True
+                if name in _COMMAND_DONE_EVENTS:
                     result["completed"] = True
                     result["event"] = name
-                    result["reason"] = str(fields.get("message", ""))
+                    result["tick"] = record.get("tick")
+                elif name == "dev-loop.control":
+                    fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+                    status = str(fields.get("status", ""))
+                    if status in ("rejected", "queue_rejected", "scenario_rejected"):
+                        result["completed"] = True
+                        result["event"] = name
+                        result["reason"] = str(fields.get("message", ""))
         if result["completed"]:
             return result
         time.sleep(0.2)
@@ -4805,6 +5015,8 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
 def _control_action(args: argparse.Namespace) -> str:
     if getattr(args, "ai_match", False):
         return "scenario-file"
+    if getattr(args, "list_instances", False):
+        return "list-instances"
     if args.command:
         return "command"
     if args.scenario_file:
@@ -4881,6 +5093,28 @@ def run_ai_match(args: argparse.Namespace) -> int:
 
 def run_control_client(args: argparse.Namespace) -> int:
     action = _control_action(args)
+
+    if action == "list-instances":
+        current = read_current_run()
+        if current is None:
+            print(f"[DEV CONTROL] no current run state: {CURRENT_RUN_PATH}", file=sys.stderr)
+            return 2
+        instances = current.get("instances") or []
+        if args.json:
+            print(json.dumps({"run_id": current.get("run_id"),
+                              "manifest_path": current.get("manifest_path"),
+                              "instances": instances}, indent=2))
+            return 0
+        print(f"[DEV INSTANCES] run={current.get('run_id') or '(none)'} "
+              f"manifest={current.get('manifest_path') or '-'}")
+        for inst in instances:
+            age = inst.get("snapshot_age_ms")
+            age_text = f"{age / 1000.0:.1f}s" if age is not None else "-"
+            print(f"[DEV INSTANCES] {inst.get('instance_id')} "
+                  f"{inst.get('role')} {inst.get('state')} "
+                  f"pid={inst.get('pid') or '-'} "
+                  f"snap={age_text} journal={inst.get('journal_path') or '-'}")
+        return 0
 
     # Preserve read-only status behavior: never start or wake the daemon for a
     # pure status read. `--ensure-running` is explicitly not a read-only read.
@@ -4968,10 +5202,12 @@ def run_control_client(args: argparse.Namespace) -> int:
             print(f"[DEV CONTROL] error={response['error']}", file=sys.stderr)
 
     if action == "command" and response.get("accepted"):
-        events_path = str(current.get("events_path") or "")
+        events_path = str(current.get("client_journal_path") or
+                          current.get("events_path") or "")
+        control_journal = str(current.get("events_path") or "")
         result = wait_for_command_result(
-            events_path, request["request_id"], timeout=float(args.command_timeout),
-            start_offset=pre_offset)
+            [events_path, control_journal], request["request_id"],
+            timeout=float(args.command_timeout), start_offset=pre_offset)
         print(f"[DEV CONTROL] command=\"{args.command}\" delivered={result['delivered']} "
               f"completed={result['completed']} event={result['event'] or '-'} "
               f"tick={result['tick'] if result['tick'] is not None else '-'}"
@@ -4992,7 +5228,7 @@ def main() -> int:
     args = create_parser().parse_args()
 
     control = bool(args.status or args.request or args.command or args.scenario_file
-                   or args.ai_match)
+                   or args.list_instances or args.ai_match)
 
     if args.ai_match:
         args.profile = args.ai_profile

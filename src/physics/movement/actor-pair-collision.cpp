@@ -702,10 +702,17 @@ void resolveActorPairCollisions(
     const float cellSize = std::max(data.broadphaseCellSizeM, 0.25f);
     s.cells.clear();
 
+    // A respawn/teleport must not be treated as a swept collision across the
+    // whole map. Without this clamp one teleport generated ~56k broadphase cell
+    // entries and stalled the fixed tick for tens of milliseconds.
+    constexpr float kMaxPairSweepMeters = 8.0f;
     for (std::size_t rank = 0; rank < count; ++rank)
     {
         const ActorPairCollisionActor& actor = actors[s.order[rank]];
-        const Capsule start = makeActorCapsule(actor, actor.prevPos);
+        glm::vec3 sweepStart = actor.prevPos;
+        if (glm::length(actor.pos - sweepStart) > kMaxPairSweepMeters)
+            sweepStart = actor.pos;
+        const Capsule start = makeActorCapsule(actor, sweepStart);
         const Capsule end = makeActorCapsule(actor, outputs[s.order[rank]].pos);
 
         glm::vec3 min = glm::min(start.a, start.b) - glm::vec3(start.r);

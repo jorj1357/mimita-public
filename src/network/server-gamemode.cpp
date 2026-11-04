@@ -3516,6 +3516,12 @@ void serverObjectiveTick(ServerGamemodeState& d,
     if (!d.objective.valid()) return;
     if (d.phase != DUEL_PHASE_ACTIVE && d.phase != DUEL_PHASE_GO) return;
 
+    // The NPC defuse assignment only exists while the bomb is planted. Keeping
+    // a stale actor assigned across a round made an instant-respawn NPC (or
+    // another player) the permanent only defuser.
+    if (d.objective.state != ObjectiveState::Planted)
+        d.teamBrainA.state().reportedDefuserId = 0;
+
     const bool tapMode =
         d.objective.interactionMode == ObjectiveInteractionMode::RepeatedTap;
     const int tapTicks = std::max(1, d.objective.tapProgressTicks);
@@ -3546,11 +3552,15 @@ void serverObjectiveTick(ServerGamemodeState& d,
             nlohmann::json{{"objective", d.objective.id},
                            {"operator", actorId},
                            {"planting", planting},
-                           {"site", site ? site : ""},
-                           {"elapsed_ticks", elapsed},
-                           {"required_ticks", required},
-                           {"mode", objectiveInteractionModeName(d.objective.interactionMode)},
-                           {"taps", tapMode ? (elapsed / tapTicks) : 0}});
+                            {"site", site ? site : ""},
+                            {"elapsed_ticks", elapsed},
+                            {"required_ticks", required},
+                            {"elapsed_seconds", (double)elapsed / 60.0},
+                            {"required_seconds", (double)required / 60.0},
+                            {"remaining_seconds", (double)std::max(0, required - elapsed) / 60.0},
+                            {"percent", required > 0 ? (double)elapsed / (double)required : 0.0},
+                            {"mode", objectiveInteractionModeName(d.objective.interactionMode)},
+                            {"taps", tapMode ? (elapsed / tapTicks) : 0}});
     };
     auto emitInterruption = [&](const char* event, const char* reason,
                                 uint32_t actorId, int elapsed, int required) {
@@ -3703,7 +3713,9 @@ void serverObjectiveTick(ServerGamemodeState& d,
                                      {"site", siteId},
                                      {"mode", objectiveInteractionModeName(
                                          d.objective.interactionMode)},
-                                     {"required_ticks", d.objective.plantTicksRequired}});
+                                     {"required_ticks", d.objective.plantTicksRequired},
+                                     {"required_seconds",
+                                      (double)d.objective.plantTicksRequired / 60.0}});
             ++d.stateVersion;
             d.stateBroadcastPending = true;
         }
@@ -3765,9 +3777,13 @@ void serverObjectiveTick(ServerGamemodeState& d,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "objective.planted", std::to_string(d.duelId), d.objective.plantedSiteId,
-                tick, nlohmann::json{{"objective", d.objective.id},
+                 tick, nlohmann::json{{"objective", d.objective.id},
                                      {"site", d.objective.plantedSiteId},
                                      {"operator", planter},
+                                     {"position", {d.objective.position.x,
+                                                   d.objective.position.y,
+                                                   d.objective.position.z}},
+                                     {"explosion_seconds", d.objective.explosionSeconds},
                                      {"mode", objectiveInteractionModeName(
                                          d.objective.interactionMode)}});
         }
@@ -3816,38 +3832,93 @@ void serverObjectiveTick(ServerGamemodeState& d,
         bool candidateHeld = false;
         bool candidateIsNpc = false;
         float bestDistSq = rangeSq;
-        // Keep one designated defuser stable. Otherwise a closer CT can steal
-        // the interaction and reset progress every few ticks.
+        // Keep one designated NPC defuser stable. Human players are never gated
+        // by that assignment: any defender in range holding F may defuse.
         const uint32_t designatedDefuser =
             d.teamBrainA.state().reportedDefuserId;
 
-        for (const auto& kv : players) {
-            const ServerPlayer& p = kv.second;
-            if (p.dead || objectiveActorTeam(d, kv.first) != defenderTeam) continue;
-            if (designatedDefuser != 0 && kv.first != designatedDefuser) continue;
-            if (!p.input.interactHeld && p.pendingInteractTaps == 0) continue;
-            const float distSq = actorDistanceSq(p.pos);
-            if (distSq <= bestDistSq) {
-                bestDistSq = distSq;
-                candidate = kv.first;
-                candidateHeld = p.input.interactHeld;
-                candidateIsNpc = false;
+        // Keep the currently active human defuser stable so a later tick cannot
+        // switch operators and reset progress.
+        {
+            auto active = players.find(d.objective.defuserActorId);
+            if (active != players.end()) {
+                const ServerPlayer& p = active->second;
+                const float distSq = actorDistanceSq(p.pos);
+                if (!p.dead &&
+                    objectiveActorTeam(d, active->first) == defenderTeam &&
+                    (p.input.interactHeld || p.pendingInteractTaps > 0) &&
+                    distSq <= rangeSq) {
+                    candidate = active->first;
+                    candidateHeld = p.input.interactHeld;
+                    candidateIsNpc = false;
+                    bestDistSq = distSq;
+                }
             }
         }
-        for (const auto& kv : npcs) {
-            if (kv.second.health <= 0 ||
-                objectiveActorTeam(d, kv.first) != defenderTeam) continue;
-            if (designatedDefuser != 0 && kv.first != designatedDefuser) continue;
-            const float distSq = actorDistanceSq(kv.second.pos);
-            if (distSq > bestDistSq) continue;
-            Npc* npc = findNpc(kv.first);
-            if (!npc || npc->body.currentHp <= 0) continue;
-            if (npc->utility.currentGoal != UtilityGoalKind::DefuseObjective)
-                continue;
-            bestDistSq = distSq;
-            candidate = kv.first;
-            candidateHeld = true;
-            candidateIsNpc = true;
+
+        if (candidate == 0) {
+            for (const auto& kv : players) {
+                const ServerPlayer& p = kv.second;
+                if (p.dead || objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+                if (!p.input.interactHeld && p.pendingInteractTaps == 0) continue;
+                const float distSq = actorDistanceSq(p.pos);
+                if (distSq <= bestDistSq) {
+                    bestDistSq = distSq;
+                    candidate = kv.first;
+                    candidateHeld = p.input.interactHeld;
+                    candidateIsNpc = false;
+                }
+            }
+        }
+
+        if (candidate == 0) {
+            for (const auto& kv : npcs) {
+                if (kv.second.health <= 0 ||
+                    objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+                if (designatedDefuser != 0 && kv.first != designatedDefuser) continue;
+                const float distSq = actorDistanceSq(kv.second.pos);
+                if (distSq > bestDistSq) continue;
+                Npc* npc = findNpc(kv.first);
+                if (!npc || npc->body.currentHp <= 0) continue;
+                if (npc->utility.currentGoal != UtilityGoalKind::DefuseObjective)
+                    continue;
+                bestDistSq = distSq;
+                candidate = kv.first;
+                candidateHeld = true;
+                candidateIsNpc = true;
+            }
+        }
+
+        // Bounded evidence for "I held F and nothing happened": name the
+        // defender, distance, and whether an NPC designation was involved.
+        if (candidate == 0) {
+            static uint32_t lastRejectTick = 0;
+            if (lastRejectTick == 0 || tick >= lastRejectTick + 60) {
+                for (const auto& kv : players) {
+                    const ServerPlayer& p = kv.second;
+                    if (p.dead || objectiveActorTeam(d, kv.first) != defenderTeam) continue;
+                    if (!p.input.interactHeld && p.pendingInteractTaps == 0) continue;
+                    lastRejectTick = tick;
+                    const float dist = std::sqrt(actorDistanceSq(p.pos));
+                    const char* reason = dist > d.objective.interactionRange
+                        ? "out_of_range" : "no_valid_operator";
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Duel, StructuredLevel::Important,
+                        "objective.interaction-rejected", std::to_string(d.duelId),
+                        reason, tick,
+                        nlohmann::json{{"objective", d.objective.id},
+                                       {"actor", kv.first},
+                                       {"team", defenderTeam},
+                                       {"distance_m", dist},
+                                       {"range_m", d.objective.interactionRange},
+                                       {"objective_position", {d.objective.position.x,
+                                                               d.objective.position.y,
+                                                               d.objective.position.z}},
+                                       {"designated_defuser", designatedDefuser},
+                                       {"defuser_actor", d.objective.defuserActorId}});
+                    break;
+                }
+            }
         }
 
         int candidateTaps = 0;
@@ -3869,6 +3940,16 @@ void serverObjectiveTick(ServerGamemodeState& d,
 
         const bool hasDefuseInput =
             candidate != 0 && (candidateHeld || (tapMode && candidateTaps > 0));
+        glm::vec3 candidatePos = d.objective.position;
+        if (candidate != 0) {
+            if (candidateIsNpc) {
+                if (Npc* n = findNpc(candidate)) candidatePos = n->body.pos;
+            } else {
+                auto it = players.find(candidate);
+                if (it != players.end()) candidatePos = it->second.pos;
+            }
+        }
+        const float candidateDist = std::sqrt(actorDistanceSq(candidatePos));
         if (d.objective.defuseTicksElapsed == 0 && hasDefuseInput) {
             d.objective.defuserActorId = candidate;
             Debug::warn(Debug::Category::Duel,
@@ -3883,7 +3964,11 @@ void serverObjectiveTick(ServerGamemodeState& d,
                                      {"operator_kind", candidateIsNpc ? "npc" : "player"},
                                      {"mode", objectiveInteractionModeName(
                                          d.objective.interactionMode)},
-                                     {"required_ticks", d.objective.defuseTicksRequired}});
+                                     {"required_ticks", d.objective.defuseTicksRequired},
+                                     {"required_seconds",
+                                      (double)d.objective.defuseTicksRequired / 60.0},
+                                     {"distance_m", candidateDist},
+                                     {"designated_defuser", designatedDefuser}});
             ++d.stateVersion;
             d.stateBroadcastPending = true;
         } else if (candidate != 0 && d.objective.defuseTicksElapsed > 0 &&
@@ -4041,6 +4126,7 @@ void assignObjectiveCarrier(ServerGamemodeState& d,
     d.objective.defuserActorId = 0;
     d.objective.plantedSiteId.clear();
     d.objective.explosionDeadlineTick = 0;
+    d.teamBrainA.state().reportedDefuserId = 0;
 
     // Reset per round, then hand it to the first living allowed-team actor.
     d.objective.state = ObjectiveState::Carried;

@@ -29,13 +29,33 @@ bool pointInsideSolidId(const World& world, const glm::vec3& point,
     const glm::vec3 direction =
         glm::normalize(glm::vec3(1.0f, 0.3713907f, 0.193f));
     int hits = 0;
-    for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
-        if (mesh.solidIds[i] != solidId)
-            continue;
-        float distance = 0.0f;
-        if (rayTriangle(point, direction, mesh.triangles[i], distance) &&
-            distance > 1.0e-4f)
-            ++hits;
+    // Querying the solid's AABB through the persistent collision tree avoids a
+    // full-mesh scan for every containment test (the dominant NPC recovery
+    // stall). Candidates are still filtered to the requested solid id.
+    auto boundsIt = mesh.solidBounds.find(solidId);
+    if (boundsIt != mesh.solidBounds.end()) {
+        static thread_local std::vector<int> candidates;
+        candidates.clear();
+        appendChunkTrianglesForAABB(world, boundsIt->second, 0.0f, candidates,
+                                    "pointInsideSolidId");
+        for (int candidate : candidates) {
+            const std::size_t i = static_cast<std::size_t>(candidate);
+            if (i >= mesh.triangles.size() || mesh.solidIds[i] != solidId)
+                continue;
+            float distance = 0.0f;
+            if (rayTriangle(point, direction, mesh.triangles[i], distance) &&
+                distance > 1.0e-4f)
+                ++hits;
+        }
+    } else {
+        for (std::size_t i = 0; i < mesh.triangles.size(); ++i) {
+            if (mesh.solidIds[i] != solidId)
+                continue;
+            float distance = 0.0f;
+            if (rayTriangle(point, direction, mesh.triangles[i], distance) &&
+                distance > 1.0e-4f)
+                ++hits;
+        }
     }
     return (hits % 2) != 0;
 }

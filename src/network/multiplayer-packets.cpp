@@ -1896,13 +1896,50 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     const uint64_t graceMs = (uint64_t)cfg.retries.reconnectGraceMs;
     const uint64_t lastHeardAge = ctx.lastHeardServerMs > 0
         ? now - ctx.lastHeardServerMs : 0;
+    const uint64_t snapshotAge = ctx.lastSnapshotReceivedMs > 0
+        ? now - ctx.lastSnapshotReceivedMs : 0;
     const bool heardSinceDisconnect =
         ctx.disconnectStartedMs > 0 && ctx.lastHeardServerMs > ctx.disconnectStartedMs;
 
     const ConnectionState before = ctx.connectionState;
+    // A live packet stream is not proof that the client is playing. If the
+    // authoritative snapshots stop while other packets continue, the client
+    // otherwise replays its last frame forever. Treat snapshot starvation as a
+    // connection failure and name it in the journal.
+    const bool snapshotStarved =
+        before == ConnectionState::Connected &&
+        ctx.lastSnapshotReceivedMs > 0 &&
+        snapshotAge > staleThreshold;
+    if (snapshotStarved)
+    {
+        static thread_local uint64_t lastSnapshotTimeoutMs = 0;
+        if (now - lastSnapshotTimeoutMs >= 1000)
+        {
+            lastSnapshotTimeoutMs = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.snapshot.timeout", "CONNECTION_" +
+                    std::to_string(ctx.localPlayerId),
+                "authoritative snapshots stopped while the client was connected",
+                ctx.tick,
+                nlohmann::json{
+                    {"snapshot_age_ms", snapshotAge},
+                    {"stale_threshold_ms", staleThreshold},
+                    {"last_snapshot_tick", ctx.latestLocalSnapshotTick},
+                    {"server_tick", ctx.latestServerTick},
+                    {"last_heard_age_ms", lastHeardAge},
+                    {"server_address", ctx.serverAddress},
+                    {"room_code", ctx.roomCode.empty()
+                        ? ctx.currentRoomCode : ctx.roomCode},
+                    {"local_player_id", ctx.localPlayerId}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
     ConnectionState next = mpNextConnectionHealth(
         before, now, lastHeardAge, heardSinceDisconnect,
         staleThreshold, hardTimeout, ctx.reconnectGraceDeadlineMs, graceMs);
+    if (snapshotStarved && next == before)
+        next = ConnectionState::Reconnecting;
 
     if (next == before)
         return;

@@ -81,6 +81,12 @@ struct PhysicalEntity {
     float density = 1.0f;
     float friction = 0.6f;
     float restitution = 0.0f;
+    // Optional lower friction for near-vertical wall contacts. <0 uses friction.
+    float wallFriction = -1.0f;
+    // Last wall contact telemetry (set by resolveWorldContactVelocity).
+    float lastWallContactTick = -1.0f;
+    glm::vec3 lastWallContactNormal{0.0f};
+    float lastWallImpactSpeed = 0.0f;
     float gravityScale = 1.0f;
     float linearDamping = 0.15f;
     float angularDamping = 2.0f;

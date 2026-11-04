@@ -194,3 +194,10 @@ Entries: 26
 - Status: ATTEMPTED FIX (1) — explicit TDM/SSBM runtime override evidence recorded; Auto and GUI review pending
 - Summary: docs/specs/gamemodes/gamemodes.md, GUI server-launch settings
 - Detail: `docs/regressions/2026-11-03/gui-weapon-set-override-REG.md`
+
+## Entry 28 — Holding F did not defuse for non-designated human CTs
+
+- Recorded: 2026-11-04T11:10:00Z
+- Status: ATTEMPTED FIX (1) — live journal proof recorded; human play confirmation pending
+- Summary: docs/specs/gamemodes/funcounterstrike.md — the NPC designated-defuser assignment was applied as an exclusive lock on human players.
+- Detail: `docs/regressions/2026-11-04/human-defuse-designated-lock-REG.md`

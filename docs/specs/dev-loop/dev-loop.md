@@ -2499,3 +2499,40 @@ owned UI, activity collection, and status components into separate modules
 when that split is implemented. A GUI library may be selected during that
 implementation if it is available locally and supports the native window and
 responsive status updates without adding an unjustified dependency.
+
+## Multi-instance process presentation — desired (2026-11-04)
+
+The single `server_status · client_status` line and the single shared journal
+are not sufficient when a run owns more than one server or client.
+
+Required behavior:
+
+- One run manifest lists every instance: `instance_id`, role, label, PID,
+  executable, build ID, launch ID, bind/port, room code, map, mode, journal
+  path, heartbeat, roster, snapshot age, exit code, and state.
+- Each executable writes its own `events.jsonl` under the run folder. Two
+  servers never share a journal. See
+  `docs/specs/debug-logging/canonical-jsonl.md`.
+- The native dashboard shows a process table with the required columns and a
+  selected-instance detail pane. The terminal dashboard shows the same rows.
+- States are `starting`, `online`, `stale`, `frozen`, `offline`, `stopped`,
+  `failed`, and `mismatch`. Process liveness alone is not `online`.
+- A client is not healthy merely because its process is alive or its session
+  state says `Connected`; it requires recent authoritative snapshots.
+- A server is not proof of client health. A `hz=60` line from any server may
+  not be presented as client acceptance.
+- A client row names the server instance it is connected to. A mismatch between
+  the configured server instance, connected address/port, and manifest is
+  `mismatch`.
+- The dev loop must be able to start N servers and N clients, stop/restart one
+  instance without stopping unrelated instances, and reject duplicate
+  `instance_id` or bind/port reuse.
+- The target command surface is:
+  `--start-server`, `--start-client --server <instance_id>`,
+  `--stop-instance`, `--restart-instance`, and `--list-instances [--json]`.
+- The journal records `dev-loop.instance.*`, `dev-loop.client.frozen`,
+  `network.snapshot.timeout`, and every `network.session.health` transition.
+
+The full contract is `docs/specs/dev-loop/multi-instance.md`. Where this
+document's older one-server/one-client or one-shared-journal wording conflicts,
+the multi-instance contract wins for new runs.

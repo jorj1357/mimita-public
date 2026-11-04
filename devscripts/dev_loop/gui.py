@@ -849,10 +849,19 @@ def run(status_provider: Callable[[], dict],
 
                 runtime_value.configure(text=model.get("runtime", "Not running"),
                                          fg=GREEN if same_build else rainbow_color())
+                instance_lines = []
+                for inst in model.get("instances", []) or []:
+                    age = inst.get("snapshot_age_ms")
+                    age_text = f"{age / 1000.0:.1f}s" if age is not None else "-"
+                    instance_lines.append(
+                        f"{inst.get('instance_id', '?')} {inst.get('role', '?')} "
+                        f"{inst.get('state', '?')} pid={inst.get('pid') or '-'} "
+                        f"snap={age_text}")
                 runtime_detail.configure(text=(
                     f"{model.get('server_status', 'server unknown')}  ·  "
                     f"{model.get('client_status', 'client unknown')}  ·  "
                     f"builds {'MATCH' if same_build else 'DIFFER'}"
+                    + ("\n" + "\n".join(instance_lines) if instance_lines else "")
                 ))
                 mode = str(model.get("mode") or "—")
                 map_name = str(model.get("map") or "—")

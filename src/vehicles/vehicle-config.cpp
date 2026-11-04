@@ -100,8 +100,19 @@ VehicleWheelSpec parseWheel(const json& wheel)
         readFloat(wheel, "damperRate", spec.damperRate, 0.0f, 2.0e5f);
     spec.antiRoll =
         readFloat(wheel, "antiRoll", spec.antiRoll, 0.0f, 2.0e6f);
+    spec.antiRollDamping = readFloat(wheel, "antiRollDamping",
+                                     spec.antiRollDamping, 0.0f, 2.0e6f);
     spec.unsprungMass =
-        readFloat(wheel, "unsprungMass", spec.unsprungMass, 0.1f, 500.0f);
+        readFloat(wheel, "unsprungMass", spec.unsprungMass, 0.1f, 2000.0f);
+    spec.spinInertia = readFloat(wheel, "spinInertia", spec.spinInertia,
+                                 0.0f, 1.0e5f);
+    spec.maxSpinVelocity = readFloat(wheel, "maxSpinVelocity",
+                                     spec.maxSpinVelocity, 1.0f, 5000.0f);
+    spec.camberDeg = readFloat(wheel, "camberDeg", spec.camberDeg,
+                               -20.0f, 20.0f);
+    spec.toeDeg = readFloat(wheel, "toeDeg", spec.toeDeg, -20.0f, 20.0f);
+    spec.casterDeg = readFloat(wheel, "casterDeg", spec.casterDeg,
+                               -20.0f, 20.0f);
     spec.steer = readBool(wheel, "steer", spec.steer);
     spec.drive = readBool(wheel, "drive", spec.drive);
     spec.brake = readBool(wheel, "brake", spec.brake);
@@ -122,6 +133,16 @@ VehicleTireSpec parseTire(const json& root)
                                    spec.peakSlipAngle, 0.01f, 1.5f);
     spec.frictionCircle = readBool(root, "frictionCircle", spec.frictionCircle);
     spec.lowSpeed = readFloat(root, "lowSpeed", spec.lowSpeed, 0.01f, 10.0f);
+    spec.lowSpeedGrip = readFloat(root, "lowSpeedGrip", spec.lowSpeedGrip,
+                                  0.1f, 5.0f);
+    spec.rollingResistance = readFloat(root, "rollingResistance",
+                                       spec.rollingResistance, 0.0f, 1.0f);
+    spec.maxLoadScale = readFloat(root, "maxLoadScale",
+                                  spec.maxLoadScale, 0.1f, 20.0f);
+    spec.slipStiffness = readFloat(root, "slipStiffness",
+                                   spec.slipStiffness, 0.05f, 5.0f);
+    spec.camberGain = readFloat(root, "camberGain", spec.camberGain,
+                                -5.0f, 5.0f);
     return spec;
 }
 
@@ -162,6 +183,8 @@ VehicleEngineSpec parseEngine(const json& root)
             readFloat(turbo, "spoolRate", spec.turboSpoolRate, 0.0f, 50.0f);
         spec.turboLag = readFloat(turbo, "lag", spec.turboLag, 0.0f, 2.0f);
     }
+    spec.clutchKickBoost = readFloat(root, "clutchKickBoost",
+                                     spec.clutchKickBoost, 0.0f, 10.0f);
     return spec;
 }
 
@@ -207,6 +230,32 @@ json vehicleSpecJson(const VehicleSpec& spec)
     root["height"] = spec.halfExtents.z * 2.0f;
     root["drag"] = spec.drag;
     root["downforce"] = spec.downforce;
+    root["bodyFriction"] = spec.bodyFriction;
+    root["bodyWallFriction"] = spec.bodyWallFriction;
+    root["bodyRestitution"] = spec.bodyRestitution;
+    root["reboundScale"] = spec.reboundScale;
+    root["coastDeceleration"] = spec.coastDeceleration;
+    root["coastSpinDamping"] = spec.coastSpinDamping;
+    root["speedTargets"] = {
+        {"zeroTo60KmhSeconds", spec.targetZeroTo60Seconds},
+        {"topSpeedKmh", spec.targetTopSpeedKmh},
+    };
+    root["linearDamping"] = spec.linearDamping;
+    root["angularDamping"] = spec.angularDamping;
+    root["maxAngularSpeed"] = spec.maxAngularSpeed;
+    root["sleepLinearThreshold"] = spec.sleepLinearThreshold;
+    root["sleepAngularThreshold"] = spec.sleepAngularThreshold;
+    root["sleepRequiredTicks"] = spec.sleepRequiredTicks;
+    root["maxSuspensionForce"] = spec.maxSuspensionForce;
+    root["bumpStopStiffness"] = spec.bumpStopStiffness;
+    root["bumpStopDamping"] = spec.bumpStopDamping;
+    root["antiRollForceScale"] = spec.antiRollForceScale;
+    root["stabilityVerticalDamping"] = spec.stabilityVerticalDamping;
+    root["stabilityAngularDamping"] = spec.stabilityAngularDamping;
+    root["idleSettleSpeed"] = spec.idleSettleSpeed;
+    root["idleSettleHorizontal"] = spec.idleSettleHorizontal;
+    root["idleSettleVertical"] = spec.idleSettleVertical;
+    root["idleSettleAngular"] = spec.idleSettleAngular;
     root["interactionRadius"] = spec.interactionRadius;
     root["bodyTexture"] = spec.bodyTexture;
     root["wheelTexture"] = spec.wheelTexture;
@@ -228,7 +277,13 @@ json vehicleSpecJson(const VehicleSpec& spec)
             {"springRate", wheel.springRate},
             {"damperRate", wheel.damperRate},
             {"antiRoll", wheel.antiRoll},
+            {"antiRollDamping", wheel.antiRollDamping},
             {"unsprungMass", wheel.unsprungMass},
+            {"spinInertia", wheel.spinInertia},
+            {"maxSpinVelocity", wheel.maxSpinVelocity},
+            {"camberDeg", wheel.camberDeg},
+            {"toeDeg", wheel.toeDeg},
+            {"casterDeg", wheel.casterDeg},
             {"steer", wheel.steer},
             {"drive", wheel.drive},
             {"brake", wheel.brake},
@@ -243,12 +298,18 @@ json vehicleSpecJson(const VehicleSpec& spec)
         {"peakSlipAngle", spec.tire.peakSlipAngle},
         {"frictionCircle", spec.tire.frictionCircle},
         {"lowSpeed", spec.tire.lowSpeed},
+        {"lowSpeedGrip", spec.tire.lowSpeedGrip},
+        {"rollingResistance", spec.tire.rollingResistance},
+        {"maxLoadScale", spec.tire.maxLoadScale},
+        {"slipStiffness", spec.tire.slipStiffness},
+        {"camberGain", spec.tire.camberGain},
     };
     root["engine"] = {
         {"inertia", spec.engine.inertia},
         {"idleRpm", spec.engine.idleRpm},
         {"redlineRpm", spec.engine.redlineRpm},
         {"frictionTorque", spec.engine.frictionTorque},
+        {"clutchKickBoost", spec.engine.clutchKickBoost},
         {"torqueCurve", json::array()},
         {"turbo", {
             {"maxBoost", spec.engine.turboMaxBoost},
@@ -268,15 +329,23 @@ json vehicleSpecJson(const VehicleSpec& spec)
     root["differential"] = {
         {"type", spec.differential.type},
         {"frontRearSplit", spec.differential.frontRearSplit},
+        {"preloadTorque", spec.differential.preloadTorque},
+        {"powerLock", spec.differential.powerLock},
+        {"coastLock", spec.differential.coastLock},
+        {"lockStrength", spec.differential.lockStrength},
+        {"biasRatio", spec.differential.biasRatio},
     };
     root["steering"] = {
         {"maxAngleDeg", spec.steering.maxAngleDeg},
         {"speedFalloff", spec.steering.speedFalloff},
         {"returnRate", spec.steering.returnRate},
+        {"directionSign", spec.steering.directionSign},
+        {"ackermann", spec.steering.ackermann},
     };
     root["brakes"] = {
         {"maxTorque", spec.brakes.maxTorque},
         {"handbrakeTorque", spec.brakes.handbrakeTorque},
+        {"handbrakeGripScale", spec.brakes.handbrakeGripScale},
     };
     root["seats"] = json::array();
     for (const VehicleSeatSpec& seat : spec.seats)
@@ -330,6 +399,62 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
     spec.halfExtents = glm::vec3(length, width, height) * 0.5f;
     spec.drag = readFloat(root, "drag", spec.drag, 0.0f, 10.0f);
     spec.downforce = readFloat(root, "downforce", spec.downforce, 0.0f, 10.0f);
+    spec.bodyFriction = readFloat(root, "bodyFriction",
+                                  spec.bodyFriction, 0.0f, 2.0f);
+    spec.bodyWallFriction = readFloat(root, "bodyWallFriction",
+                                      spec.bodyWallFriction, 0.0f, 2.0f);
+    spec.bodyRestitution = readFloat(root, "bodyRestitution",
+                                     spec.bodyRestitution, 0.0f, 2.0f);
+    spec.reboundScale = readFloat(root, "reboundScale",
+                                  spec.reboundScale, 0.0f, 5.0f);
+    spec.coastDeceleration = readFloat(root, "coastDeceleration",
+                                       spec.coastDeceleration, 0.0f, 50.0f);
+    spec.coastSpinDamping = readFloat(root, "coastSpinDamping",
+                                      spec.coastSpinDamping, 0.0f, 50.0f);
+    if (root.contains("speedTargets") && root["speedTargets"].is_object())
+    {
+        const json& targets = root["speedTargets"];
+        spec.targetZeroTo60Seconds = readFloat(
+            targets, "zeroTo60KmhSeconds", 0.0f, 0.0f, 60.0f);
+        spec.targetTopSpeedKmh = readFloat(
+            targets, "topSpeedKmh", 0.0f, 0.0f, 5000.0f);
+    }
+    spec.linearDamping = readFloat(root, "linearDamping",
+                                   spec.linearDamping, 0.0f, 20.0f);
+    spec.angularDamping = readFloat(root, "angularDamping",
+                                    spec.angularDamping, 0.0f, 50.0f);
+    spec.maxAngularSpeed = readFloat(root, "maxAngularSpeed",
+                                     spec.maxAngularSpeed, 0.0f, 100.0f);
+    spec.sleepLinearThreshold = readFloat(
+        root, "sleepLinearThreshold", spec.sleepLinearThreshold, 0.0f, 10.0f);
+    spec.sleepAngularThreshold = readFloat(
+        root, "sleepAngularThreshold", spec.sleepAngularThreshold, 0.0f,
+        10.0f);
+    spec.sleepRequiredTicks = static_cast<int>(readFloat(
+        root, "sleepRequiredTicks", (float)spec.sleepRequiredTicks, 0.0f,
+        1000.0f));
+    spec.maxSuspensionForce = readFloat(root, "maxSuspensionForce",
+                                        spec.maxSuspensionForce, 1.0f, 1.0e7f);
+    spec.bumpStopStiffness = readFloat(root, "bumpStopStiffness",
+                                       spec.bumpStopStiffness, 0.0f, 1.0e7f);
+    spec.bumpStopDamping = readFloat(root, "bumpStopDamping",
+                                     spec.bumpStopDamping, 0.0f, 1.0e6f);
+    spec.antiRollForceScale = readFloat(root, "antiRollForceScale",
+                                        spec.antiRollForceScale, 0.1f, 100.0f);
+    spec.stabilityVerticalDamping = readFloat(
+        root, "stabilityVerticalDamping", spec.stabilityVerticalDamping, 0.0f,
+        100.0f);
+    spec.stabilityAngularDamping = readFloat(
+        root, "stabilityAngularDamping", spec.stabilityAngularDamping, 0.0f,
+        100.0f);
+    spec.idleSettleSpeed = readFloat(root, "idleSettleSpeed",
+                                     spec.idleSettleSpeed, 0.0f, 50.0f);
+    spec.idleSettleHorizontal = readFloat(
+        root, "idleSettleHorizontal", spec.idleSettleHorizontal, 0.0f, 1.0f);
+    spec.idleSettleVertical = readFloat(
+        root, "idleSettleVertical", spec.idleSettleVertical, 0.0f, 1.0f);
+    spec.idleSettleAngular = readFloat(
+        root, "idleSettleAngular", spec.idleSettleAngular, 0.0f, 1.0f);
     spec.interactionRadius = readFloat(root, "interactionRadius",
                                        spec.interactionRadius, 1.0f, 50.0f);
     spec.bodyTexture = readString(root, "bodyTexture", spec.bodyTexture);
@@ -365,6 +490,17 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
         spec.differential.frontRearSplit =
             readFloat(diff, "frontRearSplit", spec.differential.frontRearSplit,
                       0.0f, 1.0f);
+        spec.differential.preloadTorque = readFloat(
+            diff, "preloadTorque", spec.differential.preloadTorque, 0.0f,
+            1.0e5f);
+        spec.differential.powerLock = readFloat(
+            diff, "powerLock", spec.differential.powerLock, 0.0f, 1.0f);
+        spec.differential.coastLock = readFloat(
+            diff, "coastLock", spec.differential.coastLock, 0.0f, 1.0f);
+        spec.differential.lockStrength = readFloat(
+            diff, "lockStrength", spec.differential.lockStrength, 0.0f, 1.0f);
+        spec.differential.biasRatio = readFloat(
+            diff, "biasRatio", spec.differential.biasRatio, 1.0f, 10.0f);
     }
     if (root.contains("steering") && root["steering"].is_object())
     {
@@ -378,6 +514,11 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
         spec.steering.returnRate =
             readFloat(steering, "returnRate", spec.steering.returnRate,
                       0.0f, 20.0f);
+        spec.steering.directionSign = readFloat(
+            steering, "directionSign", spec.steering.directionSign, -1.0f,
+            1.0f);
+        spec.steering.ackermann = readFloat(
+            steering, "ackermann", spec.steering.ackermann, 0.0f, 1.0f);
     }
     if (root.contains("brakes") && root["brakes"].is_object())
     {
@@ -388,6 +529,9 @@ bool VehicleConfigRegistry::loadFile(const std::string& path,
         spec.brakes.handbrakeTorque =
             readFloat(brakes, "handbrakeTorque", spec.brakes.handbrakeTorque,
                       0.0f, 100000.0f);
+        spec.brakes.handbrakeGripScale = readFloat(
+            brakes, "handbrakeGripScale", spec.brakes.handbrakeGripScale,
+            0.0f, 1.0f);
     }
     if (root.contains("seats") && root["seats"].is_array())
     {

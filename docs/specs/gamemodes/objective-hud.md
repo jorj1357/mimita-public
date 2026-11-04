@@ -31,7 +31,8 @@ Every mode with a round timer or objective must provide layout elements for:
 | Action prompt | Plant, defuse, pick up, or defend/hold hint for the local team |
 | Interaction mode | Whether the mode requires holding or repeated taps |
 | Interaction range | Prompt appears within the mode's replicated `interaction_range_m`, not a hardcoded radius |
-| Interaction progress | Percentage for hold mode and percentage plus tap count for repeated-tap mode |
+| Interaction progress | Elapsed and total seconds plus percentage for hold mode; elapsed/total seconds plus tap count for repeated-tap mode |
+| World progress | A world-anchored readout above the objective showing the active plant/defuse seconds, visible to every client in the match |
 | Round result | Winner and reason: objective, defuse, detonation, timeout, elimination, or draw |
 
 A mode may add more specific elements, but it must not remove these questions
@@ -74,6 +75,7 @@ The shared HUD code recognizes these element IDs:
 - `objectiveStatus`
 - `objectiveHint`
 - `objectivePrompt`
+- `objectiveWorldText`
 - `objectiveResultText`
 - `roundOverText`
 - `countdownText`

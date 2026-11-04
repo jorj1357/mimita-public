@@ -69,6 +69,12 @@ bool containActorFinalPose(Player& actor,
 
 bool actorFinalPoseSelfTest(std::string* outSummary = nullptr);
 
+// True when the point is inside the specified collision solid volume.
+// Uses the solid AABB and world collision tree rather than scanning all
+// triangles with that solid id.
+bool pointInsideSolidId(const World& world, const glm::vec3& point,
+                        std::uint32_t solidId);
+
 // True when the root is inside a closed collision solid volume, not merely
 // inside the map's enclosing room shell. Uses the nearest floor triangle's
 // solid id and tests parity against that solid only.

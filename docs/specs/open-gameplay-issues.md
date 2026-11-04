@@ -1,4 +1,39 @@
-﻿2026 11 03 1646 
+﻿2026 11 04 0854 jorj
+
+girl avatars need to be  liek having the aniatmins
+
+but
+
+after the fun
+its fun 
+
+retrograd what modes to do
+
+ai what things i learn 
+
+blood
+1. more big at the inital place, and smaller outward
+2. like a big cirlce then some smaller ones hten some smaller onces
+3. and more gore from the actual bodiessssss get the standard bod at least to have meat and head and stuff in it 
+
+but what can i do as the coding sysmtes desigenr hmm 
+distributed data storage so anuone can do this 
+
+what to NOT do
+dont need new sounds
+new footstep sounds
+new maps
+new gamemodes?
+
+we do need new 
+like
+entire new fetures that can be used over time 
+
+need to enure that like
+me spawning
+client spawning is like 
+
+2026 11 03 1646 
 npcs on atdm map
 falling thru the floor
 not good

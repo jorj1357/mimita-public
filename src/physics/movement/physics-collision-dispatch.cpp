@@ -55,10 +55,15 @@ void logCollisionBounceResponse(const Player& player,
     static thread_local uint64_t sLastBounceLogMs = 0;
     const uint64_t now = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (now - sLastBounceLogMs < 100)
+    if (now - sLastBounceLogMs < 500)
         return;
     const glm::vec3 delta = player.vel - beforeVelocity;
     if (glm::length(delta) < 0.05f)
+        return;
+    // Grounded limb micro-bounces on a flat floor are not useful collision
+    // evidence and previously produced ~10 events per second per actor.
+    if (impact < 2.0f && !dynamicEntity && !(actorPart &&
+        std::strcmp(actorPart, "weapon") == 0))
         return;
     sLastBounceLogMs = now;
     const CollisionConfig& cfg = CollisionConfig::instance();

@@ -1465,7 +1465,23 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
+    const auto npcSlowStart = std::chrono::steady_clock::now();
+    auto npcSlowMark = npcSlowStart;
+    double npcSenseMs = 0.0;
+    double npcThinkMs = 0.0;
+    double npcDecisionMs = 0.0;
+    double npcPickMs = 0.0;
+    double npcGatherMs = 0.0;
+    double npcCommitMs = 0.0;
+    double npcNavigatorMs = 0.0;
+    double npcPathMs = 0.0;
+    double npcPhysicsMs = 0.0;
+    double npcCombatMs = 0.0;
+
     senseWorld(npc, world, player, safeDt, &mHazardEffects, &mProjectileHazards);
+    npcSenseMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcSlowMark).count();
+    npcSlowMark = std::chrono::steady_clock::now();
 
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {
@@ -1859,6 +1875,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         if (npc.stateMachine.nextDecisionTime <= 0.0f)
         {
             Perf::ScopedTimer _decTimer("NpcSecondDecision");
+            const auto npcPickStart = std::chrono::steady_clock::now();
             NpcState oldState = npc.stateMachine.currentState;
             NpcState newState = pickNextState(npc);
 
@@ -1915,6 +1932,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             float minT = stateMinTime(newState, difficulty01(npc.difficulty));
             float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
             npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
+            npcPickMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - npcPickStart).count();
         }
     }
 
@@ -1930,7 +1949,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     AABB localBounds{gatherCenter - glm::vec3(navigationGatherDistance), gatherCenter + glm::vec3(navigationGatherDistance)};
     static thread_local std::vector<int> nearCandidates;
     nearCandidates.clear();
+        const auto npcGatherStart = std::chrono::steady_clock::now();
         appendChunkTrianglesForAABB(world, localBounds, 0.0f, nearCandidates, "npcNearCandidates");
+        npcGatherMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcGatherStart).count();
 
     // ── Movement commitment (single forward/pursuit direction owner) ────
     // Resolve the behavior-profile tuning once, then evaluate the commitment
@@ -2028,9 +2050,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             targetDir = glm::vec3(targetPoint.x - npc.body.pos.x,
                                   targetPoint.y - npc.body.pos.y, 0.0f);
         }
+        const auto npcCommitStart = std::chrono::steady_clock::now();
         const NpcCommitmentUpdate cu = npc.navigator.updateCommitment(
             npc, forwardDir, targetDir, npc.sensors.hasTarget, world, nearCandidates,
             commitmentSettings, safeDt, npc.sensors.time, npcDifficulty.searchMemorySeconds);
+        npcCommitMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcCommitStart).count();
         emitCommitmentEvents(npc, cu, commitmentSettings);
     }
 
@@ -2183,9 +2208,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         const NpcGoal navGoal = context.hasGoalOverride ? context.goalOverride
                                                         : makeNavGoal(npc);
         emitGoalChangedEvent(npc, navGoal);
+        const auto npcNavStart = std::chrono::steady_clock::now();
         const NpcNavResult nav =
             npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
                                  navSettings, policy, &commitmentSettings);
+        npcNavigatorMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcNavStart).count();
         emitNavPlanEvents(npc, nav, navSettings);
         replanReasonThisTick = nav.replanReason;
         // While a route is being followed toward a non-visible goal, recovery
@@ -2400,6 +2428,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         --npc.stateMachine.patrolForcedDetourTicks;
     }
 
+    npcDecisionMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcSlowMark).count();
+    npcSlowMark = std::chrono::steady_clock::now();
     {
         Perf::ScopedTimer _pathTimer("NpcPathfinding");
         if (glm::length(moveDir) > 0.001f)
@@ -2607,6 +2638,9 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
         npc.wasStuck = stuckNow;
     }
+    npcPathMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcSlowMark).count();
+    npcSlowMark = std::chrono::steady_clock::now();
 
     // A policy jump always needs an explicit, allowed reason. This also catches
     // any jump set outside the sources above (e.g. mirror/bomb-tag) so a policy
@@ -2747,7 +2781,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
         // navMovement (resolved above) carries the actor's role movement config
         // through the same shared kernel as the human actor.
+        npcThinkMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcSlowMark).count();
+        npcSlowMark = std::chrono::steady_clock::now();
         physicsMainUpdate(npc.body, world, input, safeDt, 2, navMovement);
+        npcPhysicsMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcSlowMark).count();
+        npcSlowMark = std::chrono::steady_clock::now();
 
         // NPCs use the same AimBody hybrid body/animation solver as players.
         // Navigation supplies movement intent only; target/facing supplies the
@@ -3117,13 +3157,53 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             "[NPC FIRE] npc=%u timeSinceLastShot=%.3f\n",
             npc.id, npc.timeSinceLastShot);
         Perf::ScopedTimer _combatTimer("NpcCombat");
+        const auto npcCombatStart = std::chrono::steady_clock::now();
         bool fired = NpcCombat::tryFire(npc, world, player, safeDt);
+        npcCombatMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcCombatStart).count();
         npc.justFired = fired;
         if (fired)
         {
             npc.timeSinceLastShot = 0.0f;
             // Do NOT reset nextDecisionTime — let the state machine keep its
             // current state for its minimum duration to prevent jitter.
+        }
+    }
+
+    const double npcSlowTotalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcSlowStart).count();
+    if (npcSlowTotalMs > 25.0) {
+        static std::unordered_map<uint32_t, uint32_t> lastSlowUpdateTick;
+        const uint32_t slowTick = (uint32_t)(npc.sensors.time * 60.0f);
+        auto last = lastSlowUpdateTick.find(npc.id);
+        if (last == lastSlowUpdateTick.end() ||
+            slowTick >= last->second + 60u) {
+            if (lastSlowUpdateTick.size() > 128)
+                lastSlowUpdateTick.clear();
+            lastSlowUpdateTick[npc.id] = slowTick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.slow-update", std::to_string(npc.id),
+                "single_npc_update_exceeded_25ms", slowTick,
+                nlohmann::json{{"actor", npc.id},
+                               {"team", npc.body.matchTeam},
+                               {"total_ms", npcSlowTotalMs},
+                               {"sense_ms", npcSenseMs},
+                               {"think_ms", npcThinkMs},
+                               {"decision_ms", npcDecisionMs},
+                               {"pick_ms", npcPickMs},
+                               {"gather_ms", npcGatherMs},
+                               {"commit_ms", npcCommitMs},
+                               {"navigator_ms", npcNavigatorMs},
+                               {"path_ms", npcPathMs},
+                               {"physics_ms", npcPhysicsMs},
+                               {"combat_ms", npcCombatMs},
+                               {"state", npcStateName(npc.stateMachine.currentState)},
+                               {"equipped", npc.body.equippedWeaponId},
+                               {"has_target", npc.sensors.hasTarget},
+                               {"los_blocked", npc.cachedLoSBlocked},
+                               {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     }
 

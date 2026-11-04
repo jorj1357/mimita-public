@@ -284,8 +284,8 @@
     }
   },
   "aim": {
-    "mode": null,
-    "body_mode": null,
+    "mode": "physical",
+    "body_mode": "hybrid",
     "body_enabled": null
   },
   "bomb_timer_ticks": 900,

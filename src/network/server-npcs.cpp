@@ -47,6 +47,7 @@
 #include "debug/debug-log.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1455,6 +1456,22 @@ static void resolveServerActorPairCollisions(
     resolveActorPairCollisions(actors.data(), actors.size(), SERVER_DT,
                                data, outputs.data(), &stats, "server", tick);
 
+    if (stats.totalMs > 20.0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Collision, StructuredLevel::Important,
+            "npc.pair-cost", "server",
+            "actor-pair collision exceeded 20 ms", tick,
+            nlohmann::json{{"actors", stats.actorCount},
+                           {"cell_entries", stats.cellEntries},
+                           {"candidate_pairs", stats.candidatePairs},
+                           {"narrow_pairs", stats.narrowPairs},
+                           {"contacts", stats.contacts},
+                           {"broadphase_ms", stats.broadphaseMs},
+                           {"collision_ms", stats.totalMs},
+                           {"truncated", stats.truncated}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     Perf::state().current.collisionPairs =
         static_cast<int>(stats.candidatePairs);
     Perf::state().current.charVsChar += stats.totalMs;
@@ -1639,6 +1656,18 @@ void simulateSharedNpcs(SOCKET sock,
                         uint32_t tick,
                         uint64_t& totalPacketsOut)
 {
+    const auto simStart = std::chrono::steady_clock::now();
+    double recoveryMs = 0.0;
+    double traceMs = 0.0;
+    double traceContainmentMs = 0.0;
+    double npcAiMs = 0.0;
+    double pairMs = 0.0;
+    double respawnMs = 0.0;
+    double rebuildMs = 0.0;
+    double aiUpdateMs = 0.0;
+    double worstAiMs = 0.0;
+    uint32_t worstAiActor = 0;
+    uint32_t recoveryActor = 0;
     Perf::ScopedTimer npcSimulationTimer("Server::NpcSimulation");
     ActorCollisionConfig::instance().pollHotReload(tick);
     adoptNewServerNpcs(npcs, npcSystem, npcIdsAlive, world);
@@ -1768,6 +1797,7 @@ void simulateSharedNpcs(SOCKET sock,
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
+    const auto npcAiStart = std::chrono::steady_clock::now();
     for (Npc& n : npcSystem.all())
     {
         // Transform-follow proxies are driven by the recorded track. Intent
@@ -2014,7 +2044,15 @@ void simulateSharedNpcs(SOCKET sock,
         mirrorPlayer.externalImpulse = glm::vec3(0.0f);
         const int hpBefore = mirrorPlayer.currentHp;
 
+        const auto aiUpdateStart = std::chrono::steady_clock::now();
         npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
+        const double oneAiMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - aiUpdateStart).count();
+        aiUpdateMs += oneAiMs;
+        if (oneAiMs > worstAiMs) {
+            worstAiMs = oneAiMs;
+            worstAiActor = n.id;
+        }
 
         // Ground clamp: only accept a floor within a small bounded distance.
         // A 100 m downward query can find a lower floor through a solid and
@@ -2150,6 +2188,8 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
     }
+    npcAiMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcAiStart).count();
 
     // Capsule recovery: keep the NPC root out of static solid geometry without
     // scanning the whole map for every NPC every tick. One candidate is checked
@@ -2158,6 +2198,7 @@ void simulateSharedNpcs(SOCKET sock,
     // fallback. The deep inside-solid query is cheap enough at this rate even
     // on large maps (funworld3 has ~44k collision triangles).
     {
+        const auto recoveryStart = std::chrono::steady_clock::now();
         std::vector<Npc>& allNpcs = npcSystem.all();
         if (!allNpcs.empty()) {
             static size_t recoveryCursor = 0;
@@ -2206,6 +2247,10 @@ void simulateSharedNpcs(SOCKET sock,
                             __FILE__, __LINE__, __FUNCTION__);
                         break;
                     }
+                    // A below-map actor is already scheduled for respawn. Running
+                    // the deep containment/push-out scan while it is far below a
+                    // large solid was a 100-300 ms fixed-tick stall.
+                    continue;
                 }
                 else
                 {
@@ -2224,6 +2269,7 @@ void simulateSharedNpcs(SOCKET sock,
                 if (!stuck && !periodic)
                     continue;
                 recoveryCursor = index + 1;
+                recoveryActor = candidate.id;
                 if (npcRootInsideWorld(world, candidate.body.pos)) {
                     const glm::vec3 before = candidate.body.pos;
                     glm::vec3 pushDelta(0.0f);
@@ -2253,8 +2299,11 @@ void simulateSharedNpcs(SOCKET sock,
                             break;
                         }
                     }
+                    // Recovery runs inside the fixed tick. Bound the candidate
+                    // search so one actor inside geometry cannot stall the
+                    // server; unresolvable actors fall through to respawn.
                     const glm::vec3 safe = resolveSafeStandingSpawn(
-                        world, before, 0.60f, 2.0f);
+                        world, before, 0.60f, 2.0f, 12, 4.0);
                     if (!npcRootInsideWorld(world, safe)) {
                         candidate.body.pos = safe;
                         candidate.body.vel = glm::vec3(0.0f);
@@ -2319,17 +2368,34 @@ void simulateSharedNpcs(SOCKET sock,
                 break;
             }
         }
+        recoveryMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - recoveryStart).count();
+        if (recoveryMs > 5.0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "npc.containment-cost", std::to_string(recoveryActor),
+                "recovery_containment", tick,
+                nlohmann::json{{"phase", "recovery"},
+                               {"npc_id", recoveryActor},
+                               {"duration_ms", recoveryMs},
+                               {"npc_count", npcSystem.all().size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 
     // Authoritative actor-pair collision runs after all player/NPC movement
     // and damage for this tick, before dead bodies are rebuilt into the
     // broadcast map. Players and NPCs share this one pass.
+    const auto pairStart = std::chrono::steady_clock::now();
     resolveServerActorPairCollisions(players, npcSystem, playerWorld, world, tick);
+    pairMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - pairStart).count();
 
     // Respawn killed NPCs (updateOneNpc freezes dead bodies; this loop drives
     // their countdown and resets them so rebuildServerNpcMap re-admits them).
     // One-life modes never revive: the dead body stays Spectating for the round.
     const bool npcWaveMode = serverGamemodeState().npcWaves;
+    const auto respawnStart = std::chrono::steady_clock::now();
     for (Npc& n : npcSystem.all())
     {
         if (n.replayControlled && !n.replayUseRecordedIntent) continue;
@@ -2346,6 +2412,8 @@ void simulateSharedNpcs(SOCKET sock,
         if (n.body.respawnTimer <= 0.0f)
             respawnServerNpc(n, world);
     }
+    respawnMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - respawnStart).count();
 
     // The NPC map is the authoritative lifecycle gate for its rockets. This
     // runs before the next NPC fire broadcast, so an NPC that died this tick
@@ -2398,9 +2466,15 @@ void simulateSharedNpcs(SOCKET sock,
         if (nowTrace - lastNpcTrace >= 1000)
         {
             lastNpcTrace = nowTrace;
+            const auto traceStart = std::chrono::steady_clock::now();
             nlohmann::json actors = nlohmann::json::array();
             for (const Npc& n : npcSystem.all())
             {
+                const auto containmentStart = std::chrono::steady_clock::now();
+                const bool insideSolid =
+                    actorRootInsideClosedSolid(world, n.body.pos);
+                traceContainmentMs += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - containmentStart).count();
                 actors.push_back({
                     {"id", n.id},
                     {"team", n.body.matchTeam},
@@ -2411,8 +2485,7 @@ void simulateSharedNpcs(SOCKET sock,
                     {"world_contact", n.body.ground.hasWorldContact},
                     {"stuck", NpcNavigation::isStuck(n) ||
                               n.movementStuckEpisodeActive},
-                    {"inside_solid",
-                     actorRootInsideClosedSolid(world, n.body.pos)},
+                    {"inside_solid", insideSolid},
                     {"state", npcStateName(n.stateMachine.currentState)}});
             }
             StructuredLogger::instance().writeEvent(
@@ -2425,9 +2498,23 @@ void simulateSharedNpcs(SOCKET sock,
                                {"count", actors.size()},
                                {"npcs", std::move(actors)}},
                 __FILE__, __LINE__, __FUNCTION__);
+            traceMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - traceStart).count();
+            if (traceMs > 5.0) {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.containment-cost", "trace",
+                    "trace_containment", tick,
+                    nlohmann::json{{"phase", "trace"},
+                                   {"duration_ms", traceMs},
+                                   {"containment_ms", traceContainmentMs},
+                                   {"npc_count", npcSystem.all().size()}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
         }
     }
 
+    const auto rebuildStart = std::chrono::steady_clock::now();
     rebuildServerNpcMap(npcs, npcSystem, npcIdsAlive);
 
     // Record each NPC's broadcast pose for hit-rewind validation. This runs
@@ -2435,6 +2522,8 @@ void simulateSharedNpcs(SOCKET sock,
     // built for this tick will contain (what clients see and shoot at).
     for (auto& kv : npcs)
         pushNpcPositionHistory(kv.second, tick);
+    rebuildMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - rebuildStart).count();
 
     static uint64_t lastNpcPosLog = 0;
     const uint64_t now = nowMs();
@@ -2447,6 +2536,36 @@ void simulateSharedNpcs(SOCKET sock,
                 ++living;
         printf("[SERVER NPC SUMMARY] count=%zu living=%zu dead=%zu\n",
                npcs.size(), living, npcs.size() - living);
+    }
+
+    const double totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - simStart).count();
+    if (totalMs > 50.0) {
+        size_t living = 0;
+        for (const auto& kv : npcs)
+            if (kv.second.health > 0) ++living;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.tick-cost", "server",
+            "npc fixed-tick cost exceeded 50 ms", tick,
+            nlohmann::json{{"mode", serverGamemodeState().matchMode},
+                           {"map", serverGamemodeState().mapId},
+                           {"total_ms", totalMs},
+                           {"npc_ai_ms", npcAiMs},
+                           {"ai_update_ms", aiUpdateMs},
+                           {"worst_ai_ms", worstAiMs},
+                           {"worst_ai_actor", worstAiActor},
+                           {"recovery_ms", recoveryMs},
+                           {"pair_ms", pairMs},
+                           {"respawn_ms", respawnMs},
+                           {"rebuild_ms", rebuildMs},
+                           {"trace_ms", traceMs},
+                           {"trace_containment_ms", traceContainmentMs},
+                           {"recovery_actor", recoveryActor},
+                           {"npc_count", npcs.size()},
+                           {"living_npcs", living},
+                           {"max_hp", serverMaxHp()}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 }
 

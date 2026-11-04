@@ -370,6 +370,19 @@ static void logSpatialVoice(const ActiveSound& active)
     if (!StructuredLogger::instance().shouldLog(
             StructuredCategory::Audio, StructuredLevel::Important))
         return;
+    // Legacy attenuation is the steady-state default for world sounds. Logging
+    // every voice produced >10k events in a few minutes and buried gameplay
+    // evidence; keep a bounded periodic sample instead.
+    if (active.world && active.mode == SpatialAudioMode::Legacy)
+    {
+        static thread_local uint64_t lastLegacyLogMs = 0;
+        const uint64_t now = (uint64_t)std::chrono::duration_cast<
+            std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (now - lastLegacyLogMs < 10000)
+            return;
+        lastLegacyLogMs = now;
+    }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Audio, StructuredLevel::Important,
         "audio.spatial.applied", active.name,

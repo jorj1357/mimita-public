@@ -16,6 +16,8 @@ def create_parser() -> argparse.ArgumentParser:
     visibility.add_argument("--visible", dest="launch_visibility", action="store_const",
                             const="visible", help="show the game window without leaving it focused")
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
+    parser.add_argument("--list-instances", action="store_true",
+                        help="print the current run's server/client instances and exit")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
     parser.add_argument("--command", "--cmd", dest="command",
                         help="send one terminal command to the running daemon, wait for the result, and exit")

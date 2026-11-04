@@ -6,7 +6,10 @@
 
 #include <glm/glm.hpp>
 
+#include "debug/structured-log.h"
 #include "gui/ui-system.h"
+#include "physics/physical-entity.h"
+#include "vehicles/vehicle-config.h"
 #include "vehicles/vehicle-system.h"
 
 namespace {
@@ -36,14 +39,20 @@ void drawVehicleHud()
     const char* gear = gearLabel(state->gear, gearBuffer, sizeof(gearBuffer));
     const char* mode =
         state->mode == VehicleControlMode::Automatic ? "AUTO" : "MANUAL";
+    const VehicleSpec* spec =
+        VehicleConfigRegistry::instance().find(state->templateId);
+    const char* diff = spec ? spec->differential.type.c_str() : "?";
     const int speedKmh = (int)(state->speed * 3.6f + 0.5f);
 
-    char line[160];
-    std::snprintf(line, sizeof(line), "%s  %s  GEAR %s",
-                  state->engineOn ? "ENGINE ON" : "ENGINE OFF", mode, gear);
+    char line[192];
+    std::snprintf(line, sizeof(line), "%s  %s  GEAR %s  DIFF %s",
+                  state->engineOn ? "ENGINE ON" : "ENGINE OFF", mode, gear,
+                  diff);
     const float scale = 0.34f;
     const float x = 24.0f;
-    float y = uiScreenH() - 150.0f;
+    float y = uiScreenH() - 300.0f;
+    uiDrawRect({x - 8.0f, y - 8.0f, 470.0f, 178.0f},
+               {0.03f, 0.04f, 0.06f, 0.72f}, "vehicle-hud-bg");
     uiDrawText(line, x, y, scale, {1.0f, 1.0f, 1.0f, 1.0f});
     y += 22.0f;
 
@@ -67,4 +76,37 @@ void drawVehicleHud()
                   (int)(state->throttle * 100.0f + 0.5f),
                   (int)(state->brake * 100.0f + 0.5f), state->steer);
     uiDrawText(line, x, y, 0.28f, {0.8f, 0.85f, 0.9f, 1.0f});
+    y += 24.0f;
+
+    const glm::vec4 hintColor{1.0f, 0.86f, 0.35f, 1.0f};
+    uiDrawText(state->engineOn ? "V  ENGINE OFF" : "V  START ENGINE",
+               x, y, 0.30f, hintColor);
+    y += 20.0f;
+    uiDrawText("B  AUTO/MANUAL   X  SHIFT UP   Z  SHIFT DOWN", x, y,
+               0.25f, {0.85f, 0.9f, 1.0f, 1.0f});
+    y += 18.0f;
+    uiDrawText("W/S THROTTLE/BRAKE  A/D STEER  SHIFT CLUTCH  SPACE HANDBRAKE"
+               "  F EXIT",
+               x, y, 0.23f, {0.8f, 0.85f, 0.9f, 1.0f});
+
+    const uint64_t hudTick =
+        PhysicalEntitySystem::instance().simulationTick();
+    static uint64_t lastHudLogTick = 0;
+    if (hudTick - lastHudLogTick >= 60)
+    {
+        lastHudLogTick = hudTick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "vehicle.hud", std::to_string(state->id),
+            "vehicle HUD rendered live state", hudTick,
+            {{"vehicle_id", state->id},
+             {"gear", state->gear},
+             {"gear_label", gear},
+             {"mode", mode},
+             {"engine_on", state->engineOn},
+             {"speed_kmh", speedKmh},
+             {"differential", diff},
+             {"screen_w", uiScreenW()},
+             {"screen_h", uiScreenH()}});
+    }
 }

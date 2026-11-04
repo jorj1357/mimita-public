@@ -1,117 +1,205 @@
 {
   // Neutral four-wheel sedan. Length is X, width is Y, up is Z.
-  // This slice deliberately uses a 5 x 3 x 1 m block body so the physics and
-  // visual axes are easy to inspect.
+  // All vehicle feel belongs in this file. The load-time
+  // vehicle.config.validation event reports static compression and grip.
   "id": "car_sedan",
-  "massKg": 1400,
+
+  // ── Chassis ─────────────────────────────────────────────────────────
+  "massKg": 2600,
   "density": 120,
-  "centerOfMass": [0.0, 0.0, -0.10],
+  "centerOfMass": [0.0, 0.0, -0.35],
   "length": 5.0,
   "width": 3.0,
   "height": 1.0,
-  "drag": 0.32,
-  "downforce": 0.0,
+  "drag": 0.045,
+  "downforce": 8.0,
+  "bodyFriction": 0.18,
+  "bodyWallFriction": 0.05,
+  "bodyRestitution": 0.18,
+  "reboundScale": 0.55,
+  "coastDeceleration": 3.0,
+  "coastSpinDamping": 2.5,
+
+  // ── Speed targets / gearing math ────────────────────────────────────
+  // 0-60 km/h time: 16.667 m/s / (firstGearForce / massKg)
+  // firstGearForce = torqueAt(2000rpm) * gear1 * finalDrive * 0.9 / radius
+  // Top speed: redlineRpm*2*pi/60 / (topGear*finalDrive) * radius * 3.6
+  // drag is calibrated as forceAtTopSpeed / topSpeed^2.
+  "speedTargets": { "zeroTo60KmhSeconds": 1.0, "topSpeedKmh": 999 },
+  "linearDamping": 0.04,
+  "angularDamping": 1.2,
+  "maxAngularSpeed": 8.0,
+  "sleepLinearThreshold": 0.12,
+  "sleepAngularThreshold": 0.12,
+  "sleepRequiredTicks": 80,
+
+  // ── Suspension / stability ──────────────────────────────────────────
+  // Per-wheel force cap. Static corner load is massKg * 70 / 4 = 45500 N.
+  "maxSuspensionForce": 180000,
+  "bumpStopStiffness": 900000,
+  "bumpStopDamping": 50000,
+  "antiRollForceScale": 6.0,
+  "stabilityVerticalDamping": 6.0,
+  "stabilityAngularDamping": 6.0,
+  "idleSettleSpeed": 2.0,
+  "idleSettleHorizontal": 0.90,
+  "idleSettleVertical": 0.20,
+  "idleSettleAngular": 0.20,
+
   "interactionRadius": 15.0,
   "bodyTexture": "assets/textureshq/240sx.png",
   "wheelTexture": "assets/textureshq/dark1.png",
   "engineSound": "assets/sound/weapon/chainsaw/chainsawidle.wav",
   "wheelSegments": 32,
+
+  // ── Wheels ──────────────────────────────────────────────────────────
+  // Larger unsprungMass and spinInertia make the wheels harder to spin up.
+  // Lower maxSpinVelocity keeps wheel speed readable and drift controllable.
   "wheels": [
     {
-      "hub": [1.5, 1.2, -0.25],
-      "radius": 0.55,
-      "width": 0.38,
+      "hub": [1.55, 1.35, -0.28],
+      "radius": 0.62,
+      "width": 0.42,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
       "steerAxis": [0, 0, 1],
-      "restLength": 0.18,
-      "travel": 0.15,
-      "springRate": 600000,
+      "restLength": 0.20,
+      "travel": 0.18,
+      "springRate": 420000,
       "damperRate": 22000,
-      "antiRoll": 120000,
-      "unsprungMass": 45,
+      "antiRoll": 180000,
+      "antiRollDamping": 80000,
+      "unsprungMass": 55,
+      "spinInertia": 30,
+      "maxSpinVelocity": 480,
+      "camberDeg": -1.5,
+      "toeDeg": -0.10,
+      "casterDeg": 0.0,
+      "camberDeg": -1.5,
+      "toeDeg": 0.10,
+      "casterDeg": 0.0,
+      "camberDeg": -2.5,
+      "toeDeg": -0.05,
+      "casterDeg": 0.0,
+      "camberDeg": -2.5,
+      "toeDeg": 0.05,
+      "casterDeg": 0.0,
       "steer": true,
       "drive": false,
       "brake": true
     },
     {
-      "hub": [1.5, -1.2, -0.25],
-      "radius": 0.55,
-      "width": 0.38,
+      "hub": [1.55, -1.35, -0.28],
+      "radius": 0.62,
+      "width": 0.42,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
       "steerAxis": [0, 0, 1],
-      "restLength": 0.18,
-      "travel": 0.15,
-      "springRate": 600000,
+      "restLength": 0.20,
+      "travel": 0.18,
+      "springRate": 420000,
       "damperRate": 22000,
-      "antiRoll": 120000,
-      "unsprungMass": 45,
+      "antiRoll": 180000,
+      "antiRollDamping": 80000,
+      "unsprungMass": 55,
+      "spinInertia": 30,
+      "maxSpinVelocity": 480,
       "steer": true,
       "drive": false,
       "brake": true
     },
     {
-      "hub": [-1.5, 1.2, -0.25],
-      "radius": 0.55,
-      "width": 0.38,
+      "hub": [-1.55, 1.35, -0.28],
+      "radius": 0.62,
+      "width": 0.42,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
       "steerAxis": [0, 0, 1],
-      "restLength": 0.18,
-      "travel": 0.15,
-      "springRate": 600000,
+      "restLength": 0.20,
+      "travel": 0.18,
+      "springRate": 420000,
       "damperRate": 22000,
-      "antiRoll": 120000,
-      "unsprungMass": 45,
+      "antiRoll": 180000,
+      "antiRollDamping": 80000,
+      "unsprungMass": 55,
+      "spinInertia": 30,
+      "maxSpinVelocity": 480,
       "steer": false,
       "drive": true,
       "brake": true
     },
     {
-      "hub": [-1.5, -1.2, -0.25],
-      "radius": 0.55,
-      "width": 0.38,
+      "hub": [-1.55, -1.35, -0.28],
+      "radius": 0.62,
+      "width": 0.42,
       "suspensionAxis": [0, 0, -1],
       "spinAxis": [0, 1, 0],
       "steerAxis": [0, 0, 1],
-      "restLength": 0.18,
-      "travel": 0.15,
-      "springRate": 600000,
+      "restLength": 0.20,
+      "travel": 0.18,
+      "springRate": 420000,
       "damperRate": 22000,
-      "antiRoll": 120000,
-      "unsprungMass": 45,
+      "antiRoll": 180000,
+      "antiRollDamping": 80000,
+      "unsprungMass": 55,
+      "spinInertia": 30,
+      "maxSpinVelocity": 480,
       "steer": false,
       "drive": true,
       "brake": true
     }
   ],
+
+  // ── Tires ───────────────────────────────────────────────────────────
+  // nominalLoad should stay near massKg * 70 / 4 so effective mu stays high.
   "tire": {
-    "mu": 1.35,
-    "loadSensitivity": 0.00018,
-    "nominalLoad": 24500,
-    "peakSlipRatio": 0.12,
-    "peakSlipAngle": 0.12,
+    "mu": 2.0,
+    "loadSensitivity": 0.00002,
+    "nominalLoad": 45500,
+    "peakSlipRatio": 0.14,
+    "peakSlipAngle": 0.11,
     "frictionCircle": true,
-    "lowSpeed": 0.6
+    "lowSpeed": 1.2,
+    "lowSpeedGrip": 1.25,
+    "rollingResistance": 0.025,
+    "maxLoadScale": 3.5,
+    "slipStiffness": 1.0,
+    "camberGain": 0.15
   },
+
+  // ── Engine / drivetrain ─────────────────────────────────────────────
+  // Presets: mild [[800,180],[2500,340],[4500,420],[6500,380]]
+  //          sport [[800,220],[2500,420],[4500,520],[6500,470]]
+  //          turbo [[800,280],[2500,560],[4500,700],[6500,620]]
   "engine": {
-    "inertia": 0.22,
-    "idleRpm": 850,
-    "redlineRpm": 6800,
-    "frictionTorque": 18,
-    "torqueCurve": [[800, 120], [2500, 240], [4500, 300], [6500, 260]],
-    "turbo": { "maxBoost": 0.35, "spoolRate": 2.4, "lag": 0.18 }
+    "inertia": 0.20,
+    "idleRpm": 900,
+    "redlineRpm": 8550,
+    "frictionTorque": 25,
+    "torqueCurve": [[800, 3800], [2500, 3800], [3500, 3800],
+                    [5000, 3200], [7000, 2200], [8550, 1200]],
+    "turbo": { "maxBoost": 0.10, "spoolRate": 2.4, "lag": 0.18 },
+    "clutchKickBoost": 0.80
   },
   "gearbox": {
-    "ratios": [-3.4, 0.0, 3.6, 2.1, 1.45, 1.05, 0.82, 0.68],
-    "finalDrive": 3.7,
-    "shiftTime": 0.18,
-    "clutchCapacity": 420
+    "ratios": [-3.2, 0.0, 3.2, 2.1, 1.5, 1.15, 0.95, 0.80],
+    "finalDrive": 2.5,
+    "shiftTime": 0.12,
+    "clutchCapacity": 2000
   },
-  "differential": { "type": "lsd", "frontRearSplit": 0.0 },
-  "steering": { "maxAngleDeg": 32, "speedFalloff": 0.55, "returnRate": 3.5 },
-  "brakes": { "maxTorque": 5200, "handbrakeTorque": 3000 },
+  "differential": {
+    "type": "welded",
+    "frontRearSplit": 0.0,
+    "preloadTorque": 120.0,
+    "powerLock": 0.65,
+    "coastLock": 0.30,
+    "lockStrength": 0.85,
+    "biasRatio": 2.0
+  },
+  "steering": { "maxAngleDeg": 45, "speedFalloff": 0.45, "returnRate": 4.0,
+    "directionSign": -1.0, "ackermann": 0.30 },
+  "brakes": { "maxTorque": 6000, "handbrakeTorque": 6000, "handbrakeGripScale": 0.35 },
+
   "seats": [
     { "name": "driver", "anchor": [-0.4, -0.7, 0.0], "riderOffset": [0.0, 0.0, 1.11], "pose": "sit" },
     { "name": "passenger", "anchor": [-0.4, 0.7, 0.0], "riderOffset": [0.0, 0.0, 1.11], "pose": "sit" }

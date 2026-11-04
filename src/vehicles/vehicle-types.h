@@ -27,7 +27,15 @@ struct VehicleWheelSpec {
     float springRate = 42000.0f;
     float damperRate = 4200.0f;
     float antiRoll = 9000.0f;
+    // Anti-roll damping in N per (m/s), 0 = derive from antiRoll.
+    float antiRollDamping = 0.0f;
     float unsprungMass = 38.0f;
+    // Wheel spin inertia in kg*m^2. 0 = derive from unsprungMass and radius.
+    float spinInertia = 0.0f;
+    float maxSpinVelocity = 400.0f;
+    float camberDeg = 0.0f;
+    float toeDeg = 0.0f;
+    float casterDeg = 0.0f;
     bool steer = false;
     bool drive = false;
     bool brake = true;
@@ -41,6 +49,14 @@ struct VehicleTireSpec {
     float peakSlipAngle = 0.12f;
     bool frictionCircle = true;
     float lowSpeed = 0.6f;
+    // Grip multiplier below lowSpeed. >1 makes a parked/slow wheel stick.
+    float lowSpeedGrip = 1.0f;
+    // Rolling resistance coefficient applied against travel direction.
+    float rollingResistance = 0.015f;
+    // Tire normal-load cap as a multiple of nominalLoad.
+    float maxLoadScale = 3.0f;
+    float slipStiffness = 1.0f;
+    float camberGain = 0.0f;
 };
 
 struct VehicleEngineSpec {
@@ -52,6 +68,7 @@ struct VehicleEngineSpec {
     float turboMaxBoost = 0.0f;
     float turboSpoolRate = 2.4f;
     float turboLag = 0.18f;
+    float clutchKickBoost = 0.5f;
 };
 
 struct VehicleGearboxSpec {
@@ -63,19 +80,30 @@ struct VehicleGearboxSpec {
 };
 
 struct VehicleDifferentialSpec {
-    std::string type = "lsd";
+    // welded | race_lsd | open
+    std::string type = "welded";
     float frontRearSplit = 0.0f;
+    float preloadTorque = 120.0f;
+    float powerLock = 0.65f;
+    float coastLock = 0.30f;
+    float lockStrength = 0.85f;
+    float biasRatio = 2.0f;
 };
 
 struct VehicleSteeringSpec {
     float maxAngleDeg = 32.0f;
     float speedFalloff = 0.55f;
     float returnRate = 3.5f;
+    // +1 means positive input steers right; -1 inverts.
+    float directionSign = -1.0f;
+    float ackermann = 0.0f;
 };
 
 struct VehicleBrakeSpec {
     float maxTorque = 5200.0f;
     float handbrakeTorque = 3000.0f;
+    // Rear lateral grip multiplier while the handbrake is held.
+    float handbrakeGripScale = 0.45f;
 };
 
 struct VehicleSeatSpec {
@@ -95,6 +123,39 @@ struct VehicleSpec {
     glm::vec3 halfExtents{2.2f, 0.9f, 0.6f};
     float drag = 0.32f;
     float downforce = 0.0f;
+    // Chassis-vs-world material response. Low friction lets the body slide off
+    // ledges instead of catching; a small restitution gives a 0.1 bounce.
+    float bodyFriction = 0.20f;
+    float bodyWallFriction = 0.05f;
+    float bodyRestitution = 0.10f;
+    // Rebound damping multiplier: <1 gives a bouncier suspension.
+    float reboundScale = 1.0f;
+    // Guaranteed coast-down when there is no throttle/brake/steer input.
+    float coastDeceleration = 3.0f;
+    float coastSpinDamping = 2.0f;
+    // Documentation/validation targets. They do not override physics; they
+    // make the gearing/torque math checkable from events.jsonl.
+    float targetZeroTo60Seconds = 0.0f;
+    float targetTopSpeedKmh = 0.0f;
+    // Chassis rigid-body response. These used to be hardcoded in
+    // vehicle-system.cpp.
+    float linearDamping = 0.02f;
+    float angularDamping = 0.25f;
+    float maxAngularSpeed = 12.0f;
+    float sleepLinearThreshold = 0.15f;
+    float sleepAngularThreshold = 0.15f;
+    int sleepRequiredTicks = 80;
+    // Suspension integration safety. maxSuspensionForce is per wheel.
+    float maxSuspensionForce = 56000.0f;
+    float bumpStopStiffness = 0.0f; // 0 = 4 * springRate
+    float bumpStopDamping = 0.0f;   // 0 = damperRate
+    float antiRollForceScale = 10.0f;
+    float stabilityVerticalDamping = 8.0f;
+    float stabilityAngularDamping = 8.0f;
+    float idleSettleSpeed = 2.0f;
+    float idleSettleHorizontal = 0.80f;
+    float idleSettleVertical = 0.10f;
+    float idleSettleAngular = 0.10f;
     // F-interaction radius. The vehicle prompt uses this directly and the
     // authoritative seat request allows this plus a small network margin.
     float interactionRadius = 15.0f;
@@ -180,6 +241,12 @@ struct VehicleState {
     float engineTorque = 0.0f;
     float boost = 0.0f;
     float shiftTimer = 0.0f;
+    float autoShiftLockTimer = 0.0f;
+    int lastGearLogged = -999;
+    float clutchKickTimer = 0.0f;
+    float prevClutch = 0.0f;
+    float lastWallContactTick = -1.0f;
+    float lastSteerYaw = 0.0f;
 
     float throttle = 0.0f;
     float brake = 0.0f;
@@ -220,6 +287,11 @@ struct VehicleState {
     uint64_t lastAudioLogTick = 0;
     bool audioEngineWasOn = false;
     int enginePulsesSinceLog = 0;
+    int settleTicks = 0;
+    bool settleReported = false;
+    bool flipReported = false;
+    glm::vec3 settleAnchor{0.0f};
+    bool settleAnchorValid = false;
 
     // Input used when no local driver is attached (terminal, NPC, network).
     VehicleInput pendingInput;

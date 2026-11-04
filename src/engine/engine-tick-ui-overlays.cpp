@@ -37,6 +37,7 @@
 #include "gui/gui-element-render.h"
 #include "gui/hud/player-nameplates.h"
 #include "gui/hud/chat-bubble.h"
+#include "debug/debug-visuals.h"
 #include "gui/gui-editor.h"
 #include "competitive/competitive-match.h"
 #include "competitive/competitive-ui.h"
@@ -1064,6 +1065,15 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                             ? std::clamp((int)std::lround(
                                   objective.progress * (float)totalTaps), 0, totalTaps)
                             : 0;
+                        const float requiredSec = objective.requiredTicks > 0
+                            ? (float)objective.requiredTicks / 60.0f : 0.0f;
+                        const float elapsedSec = std::clamp(
+                            objective.progress, 0.0f, 1.0f) * requiredSec;
+                        auto secondsText = [](float value) {
+                            char buf[24];
+                            std::snprintf(buf, sizeof(buf), "%.2f", std::max(0.0f, value));
+                            return std::string(buf);
+                        };
                         auto interactionPrompt = [&](const char* action) {
                             std::string text = tapMode ? "TAP F TO " : "HOLD F TO ";
                             text += action;
@@ -1072,35 +1082,45 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                                 text += std::to_string(elapsedTaps);
                                 text += "/";
                                 text += std::to_string(totalTaps);
+                                text += " TAPS";
+                                if (requiredSec > 0.0f) {
+                                    text += " / ";
+                                    text += secondsText(requiredSec);
+                                    text += "s";
+                                }
                                 text += ")";
+                            } else if (requiredSec > 0.0f) {
+                                text += " (";
+                                text += secondsText(requiredSec);
+                                text += "s)";
                             }
                             return text;
                         };
-                        if (objective.progressKind == 1 && matchLayout.get("objectivePrompt")) {
-                            std::string text = "PLANTING BOMB ";
+                        auto progressText = [&](const char* verb, const char* noun) {
+                            std::string text = verb;
+                            text += noun;
+                            text += " ";
+                            text += secondsText(elapsedSec);
+                            text += "s / ";
+                            text += secondsText(requiredSec);
+                            text += "s (";
                             text += std::to_string(percent);
                             text += "%";
                             if (tapMode && totalTaps > 0) {
-                                text += " (";
+                                text += ", ";
                                 text += std::to_string(elapsedTaps);
                                 text += "/";
                                 text += std::to_string(totalTaps);
-                                text += " TAPS)";
+                                text += " TAPS";
                             }
-                            drawCentered("objectivePrompt", text);
+                            text += ")";
+                            return text;
+                        };
+                        if (objective.progressKind == 1 && matchLayout.get("objectivePrompt")) {
+                            drawCentered("objectivePrompt", progressText("PLANTING", " BOMB"));
                         } else if (objective.progressKind == 2 &&
                                    matchLayout.get("objectivePrompt")) {
-                            std::string text = "DEFUSING BOMB ";
-                            text += std::to_string(percent);
-                            text += "%";
-                            if (tapMode && totalTaps > 0) {
-                                text += " (";
-                                text += std::to_string(elapsedTaps);
-                                text += "/";
-                                text += std::to_string(totalTaps);
-                                text += " TAPS)";
-                            }
-                            drawCentered("objectivePrompt", text);
+                            drawCentered("objectivePrompt", progressText("DEFUSING", " BOMB"));
                         } else if (objective.state == 3 && matchLayout.get("objectiveStatus")) {
                             // Planted: the round timer is replaced by the
                             // authoritative explosion timer.
@@ -1122,6 +1142,43 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                                 interactionPrompt("PLANT BOMB"));
                         } else if (objective.state == 1 && matchLayout.get("objectiveStatus")) {
                             drawCentered("objectiveStatus", std::string("BOMB CARRIED"));
+                        }
+
+                        // World-anchored progress readout visible to every
+                        // client in the match (not just the local operator).
+                        const GuiElement* worldEl = matchLayout.get("objectiveWorldText");
+                        if (worldEl && worldEl->visible) {
+                            std::string worldText;
+                            if (objective.progressKind == 1) {
+                                worldText = "PLANTING ";
+                                worldText += secondsText(elapsedSec);
+                                worldText += "s / ";
+                                worldText += secondsText(requiredSec);
+                                worldText += "s";
+                            } else if (objective.progressKind == 2) {
+                                worldText = "DEFUSING ";
+                                worldText += secondsText(elapsedSec);
+                                worldText += "s / ";
+                                worldText += secondsText(requiredSec);
+                                worldText += "s";
+                            } else if (objective.state == 3) {
+                                worldText = "BOMB ";
+                                worldText += secondsText(objective.timerLeft);
+                                worldText += "s";
+                            }
+                            float sx = 0.0f;
+                            float sy = 0.0f;
+                            if (!worldText.empty() &&
+                                DebugVis::projectToScreen(
+                                    camera,
+                                    objective.position + glm::vec3(0.0f, 0.0f, 1.4f),
+                                    sx, sy)) {
+                                const float scale = worldEl->fontSize > 0.0f
+                                    ? worldEl->fontSize : 0.32f;
+                                const float w = uiMeasureText(worldText.c_str(), scale);
+                                uiDrawText(worldText.c_str(), sx - w * 0.5f, sy,
+                                           scale, worldEl->getTextColorVec());
+                            }
                         }
                     }
 

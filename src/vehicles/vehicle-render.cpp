@@ -76,10 +76,14 @@ void drawVehicleWheels(const Camera& camera)
                 glm::rotation(glm::vec3(0.0f, 0.0f, 1.0f), spinAxis);
             const glm::quat steer =
                 glm::angleAxis(wheel.steerAngle, steerAxis);
+            const glm::quat camber = glm::angleAxis(
+                glm::radians(wheelSpec.camberDeg), glm::vec3(1.0f, 0.0f, 0.0f));
+            const glm::quat caster = glm::angleAxis(
+                glm::radians(wheelSpec.casterDeg), glm::vec3(0.0f, 1.0f, 0.0f));
             const glm::quat spin =
                 glm::angleAxis(wheel.spinAngle, glm::vec3(0.0f, 0.0f, 1.0f));
             const glm::quat rotation =
-                chassisRotation * steer * align * spin;
+                chassisRotation * steer * caster * camber * align * spin;
 
             const glm::mat4 model =
                 glm::translate(glm::mat4(1.0f), center) *

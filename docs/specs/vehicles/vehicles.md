@@ -502,6 +502,9 @@ the force, not the rules.
 
 ### 11.2 Seated driver
 
+Cars start with the engine off. Press `V` to start/stop the engine. The
+bottom-left HUD shows the start key and the live driving controls.
+
 | Input | Behavior |
 |---|---|
 | `V` | Toggle engine on/off |
@@ -597,7 +600,9 @@ is a TODO; the first slice may use the existing exit/idle transition.
 
 ## 13. HUD
 
-While seated, the HUD shows the vehicle state:
+While seated, the HUD shows the vehicle state and key hints (`V` engine,
+`B` auto/manual, `X`/`Z` shift, clutch, throttle/brake/steer, handbrake,
+`F` exit):
 
 - engine `ON` / `OFF`,
 - mode `AUTO` / `MANUAL`,
@@ -858,9 +863,29 @@ To make a car easier or harder to enter, edit that one JSON field and run
 The current first template is a deliberately simple block:
 
 - length **5 m** (X), width **3 m** (Y), height **1 m** (Z);
-- wheel radius **0.55 m**, width 0.38 m;
-- wheel hub positions `x ±1.5`, `y ±1.2`, `z -0.25`;
+- mass **2600 kg**, center of mass `[0, 0, -0.35]`;
+- wheel radius **0.62 m**, width 0.42 m;
+- wheel hub positions `x ±1.55`, `y ±1.35`, `z -0.28`;
+- wheel spring 420000 N/m, damper 15000, travel 0.18, anti-roll 180000;
+- wheel unsprung mass 55 kg, explicit spin inertia 30 kg*m^2, max spin 480 rad/s;
+- tire `mu` 2.0, nominal load 45500 N, low-speed grip 1.25, rolling resistance 0.025;
+- body friction 0.18, body restitution 0.10, coast deceleration 3.0 m/s^2;
 - seat `riderOffset` **1.11 m** upward (capsule-center origin; this is seat cushion + capsule half-height).
+
+### 22.1 Speed target math
+
+`speedTargets` in the template is documentation and validation only:
+
+```
+zeroTo60KmhSeconds ~= 16.667 / (launchForce / massKg)
+launchForce = torqueAt(2000rpm) * firstGear * finalDrive * 0.9 / radius
+topSpeedKmh = redlineRpm * 2*pi/60 / (topGear * finalDrive) * radius * 3.6
+drag ~= forceAtTopSpeed / topSpeed^2
+```
+
+Current `car_sedan` targets 1.0 s to 60 km/h and 999 km/h top speed.
+`vehicle.tuning` and `vehicle.config.validation` report the estimated values
+and warn when the estimate misses the target by more than 15%/10%.
 - body texture `assets/textureshq/240sx.png`;
 - wheel texture `assets/textureshq/dark1.png`.
 
@@ -973,3 +998,29 @@ cannot allocate unbounded work.
   is the single owner.
 - The debug renderer is read-only and does not change solver behavior.
 
+
+
+## 25. Drift tuning and surface response
+
+- Manual is the default transmission. Cars spawn engine-off, clutch-up, gear 1.
+- Drift tunables live in `config/vehicles/car_sedan.json`:
+  - `wheels[].camberDeg`, `toeDeg`, `casterDeg`
+  - `tire.slipStiffness`, `camberGain`
+  - `steering.directionSign`, `ackermann`, `maxAngleDeg`, `speedFalloff`
+  - `engine.clutchKickBoost`
+  - `brakes.handbrakeGripScale`, `handbrakeTorque`
+  - `reboundScale`, `bodyRestitution`, `bodyFriction`, `bodyWallFriction`
+- Differential types:
+  - `welded` (default): driven wheels on an axle share one spin speed.
+  - `race_lsd`: preload + power/coast lock + lock strength + bias ratio.
+  - `open`: independent driven wheel spin.
+- Shallow wall hits use `bodyWallFriction` rather than body friction. Exact
+  triangle normals are preserved; only the normal component is removed, so the
+  car keeps sliding along the wall. `vehicle.wall.contact` records the normal,
+  impact speed, current speed, velocity, yaw, and wall friction.
+- Wheel hubs render as textured caps. Bottom/top cap winding, radial cap UVs,
+  opaque alpha, and cull-state restoration are owned by
+  `src/render/procedural-cylinder.cpp`.
+- Telemetry: `vehicle.steer`, `vehicle.differential` data in `vehicle.bounce`,
+  `vehicle.wall.contact`, `vehicle.clutch.kick`, `vehicle.hud`,
+  `vehicle.gear.changed`, `vehicle.bounce`, `vehicle.settle`, `vehicle.flip`.

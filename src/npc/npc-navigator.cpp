@@ -1124,7 +1124,12 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
         // The graph sees the whole map (no authored points) and returns a
         // corridor; the local planner below is the fallback and fine-steering
         // owner. Chunks are built lazily, so this costs nothing until used.
-        const bool graphAllowed = !commitment || commitment->useNavGraph;
+        // When Recast owns the route, do not also build the custom global graph:
+        // a successful Recast corridor replaces the custom plan below. Compare
+        // mode still keeps the custom plan authoritative, and Custom mode uses
+        // it directly. This removes the dominant fixed-tick planning cost.
+        const bool graphAllowed = (!commitment || commitment->useNavGraph) &&
+            navBackend != RecastBackend::Recast;
         if (graphAllowed && toGoal > localReach) {
             // Rebuild the cached graph if the live tuning file changed, so
             // editing chunk/cell size while the game runs takes effect.
@@ -1137,7 +1142,10 @@ NpcNavResult NpcNavigator::update(Npc& npc, const NpcGoal& newGoal, const World&
             NpcNavGraphSettings gs;
             gs.chunkSize = diff.navGraphChunkSize;
             gs.cellSize = diff.navGraphCellSize;
-            gs.maxRoutes = diff.navGraphMaxRoutes;
+            // This caller only consumes routes.front(). Asking the graph for
+            // extra equal-cost candidates tripled A* work per replan for no
+            // gameplay benefit and was the dominant source of fixed-tick stalls.
+            gs.maxRoutes = 1;
             gs.maxDropHeight = diff.navGraphMaxDropHeight;
             gs.jumpHeight = npcMaxJumpHeight(cfg);
             gs.actorRadius = std::max(0.1f, npc.body.getCapsule().r);

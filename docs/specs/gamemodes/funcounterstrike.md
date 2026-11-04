@@ -87,7 +87,7 @@ Two interaction modes are supported through the mode objective configuration:
   fifty presses defuse a 5-second bomb. Releasing between taps does not cancel
   accumulated progress; dying or leaving the valid area does.
 
-The current Fun Counter Strike durations are **1 second to plant** and
+The current Fun Counter Strike durations are **5 seconds to plant** and
 **5 seconds to defuse**. The plant/defuse interaction range is configurable in
 the objective JSON through `interaction_range_m` (default 3 m; Fun Counter
 Strike ships with 6 m). The same value is authoritative on the server and drives
@@ -367,7 +367,7 @@ repeated):
 | Setting | Default | Owner |
 |---|---|---|
 | Unplanted round timer | 90 s | gamemode JSON |
-| Plant | 1 s | gamemode JSON |
+| Plant | 5 s | gamemode JSON |
 | Defuse | 5 s | gamemode JSON |
 | Interaction range | 6 m | gamemode JSON `interaction_range_m` |
 | Interaction mode | hold (Mode 1) | gamemode JSON |

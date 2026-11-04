@@ -5,10 +5,13 @@
 #include "game/spawn-override.h"
 #include "physics/ray-utils.h"
 #include "physics/movement/physics-collision.h"
+#include "physics/movement/actor-final-pose.h"
+#include "physics/physics-types.h"
 #include "debug/debug-log.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
@@ -172,9 +175,32 @@ bool resolveCandidate(const World& world,
 
 bool worldPointInsideSolid(const World& world, const glm::vec3& point)
 {
+    const auto& mesh = world.collisionMesh;
+    // When solid identity exists, test only the closed solids whose AABB
+    // contains the point. The old global parity scan was both slow (full mesh)
+    // and could be fooled by the map's enclosing room shell.
+    if (!mesh.solidBounds.empty())
+    {
+        for (const auto& entry : mesh.solidBounds)
+        {
+            if (entry.first == 0 || entry.first == kRemovedCollisionSolidId)
+                continue;
+            auto interior = mesh.solidInteriorSolid.find(entry.first);
+            if (interior != mesh.solidInteriorSolid.end() && !interior->second)
+                continue;
+            const AABB& bounds = entry.second;
+            if (glm::any(glm::lessThan(point, bounds.min)) ||
+                glm::any(glm::greaterThan(point, bounds.max)))
+                continue;
+            if (pointInsideSolidId(world, point, entry.first))
+                return true;
+        }
+        return false;
+    }
+
     const glm::vec3 direction = glm::normalize(glm::vec3(1.0f, 0.3713907f, 0.193f));
     int hits = 0;
-    for (const CollisionTriangle& triangle : world.collisionMesh.triangles)
+    for (const CollisionTriangle& triangle : mesh.triangles)
     {
         float distance = 0.0f;
         if (rayTriangle(point, direction, triangle, distance) && distance > 1.0e-4f)
@@ -184,15 +210,35 @@ bool worldPointInsideSolid(const World& world, const glm::vec3& point)
 }
 
 glm::vec3 resolveSafeStandingSpawn(const World& world, const glm::vec3& desired,
-                                   float radius, float height)
+                                   float radius, float height,
+                                   int maxCandidates, double maxMilliseconds)
 {
     radius = std::max(0.05f, radius);
     height = std::max(0.2f, height);
     if (world.collisionMesh.triangles.empty())
         return desired;
 
+    const auto budgetStart = std::chrono::steady_clock::now();
+    int candidateChecks = 0;
+    auto budgetExceeded = [&]() {
+        if (maxCandidates > 0 && candidateChecks >= maxCandidates)
+            return true;
+        if (maxMilliseconds > 0.0) {
+            const double elapsedMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - budgetStart).count();
+            if (elapsedMs >= maxMilliseconds)
+                return true;
+        }
+        return false;
+    };
     const glm::vec3 extent = world.collisionMesh.boundsMax - world.collisionMesh.boundsMin;
     const float maxDrop = std::max(200.0f, extent.z + 64.0f);
+    auto checkCandidate = [&](const glm::vec3& candidate, glm::vec3& out) {
+        if (budgetExceeded())
+            return false;
+        ++candidateChecks;
+        return resolveCandidate(world, candidate, radius, height, maxDrop, out);
+    };
     float ceilingDistance = 0.0f;
     const bool hasCeiling = raycastUpWorld(world, desired, 64.0f, ceilingDistance);
     const float maxLift = hasCeiling ? std::max(0.0f, ceilingDistance - 0.1f) : 16.0f;
@@ -203,8 +249,7 @@ glm::vec3 resolveSafeStandingSpawn(const World& world, const glm::vec3& desired,
     {
         if (lift > maxLift)
             break;
-        if (resolveCandidate(world, desired + glm::vec3(0.0f, 0.0f, lift),
-                             radius, height, maxDrop, resolved))
+        if (checkCandidate(desired + glm::vec3(0.0f, 0.0f, lift), resolved))
         {
             if (lift > 0.0f)
                 Debug::log(Debug::Category::General,
@@ -223,8 +268,8 @@ glm::vec3 resolveSafeStandingSpawn(const World& world, const glm::vec3& desired,
             const glm::vec3 offset(std::cos(angle) * ring, std::sin(angle) * ring, 0.0f);
             for (float lift : lifts)
             {
-                if (resolveCandidate(world, desired + offset + glm::vec3(0.0f, 0.0f, lift),
-                                     radius, height, maxDrop, resolved))
+                if (checkCandidate(desired + offset + glm::vec3(0.0f, 0.0f, lift),
+                                   resolved))
                 {
                     Debug::log(Debug::Category::General,
                         "[SPAWN SAFE] moved spawn by (%.2f %.2f %.2f) to (%.2f %.2f %.2f)\\n",

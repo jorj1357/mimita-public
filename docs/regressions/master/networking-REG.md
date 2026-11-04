@@ -89,3 +89,10 @@ Entries: 12
 - Status: FIXED IN SOURCE; RUNTIME AND HUMAN VISIBILITY CONFIRMED FOR PAYLOAD 1
 - Summary: - Recorded: 2026-10-25T15:29:08Z - Status: FIXED IN SOURCE; RUNTIME AND HUMAN VISIBILITY CONFIRMED FOR PAYLOAD 1 - Changelog: [../../changelog/2026-10-25/20261025152908-payload-npc-spawn-authoring.md](../../changelog/2026-10-25/20261025152908-payload-npc-spawn-authoring.md)
 - Detail: `docs/regressions/2026-10-25/payload-npc-replication-and-spawn-collapse-REG.md`
+
+## Entry 13 — Client appeared frozen while a different server kept reporting 60 Hz
+
+- Recorded: 2026-11-04T14:30:00Z
+- Status: FIXED IN SOURCE; live journal proof recorded; dashboard visual review pending
+- Summary: One run had two servers and a shared journal; the client's server died, the client kept replaying its last snapshot, and a playerless 60 Hz server made the run look healthy.
+- Detail: `docs/regressions/2026-11-04/frozen-client-dead-server-REG.md`

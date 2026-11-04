@@ -2029,3 +2029,16 @@ must not become per-tick spam.
 Every record carries the universal `tick`. Derived seconds are optional
 readability fields; the tick is the authoritative value. Assertions must use
 ticks and configured ranges, not wall-clock time.
+
+## Multi-instance journal layout (2026-11-04)
+
+New runs use one run folder with one canonical journal per executable:
+
+``text
+logs/<yyyy-mm-dd>/<run-id>/
+  run.json
+  dev-loop/events.jsonl
+  server-01/events.jsonl
+  client-01/events.jsonl
+``n
+Every record carries `run_id`, `instance_id`, `role`, `pid`, `launch_id`, and `build_id`. `run.json` is the manifest that maps instances to journals, ports, rooms, and states. Readers must not assume two processes share one `events.jsonl`. See `docs/specs/debug-logging/canonical-jsonl.md` and `docs/specs/dev-loop/multi-instance.md`. The older single-shared-file wording in this document remains historical context for runs before this date.

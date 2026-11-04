@@ -46,14 +46,28 @@ std::string wallTimestampUtc() {
     return out;
 }
 
+const char* instanceId() {
+    const char* value = std::getenv("MIMITA_INSTANCE_ID");
+    return value && *value ? value : "";
+}
+
+const char* launchId() {
+    const char* value = std::getenv("MIMITA_LAUNCH_ID");
+    return value && *value ? value : "";
+}
+
 const char* processRole() {
+    // The command line is authoritative. A client that spawns a local host
+    // server passes its environment to the child, so an inherited
+    // MIMITA_PROCESS_ROLE=client must not relabel a real --server process.
+    const char* commandLine = GetCommandLineA();
+    if (commandLine && (std::strstr(commandLine, "--server") ||
+                        std::strstr(commandLine, "-server")))
+        return "server";
     const char* explicitRole = std::getenv("MIMITA_PROCESS_ROLE");
     if (explicitRole && *explicitRole)
         return explicitRole;
-    const char* commandLine = GetCommandLineA();
-    return commandLine && (std::strstr(commandLine, "--server") ||
-                           std::strstr(commandLine, "-server"))
-        ? "server" : "client";
+    return "client";
 }
 
 HANDLE eventsFileMutex() {
@@ -738,7 +752,12 @@ void StructuredLogger::createLogDir() {
         const std::filesystem::path events(sharedPath);
         mEventsPath = events.string();
         mLogDir = events.parent_path().string();
-        mRunId = events.parent_path().filename().string();
+        // Per-executable journals live in <run>/<instance>/. Prefer the
+        // launcher's explicit run id so records carry the run, not the
+        // instance folder name.
+        const char* explicitRun = std::getenv("MIMITA_RUN_ID");
+        mRunId = explicitRun && *explicitRun
+            ? explicitRun : events.parent_path().filename().string();
         if (mRunId.empty()) mRunId = runBuf;
         std::filesystem::create_directories(mLogDir, ec);
         if (ec)
@@ -1069,6 +1088,8 @@ void StructuredLogger::init() {
         {"run_id", mRunId},
         {"process", role},
         {"process_role", role},
+        {"instance_id", instanceId()},
+        {"launch_id", launchId()},
         {"executable", exePath},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""},
@@ -1090,11 +1111,13 @@ void StructuredLogger::init() {
                runFields);
     writeEvent(StructuredCategory::General, StructuredLevel::Important,
                "logger.started", "", "canonical JSONL logger started", 0,
-               {{"path", mEventsPath}, {"run_id", mRunId},
-                {"process", role},
-                {"process_role", role},
-                {"executable", exePath},
-                {"pid", static_cast<unsigned long long>(GetCurrentProcessId())}});
+                {{"path", mEventsPath}, {"run_id", mRunId},
+                 {"process", role},
+                 {"process_role", role},
+                 {"instance_id", instanceId()},
+                 {"launch_id", launchId()},
+                 {"executable", exePath},
+                 {"pid", static_cast<unsigned long long>(GetCurrentProcessId())}});
 
     Debug::log(Debug::Category::General,
         "[STRUCTURED_LOG] Initialized: events=%s run=%s\n",
@@ -1345,6 +1368,8 @@ void StructuredLogger::writeEvent(StructuredCategory category,
         {"run_id", mRunId},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"process", processRole()},
+        {"instance_id", instanceId()},
+        {"launch_id", launchId()},
         {"level", levelToString(level)},
         {"category", categoryName(category)},
         {"event", eventName},
@@ -1385,6 +1410,8 @@ bool StructuredLogger::tryWriteEvent(StructuredCategory category,
         {"run_id", mRunId},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"process", processRole()},
+        {"instance_id", instanceId()},
+        {"launch_id", launchId()},
         {"level", levelToString(level)},
         {"category", categoryName(category)},
         {"event", eventName},
@@ -1427,6 +1454,8 @@ bool StructuredLogger::writeEventChecked(StructuredCategory category,
         {"run_id", mRunId},
         {"pid", static_cast<unsigned long long>(GetCurrentProcessId())},
         {"process", processRole()},
+        {"instance_id", instanceId()},
+        {"launch_id", launchId()},
         {"level", levelToString(level)},
         {"category", categoryName(category)},
         {"event", eventName},

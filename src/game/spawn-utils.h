@@ -26,7 +26,9 @@ bool worldPointInsideSolid(const World& world, const glm::vec3& point);
 // rejects inside-solid points, ground-snaps, and checks capsule clearance.
 // Falls back to `desired` only when no candidate validates.
 glm::vec3 resolveSafeStandingSpawn(const World& world, const glm::vec3& desired,
-                                   float radius = 0.65f, float height = 3.5f);
+                                   float radius = 0.65f, float height = 3.5f,
+                                   int maxCandidates = 0,
+                                   double maxMilliseconds = 0.0);
 
 // Spawn an NPC at a valid position using shared spawn logic.
 // Returns the NPC's spawn position (for logging).

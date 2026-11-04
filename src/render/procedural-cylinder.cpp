@@ -57,11 +57,12 @@ void buildCylinderVertices(std::vector<Vertex>& verts, float radius,
                                       std::sin(angle) * radius,
                                       -halfLength));
         normals.push_back(glm::vec3(0.0f, 0.0f, -1.0f));
-        uvs.push_back(glm::vec2(u, 0.0f));
+        uvs.push_back(glm::vec2(0.5f + 0.5f * std::cos(angle),
+                                0.5f + 0.5f * std::sin(angle)));
     }
     positions.push_back(bottomCenter);
     normals.push_back(glm::vec3(0.0f, 0.0f, -1.0f));
-    uvs.push_back(glm::vec2(0.5f, 0.0f));
+    uvs.push_back(glm::vec2(0.5f, 0.5f));
 
     const glm::vec3 topCenter(0.0f, 0.0f, halfLength);
     for (int i = 0; i <= seg; ++i)
@@ -72,11 +73,12 @@ void buildCylinderVertices(std::vector<Vertex>& verts, float radius,
                                       std::sin(angle) * radius,
                                       halfLength));
         normals.push_back(glm::vec3(0.0f, 0.0f, 1.0f));
-        uvs.push_back(glm::vec2(u, 1.0f));
+        uvs.push_back(glm::vec2(0.5f + 0.5f * std::cos(angle),
+                                0.5f + 0.5f * std::sin(angle)));
     }
     positions.push_back(topCenter);
     normals.push_back(glm::vec3(0.0f, 0.0f, 1.0f));
-    uvs.push_back(glm::vec2(0.5f, 1.0f));
+    uvs.push_back(glm::vec2(0.5f, 0.5f));
 
     std::vector<unsigned int> indices;
     for (int i = 0; i < seg; ++i)
@@ -98,8 +100,8 @@ void buildCylinderVertices(std::vector<Vertex>& verts, float radius,
     for (int i = 0; i < seg; ++i)
     {
         indices.push_back(bottomCenterIndex);
-        indices.push_back(bottomRingStart + i);
         indices.push_back(bottomRingStart + ((i + 1) % (seg + 1)));
+        indices.push_back(bottomRingStart + i);
     }
 
     const int topRingStart = bottomCenterIndex + 1;
@@ -107,8 +109,8 @@ void buildCylinderVertices(std::vector<Vertex>& verts, float radius,
     for (int i = 0; i < seg; ++i)
     {
         indices.push_back(topCenterIndex);
-        indices.push_back(topRingStart + ((i + 1) % (seg + 1)));
         indices.push_back(topRingStart + i);
+        indices.push_back(topRingStart + ((i + 1) % (seg + 1)));
     }
 
     verts.clear();
@@ -187,12 +189,28 @@ void drawTexturedCylinder(const Camera& camera, const glm::mat4& model,
     glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
     glUniform3f(glGetUniformLocation(shader, "uTint"), tint.x, tint.y,
                 tint.z);
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"),
-                alpha >= 0.999f ? 0.5f : 0.0f);
+    // Wheels are opaque; the texture has no intended cutout.
+    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.0f);
+
+    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+    GLint cullModeWas = GL_BACK;
+    if (cullWasEnabled)
+        glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+    glDisable(GL_CULL_FACE);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
     glBindVertexArray(mesh.vao);
     glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
     glBindVertexArray(0);
+
+    if (cullWasEnabled)
+    {
+        glEnable(GL_CULL_FACE);
+        glCullFace(cullModeWas);
+    }
+    else
+    {
+        glDisable(GL_CULL_FACE);
+    }
 }
