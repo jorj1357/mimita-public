@@ -1,3 +1,24 @@
+2026 11 04 1025 jorj
+
+red = enemy
+over na dover
+show that 
+
+then,
+red outline
+u not enemy
+what
+....
+omg traintor
+have to kill frined
+grrrr
+
+i love dat
+
+more practice more fun 
+
+i lit could mkae a show with this 
+
 2026 10 29 0915
 
 detro chan volcanic chan

@@ -1,4 +1,20 @@
-﻿2026 11 04 1022
+﻿
+
+2026 11 04 1027
+avatars hmmmm
+need to show eveurones avatars
+cannot have that skipped
+but
+
+need to ahve 
+what i am = what others see
+not like
+what i am =/= what other see
+i want to be the actor, not just  be a local avatar
+i want to be the  serr avatar so 
+gate avatar load and stuff behind  idk admin or server things idk 
+
+2026 11 04 1022
 
 ragdoll cannot do antthign while hcatting 
 no notihng while hcatting
