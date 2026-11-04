@@ -163,3 +163,33 @@ etwork.session.health reconnect transitions in the client journal.
 - New N-server/N-client start/stop controls remain the next Phase 3 step.
 
 - Added read-only dev-loop.py --list-instances [--json] for the new per-instance rows.
+
+## Follow-up: multi-client dashboard controls and testing docs
+
+- Added native/terminal dashboard process rows with counts, PID, state, uptime,
+  snapshot age, and journal path.
+- Added dashboard buttons: Start server, Start client, Stop selected, Restart selected.
+- Added CLI: --start-server, --start-client, --stop-instance, --restart-instance,
+  --client, --name, --badconn-preset.
+- Additional clients get their own instance id, journal, command queue, badconn preset,
+  and process record. Commands route by --client.
+- Added docs/workflows/multi-client-dev-testing.md and
+  docs/specs/networking/bad-connection-simulation.md, routed from ROUTER.
+Live evidence (run logs/2026-11-04/20261104_145751):
+- server-01 + client-01 + client-02 all listed with separate journals.
+- Both clients reported `remote_players=1` and `remote_npcs=9` with
+  `snapshots_missed=0`, proving they saw each other on the same server.
+- --stop-instance client-02 removed only client-02; server/client-01 stayed.
+- --restart-instance client-02 changed its PID and kept the same id/preset;
+  the restart also produced reconnect churn on client-01, recorded as a follow-up
+  networking investigation rather than claimed fixed.
+
+Still pending after this pass:
+- Explicit `server.player.registered/unregistered/stale` events (roster count is
+  currently derived from active client instances).
+- Run-level quota across all instance journals (per-instance rotation exists).
+- New badconn impairment fields: duplicate packets, periodic latency spikes,
+  bandwidth cap, and presets 11-16. The spec is written; existing presets 1-10 work.
+- Human visual review of the new dashboard process rows and buttons.
+- Restarting a client while another client is connected caused reconnect churn on
+  client-01 in run `20261104_145751`; this is a follow-up networking investigation.

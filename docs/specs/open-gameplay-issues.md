@@ -1,4 +1,85 @@
-﻿2026 11 04 0854 jorj
+﻿2026 11 04 1022
+
+ragdoll cannot do antthign while hcatting 
+no notihng while hcatting
+
+need to separate these inputs lowk
+we can do this right now like
+
+input state gameplay = all binds
+we acn do binds right now ew dont have a binds system
+we need to do that for cross platform
+
+so we can wrap that here 
+and
+chat open = 
+input state chat
+or 
+gui
+so 
+g dont mean ragdoll
+g mean g
+or
+
+input state map eidotr
+or etc
+idk how to  explain totallt perforem but do it liek that 
+
+
+2026 11 04 1008 jorj 
+
+go much harder on the 
+clients and server
+
+1 dev loop dashboard
+AND ENSURE 1 EVENTS.JSONL
+NO OTHER TESTING 
+if u looking for a behavior or making sure itw rosking
+makei it work
+in 
+events.jsonl
+no 
+
+no other tests
+no agent gate
+no nothing
+no  just
+just run the .exe
+the funciton u wanna ahve happen happens
+with events to prove it
+if not working then  trial/error
+form there
+
+but
+now we have 
+2 cleitns
+that made m ethink wow
+we hneed to do likem uch more 
+
+avatars are not replciateing and saving super good totally
+i think we also should make it so like  each clinet has their own account
+so u cna test
+diffrnet saved data
+
+then , rpg game?
+like
+how do we 
+
+anuone just joins the rpg game
+and then fights  monsterrs
+gets gold 
+saves to their profile
+leave for 1000 uears
+come back
+its sitll here
+wheres it stored ,  other ocmptuers
+hows it accessesd, hmmm not sure
+if its all local then 
+but if its all centarlized then
+hmmm idkkkk idk bro 
+netwrokgi traffic u ned to  like do that stuff with it 
+
+2026 11 04 0854 jorj
 
 girl avatars need to be  liek having the aniatmins
 
@@ -18,6 +99,8 @@ blood
 
 but what can i do as the coding sysmtes desigenr hmm 
 distributed data storage so anuone can do this 
+
+So that made me think like. What should I do for Systems thinking OK How did retrograde even get to me? Retrograde is actually., grad, as in graduation, whatever. It's voice text. Systems thinking. How did retrograde get? To me, it's through the Internet but it's. From ROBLOX Studio. It's from ROBLOX. So they use Roblox Studio to make a game, and so the game is. Edit it and saved on their computer. They save it, and then we they send copies of it to Roblox And then Roblox distributes those. See other people on their servers and then so me as a client, I connect to their ROBLOX servers and I can play that game Awesome. I there's so much stuff that we could do there though, like networking. That's a big reason why I even started, because I just feel so frustrated with the networking from ROBLOX Its general purpose and that's good. But I The competitiveness of it. I feel like we could do a whole game engine. Based on competitive Things that matter, like you need one thing to happen before the other. It's not just like Willie, Neil, I don't know how to even explain. But II? Yeah, I'm kind of confused, but so that's why I wanted to talk about OK D, OK imagine anybody can make their game. Anybody. Anywhere with an Internet with a device. I want to make something so that. You don't need to publish it to ROBLOX, you just publish it. You don't need to. Save your data. It just saves to something. Collective. Umm, yeah. So if we make an editor. I mean make it like easy to and we ensure like the the big purpose of why we're even doing this is because we want the joy and happiness. That we get from ROBLOX. With more Tinkerability like. Networking. Why is networking strange? Why isn't it behaving the way I intended? What can I do about that What can I do about the operating system you've been on and stuff like this? I want to do stuff like distributed storage So that. And it's stuff like stuff that I'm. Like OK 'cause I'd be happy to do Zombie Town, like Zombie Tower, was a big thing. Because the tower took so long due This has shown to us that we need to make the map editor much, much better because Blender can't do. I want to do it in Blender anymore. I don't want to do in Blender So we need to make inside of the executable better OK. Cool. Map editor and then video editor because we're having so many cool things showing up, why don't we have again like a singular entity editor? Which? And then this makes me think OK. Why am I doing this when other engines have been doing this? I don't know, like Godot and stuff and so I'm doing it like all novel my own way because number one, so I can figure it out. Me as the human. So if something's wrong I can just go fix it. But number two, because then I'll understand it. But number two, it's like a different way of solving the same problem and it's solved in the way that I specifically like it. Not like Godot, like Goda is a like A, general purpose one. This is gonna be like a really specific like to me. Which sounds selfish, but Umm, it's solving problems for me. And so that means I believe it should solve the same problems for others. So we have a OK, so we have a map editor, and then let's do Video editor. And then map editor, video editor, sound editor I would love to do. This this thing's like engineering challenge is really like N dimensional geometry. Fractal world non Euclidean geometry. Walking inside of a room that's way bigger on the inside than it is on the outside. And it like, logically makes sense in the geometry. And it's like the networking reliable too. That would be amazing. That would be incredible. Because then we can do like. That would be just like a fun like a walking simulator, especially combining that with Virtual reality. Oh my gosh. And infinite infiniteness. Just infiniteness. Plus AI plus a general. Direction of where you want to go. You can get things like Like you like how? Optical illusion is like showcase. You can just do like a bunch of stuff like that. Like you can make the rules that create those and because Like if we're 'cause I can't. I like to think about it like. What is space time emerge from? It emerges from notes some like. State states that are distinguishable between each other. A is AA equals A. We can start, we should basically just have to start on like an assumption I think. So we just have like notes. And then. Relationships between the nodes. And then from that we have. Space and time and we have and therefore we have networking From that, because space time exit we have pretty much everything We have like everything. Like the universe? Kind of. I mean, I don't know how you get. Really Granular about it, but it really. Space time is what humans have operate what the universe, as we've known, seems to operate in. Space time if you just deconstruct that into. Nodes and relationships. And then you write a lot of documentation about OK. Well, I want the existing behavior to work. While also supporting stuff like. Because at that at that point you can do like Live like all of this stuff would just be. It's really just a The state before or estate. If at 10:00 PM, well not even you can't go like 10:00 PM. But like millisecond to millisecond. Like trace one event. I don't know how to really explain But you can do crazy things, I believe, and so I wanted help figuring out what, even what things to do. What things would help. What are the issues even that are currently like? I don't really like how Roblox has. Like you'll see a game on the front page and it'll just be gone within a day, within a week. What happened to the things that are staying that like like Steam, like kind of like things that pass down? Your family will play this. It's not just stuff for you. I mean, on ROBLOX, like it's crazy, some games. I played a game the other day that I had no idea was just me in it. It was just me. It seemed so lively and that's what I'm doing with the NPCS in this in my engine, but I mean the engine I get to contribute to. But from that play experience. That was Scary. Strange, because humans have not evolved. Past the point. I mean, you can just go sit And like a corner somewhere and play with NPCS that do everything. Exactly what you say, but I feel like it. That's what. Like a human baseline, like some science studies. Your relationships like to other humans. I was so sad when I broke up with my girlfriend Because I realized, like my whole life was kind of built around her. And so now she's gone. Or she was gone at the time. And then I got nothing. I mean, technically I have artificial intelligence and projects and stuff like that, but I was so there was no like Spark. There's no like millisecond to millisecond stuff you can only really get, I think, with another real life biological human being. Just stuff like that and so. What that? Yeah, that's the issue. How can we get technology To make it cool to hang out with other humans and collaborate with stuff that you're both having fun with Like stuff that. It's fun. You and your computer fighting other people. What if it was you brought your computer with you to a library where there's already TV's and stuff and you have like a tournament and it was like fun to watch and people can just join and it's like. Just bring a computer, bring a controller. You can join on your phone. You can just start up a like a tournament. I think that is cool. I think that is super duper cool actually. Being able to see like We could make something like that, like that'll bring people together. It combines map editor, video editor and definitely like Accessibility. On every platform you need to get on Apple you need to get. It might be something like a web browser. And fun shows that you can. Pfizer, dots, fun Fists. Like I have my hand in a fist. ER like. Renew. Jumper Umm lunger ER at the end fists, ER OK. That website is awesome because it's all on. A web browser? There's no special app. There's no iOS. There's no like Platform stuff. And So what? That makes me think. If you want to bring people together, I feel like something that's even more important than that, because I feel like that stuff should emerge as well. Trying to build a model of the world. Like or explain my model of the world? It's like, umm. Why is rent $1000? Well, 'cause the house costs money, why is it cost money? Somebody owns it and we do need to maintain it. But like. Just like why? What if no one owned it? What if it was just a community? Like you just get a house like it just exist. Just 'cause it exists doesn't mean I own it. Concept of. Ownership is changing, I think. But if you're thinking about relationship if you're just A node in a relationship to the other nodes. Or a point in space maybe? It doesn't even have to be a point in space. It's like that's where space even Comes from. Is a node in. Relations between the node. Like. I wanted your yeah, I talked a lot, but I wanted your like feedback on what even what to do here. If you know what I mean. 
 
 what to NOT do
 dont need new sounds

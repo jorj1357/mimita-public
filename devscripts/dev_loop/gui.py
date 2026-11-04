@@ -32,6 +32,7 @@ def _configured_launch_modes() -> list[dict[str, str]]:
     if not isinstance(modes, dict):
         return []
     ordered = sorted(modes, key=lambda value: (
+        not bool(modes[value].get("clients")) if isinstance(modes[value], dict) else True,
         not str(value).isdigit(),
         int(str(value)) if str(value).isdigit() else str(value),
     ))
@@ -268,7 +269,7 @@ def run(status_provider: Callable[[], dict],
     content = tk.Frame(shell, bg=BLACK, padx=7, pady=5)
     content.grid(row=1, column=0, sticky="nsew")
     content.grid_columnconfigure(0, weight=1)
-    content.grid_rowconfigure(3, weight=1)
+    content.grid_rowconfigure(4, weight=1)
 
     caption_buttons = tk.Frame(titlebar, bg=BLACK)
     caption_buttons.grid(row=0, column=1, sticky="e", padx=(0, 4))
@@ -425,8 +426,26 @@ def run(status_provider: Callable[[], dict],
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
+    process_card = frame(content, padx=5, pady=3)
+    process_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
+    process_card.grid_columnconfigure(0, weight=1)
+    label(process_card, "MIMITA PROCESSES", size=7, bold=True).grid(
+        row=0, column=0, sticky="w")
+    process_summary = label(process_card, "no servers · no clients", size=7)
+    process_summary.grid(row=1, column=0, sticky="w", pady=(1, 2))
+    process_list = tk.Listbox(
+        process_card, height=5, activestyle="none", exportselection=False,
+        background=BLACK, foreground=RED, selectbackground="#660000",
+        selectforeground=WHITE, relief="flat", bd=0, highlightthickness=0,
+        font=(family, 8))
+    process_list.grid(row=2, column=0, sticky="ew")
+    process_buttons = tk.Frame(process_card, bg=BLACK)
+    process_buttons.grid(row=3, column=0, sticky="ew", pady=(2, 0))
+    for column in range(4):
+        process_buttons.grid_columnconfigure(column, weight=1)
+
     details = frame(content, padx=5, pady=3)
-    details.grid(row=3, column=0, sticky="nsew", pady=(1, 0))
+    details.grid(row=4, column=0, sticky="nsew", pady=(1, 0))
     details.grid_columnconfigure(0, weight=1)
     label(details, "LATEST BUILD AND LOOP ACTIVITY  ·  LAST 10 LINES",
           size=7, bold=True).pack(anchor="w", pady=(0, 2))
@@ -467,13 +486,13 @@ def run(status_provider: Callable[[], dict],
     output.bind("<Configure>", lambda _event: update_gutter())
 
     action_status = label(content, "Ready", size=7)
-    action_status.grid(row=4, column=0, sticky="ew", pady=(3, 1))
+    action_status.grid(row=5, column=0, sticky="ew", pady=(3, 1))
     if state.get("window_registration_error"):
         action_status.configure(text=state["window_registration_error"])
     elif state.get("app_id_error"):
         action_status.configure(text="Windows app identity unavailable; taskbar window still enabled")
     controls = tk.Frame(content, bg=BLACK)
-    controls.grid(row=5, column=0, sticky="ew")
+    controls.grid(row=6, column=0, sticky="ew")
     controls.grid_columnconfigure(0, weight=3)
     controls.grid_columnconfigure(1, weight=1)
     controls.grid_columnconfigure(2, weight=1)
@@ -519,6 +538,39 @@ def run(status_provider: Callable[[], dict],
                 state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
                 state["launch_timing_message"] = str(error)
         refresh()
+
+    state["instance_ids"] = []
+
+    def selected_instance() -> str:
+        selection = process_list.curselection()
+        if not selection:
+            return ""
+        index = int(selection[0])
+        ids = state.get("instance_ids") or []
+        return ids[index] if 0 <= index < len(ids) else ""
+
+    def send_instance(action: str) -> None:
+        iid = selected_instance()
+        if not iid:
+            action_status.configure(text="Select a process row first")
+            return
+        send(action, instance_id=iid)
+
+    def start_client() -> None:
+        client_count = sum(1 for iid in (state.get("instance_ids") or [])
+                           if str(iid).startswith("client-"))
+        send("start-client", name=f"Client {client_count + 1}")
+
+    button(process_buttons, "Start server", lambda: send("start-server")).grid(
+        row=0, column=0, sticky="ew", padx=(0, 3))
+    button(process_buttons, "Start client", start_client).grid(
+        row=0, column=1, sticky="ew", padx=(0, 3))
+    button(process_buttons, "Stop selected", lambda: send_instance("stop-instance")).grid(
+        row=0, column=2, sticky="ew", padx=(0, 3))
+    button(process_buttons, "Restart selected",
+           lambda: send_instance("restart-instance")).grid(
+        row=0, column=3, sticky="ew")
+    process_list.bind("<<ListboxSelect>>", lambda _event: None)
 
     launch_button = button(controls, "Launch latest stable MiMITA.exe",
                            lambda: send("build-or-launch"))
@@ -863,6 +915,34 @@ def run(status_provider: Callable[[], dict],
                     f"builds {'MATCH' if same_build else 'DIFFER'}"
                     + ("\n" + "\n".join(instance_lines) if instance_lines else "")
                 ))
+                instances = model.get("instances") or []
+                servers = [i for i in instances if i.get("role") == "server"]
+                clients = [i for i in instances if i.get("role") == "client"]
+                server_online = sum(1 for i in servers if i.get("state") == "online")
+                client_online = sum(1 for i in clients if i.get("state") == "online")
+                frozen = sum(1 for i in instances if i.get("state") == "frozen")
+                process_summary.configure(text=(
+                    f"{len(servers)} servers ({server_online} online) · "
+                    f"{len(clients)} clients ({client_online} online)"
+                    + (f" · {frozen} frozen" if frozen else "")))
+                previous_selection = selected_instance()
+                process_list.delete(0, "end")
+                state["instance_ids"] = []
+                for inst in instances:
+                    iid = str(inst.get("instance_id", "?"))
+                    uptime = inst.get("uptime_seconds")
+                    uptime_text = (f"{int(uptime) // 60:02d}:{int(uptime) % 60:02d}"
+                                   if uptime is not None else "--:--")
+                    age = inst.get("snapshot_age_ms")
+                    age_text = f"{age / 1000.0:.1f}s" if age is not None else "-"
+                    process_list.insert("end",
+                        f"{iid:10} {str(inst.get('role', '?')):6} "
+                        f"{str(inst.get('state', '?')):9} "
+                        f"pid={inst.get('pid') or '-':>6} up={uptime_text} "
+                        f"snap={age_text:>6}")
+                    state["instance_ids"].append(iid)
+                    if iid == previous_selection:
+                        process_list.selection_set("end")
                 mode = str(model.get("mode") or "—")
                 map_name = str(model.get("map") or "—")
                 mode_value.configure(text=mode, fg=rainbow_color())

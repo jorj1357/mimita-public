@@ -717,6 +717,7 @@ def launch_mode_table() -> list[tuple[str, str]]:
     ordered = sorted(
         modes,
         key=lambda value: (
+            not bool(modes[value].get("clients")) if isinstance(modes[value], dict) else True,
             not str(value).isdigit(),
             int(str(value)) if str(value).isdigit() else str(value),
         ),
@@ -1035,6 +1036,8 @@ class DevLoop:
         self.server_journal_path: str | None = None
         self.client_journal_path: str | None = None
         self.launch_id: str | None = None
+        self.launch_executable: str | None = None
+        self.client_instances: dict[str, dict] = {}
         self.instances: list[dict] = []
         # Legacy alias: the dev-loop journal. Kept for control/status readers.
         self.events_path: str | None = None
@@ -1182,7 +1185,9 @@ class DevLoop:
     def _journal_read_paths(self) -> list[str]:
         paths = [self.server_journal_path, self.client_journal_path,
                  self.events_path]
-        return [path for path in paths if path]
+        paths.extend(str(record.get("journal_path") or "")
+                     for record in self.client_instances.values())
+        return [path for path in dict.fromkeys(paths) if path]
 
     @staticmethod
     def _tail_records(path: str | None, max_bytes: int = 262144) -> list[dict]:
@@ -1227,20 +1232,174 @@ class DevLoop:
         except ValueError:
             return None
 
+    def _next_client_instance_id(self) -> str:
+        index = 1
+        while f"client-{index:02d}" in self.client_instances:
+            index += 1
+        return f"client-{index:02d}"
+
+    def start_client_instance(self, name: str, badconn_preset: str = "",
+                              instance_id: str | None = None,
+                              server_instance_id: str = "server-01") -> dict | None:
+        """Start one additional client connected to the owned server."""
+        if server_instance_id != "server-01":
+            self.last_message = f"unknown server instance {server_instance_id}"
+            return None
+        if not self.server_health() or not self.launch_executable:
+            self.last_message = "start-client requires a running server and published build"
+            return None
+        self._ensure_run_layout()
+        iid = instance_id or self._next_client_instance_id()
+        if iid in self.client_instances:
+            self.last_message = f"duplicate client instance {iid}"
+            return None
+        journal = self.run_layout.journal_for(iid)
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        queue = DEV_ROOT / f"agent-command-{self.run_id}-{iid}.jsonl"
+        queue.write_text("", encoding="utf-8")
+        args = [self.launch_executable]
+        if self.room_code:
+            args.extend(["--room", self.room_code])
+        else:
+            args.extend(["--connect", f"127.0.0.1:{self.server_local_port}"])
+            if self.room_file_path is not None:
+                args.extend(["--room-code-file", str(self.room_file_path)])
+        args.extend(["--map", self.current_map or "",
+                     "--name", name, "--unlock-cursor"])
+        if badconn_preset:
+            args.extend(["--badconn-preset", str(badconn_preset)])
+        args.extend(["--agent-command-file", str(queue)])
+        env = {
+            **os.environ,
+            "MIMITA_EVENTS_FILE": str(journal),
+            "MIMITA_INSTANCE_ID": iid,
+            "MIMITA_LAUNCH_ID": self.launch_id or "",
+            "MIMITA_DEV_LOOP_SERVER": "1",
+            "MIMITA_RUN_ID": self.run_id or "",
+            "MIMITA_EXPECTED_RUN_ID": self.run_id or "",
+            "MIMITA_EXPECTED_BUILD_ID": self.run_metadata.get("build_id", ""),
+            "MIMITA_BUILD_ID": self.run_metadata.get("build_id", ""),
+            "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
+            "MIMITA_PROCESS_ROLE": "client",
+        }
+        try:
+            process = subprocess.Popen(
+                args, cwd=ROOT, env=env,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as error:
+            self.last_message = f"could not start {iid}: {error}"
+            return None
+        self.processes.append(process)
+        record = {
+            "instance_id": iid,
+            "name": name,
+            "process": process,
+            "pid": process.pid,
+            "journal_path": str(journal),
+            "command_queue": str(queue),
+            "badconn_preset": badconn_preset,
+            "server_instance_id": "server-01",
+            "started_ms": time.time() * 1000.0,
+        }
+        self.client_instances[iid] = record
+        ready = self.wait_for_logger_started("client", process.pid, process=process)
+        self.client_ready = self.client_ready or ready
+        self.record_runtime_event(
+            "dev-loop.instance.started",
+            {"instance_id": iid, "role": "client", "pid": process.pid,
+             "journal_path": str(journal), "badconn_preset": badconn_preset,
+             "ready": ready},
+            "additional client instance started")
+        self.last_message = f"started {iid} pid={process.pid} ready={ready}"
+        self.save_state("client_started")
+        return record
+
+    def stop_client_instance(self, instance_id: str) -> bool:
+        record = self.client_instances.get(instance_id)
+        if not record:
+            self.last_message = f"unknown client instance {instance_id}"
+            return False
+        process = record.get("process")
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+        self.client_instances.pop(instance_id, None)
+        self.processes = [p for p in self.processes if p is not process]
+        if not self.client_instances:
+            self.client_ready = False
+        self.record_runtime_event(
+            "dev-loop.instance.stopped",
+            {"instance_id": instance_id, "role": "client"},
+            "client instance stopped")
+        self.last_message = f"stopped {instance_id}"
+        self.save_state("client_stopped")
+        return True
+
+    def apply_configured_client_teams(self, configured_clients: list[dict]) -> None:
+        """Force the launch mode's client teams through the host command path."""
+        if len(configured_clients) < 2:
+            return
+        host = self.client_instances.get("client-01")
+        if not host:
+            return
+        entries = []
+        for index, client_cfg in enumerate(configured_clients, start=1):
+            try:
+                team = int(client_cfg.get("team", 0) or 0)
+            except (TypeError, ValueError):
+                team = 0
+            if team not in (1, 2):
+                continue
+            iid = f"client-{index:02d}"
+            record = self.client_instances.get(iid)
+            if not record:
+                continue
+            actor_id = 0
+            deadline = time.time() + 30.0
+            while time.time() < deadline:
+                event = self._journal_last(
+                    record.get("journal_path"),
+                    {"client.local.spawn_applied"})
+                if event:
+                    fields = event.get("fields") or {}
+                    try:
+                        actor_id = int(fields.get("actor_id", 0) or 0)
+                    except (TypeError, ValueError):
+                        actor_id = 0
+                    if actor_id:
+                        break
+                time.sleep(0.2)
+            if actor_id:
+                entries.append({"command": "team_assign",
+                                "args": [str(actor_id), str(team)]})
+        if not entries:
+            return
+        self._queue_agent_requests(
+            {"client_id": "client-01",
+             "request_id": f"team-assign-{uuid.uuid4().hex[:8]}"},
+            entries)
+
+    def restart_client_instance(self, instance_id: str) -> bool:
+        record = self.client_instances.get(instance_id)
+        if not record:
+            return False
+        name = str(record.get("name", instance_id))
+        preset = str(record.get("badconn_preset", ""))
+        if not self.stop_client_instance(instance_id):
+            return False
+        return self.start_client_instance(name, preset, instance_id) is not None
+
     def _instance_records(self) -> list[dict]:
         now_ms = time.time() * 1000.0
         server_alive = bool(self.server_pid and self.server_health())
-        clients = [p for p in self.processes if p.poll() is None]
         server_last = self._journal_last(self.server_journal_path)
-        client_last = self._journal_last(self.client_journal_path)
-        snapshot = self._journal_last(
-            self.client_journal_path, {"network.client-snapshot-window"},
-            max_bytes=4 * 1024 * 1024)
         server_event_age = self._age_ms(server_last, now_ms)
-        client_event_age = self._age_ms(client_last, now_ms)
-        snapshot_age = self._age_ms(snapshot, now_ms)
-        snapshot_tick = (snapshot or {}).get("fields", {}).get("server_tick") \
-            if isinstance((snapshot or {}).get("fields"), dict) else None
         if not server_alive:
             server_state = "stopped" if self.server_unavailable else "offline"
         elif not self.server_ready:
@@ -1249,14 +1408,8 @@ class DevLoop:
             server_state = "mismatch"
         else:
             server_state = "online"
-        if not clients:
-            client_state = "offline"
-        elif snapshot_age is not None and snapshot_age <= 3000.0:
-            client_state = "online"
-        elif not server_alive:
-            client_state = "frozen"
-        else:
-            client_state = "stale"
+        server_uptime = (max(0.0, (now_ms - self.server_launch_ms) / 1000.0)
+                         if self.server_launch_ms and server_alive else None)
         server = {
             "instance_id": "server-01",
             "role": "server",
@@ -1274,29 +1427,67 @@ class DevLoop:
             "journal_path": self.server_journal_path,
             "last_event_utc": (server_last or {}).get("wall_time"),
             "event_age_ms": server_event_age,
-            "roster_count": 1 if (server_alive and self.client_ready) else 0,
+            "uptime_seconds": server_uptime,
+            "roster_count": len(self.client_instances) if server_alive else 0,
             "build_match": bool(self.builds_match),
         }
-        client = {
-            "instance_id": "client-01",
-            "role": "client",
-            "label": self.profile.get("client_name", "client"),
-            "pid": clients[0].pid if clients else None,
-            "executable": (self.client_args[0] if self.client_args else None),
-            "build_id": self.run_metadata.get("client_build_id"),
-            "launch_id": self.launch_id,
-            "state": client_state,
-            "server_instance_id": "server-01",
-            "connected_address": (f"127.0.0.1:{self.server_local_port}"
-                                  if self.server_local_port else ""),
-            "journal_path": self.client_journal_path,
-            "last_event_utc": (client_last or {}).get("wall_time"),
-            "event_age_ms": client_event_age,
-            "last_snapshot_tick": snapshot_tick,
-            "snapshot_age_ms": snapshot_age,
-            "build_match": bool(self.builds_match),
-        }
-        return [server, client]
+        clients = []
+        for iid, record in sorted(self.client_instances.items()):
+            process = record.get("process")
+            alive = bool(process is not None and process.poll() is None)
+            journal = record.get("journal_path")
+            last = self._journal_last(journal)
+            snap = self._journal_last(
+                journal, {"network.client-snapshot-window"},
+                max_bytes=4 * 1024 * 1024)
+            event_age = self._age_ms(last, now_ms)
+            snap_age = self._age_ms(snap, now_ms)
+            snap_tick = (snap or {}).get("fields", {}).get("server_tick") \
+                if isinstance((snap or {}).get("fields"), dict) else None
+            if not alive:
+                state = "offline"
+            elif snap_age is not None and snap_age <= 3000.0:
+                state = "online"
+            elif not server_alive:
+                state = "frozen"
+            else:
+                state = "stale"
+            clients.append({
+                "instance_id": iid,
+                "role": "client",
+                "label": record.get("name", iid),
+                "pid": process.pid if alive else record.get("pid"),
+                "executable": self.launch_executable,
+                "build_id": self.run_metadata.get("client_build_id"),
+                "launch_id": self.launch_id,
+                "state": state,
+                "server_instance_id": record.get("server_instance_id", "server-01"),
+                "connected_address": (f"127.0.0.1:{self.server_local_port}"
+                                      if self.server_local_port else ""),
+                "badconn_preset": record.get("badconn_preset", ""),
+                "journal_path": journal,
+                "last_event_utc": (last or {}).get("wall_time"),
+                "event_age_ms": event_age,
+                "last_snapshot_tick": snap_tick,
+                "snapshot_age_ms": snap_age,
+                "uptime_seconds": (max(0.0, (now_ms - float(record.get("started_ms", now_ms))) / 1000.0)
+                                   if alive else None),
+                "command_queue": record.get("command_queue"),
+                "build_match": bool(self.builds_match),
+            })
+        if not clients and self.processes:
+            # Backward-compatible single-client view for a run adopted from old state.
+            clients.append({
+                "instance_id": "client-01", "role": "client",
+                "label": self.profile.get("client_name", "client"),
+                "pid": self.processes[-1].pid,
+                "state": "stale" if not server_alive else "online",
+                "server_instance_id": "server-01",
+                "journal_path": self.client_journal_path,
+                "snapshot_age_ms": None, "uptime_seconds": None,
+                "build_match": bool(self.builds_match),
+            })
+        return [server, *clients]
 
     def _write_manifest(self) -> None:
         layout = self.run_layout
@@ -1534,13 +1725,28 @@ class DevLoop:
         return value
 
     def _queue_agent_requests(self, request: dict, entries: list[dict]) -> dict:
-        live_clients = [process for process in self.processes if process.poll() is None]
-        if not live_clients or not self.client_ready:
-            message = "client is not alive and logger-ready"
-            self.record_control_event(request, "rejected", message)
-            self.save_state("command_rejected")
-            return {"accepted": False, "queued": False, "error": message}
-        if not self.command_queue_path:
+        requested_client = str(request.get("client_id", "") or "")
+        if requested_client:
+            record = self.client_instances.get(requested_client)
+            process = record.get("process") if record else None
+            if not record or process is None or process.poll() is not None:
+                message = f"client instance {requested_client} is not alive"
+                self.record_control_event(request, "rejected", message)
+                self.save_state("command_rejected")
+                return {"accepted": False, "queued": False, "error": message}
+            live_clients = [process]
+            queue_path = str(record.get("command_queue") or "")
+            journal_path = str(record.get("journal_path") or self.client_journal_path)
+        else:
+            live_clients = [process for process in self.processes if process.poll() is None]
+            if not live_clients or not self.client_ready:
+                message = "client is not alive and logger-ready"
+                self.record_control_event(request, "rejected", message)
+                self.save_state("command_rejected")
+                return {"accepted": False, "queued": False, "error": message}
+            queue_path = str(self.command_queue_path or "")
+            journal_path = self.client_journal_path
+        if not queue_path:
             message = "client command queue is not configured"
             self.record_control_event(request, "rejected", message)
             self.save_state("command_rejected")
@@ -1567,7 +1773,7 @@ class DevLoop:
             })
             not_before_ms += max(0, int(entry.get("delay_ms_after", 0) or 0))
 
-        with open(self.command_queue_path, "a", encoding="utf-8", newline="\n") as queue:
+        with open(queue_path, "a", encoding="utf-8", newline="\n") as queue:
             for record in queue_records:
                 queue.write(json.dumps(record, separators=(",", ":")) + "\n")
 
@@ -1578,9 +1784,10 @@ class DevLoop:
                 "command_count": len(queue_records),
                 "scenario_id": scenario_id,
                 "client_pid": live_clients[0].pid,
+                "client_id": requested_client or "client-01",
                 "build": self.running_build,
-                "events_path": self.events_path,
-                "queue_path": self.command_queue_path,
+                "events_path": journal_path,
+                "queue_path": queue_path,
             },
             "dev-loop queued client command request",
         )
@@ -1592,9 +1799,10 @@ class DevLoop:
             "request_id": request_id,
             "command_count": len(queue_records),
             "client_pid": live_clients[0].pid,
+            "client_id": requested_client or "client-01",
             "build": self.running_build,
-            "events_path": self.events_path,
-            "queue_path": self.command_queue_path,
+            "events_path": journal_path,
+            "queue_path": queue_path,
         }
 
     def queue_agent_command(self, request: dict) -> dict:
@@ -1975,8 +2183,50 @@ class DevLoop:
                 )
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("auto_start_toggled")
+            elif action == "start-server":
+                if self.server_health():
+                    self.last_message = "server is already running"
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                launched = self.launch_for_control_request(request)
+                self.record_control_event(
+                    request, "completed" if launched else "failed", self.last_message)
+                self.save_state("launch_latest" if launched else "launch_failed")
+            elif action == "start-client":
+                name = str(request.get("name", "") or "").strip()
+                if not name:
+                    name = f"Client {len(self.client_instances) + 1}"
+                record = self.start_client_instance(
+                    name, str(request.get("badconn_preset", "") or ""),
+                    str(request.get("instance_id", "") or "") or None,
+                    str(request.get("server_instance_id", "") or "server-01"))
+                if record:
+                    self.record_control_event(request, "completed", self.last_message)
+                else:
+                    self.record_control_event(request, "rejected", self.last_message)
+            elif action == "stop-instance":
+                iid = str(request.get("instance_id", "") or "")
+                if iid == "server-01":
+                    self.stop_server()
+                    stopped = True
+                else:
+                    stopped = self.stop_client_instance(iid)
+                self.record_control_event(
+                    request, "completed" if stopped else "rejected", self.last_message)
+                self.save_state("instance_stopped" if stopped else "request_rejected")
+            elif action == "restart-instance":
+                iid = str(request.get("instance_id", "") or "")
+                if iid == "server-01":
+                    restarted = self.launch_for_control_request(request)
+                else:
+                    restarted = self.restart_client_instance(iid)
+                self.record_control_event(
+                    request, "completed" if restarted else "rejected", self.last_message)
+                self.save_state("instance_restarted" if restarted else "request_rejected")
             elif action == "stop-client":
                 self.stop_processes()
+                self.client_instances.clear()
                 self.record_control_event(request, "completed", "client stopped")
                 self.save_state("client_stopped")
             elif action == "command":
@@ -2524,6 +2774,10 @@ class DevLoop:
         launch_started = time.monotonic()
         self.last_message = ""
         self.reap_stray_mimita_processes()
+        # A new launch owns a fresh set of clients. Never leave an old
+        # client-02 writing into the previous run after the server is replaced.
+        self.stop_processes()
+        self.client_instances = {}
         # Every explicit launch starts a fresh run folder with one journal per
         # executable. Reusing a full/capped journal is what made logger.started
         # disappear and readiness time out while the replacement server stayed
@@ -2533,6 +2787,8 @@ class DevLoop:
         self.launch_id = utc_now()
         self.run_started_utc = utc_now()
         self.run_metadata = {}
+        self.client_instances = {}
+        self.launch_executable = None
         launch_journal_path = self.events_path
         launch_run_id = self.run_id
         build_id = ""
@@ -2610,6 +2866,7 @@ class DevLoop:
             return False
         build_id = self.build_id(identity)
         launch_exe = STABLE_LAUNCH_EXE
+        self.launch_executable = str(launch_exe)
         stage("artifact_selection", "selected",
               "newest valid published artifact selected" if not fell_back
               else "newest published artifact invalid; previous valid artifact selected",
@@ -2977,11 +3234,19 @@ class DevLoop:
             client_args.extend(["--connect", f"127.0.0.1:{local_server_port}"])
             if self.room_file_path is not None:
                 client_args.extend(["--room-code-file", str(self.room_file_path)])
+        configured_clients = list(self.launch_mode.get("clients") or [])
+        primary_client_cfg = configured_clients[0] if configured_clients else {}
+        primary_client_name = str(
+            primary_client_cfg.get("name")
+            or self.profile.get("client_name", "NPC Dev"))
         client_args.extend([
             "--map", map_name,
-            "--name", str(self.profile.get("client_name", "NPC Dev")),
+            "--name", primary_client_name,
             "--unlock-cursor",
         ])
+        primary_badconn = str(primary_client_cfg.get("badconn_preset", "") or "")
+        if primary_badconn:
+            client_args.extend(["--badconn-preset", primary_badconn])
         client_args.extend(str(value) for value in self.launch_mode.get("client_args", []))
         if not self.events_path:
             self._ensure_run_layout()
@@ -3067,6 +3332,17 @@ class DevLoop:
             self.save_state("client_process_start_failed")
             return False
         self.processes.append(client)
+        self.client_instances["client-01"] = {
+            "instance_id": "client-01",
+            "name": primary_client_name,
+            "process": client,
+            "pid": client.pid,
+            "journal_path": self.client_journal_path,
+            "command_queue": self.command_queue_path,
+            "badconn_preset": primary_badconn,
+            "server_instance_id": "server-01",
+            "started_ms": time.time() * 1000.0,
+        }
         self.client_args = list(client_args)
         self.client_launch_ms = time.time() * 1000.0
         self.running_build = selected_build
@@ -3085,6 +3361,16 @@ class DevLoop:
               self.last_message if not self.client_ready else "client logger.started observed",
               stage_started, client_pid=client.pid, exit_code=client.returncode,
               timeout_seconds=20, journal_path=self.events_path)
+        # Start extra configured clients after the primary logger is ready but
+        # before connection/mode readiness waits. The server/room is known by
+        # then, and both humans can still join before the round roster locks.
+        if len(configured_clients) > 1:
+            for index, client_cfg in enumerate(configured_clients[1:], start=2):
+                extra_name = str(client_cfg.get("name") or f"Client {index}")
+                extra_preset = str(client_cfg.get("badconn_preset", "") or "")
+                started = self.start_client_instance(extra_name, extra_preset)
+                if started is None:
+                    print(f"[DEV] additional client {extra_name} failed: {self.last_message}")
         self.builds_match = bool(self.server_ready and self.client_ready and
                                  self.server_exe == str(launch_exe) and
                                  identity.get("valid") and
@@ -3113,6 +3399,8 @@ class DevLoop:
             stage("client_connection", "ready" if connection_ready else "failed",
                   self.last_message if not connection_ready else "client reached Connected",
                   stage_started, client_pid=client.pid, timeout_seconds=45)
+        if connection_ready:
+            self.apply_configured_client_teams(configured_clients)
 
         mode_ready = True
         if connection_ready and bool(
@@ -4886,6 +5174,8 @@ def run_dashboard(args: argparse.Namespace) -> int:
                             f"build match {'yes' if latest.get('builds_match') else 'no'}"
                         ),
                         "scenario": scenario,
+                        "instances": latest.get("instances") or [],
+                        "manifest_path": latest.get("manifest_path") or "",
                         "journal": latest.get("events_path") or "(none)",
                         "recent": _recent_activity(str(latest.get("events_path") or "")),
                         "source_activity": (
@@ -5017,6 +5307,14 @@ def _control_action(args: argparse.Namespace) -> str:
         return "scenario-file"
     if getattr(args, "list_instances", False):
         return "list-instances"
+    if getattr(args, "start_server", False):
+        return "start-server"
+    if getattr(args, "start_client", False):
+        return "start-client"
+    if getattr(args, "stop_instance", None):
+        return "stop-instance"
+    if getattr(args, "restart_instance", None):
+        return "restart-instance"
     if args.command:
         return "command"
     if args.scenario_file:
@@ -5135,7 +5433,8 @@ def run_control_client(args: argparse.Namespace) -> int:
     if args.scenario_file and getattr(args, "scenario_explain", False):
         return run_scenario_file(args)
 
-    if action in ("command", "scenario-file", "launch", "build") or args.ensure_running:
+    if action in ("command", "scenario-file", "launch", "build", "start-server",
+                  "start-client", "stop-instance", "restart-instance") or args.ensure_running:
         current, ensure_events = ensure_running(args.profile, args.launch_mode, visibility)
         for event in ensure_events:
             print(f"[DEV CONTROL] recovery action={event.get('action')} "
@@ -5180,6 +5479,15 @@ def run_control_client(args: argparse.Namespace) -> int:
         request["requested_by"] = "cli"
     if args.command:
         request["command"] = args.command
+        if getattr(args, "client", ""):
+            request["client_id"] = args.client
+    if action == "start-client":
+        request["name"] = getattr(args, "name", "") or ""
+        request["server_instance_id"] = getattr(args, "server", "") or "server-01"
+        request["badconn_preset"] = getattr(args, "badconn_preset", "") or ""
+    if action in ("stop-instance", "restart-instance"):
+        request["instance_id"] = (getattr(args, "stop_instance", None)
+                                  or getattr(args, "restart_instance", None) or "")
     # Capture the journal offset before sending so a fast command execution is
     # not missed while the daemon builds its synchronous control reply.
     pre_offset = None
@@ -5202,7 +5510,16 @@ def run_control_client(args: argparse.Namespace) -> int:
             print(f"[DEV CONTROL] error={response['error']}", file=sys.stderr)
 
     if action == "command" and response.get("accepted"):
-        events_path = str(current.get("client_journal_path") or
+        requested_client = str(request.get("client_id", "") or "")
+        chosen = None
+        for inst in (current.get("instances") or []):
+            if inst.get("role") == "client" and (
+                    not requested_client or inst.get("instance_id") == requested_client):
+                chosen = inst
+                if requested_client:
+                    break
+        events_path = str((chosen or {}).get("journal_path") or
+                          current.get("client_journal_path") or
                           current.get("events_path") or "")
         control_journal = str(current.get("events_path") or "")
         result = wait_for_command_result(
@@ -5228,7 +5545,8 @@ def main() -> int:
     args = create_parser().parse_args()
 
     control = bool(args.status or args.request or args.command or args.scenario_file
-                   or args.list_instances or args.ai_match)
+                   or args.list_instances or args.start_server or args.start_client
+                   or args.stop_instance or args.restart_instance or args.ai_match)
 
     if args.ai_match:
         args.profile = args.ai_profile

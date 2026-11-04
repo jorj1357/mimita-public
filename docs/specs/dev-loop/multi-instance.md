@@ -168,23 +168,34 @@ Required evidence fields per state:
 The native dashboard is the primary presentation. The terminal dashboard is a
 readable fallback with the same data.
 
-### Process table
+### Process table and controls
+
+The dashboard is the single human heartbeat view. It must show, live:
+
+- Total server count and total client count.
+- Online/offline/frozen/failed/stale counts.
+- One selectable row per server/client with PID, state, uptime, build, map/mode,
+  port/room, roster, snapshot age, badconn preset, and journal.
+- Buttons to start one server, start one client, stop the selected instance,
+  and restart the selected instance.
+- The selected row's detail and actions.
 
 One row per instance, grouped by role, with columns:
 
 ```text
-INSTANCE     ROLE    STATE     PID    BUILD   MAP/MODE            PORT/ROOM      ROSTER  SNAP AGE  UPTIME   JOURNAL
-server-01    server  online    24208  a1b2c3  dust2/funcs        57569/DL57B3W  1       —         00:12:31 server-01/events.jsonl
-client-01    client  frozen    12344  a1b2c3  dust2/funcs        ->server-01    —       42.1s     00:12:29 client-01/events.jsonl
+INSTANCE     ROLE    STATE     PID    UPTIME   BUILD   MAP/MODE        PORT/ROOM      ROSTER  SNAP AGE  JOURNAL
+server-01    server  online    24208  00:12:31 a1b2c3  dust2/funcs    57569/DL57B3W  1       —         server-01/events.jsonl
+client-01    client  frozen    12344  00:12:29 a1b2c3  dust2/funcs    ->server-01    —       42.1s     client-01/events.jsonl
 ```
 
 ### Summary
 
 ```text
-2 servers online · 2 clients online · 1 frozen · 1 offline
+2 servers (2 online) · 2 clients (1 online) · 1 frozen
 ```
 
-The summary must count by state, not by process liveness alone.
+The summary must count by state, not by process liveness alone. It is updated
+in place, not appended.
 
 ### Selected instance
 

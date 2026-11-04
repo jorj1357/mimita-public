@@ -581,6 +581,43 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
     // Team commands are player actions, not host administration.  They must
     // be processed before the host gate so the server can validate and apply
     // them authoritatively for any connected player.
+    // Host-only team assignment for dev-loop multi-client launches. The dev
+    // loop uses this to put client A on T and client B on CT before/while a
+    // round is active. The target is temporarily treated as host so the normal
+    // team/capacity/spawn path applies without the pre-round lock.
+    if (commandStr.rfind("team_assign ", 0) == 0)
+    {
+        if (!it->second.isHost)
+        {
+            ack(false, "rejected: host only");
+            return;
+        }
+        int actorId = 0;
+        int teamNumber = 0;
+        if (std::sscanf(commandStr.c_str(), "team_assign %d %d",
+                        &actorId, &teamNumber) != 2 ||
+            actorId <= 0 || teamNumber < 1 || teamNumber > 2)
+        {
+            ack(false, "rejected: usage team_assign <actor_id> <1|2>");
+            return;
+        }
+        auto target = players.find((uint32_t)actorId);
+        if (target == players.end())
+        {
+            ack(false, "rejected: player not found");
+            return;
+        }
+        std::string message;
+        const bool wasHost = target->second.isHost;
+        target->second.isHost = true;
+        const bool accepted = serverRequestTeamChange(
+            (uint32_t)actorId, teamNumber - 1, sock, players, npcs, tick,
+            totalPacketsOut, message);
+        target->second.isHost = wasHost;
+        ack(accepted, message.c_str());
+        return;
+    }
+
     if (commandStr == "team_list" || commandStr == "teamlist")
     {
         ack(true, serverActiveTeamList().c_str());

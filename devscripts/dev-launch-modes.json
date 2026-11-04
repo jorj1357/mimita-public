@@ -417,6 +417,42 @@
       "map": "dust2cyberiav4",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "47": {
+      "name": "[2 CLIENTS] Fun CS - A=Terrorist, B=Counter-Terrorist + NPC roster",
+      "server_args": ["--mode", "funcounterstrike", "--gamemode", "funcounterstrike"],
+      "client_args": [],
+      "clients": [
+        { "name": "Client B (Counter-Terrorist)", "badconn_preset": "", "team": 1 },
+        { "name": "Client A (Terrorist)", "badconn_preset": "", "team": 2 }
+      ],
+      "map": "dust2cyberiav4",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "48": {
+      "name": "[2 CLIENTS] TDM - Client A vs Client B + NPCs",
+      "server_args": ["--mode", "team_deathmatch", "--gamemode", "tdm"],
+      "client_args": [],
+      "clients": [
+        { "name": "Client A", "badconn_preset": "" },
+        { "name": "Client B", "badconn_preset": "" }
+      ],
+      "map": "atdm",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "49": {
+      "name": "[2 CLIENTS] Counter Strike - A=Terrorist, B=Counter-Terrorist + NPC roster",
+      "server_args": ["--mode", "counterstrike", "--gamemode", "counterstrike"],
+      "client_args": [],
+      "clients": [
+        { "name": "Client B (Counter-Terrorist)", "badconn_preset": "", "team": 1 },
+        { "name": "Client A (Terrorist)", "badconn_preset": "", "team": 2 }
+      ],
+      "map": "dust2cyberiav4",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

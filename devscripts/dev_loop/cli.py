@@ -18,6 +18,22 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
     parser.add_argument("--list-instances", action="store_true",
                         help="print the current run's server/client instances and exit")
+    parser.add_argument("--start-server", action="store_true",
+                        help="start a server instance through the dev loop")
+    parser.add_argument("--start-client", action="store_true",
+                        help="start an additional client instance through the dev loop")
+    parser.add_argument("--stop-instance", metavar="INSTANCE_ID",
+                        help="stop one server/client instance")
+    parser.add_argument("--restart-instance", metavar="INSTANCE_ID",
+                        help="restart one server/client instance")
+    parser.add_argument("--server", default="server-01",
+                        help="server instance id for --start-client")
+    parser.add_argument("--name", default="",
+                        help="display name for --start-client")
+    parser.add_argument("--badconn-preset", default="",
+                        help="bad-connection preset for --start-client")
+    parser.add_argument("--client", default="",
+                        help="client instance id for --command (default: primary client)")
     parser.add_argument("--json", action="store_true", help="print control/status responses as JSON")
     parser.add_argument("--command", "--cmd", dest="command",
                         help="send one terminal command to the running daemon, wait for the result, and exit")

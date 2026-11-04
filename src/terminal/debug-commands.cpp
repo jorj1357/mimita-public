@@ -192,6 +192,25 @@ void registerDebugCommands()
         "", CommandCategory::Duel
     });
     Terminal::instance().registerCommand({
+        "team_assign", "Host only: assign a player to team 1 or 2",
+        "team_assign <actor_id> <1|2>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 2) {
+                Terminal::instance().addLog(
+                    "[TEAM_ASSIGN] Usage: team_assign <actor_id> <1|2>");
+                return;
+            }
+            const std::string command =
+                "team_assign " + args[0] + " " + args[1];
+            if (::gpMpContext && ::gpMpContext->active)
+                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            else
+                Terminal::instance().addLog(
+                    "[TEAM_ASSIGN] host must be connected to its server session");
+        },
+        "", CommandCategory::Duel
+    });
+    Terminal::instance().registerCommand({
         "change_team", "Request an authoritative team change", "change_team <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: change_team <number>"); return; }

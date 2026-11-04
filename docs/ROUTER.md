@@ -94,6 +94,8 @@ systems first. Use this default order:
 | Human-recorded scenarios, replay checkpoints, or collision trace capture | `docs/specs/dev-loop/scenario-input-recording.md`, `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/specs/dev-loop/quality-gates.md` |
 | Quality gates, lint, dead/duplicate code, multi-client matrix | `docs/specs/dev-loop/quality-gates.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Multi-server/client presentation, per-executable journals, or dev-loop process table | `docs/specs/dev-loop/multi-instance.md`, `docs/specs/debug-logging/canonical-jsonl.md`, `docs/specs/dev-loop/dev-loop.md` |
+| One server + multiple clients, same-machine interaction tests, or dev-loop process controls | `docs/workflows/multi-client-dev-testing.md`, `docs/specs/dev-loop/multi-instance.md`, `docs/specs/networking/bad-connection-simulation.md` |
+| Bad-connection presets, latency, loss, reorder, blackout, or impairment evidence | `docs/specs/networking/bad-connection-simulation.md`, `docs/specs/networking/networking.md`, `docs/specs/debug-logging/debug-logging.md` |
 | In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |
 | Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |
