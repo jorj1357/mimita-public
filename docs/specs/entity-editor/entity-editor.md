@@ -165,7 +165,8 @@ Enter to apply the position. The edit uses the same undo, collision refresh, and
 autosave path as a handle drag. `Esc` cancels the text focus. Rotation and scale
 are displayed for blocks, entities, routes, the cart origin, and GLB nodes;
 editable rotation/scale overrides for GLB nodes are the next slice. GLB
-overrides currently persist position only.
+overrides currently persist position only. This follows the 2026-11-01 user
+direction to tune rotations in the editor without repeatedly editing JSON.
 
 ### Drag handles
 

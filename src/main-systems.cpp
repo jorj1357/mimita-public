@@ -288,16 +288,49 @@ void registerAgentCommands()
     });
 
     Terminal::instance().registerCommand({
-        "agent.holdprimary", "Hold primary fire for bounded input frames",
+        "agent.hold", "Hold primary or secondary gameplay input for fixed ticks",
+        "agent.hold <primary|secondary> <duration_ticks>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() != 2 || (args[0] != "primary" && args[0] != "secondary")) {
+                Terminal::instance().addLog(
+                    "[AGENT] Usage: agent.hold <primary|secondary> <duration_ticks>");
+                return;
+            }
+            int ticks = 0;
+            try {
+                size_t consumed = 0;
+                ticks = std::stoi(args[1], &consumed);
+                if (consumed != args[1].size()) throw std::invalid_argument("trailing text");
+            } catch (...) {
+                Terminal::instance().addLog("[AGENT] duration_ticks must be an integer from 1 to 3600");
+                return;
+            }
+            if (ticks < 1 || ticks > 3600) {
+                Terminal::instance().addLog("[AGENT] duration_ticks must be an integer from 1 to 3600");
+                return;
+            }
+            const std::string requestId = Terminal::instance().currentRequestId();
+            scheduleTerminalGameplayHold(args[0], ticks, requestId);
+            writeAgentCommandEvent(
+                "avatar.command.dispatch", "agent.hold accepted",
+                {{"command", "agent.hold"}, {"action", args[0]},
+                 {"duration_ticks", ticks}, {"player", gpPlayer ? gpPlayer->username : std::string()}});
+        }, "2026-11-05", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.holdprimary", "Compatibility alias for holding primary gameplay input",
         "agent.holdprimary <frames>",
         [](const std::vector<std::string>& args) {
             int frames = 60;
             if (!args.empty()) {
                 try { frames = std::stoi(args[0]); } catch (...) { frames = 60; }
             }
-            scheduleTerminalPrimaryHold(std::max(0, frames));
+            frames = std::clamp(frames, 0, 3600);
+            const std::string requestId = Terminal::instance().currentRequestId();
+            scheduleTerminalGameplayHold("primary", frames, requestId);
             writeAgentCommandEvent(
-                "avatar.command.dispatch", "agent.holdprimary accepted",
+                "avatar.command.dispatch", "agent.holdprimary compatibility alias accepted",
                 {{"command", "agent.holdprimary"}, {"frames", frames},
                  {"player", gpPlayer ? gpPlayer->username : std::string()}});
 

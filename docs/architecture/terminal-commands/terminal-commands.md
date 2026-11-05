@@ -50,6 +50,12 @@ Over time, commands should cover:
 The exact command names are implementation details. The coverage goal is that
 no important feature is reachable only through a mouse click or visual menu.
 
+Named mode quick-start commands combine a configured local server preset with
+the normal host-client join path. When already connected, they request the
+server to switch through its existing authoritative mode-start command. The
+Fun Counter Strike command is `startfuncounterstrike`; its configurable `fcs`
+alias starts preset `funcounterstrike_1` on `dust2cyberiav4`.
+
 ## Timing model
 
 Commands should have explicit timing semantics. A command such as

@@ -812,6 +812,32 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
                            {"spawn_generation", player.spawnGeneration}});
     }
 
+    if (serverGamemodeState().enabled) {
+        CommunityServerConfig& config = CommunityServerConfig::instance();
+        if (config.weaponSets().empty()) config.load();
+        const CommunityWeaponSet* weaponSet =
+            config.weaponSetById(player.weaponSetId);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "actor.loadout.spawned", std::to_string(player.id),
+            "authoritative loadout and equipped weapon for spawned life",
+            static_cast<uint32_t>(player.spawnGeneration),
+            nlohmann::json{{"actor", player.id}, {"kind", "player"},
+                           {"spawn_generation", player.spawnGeneration},
+                           {"initial_spawn", isInitialSpawn},
+                           {"gamemode", serverGamemodeState().communityMode},
+                           {"role_id", profile.roleId},
+                           {"weapon_set_id", player.weaponSetId},
+                           {"weapon_set_key", weaponSet ? weaponSet->key : ""},
+                           {"weapon_set_name", weaponSet ? weaponSet->name : ""},
+                           {"weapons", player.ownedWeaponIds},
+                           {"weapon_count", player.ownedWeaponIds.size()},
+                           {"equipped_weapon_id", player.equippedWeaponId},
+                           {"equipped_slot", player.equippedSlot},
+                           {"starting_weapon", profile.startingWeapon}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Clear transient combat/reload state
     player.projectileFireCooldown = 0.0f;
     player.nextProjectileFireTick = 0;

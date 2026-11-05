@@ -9,8 +9,10 @@
 */
 
 #include "input/input-state.h"
+#include "input/input-poll.h"
 #include "input/input-commands.h"
 #include "input/input-frame.h"
+#include "input/scenario-input.h"
 #include "combat/melee-client.h"
 #include "debug/structured-log.h"
 #include "actor/player-ai.h"
@@ -24,9 +26,15 @@
 
 static bool gInputInitialized = false;
 InputFrame gTerminalInputOverride;
-static int gTerminalPrimaryHoldFrames = 0;
-
 namespace {
+struct ScheduledGameplayHold {
+    int ticksRemaining = 0;
+    int totalTicks = 0;
+    bool appliedThisTick = false;
+    std::string requestId;
+};
+ScheduledGameplayHold gTerminalPrimaryHold;
+ScheduledGameplayHold gTerminalSecondaryHold;
 int gScheduledMoveTicks = 0;
 int gScheduledMoveTotal = 0;
 bool gScheduledMoveNetworkReleasePending = false;
@@ -46,7 +54,8 @@ bool gScheduledInteractHeld = false;
 void clearHeldGameplayInputs()
 {
     gTerminalInputOverride = InputFrame{};
-    gTerminalPrimaryHoldFrames = 0;
+    gTerminalPrimaryHold = {};
+    gTerminalSecondaryHold = {};
     gScheduledMoveTicks = 0;
     gScheduledMoveTotal = 0;
     gScheduledMoveNetworkReleasePending = false;
@@ -139,7 +148,34 @@ bool peekScheduledTerminalMove(float& moveX, float& moveY, bool* justStarted)
 
 void scheduleTerminalPrimaryHold(int durationFrames)
 {
-    gTerminalPrimaryHoldFrames = std::max(0, durationFrames);
+    scheduleTerminalGameplayHold("primary", std::max(0, durationFrames), std::string());
+}
+
+bool scheduleTerminalGameplayHold(const std::string& action, int durationTicks,
+                                  const std::string& requestId)
+{
+    ScheduledGameplayHold* hold = nullptr;
+    if (action == "primary") hold = &gTerminalPrimaryHold;
+    else if (action == "secondary") hold = &gTerminalSecondaryHold;
+    else return false;
+    hold->ticksRemaining = std::max(0, durationTicks);
+    hold->totalTicks = hold->ticksRemaining;
+    hold->requestId = requestId;
+    return true;
+}
+
+bool effectiveGameplayMouseButton(GLFWwindow* window, int button)
+{
+    if (ScenarioInput::active())
+        return ScenarioInput::mouseButton(window, button);
+    const bool physical = glfwGetMouseButton(window, button) == GLFW_PRESS;
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
+        return physical || gTerminalPrimaryHold.ticksRemaining > 0 ||
+            gTerminalPrimaryHold.appliedThisTick;
+    if (button == GLFW_MOUSE_BUTTON_RIGHT)
+        return physical || gTerminalSecondaryHold.ticksRemaining > 0 ||
+            gTerminalSecondaryHold.appliedThisTick;
+    return physical;
 }
 
 void scheduleTerminalInteractHold(int durationTicks)
@@ -341,6 +377,8 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
 
 InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
 {
+    gTerminalPrimaryHold.appliedThisTick = false;
+    gTerminalSecondaryHold.appliedThisTick = false;
     ensureInputInit(win);
     InputCommandSystem::instance().update(0.016f);
 
@@ -430,8 +468,8 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.ragdollTogglePressed = glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS;
     frame.grabLeftHeld = glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS;
     frame.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
-    frame.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    frame.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    frame.extendLeftMouse = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_LEFT);
+    frame.extendRightMouse = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT);
 
     frame.fisterTogglePressed = glfwGetKey(win, GLFW_KEY_F8) == GLFW_PRESS;
     frame.fisterFistHeld = frame.extendLeftMouse;
@@ -444,13 +482,53 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.wishSide = frame.moveX * r.x + frame.moveY * r.y;
     frame.camForward = cam.front;
 
-    frame.primaryHeld =
-        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ||
-        gTerminalPrimaryHoldFrames > 0;
-    if (gTerminalPrimaryHoldFrames > 0)
-        --gTerminalPrimaryHoldFrames;
-    frame.secondaryHeld =
-        glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    frame.primaryHeld = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_LEFT);
+    frame.secondaryHeld = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT);
+    auto advanceHold = [](ScheduledGameplayHold& hold, const char* action,
+                          bool& held) {
+        if (ScenarioInput::active())
+            return;
+        held = hold.ticksRemaining > 0;
+        if (!held)
+            return;
+        hold.appliedThisTick = true;
+        nlohmann::json fields = {
+            {"command", "agent.hold"}, {"action", action},
+            {"duration_ticks", hold.totalTicks}, {"ticks_remaining", hold.ticksRemaining},
+            {"request_id", hold.requestId}, {"held", true},
+            {"primary_held", std::string(action) == "primary"},
+            {"secondary_held", std::string(action) == "secondary"}
+        };
+        if (hold.ticksRemaining == hold.totalTicks) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "agent.hold.applied", hold.requestId.empty() ? "agent-hold" : hold.requestId,
+                "fixed-tick gameplay input applied", 0, fields,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        --hold.ticksRemaining;
+        if (hold.ticksRemaining == 0) {
+            fields["ticks_remaining"] = 0;
+            fields["held"] = false;
+            fields["primary_held"] = false;
+            fields["secondary_held"] = false;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "agent.hold.released", hold.requestId.empty() ? "agent-hold" : hold.requestId,
+                "fixed-tick gameplay input released", 0, fields,
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    };
+    bool scheduledPrimary = false;
+    bool scheduledSecondary = false;
+    advanceHold(gTerminalPrimaryHold, "primary", scheduledPrimary);
+    advanceHold(gTerminalSecondaryHold, "secondary", scheduledSecondary);
+    frame.primaryHeld = frame.primaryHeld || scheduledPrimary;
+    frame.secondaryHeld = frame.secondaryHeld || scheduledSecondary;
+    frame.extendLeftMouse = frame.extendLeftMouse || scheduledPrimary;
+    frame.extendRightMouse = frame.extendRightMouse || scheduledSecondary;
+    frame.fisterFistHeld = frame.extendLeftMouse;
+    frame.fisterParryHeld = frame.extendRightMouse;
     frame.shieldHeld = glfwGetKey(win, GLFW_KEY_Q) == GLFW_PRESS;
     frame.grabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
     frame.slotHeldMask = 0;

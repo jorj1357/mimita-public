@@ -161,6 +161,21 @@ Prototype these in bounded slices and learn from actual use. Their feasibility,
 priority, safety, moderation, licensing, and relationship to the core game
 remain to be decided.
 
+## Creator continuity and shared play — 2026-11-04
+
+A further product direction is to make it easy for people to create, save, share
+when they choose, and revisit games over time, with multiplayer systems whose
+state and event order are understandable. Map/entity tools, video creation,
+future sound tools, durable player projects, and broad device access support
+that direction. The notes also imagine community meetups and lightweight ways
+for people on computers, phones, and controllers to play together. This is
+vision context, not a delivery roadmap; persistence topology, publishing,
+platform support, and specific social features remain undecided.
+
+The user prefers investment in reusable capabilities over adding content only
+for variety. The priority of specific modes and worlds remains with their owner
+specifications and future decisions.
+
 ## How to use this vision
 
 Use this document to explain why the project values openness, composability,

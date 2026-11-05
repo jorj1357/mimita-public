@@ -2458,18 +2458,27 @@ class DevLoop:
         if not host_player:
             host_player = str(profile.get("client_name", "")).strip()
 
+        # A launch mode can request the gamemode's own weapon-set default.
+        # This matters when the selected dev profile is for another mode and
+        # carries an explicit --weapon-set that would otherwise override the
+        # launch mode's gamemode/role loadout.
+        weapon_set = self.override_weapon_set or self.launch_mode.get(
+            "weapon_set", profile.get("weapon_set", 1))
+        use_weapon_set_override = str(weapon_set).strip().lower() != "auto"
+
         args = [
             str(exe), "--server", "--bind", server_bind,
             "--name", str(profile.get("server_name", "MiMITA Dev Server")),
             "--map", map_name,
             "--mode", str(profile.get("mode", "sandbox")),
             "--max-players", str(max_players),
-            "--weapon-set", str(self.override_weapon_set or profile.get("weapon_set", 1)),
             "--map-rotation-minutes", str(rotation_minutes),
             "--password-protected", password_protected,
             "--password", str(profile.get("password", "")),
             "--room-file", str(room_file_path),
         ]
+        if use_weapon_set_override:
+            args.extend(["--weapon-set", str(weapon_set)])
         if host_player:
             args.extend(["--host-player", host_player])
         if npc_count > 0:

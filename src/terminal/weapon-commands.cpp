@@ -283,8 +283,9 @@ void registerWeaponCommands()
                 // Prefer the actual fired direction (aim.direction / camera
                 // forward in camforward mode) over one derived from the hit
                 // geometry, so the server always traces the real aim direction.
+                const bool hasShotDirection = glm::length(shot.direction) > 0.001f;
                 const glm::vec3 direction =
-                    glm::length(shot.direction) > 0.001f
+                    hasShotDirection
                         ? glm::normalize(shot.direction)
                         : (glm::length(shot.end - shot.start) > 0.001f
                                ? glm::normalize(shot.end - shot.start)
@@ -438,6 +439,12 @@ void registerWeaponCommands()
                                              {"native_slot", wdef2->slot},
                                              {"logical_slot", requestSlot},
                                              {"attack_request_id", requestId},
+                                             {"fire_start", {shot.start.x, shot.start.y, shot.start.z}},
+                                             {"fired_direction", {direction.x, direction.y, direction.z}},
+                                             {"fire_end", {shot.end.x, shot.end.y, shot.end.z}},
+                                             {"camera_forward", {camera.front.x, camera.front.y, camera.front.z}},
+                                             {"fired_camera_forward_dot", glm::dot(direction, camera.front)},
+                                             {"direction_source", hasShotDirection ? "shot_result" : "fallback"},
                                              {"claimed_target_id", claimedTargetId},
                                              {"hit_world", shot.hitWorld},
                                              {"hit_remote", shot.targetIsRemotePlayer}});

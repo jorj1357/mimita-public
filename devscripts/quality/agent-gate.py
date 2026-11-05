@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One mandatory gate for AI/human edits.
+"""Optional quality gate for manual use; it is not required to complete work.
 
 Runs the canonical build, focused selftests, lint against the accepted
 pre-existing baseline, JSON sync checks, and the fast runtime scenarios.

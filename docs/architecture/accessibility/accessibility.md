@@ -68,6 +68,11 @@ depending on one device. Support, where the platform allows it:
 The terminal command layer and the shared player/NPC action layer are useful
 validation paths for this abstraction.
 
+Input context is part of portability: gameplay, chat, editor, and other open
+interfaces should receive actions through their active context so the same key
+cannot accidentally trigger a gameplay action while another interface owns
+input. The binding format and exact context lifecycle remain to be designed.
+
 ## Visual access
 
 Visual presentation should be configurable through JSON and should support:

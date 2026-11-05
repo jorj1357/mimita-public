@@ -2017,3 +2017,11 @@ Required direction:
 
 This is not implemented by the imported-map destruction slice. It is recorded
 here so the actor hook is not lost and the same physical model is reused later.
+
+## Additional appearance direction — 2026-11-04
+
+Explore a large initial blood mark followed by progressively smaller marks
+spreading outward, with clustered circular placement. The user also wants
+stronger visible meat/head/body-part gore on standard avatars. These are
+appearance directions without fixed sizes, counts, or acceptance values; tune
+through the existing generalized effect and part-health owners.

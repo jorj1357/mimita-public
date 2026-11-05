@@ -24,6 +24,7 @@
 #include "world/world.h"
 #include "input/input-commands.h"
 #include "input/input-frame.h"
+#include "input/input-poll.h"
 #include "input/scenario-input.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
@@ -124,7 +125,7 @@ void engineTickCombat(Engine& engine, float dt)
     }
 
     player.weaponAimDownSights = !MapEditor::instance().active() &&
-        ScenarioInput::mouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
+        effectiveGameplayMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
 
@@ -316,7 +317,7 @@ void engineTickCombat(Engine& engine, float dt)
         InputCommandSystem::instance().isKeyboardEnabled());
     const bool cursorCaptured = scenarioInputActive ||
         glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
-    bool mouseDown = ScenarioInput::mouseButton(
+    bool mouseDown = effectiveGameplayMouseButton(
         engine.window(), GLFW_MOUSE_BUTTON_LEFT);
     // Local/offline duel only for DuelManager checks; also check DuelQueue for network duels.
     bool duelEndVisible = gDuelManager.phase() == DuelPhase::MatchEnd ||
@@ -360,7 +361,7 @@ void engineTickCombat(Engine& engine, float dt)
     mousePrev = mouseDown;
 
     static bool rightMousePrev = false;
-    bool rightMouseDown = ScenarioInput::mouseButton(
+    bool rightMouseDown = effectiveGameplayMouseButton(
         engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
     if (meleeEquipped) {
         if (!replayPlaybackActive && gameplayInputAllowed &&

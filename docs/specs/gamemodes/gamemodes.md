@@ -116,6 +116,20 @@ authorization, and is reapplied on spawn and respawn. With no explicit host
 selection, the mode's configured set and role-specific loadouts retain their
 existing precedence.
 
+## Shared interaction and input direction — 2026-11-05
+
+Use one shared interaction owner for player-facing world actions and one
+consistent prompt presentation, rather than separate hard-coded F-key checks
+and unrelated popups. The prompt and accepted action must use the same
+mode-owned interaction eligibility and range. This is a product direction; the
+exact action API and owner boundary must be traced against the existing shared
+command/action surface before implementation.
+
+Input should resolve through the active context (gameplay, chat, editor, or
+another open interface), so a key does not trigger an unrelated gameplay action
+while the player is using another context. Binding syntax and platform-specific
+UI remain with the input/accessibility owners.
+
 ## Engine-wide actor and session rules
 
 The shared runtime is an engine service. Players and NPCs are participants in

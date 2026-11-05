@@ -5054,3 +5054,27 @@ server's ownership of vehicles, the physical ball, or match rules.
 The Vehicle Arena mode rules and acceptance scenarios are owned by
 `docs/specs/gamemodes/vehicle-arena.md`; this section owns prediction,
 authority, ordering, and reconciliation.
+
+## Coordinator unavailable during local hosting — 2026-11-05
+
+A missing Wi-Fi connection or unreachable coordinator must not prevent a local
+host from starting and joining its authoritative server. Show a clear
+coordinator-unavailable notice and identify the room as local-only; do not imply
+that remote players can discover or join it by room code until registration
+succeeds. Keep the existing normal server/client protocol and background
+registration behavior as the owner path.
+
+## F3 server-Hz display request — 2026-11-05
+
+The user requests the measured authoritative server simulation rate (Hz) in the
+F3 debug overlay. Networking already identifies current server Hz as useful
+diagnostic state. This request does not choose additional overlay metrics or
+claim that the display has been implemented.
+
+## Avatar identity and remote presentation direction — 2026-11-04
+
+The user wants the selected actor/avatar to be what remote players see as well
+as what the local player sees, with avatar choice and saved state behaving
+consistently across clients and rejoin. Keep actor authority, avatar asset
+resolution, and animation replication with their existing owners. The open
+question about server/admin restrictions on avatar loading remains undecided.

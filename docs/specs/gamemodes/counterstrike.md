@@ -3237,3 +3237,19 @@ The long-term goal is that future modes can reuse the same systems without havin
     logging
 
 from scratch.
+
+## Rejoin team and interaction consistency — 2026-11-05
+
+A current user report says that after leaving and rejoining, the client can show
+its former CT/T teammates with enemy outlines. The authoritative mode team must
+be applied to the rejoined participant before team hostility, outline, or HUD
+presentation is resolved. If the prior team cannot be restored, use the mode's
+normal team-selection/assignment path; do not infer membership from stale local
+presentation state. Whether a disconnect preserves the prior team choice is
+not decided here.
+
+The generalized `Interact` direction above the bomb rules should be shared
+across the prompt and action paths. In particular, a visible “hold F” prompt
+must agree with the server-accepted range for plant, defuse, and pickup. A
+2026-11-05 user report says the defuse/press-F reach feels too small; the
+replacement distance remains to be decided from a current reproduction.

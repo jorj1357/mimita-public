@@ -405,6 +405,7 @@
     "45": {
       "name": "fun counter strike",
       "server_args": ["--mode", "funcounterstrike", "--gamemode", "funcounterstrike"],
+      "weapon_set": "auto",
       "client_args": [],
       "map": "dust2cyberiav4",
       "require_client_connection": true,

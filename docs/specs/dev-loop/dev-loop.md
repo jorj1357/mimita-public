@@ -671,25 +671,28 @@ bounded observations; they must not log every render frame.
 
 ## 12. AI-fix-live validation procedure
 
-Any dev-loop bug investigation follows
-`docs/specs/debug-logging/AI-fix-live.md`:
+For gameplay behavior, this is the only required proving loop:
 
-1. Read this specification and the routed build, logging, terminal, runtime,
-   and task-completion documents.
-2. State the failure with actor/process, action, expected state, actual state,
-   exact build identity, and exact journal path.
-3. Use the existing dev-loop status/control path. Do not start a competing loop.
-4. Trace source change -> build -> publish -> process discovery -> launch ->
-   identity -> readiness -> journal/result.
-5. Add only the smallest owner-level `StructuredLogger` evidence needed to
-   identify the first divergence.
-6. Publish a newly identified executable through the dev loop.
-7. Run that exact executable and inspect its live shared journal.
-8. Implement a fix only when the first divergence and intended behavior are
-   clear. Otherwise improve the evidence and repeat the real scenario.
-9. Rebuild and rerun the same scenario.
-10. Report source, build, runtime-journal, visible behavior, and human-review
-    evidence as separate claims.
+1. Put the code change into the game source.
+2. Compile it through the dev loop and confirm the new executable was
+   published.
+3. Start that executable in the target gamemode through the existing dev loop.
+4. Perform the behavior being built in the live game.
+5. Inspect the `events.jsonl` written by that executable for enough direct
+   input and resulting-state evidence to establish whether it worked.
+
+If the journal does not show the expected result, trace the first missing or
+incorrect input-to-output step, add only the bounded owner-level
+`StructuredLogger` evidence needed to observe it, and repeat the same loop.
+For example, a jump is supported when the same run records jump input held,
+increased vertical velocity, and `grounded=false` in the expected order. A
+successful compile alone is not behavior proof. The agent gate and synthetic
+test suites are optional and are not prerequisites for this loop or task
+completion.
+
+Use the dev loop's existing status/control path to build and launch; do not
+start a competing loop or manually run a stale executable. Record the build
+identity and the exact client/server `events.jsonl` paths used for the result.
 
 For a performance or collision scenario, an FPS value is valid only when the
 journal also identifies the exact executable/build, map/mode, avatar/config,
@@ -866,13 +869,14 @@ keyboard, mouse, or GUI action:
 | walk forward/back/left/right | `agent.move <forward> <side> <duration_ticks>` | fixed-tick input is held for the requested ticks, then released |
 | jump/dash | `agent.action <jump\|dash>` | the normal action edge is delivered once |
 | aim at a direction | `agent.aim <x> <y> <z>` | camera/player aim target is set through the shared aim owner |
+| hold primary/secondary gameplay input | `agent.hold <primary\|secondary> <duration_ticks>` | shared fixed-tick gameplay input is held for the requested ticks; secondary is RMB and drives normal aim/secondary-fire semantics |
 | equip a weapon | existing `equipslot <n>` | normal inventory/equip path runs |
 | shoot once | `agent.shoot` | normal weapon input path runs and records the shot result |
 | inspect state | `agent.snapshot <label>` | one structured state sample is written |
 | run a bounded scenario | `agent.scenario <id>` | registered steps execute in order with step IDs and assertions |
 
 These names are the v1 command contract. The current source provides
-`agent.move`, `agent.aim`, `agent.action`, `agent.shoot`, and
+`agent.move`, `agent.aim`, `agent.action`, `agent.hold`, `agent.shoot`, and
 `agent.snapshot`. `dev-loop.py --scenario-file` also reads a repository-local
 JSON (or fenced-JSON Markdown) file and queues its `setup` and `steps` commands
 in the existing ready client's command queue. The command queue executes
@@ -883,6 +887,13 @@ rather than a final pass/fail result. Existing commands remain valid. The
 adapters must call the same action/input functions used by normal gameplay;
 they must not teleport by editing `Player::pos`, fire by spawning a projectile
 directly, or rotate a limb by bypassing the animation owner.
+
+`agent.hold` accepts `primary` or `secondary` and 1–3600 fixed ticks. It emits
+an acceptance event at dispatch and correlated applied/released events from
+the fixed-tick gameplay input owner. Secondary hold uses the shared effective
+gameplay mouse state for arm aiming, camera aim FOV, and weapon input; it does
+not synthesize a desktop mouse click or invoke GUI controls. The legacy
+`agent.holdprimary` command remains as a primary-input compatibility alias.
 
 ### One running executable
 
@@ -2037,36 +2048,15 @@ Implemented and runtime-verified on 2026-10-17 (see sections 19.4, 19.8, 22.1):
   daemon were exercised. The Windows Terminal relaunch path and the human visual
   reading of the live window remain unverified in this environment.
 
-## 21. Proposed AI test workflow
+## 21. Live behavior proving workflow
 
-```text
-1. python devscripts/dev-loop.py --profile npc-navigation --visible
-2. python devscripts/dev-loop.py --status --json
-3. python devscripts/dev-loop.py --command "avatar.load monstertest1"
-4. python devscripts/dev-loop.py --command "agent.aim ..."
-5. python devscripts/dev-loop.py --command "agent.move 1 0 120"
-6. python devscripts/dev-loop.py --command "agent.snapshot after_walk"
-7. wait for request-specific completion/assertion events
-8. inspect the exact journal from status, then perform visual review if needed
-```
-
-Every work call is the supported AI entry point. It must reuse one healthy
-daemon or start one if absent, then send the request exactly once:
-
-```text
-python devscripts/dev-loop.py --status --json
-python devscripts/dev-loop.py --command "agent.move 1 0 120"
-python devscripts/dev-loop.py --scenario-file C:\mimita-v9\devscripts\scenarios\readmewhat.md
-```
-
-`--status` is read-only and may report `NO_RUNNING_DAEMON`; the next work call
-must recover it. The user or AI should not need to leave a separate Python
-window open just to keep the command interface available.
-
-The desired end state is that an AI can issue one command or one
-repository-local scenario through `dev-loop.py`, keep one identified
-executable pair alive, survive a controlled Python-script update, and receive
-a bounded pass/fail result from the same `events.jsonl` file.
+Use the five-step live behavior loop in section 12 for gameplay proof. The dev
+loop is the build and launch authority and its command interface may deliver
+the intended input, but a command acknowledgement is not proof that gameplay
+state changed. The selected executable's `events.jsonl` must show the input
+and resulting state. Agent-gate and repository scenario suites remain
+optional tools for their specific use cases; they are not a required debug or
+completion path.
 
 ## 22. Command reference
 

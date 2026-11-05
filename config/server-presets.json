@@ -21,6 +21,16 @@
       "map_rotation": false,
       "join_host": true
     },
+    "funcounterstrike_1": {
+      "server_name": "Fun Counter Strike 1",
+      "map": "dust2cyberiav4",
+      "mode": "funcounterstrike",
+      "startup_npcs": false,
+      "npc_count": 0,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
+    },
       "sandbox_1": {
       "server_name": "sandboxlalal",
       "map": "funworld3",

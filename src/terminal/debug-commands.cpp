@@ -133,6 +133,56 @@ void registerDebugCommands()
         }
     });
     Terminal::instance().registerCommand({
+        "startfuncounterstrike",
+        "Start and join a Fun Counter Strike room, or switch the connected room to Fun Counter Strike.",
+        "startfuncounterstrike",
+        [](const std::vector<std::string>&) {
+            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+                MimitaNet::serverCommunitySetMode("funcounterstrike");
+                MimitaNet::serverCommunityStartMatch(false, "funcounterstrike");
+                Terminal::instance().addLog("[STARTFUNCOUNTERSTRIKE] started Fun Counter Strike");
+            } else if (::gpMpContext && ::gpMpContext->active) {
+                MimitaNet::mpSendServerCommand(*::gpMpContext, "start funcounterstrike");
+                Terminal::instance().addLog(
+                    "[STARTFUNCOUNTERSTRIKE] requested Fun Counter Strike from the connected server; "
+                    "waiting for its authoritative result");
+            } else {
+                MimitaNet::ServerPreset preset;
+                std::string error;
+                if (!MimitaNet::loadServerPreset("funcounterstrike_1", preset, error)) {
+                    Terminal::instance().addLog(
+                        "[STARTFUNCOUNTERSTRIKE] failed to load funcounterstrike_1: " + error);
+                    return;
+                }
+
+                MimitaNet::ServerLaunchSettings settings;
+                settings.serverName = preset.serverName;
+                settings.mapName = preset.mapName;
+                settings.resolvedMapPath = "assets/maps/" + preset.mapName + ".glb";
+                settings.gameMode = preset.gameMode;
+                settings.maxPlayers = preset.maxPlayers;
+                settings.startupNpcsEnabled = preset.startupNpcsEnabled;
+                settings.startupNpcCount = preset.startupNpcCount;
+                settings.autoMapRotation = preset.autoMapRotation;
+                settings.mapRotationMinutes = preset.mapRotationMinutes;
+                settings.discordNotification = preset.discordNotification;
+                settings.startLocalServer = true;
+                settings.hostPlayerName = AuthSystem::instance().displayName();
+
+                if (!launchServerPresetAndJoin(settings)) {
+                    Terminal::instance().addLog(
+                        "[STARTFUNCOUNTERSTRIKE] failed to start and join preset funcounterstrike_1; "
+                        "check the current server and client state");
+                    return;
+                }
+                Terminal::instance().addLog(
+                    "[STARTFUNCOUNTERSTRIKE] starting and joining Fun Counter Strike: map=" +
+                    preset.mapName + " mode=" + preset.gameMode + " startup_npcs=" +
+                    std::to_string(preset.startupNpcsEnabled ? preset.startupNpcCount : 0));
+            }
+        }
+    });
+    Terminal::instance().registerCommand({
         "meleeattack", "Start a Captain Falcon Melee action by id; host only.", "meleeattack [actionId]",
         [](const std::vector<std::string>& args) {
             const std::string actionId = args.empty() ? std::string("a_ground_punch") : args[0];

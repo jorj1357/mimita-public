@@ -1,15 +1,16 @@
 # RMB weapon aim reversal
 
 Time created: 2026-11-05T17:34:10Z
-Time last updated: 2026-11-05T17:34:10Z
+Time last updated: 2026-11-05T17:56:10Z
 
-Status: ATTEMPTED FIX (1) — source fix and instrumented build/runtime recheck pending
+Status: ATTEMPTED FIX (1) — instrumented build and FCS runtime sample confirmed;
+held-RMB and human visual confirmation pending
 
 Related specification:
 `docs/specs/weapons/weapons.md` — Aim system
 
 Related changelog:
-`docs/changelog/2026-11-05/20261105_173410-rmb-weapon-aim-reversal.md`
+`docs/changelog/2026-11-05/20261105_125610-rmb-aim-fcs-loadout-debug.md`
 
 ## Regression Occurrence 1
 
@@ -27,9 +28,9 @@ at level, upward, and downward camera angles.
 ### Actual Behavior
 
 The user reports revolver and deathball aim in the opposite direction from the
-camera while RMB is held. Shotgun and rocket launcher aim correctly. The
-currently running journal contains aim-body samples, but none record RMB held,
-so it does not independently capture this report.
+camera while RMB is held. Shotgun and rocket launcher aim correctly. The live
+Fun Counter Strike journal contains the expanded aim-body fields, but none
+record RMB held, so it does not independently capture this report.
 
 ### Why This Is Bad
 
@@ -93,9 +94,12 @@ camera-forward dot product, and collision capsule endpoints.
 
 Result:
 
-Source change made. Build and live journal recheck are pending. The existing
-live game window did not provide a sustained RMB hold through the available
-UI controls, so this attempt is not yet runtime- or visually confirmed.
+The weapon-frame correction is present in source and the identified live
+build. The current journal emitted 139 aim samples with weapon barrel,
+camera-forward dot, and collision-capsule fields; zero samples had
+`right_mouse_held=true`. The available Windows UI click did not create a
+sustained hold. The aimed runtime result and visible barrel direction remain
+unconfirmed.
 
 ### Corrected Code
 
@@ -114,7 +118,9 @@ if (!hasWeaponAimAxis) {
 Human review: Pending. Test revolver, deathball, shotgun, and rocket launcher
 with RMB held at level/up/down angles after the rebuilt executable is running.
 
-Automated/runtime proof: Pending. The journal now records the transform fields
-needed to compare camera direction, weapon axis, collision capsule, and arm
-state. Record the exact dev-loop build identity and client `EVENTS_JSONL_PATH`
-when the recheck is performed.
+Runtime evidence: build ID
+`2026-11-05T17:52:25.918603Z:de51dc23ec632b6f78efba1575fc50feed5be90a0e427e525d03262bede40d9d`;
+client journal
+`logs/2026-11-05/20261105_175404/client-01/events.jsonl`. The sample confirms
+the required transform values are available, but the game was not observed
+with RMB held. Human review remains pending.

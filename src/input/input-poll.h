@@ -46,6 +46,11 @@ bool consumeScheduledTerminalMoveForNetwork(float& moveX, float& moveY);
 // number of buildInputFrame calls. Used by runtime scenarios to exercise the
 // per-weapon arm-ragdoll motor without a live mouse.
 void scheduleTerminalPrimaryHold(int durationFrames);
+// Schedule primary or secondary gameplay input for fixed simulation ticks.
+// requestId is carried through applied/released journal events.
+bool scheduleTerminalGameplayHold(const std::string& action, int durationTicks,
+                                  const std::string& requestId);
+bool effectiveGameplayMouseButton(GLFWwindow* window, int button);
 
 // Deterministic objective interaction input for runtime scenarios. Hold emits
 // a continuous held F for the requested fixed ticks. Tap emits distinct

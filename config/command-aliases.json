@@ -3,6 +3,7 @@
   "aliases": {
     "rt1": "server_start_preset juggernaut_1",
     "CT1": "server_start_preset counterstrike_1",
+    "fcs": "startfuncounterstrike",
     "ss": "server_start_preset sandbox_1",
     "mm": "server_start_preset melee_1",
     "zt1": "server_start_preset zombie_tower_1",

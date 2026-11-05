@@ -2479,11 +2479,11 @@ generic replication
 - **Godball:** this file, §8 above. It is explicitly a sphere that passes
   through world geometry while sweeping and damaging overlapping player bodies.
 - **SwordSword:** this file, §9 above, plus
-  [`swordsword.md`](swordsword.md) for its user-reported model, move-set,
+  [`swordsword.md`](melee/swordsword.md) for its user-reported model, move-set,
   damage, and collision issues.
-- **Spy Knife:** [`melee-weapons.md`](melee-weapons.md), especially §§4–9 for
+- **Spy Knife:** [`melee-weapons.md`](melee/melee-weapons.md), especially §§4–9 for
   behavior, damage, networking, and reported failures.
-- **HAFS:** [`hafs.md`](hafs.md), a new draft source audit because HAFS is a
+- **HAFS:** [`hafs.md`](melee/hafs.md), a new draft source audit because HAFS is a
   separate configured weapon and does not inherit Godball's rules.
 
 The user reports that Godball and HAFS need further work. The current spec
@@ -2710,3 +2710,16 @@ projectile, damage, and feedback systems while an actor is seated in a vehicle.
   owner for the first online car slice.
 - Driving suppresses jump, dash, down-dash, freeze, crouch, and melee; it does
   not suppress weapon aim/fire/reload.
+
+## Inventory UI and grenade presentation direction — 2026-11-05
+
+The user wants an `inventory_open` action/command to open an in-game inventory
+view, with owned items visible and selection routed through the existing
+server-authoritative equip request. GUI presentation should remain data-driven
+and live-editable where its owner supports that. This is a product direction;
+the input binding, command syntax, and GUI schema are not decided here.
+
+The user also wants grenades to read more clearly in play, with distinct or
+larger presentation and more noticeable bounce/travel. Keep the existing shared
+throwable, physics, and per-weapon configuration owners; exact models, light,
+and physics tuning remain open for a focused design review.

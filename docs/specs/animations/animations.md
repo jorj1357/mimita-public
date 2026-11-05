@@ -137,6 +137,10 @@ centipede, giant) and, through JSON only:
 4. edit the clips live and see the result in the running game;
 5. use the exact same clips for the player, NPCs, corpses, and remote replicas.
 
+This applies to every intended humanoid avatar, including female-presenting
+avatars; an avatar must not be skipped from animation mapping because of its
+appearance category.
+
 This spec is the source of truth for the animation *format*, the *state
 machine*, the *runtime contract*, the *live-edit path*, and the *rendering of
 arbitrary parts*. It builds on the normalized bind frame defined in

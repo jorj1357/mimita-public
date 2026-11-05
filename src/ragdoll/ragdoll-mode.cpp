@@ -357,6 +357,13 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
         ? glm::normalize(weaponBarrelVector) : glm::vec3(0.0f);
     const glm::vec3 cameraForward = glm::length(camForward) > 1e-5f
         ? glm::normalize(camForward) : glm::vec3(0.0f);
+    glm::mat4 rightArmMeshLocal(1.0f);
+    if (body.rightArmIndex >= 0 && body.rightArmIndex < (int)body.parts.size())
+        rightArmMeshLocal = body.parts[body.rightArmIndex].meshLocal;
+    const glm::mat3 weaponLocalToPhysicsArm =
+        glm::mat3(rightArmMeshLocal) * glm::mat3(player.weaponLocalToArm);
+    const glm::vec3 weaponBarrelLocalPhysicsArm =
+        weaponLocalToPhysicsArm * (player.weaponMuzzleLocal - player.weaponGripLocal);
     nlohmann::json fields = {
         {"avatar_name", avatarIdentity},
         {"weapon", player.equippedWeaponId},
@@ -373,6 +380,10 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
         {"weapon_grip_local", vec3Json(player.weaponGripLocal)},
         {"weapon_muzzle_local", vec3Json(player.weaponMuzzleLocal)},
         {"weapon_local_to_arm", transformMatrixJson(player.weaponLocalToArm)},
+        {"right_arm_mesh_local", transformMatrixJson(rightArmMeshLocal)},
+        {"weapon_local_to_physics_arm",
+            transformMatrixJson(rightArmMeshLocal * player.weaponLocalToArm)},
+        {"weapon_barrel_local_physics_arm", vec3Json(weaponBarrelLocalPhysicsArm)},
         {"weapon_model_transform", transformMatrixJson(player.weaponModelTransform)},
         {"weapon_barrel_forward_world", vec3Json(weaponBarrelWorld)},
         {"weapon_camera_forward_dot", glm::dot(
@@ -1016,7 +1027,11 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     // converge on the camera center instead of merely running parallel to it.
     const glm::vec3 weaponBarrelLocal =
         player.weaponMuzzleLocal - player.weaponGripLocal;
-    const glm::mat3 weaponToArm = glm::mat3(player.weaponLocalToArm);
+    // weaponLocalToArm is relative to the rendered arm node, but the motor
+    // rotates the canonical physics body. Include the bind frame that maps the
+    // physics body to that rendered node before solving the body target.
+    const glm::mat3 weaponToArm =
+        glm::mat3(part.meshLocal) * glm::mat3(player.weaponLocalToArm);
     glm::vec3 armBarrelLocal = weaponToArm * weaponBarrelLocal;
     glm::vec3 armUpLocal = weaponToArm * glm::vec3(0.0f, 0.0f, 1.0f);
     bool hasWeaponAimAxis = glm::length(weaponBarrelLocal) > 1e-4f &&

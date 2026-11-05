@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "input/scenario-input.h"
+#include "input/input-poll.h"
 #include "world/world.h"
 #include "entities/player.h"
 #include "entities/aimbody-config.h"
@@ -1083,7 +1084,7 @@ void engineTickCamera(Engine& engine, float dt)
         aimFovLastActive = matchActive;
 
         const bool rmbHeld =
-            ScenarioInput::mouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
+            effectiveGameplayMouseButton(engine.window(), GLFW_MOUSE_BUTTON_RIGHT);
         bool held = false;
         float multiplier = 1.0f;
         float duration = 0.5f;

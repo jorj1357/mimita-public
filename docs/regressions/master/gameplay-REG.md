@@ -2,7 +2,7 @@
 
 Append-only master ledger. Each entry links to the detailed dated record that owns the full evidence.
 
-Entries: 29
+Entries: 30
 
 ---
 
@@ -208,3 +208,10 @@ Entries: 29
 - Status: ATTEMPTED FIX (1) — source fix and instrumented build/runtime recheck pending
 - Summary: Measured weapon-frame aim is rotated again by a shared arm correction, reversing the reported RMB aim for revolver and deathball.
 - Detail: `docs/regressions/2026-11-05/rmb-weapon-aim-reversal-REG.md`
+
+## Entry 30 — Fun Counter Strike inherited the dev profile's Captain Falcon loadout
+
+- Recorded: 2026-11-05T17:56:10Z
+- Status: FIXED IN SOURCE; LIVE JOURNAL PASS; HUMAN VISUAL REVIEW PENDING
+- Summary: Launch mode 45 appended Fun Counter Strike mode flags while retaining the `npc-navigation` profile's explicit `--weapon-set 12`, forcing Captain Falcon weapons over the mode and role loadouts.
+- Detail: `docs/regressions/2026-11-05/funcounterstrike-launch-loadout-override-REG.md`
