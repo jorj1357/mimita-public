@@ -1,3 +1,13 @@
+2026 11 05 1237
+
+1. put code into the game
+2. it compiles
+3. start mimita.exe into a gamemode
+4. do the functiosn we are building
+5. observe evidence from events.jsonl on that .exe 
+if good result, consider good enough, e.g. we want to jump, we code jumping, do a jump, events.jsonl shows jumpheld = true, and velocity increse, and grounded=false, etc, a lot of evidence that its working, ogod enough
+if its not working, trial/error, repeat this over and overuntil it works and events.jsonl proves it
+
 2026 10 22 1645
 "
 idk can u explain simpler  how do we make it so we have totally evidence on what is making the issues happen  

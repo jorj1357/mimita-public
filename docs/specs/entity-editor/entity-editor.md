@@ -980,7 +980,8 @@ is authored data; a spawned vehicle is a runtime object and is never serialized
 as a second map entry.
 
 The vehicle builder edits a reusable template in `config/vehicles/<id>.json`.
-It is the next slice on the same editor tools:
+It is a later slice on the same editor tools, after the first Vehicle Arena
+milestone:
 
 - primitive parts (`box`, `slope`, `sphere`, `cylinder`),
 - mass, density, and center of mass,
@@ -999,3 +1000,14 @@ mapeditor vehicle_wheel <index> hub <x> <y> <z>
 mapeditor vehicle_wheel <index> radius <m>
 mapeditor vehicle_wheel <index> width <m>
 ```
+
+### Vehicle Arena map priority
+
+The first Vehicle Arena milestone uses a stable, authored arena map with
+authored kickoff positions, ball spawn, and goal volumes. Do not make live
+map editing, connected modules, or procedural generation a dependency of the
+first playable mode. After the authored arena passes multiplayer and human
+playtesting acceptance, extend map editing for arena iteration and connected
+modules; see `../procedural-infinite-world/procedural-infinite-world.md` for
+the later procedural-world direction. Arena rules and acceptance are owned by
+`../gamemodes/vehicle-arena.md`.

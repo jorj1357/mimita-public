@@ -43,6 +43,15 @@ actor state, relevant inputs, sounds, animation, and effect events. Use the
 shared gameplay and presentation paths during playback rather than replay-only
 implementations.
 
+Vehicle Arena match capture must additionally retain vehicle movement and
+control state, ball state and car-ball contact events, authoritative goals and
+resets, team scores, match phase, and authoritative timer/tick timing. Preserve
+the ordering between a vehicle input, predicted contact, server confirmation or
+correction, and any resulting goal. Compatible replay playback must present the
+same vehicles, ball events, goals, and timing; this requirement does not claim
+cross-machine deterministic simulation. See
+[`vehicle-arena.md`](../gamemodes/vehicle-arena.md) for mode acceptance.
+
 Long recordings must be written and read incrementally so duration is not
 limited by holding the entire recording in memory. A project may refer to
 multiple replay files and ranges without copying each source into a duplicate
@@ -118,6 +127,9 @@ subprocess output, and live journal before assigning an owner.
    project and source replay recoverable.
 6. Compare same-build input replay against recorded checkpoints; report
    cross-machine results separately.
+7. Record and reopen a complete Vehicle Arena match; verify vehicle motion,
+   contested ball contacts and their confirmed outcomes, goals, resets, score,
+   phase, and timer align at the same simulation ticks.
 
 ## Related specifications
 

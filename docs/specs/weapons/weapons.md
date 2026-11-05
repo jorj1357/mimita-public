@@ -985,6 +985,14 @@ Default: camforward
 * I think this is like CS? Or tf2? Idk 
 * But keep it like this 
 
+When RMB arm pointing is enabled, the right arm's physical target must account
+for the equipped weapon's measured grip-to-muzzle axis and weapon-to-arm
+transform so the barrel points along camera forward. Apply the configured arm
+rotation correction only when no valid weapon barrel axis is available;
+applying it after solving the measured weapon frame would rotate an already
+aligned weapon away from camera forward. Preserve additive recoil after the aim
+target is solved.
+
 
 Others but dont use 7 18 2026 
 * Crosshair

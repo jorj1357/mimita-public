@@ -1,16 +1,17 @@
 # Vehicles Feature Record
 
-**Status:** partial implementation; local placement/spawn slice is being
-implemented, online authority and builder remain phased.
+**Status:** partial implementation; online vehicle authority is implemented,
+and the focused Vehicle Arena is the first gameplay milestone still pending.
 **Specification:** `docs/specs/vehicles/vehicles.md`
 **Arena specification:** `docs/specs/gamemodes/vehicle-arena.md`
 
 ## Goal
 
-Make the first playable vehicle experience an online, weaponized car:
-place or build a car, enter it with the shared F interaction, drive it, use
-existing weapons from the seat, and have other clients observe the same
-server-authoritative vehicle.
+Make MiMITA's first vehicle showcase a focused multiplayer car-and-ball arena
+on the shared vehicle system. Players should drive with responsive arcade
+controls, contest a physical ball, score in two team goals, and complete a
+match whose authoritative state agrees across clients. Keep replay capture
+compatible with the mode so matches can be edited into clips later.
 
 ## Ownership
 
@@ -28,12 +29,17 @@ server-authoritative vehicle.
 
 ## Phases
 
-1. Spec and shared primitive/template contract.
-2. Local car slice: map placement, spawn, F enter, drive, exit, visible wheels.
-3. Server authority, seat occupancy, seated weapons, and multi-client state.
-4. Primitive builder and reusable templates.
-5. NPC driver profiles.
-6. Vehicle Arena: ball, goals, scoring, reference tuning.
+1. Shared vehicle foundation and server-authoritative online car control.
+2. Arcade driving profile on the shared vehicle system: steering/recovery,
+   boost, jump, and air control, accepted through human playtesting.
+3. First playable Vehicle Arena: authored map, kickoff, two teams, one ball,
+   goals, scoring, resets, HUD, and two-client prediction/reconciliation.
+4. Replay fidelity for arena matches, followed by the quick recent-clip,
+   caption, and export workflow.
+5. Primitive vehicle builder and reusable templates.
+6. NPC drivers and later vehicle-library capabilities, including seated or
+   mounted weapons, helicopters, and destruction.
+7. Live map editing, connected map modules, and other generated courses.
 
 ## Local slice implemented files
 
@@ -49,16 +55,18 @@ server-authoritative vehicle.
   human gameplay evidence.
 - Local acceptance: add vehicle in editor, spawn, F enter, drive, exit, wheels
   visible, template wheel edit changes the spawned car.
-- Online acceptance is pending Phase 3.
-- Builder and arena acceptance are pending later phases.
+- Online vehicle authority exists; full multi-client arena acceptance is
+  pending the Vehicle Arena milestone.
+- Human acceptance of the arcade driving feel is pending playtesting.
 
 ## Known gaps
 
-- No server-owned vehicle simulation/replication yet.
-- No per-actor seat occupancy packet yet.
 - No primitive builder UI yet.
 - No NPC driver controller yet.
-- No arena ball/goal runtime yet.
+- No arena ball/goal/match runtime yet.
+- Arena car-ball prediction and reconciliation remain pending.
+- Arena match replay fidelity and the prioritized quick-clip workflow remain
+  pending.
 - Vehicle damage/destruction hooks are later work.
 
 ## Online networking slice (2026-11-04)

@@ -186,6 +186,20 @@ origin, and solve position correction). This keeps
 collision-source diagnostics available in `events.jsonl` without enabling
 per-tick trace output.
 
+## Vehicle Arena ball-contact evidence
+
+Car-ball contacts use the shared physical collision/contact owner. Its normal
+diagnostics must make a prediction correction or contested first divergence
+explainable without serializing every arena contact continuously. Through the
+existing structured logger, retain bounded correction events with simulation
+tick, ball and vehicle identities, contact point/normal, pre-contact car and
+ball velocities, predicted and authoritative post-contact state, prediction
+identity, and correction magnitude. Preserve the first divergent contact and
+summarize repeated corrections; targeted human-recorded scenarios may capture
+full per-tick contact detail under the scenario trace contract. See the
+network authority rules in `docs/specs/networking/networking.md` and event
+volume policy in `docs/specs/debug-logging/debug-logging.md`.
+
 ## Static hidden-face removal and solid union — 2026-10-25
 
 `src/map/map-static-union.cpp` owns the static-map collision surface cleanup.

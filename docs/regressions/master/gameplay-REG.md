@@ -2,7 +2,7 @@
 
 Append-only master ledger. Each entry links to the detailed dated record that owns the full evidence.
 
-Entries: 26
+Entries: 29
 
 ---
 
@@ -201,3 +201,10 @@ Entries: 26
 - Status: ATTEMPTED FIX (1) — live journal proof recorded; human play confirmation pending
 - Summary: docs/specs/gamemodes/funcounterstrike.md — the NPC designated-defuser assignment was applied as an exclusive lock on human players.
 - Detail: `docs/regressions/2026-11-04/human-defuse-designated-lock-REG.md`
+
+## Entry 29 — RMB weapon aim reversal
+
+- Recorded: 2026-11-05 (user report; exact report time unavailable)
+- Status: ATTEMPTED FIX (1) — source fix and instrumented build/runtime recheck pending
+- Summary: Measured weapon-frame aim is rotated again by a shared arm correction, reversing the reported RMB aim for revolver and deathball.
+- Detail: `docs/regressions/2026-11-05/rmb-weapon-aim-reversal-REG.md`

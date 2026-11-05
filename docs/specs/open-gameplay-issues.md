@@ -1,4 +1,21 @@
-﻿
+﻿2026 11 0 1232 jojr  leaving a game after it does the slowdown thing, like, npcs lal start to  perofmr slower and then i get a reconnecting issue then iget disconnected, reconnecting to that same  servre , we also need a muhc more visible serve creation thing, and also u should be able to  amke a serve without having wifi like u just get a notification that  u arent connected to the coordinator thats fine just put thae tip that its local or no other person knows the server exists 
+
+but the freezin issue happens and then i leave and rejoin and im fine 
+but then i join and the CT team which i starte th game in, then left the game, joine dagain, now its red outlines, it think shat everuone on CT is an enemy, and everuone on T side,
+need to ensure that joining  a game u are assigend to that gamemodes team 
+
+2026 11 05 1230 jorj 
+defuse bomb hitbox is too small
+need to maek 1 standard interaction popup thing
+
+also just had a freeze lke after 
+idk
+maybe its like  the 
+we shoul dshow l ike serve hz in teh f3 debug overla menu 
+
+f3 overla debug menu should  show hmm idk somethign epic and awesome 
+
+
 
 2026 11 04 1027
 avatars hmmmm

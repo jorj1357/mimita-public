@@ -5019,3 +5019,38 @@ The networking rules that must not be duplicated or bypassed are:
   owner.
 - A missing template or malformed vehicle spawn fails closed with a diagnostic;
   clients do not invent a fallback vehicle.
+
+### Vehicle Arena car and ball prediction
+
+Vehicle Arena builds on the vehicle authority above; it does not change the
+server's ownership of vehicles, the physical ball, or match rules.
+
+- The local driver predicts its own car control from sequenced input. Keep the
+  input history needed to replay unacknowledged controls from an authoritative
+  vehicle snapshot; reconcile the chassis and driving state to the server.
+- A client may predict the immediate result of a local car-ball contact for
+  responsiveness. Tag the prediction with enough stable identity to match the
+  authoritative contact/result (vehicle, ball, and input/contact tick or
+  sequence). The server simulates the contact in authoritative tick order and
+  publishes the confirmed ball state and contact result.
+- On confirmation, consume the matching prediction without applying its
+  impulse a second time. On rejection or disagreement, restore/replay the
+  affected prediction history from the authoritative state and correct the
+  ball presentation. Do not allow local prediction to award goals or change
+  score, phase, or reset state.
+- When opposing cars contact the ball on the same or adjacent authoritative
+  ticks (a contested 50/50), the server's ordered physical simulation decides
+  the result. Both clients converge on that same ball state; neither client
+  independently resolves a lasting winner.
+- A confirmed goal and its reset are idempotent authoritative match events.
+  Stale, duplicate, or reordered prediction/state packets cannot undo a goal,
+  repeat a score, or restore pre-reset ball motion.
+- For the first divergence, preserve the relevant input/contact identity,
+  client prediction and server result, ball state before/after, tick, and
+  correction magnitude through the bounded diagnostics contract in
+  `docs/specs/debug-logging/debug-logging.md` and
+  `docs/architecture/collision/collision.md`.
+
+The Vehicle Arena mode rules and acceptance scenarios are owned by
+`docs/specs/gamemodes/vehicle-arena.md`; this section owns prediction,
+authority, ordering, and reconciliation.

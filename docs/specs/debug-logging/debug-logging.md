@@ -238,11 +238,23 @@ Required bounded events:
 - `npc.pose.last_clear` — last-clear pose accepted after final containment.
 - `npc.pose.reset` — last-clear restore, safe-point fallback, or respawn, with
   before/after position, yaw, ground state, velocity, and reason.
+- `vehicle.ball_contact.prediction` — sampled or correction-triggered
+  car-ball prediction evidence with run/process, mode, tick, prediction key,
+  vehicle/ball IDs, contact point/normal, pre-contact velocities, predicted and
+  authoritative results, correction magnitude, and accept/reject reason.
+- `vehicle.ball_contact.divergence` — the first divergent contact in an
+  episode, with enough preceding input/contact identity and expected/actual
+  car/ball state to locate the earliest mismatch. Summarize repeated episodes;
+  do not log every ordinary car-ball contact continuously.
 
 Rules:
 
 - Never claim a collision was fixed from a build or a passing event alone.
 - Record expected and actual values for the first divergence.
+- For Vehicle Arena, distinguish ordinary confirmed contacts from actual
+  prediction corrections. Emit bounded correction/first-divergence events
+  through the feature owner; full per-tick contact state is reserved for a
+  targeted recorded scenario and uses the canonical journal contract.
 - Correlate by run, process, actor, tick, contact, and triangle identity.
 - Rate-limit repeated records by episode, not by hiding the first occurrence.
 - Keep static-world contacts, actor-pair contacts, and weapon/damage outcomes

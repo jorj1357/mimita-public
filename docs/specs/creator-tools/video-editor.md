@@ -21,6 +21,13 @@ A new user should be able to make a simple, shareable clip from a replay in
 about five minutes. Deeper tools should be available without making the quick
 path harder to discover.
 
+After Vehicle Arena replay fidelity is established, prioritize a quick clip
+path before advanced camera tooling or automatic highlight selection: choose a
+recent replay moment, add a text title/caption, preview, and export. Keep the
+recent-clip action and selected range discoverable; preserve the source replay
+and save edits non-destructively in the project. Advanced camera controls and
+automatic highlights remain later editor work.
+
 ## Project contents
 
 A video project can refer to:
@@ -100,13 +107,15 @@ Acceptance should include:
 
 1. A first-time user creates a simple clip from a replay and exports it without
    an account or upload.
-2. A project combines replay footage, an imported clip, music, a title, and a
+2. From a recent Vehicle Arena replay, the user selects a moment, adds text,
+   previews it, and exports a clip while retaining the original match replay.
+3. A project combines replay footage, an imported clip, music, a title, and a
    caption, then reopens with the same edits.
-3. Missing media, failed export, and a long-running export are explained
+4. Missing media, failed export, and a long-running export are explained
    without freezing editing input.
-4. The user can see which effects are included and any cost or dependency
+5. The user can see which effects are included and any cost or dependency
    before use.
-5. Pointer, keyboard, and controller selection do not apply edits to a
+6. Pointer, keyboard, and controller selection do not apply edits to a
    neighboring control.
 
 ## Related specifications

@@ -350,8 +350,16 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
         parts.push_back(std::move(partFields));
     }
 
+    const glm::vec3 weaponBarrelVector = glm::vec3(
+        player.weaponModelTransform * glm::vec4(
+            player.weaponMuzzleLocal - player.weaponGripLocal, 0.0f));
+    const glm::vec3 weaponBarrelWorld = glm::length(weaponBarrelVector) > 1e-5f
+        ? glm::normalize(weaponBarrelVector) : glm::vec3(0.0f);
+    const glm::vec3 cameraForward = glm::length(camForward) > 1e-5f
+        ? glm::normalize(camForward) : glm::vec3(0.0f);
     nlohmann::json fields = {
         {"avatar_name", avatarIdentity},
+        {"weapon", player.equippedWeaponId},
         {"mode", aimConfig.mode()},
         {"arms_mode", aimConfig.armsMode()},
         {"hybrid_enabled", hybrid},
@@ -362,6 +370,16 @@ static void logAimLiveSnapshot(const Player& player, const RagdollBody& body,
             aimConfig.normalMovementArmAimResponseMultiplier()},
         {"camera_position", vec3Json(camPosition)},
         {"camera_forward", vec3Json(camForward)},
+        {"weapon_grip_local", vec3Json(player.weaponGripLocal)},
+        {"weapon_muzzle_local", vec3Json(player.weaponMuzzleLocal)},
+        {"weapon_local_to_arm", transformMatrixJson(player.weaponLocalToArm)},
+        {"weapon_model_transform", transformMatrixJson(player.weaponModelTransform)},
+        {"weapon_barrel_forward_world", vec3Json(weaponBarrelWorld)},
+        {"weapon_camera_forward_dot", glm::dot(
+            weaponBarrelWorld, cameraForward)},
+        {"has_weapon_collision_capsule", player.collision.hasWeaponCollisionCapsule},
+        {"weapon_collision_capsule_start", vec3Json(player.weaponCollisionCapsule.a)},
+        {"weapon_collision_capsule_end", vec3Json(player.weaponCollisionCapsule.b)},
         {"camera_look_pitch_deg", lookPitchDegrees},
         {"camera_look_yaw_deg", lookYawDegrees},
         {"player_root_yaw_deg", player.yaw},
@@ -1038,8 +1056,10 @@ void RagdollModeSystem::applyRightArmPointMotor(RagdollBody& b,
     // This is an arm-local goal rotation, intentionally separate from the
     // weapon attachment transform. It is the hot tuning hook for correcting
     // pitch/roll/yaw if an avatar's bind orientation makes the arm point down.
-    target = glm::normalize(target * glm::quat(glm::radians(
-        aimConfig.rightArmPointingRotationDegrees())));
+    if (!hasWeaponAimAxis) {
+        target = glm::normalize(target * glm::quat(glm::radians(
+            aimConfig.rightArmPointingRotationDegrees())));
+    }
     // Weapon recoil is an additive arm response. The base aim target remains
     // authoritative, while the transient rotation is consumed by the same
     // physical arm solver instead of being overwritten by an animation pose.

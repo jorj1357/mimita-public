@@ -33,47 +33,54 @@ Make it like beamng
 `docs/specs/vehicles/vehicles-skateboard.md`,
 `docs/specs/vehicles/vehicles-bmx.md`
 
-## 0. Current direction (2026-11-03)
+## 0. Current direction (2026-11-04)
 
-The first playable target is an **online, weaponized car**:
+The first vehicle showcase is a focused **online car-and-ball arena** using the
+shared vehicle foundation. The first playable mode milestone is an authored
+arena with kickoff, two teams, one physical ball, goals, scoring, resets, and a
+clear score/timer HUD. Cars use a data-selected arcade driving profile for
+responsive steering and recovery, boost, jump, and air control. The client
+predicts its local car control and car-ball hit response for immediacy; the
+server remains authoritative for confirmed ball state, scoring, and match
+state. The shared prediction and correction contract is in
+`docs/specs/networking/networking.md`.
 
-1. a car exists and has readable wheels,
-2. a player enters the driver seat with the shared F interaction,
-3. the car drives, steers, brakes, and recovers,
-4. the same vehicle is server-owned and observed by multiple clients,
-5. the seated driver aims and fires existing weapons through the normal weapon
-   muzzle and collision path,
-6. a reusable template can be built from primitive parts and tuned in JSON,
-7. NPCs can drive the same vehicles through the same input surface,
-8. a later arena mode adds a ball, goals, and scoring.
+Keep the physical vehicle system and templates reusable across modes. The
+arena profile selects behavior through data and the shared vehicle input,
+simulation, and collision owners; it does not add an arena-only car solver or
+mode-ID branches. An authored, stable map is the first arena surface. Match
+replay must preserve vehicle movement, ball contacts, goals, and timing so a
+later quick clip workflow can use it.
 
-The car must be fun to drive before visual polish, the builder UI, NPC driving,
-or the arena are treated as complete. The order is a dependency order, not a
-claim that every intermediate step must ship separately.
+The local spawn/enter/drive slice and online vehicle authority are foundation
+work already underway or implemented. The arena, arcade feel, prediction
+reconciliation, and match replay remain acceptance gates; builder, NPC,
+weapons, and broad map-authoring work follow the focused mode milestone.
 
 The existing journal at the top of this file is preserved as original intake.
 It is historical context, not an additional requirement.
 
-### 0.1 First-playable acceptance
+### 0.1 First showcase acceptance
 
-- A car is placed from the map editor and can be spawned from that authored
-  placement.
-- Looking at the driver seat and pressing F enters it; F exits.
-- The driver can accelerate, steer, brake, reverse, and recover.
-- Wheels are visible in the world and visible in the map editor.
-- The car can be tuned from `config/vehicles/*.json` and the behavior changes
-  without code edits.
-- Server authority, weapon use from the seat, NPC driving, and arena rules are
-  separate acceptance gates described in the phase table.
+- Two clients complete an arena match with responsive shared-system car
+  controls, boost, jump, and aerial control.
+- Contested car-ball hits reconcile to the same authoritative result for both
+  clients; a goal scores once and resets the ball and cars correctly.
+- HUD and match state agree across clients.
+- A replay preserves vehicle movement, ball contacts, goals, and match timing.
+- Human playtesting accepts the arcade driving feel; compilation alone is not
+  evidence of feel or gameplay acceptance.
+- The existing local placement, F interaction, and server-authoritative vehicle
+  foundation remain supporting slices, not substitutes for the arena gate.
 
 ### 0.2 Deferred capabilities
 
-- aircraft and flight controllers,
+- aircraft, including helicopters, and flight controllers,
 - motorcycles, skateboards, scooters, and BMX,
 - vehicle-mounted weapons,
+- vehicle destruction, detachable parts, and advanced per-part damage,
 - arbitrary vertex/edge/face mesh editing,
 - soft-body deformation and BeamNG-style continuum simulation,
-- advanced per-part destruction and detached wheels.
 
 Deferred items stay in the general library design, but are not first-playable
 requirements.
@@ -532,13 +539,20 @@ No locomotion and no driving input. Look, weapon aim/fire, `G` to ragdoll
 
 Vehicle physics is shared, while the active gamemode selects a named control
 profile through its mode data. The profile maps device inputs to generic
-vehicle actions such as throttle, brake, steer, lean, jump, and trick. It does
-not select a separate physics implementation.
+vehicle actions such as throttle, brake, steer, boost, jump, air control, lean,
+and trick. It does not select a separate physics implementation.
 
 The standard car profile starts in manual transmission, matching the desired
 simulation-style default. Automatic transmission remains an explicit option.
 Modes may select an arcade profile for a vehicle without changing its physical
-template or adding mode-ID branches to the vehicle system.
+template or adding mode-ID branches to the vehicle system. Vehicle Arena is
+the first arcade-profile consumer. Its data profile must make steering
+responsive at low speed and controllable at high speed, return steering
+smoothly, provide a reliable recovery when overturned, and expose predictable
+boost, jump, and aerial rotation controls. Tune these against the labeled
+reference baseline in `docs/specs/gamemodes/vehicle-arena.md`; compare measured
+trajectories and handling rather than copying simulator force units. Keep the
+profile reusable by other modes.
 
 The first trick-vehicle profile is shared by skateboard and BMX: W accelerates,
 S brakes and then reverses, A/D steer and lean, and holding Space while
@@ -631,6 +645,11 @@ All drawings reuse the existing HUD text/render path; no new UI framework.
   established vehicle cadence.
 - Clients interpolate the chassis and visual wheel state; local input may be
   predicted for responsiveness, but the server state is the correction target.
+- For the Vehicle Arena arcade profile, local car controls are predicted and
+  replayed against authoritative vehicle snapshots. Car-ball contacts may be
+  predicted locally for immediate response; the server confirms the shared
+  ball result and scoring. Follow the car-ball prediction key, ordering, and
+  reconciliation rules in `docs/specs/networking/networking.md`.
 - While seated, the server owns the actor origin and bypasses normal movement
   validation/correction for that actor.
 - Remote occupants appear seated through the replicated seat/occupant state and
@@ -691,9 +710,9 @@ First map-editor slice:
   inspectable,
 - edit wheel hub/radius/width through the editor command surface.
 
-Full visual assembly (spawn parts, parent, rotate, live physics preview) is the
-next slice on the same data model. Arbitrary vertex/edge/face editing is not in
-scope.
+Full visual assembly (spawn parts, parent, rotate, live physics preview) is a
+later slice after the Vehicle Arena milestone, on the same data model.
+Arbitrary vertex/edge/face editing is not in scope.
 
 Constraints are stored in a `constraints` array. Vehicles are stored in a
 `vehicles` array. Runtime-only actors remain outside the editor, as specified in
@@ -761,14 +780,17 @@ mutate server-owned state directly from a client.
 | `src/vehicles/vehicle-commands.cpp` | console surface |
 | `src/vehicles/vehicle-authoring.*` | map editor placement |
 
-Implementation order (updated 2026-11-03):
+Implementation priority (updated 2026-11-04):
 
-1. Spec, shared primitive/template contract, and map-authored vehicle placement.
-2. Local car vertical slice: spawn, F enter, drive, exit, wheels visible.
-3. Server authority, occupancy, input, weapon use from the seat, and replication.
-4. Primitive builder, reusable templates, and visual body authoring.
-5. NPC driver profiles through the shared vehicle input surface.
-6. Vehicle arena mode: ball, goals, scoring, and exact reference tuning.
+1. Shared vehicle foundation, local spawn/interaction, and online authority.
+2. Vehicle Arena arcade profile and human handling acceptance.
+3. Authored-map Vehicle Arena loop and multi-client ball prediction,
+   reconciliation, goals, resets, HUD, and match acceptance.
+4. Arena replay fidelity and quick recent-moment clip workflow.
+5. Primitive builder and reusable visual templates.
+6. NPC drivers and later library work: seated/mounted weapons, aircraft, and
+   vehicle destruction.
+7. Live map editing, connected procedural modules, and other generated courses.
 
 Each phase reports build evidence, runtime `events.jsonl` evidence, and human
 acceptance separately. Build success never counts as gameplay acceptance.
