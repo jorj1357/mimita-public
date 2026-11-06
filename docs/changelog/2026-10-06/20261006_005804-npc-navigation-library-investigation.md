@@ -65,7 +65,7 @@ leave the difficult geometry/navigation ownership inside MiMITA.
 - `docs/specs/performance/performance.md`
 - `docs/specs/debug-logging/debug-logging.md`
 - `docs/architecture/player-npc-systems/player-npc-systems.md`
-- `docs/regressions/2026-10-04/counterstrike-npc-targeting-movement-REG.md`
+- `docs/regressions/npc-movement/counterstrike-npc-targeting-REG-2026-10-04.md`
 - `docs/changelog/2026-10-05/20261005_210108-layered-npc-navigation.md`
 - `docs/changelog/2026-10-05/20261005_234827-npc-area-escape.md`
 - `docs/changelog/2026-10-05/20261005_232354-npc-corner-oscillation-fix.md`

@@ -3,6 +3,12 @@
 **Status:** Desired behavior contract for one dev-loop run that owns one or
 more servers and clients.
 
+This runtime topology applies within one checkout. Independent agent lanes use
+separate Git worktrees and therefore separate dev-loop daemons, build locks,
+artifacts, run manifests, and journals. Do not use this document's multiple
+server/client instances as a substitute for source/build isolation between
+agents; see the independent agent worktree lane contract in `dev-loop.md`.
+
 ## Purpose
 
 The dev loop must let the human and an AI answer these questions at a glance:
@@ -168,6 +174,10 @@ Required evidence fields per state:
 The native dashboard is the primary presentation. The terminal dashboard is a
 readable fallback with the same data.
 
+Dashboard presentation, Python responsibilities, external-process discovery,
+and dashboard control feedback are specified in
+`docs/specs/dev-loop/dashboard.md`.
+
 ### Process table and controls
 
 The dashboard is the single human heartbeat view. It must show, live:
@@ -176,6 +186,10 @@ The dashboard is the single human heartbeat view. It must show, live:
 - Online/offline/frozen/failed/stale counts.
 - One selectable row per server/client with PID, state, uptime, build, map/mode,
   port/room, roster, snapshot age, badconn preset, and journal.
+- A separately labeled external-process group, excluded from active-run counts
+  and the run manifest.
+- A live-process count and last successful process-scan time in UTC ISO 8601;
+  exited processes are removed from the process list.
 - Buttons to start one server, start one client, stop the selected instance,
   and restart the selected instance.
 - The selected row's detail and actions.
@@ -249,7 +263,13 @@ Rules:
 - Stopping one instance must not stop unrelated instances.
 - Duplicate `instance_id` is rejected.
 - The dashboard uses the same control requests as the CLI.
-- No cross-run adoption. A process from another run is reported, never adopted.
+- No cross-run adoption. A process from another run is reported as external,
+  never added to the active run manifest or assigned one of its instance IDs.
+- A verified external MiMITA process may be stopped as an explicit process
+  action under `docs/specs/dev-loop/dashboard.md`; this does not adopt it into
+  the run. Unverified candidates have no stop action.
+- Stopped/exited processes disappear from the live process list. Their final
+  lifecycle state remains in the run manifest and journal.
 
 ## Required events
 

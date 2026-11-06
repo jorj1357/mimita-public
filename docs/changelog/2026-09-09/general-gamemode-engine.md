@@ -54,7 +54,7 @@ of the requested Tab leaderboard implementation.
   `docs/specs/gamemodes/gamemodes.md` and
   `docs/architecture/code-ownership/code-ownership.md`.
 - Added the confirmed regression record
-  `docs/regressions/2026-09-09/gamemode-session-actors-REG.md` with exact wrong
+  `docs/regressions/gameplay/gamemode-session-actors-REG-2026-09-09.md` with exact wrong
   and corrected code, cause, attempted-fix status, proof, and live-review
   requirements.
 

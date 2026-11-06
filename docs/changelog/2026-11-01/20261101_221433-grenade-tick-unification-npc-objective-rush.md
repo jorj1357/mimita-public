@@ -42,7 +42,7 @@ Updated before code:
 
 Regression record:
 
-- `docs/regressions/2026-11-01/grenade-timing-split-REG.md`
+- `docs/regressions/gameplay/grenade-timing-split-REG-2026-11-01.md`
   - Recorded the split fuse/lifetime ownership as a regression and attempted
     fix with runtime proof.
 

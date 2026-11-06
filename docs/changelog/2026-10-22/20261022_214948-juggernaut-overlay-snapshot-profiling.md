@@ -14,7 +14,7 @@ New source changes in this continuation:
 
 - `src/network/multiplayer-context.h:476`, `showDebugOverlay`: changed default `true` to `false`; existing F3 toggle remains.
 - `src/network/multiplayer-tick.cpp:210-212, 415-421, 457-469, 551-568, 598-600`: added timers to separate snapshot entity-loop, avatar apply/fallback model load, interpolation insertion, initial replica pose, and membership cleanup.
-- Added `docs/regressions/2026-10-22/dev-loop-stale-ready-suppressed-launch-REG.md` for the confirmed false-ready launch failure; it remains `ATTEMPTED FIX (1)` pending human review.
+- Added `docs/regressions/dev-loop/dev-loop-stale-REG-2026-10-22.md` for the confirmed false-ready launch failure; it remains `ATTEMPTED FIX (1)` pending human review.
 
 ## Evidence and interpretation
 

@@ -2016,9 +2016,17 @@ behavior through the live `events.jsonl` journal. They are rate-limited and
 must not become per-tick spam.
 
 - `grenade.config.resolved`: kind, radius, `duration_ticks`, `fuse_ticks`,
-  damage cadence, bounce values, visual ticks/alpha.
-- `grenade.spawn`: kind, position, `fuse_ticks`.
-- `grenade.bounce`: tick, speed before/after, restitution, position.
+  damage cadence, forward speed, upward bias, collision radius, gravity, drag,
+  restitution, friction, visual shape/size, outline/glow, and optional light
+  configuration.
+- `grenade.equipped-collision`: weapon ID and proof that a held throwable has
+  no collision capsule or mesh in the player movement path.
+- `grenade.thrower-impulse`: weapon ID and external impulse before/after the
+  throw, proving the throw itself applied no movement impulse.
+- `grenade.spawn`: kind, projectile ID, position, velocity, collision shape and
+  radius, physics settings, and `fuse_ticks`.
+- `grenade.bounce`: tick, projectile ID, speed before/after, restitution,
+  friction, contact normal, and position.
 - `grenade.area.spawn`: radius, `duration_ticks`, visual ticks/alpha,
   camera-overlay mode.
 - `grenade.area.tick`: every 60 ticks and at first/last tick; remaining ticks

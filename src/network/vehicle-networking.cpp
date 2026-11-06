@@ -23,6 +23,7 @@
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
 #include "network/multiplayer-context.h"
+#include "network/server-gamemode.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physical-entity.h"
 #include "physics/ray-utils.h"
@@ -93,6 +94,41 @@ glm::mat4 settleVehicleSpawnTransform(const World& world,
     if (found)
         transform[3].z = bestOriginZ + 0.03f;
     return transform;
+}
+
+const PhysicalEntity* findArenaBall()
+{
+    for (const PhysicalEntity& entity : PhysicalEntitySystem::instance().entities())
+        if (entity.persistenceId == "arena-ball")
+            return &entity;
+    return nullptr;
+}
+
+void driveArenaNpcCar(VehicleState& vehicle, const PhysicalEntity& ball)
+{
+    const PhysicalEntity* chassis =
+        PhysicalEntitySystem::instance().find(vehicle.entityId);
+    if (!chassis)
+        return;
+    const glm::vec3 carPosition(chassis->transform[3]);
+    const glm::vec3 ballPosition(ball.transform[3]);
+    glm::vec3 toBall = ballPosition - carPosition;
+    toBall.z = 0.0f;
+    const float distance = glm::length(toBall);
+    if (distance <= 1e-4f)
+        return;
+    const glm::vec3 forward = chassis->orientation * glm::vec3(1.0f, 0.0f, 0.0f);
+    const float currentYaw = std::atan2(forward.y, forward.x);
+    const float desiredYaw = std::atan2(toBall.y, toBall.x);
+    const float yawError = std::remainder(desiredYaw - currentYaw,
+                                          glm::two_pi<float>());
+    VehicleInput input;
+    input.steer = std::clamp(yawError * 2.5f, -1.0f, 1.0f);
+    input.throttle = distance > 2.5f ? 1.0f : 0.35f;
+    input.brake = 0.0f;
+    input.clutch = 0.0f;
+    input.handbrake = 0.0f;
+    VehicleSystem::instance().setInput(vehicle.id, input);
 }
 
 uint64_t mapVehicleHash(const MapObjectiveConfig& map)
@@ -266,6 +302,8 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
         for (uint32_t id : doomed)
             VehicleSystem::instance().despawn(id);
         vehicleState.knownVehicles.clear();
+        vehicleState.npcDriverIds.clear();
+        vehicleState.npcVehicleId = 0;
         vehicleState.mapId = mapId;
         vehicleState.mapRevision = revision;
         vehicleState.vehicleHash = vehicleHash;
@@ -321,6 +359,81 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
         }
     }
 
+    // Vehicle Arena 1v1: one NPC-driven car uses the same VehicleInput surface
+    // as a human driver. It is assigned to the free car nearest the orange
+    // kickoff and chases the ball.
+    if (serverGamemodeState().matchMode == "vehicle_arena")
+    {
+        bool npcVehicleAlive = false;
+        for (const VehicleState& vehicle : VehicleSystem::instance().vehicles())
+            if (vehicle.id == vehicleState.npcVehicleId)
+                npcVehicleAlive = true;
+        if (!npcVehicleAlive)
+        {
+            vehicleState.npcVehicleId = 0;
+            vehicleState.npcDriverIds.clear();
+        }
+        if (vehicleState.npcVehicleId == 0)
+        {
+            glm::vec3 target(0.0f);
+            bool hasTarget = false;
+            for (const ArenaKickoffConfig& kickoff : map.arena.kickoffs)
+                if (kickoff.enabled && kickoff.team == "orange")
+                {
+                    target = kickoff.position;
+                    hasTarget = true;
+                    break;
+                }
+            VehicleState* best = nullptr;
+            float bestDistance = std::numeric_limits<float>::max();
+            for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
+            {
+                if (!vehicle.serverAuthoritative || vehicle.serverMirror ||
+                    vehicle.seatOccupants.empty() || vehicle.seatOccupants[0] != 0)
+                    continue;
+                const glm::vec3 anchor = hasTarget ? target : vehicle.origin;
+                const float distance = glm::length(vehicle.origin - anchor);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = &vehicle;
+                }
+            }
+            if (best)
+            {
+                const uint32_t npcDriverId = nextEntityId++;
+                if (VehicleSystem::instance().enterSeat(best->id, 0, npcDriverId))
+                {
+                    best->mode = VehicleControlMode::Automatic;
+                    best->engineOn = true;
+                    vehicleState.npcDriverIds.insert(npcDriverId);
+                    vehicleState.npcVehicleId = best->id;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "vehicle.auto_seat", std::to_string(npcDriverId),
+                        "arena NPC car driver seated",
+                        tick,
+                        {{"driver_id", npcDriverId},
+                         {"vehicle_id", best->id},
+                         {"seat", 0},
+                         {"npc", true},
+                         {"mode", serverGamemodeState().matchMode}});
+                }
+            }
+        }
+        if (vehicleState.npcVehicleId != 0)
+        {
+            const PhysicalEntity* ball = findArenaBall();
+            if (ball)
+                for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
+                    if (vehicle.id == vehicleState.npcVehicleId)
+                    {
+                        driveArenaNpcCar(vehicle, *ball);
+                        break;
+                    }
+        }
+    }
+
     // Clear seats whose player died, disconnected, or no longer exists.
     for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
     {
@@ -332,9 +445,11 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
             if (occupant <= 0)
                 continue;
             const auto it = players.find(static_cast<uint32_t>(occupant));
-            const bool valid = it != players.end() &&
-                               !it->second.dead &&
-                               !it->second.connectionStale;
+            const bool npcDriver =
+                vehicleState.npcDriverIds.count(static_cast<uint32_t>(occupant)) != 0;
+            const bool valid = npcDriver ||
+                (it != players.end() && !it->second.dead &&
+                 !it->second.connectionStale);
             if (valid)
                 continue;
             vehicle.seatOccupants[seat] = 0;
@@ -343,6 +458,57 @@ void serverTickVehicles(ServerVehicleState& vehicleState,
                 vehicle.driverActorId = 0;
                 vehicle.driverSeat = -1;
             }
+        }
+    }
+
+    // Vehicle Arena players spawn as their car. Seat an active, unseated player
+    // into the nearest free authoritative car without adding a second vehicle
+    // or a mode-specific physics path.
+    if (serverGamemodeState().matchMode == "vehicle_arena")
+    {
+        for (auto& [playerId, player] : players)
+        {
+            if (player.dead || player.seatedVehicleId != 0 ||
+                player.spawnState != ServerPlayer::Active)
+                continue;
+            VehicleState* best = nullptr;
+            float bestDistance = std::numeric_limits<float>::max();
+            for (VehicleState& vehicle : VehicleSystem::instance().vehiclesMutable())
+            {
+                if (!vehicle.serverAuthoritative || vehicle.serverMirror ||
+                    vehicle.seatOccupants.empty() || vehicle.seatOccupants[0] != 0)
+                    continue;
+                const float distance = glm::length(vehicle.origin - player.pos);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = &vehicle;
+                }
+            }
+            if (!best || bestDistance > 40.0f)
+                continue;
+            if (!VehicleSystem::instance().enterSeat(best->id, 0, player.id))
+                continue;
+            best->mode = VehicleControlMode::Automatic;
+            best->engineOn = true;
+            player.seatedVehicleId = best->id;
+            player.seatedSeat = 0;
+            player.vel = glm::vec3(0.0f);
+            glm::vec3 seatPosition(0.0f);
+            glm::vec3 seatForward(0.0f, 1.0f, 0.0f);
+            if (VehicleSystem::instance().seatWorld(best->id, 0, seatPosition,
+                                                    seatForward))
+                player.pos = seatPosition;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "vehicle.auto_seat", std::to_string(player.id),
+                "arena player spawned into the nearest free vehicle",
+                tick,
+                {{"player_id", player.id},
+                 {"vehicle_id", best->id},
+                 {"seat", 0},
+                 {"distance", bestDistance},
+                 {"mode", serverGamemodeState().matchMode}});
         }
     }
 

@@ -51,7 +51,9 @@ uint8_t networkWeaponTypeForDefinition(const WeaponDefinition& definition)
         return NETWORK_WEAPON_HAFS;
     if (definition.id == "force_punch")
         return NETWORK_WEAPON_FORCE_PUNCH;
-    if (definition.id == "projectile_rifle")
+    if (definition.id == "projectile_rifle" ||
+        definition.id == "bloodtest_revolver" ||
+        definition.id == "bloodtest_shotgun")
         return NETWORK_WEAPON_PROJECTILE_RIFLE;
     return NETWORK_WEAPON_NONE;
 }

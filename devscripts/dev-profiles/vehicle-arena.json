@@ -1,0 +1,22 @@
+{
+  "name": "vehicle-arena",
+  "launch_mode": 50,
+  "launch_visibility": "visible",
+  "map": "arena1",
+  "map_selection": "configured",
+  "allowed_maps_file": "config/gamemode-good-maps.json",
+  "mode": "vehicle_arena",
+  "gamemode": "vehicle_arena",
+  "weapon_set": 1,
+  "npc_count": 0,
+  "auto_map_rotation": false,
+  "discord_notification": false,
+  "host_player_name": "",
+  "client_name": "Vehicle Arena Dev",
+  "server_name": "Vehicle Arena Dev Server",
+  "server_bind": "127.0.0.1:0",
+  "join_via_room_code": true,
+  "require_client_connection": true,
+  "require_mode_start": true,
+  "max_mimita_processes": 2
+}

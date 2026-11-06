@@ -357,6 +357,7 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // policy may refine it below; explicit role lists still win.
     {
         const Gamemode& modeAvatar = GamemodeRegistry::instance().get(d.matchMode);
+        out.allowAvatarLiveChange = modeAvatar.avatar.allowLiveChange;
         if (modeAvatar.avatar.configured) {
             out.allowedAvatars = modeAvatar.avatar.allowed;
             out.deniedAvatars = modeAvatar.avatar.denied;
@@ -610,10 +611,11 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     // An explicit host-selected set is shared by every actor in every managed
     // mode. It overrides role/preset loadouts as well as the mode fallback.
     // TDM retains its built-in mode-set behavior when no host override exists.
-    if (d.enabled && (d.communityWeaponSetExplicit ||
+    if (d.enabled && (gm.forceWeaponSetForAllActors || d.communityWeaponSetExplicit ||
                       (gm.id == "tdm" && gm.weaponSetId > 0))) {
-        const int effectiveSet = d.communityWeaponSetExplicit
-            ? d.communityWeaponSetId : gm.weaponSetId;
+        const int effectiveSet = gm.forceWeaponSetForAllActors
+            ? gm.weaponSetId
+            : (d.communityWeaponSetExplicit ? d.communityWeaponSetId : gm.weaponSetId);
         if (const CommunityWeaponSet* set =
                 CommunityServerConfig::instance().weaponSetById(effectiveSet)) {
             out.weaponSetId = set->id;
@@ -1623,11 +1625,15 @@ uint32_t countActivePlayers(const std::unordered_map<uint32_t, ServerPlayer>& pl
     return count;
 }
 
+void assignMissingRoundModePlayers(ServerGamemodeState& d,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players);
+
 void broadcastDuelState(SOCKET sock,
-                        const ServerGamemodeState& d,
-                        const std::unordered_map<uint32_t, ServerPlayer>& players,
+                        ServerGamemodeState& d,
+                        std::unordered_map<uint32_t, ServerPlayer>& players,
                         uint64_t& totalPacketsOut)
 {
+    assignMissingRoundModePlayers(d, players);
     DuelStatePacket pkt{};
     pkt.header.type = PACKET_DUEL_STATE;
     pkt.header.tick = 0;
@@ -1961,7 +1967,15 @@ void broadcastDuelState(SOCKET sock,
         // The fixed packet identity list holds 64 actors, while team rosters
         // may exceed that. Keep the full shared roster window, but guarantee
         // that this recipient always receives its own role/preset identity.
-        if (!localActorIncluded && recipientPacket.participantCount > 0) {
+        const auto rosterMember = std::find(d.participants.begin(), d.participants.end(), kv.second.id)
+            != d.participants.end();
+        const auto localTeamIt = d.matchTeams.find(kv.second.id);
+        const auto localActorIt = d.matchActors.find(kv.second.id);
+        const bool hasAuthoritativeIdentity = rosterMember &&
+            localTeamIt != d.matchTeams.end() && localTeamIt->second >= 0 &&
+            localActorIt != d.matchActors.end() && !localActorIt->second.roleId.empty();
+        if (!localActorIncluded && recipientPacket.participantCount > 0 &&
+            hasAuthoritativeIdentity) {
             const uint8_t i = (uint8_t)(recipientPacket.participantCount - 1);
             const uint32_t actorId = kv.second.id;
             recipientPacket.participantIds[i] = actorId;
@@ -2920,6 +2934,75 @@ void applyHumanRosterTeam(ServerGamemodeState& d,
     if (actorIt != d.matchActors.end()) actorIt->second.teamId = team;
 }
 
+void assignMissingRoundModePlayers(
+    ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players)
+{
+    // Fun Counter Strike drives the shared round lifecycle from its authored
+    // victory.type config while victory_condition is intentionally empty.
+    // Keep the late-join identity repair attached to the actual mode owner as
+    // well as generic modes that explicitly declare victory_condition=rounds.
+    if (d.matchMode != "funcounterstrike" && d.victoryCondition != "rounds")
+        return;
+    const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
+    if (gm.teams.size() < 2) return;
+    for (auto& entry : players) {
+        ServerPlayer& player = entry.second;
+        if (player.spawnState != ServerPlayer::Active) continue;
+        const uint32_t id = entry.first;
+        auto teamIt = d.matchTeams.find(id);
+        auto actorIt = d.matchActors.find(id);
+        const bool validIdentity = teamIt != d.matchTeams.end() &&
+            teamIt->second >= 0 && teamIt->second < 2 &&
+            actorIt != d.matchActors.end() && !actorIt->second.roleId.empty();
+        if (validIdentity) continue;
+
+        int team = teamIt != d.matchTeams.end() && teamIt->second >= 0 && teamIt->second < 2
+            ? teamIt->second : chooseFallbackTeam(players, d);
+        applyHumanRosterTeam(d, players, id, team);
+        ActorMatchDescriptor& actor = d.matchActors[id];
+        actor.controller = ActorController::Human;
+        actor.state = ActorState::Alive;
+        actor.teamId = team;
+        actor.roleId = roundTeamRoleId(gm, team);
+        if (const MatchRoleDefinition* role = MatchRoleRegistry::instance().get(actor.roleId)) {
+            actor.movementProfileId = role->movementPreset;
+            actor.weaponProfileId = role->weaponSet;
+        }
+        const MatchRoleDefinition* assignedRole =
+            MatchRoleRegistry::instance().get(actor.roleId);
+        if (assignedRole && assignedRole->avatarForced &&
+            !assignedRole->avatarName.empty() &&
+            player.avatarName != assignedRole->avatarName) {
+            const std::string previousAvatar = player.avatarName;
+            player.avatarName = assignedRole->avatarName;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "match.actor.avatar-selected", std::to_string(id),
+                "server selected the avatar forced by the assigned match role",
+                d.currentServerTick,
+                {{"actor_id", id}, {"mode", d.matchMode},
+                 {"team", team}, {"role", actor.roleId},
+                 {"previous_avatar", previousAvatar},
+                 {"selected_avatar", player.avatarName},
+                 {"reason", "late_join_role_assignment"}});
+        }
+        if (std::find(d.participants.begin(), d.participants.end(), id) == d.participants.end())
+            d.participants.push_back(id);
+        d.participantNames[id] = player.name;
+        d.ffaKills.try_emplace(id, 0);
+        d.ffaDeaths.try_emplace(id, 0);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "match.actor.identity-assigned", std::to_string(id),
+            "active round-mode player assigned authoritative team and role",
+            d.currentServerTick,
+            {{"actor_id", id}, {"team", team}, {"role", actor.roleId},
+             {"selected_avatar", assignedRole ? assignedRole->avatarName : std::string()},
+             {"mode", d.matchMode}, {"reason", "active_player_missing_roster_identity"}});
+    }
+}
+
 // Headless NPC-only match affordance for controlled runtime testing. When
 // MIMITA_CS_HEADLESS_MATCH is set, a round-mode match runs with NPCs only (no
 // connected human): the roster fills both teams and the normal round lifecycle
@@ -2943,7 +3026,8 @@ static bool headlessMatchAllowed()
 // human and both teams are filled with NPCs.
 void buildObjectiveRoster(ServerGamemodeState& d,
                           std::unordered_map<uint32_t, ServerPlayer>& players,
-                          std::unordered_map<uint32_t, ServerNpc>& npcs)
+                          std::unordered_map<uint32_t, ServerNpc>& npcs,
+                          NpcSystem& npcSystem)
 {
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
 
@@ -2956,13 +3040,31 @@ void buildObjectiveRoster(ServerGamemodeState& d,
         d.roundNextNpcId = kObjectiveRosterNpcIdBase;
 
     // Clear exactly the previous objective roster (plus the historical
-    // >=100000 range) so rebuilding for a new round/warmup never duplicates or
-    // leaks the squad. Startup/map NPCs keep their ids and bodies.
+    // >=100000 range). FCS also retires generic startup NPCs: only explicit
+    // team+role assignments may survive its roster boundary.
     for (auto it = npcs.begin(); it != npcs.end(); ) {
         const bool ownedRosterNpc =
             it->first >= kObjectiveRosterNpcIdBase ||
             d.objectiveRosterNpcIds.count(it->first) != 0;
-        if (ownedRosterNpc) {
+        const auto identity = d.matchActors.find(it->first);
+        const auto team = d.matchTeams.find(it->first);
+        const bool explicitlyModeAssigned = identity != d.matchActors.end() &&
+            identity->second.controller == ActorController::Npc &&
+            !identity->second.roleId.empty() && team != d.matchTeams.end() &&
+            team->second >= 0 && team->second < (int)gm.teams.size();
+        const bool unrosteredFcsStartupNpc = d.matchMode == "funcounterstrike" &&
+            it->first < kObjectiveRosterNpcIdBase && !explicitlyModeAssigned;
+        if (ownedRosterNpc || unrosteredFcsStartupNpc) {
+            if (unrosteredFcsStartupNpc) {
+                npcSystem.destroySelected({it->first});
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Duel, StructuredLevel::Important,
+                    "gamemode.npc.unrostered-startup-removed", std::to_string(it->first),
+                    "unrostered startup NPC removed before FCS roster publication",
+                    d.currentServerTick,
+                    {{"actor_id", it->first}, {"mode", d.matchMode},
+                     {"reason", "missing_mode_team_or_role"}});
+            }
             d.objectiveRosterNpcIds.erase(it->first);
             d.matchTeams.erase(it->first);
             d.matchActors.erase(it->first);
@@ -3016,6 +3118,21 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             desc.roleId = roleId;
             desc.movementProfileId = humanDef->movementPreset;
             desc.weaponProfileId = humanDef->weaponSet;
+            if (humanDef->avatarForced && !humanDef->avatarName.empty() &&
+                players[humanId].avatarName != humanDef->avatarName) {
+                const std::string previousAvatar = players[humanId].avatarName;
+                players[humanId].avatarName = humanDef->avatarName;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "match.actor.avatar-selected", std::to_string(humanId),
+                    "server selected the avatar forced by the assigned match role",
+                    d.currentServerTick,
+                    {{"actor_id", humanId}, {"mode", d.matchMode},
+                     {"team", humanTeam}, {"role", roleId},
+                     {"previous_avatar", previousAvatar},
+                     {"selected_avatar", players[humanId].avatarName},
+                     {"reason", "objective_roster_assignment"}});
+            }
         }
         if (std::find(d.participants.begin(), d.participants.end(), humanId) ==
             d.participants.end()) {
@@ -3024,6 +3141,15 @@ void buildObjectiveRoster(ServerGamemodeState& d,
         d.participantNames[humanId] = players[humanId].name;
         d.ffaKills[humanId] = 0;
         d.ffaDeaths[humanId] = 0;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "match.actor.identity-assigned", std::to_string(humanId),
+            "round roster assigned authoritative human team and role",
+            d.currentServerTick,
+            {{"actor_id", humanId}, {"controller", "human"},
+             {"team", humanTeam}, {"role", roleId},
+             {"selected_avatar", humanDef ? humanDef->avatarName : std::string()},
+             {"mode", d.matchMode}, {"reason", "objective_roster_build"}});
     }
 
     int npcCounts[2] = {0, 0};
@@ -3080,6 +3206,16 @@ void buildObjectiveRoster(ServerGamemodeState& d,
             d.ffaKills[npc.entityId] = 0;
             d.ffaDeaths[npc.entityId] = 0;
             d.objectiveRosterNpcIds.insert(npc.entityId);
+            const MatchRoleDefinition* assignedRole = MatchRoleRegistry::instance().get(roleId);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "match.actor.identity-assigned", std::to_string(npc.entityId),
+                "round roster assigned authoritative NPC team and role",
+                d.currentServerTick,
+                {{"actor_id", npc.entityId}, {"controller", "npc"},
+                 {"team", team}, {"role", roleId},
+                 {"selected_avatar", assignedRole ? assignedRole->avatarName : std::string()},
+                 {"mode", d.matchMode}, {"reason", "objective_roster_build"}});
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Duel, StructuredLevel::Important,
                 "npc.roster-id.allocated", std::to_string(npc.entityId),
@@ -8030,7 +8166,7 @@ void serverGamemodeTick(SOCKET sock,
                     if (world.spawnPoints.empty())
                         rotateToNextGamemodeMap(sock, d, players, world, npcWorld, npcs, npcSystem, totalPacketsOut);
                     assignGamemodeSpawns(d, world);
-                    buildObjectiveRoster(d, players, npcs);
+                    buildObjectiveRoster(d, players, npcs, npcSystem);
                     // Spawn the human at their team spawn for warmup.
                     for (auto& kv : players) {
                         if (kv.second.spawnState != ServerPlayer::Active) continue;
@@ -8064,7 +8200,7 @@ void serverGamemodeTick(SOCKET sock,
                     }
                 d.warmup = false;
                 // Rebuild a clean roster and spawn at team spawns for the round.
-                buildObjectiveRoster(d, players, npcs);
+                buildObjectiveRoster(d, players, npcs, npcSystem);
                 beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
                 broadcastDuelState(sock, d, players, totalPacketsOut);
             }
@@ -8169,7 +8305,7 @@ void serverGamemodeTick(SOCKET sock,
                 {
                     // Next round: rebuild roster only if unlocked, then countdown.
                     if (!d.rosterLocked)
-                        buildObjectiveRoster(d, players, npcs);
+                        buildObjectiveRoster(d, players, npcs, npcSystem);
                     beginObjectiveRound(d, players, npcs, npcSystem, world, tick);
                 }
                 broadcastDuelState(sock, d, players, totalPacketsOut);

@@ -501,10 +501,15 @@ void registerAgentCommands()
 #include "interaction/interaction-commands.h"
 #include "physics/runtime-objects-commands.h"
 #include "terminal/procedural-world-commands.h"
+#include "procedural/infinite-world-runtime.h"
+#include "interaction/world-interaction-runtime.h"
+#include "worldgen/worldgen-commands.h"
 #include "terminal/duel-commands.h"
 #include "terminal/actor-commands.h"
 #include "terminal/editor-commands.h"
 #include "mapeditor/map-editor-commands.h"
+#include "mapeditor/map-editor-projects.h"
+#include "mapeditor/world-edit-commands.h"
 #include "terminal/network-commands.h"
 #include "terminal/badconn-commands.h"
 #include "terminal/vip-commands.h"
@@ -797,10 +802,15 @@ void gameInitSubsystems(Engine& engine)
     VehicleSystem::instance().loadConfig("config/vehicles");
     VehicleSystem::instance().registerFixedTick();
     registerProceduralWorldCommands();
+    registerInfiniteWorldCommands();
+    registerWorldInteractionCommands();
+    registerWorldGenCommands();
     registerTransformDebugCommands();
 
     registerEditorCommands();
     registerMapEditorCommands();
+    registerWorldProjectCommands();
+    registerWorldEditCommands();
     registerNetworkCommands();
     badconn::loadConfig(badconn::configPath());
     registerBadConnCommands();

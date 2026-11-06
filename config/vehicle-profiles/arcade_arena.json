@@ -1,0 +1,57 @@
+{
+  "id": "arcade_arena",
+  "description": "Rocket-League-style arcade controls on the shared vehicle system. Data only; no arena-specific solver.",
+  "transmission": {
+    "automatic": true,
+    "engine_auto_start": true
+  },
+  "boost": {
+    "max": 100.0,
+    "fullDrainTicks": 300,
+    "drainPerTick": 0.3333333,
+    "force": 42000.0,
+    "airForce": 42000.0
+  },
+  "jump": {
+    "impulse": 52000.0,
+    "heldForce": 21000.0,
+    "heldWindowSeconds": 0.2,
+    "minimumHoldSeconds": 0.025,
+    "doubleJumpImpulse": 52000.0,
+    "secondJumpWindowSeconds": 1.25
+  },
+  "airControl": {
+    "pitchTorque": 130.0,
+    "rollTorque": 400.0,
+    "pitchDamping": 30.0,
+    "rollDamping": 50.0,
+    "yawEnabled": false
+  },
+  "steering": {
+    "maxAngleDeg": 35.0,
+    "speedFalloff": 0.45,
+    "returnRate": 6.0
+  },
+  "powerslide": {
+    "gripScale": 0.3333333
+  },
+  "wall": {
+    "adhesionForce": 18000.0,
+    "adhesionMaxNormalUpDot": 0.35,
+    "slideGravityScale": 1.0
+  },
+  "ballContact": {
+    "wheelImpulseScale": 0.18,
+    "chassisImpulseScale": 1.0
+  },
+  "bindings": {
+    "throttle": "walkforward",
+    "brake": "walkback",
+    "steerLeft": "walkleft",
+    "steerRight": "walkright",
+    "boost": "mouse_left",
+    "jump": "mouse_right",
+    "powerslideAirRoll": "key_left_shift",
+    "ballCam": "key_space"
+  }
+}

@@ -28,7 +28,7 @@
 - `src/network/multiplayer-shots.cpp:166-177` leaves the gun-shot serial sequence unchanged for Melee feedback; reliable event deduplication handles the impact event.
 - `src/engine/engine-tick-net.cpp:754-757, 798-808, 892-935` displays confirmed impact effects to the attacker and observers, skips damage numbers and gunshot replay labeling, and uses the `captain_falcon_moveset` hit sound configuration at 55% base volume.
 - `src/engine/engine-tick-camera.cpp:1053-1057` honors the mode's aim-FOV input; `none` leaves RMB from narrowing the camera FOV. The existing Melee-authored-pose path already suppresses physical arm aiming.
-- Added `docs/regressions/2026-10-18/melee-hit-feedback-and-hitbox-accuracy-REG.md` with the confirmed feedback gap and remaining hitbox-position mismatch.
+- Added `docs/regressions/gameplay/melee-hit-feedback-REG-2026-10-18.md` with the confirmed feedback gap and remaining hitbox-position mismatch.
 
 ## Validation and remaining evidence
 

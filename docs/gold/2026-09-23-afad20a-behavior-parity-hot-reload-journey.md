@@ -69,7 +69,7 @@ press edge. There is no buffer and no cooldown anywhere on the dash/down-dash
 path; the press acts on the tick it is sampled.
 
 Full investigation and the attempted intermediate fix are in
-`docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+`docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`.
 
 **The rule that came out of it** (now loud in `AGENTS.md`,
 `docs/specs/movement/movement.md`, and
@@ -161,7 +161,7 @@ novel. Keep the randomness on the presentation side only.
 
 ## References
 
-- `docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`
+- `docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`
 - `docs/changelog/2026-09-23/20260923_032941-dash-down-dash-no-buffer-hot-edge.md`
 - `docs/changelog/2026-09-23/20260923_101537-afad20a-freeze-grounded-hot.md`
 - `docs/changelog/2026-09-23/20260923_130654-afad20a-grounded-rest-land-sound-random-walk.md`

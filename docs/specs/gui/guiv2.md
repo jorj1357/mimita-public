@@ -1,3 +1,5 @@
+2026 11 05 1644 jorj TODO WE NEED A  GUI JSON CHECKER TO ENSURE THAT ALL GUI JSONS OR FILES HAVE ALL FIELDS ACTUAL WORKING AND READ AND BOUND TO SOMETIHNG, AND MKAE 1 CENTRALIZED JSON GUI DEFINTION AND MAKE ALL GUI JSON CONFIGS USE THAT 
+
 2026 10 13 1536 jorj todo - cant press buttons, this happened like
 we werere doing
 bc when u die, u become spectator, and then couldnt see the cursor

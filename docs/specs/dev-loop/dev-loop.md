@@ -195,6 +195,88 @@ The loop may terminate a process only when all of the following are true:
 If ownership cannot be proven, the loop must stop and report
 `NEEDS_USER_ACTION`.
 
+## 3.1 AI runtime reuse contract (2026-11-05)
+
+An AI agent must first discover and reuse the dev loop and game processes that
+already exist. It must not start a second daemon, a second watchdog, or a
+competing client/server pair for the same checkout.
+
+Required discovery order:
+
+```text
+python devscripts/dev-loop.py --status
+python devscripts/dev-loop.py --list-instances
+Get-CimInstance Win32_Process -Filter "Name='mimita.exe'"
+```
+
+Rules:
+
+1. If a daemon/dashboard control endpoint responds, use it.
+2. If a healthy server/client pair exists, reuse it.
+3. If the pair is on an older artifact, report the build mismatch and use the
+   loop's normal replacement path; do not kill an unrelated user-owned process.
+4. Run gameplay commands through the existing loop with
+   `python devscripts/dev-loop.py --command "<command>"`.
+5. If the loop is building, keep the existing process alive and continue with
+   available status/commands. Do not start another loop to bypass the build.
+6. A user-owned `mimita.exe` that the loop did not launch is inspected for
+   journal evidence only. Its process must not be stopped, replaced, or
+   repurposed without explicit user approval.
+7. If no control endpoint exists, start the single canonical loop; after that,
+   every later action reuses it.
+
+This contract is about runtime ownership. It does not change the requirement
+that gameplay evidence comes from the exact running artifact's `events.jsonl`.
+
+## 3.2 Human-visible dashboard and AI command transcript (2026-11-05)
+
+The dashboard is the human's always-visible window into the loop.
+
+- The single canonical dashboard must be visible on screen for the whole time
+  the loop is running. It must auto-open when the loop starts and must not be
+  hidden, closed, or replaced by an AI action.
+- The dashboard's existing bottom output/log pane must show every command the
+  AI sends, in order, with a timestamp and result. Minimum record:
+  `YYYY-MM-DD HH:MM:SS UTC | AI | target instance | command | result`.
+- The same command records must also be written to the loop journal and remain
+  readable from the status view after the command finishes.
+- The AI must not hide the dashboard, must not open a second dashboard, and must
+  not move the loop to a headless-only mode while the human is watching.
+- If the human minimizes the dashboard, the loop keeps running; the AI does not
+  close or recreate it.
+
+### 3.3 Launch identity confirmation (2026-11-05)
+
+Before and after every launch, status must expose the effective launch values,
+not only the artifact build ID:
+
+- launch mode number and name,
+- map id,
+- community mode id (`--mode`),
+- gamemode JSON id (`--gamemode`),
+- weapon set id and source (explicit/profile/gamemode default),
+- NPC count and enabled flag,
+- server/client PIDs and journals.
+
+`--status`, `--list-instances`, the dashboard, and the launch journal must show
+these values. A launch whose effective mode/gamemode/map does not match the
+requested profile is a launch-identity failure and must be reported as
+`NEEDS_USER_ACTION`; the AI must not claim that it launched the requested mode.
+
+For Vehicle Arena the expected identity is:
+
+```text
+map=arena1
+mode=vehicle_arena
+gamemode=vehicle_arena
+weapon_set=1
+npcs=0
+```
+
+The AI must run `--status` after launch and confirm those values before running
+gameplay commands. A correct map id alone is not proof of the correct mode or
+weapon set.
+
 ## 4. Inputs and configuration
 
 The loop reads its profile and launch-mode configuration through the existing
@@ -221,6 +303,8 @@ follow-up saves become one build. It must not wait for the current build to
 finish before accepting changes, status requests, launch requests, or control
 commands. It serializes compiler/linker work, then queues one follow-up build
 for the newest source generation if inputs changed during the active build.
+This serialization is per checkout/worktree; independent agent worktrees have
+separate watchers, locks, outputs, and may compile concurrently.
 
 The canonical build-input inventory is owned by `build.py`,
 `build_game_dll.py`, and `build_toolchain.py`. The dev loop must watch every
@@ -332,9 +416,11 @@ Record timestamps for save/change observed, build start, first useful compiler
 output, build end, publication complete, and any follow-up generation queued.
 Use these measurements to find the slow stage and improve it. Compare a no-op
 save, a small source edit, and a broad/header edit. Keep one compiler/linker
-job active at a time because concurrent jobs can corrupt or invalidate shared
-outputs. Changes during that job must be accepted immediately and coalesced to
-the newest generation; do not start one competing compiler per file or save.
+job active per checkout because overlapping jobs there can corrupt or
+invalidate shared outputs. Separate worktrees may build concurrently because
+their outputs and locks are isolated. Changes during a checkout's job must be
+accepted immediately and coalesced to the newest generation; do not start one
+competing compiler per file or save.
 Retain source-generation identity, artifact validation, running-client
 stability, and the persistent daemon while improving speed.
 
@@ -342,11 +428,12 @@ stability, and the persistent daemon while improving speed.
 
 `python devscripts/dev-loop.py` is the only supported user-facing entry point
 for requesting builds, checking build state, and launching MiMITA. Humans and AI
-tools must submit build/launch requests to the one dev-loop daemon; they must
-not start a second build process directly while that daemon owns the checkout.
-The daemon serializes builds: at most one compiler/linker job may be active, and
-source changes observed during that job coalesce into one subsequent build for
-the newest observed source generation.
+tools must submit build/launch requests to the dev-loop daemon for that
+checkout; they must not start a second build process directly while that daemon
+owns the checkout. Each checkout's daemon serializes its builds: at most one
+compiler/linker job may be active in that worktree, and source changes observed
+during that job coalesce into one subsequent build for the newest observed
+source generation. Independent worktree daemons may build concurrently.
 
 The dev loop is the coordinator, not the compiler implementation. These files
 remain internal build components while they have active responsibilities:
@@ -378,8 +465,9 @@ The intended implementation boundary is one daemon-owned build worker plus a
 responsive daemon control loop. The worker runs the canonical compiler/linker
 pipeline and streams bounded phase/output updates into daemon state; the daemon
 continues to accept `[1]`, status, and other control requests while that worker
-runs. A checkout-wide build lock at the canonical build boundary must reject
-or route any accidental second build request, including legacy entry points.
+runs. A per-checkout build lock at the canonical build boundary must reject or
+route any accidental second build request in that worktree, including legacy
+entry points. Other worktrees use their own locks.
 The dashboard must distinguish the selected last-successful artifact from the
 active build's source generation and show pending/building/failed/published
 state, elapsed time, and a concise recent output/error summary. It must not
@@ -392,6 +480,40 @@ compiler process per file or a new build for every keystroke. The dashboard
 must keep reporting build phase and identity while the compiler runs, and the
 daemon must remain able to accept launch/status/control requests during that
 time.
+
+### 5.2.1 One build process per checkout at a time
+
+Before requesting a build, an agent or tool must query the existing daemon and
+build state. If a build is already `pending` or `building`, it must **not**
+submit another build request and must **not** start a competing compiler or
+linker. It waits for that single build to finish, or returns to other
+non-conflicting code edits and checks the state again later. A waiting command
+must not block so long that the agent cannot continue useful work.
+
+The ideal workflow is:
+
+1. ask the daemon for status;
+2. if no build is active and a build is needed, submit exactly one request;
+3. if a build is active, do not request another one;
+4. continue source edits, reviews, or documentation work while it runs;
+5. re-check status after the active build finishes, then request the next
+   build only if the source changed again.
+
+Multiple simultaneous builds in one checkout, build processes launched outside
+that checkout's daemon, and queued duplicate requests for the same source
+generation are invalid. Independent agent worktrees have separate daemons and
+may build concurrently. The daemon may coalesce a source change into at most
+one subsequent build per checkout, but it must never run two compiler/linker
+jobs in one worktree at once. Status or control commands must remain responsive
+during the active build.
+
+A dev-loop publish can block when an older dev-loop-owned server or client is
+still running from `.dev/current/mimita.exe`. When that happens, the agent may
+stop or kill only the dev-loop-owned test processes that hold the artifact, then
+let the build publish and continue testing. Do not kill unrelated user
+processes or processes outside the current dev-loop run. After unblocking, keep
+going through the runtime matrix; a publish blockage is not a reason to stop
+the task.
 
 ## 6. Build and publish contract
 
@@ -2430,25 +2552,130 @@ push distance; do not infer team movement from score alone.
 The journal may rotate into sealed `events-NNNN.jsonl` segments plus the active
 `events.jsonl`. The runner's cursor reads them chronologically as one run.
 
-## Future: named launch lanes (not implemented)
+## Agent build modes: 1, 2, and 3
 
-The current loop has one daemon, one build worker, one `.dev/current` launch
-path, and a default per-checkout `mimita.exe` cap of one. That prevents a stable
-play build from co-existing with an AI test build.
+These modes describe who owns source and builds, and how quickly saved code
+can reach a running game. Modes 1 and 2 are available now. Mode 3 is a staged
+direction, not a feature that is fully implemented.
 
-The future contract should support arbitrary named lanes (`A`, `B`, `C`, ...)
-in one checkout:
+### Mode 1: shared checkout (available fallback)
 
-- each lane has its own selected artifact/build identity, server, client set,
-  run ID, room/port, journal, command queue, visibility, and process cap;
-- one compiler/linker job remains global; lanes do not run competing builds;
-- published timestamped artifacts stay immutable; a lane selects an artifact and
-  never rewrites another lane's executable;
-- process reaping is scoped to the lane that requested it;
-- status separates `build_pipeline` from `lanes[]`, and each lane reports the
-  live map/mode/room from its actual processes rather than only launch args;
-- AI commands target an explicit lane/client; multi-client matrix runs are one
-  lane with N clients.
+All work uses the coordinator's checkout, its dev-loop, its build files, and
+its runtime. The dev-loop detects compiler-input changes, groups nearby file
+writes with a short debounce, and incrementally builds the changed source
+generation. If a build is active, later edits are accepted and coalesced into
+one follow-up build. There is one compiler/linker job at a time in this
+checkout, so agents using it share that build owner and can wait on one another.
+The published executable becomes the launch choice; a running game is not
+automatically replaced by the executable build.
+
+### Mode 2: separate agent lanes (available parallel workflow)
+
+Each agent gets a worktree with its own source, incremental object files and
+PCH, executable artifact, dev-loop, run state, command queue, and
+`events.jsonl`. By default, a lane starts from a recorded snapshot of the
+coordinator's current tracked and non-ignored untracked work. Builds serialize
+inside that lane, but different lanes have independent build owners and no
+cross-lane build queue. One compiler job per lane is the default. Lanes share
+ccache storage only; cache reuse depends on matching compiler inputs, and
+unique edits still use machine resources.
+
+A lane's file changes are detected and incremental builds are coalesced by its
+dev-loop. Agents can run their own checks and executable. A changed `.cpp` may
+compile only its translation unit; a changed header may require compiling many
+dependents, and updated objects still have to be linked into an executable or
+module. A build proves compilation/linking, not correct runtime behavior; use
+that lane's executable and journal for behavior evidence.
+
+### Mode 3: save-triggered compile and safe live activation (future direction)
+
+The goal is for saving a file (for example, Ctrl+S) to start a debounced,
+background check for that agent's lane. Unsaved keystrokes do not start a
+compiler. The system determines affected translation units, compiles them,
+links the affected replaceable module, reports errors to the owning lane, and
+keeps accepting edits while a check runs. If inputs change during a check, it
+finishes or safely cancels that work and coalesces a follow-up for the latest
+saved source; it never starts competing compilers against the same lane's
+incremental outputs.
+
+When the changed code can be safely replaced, a validated immutable module is
+activated at a safe runtime boundary and the running game keeps its state. If
+it cannot be replaced safely, mode 3 can still report compile/check results,
+but that code needs a complete executable build before it can run. The
+long-term goal is to move every C++ edit into a replaceable workflow. Achieving
+that requires stable interfaces, explicit ownership of persistent state,
+dependency-aware module linking, compatibility checks, and rollback. The
+current hot DLL covers only a small source set; mode 3 does not yet make every
+C++ file live-reloadable or eliminate the final integrated stable build.
+
+### Commands and integration
+
+Mode 1 is the fallback if lanes are unavailable. Mode 2 is the current choice
+for independent agent work. Mode 3 commands are not available yet.
+
+```text
+python devscripts/agent-workflow.py --mode 1 build
+python devscripts/agent-workflow.py --mode 1 run 1
+python devscripts/agent-workflow.py --mode 1 status
+python devscripts/agent-workflow.py --mode 2 create <lane-id>
+python devscripts/agent-workflow.py --mode 2 build <lane-id>
+python devscripts/agent-workflow.py --mode 2 run <lane-id> --launch-mode <id>
+python devscripts/agent-workflow.py --mode 2 check <lane-id>
+python devscripts/agent-workflow.py --mode 2 status <lane-id>
+python devscripts/agent-workflow.py --mode 2 cleanup <lane-id>
+```
+
+At the end, one integrator reviews selected agent commits, combines them on an
+integration branch, validates that combined source, and publishes the stable
+executable. This final build contains the reviewed combined revision; individual
+lane artifacts and journals remain available for diagnosis.
+
+## Independent agent worktree lanes
+
+Agents use separate Git worktrees managed from the coordinator checkout:
+
+```text
+python devscripts/agent-lane.py create <lane-id> [--base <ref>]
+python devscripts/agent-lane.py status <lane-id>
+python devscripts/agent-lane.py build <lane-id> [--mode debug|release] [--jobs 1]
+python devscripts/agent-lane.py run <lane-id> --launch-mode <id> [--profile <id>]
+python devscripts/agent-lane.py check <lane-id> [--base <ref>]
+python devscripts/agent-lane.py cleanup <lane-id>
+python devscripts/agent-lane.py promote <integration-id> --base <ref> --commit <sha> [--commit <sha> ...] [--build]
+```
+
+Each worktree is a separate build and runtime owner. Lane creation copies or
+initializes the exact required submodule revisions and copies the local
+Manifold prebuilt library when available. Its `build/`, `src/pch.h.gch`, `.dev/`
+artifacts and locks, dev-loop daemon, process cap, run IDs, command queues, and
+`logs/` are checkout-local. Builds serialize within one worktree and may run
+concurrently across worktrees. The lane build defaults to one compiler job;
+tune `--jobs` only when machine capacity allows. Toolchain installations may
+be shared read-only. Agents should be assigned the printed worktree path.
+
+Build artifact metadata records the source revision and a SHA-256 fingerprint
+of its source tree and submodule revisions at build start and publication,
+plus whether it changed during the build. Runtime status and `--versioninfo` continue to identify the
+artifact and the exact per-process journal. `check` runs focused syntax checks
+for changed Python files, JSONC parsing for changed config files, JSON parsing
+for changed scenario files, and an incremental dev-loop build for changed C/C++
+source. Runtime behavior still requires a
+separate real run and inspection of that run's journal; these checks do not
+claim gameplay acceptance.
+
+Promotion takes explicit reviewed commit IDs, creates an integration worktree,
+and cherry-picks them onto the requested base in the supplied order. Review the
+combined diff there before building. `promote --build` builds the integration
+worktree, requires a clean source tree and identical start/end source identity,
+then publishes an immutable artifact under the coordinator checkout's
+`.dev/stable-builds/` and atomically updates `.dev/stable-build.json`. This
+pointer names the latest stable executable; it never overwrites a running
+binary. Agent worktrees and their artifacts remain available for diagnosis.
+
+`cleanup` stops only the selected lane's dev-loop-owned processes and preserves
+the worktree, build artifacts, journals, and metadata. It does not delete a
+lane. To avoid assigning two agents to the same source tree, create one lane per
+agent task. Available machine resources still bound useful parallel build count.
 
 ## Scenario explanation and launch preflight (2026-11-01)
 

@@ -376,8 +376,8 @@ bool loadWorldTemplate(const char* path, World& outTemplate)
     return true;
 }
 
-void appendWorldInstance(World& target, const World& templateWorld,
-                         const glm::mat4& transform)
+void appendWorldInstanceNoRebuild(World& target, const World& templateWorld,
+                                  const glm::mat4& transform)
 {
     const Mesh& src = templateWorld.mesh;
     Mesh& dst = target.mesh;
@@ -454,8 +454,19 @@ void appendWorldInstance(World& target, const World& templateWorld,
         dc.boundsMax = hi;
     }
 
+}
+
+void commitWorldInstanceBatch(World& target)
+{
     buildCollisionChunks(target, nullptr);
     target.renderRevision += 1;
+}
+
+void appendWorldInstance(World& target, const World& templateWorld,
+                         const glm::mat4& transform)
+{
+    appendWorldInstanceNoRebuild(target, templateWorld, transform);
+    commitWorldInstanceBatch(target);
 }
 
 void truncateWorldInstances(World& target, size_t baseVertCount,

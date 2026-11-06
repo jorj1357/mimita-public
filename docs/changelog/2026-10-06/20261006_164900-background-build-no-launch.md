@@ -58,7 +58,7 @@ Result: `PASS_WITH_HUMAN_REVIEW`.
 - `docs/operations/build-and-exe/build-and-exe.md`
 - `docs/operations/task-completion/task-completion.md`
 - `docs/skills/spec-behavior-review-v1.md`
-- `docs/regressions/2026-09-27/dev-loop-stale-build-launch-REG.md`
+- `docs/regressions/dev-loop/dev-loop-stale-REG-2026-09-27.md`
 
 ## Validation
 

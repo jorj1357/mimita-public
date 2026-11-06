@@ -5,7 +5,7 @@
 - Scope: Counter-Strike deaths, network death presentation, local-player
   deaths, NPC respawn state, corpse spawning, and AI/runtime observability
 - Related regression:
-  `docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`
+  `docs/regressions/gameplay/ragdoll-per-death-REG-2026-10-06.md`
 - Related logging specifications:
   `docs/specs/debug-logging/debug-logging.md`,
   `docs/specs/debug-logging/canonical-jsonl.md`

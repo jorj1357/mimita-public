@@ -110,8 +110,8 @@ untouched.
 - `docs/specs/performance/performance.md`
 - `docs/specs/debug-logging/debug-logging.md`
 - `docs/architecture/time-and-formatting/time-and-formatting.md`
-- `docs/regressions/2026-09-29/slope-edge-snag-REG.md`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md`
+- `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md`
 - `docs/operations/build-and-exe/build-and-exe.md`
 - `docs/operations/task-completion/task-completion.md`
 - `docs/skills/spec-behavior-review-v1.md` — `PASS_WITH_HUMAN_REVIEW`; no

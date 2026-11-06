@@ -21,6 +21,7 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -32,6 +33,7 @@
 #include "physics/movement/physics-collision-shared.h"
 #include "config/material-config.h"
 #include "debug/crash-handler.h"
+#include "debug/structured-log.h"
 #include "impact/destructible-geometry.h"
 #include "impact/destructible-render.h"
 #include "impact/destructible-world-config.h"
@@ -76,9 +78,17 @@ void refreshMassProperties(PhysicalEntity& e)
     }
 
     e.centerOfMass = glm::vec3(0.0f);
+    const float m = std::max(e.mass, 0.0001f);
+    if (e.shape == PhysicalEntityShape::Sphere)
+    {
+        const float radius = std::max(e.halfExtents.x, 0.001f);
+        const float inertia = 0.4f * m * radius * radius;
+        e.inertia = glm::vec3(inertia);
+        e.inverseInertia = 1.0f / e.inertia;
+        return;
+    }
     const glm::vec3 dimensions = glm::max(e.halfExtents * 2.0f,
                                           glm::vec3(0.001f));
-    const float m = std::max(e.mass, 0.0001f);
     e.inertia = glm::vec3(
         m * (dimensions.y * dimensions.y + dimensions.z * dimensions.z) / 12.0f,
         m * (dimensions.x * dimensions.x + dimensions.z * dimensions.z) / 12.0f,
@@ -738,9 +748,28 @@ void PhysicalEntitySystem::applyPlayerPush(const Player& player, float dt)
             continue;
         const glm::vec3 contactPoint = glm::clamp(
             player.pos, objectBox.min, objectBox.max);
+        const glm::vec3 velocityBefore = e.velocity;
         constexpr float kPlayerMass = 80.0f;
         applyImpulseAtPoint(e, -pushNormal * (-into) * kPlayerMass * 0.9f,
                             contactPoint);
+        if (e.persistenceId == "arena-ball")
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Important,
+                "arena.ball.contact", std::to_string(e.networkId),
+                "actor pushed the arena ball",
+                static_cast<uint32_t>(mSimulationTick),
+                nlohmann::json{
+                    {"source", "actor"},
+                    {"actor", player.username},
+                    {"network_id", e.networkId},
+                    {"tick", mSimulationTick},
+                    {"velocity_before", {velocityBefore.x, velocityBefore.y, velocityBefore.z}},
+                    {"velocity_after", {e.velocity.x, e.velocity.y, e.velocity.z}},
+                    {"contact_point", {contactPoint.x, contactPoint.y, contactPoint.z}},
+                    {"normal", {pushNormal.x, pushNormal.y, pushNormal.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         e.lastPlayerPushTick = mSimulationTick;
         e.velocity.x = std::clamp(e.velocity.x, -MAX_PLAYER_MOVE_SPEED, MAX_PLAYER_MOVE_SPEED);
         e.velocity.y = std::clamp(e.velocity.y, -MAX_PLAYER_MOVE_SPEED, MAX_PLAYER_MOVE_SPEED);
@@ -775,8 +804,27 @@ void PhysicalEntitySystem::applyPlayerContactPush(
     if (into <= 1e-4f)
         return;
 
+    const glm::vec3 velocityBefore = e->velocity;
     constexpr float kPlayerMass = 80.0f;
     applyImpulseAtPoint(*e, -pushNormal * into * kPlayerMass * 0.9f, point);
+    if (e->persistenceId == "arena-ball")
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "arena.ball.contact", std::to_string(e->networkId),
+            "actor contact pushed the arena ball",
+            static_cast<uint32_t>(mSimulationTick),
+            nlohmann::json{
+                {"source", "actor"},
+                {"actor", player.username},
+                {"network_id", e->networkId},
+                {"tick", mSimulationTick},
+                {"velocity_before", {velocityBefore.x, velocityBefore.y, velocityBefore.z}},
+                {"velocity_after", {e->velocity.x, e->velocity.y, e->velocity.z}},
+                {"contact_point", {point.x, point.y, point.z}},
+                {"normal", {pushNormal.x, pushNormal.y, pushNormal.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     e->lastPlayerPushTick = mSimulationTick;
 }
 
@@ -815,6 +863,49 @@ void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,
         push(v[ix[0]], v[ix[1]], v[ix[2]]);
         push(v[ix[0]], v[ix[2]], v[ix[3]]);
     }
+}
+
+void buildSphereCollisionTriangles(std::vector<CollisionTriangle>& out,
+                                   const glm::vec3& center,
+                                   float radius,
+                                   int stacks,
+                                   int slices)
+{
+    const float r = std::max(radius, 0.001f);
+    const int rows = std::max(2, stacks);
+    const int cols = std::max(3, slices);
+    auto point = [&](int row, int col) {
+        const float theta = glm::pi<float>() * (float)row / (float)rows;
+        const float phi = glm::two_pi<float>() * (float)col / (float)cols;
+        return center + r * glm::vec3(
+            std::sin(theta) * std::cos(phi),
+            std::sin(theta) * std::sin(phi),
+            std::cos(theta));
+    };
+    auto push = [&](glm::vec3 a, glm::vec3 b, glm::vec3 c) {
+        glm::vec3 n = glm::cross(b - a, c - a);
+        const float len = glm::length(n);
+        if (len < 1e-8f) return;
+        n /= len;
+        // Keep the winding outward-facing regardless of row/column order.
+        const glm::vec3 centroid = (a + b + c) / 3.0f;
+        if (glm::dot(n, centroid - center) < 0.0f)
+            std::swap(b, c);
+        CollisionTriangle t;
+        t.a = a; t.b = b; t.c = c;
+        t.normal = glm::normalize(glm::cross(t.b - t.a, t.c - t.a));
+        out.push_back(t);
+    };
+    for (int row = 0; row < rows; ++row)
+        for (int col = 0; col < cols; ++col)
+        {
+            const glm::vec3 a = point(row, col);
+            const glm::vec3 b = point(row + 1, col);
+            const glm::vec3 c = point(row + 1, col + 1);
+            const glm::vec3 d = point(row, col + 1);
+            push(a, b, c);
+            push(a, c, d);
+        }
 }
 
 namespace {
@@ -973,8 +1064,33 @@ void resolveEntityPairContact(PhysicalEntity& a, PhysicalEntity& b,
         std::fabs(normalSpeed) < config.objectMinBounceSpeed()
             ? 0.0f : std::max(a.restitution, b.restitution);
     const float normalImpulse = -(1.0f + restitution) * normalSpeed / normalMass;
+    const bool arenaBallA = a.persistenceId == "arena-ball";
+    const bool arenaBallB = b.persistenceId == "arena-ball";
+    const glm::vec3 ballVelocityBefore = arenaBallA ? a.velocity
+                                     : arenaBallB ? b.velocity : glm::vec3(0.0f);
     applyImpulseAtPoint(a, normal * normalImpulse, point, false);
     applyImpulseAtPoint(b, -normal * normalImpulse, point, false);
+    if (arenaBallA || arenaBallB)
+    {
+        const PhysicalEntity& ball = arenaBallA ? a : b;
+        const PhysicalEntity& other = arenaBallA ? b : a;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Physics, StructuredLevel::Important,
+            "arena.ball.contact", std::to_string(ball.networkId),
+            "physical entity contact pushed the arena ball",
+            static_cast<uint32_t>(PhysicalEntitySystem::instance().simulationTick()),
+            nlohmann::json{
+                {"source", "physical_entity"},
+                {"network_id", ball.networkId},
+                {"other_network_id", other.networkId},
+                {"other_persistence_id", other.persistenceId},
+                {"tick", PhysicalEntitySystem::instance().simulationTick()},
+                {"velocity_before", {ballVelocityBefore.x, ballVelocityBefore.y, ballVelocityBefore.z}},
+                {"velocity_after", {ball.velocity.x, ball.velocity.y, ball.velocity.z}},
+                {"contact_point", {point.x, point.y, point.z}},
+                {"normal", {normal.x, normal.y, normal.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     const glm::vec3 postA = a.velocity + glm::cross(a.angularVelocity, rA);
     const glm::vec3 postB = b.velocity + glm::cross(b.angularVelocity, rB);
@@ -1371,6 +1487,102 @@ void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
     glBindVertexArray(0);
 }
 
+GLuint gPhysicalSphereVao = 0;
+GLuint gPhysicalSphereVbo = 0;
+GLsizei gPhysicalSphereVertexCount = 0;
+
+void drawTexturedPhysicalSphere(const Camera& camera, const PhysicalEntity& e)
+{
+    if (!gRenderer || !gRenderer->shaderProgram)
+        return;
+    if (!gPhysicalSphereVao)
+    {
+        constexpr int kStacks = 16;
+        constexpr int kSlices = 32;
+        std::vector<Vertex> verts;
+        verts.reserve(kStacks * kSlices * 6);
+        auto point = [](int row, int col) {
+            const float theta = glm::pi<float>() * (float)row / (float)kStacks;
+            const float phi = glm::two_pi<float>() * (float)col / (float)kSlices;
+            return glm::vec3(std::sin(theta) * std::cos(phi),
+                             std::sin(theta) * std::sin(phi),
+                             std::cos(theta));
+        };
+        auto push = [&](const glm::vec3& p) {
+            const glm::vec2 uv(0.5f + std::atan2(p.y, p.x) / glm::two_pi<float>(),
+                               0.5f - std::asin(glm::clamp(p.z, -1.0f, 1.0f)) /
+                                          glm::pi<float>());
+            verts.push_back({p, glm::normalize(p), uv});
+        };
+        for (int row = 0; row < kStacks; ++row)
+            for (int col = 0; col < kSlices; ++col)
+            {
+                const glm::vec3 a = point(row, col);
+                const glm::vec3 b = point(row + 1, col);
+                const glm::vec3 c = point(row + 1, col + 1);
+                const glm::vec3 d = point(row, col + 1);
+                push(a); push(b); push(c);
+                push(a); push(c); push(d);
+            }
+        glGenVertexArrays(1, &gPhysicalSphereVao);
+        glGenBuffers(1, &gPhysicalSphereVbo);
+        glBindVertexArray(gPhysicalSphereVao);
+        glBindBuffer(GL_ARRAY_BUFFER, gPhysicalSphereVbo);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(verts.size() * sizeof(Vertex)),
+                     verts.data(), GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                              (void*)offsetof(Vertex, pos));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                              (void*)offsetof(Vertex, uv));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
+                              (void*)offsetof(Vertex, normal));
+        glBindVertexArray(0);
+        gPhysicalSphereVertexCount = (GLsizei)verts.size();
+    }
+
+    const float alpha = PhysicalEntitySystem::instance().renderAlpha();
+    const glm::vec3 previousPosition(e.previousTransform[3]);
+    const glm::vec3 currentPosition(e.transform[3]);
+    const glm::quat previousOrientation = glm::normalize(
+        glm::quat_cast(glm::mat3(e.previousTransform)));
+    const glm::mat4 model =
+        glm::translate(glm::mat4(1.0f),
+                       glm::mix(previousPosition, currentPosition, alpha)) *
+        glm::mat4_cast(glm::normalize(glm::slerp(
+            previousOrientation, e.orientation, alpha))) *
+        glm::scale(glm::mat4(1.0f), glm::vec3(std::max(e.halfExtents.x, 0.001f)));
+    const glm::mat4 view = camera.getView();
+    const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
+                                          (float)gRenderer->sceneHeight);
+    glUseProgram(gRenderer->shaderProgram);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
+                       1, GL_FALSE, &model[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"),
+                       1, GL_FALSE, &view[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+                       1, GL_FALSE, &proj[0][0]);
+    setUniforms(gRenderer->shaderProgram, camera.pos);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, gTextures.getPath(e.texturePath));
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
+    GLint cullModeWas = GL_BACK;
+    glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glBindVertexArray(gPhysicalSphereVao);
+    glDrawArrays(GL_TRIANGLES, 0, gPhysicalSphereVertexCount);
+    if (!cullWasEnabled)
+        glDisable(GL_CULL_FACE);
+    glCullFace(cullModeWas);
+    glBindVertexArray(0);
+}
+
 } // namespace
 
 namespace {
@@ -1502,8 +1714,15 @@ void drawPhysicalEntities(const Camera& camera)
         PhysicalEntitySystem::instance().entities();
     for (const PhysicalEntity& e : entities)
     {
+        if (!e.renderEnabled)
+            continue;
         if (e.renderModel && drawPropModel(e, camera))
             continue;
+        if (e.shape == PhysicalEntityShape::Sphere)
+        {
+            drawTexturedPhysicalSphere(camera, e);
+            continue;
+        }
         if (e.localTriangles.empty())
             continue;
         // Prefer the generated destructible mesh; fall back to the box.

@@ -8,7 +8,7 @@ Investigated ground walking that catches at block seams and the transition from 
 
 ## Source change
 
-`src/physics/movement/actor-triangle-solver.cpp` now classifies map support using the oriented map face normal, preventing rounded edge response normals from turning vertical map walls into false floors. Actual walkable slope normals are retained for response; only numerically flat floors canonicalize to world-up. `docs/architecture/collision/collision.md` documents that rule. `docs/regressions/2026-09-29/slope-edge-snag-REG.md` records the live retest and remaining blocker.
+`src/physics/movement/actor-triangle-solver.cpp` now classifies map support using the oriented map face normal, preventing rounded edge response normals from turning vertical map walls into false floors. Actual walkable slope normals are retained for response; only numerically flat floors canonicalize to world-up. `docs/architecture/collision/collision.md` documents that rule. `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md` records the live retest and remaining blocker.
 
 ## Evidence
 

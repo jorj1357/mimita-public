@@ -21,5 +21,5 @@ The bookmark code was writing those events as `GENERAL`, while
 therefore showed success while the JSONL write was filtered out.
 
 The failed support-response attempt is recorded in
-`docs/regressions/2026-09-29/slope-edge-snag-REG.md` as Attempt 6. No claim is
+`docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md` as Attempt 6. No claim is
 made that the slope/corner issue is fixed.

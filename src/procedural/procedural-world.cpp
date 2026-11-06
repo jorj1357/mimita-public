@@ -327,6 +327,55 @@ uint64_t proceduralChunkHash(uint32_t seed, int32_t chunkX, int32_t chunkZ)
     return value ^ (value >> 31);
 }
 
+namespace {
+
+uint64_t fnv1a64(const std::string& text)
+{
+    uint64_t value = 0xCBF29CE484222325ull;
+    for (unsigned char c : text) {
+        value ^= static_cast<uint64_t>(c);
+        value *= 0x100000001B3ull;
+    }
+    return value;
+}
+
+} // namespace
+
+uint64_t proceduralZoneChunkHash(uint32_t seed,
+                                 const std::string& generatorVersion,
+                                 const std::string& dependencyIdentity,
+                                 int32_t chunkX, int32_t chunkZ)
+{
+    const uint64_t identity = fnv1a64(generatorVersion + "|" +
+                                      dependencyIdentity);
+    const uint32_t mixedSeed = static_cast<uint32_t>(
+        static_cast<uint64_t>(seed) ^ identity ^ (identity >> 32));
+    return proceduralChunkHash(mixedSeed, chunkX, chunkZ);
+}
+
+bool proceduralZoneSelfTest(std::string& report)
+{
+    report.clear();
+    bool ok = true;
+    auto check = [&](bool condition, const char* name) {
+        report += std::string(condition ? "PASS " : "FAIL ") + name + "\n";
+        ok = ok && condition;
+    };
+
+    const uint64_t base = proceduralZoneChunkHash(1234u, "gen-1", "chunks-a", 4, -7);
+    check(base == proceduralZoneChunkHash(1234u, "gen-1", "chunks-a", 4, -7),
+          "same seed/version/dependencies repeat");
+    check(base != proceduralZoneChunkHash(1235u, "gen-1", "chunks-a", 4, -7),
+          "seed changes identity");
+    check(base != proceduralZoneChunkHash(1234u, "gen-2", "chunks-a", 4, -7),
+          "generator version changes identity");
+    check(base != proceduralZoneChunkHash(1234u, "gen-1", "chunks-b", 4, -7),
+          "dependency identity changes identity");
+    check(base != proceduralZoneChunkHash(1234u, "gen-1", "chunks-a", 5, -7),
+          "chunk coordinate changes identity");
+    return ok;
+}
+
 std::vector<glm::vec3> proceduralChunkBlockPositions(
     const ProceduralModeDefinition& mode, uint32_t seed,
     int32_t chunkX, int32_t chunkZ)

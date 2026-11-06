@@ -87,7 +87,7 @@ as a runtime side effect of the `avatar.load monstergriever` test command.
 - `src/network/server-packets.cpp::isKnownPacketType` rejected the avatar
   manifest/asset packet types (62-64), so the whole avatar-manifest receive path
   was dead. Accepted them. Recorded in
-  `docs/regressions/2026-10-15/avatar-manifest-packets-rejected-REG.md`.
+  `docs/regressions/networking/avatar-manifest-packets-REG-2026-10-15.md`.
 
 ## Build evidence
 
@@ -145,5 +145,5 @@ resolves avatar changes.
 
 ## Related records
 
-- Regression: `docs/regressions/2026-10-15/avatar-manifest-packets-rejected-REG.md`
+- Regression: `docs/regressions/networking/avatar-manifest-packets-REG-2026-10-15.md`
 - Specification: `docs/specs/griever-monster/griever-monster.md`

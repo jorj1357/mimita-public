@@ -19,7 +19,7 @@ file without adding a cold command-registration dependency.
 - Corrected the mismatch notification wording so candidate/status and pending
   switch states are not reported as an already-active server generation.
 - Added regression record:
-  `docs/regressions/2026-09-20/generation-mismatch-repeats-REG.md`.
+  `docs/regressions/networking/generation-mismatch-repeats-REG-2026-09-20.md`.
 
 ## Evidence
 

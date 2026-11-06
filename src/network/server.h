@@ -75,6 +75,10 @@ struct ServerVehicleState
     uint64_t vehicleHash = 0;
     bool mapInitialized = false;
     std::unordered_map<uint32_t, std::unordered_set<uint32_t>> knownVehicles;
+    // Vehicle Arena NPC car driver ids and the vehicle each drives. NPCs use
+    // the same VehicleInput surface as human drivers.
+    std::unordered_set<uint32_t> npcDriverIds;
+    uint32_t npcVehicleId = 0;
 };
 
 // Bookkeeping for destructible physical-entity replication. Defined near
@@ -1389,6 +1393,13 @@ void beginAuthoritativeTeleport(ServerPlayer& player,
     uint16_t invulnerabilityTicks = 0);
 
 // Post-tick helpers
+// Emits the single structured record for an authoritative player-session erase.
+// Logger metadata supplies the process PID; server_pid is included for filtering.
+void serverLogPlayerSessionRemoval(const ServerPlayer& player,
+                                  const char* reason,
+                                  uint64_t removalTimeMs,
+                                  uint32_t tick,
+                                  size_t playersBefore);
 void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
                          SOCKET sock, uint32_t tick, uint64_t& totalPacketsOut);
 void checkVoidDeath(std::unordered_map<uint32_t, ServerPlayer>& players,

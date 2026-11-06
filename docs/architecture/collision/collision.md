@@ -7,7 +7,7 @@ or contact reset. Abilities are gated only by availability and a fresh input
 edge. Contact reset is a contact, not a timer. Do not add a timer as a
 substitute for a contact, an edge, or an availability flag. The hot movement
 owns the input edge; the input layer only samples raw key state. See
-`docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+`docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`.
 
 # Tick Rate Rule (Hard Rule)
 

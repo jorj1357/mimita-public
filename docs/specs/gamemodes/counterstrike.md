@@ -2214,6 +2214,15 @@ Counter-Strike should configure them.
 
 Do not create one entirely different projectile framework for each grenade.
 
+Frag, smoke, fire, and darkbang use the shared throwable projectile policy in
+`docs/specs/weapons/weapons.md`: holding a grenade adds no actor/world weapon
+collider, clicking launches it immediately with per-weapon configurable speed
+and bounce physics, and the throw itself adds no impulse to the thrower. The
+grenade projectile collides and bounces after it is thrown. Blast knockback is
+separate and remains grenade-configured. Runtime proof is recorded in the
+throwing process's `events.jsonl` as `grenade.equipped-collision`,
+`grenade.thrower-impulse`, `grenade.spawn`, and `grenade.bounce`.
+
 99. Frag grenade
 
 Expected:
@@ -2253,6 +2262,12 @@ Eventually perception should respect smoke.
 NPC should not see perfectly through a valid smoke volume.
 
 101. Fire grenade
+
+2026 11 05 1655 jorj1357 todo 
+fire needs to 
+expand the damage volume thing with like lasting damage
+so u leave the fire radius and u still are  getting damaged
+also the dmg presentation isnt updates so in fire = u dont get the damage presetnation but u still die and take damage
 
 Expected:
 

@@ -20,7 +20,7 @@
 # Human feedback driving this pass
 
 The full grouped list is recorded in
-`docs/regressions/2026-10-01/physical-objects-collision-REG.md`. Highlights:
+`docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md`. Highlights:
 crate phasing into floor/cylinder/other and player phasing; density-dependent
 settling that never rests flush; too-strong drag; no momentum on fast contact;
 floating/tiny fragments; large FPS drops when shooting/being near holey crates;
@@ -109,7 +109,7 @@ terminal needs word wrap and Shift+Tab reverse autocomplete.
   `destructible-world-config.{h,cpp}`, `impact-system.cpp`
 - `src/physics/physical-entity.{h,cpp}`
 - `config/destructible-world.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (new)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (new)
 
 # Pre-existing work (not authored this session)
 

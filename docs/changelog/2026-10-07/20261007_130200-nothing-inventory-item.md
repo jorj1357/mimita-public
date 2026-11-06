@@ -47,7 +47,7 @@ Time: 2026-10-07T13:12:59-04:00
   share the same behavior: equip on the first press, select hidden Nothing on
   the second press.
 - Added the append-only regression record
-  `docs/regressions/2026-10-07/repeat-key-unequip-REG.md`, currently marked
+  `docs/regressions/gameplay/repeat-key-unequip-REG-2026-10-07.md`, currently marked
   `ATTEMPTED FIX (1)` until live key-binding gameplay confirms it.
 - Validation: `mimita-20261007T-repeat-key-unequip.exe` built successfully
   with `src/terminal/weapon-commands.cpp` compiled. Its versioninfo journal is

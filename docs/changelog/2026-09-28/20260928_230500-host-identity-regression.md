@@ -13,7 +13,7 @@ The server decided whether a player was the host by comparing a display-name str
 - `src/network/server-packets.cpp`: replaced `computeHostFlag(rawName, playerCount)` with `assignHostFlag(ServerPlayer&, bool)`. The first accepted player session now owns host authority by numeric player ID. A reconnecting existing player keeps its previous host flag. Both the normal Hello path and the room-code/ICE path use the same helper.
 - `src/network/server.cpp` and `src/network/server.h`: added and reset `gServerHostPlayerId` for each server session. `gServerHostPlayerName` remains informational and no longer grants authority.
 - `src/network/server-packet-chat.cpp`: a rejected host command now logs both the requesting `playerId` and the current `hostPlayerId`; assignment logs `[SERVER HOST OWNER]`.
-- `docs/regressions/2026-09-27/dev-loop-first-client-not-host-REG.md`: recorded this as the second occurrence of the same regression, including prevention checks.
+- `docs/regressions/dev-loop/dev-loop-first-REG-2026-09-27.md`: recorded this as the second occurrence of the same regression, including prevention checks.
 
 ## Validation
 

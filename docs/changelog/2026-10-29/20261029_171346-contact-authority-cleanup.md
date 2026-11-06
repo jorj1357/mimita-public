@@ -18,8 +18,8 @@ Added:
 
 - `docs/specs/networking/contact-authority.md`
 - `docs/specs/dev-loop/quality-gates.md`
-- `docs/regressions/2026-10-29/client-prediction-server-authority-REG.md`
-- `docs/regressions/2026-10-29/v2.0.7-actor-matrix-coverage-REG.md`
+- `docs/regressions/networking/client-prediction-server-REG-2026-10-29.md`
+- `docs/regressions/networking/v2.0.7-actor-matrix-REG-2026-10-29.md`
 - `devscripts/scenarios/matrix/actor-weapon-matrix.json`
 - `devscripts/scenarios/matrix/README.md`
 

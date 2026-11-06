@@ -71,8 +71,11 @@ void fillSpawnPacket(const PhysicalEntity& e,
     // "generated:" marks a procedural base; anything else is an authored GLB.
     const bool isGlb = !e.modelPath.empty() &&
                        e.modelPath.rfind("generated:", 0) != 0;
-    pkt.sourceKind = isGlb ? PHYSICAL_ENTITY_SOURCE_GLB
-                           : PHYSICAL_ENTITY_SOURCE_BOX;
+    if (e.shape == PhysicalEntityShape::Sphere)
+        pkt.sourceKind = PHYSICAL_ENTITY_SOURCE_SPHERE;
+    else
+        pkt.sourceKind = isGlb ? PHYSICAL_ENTITY_SOURCE_GLB
+                               : PHYSICAL_ENTITY_SOURCE_BOX;
     if (isGlb)
         copyPath(pkt.modelPath, sizeof(pkt.modelPath), e.modelPath);
     copyPath(pkt.texturePath, sizeof(pkt.texturePath), e.texturePath);

@@ -80,7 +80,7 @@ The log itself was 1.2 MB (the earlier profiler/logging fix held).
 - `src/physics/physical-entity.cpp`
 - `src/perf/perf-overlay.cpp`
 - `config/destructible-world.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 9)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 9)
 
 # Pre-existing (not authored this session)
 

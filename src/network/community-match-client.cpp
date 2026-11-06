@@ -30,6 +30,7 @@
 #include "gui/hud/healthbar-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "avatar/avatar.h"
 
 #include <chrono>
 #include <cmath>
@@ -763,6 +764,40 @@ void CommunityMatchClient::onState(const DuelStatePacket& packet)
         identity.state = packet.participantStates[i];
         identity.actorPresetIndex = packet.participantActorPresets[i];
         mActors.push_back(identity);
+    }
+    // Gameplay roles may force different authored avatars for each team even
+    // when the mode-wide allow-list contains both names. Apply the server's
+    // replicated local role before publishing the local avatar manifest.
+    {
+        const auto local = std::find_if(mActors.begin(), mActors.end(),
+            [](const ReplicatedActorIdentity& actor) {
+                return actor.actorId == MP_CONTEXT.localPlayerId;
+            });
+        if (local != mActors.end() && local->roleIndex != 0) {
+            const std::string& roleId =
+                MatchRoleRegistry::instance().idForIndex(local->roleIndex);
+            const MatchRoleDefinition* role = roleId.empty()
+                ? nullptr : MatchRoleRegistry::instance().get(roleId);
+            if (role && role->avatarForced && !role->avatarName.empty() &&
+                GetPlayerSettings().avatarName != role->avatarName) {
+                const std::string previous = GetPlayerSettings().avatarName;
+                const bool loaded = AvatarSystem::instance().loadAvatar(role->avatarName);
+                const bool applied = loaded &&
+                    AvatarSystem::instance().applyToPlayer(THE_PLAYER, true);
+                if (applied) GetPlayerSettings().avatarName = role->avatarName;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Avatar, StructuredLevel::Important,
+                    "client.gamemode.local-role-avatar", std::to_string(local->actorId),
+                    applied ? "applied avatar forced by replicated local role"
+                            : "failed to apply avatar forced by replicated local role",
+                    packet.serverTick,
+                    {{"mode", mMode}, {"actor_id", local->actorId},
+                     {"team", local->team}, {"role", role->id},
+                     {"previous_avatar", previous}, {"selected_avatar", role->avatarName},
+                     {"loaded", loaded}, {"applied", applied}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
     }
     {
         const auto local = std::find_if(mActors.begin(), mActors.end(),

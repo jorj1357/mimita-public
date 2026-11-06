@@ -244,6 +244,7 @@ struct GamemodeAimPolicy {
 struct GamemodeAvatarPolicy {
     bool configured = false;
     bool forced = false;
+    bool allowLiveChange = true;
     std::string name;
     std::vector<std::string> allowed;
     std::vector<std::string> denied;
@@ -305,6 +306,9 @@ struct Gamemode {
     std::vector<std::string> teamNames = {"RED", "BLUE"};
     int goalValue = 20;
     int weaponSetId = 1;
+    // When true, the mode's weapon_set_id overrides role and actor presets
+    // for every actor, including NPCs.
+    bool forceWeaponSetForAllActors = false;
     int timeLimitSeconds = 0;
     std::string timeLimitWinnerTeam;
     // Outcome when a timed match expires before its score goal is reached.
@@ -364,6 +368,9 @@ struct Gamemode {
     // uses this movement preset regardless of role, and the client applies it
     // for local prediction. Empty = movement comes from the role/actor preset.
     std::string movementPreset;
+    // Optional named vehicle control profile from config/vehicle-profiles/.
+    // Empty keeps the standard vehicle controls; vehicle physics stays shared.
+    std::string vehicleProfile;
     // Optional NPC-only combat profile used when an NPC has no role-specific
     // behavior profile. Humans are never affected by this setting.
     std::string npcBehaviorProfile;

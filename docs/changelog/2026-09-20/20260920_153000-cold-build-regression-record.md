@@ -3,7 +3,7 @@
 Date: 2026-09-20
 Status: documentation updated
 
-Updated `docs/regressions/2026-09-20/cold-build-required-REG.md` with the
+Updated `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md` with the
 actual v2.1.0 live-collaboration foundation cold-build occurrence:
 
 - why the canonical EXE build was needed;

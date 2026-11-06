@@ -53,7 +53,7 @@ boundary described above.
 - `docs/architecture/json-configuration/json-configuration.md`
 - `docs/architecture/player-npc-systems/npc-movement.md`
 - `docs/specs/gamemodes/gamemodes.md`
-- `docs/regressions/2026-10-04/counterstrike-npc-targeting-movement-REG.md`
+- `docs/regressions/npc-movement/counterstrike-npc-targeting-REG-2026-10-04.md`
 - `docs/skills/spec-behavior-review-v1.md`
 - `docs/operations/build-and-exe/build-and-exe.md`
 - `docs/operations/task-completion/task-completion.md`

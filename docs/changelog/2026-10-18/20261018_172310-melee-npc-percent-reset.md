@@ -27,7 +27,7 @@ targetState.percent += percentAdd;
 target.meleePercent = targetState.percent;
 ```
 
-- Added `percent_added` and `percent_after` fields to the player-to-NPC confirmed-hit event, and recorded the persistent-state regression in `docs/regressions/2026-10-18/melee-npc-percent-reset-REG.md`.
+- Added `percent_added` and `percent_after` fields to the player-to-NPC confirmed-hit event, and recorded the persistent-state regression in `docs/regressions/gameplay/melee-npc-percent-REG-2026-10-18.md`.
 
 ## Evidence
 

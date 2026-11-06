@@ -95,8 +95,8 @@ avatar replaced a placeholder, and the canonical journal dropped records at the
 - `docs/specs/debug-logging/debug-logging.md`
 - `docs/architecture/terminal-commands/terminal-commands.md`
 - `docs/specs/dev-loop/dev-loop.md`
-- `docs/regressions/2026-11-01/actor-support-world-contact-sink-REG.md`
-- `docs/regressions/2026-11-01/npc-spawn-avatar-placeholder-REG.md`
+- `docs/regressions/collisions/actor-support-world-REG-2026-11-01.md`
+- `docs/regressions/npc-movement/npc-spawn-avatar-REG-2026-11-01.md`
 
 ## Remaining acceptance
 

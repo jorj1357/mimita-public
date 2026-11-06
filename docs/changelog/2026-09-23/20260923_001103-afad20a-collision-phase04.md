@@ -7,7 +7,7 @@ acceptance pending
 Related specification: `docs/specs/movement/movement.md`,
 `docs/architecture/collision/collision.md`
 
-Related regression: `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`
+Related regression: `docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md`
 (remains UNRESOLVED; this work is a partial step, not a resolution)
 
 Predecessor: `docs/changelog/2026-09-22/20260922_235824-afad20a-movement-phase01.md`
@@ -133,5 +133,5 @@ Human acceptance:
 
 Unrelated working-tree edits left untouched: `config/collision.json` behavior
 keys, `collision-policy.cpp`, and the untracked
-`docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md` and
+`docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md` and
 `docs/changelog/2026-09-22/20260922_230452-limb-contact-movement-audit.md`.

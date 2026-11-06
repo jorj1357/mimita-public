@@ -148,6 +148,6 @@ Investigate in this order. Do not assume; trace and measure.
 - 60 Hz fixed tick; VSync off; cached broadphase; no per-query allocations in
   hot loops (`docs/architecture/collision/collision.md`).
 - Keep one owner for collision; do not add a parallel weapon collision universe.
-- Log every attempt in `docs/regressions/2026-10-01/physical-objects-collision-REG.md`
+- Log every attempt in `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md`
   and a changelog; separate source/build/runtime/human evidence.
 - Never commit unless explicitly asked.

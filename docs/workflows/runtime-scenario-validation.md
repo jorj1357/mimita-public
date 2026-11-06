@@ -53,14 +53,30 @@ an actionable process status.
 
 ## Test policy
 
-Do not create a new synthetic test as the first response to a gameplay bug.
-Use existing unit/component tests only for behavior they genuinely isolate,
-such as serialization, path construction, or a pure mathematical invariant.
-Classify those tests explicitly. For discovering gameplay failures, begin with
-ordinary live play on the real game path and inspect the raw `events.jsonl`
-evidence. Do not make an AI-authored fixed route or a short scripted scenario
-the primary proof that general NPC or collision behavior works. Such a run can
-only cover the actions and geometry it deliberately reaches.
+As of **2026-11-05 16:45 EST**, per jorj1357, MiMITA prefers **not** to add
+synthetic self-tests as the normal way to prove behavior. The preferred method
+is **dev-loop trial/error**:
+
+1. implement the behavior at its existing owner;
+2. make it compile through the canonical dev loop;
+3. publish and run the exact built executable;
+4. exercise the real path;
+5. inspect the live `events.jsonl` journal;
+6. if the journal does not prove the expected result, change the responsible
+   owner, rebuild, and repeat until the journal is unambiguous.
+
+`events.jsonl` evidence is the primary acceptance evidence for runtime
+behavior. Keep unit/component self-tests only for genuinely isolated logic such
+as serialization, hashing, path construction, or a pure mathematical invariant.
+Classify those tests explicitly and do not present them as proof that gameplay
+or user-visible behavior works.
+
+Do not create a new synthetic test as the first response to a gameplay bug. For
+discovering gameplay failures, begin with ordinary live play on the real game
+path and inspect the raw `events.jsonl` evidence. Do not make an AI-authored
+fixed route or a short scripted scenario the primary proof that general NPC or
+collision behavior works. Such a run can only cover the actions and geometry it
+deliberately reaches.
 
 Use a human-recorded route when a person has found a specific spot or action
 that should be repeatable. Replay it through the real fixed-tick input and

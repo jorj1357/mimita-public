@@ -73,6 +73,16 @@ than the scoring volume; the scoring volume is the authority.
 - Car contact uses the shared physical contact path. The client may predict its
   immediate car-ball response; the server confirms the authoritative ball
   state and scoring under the networking contract.
+- A player entering the arena spawns into a vehicle, not on foot. The server
+  seats an active player in the nearest free authored team vehicle and selects
+  the arena profile's automatic transmission/engine-on defaults. This reuses the
+  shared seat and vehicle owners; it is not a mode-only vehicle solver.
+- An unseated actor that touches the ball uses the shared actor-to-entity push
+  path. `arena.ball.contact` records the actor, ball network id, tick,
+  pre/post-contact velocity, contact point, and normal.
+- The first NPC slice is one human versus one NPC-driven car. The NPC car uses
+  the same `VehicleInput` surface and shared vehicle tick as a human driver; it
+  is not a separate vehicle solver. Later 2v2/3v3 rosters remain data-driven.
 - Human playtesting must accept steering response, recovery, boost, jump, and
   aerial control. The reference table below guides tuning but does not replace
   the recorded playtest decision.
@@ -208,6 +218,103 @@ link their result to this baseline and state the deviation and playtest result.
    tuning revision, build identity, playtest scenario, and outcome.
 9. Missing arena data produces a visible diagnostic and no invented goal.
 10. The mode remains coherent when a vehicle, the ball, or a client disconnects.
+
+## 11. Arcade controls and boost (2026-11-05)
+
+The mode selects a named data profile (`vehicle_profile`) from
+`config/vehicle-profiles/`. The profile maps device inputs to the shared vehicle
+input and physics owners; it does not add an arena-only car solver or an
+`if (arena)` branch.
+
+| Input | Ground | Air |
+|---|---|---|
+| `W` / `S` | throttle / brake-reverse | pitch forward / backward |
+| `A` / `D` | steer left / right | roll left / right |
+| `Left Shift` | powerslide, friction x 1/3 | hold to enable air roll |
+| `Left Mouse` | boost | boost |
+| `Right Mouse` | jump; after leaving a surface, next press is double jump/flip | same |
+| `Space` | ball cam / car cam toggle | same |
+
+- Controls are car-relative, never camera-relative.
+- Air control has no yaw. It applies pitch and roll torque only.
+- Diagonal air inputs combine; opposing inputs cancel that axis immediately while
+  existing angular momentum damps.
+- Air roll keeps angular momentum and decays with profile damping.
+- The arena profile auto-starts the engine and uses automatic transmission.
+- Boost is a separate meter from the engine turbo field. Its capacity,
+  drain, and force are profile data. A full 100-point tank drains in 300 server
+  ticks (5 s) at 60 Hz; this is a MiMITA choice, not the 3 s comparison baseline.
+- Wall driving uses a data-driven adhesion force on near-vertical contacts and
+  slides slowly under gravity. Ceiling contacts do not adhere, so gravity pulls
+  the car off.
+- Chassis contact uses shared restitution. Wheel-to-ball contact is much weaker
+  than chassis-to-ball contact but still counts as a wheel surface for flip
+  resets.
+- A jump or flip reset requires all four wheels to touch any surface, including
+  the ball.
+
+### 11.1 Boost pads
+
+Boost pads are authored map data, not mode code:
+
+```json
+"boost_pads": [
+  { "id": "pad_big_1", "kind": "big", "position": [0,0,0],
+    "radius": 2.0, "rechargeTicks": 600, "enabled": true },
+  { "id": "pad_small_1", "kind": "small", "position": [10,0,0],
+    "radius": 1.0, "rechargeTicks": 240, "enabled": true }
+]
+```
+
+- A small pad adds 12 boost, clamped to the profile maximum.
+- A big pad sets boost to the profile maximum.
+- Pads use cooldown timers and are visible in the world with a recharge timer.
+- The server owns pad availability; clients may predict pickup and reconcile.
+- Pad collection is logged as `arena.boostpad.collected` with pad id, kind,
+  boost before/after, and tick.
+
+## 12. Arena authoring (2026-11-05)
+
+Arena geometry, ball spawn, goals, kickoffs, and boost pads are authored through
+the map editor into `config/maps/<mapId>.json`. Blender is not required.
+
+- Curves use cubic Bezier control points and editable tangent handles.
+- Geometry output modes are wall, ribbon, and tube.
+- Curves are tessellated into the shared triangle collision mesh; the first
+  implementation is triangle-only and does not use an analytic quarter-sphere
+  collider.
+- Optional `mapeditor bake_glb` writes a derived `assets/maps/<mapId>.glb`.
+  The JSON remains authoritative.
+- Missing ball spawn or goal data fails closed with a diagnostic and never
+  creates a default scoring zone.
+- The arena map must expose at least one world spawn point (the kickoff marker
+  is the first implementation). The shared match runtime rotates away from a
+  map with no spawn points; that rotation must not silently replace `arena1`.
+- Launching the mode must verify the effective `map=arena1`,
+  `mode=vehicle_arena`, `gamemode=vehicle_arena`, `weapon_set=1`, and
+  `npcs=0`. A mismatch is a launch-identity failure, not a playable arena
+  session.
+
+## 13. Arena events (2026-11-05)
+
+```text
+arena.config.loaded
+arena.ball.spawned
+arena.ball.contact
+arena.goal.detected
+arena.goal.reset
+arena.boostpad.collected
+arena.prediction.divergence
+vehicle.jump
+vehicle.jump.double
+vehicle.surface.reset
+vehicle.boost
+vehicle.powerslide
+vehicle.airroll
+vehicle.ballcam
+```
+
+Diagnostics are categorized, bounded, and rate-limited where they can repeat.
 
 ## Related specifications
 

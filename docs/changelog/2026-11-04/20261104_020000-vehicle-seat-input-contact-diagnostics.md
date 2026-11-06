@@ -91,7 +91,7 @@ live behavior provable from `events.jsonl`:
   request. Journal:
   `logs/2026-11-04/20261104_023511_01/events.jsonl`.
 - Regression record:
-  `docs/regressions/2026-11-04/vehicle-spawn-local-f-does-not-enter-REG.md`.
+  `docs/regressions/gameplay/vehicle-spawn-local-REG-2026-11-04.md`.
 
 ## Known gaps
 

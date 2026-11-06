@@ -72,7 +72,7 @@ accept/reject, splash falloff, and connection health/cadence were already hot.
 ### Workstream 7 — docs
 - `docs/architecture/live-development/hot-cold-audit.md`: appended the
   2026-09-23 update classifying the four files and listing live-proof debt.
-- `docs/regressions/2026-09-20/cold-build-required-REG.md`: appended
+- `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`: appended
   `Cold-build occurrence 3`.
 
 ## Evidence

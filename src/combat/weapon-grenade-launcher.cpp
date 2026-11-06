@@ -15,6 +15,7 @@
 #include "combat/projectile-render.h"
 #include "config/size-scaling-config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "entities/player.h"
 #include "effects/effect-part.h"
 #include "npc/npc.h"
@@ -83,8 +84,23 @@ void fire(const WeaponDefinition& def, WeaponRuntime& runtime,
     glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
     glm::vec3 angVel = right * angSpeed;
 
-    PersistentPhysicsSystem::instance().spawn(cfg, muzzlePos, vel, angVel,
-                                              0, owner.username, def.id, owner.pos);
+    const uint32_t projectileId = PersistentPhysicsSystem::instance().spawn(
+        cfg, muzzlePos, vel, angVel, 0, owner.username, def.id, owner.pos);
+    if (def.grenadeEffect.enabled) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+            "grenade.spawn", std::to_string(projectileId),
+            "local throwable projectile created", owner.movementSimulationTick,
+            {{"projectile_id", projectileId}, {"weapon_id", def.id},
+             {"position", {muzzlePos.x, muzzlePos.y, muzzlePos.z}},
+             {"velocity", {vel.x, vel.y, vel.z}}, {"speed_mps", glm::length(vel)},
+             {"forward_speed_mps", forwardSpeed}, {"upward_bias_mps", upBias},
+             {"collision_shape", "sphere"}, {"collision_radius_m", cfg.radius},
+             {"gravity_mps2", cfg.gravity}, {"drag", cfg.drag},
+             {"restitution", cfg.restitution}, {"friction", cfg.friction},
+             {"fuse_ticks", def.grenadeEffect.fuseTicks},
+             {"thrower_impulse_mps", 0.0f}}, __FILE__, __LINE__, __FUNCTION__);
+    }
     EffectPartSystem::instance().spawnMuzzleFlash(muzzlePos, owner.username, owner.sizeScale, def.id);
 
     Debug::log(Debug::Category::Weapons, "[GRENADE LAUNCHER] fired pos=(%.2f %.2f %.2f) vel=(%.2f %.2f %.2f) "

@@ -1,0 +1,228 @@
+{
+  "bounds_max": [
+    5.0,
+    5.0,
+    4.0
+  ],
+  "bounds_min": [
+    -5.0,
+    -5.0,
+    0.0
+  ],
+  "connectors": [
+    {
+      "id": "west",
+      "orientation": "tunnel",
+      "position": [
+        -5.0,
+        0.0,
+        2.0
+      ],
+      "role": "bidirectional",
+      "side": "west",
+      "tags": [
+        "tunnel"
+      ]
+    },
+    {
+      "id": "east",
+      "orientation": "tunnel",
+      "position": [
+        5.0,
+        0.0,
+        2.0
+      ],
+      "role": "bidirectional",
+      "side": "east",
+      "tags": [
+        "tunnel"
+      ]
+    },
+    {
+      "id": "north",
+      "orientation": "tunnel",
+      "position": [
+        0.0,
+        5.0,
+        2.0
+      ],
+      "role": "bidirectional",
+      "side": "north",
+      "tags": [
+        "tunnel"
+      ]
+    },
+    {
+      "id": "south",
+      "orientation": "tunnel",
+      "position": [
+        0.0,
+        -5.0,
+        2.0
+      ],
+      "role": "bidirectional",
+      "side": "south",
+      "tags": [
+        "tunnel"
+      ]
+    }
+  ],
+  "enabled": true,
+  "format": 1,
+  "id": "chunk_cross",
+  "parts": [
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "floor",
+      "kind": "floor",
+      "material": "stone_floor",
+      "position": [
+        0.0,
+        0.0,
+        -0.25
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        10.0,
+        10.0,
+        0.5
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "post_0",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        -4.75,
+        -4.75,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        0.5,
+        4.0
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "post_1",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        4.75,
+        -4.75,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        0.5,
+        4.0
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "post_2",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        -4.75,
+        4.75,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        0.5,
+        4.0
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "post_3",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        4.75,
+        4.75,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        0.5,
+        4.0
+      ],
+      "visible": true
+    }
+  ],
+  "tags": [
+    "cross"
+  ]
+}

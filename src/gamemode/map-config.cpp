@@ -57,6 +57,250 @@ std::string resolveUnderConfig(const std::string& relative)
     return requested.string();
 }
 
+json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
+{
+    json root = base.is_object() ? base : json::object();
+
+    root["bomb_sites"] = json::array();
+    for (const auto& site : current.bombSites) {
+        root["bomb_sites"].push_back({
+            {"id", site.id},
+            {"position", {site.position.x, site.position.y, site.position.z}},
+            {"radius", site.radius},
+            {"visible_debug", site.visibleDebug},
+        });
+    }
+    root["bomb"] = {
+        {"plant_seconds", current.plantSeconds},
+        {"defuse_seconds", current.defuseSeconds},
+        {"explosion_seconds", current.explosionSeconds},
+    };
+    root["entities"] = json::array();
+    for (const auto& entity : current.entities) {
+        root["entities"].push_back({
+            {"id", entity.id}, {"type", entity.type},
+            {"position", {entity.position.x, entity.position.y, entity.position.z}},
+            {"size", {entity.size.x, entity.size.y, entity.size.z}},
+            {"yaw", entity.yaw},
+            {"radius", entity.radius}, {"enabled", entity.enabled}, {"visible", entity.visible},
+            {"oneShot", entity.oneShot}, {"tag", entity.tag}, {"monsterPool", entity.monsterPool},
+            {"pickupId", entity.pickupId}, {"bossId", entity.bossId}, {"damageType", entity.damageType},
+            {"spawnCount", entity.spawnCount}, {"maxAlive", entity.maxAlive}, {"damage", entity.damage},
+            {"damageIntervalTicks", entity.damageIntervalTicks},
+            {"spawnCooldownTicks", entity.spawnCooldownTicks},
+            {"checkpointRequirement", entity.checkpointRequirement},
+            {"order", entity.order}, {"required", entity.required},
+            {"activationRadius", entity.activationRadius},
+            {"healthMultiplier", entity.healthMultiplier},
+            {"presetId", entity.presetId}, {"interactionId", entity.interactionId},
+            {"rewardGold", entity.rewardGold}, {"rewardXp", entity.rewardXp}
+        });
+    }
+    root["blocks"] = json::array();
+    for (const auto& block : current.blocks) {
+        json b = {
+            {"id", block.id}, {"shape", block.shape},
+            {"position", {block.position.x, block.position.y, block.position.z}},
+            {"size", {block.size.x, block.size.y, block.size.z}},
+            {"rotationEuler", {block.rotationEuler.x, block.rotationEuler.y, block.rotationEuler.z}},
+            {"material", block.material}, {"enabled", block.enabled}
+        };
+        b["tags"] = block.tags;
+        root["blocks"].push_back(std::move(b));
+    }
+    root["vehicles"] = json::array();
+    for (const auto& vehicle : current.vehicles) {
+        root["vehicles"].push_back({
+            {"id", vehicle.id},
+            {"template", vehicle.templateId},
+            {"position", {vehicle.position.x, vehicle.position.y, vehicle.position.z}},
+            {"yaw", vehicle.yaw},
+            {"enabled", vehicle.enabled}
+        });
+    }
+    root["glb_objects"] = json::array();
+    for (const auto& object : current.glbObjects) {
+        root["glb_objects"].push_back({
+            {"id", object.id}, {"name", object.name},
+            {"position", {object.position.x, object.position.y, object.position.z}}
+        });
+    }
+
+    root["generate_whole_world"] = current.generateWholeWorld;
+    root["chunks"] = json::array();
+    for (const auto& chunk : current.chunks) {
+        json connectors = json::array();
+        for (const auto& connector : chunk.connectors) {
+            connectors.push_back({
+                {"id", connector.id}, {"side", connector.side},
+                {"orientation", connector.orientation},
+                {"role", connector.role}, {"tags", connector.tags},
+                {"position", {connector.position.x, connector.position.y,
+                              connector.position.z}},
+            });
+        }
+        json parts = json::array();
+        for (const auto& part : chunk.parts) {
+            parts.push_back({
+                {"id", part.id}, {"kind", part.kind},
+                {"position", {part.position.x, part.position.y, part.position.z}},
+                {"size", {part.size.x, part.size.y, part.size.z}},
+                {"rotation", {part.rotationEuler.x, part.rotationEuler.y,
+                              part.rotationEuler.z}},
+                {"material", part.material},
+                {"faces", {part.faceMaterials[0], part.faceMaterials[1],
+                           part.faceMaterials[2], part.faceMaterials[3],
+                           part.faceMaterials[4], part.faceMaterials[5]}},
+                {"collision", part.collision}, {"visible", part.visible},
+            });
+        }
+        root["chunks"].push_back({
+            {"id", chunk.id}, {"geometry", chunk.geometryPath},
+            {"blob_sha256", chunk.blobSha256},
+            {"bounds_min", {chunk.boundsMin.x, chunk.boundsMin.y, chunk.boundsMin.z}},
+            {"bounds_max", {chunk.boundsMax.x, chunk.boundsMax.y, chunk.boundsMax.z}},
+            {"parts", parts}, {"connectors", connectors}, {"tags", chunk.tags},
+            {"enabled", chunk.enabled},
+        });
+    }
+    root["generation_zones"] = json::array();
+    for (const auto& zone : current.generationZones) {
+        root["generation_zones"].push_back({
+            {"id", zone.id}, {"name", zone.name},
+            {"bounds_min", {zone.boundsMin.x, zone.boundsMin.y, zone.boundsMin.z}},
+            {"bounds_max", {zone.boundsMax.x, zone.boundsMax.y, zone.boundsMax.z}},
+            {"seed", zone.seed}, {"generator_version", zone.generatorVersion},
+            {"rule_set", zone.ruleSet}, {"chunk_dependencies", zone.chunkDependencies},
+            {"mode", zone.modeId}, {"plane", zone.plane},
+            {"origin", {zone.origin.x, zone.origin.y, zone.origin.z}},
+            {"cell_size", {zone.cellSize.x, zone.cellSize.y, zone.cellSize.z}},
+            {"chunk_size_vec", {zone.chunkSizeVec.x, zone.chunkSizeVec.y, zone.chunkSizeVec.z}},
+            {"repeat_axes", {zone.repeatAxes.x != 0, zone.repeatAxes.y != 0,
+                             zone.repeatAxes.z != 0}},
+            {"stream_radius", {zone.streamRadius.x, zone.streamRadius.y,
+                               zone.streamRadius.z}},
+            {"spacing_mode", zone.spacingMode},
+            {"connector_gap", zone.connectorGap},
+            {"max_branch_depth", zone.maxBranchDepth},
+            {"allow_cycles", zone.allowCycles},
+            {"chunk_size", zone.chunkSize},
+            {"stream_radius_chunks", zone.streamRadiusChunks},
+            {"enabled", zone.enabled},
+        });
+    }
+    root["npc_presets"] = json::array();
+    for (const auto& preset : current.npcPresets) {
+        root["npc_presets"].push_back({
+            {"id", preset.id}, {"role_id", preset.roleId},
+            {"movement_profile", preset.movementProfile},
+            {"weapon_set", preset.weaponSet}, {"appearance", preset.appearance},
+            {"animation", preset.animation}, {"reward_gold", preset.rewardGold},
+            {"reward_xp", preset.rewardXp}, {"tags", preset.tags},
+            {"enabled", preset.enabled},
+        });
+    }
+    root["weapon_overrides"] = json::array();
+    for (const auto& overrideValue : current.weaponOverrides) {
+        root["weapon_overrides"].push_back({
+            {"id", overrideValue.id}, {"weapon_id", overrideValue.weaponId},
+            {"field", overrideValue.field}, {"value", overrideValue.value},
+            {"enabled", overrideValue.enabled},
+        });
+    }
+    root["interactions"] = json::array();
+    for (const auto& interaction : current.interactions) {
+        root["interactions"].push_back({
+            {"id", interaction.id}, {"action", interaction.actionId},
+            {"prompt", interaction.prompt}, {"target_kind", interaction.targetKind},
+            {"target_id", interaction.targetId}, {"range", interaction.range},
+            {"mode", interaction.inputMode}, {"hold_ticks", interaction.holdTicks},
+            {"enabled", interaction.enabled},
+        });
+    }
+
+    if (current.payload.present || current.payload.hasCartOrigin ||
+        !current.payload.route.empty()) {
+        json payload;
+        payload["cart_origin"] = {
+            {"position", {current.payload.cartOrigin.x,
+                          current.payload.cartOrigin.y,
+                          current.payload.cartOrigin.z}},
+            {"yaw", current.payload.cartYaw}
+        };
+        payload["cart_size"] = {current.payload.cartSize.x,
+                                current.payload.cartSize.y,
+                                current.payload.cartSize.z};
+        payload["facing_mode"] = current.payload.cartFixedFacing ? "fixed" : "route";
+        payload["interaction_box"] = {
+            {"size", {current.payload.interactionSize.x,
+                      current.payload.interactionSize.y,
+                      current.payload.interactionSize.z}},
+            {"offset", {current.payload.interactionOffset.x,
+                        current.payload.interactionOffset.y,
+                        current.payload.interactionOffset.z}},
+            {"rotationEuler", {current.payload.interactionRotationEuler.x,
+                               current.payload.interactionRotationEuler.y,
+                               current.payload.interactionRotationEuler.z}}
+        };
+        payload["route"] = json::array();
+        for (const auto& point : current.payload.route) {
+            payload["route"].push_back({
+                {"id", point.id},
+                {"position", {point.position.x, point.position.y, point.position.z}},
+                {"radius", point.radius}, {"order", point.order},
+                {"waitTicks", point.waitTicks}, {"enabled", point.enabled},
+                {"checkpoint", point.checkpoint}, {"final", point.final},
+                {"time_bonus_seconds", point.timeBonusSeconds}
+            });
+        }
+        root["payload"] = std::move(payload);
+    }
+    if (current.arena.present) {
+        json arena;
+        arena["ball"] = {
+            {"spawn", {current.arena.ball.spawn.x,
+                       current.arena.ball.spawn.y,
+                       current.arena.ball.spawn.z}},
+            {"radius", current.arena.ball.radius},
+            {"visualRadius", current.arena.ball.visualRadius},
+            {"massKg", current.arena.ball.massKg},
+            {"restitution", current.arena.ball.restitution},
+            {"friction", current.arena.ball.friction},
+            {"linearDamping", current.arena.ball.linearDamping},
+            {"maxSpeed", current.arena.ball.maxSpeed}
+        };
+        arena["goals"] = json::array();
+        for (const auto& goal : current.arena.goals) {
+            arena["goals"].push_back({
+                {"id", goal.id}, {"team", goal.team},
+                {"center", {goal.center.x, goal.center.y, goal.center.z}},
+                {"halfExtents", {goal.halfExtents.x, goal.halfExtents.y, goal.halfExtents.z}},
+                {"facing", {goal.facing.x, goal.facing.y, goal.facing.z}},
+                {"enabled", goal.enabled}
+            });
+        }
+        arena["kickoffs"] = json::array();
+        for (const auto& kickoff : current.arena.kickoffs) {
+            arena["kickoffs"].push_back({
+                {"id", kickoff.id}, {"team", kickoff.team},
+                {"position", {kickoff.position.x, kickoff.position.y, kickoff.position.z}},
+                {"yaw", kickoff.yaw}, {"enabled", kickoff.enabled}
+            });
+        }
+        root["arena"] = std::move(arena);
+    }
+    root["boost_pads"] = json::array();
+    for (const auto& pad : current.boostPads) {
+        root["boost_pads"].push_back({
+            {"id", pad.id}, {"kind", pad.kind},
+            {"position", {pad.position.x, pad.position.y, pad.position.z}},
+            {"radius", pad.radius}, {"rechargeTicks", pad.rechargeTicks},
+            {"enabled", pad.enabled}
+        });
+    }
+    return root;
+}
+
 } // namespace
 
 bool mapEntityContainsPoint(const MapEntity& entity, const glm::vec3& point)
@@ -93,8 +337,12 @@ std::string MapConfigRegistry::resolveConfigPath() const
 
 bool MapConfigRegistry::load(const std::string& mapId)
 {
-    const std::string nextPath = resolveUnderConfig(pathForMap(mapId));
+    return loadFromFile(mapId, resolveUnderConfig(pathForMap(mapId)));
+}
 
+bool MapConfigRegistry::loadFromFile(const std::string& mapId,
+                                     const std::string& nextPath)
+{
     std::ifstream file(nextPath);
     if (!file.is_open()) {
         Debug::warn(Debug::Category::Duel,
@@ -186,6 +434,10 @@ bool MapConfigRegistry::load(const std::string& mapId)
                 entity.required = item.value("required", entity.required);
                 entity.activationRadius = std::max(0.0f, item.value("activationRadius", item.value("activation_radius", entity.activationRadius)));
                 entity.healthMultiplier = std::max(0.0f, item.value("healthMultiplier", item.value("health_multiplier", entity.healthMultiplier)));
+                entity.presetId = item.value("presetId", item.value("preset_id", std::string{}));
+                entity.interactionId = item.value("interactionId", item.value("interaction_id", std::string{}));
+                entity.rewardGold = std::max(0, item.value("rewardGold", item.value("reward_gold", entity.rewardGold)));
+                entity.rewardXp = std::max(0, item.value("rewardXp", item.value("reward_xp", entity.rewardXp)));
                 // Zombie Tower encounter volumes are one-shot unless explicitly
                 // authored as repeatable.
                 if (entity.type == "monster_zone" &&
@@ -276,6 +528,191 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
         }
 
+        auto readMapVec = [](const json& value, const glm::vec3& fallback) {
+            if (!value.is_array() || value.size() < 3) return fallback;
+            return glm::vec3(value[0].get<float>(), value[1].get<float>(),
+                             value[2].get<float>());
+        };
+
+        next.generateWholeWorld = root.value("generate_whole_world",
+            root.value("generateWholeWorld", next.generateWholeWorld));
+
+        if (root.contains("chunks") && root["chunks"].is_array()) {
+            for (const auto& item : root["chunks"]) {
+                if (!item.is_object()) continue;
+                AuthoredChunk chunk;
+                chunk.id = item.value("id", std::string{});
+                if (chunk.id.empty()) continue;
+                chunk.geometryPath = item.value("geometry", item.value("geometry_path", std::string{}));
+                chunk.blobSha256 = item.value("blob_sha256", item.value("blobSha256", std::string{}));
+                if (item.contains("bounds_min"))
+                    chunk.boundsMin = readMapVec(item["bounds_min"], chunk.boundsMin);
+                if (item.contains("bounds_max"))
+                    chunk.boundsMax = readMapVec(item["bounds_max"], chunk.boundsMax);
+                chunk.enabled = item.value("enabled", true);
+                if (item.contains("tags") && item["tags"].is_array()) {
+                    for (const auto& tag : item["tags"])
+                        if (tag.is_string()) chunk.tags.push_back(tag.get<std::string>());
+                }
+                if (item.contains("parts") && item["parts"].is_array()) {
+                    for (const auto& partItem : item["parts"]) {
+                        if (!partItem.is_object()) continue;
+                        ChunkPart part;
+                        part.id = partItem.value("id", std::string{});
+                        if (part.id.empty()) continue;
+                        part.kind = partItem.value("kind", part.kind);
+                        if (partItem.contains("position"))
+                            part.position = readMapVec(partItem["position"], part.position);
+                        if (partItem.contains("size"))
+                            part.size = readMapVec(partItem["size"], part.size);
+                        if (partItem.contains("rotation"))
+                            part.rotationEuler = readMapVec(partItem["rotation"], part.rotationEuler);
+                        part.material = partItem.value("material", std::string{});
+                        part.collision = partItem.value("collision", true);
+                        part.visible = partItem.value("visible", true);
+                        if (partItem.contains("faces") && partItem["faces"].is_array()) {
+                            for (size_t face = 0; face < 6 && face < partItem["faces"].size(); ++face)
+                                if (partItem["faces"][face].is_string())
+                                    part.faceMaterials[face] = partItem["faces"][face].get<std::string>();
+                        }
+                        chunk.parts.push_back(std::move(part));
+                    }
+                }
+                if (item.contains("connectors") && item["connectors"].is_array()) {
+                    for (const auto& connectorItem : item["connectors"]) {
+                        if (!connectorItem.is_object()) continue;
+                        AuthoredChunkConnector connector;
+                        connector.id = connectorItem.value("id", std::string{});
+                        connector.side = connectorItem.value("side", std::string{});
+                        connector.orientation = connectorItem.value("orientation", std::string{});
+                        connector.role = connectorItem.value("role", connector.role);
+                        if (connectorItem.contains("position"))
+                            connector.position = readMapVec(connectorItem["position"], connector.position);
+                        if (connectorItem.contains("tags") && connectorItem["tags"].is_array()) {
+                            for (const auto& tag : connectorItem["tags"])
+                                if (tag.is_string()) connector.tags.push_back(tag.get<std::string>());
+                        }
+                        chunk.connectors.push_back(std::move(connector));
+                    }
+                }
+                next.chunks.push_back(std::move(chunk));
+            }
+        }
+
+        if (root.contains("generation_zones") && root["generation_zones"].is_array()) {
+            for (const auto& item : root["generation_zones"]) {
+                if (!item.is_object()) continue;
+                GenerationZone zone;
+                zone.id = item.value("id", std::string{});
+                if (zone.id.empty()) continue;
+                zone.name = item.value("name", zone.id);
+                if (item.contains("bounds_min"))
+                    zone.boundsMin = readMapVec(item["bounds_min"], zone.boundsMin);
+                if (item.contains("bounds_max"))
+                    zone.boundsMax = readMapVec(item["bounds_max"], zone.boundsMax);
+                zone.seed = item.value("seed", 0u);
+                zone.generatorVersion = item.value("generator_version",
+                    item.value("generatorVersion", zone.generatorVersion));
+                zone.ruleSet = item.value("rule_set", item.value("ruleSet", zone.ruleSet));
+                zone.modeId = item.value("mode", item.value("mode_id", zone.modeId));
+                zone.plane = item.value("plane", zone.plane);
+                if (item.contains("origin"))
+                    zone.origin = readMapVec(item["origin"], zone.origin);
+                if (item.contains("cell_size"))
+                    zone.cellSize = readMapVec(item["cell_size"], zone.cellSize);
+                if (item.contains("chunk_size_vec"))
+                    zone.chunkSizeVec = readMapVec(item["chunk_size_vec"], zone.chunkSizeVec);
+                if (item.contains("repeat_axes") && item["repeat_axes"].is_array() &&
+                    item["repeat_axes"].size() >= 3) {
+                    for (int axis = 0; axis < 3; ++axis) {
+                        const json& axisValue = item["repeat_axes"][axis];
+                        zone.repeatAxes[axis] = axisValue.is_boolean()
+                            ? (axisValue.get<bool>() ? 1 : 0)
+                            : (axisValue.is_number() && axisValue.get<int>() != 0 ? 1 : 0);
+                    }
+                }
+                if (item.contains("stream_radius") && item["stream_radius"].is_array() &&
+                    item["stream_radius"].size() >= 3) {
+                    for (int axis = 0; axis < 3; ++axis)
+                        zone.streamRadius[axis] = std::clamp(
+                            item["stream_radius"][axis].get<int>(), 0, 8);
+                }
+                zone.spacingMode = item.value("spacing_mode", zone.spacingMode);
+                zone.connectorGap = std::max(0.0f, item.value("connector_gap", zone.connectorGap));
+                zone.maxBranchDepth = std::max(0, item.value("max_branch_depth", zone.maxBranchDepth));
+                zone.allowCycles = item.value("allow_cycles", zone.allowCycles);
+                zone.chunkSize = std::max(4.0f, item.value("chunk_size",
+                    item.value("chunkSize", zone.chunkSize)));
+                zone.streamRadiusChunks = std::clamp(item.value("stream_radius_chunks",
+                    item.value("streamRadiusChunks", zone.streamRadiusChunks)), 0, 8);
+                zone.enabled = item.value("enabled", true);
+                if (item.contains("chunk_dependencies") &&
+                    item["chunk_dependencies"].is_array()) {
+                    for (const auto& dependency : item["chunk_dependencies"])
+                        if (dependency.is_string())
+                            zone.chunkDependencies.push_back(dependency.get<std::string>());
+                }
+                next.generationZones.push_back(std::move(zone));
+            }
+        }
+
+        if (root.contains("npc_presets") && root["npc_presets"].is_array()) {
+            for (const auto& item : root["npc_presets"]) {
+                if (!item.is_object()) continue;
+                NpcPreset preset;
+                preset.id = item.value("id", std::string{});
+                if (preset.id.empty()) continue;
+                preset.roleId = item.value("role_id", item.value("roleId", std::string{}));
+                preset.movementProfile = item.value("movement_profile", item.value("movementProfile", std::string{}));
+                preset.weaponSet = item.value("weapon_set", item.value("weaponSet", std::string{}));
+                preset.appearance = item.value("appearance", std::string{});
+                preset.animation = item.value("animation", std::string{});
+                preset.rewardGold = std::max(0, item.value("reward_gold", item.value("rewardGold", preset.rewardGold)));
+                preset.rewardXp = std::max(0, item.value("reward_xp", item.value("rewardXp", preset.rewardXp)));
+                preset.enabled = item.value("enabled", true);
+                if (item.contains("tags") && item["tags"].is_array()) {
+                    for (const auto& tag : item["tags"])
+                        if (tag.is_string()) preset.tags.push_back(tag.get<std::string>());
+                }
+                next.npcPresets.push_back(std::move(preset));
+            }
+        }
+
+        if (root.contains("weapon_overrides") && root["weapon_overrides"].is_array()) {
+            for (const auto& item : root["weapon_overrides"]) {
+                if (!item.is_object()) continue;
+                WorldWeaponOverride overrideValue;
+                overrideValue.id = item.value("id", std::string{});
+                if (overrideValue.id.empty()) continue;
+                overrideValue.weaponId = item.value("weapon_id", item.value("weaponId", std::string{}));
+                overrideValue.field = item.value("field", std::string{});
+                overrideValue.value = item.value("value", std::string{});
+                overrideValue.enabled = item.value("enabled", true);
+                next.weaponOverrides.push_back(std::move(overrideValue));
+            }
+        }
+
+        if (root.contains("interactions") && root["interactions"].is_array()) {
+            for (const auto& item : root["interactions"]) {
+                if (!item.is_object()) continue;
+                AuthoredInteraction interaction;
+                interaction.id = item.value("id", std::string{});
+                if (interaction.id.empty()) continue;
+                interaction.actionId = item.value("action", item.value("action_id", std::string{}));
+                interaction.prompt = item.value("prompt", std::string{});
+                interaction.targetKind = item.value("target_kind", item.value("targetKind", std::string{}));
+                interaction.targetId = item.value("target_id", item.value("targetId", std::string{}));
+                interaction.range = std::max(0.25f, item.value("range", interaction.range));
+                interaction.inputMode = item.value("mode", item.value("input_mode", interaction.inputMode));
+                interaction.holdTicks = std::max(0, item.value("hold_ticks", item.value("holdTicks", interaction.holdTicks)));
+                if (interaction.inputMode != "hold") interaction.inputMode = "press";
+                if (interaction.inputMode == "hold" && interaction.holdTicks <= 0)
+                    interaction.holdTicks = 30;
+                interaction.enabled = item.value("enabled", true);
+                next.interactions.push_back(std::move(interaction));
+            }
+        }
+
         if (root.contains("payload") && root["payload"].is_object()) {
             const auto& payload = root["payload"];
             next.payload.present = true;
@@ -351,11 +788,118 @@ bool MapConfigRegistry::load(const std::string& mapId)
             }
         }
 
+        auto readArenaVec = [](const json& j, const glm::vec3& fallback) {
+            if (!j.is_array() || j.size() < 3) return fallback;
+            return glm::vec3(j[0].get<float>(), j[1].get<float>(), j[2].get<float>());
+        };
+        if (root.contains("arena") && root["arena"].is_object()) {
+            const json& arena = root["arena"];
+            next.arena.present = true;
+            if (arena.contains("ball") && arena["ball"].is_object()) {
+                const json& ball = arena["ball"];
+                ArenaBallConfig& out = next.arena.ball;
+                out.present = true;
+                if (ball.contains("spawn"))
+                    out.spawn = readArenaVec(ball["spawn"], out.spawn);
+                out.radius = std::max(0.01f, ball.value("radius", out.radius));
+                out.visualRadius = std::max(out.radius, ball.value("visualRadius", out.visualRadius));
+                out.massKg = std::max(0.01f, ball.value("massKg", out.massKg));
+                out.restitution = std::clamp(ball.value("restitution", out.restitution), 0.0f, 1.5f);
+                out.friction = std::max(0.0f, ball.value("friction", out.friction));
+                out.linearDamping = std::max(0.0f, ball.value("linearDamping", out.linearDamping));
+                out.maxSpeed = std::max(0.0f, ball.value("maxSpeed", out.maxSpeed));
+            }
+            if (arena.contains("goals") && arena["goals"].is_array()) {
+                for (const auto& item : arena["goals"]) {
+                    if (!item.is_object()) continue;
+                    ArenaGoalConfig goal;
+                    goal.id = item.value("id", std::string{});
+                    if (goal.id.empty()) continue;
+                    goal.team = item.value("team", std::string{});
+                    if (item.contains("center"))
+                        goal.center = readArenaVec(item["center"], goal.center);
+                    if (item.contains("halfExtents"))
+                        goal.halfExtents = readArenaVec(item["halfExtents"], goal.halfExtents);
+                    else if (item.contains("radius"))
+                        goal.halfExtents = glm::vec3(std::max(0.1f, item.value("radius", 1.0f)));
+                    if (item.contains("facing"))
+                        goal.facing = readArenaVec(item["facing"], goal.facing);
+                    goal.enabled = item.value("enabled", true);
+                    next.arena.goals.push_back(std::move(goal));
+                }
+            }
+            if (arena.contains("kickoffs") && arena["kickoffs"].is_array()) {
+                for (const auto& item : arena["kickoffs"]) {
+                    if (!item.is_object()) continue;
+                    ArenaKickoffConfig kickoff;
+                    kickoff.id = item.value("id", std::string{});
+                    if (kickoff.id.empty()) continue;
+                    kickoff.team = item.value("team", std::string{});
+                    if (item.contains("position"))
+                        kickoff.position = readArenaVec(item["position"], kickoff.position);
+                    kickoff.yaw = item.value("yaw", kickoff.yaw);
+                    kickoff.enabled = item.value("enabled", true);
+                    next.arena.kickoffs.push_back(std::move(kickoff));
+                }
+            }
+        }
+        if (root.contains("boost_pads") && root["boost_pads"].is_array()) {
+            for (const auto& item : root["boost_pads"]) {
+                if (!item.is_object()) continue;
+                BoostPadConfig pad;
+                pad.id = item.value("id", std::string{});
+                if (pad.id.empty()) continue;
+                pad.kind = item.value("kind", pad.kind);
+                if (pad.kind != "big" && pad.kind != "small") pad.kind = "small";
+                if (item.contains("position"))
+                    pad.position = readArenaVec(item["position"], pad.position);
+                pad.radius = std::max(0.1f, item.value("radius", pad.radius));
+                pad.rechargeTicks = std::max(1, item.value(
+                    "rechargeTicks", item.value("recharge_ticks", pad.rechargeTicks)));
+                pad.enabled = item.value("enabled", true);
+                next.boostPads.push_back(std::move(pad));
+            }
+        }
+
         Debug::warn(Debug::Category::Duel,
             "[MAP CONFIG] loaded map=%s sites=%zu entities=%zu blocks=%zu route=%zu plant=%.1f defuse=%.1f explode=%.1f\n",
             mapId.c_str(), next.bombSites.size(), next.entities.size(),
             next.blocks.size(), next.payload.route.size(),
             next.plantSeconds, next.defuseSeconds, next.explosionSeconds);
+
+        if (next.arena.present || !next.boostPads.empty()) {
+            std::vector<PayloadAuthoringIssue> arenaIssues;
+            const bool arenaOk = validateArenaAuthoring(next, arenaIssues);
+            std::string firstIssue;
+            int errorCount = 0;
+            for (const PayloadAuthoringIssue& issue : arenaIssues) {
+                if (issue.severity == "error") ++errorCount;
+                if (firstIssue.empty()) firstIssue = issue.code + ": " + issue.message;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World,
+                arenaOk ? StructuredLevel::Important : StructuredLevel::Errors,
+                "arena.config.loaded", mapId,
+                arenaOk ? "arena authoring is usable"
+                        : "arena authoring failed validation; scoring must stay disabled",
+                0,
+                nlohmann::json{
+                    {"map", mapId},
+                    {"result", arenaOk ? "success" : "invalid"},
+                    {"ball_present", next.arena.ball.present},
+                    {"goal_count", next.arena.goals.size()},
+                    {"kickoff_count", next.arena.kickoffs.size()},
+                    {"boost_pad_count", next.boostPads.size()},
+                    {"error_count", errorCount},
+                    {"first_issue", firstIssue}},
+                __FILE__, __LINE__, __FUNCTION__);
+            if (!arenaOk) {
+                Debug::warn(Debug::Category::Duel,
+                    "[ARENA CONFIG] map=%s invalid: %s\n",
+                    mapId.c_str(), firstIssue.c_str());
+            }
+        }
+
         mCurrent = std::move(next);
         mPath = nextPath;
         mLastWrite = getLastWrite(mPath);
@@ -382,6 +926,12 @@ bool MapConfigRegistry::load(const std::string& mapId)
     }
 }
 
+std::string MapConfigRegistry::toJsonString(bool pretty) const
+{
+    const json document = buildAuthoredDocument(mCurrent, json::object());
+    return pretty ? document.dump(2) + "\n" : document.dump() + "\n";
+}
+
 bool MapConfigRegistry::pollReload()
 {
     if (mPath.empty() || mCurrent.mapId.empty()) return false;
@@ -390,7 +940,7 @@ bool MapConfigRegistry::pollReload()
         return false;
     Debug::warn(Debug::Category::Duel,
         "[MAP CONFIG] detected change: %s\n", mPath.c_str());
-    return load(mCurrent.mapId);
+    return loadFromFile(mCurrent.mapId, mPath);
 }
 
 void MapConfigRegistry::resetRuntimeState()
@@ -862,7 +1412,7 @@ bool MapConfigRegistry::save(bool withBackup)
     if (mPath.empty()) return false;
     // Start from the existing authored file so top-level keys this owner does
     // not understand survive a save. Only authored map sections are rewritten.
-    json root = json::object();
+    json base = json::object();
     std::string existingContents;
     {
         std::ifstream existing(mPath, std::ios::binary);
@@ -873,112 +1423,13 @@ bool MapConfigRegistry::save(bool withBackup)
             try {
                 std::istringstream input(existingContents);
                 json parsed = parseJsonConfig(input);
-                if (parsed.is_object()) root = std::move(parsed);
+                if (parsed.is_object()) base = std::move(parsed);
             } catch (const std::exception&) {
                 // A malformed on-disk file is replaced by the in-memory state.
             }
         }
     }
-    root["bomb_sites"] = json::array();
-    for (const auto& site : mCurrent.bombSites) {
-        json s;
-        s["id"] = site.id;
-        s["position"] = {site.position.x, site.position.y, site.position.z};
-        s["radius"] = site.radius;
-        s["visible_debug"] = site.visibleDebug;
-        root["bomb_sites"].push_back(std::move(s));
-    }
-    root["bomb"] = {
-        {"plant_seconds", mCurrent.plantSeconds},
-        {"defuse_seconds", mCurrent.defuseSeconds},
-        {"explosion_seconds", mCurrent.explosionSeconds},
-    };
-    root["entities"] = json::array();
-    for (const auto& entity : mCurrent.entities) {
-        root["entities"].push_back({
-            {"id", entity.id}, {"type", entity.type},
-            {"position", {entity.position.x, entity.position.y, entity.position.z}},
-            {"size", {entity.size.x, entity.size.y, entity.size.z}},
-            {"yaw", entity.yaw},
-            {"radius", entity.radius}, {"enabled", entity.enabled}, {"visible", entity.visible},
-            {"oneShot", entity.oneShot}, {"tag", entity.tag}, {"monsterPool", entity.monsterPool},
-            {"pickupId", entity.pickupId}, {"bossId", entity.bossId}, {"damageType", entity.damageType},
-            {"spawnCount", entity.spawnCount}, {"maxAlive", entity.maxAlive}, {"damage", entity.damage},
-            {"damageIntervalTicks", entity.damageIntervalTicks},
-            {"spawnCooldownTicks", entity.spawnCooldownTicks},
-            {"checkpointRequirement", entity.checkpointRequirement},
-            {"order", entity.order}, {"required", entity.required},
-            {"activationRadius", entity.activationRadius},
-            {"healthMultiplier", entity.healthMultiplier}
-        });
-    }
-    root["blocks"] = json::array();
-    for (const auto& block : mCurrent.blocks) {
-        json b = {
-            {"id", block.id}, {"shape", block.shape},
-            {"position", {block.position.x, block.position.y, block.position.z}},
-            {"size", {block.size.x, block.size.y, block.size.z}},
-            {"rotationEuler", {block.rotationEuler.x, block.rotationEuler.y, block.rotationEuler.z}},
-            {"material", block.material}, {"enabled", block.enabled}
-        };
-        b["tags"] = block.tags;
-        root["blocks"].push_back(std::move(b));
-    }
-    root["vehicles"] = json::array();
-    for (const auto& vehicle : mCurrent.vehicles) {
-        root["vehicles"].push_back({
-            {"id", vehicle.id},
-            {"template", vehicle.templateId},
-            {"position", {vehicle.position.x, vehicle.position.y, vehicle.position.z}},
-            {"yaw", vehicle.yaw},
-            {"enabled", vehicle.enabled}
-        });
-    }
-    root["glb_objects"] = json::array();
-    for (const auto& object : mCurrent.glbObjects) {
-        root["glb_objects"].push_back({
-            {"id", object.id}, {"name", object.name},
-            {"position", {object.position.x, object.position.y, object.position.z}}
-        });
-    }
-    if (mCurrent.payload.present || mCurrent.payload.hasCartOrigin ||
-        !mCurrent.payload.route.empty()) {
-        json payload;
-        payload["cart_origin"] = {
-            {"position", {mCurrent.payload.cartOrigin.x,
-                          mCurrent.payload.cartOrigin.y,
-                          mCurrent.payload.cartOrigin.z}},
-            {"yaw", mCurrent.payload.cartYaw}
-        };
-        payload["cart_size"] = {mCurrent.payload.cartSize.x,
-                                mCurrent.payload.cartSize.y,
-                                mCurrent.payload.cartSize.z};
-        payload["facing_mode"] = mCurrent.payload.cartFixedFacing ? "fixed" : "route";
-        payload["interaction_box"] = {
-            {"size", {mCurrent.payload.interactionSize.x,
-                      mCurrent.payload.interactionSize.y,
-                      mCurrent.payload.interactionSize.z}},
-            {"offset", {mCurrent.payload.interactionOffset.x,
-                        mCurrent.payload.interactionOffset.y,
-                        mCurrent.payload.interactionOffset.z}},
-            {"rotationEuler", {mCurrent.payload.interactionRotationEuler.x,
-                               mCurrent.payload.interactionRotationEuler.y,
-                               mCurrent.payload.interactionRotationEuler.z}}
-        };
-        payload["route"] = json::array();
-        for (const auto& point : mCurrent.payload.route) {
-            payload["route"].push_back({
-                {"id", point.id},
-                {"position", {point.position.x, point.position.y, point.position.z}},
-                {"radius", point.radius}, {"order", point.order},
-                {"waitTicks", point.waitTicks}, {"enabled", point.enabled},
-                {"checkpoint", point.checkpoint}, {"final", point.final},
-                {"time_bonus_seconds", point.timeBonusSeconds}
-            });
-        }
-        root["payload"] = std::move(payload);
-    }
-
+    json root = buildAuthoredDocument(mCurrent, base);
     const std::string contents = root.dump(2) + "\n";
     if (!existingContents.empty() && existingContents == contents) {
         mSavedRevision = mRevision;
@@ -1147,6 +1598,64 @@ bool validatePayloadAuthoring(const PayloadConfig& payload,
     return true;
 }
 
+bool validateArenaAuthoring(const MapObjectiveConfig& config,
+                            std::vector<PayloadAuthoringIssue>& issues)
+{
+    auto add = [&](const char* severity, const char* code, std::string message) {
+        issues.push_back({severity, code, std::move(message)});
+    };
+
+    if (!config.arena.present) {
+        add("error", "arena-missing", "map has no arena block; scoring is disabled");
+        return false;
+    }
+    if (!config.arena.ball.present) {
+        add("error", "arena-ball-missing", "arena.ball spawn is missing");
+    }
+    if (config.arena.goals.empty()) {
+        add("error", "arena-goal-missing",
+            "arena.goals is empty; no default scoring zone is created");
+    }
+    int enabledGoals = 0;
+    std::unordered_set<std::string> goalIds;
+    for (const ArenaGoalConfig& goal : config.arena.goals) {
+        if (!goalIds.insert(goal.id).second)
+            add("error", "arena-goal-duplicate", "duplicate goal id '" + goal.id + "'");
+        if (!goal.enabled) continue;
+        ++enabledGoals;
+        if (goal.team.empty())
+            add("warning", "arena-goal-team", "goal '" + goal.id + "' has no team");
+        if (goal.halfExtents.x <= 0.0f || goal.halfExtents.y <= 0.0f ||
+            goal.halfExtents.z <= 0.0f) {
+            add("error", "arena-goal-extents",
+                "goal '" + goal.id + "' has a non-positive half extent");
+        }
+        if (glm::dot(goal.facing, goal.facing) <= 1e-6f)
+            add("warning", "arena-goal-facing", "goal '" + goal.id + "' has no facing direction");
+    }
+    if (enabledGoals == 0)
+        add("error", "arena-goal-disabled", "all arena goals are disabled");
+    for (const ArenaKickoffConfig& kickoff : config.arena.kickoffs) {
+        if (kickoff.id.empty())
+            add("warning", "arena-kickoff-id", "a kickoff has no id");
+        if (kickoff.team.empty())
+            add("warning", "arena-kickoff-team", "kickoff '" + kickoff.id + "' has no team");
+    }
+    std::unordered_set<std::string> padIds;
+    for (const BoostPadConfig& pad : config.boostPads) {
+        if (!padIds.insert(pad.id).second)
+            add("error", "boost-pad-duplicate", "duplicate boost pad id '" + pad.id + "'");
+        if (pad.radius <= 0.0f)
+            add("error", "boost-pad-radius", "boost pad '" + pad.id + "' has no radius");
+        if (pad.rechargeTicks <= 0)
+            add("error", "boost-pad-recharge", "boost pad '" + pad.id + "' has no recharge ticks");
+    }
+    for (const PayloadAuthoringIssue& issue : issues) {
+        if (issue.severity == "error") return false;
+    }
+    return true;
+}
+
 bool payloadAuthoringSelfTest(std::string& report)
 {
     bool ok = true;
@@ -1259,6 +1768,33 @@ bool mapConfigSelfTest(std::string& report)
         ++checked;
     }
     report += "sites_checked=" + std::to_string(checked) + "\n";
+
+    // Arena authoring is fail-closed: missing arena/ball/goal data is an error,
+    // and a valid authored block must pass without inventing a scoring zone.
+    {
+        MapObjectiveConfig missing;
+        std::vector<PayloadAuthoringIssue> issues;
+        if (validateArenaAuthoring(missing, issues))
+            fail("missing arena data must fail validation");
+    }
+    {
+        MapObjectiveConfig valid;
+        valid.arena.present = true;
+        valid.arena.ball.present = true;
+        ArenaGoalConfig goal;
+        goal.id = "blue_goal";
+        goal.team = "blue";
+        goal.halfExtents = glm::vec3(1, 2, 3);
+        valid.arena.goals.push_back(goal);
+        BoostPadConfig pad;
+        pad.id = "pad_1";
+        pad.radius = 1.0f;
+        pad.rechargeTicks = 240;
+        valid.boostPads.push_back(pad);
+        std::vector<PayloadAuthoringIssue> issues;
+        if (!validateArenaAuthoring(valid, issues))
+            fail("valid arena data must pass validation");
+    }
 
     report += ok ? "PASS\n" : "FAIL\n";
     return ok;

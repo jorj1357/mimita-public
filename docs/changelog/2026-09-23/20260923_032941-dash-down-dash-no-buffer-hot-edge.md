@@ -4,7 +4,7 @@ Date: 2026-09-23
 Status: cold build succeeded; deterministic tests pass; human acceptance pending
 
 Related regression:
-`docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`
+`docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`
 
 ## Work performed
 
@@ -26,7 +26,7 @@ Related regression:
   no cooldowns, no buffers, no timer balancing; act on the tick the press is
   sampled.
 - Appended `Cold-build occurrence 2` to
-  `docs/regressions/2026-09-20/cold-build-required-REG.md`.
+  `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`.
 
 ## Evidence
 

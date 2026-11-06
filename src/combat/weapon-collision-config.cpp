@@ -8,7 +8,9 @@
 
 #include "config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "entities/player.h"
+#include "combat/weapon-registry.h"
 
 using json = nlohmann::json;
 
@@ -244,6 +246,36 @@ void WeaponCollisionJsonConfig::reloadNow() {
 void WeaponCollisionJsonConfig::applyCollisionConfig(Player& player) {
     const std::string& weaponId = player.equippedWeaponId;
     if (weaponId.empty()) return;
+
+    // Throwable grenades are inventory items while equipped. Their held
+    // presentation must never become an actor/world collision shape; only the
+    // spawned persistent-physics projectile collides after a throw.
+    const WeaponDefinition* definition = WeaponRegistry::instance().get(weaponId);
+    if (definition && definition->grenadeEffect.enabled) {
+        const bool hadCollider = player.collision.hasWeaponCollisionCapsule ||
+            !player.weaponColliderMesh.empty() ||
+            !player.weaponCollisionDebug.capsules.empty();
+        const bool changedWeapon = player.weaponCollisionDebug.weaponId != weaponId;
+        player.collision.hasWeaponCollisionCapsule = false;
+        player.weaponCollisionCapsule = Capsule{};
+        player.weaponColliderMesh.clear();
+        player.weaponColliderMeshPath.clear();
+        player.weaponCollisionName.clear();
+        player.weaponCollisionDebug = WeaponCollisionRuntimeDebug{};
+        player.weaponCollisionDebug.weaponId = weaponId;
+        player.weaponCollisionDebug.capsuleMode = true;
+        if (hadCollider || changedWeapon) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Weapons, StructuredLevel::Important,
+                "grenade.equipped-collision", weaponId,
+                "held grenade is inventory presentation only", player.movementSimulationTick,
+                {{"weapon_id", weaponId}, {"weapon_collision_enabled", false},
+                 {"capsule_enabled", false}, {"mesh_triangle_count", 0},
+                 {"projectile_collision_owner", "persistent_physics_after_throw"}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return;
+    }
 
     const bool wasJsonMesh = player.weaponCollisionDebug.usesJsonMesh &&
         player.weaponColliderMeshPath == "__weaponcollisions_json_boxes__";

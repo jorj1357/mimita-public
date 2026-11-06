@@ -25,7 +25,7 @@ import time
 import atexit
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path
+from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path, run_tool
 
 # ============================================================
 # CONFIG
@@ -450,7 +450,7 @@ if pch_needs_build:
     cmd += INCLUDE_FLAGS
     cmd += DEFINE_FLAGS
 
-    result = subprocess.run(cmd)
+    result = run_tool(cmd)
 
     if result.returncode != 0:
         print()
@@ -498,7 +498,7 @@ def compile_cpp_file(src):
         "pch.h",
     ]
 
-    result = subprocess.run(cmd)
+    result = run_tool(cmd)
 
     if result.returncode != 0:
         # A failed compiler can leave a partial object and dependency file.
@@ -530,7 +530,7 @@ def compile_recast_file(src):
         f"-I{ROOT}/external/recastnavigation/Detour/Include",
         f"-I{ROOT}/external/recastnavigation/DetourTileCache/Include",
     ]
-    result = subprocess.run(cmd)
+    result = run_tool(cmd)
     if result.returncode != 0:
         try:
             if os.path.exists(obj):
@@ -624,7 +624,7 @@ if source_changed(glad_path):
     cmd += INCLUDE_FLAGS
     cmd += DEFINE_FLAGS
 
-    result = subprocess.run(cmd)
+    result = run_tool(cmd)
 
     if result.returncode != 0:
         print()
@@ -700,7 +700,7 @@ def compile_juice_file(src_name):
     for f in juice_include_flags:
         cmd.append(f)
 
-    result = subprocess.run(cmd)
+    result = run_tool(cmd)
 
     if result.returncode != 0:
         return ("fail", src_name)
@@ -772,7 +772,7 @@ if os.path.isfile(RC_FILE):
             print("[TOOLCHAIN] windres.exe was not found. Add MinGW to PATH or set MIMITA_WINDRES.")
             sys.exit(2)
         print("[RC  ]", os.path.relpath(RC_FILE, ROOT))
-        r = subprocess.run([WINDRES, RC_FILE, "-O", "coff", "-o", RES_OBJ])
+        r = run_tool([WINDRES, RC_FILE, "-O", "coff", "-o", RES_OBJ])
         if r.returncode != 0:
             print()
             print("==================================================")
@@ -837,7 +837,7 @@ with open(link_response, "w", encoding="utf-8", newline="\n") as response:
 print("[LINK] using build/link.rsp", flush=True)
 cmd = ccache_cmd() + ["@" + link_response]
 
-result = subprocess.run(cmd)
+result = run_tool(cmd)
 
 if result.returncode != 0:
     print()

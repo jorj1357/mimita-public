@@ -6,8 +6,10 @@ import colorsys
 import ctypes
 import json
 import os
+import queue
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -116,9 +118,15 @@ def _artifact_key(value: str) -> str:
     if value.isdecimal():
         return str(int(value))
     return value
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace(
+        "+00:00", "Z")
 def run(status_provider: Callable[[], dict],
         control: Callable[..., dict | bool],
-        title: str) -> int:
+        title: str,
+        process_provider: Callable[[], list[dict]] | None = None) -> int:
     import tkinter as tk
 
     if os.name == "nt":
@@ -177,6 +185,17 @@ def run(status_provider: Callable[[], dict],
         "launch_timing_message": "",
         "launch_modes": [],
         "active_mode": "",
+        "latest_model": {},
+        "processes": [],
+        "process_rows": {},
+        "rendered_processes": [],
+        "selected_process_key": "",
+        "process_scan_queue": queue.SimpleQueue(),
+        "process_scan_in_flight": False,
+        "process_scan_last_started": 0.0,
+        "process_scan_last_success": "",
+        "process_scan_last_success_monotonic": 0.0,
+        "process_scan_error": "",
     }
 
     def frame(parent, *, padx=0, pady=0, **kwargs):
@@ -429,20 +448,40 @@ def run(status_provider: Callable[[], dict],
     process_card = frame(content, padx=5, pady=3)
     process_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
     process_card.grid_columnconfigure(0, weight=1)
+    process_card.grid_columnconfigure(1, weight=0)
     label(process_card, "MIMITA PROCESSES", size=7, bold=True).grid(
         row=0, column=0, sticky="w")
-    process_summary = label(process_card, "no servers · no clients", size=7)
-    process_summary.grid(row=1, column=0, sticky="w", pady=(1, 2))
-    process_list = tk.Listbox(
-        process_card, height=5, activestyle="none", exportselection=False,
-        background=BLACK, foreground=RED, selectbackground="#660000",
-        selectforeground=WHITE, relief="flat", bd=0, highlightthickness=0,
-        font=(family, 8))
-    process_list.grid(row=2, column=0, sticky="ew")
+    process_summary = label(process_card, "Checking for running MiMITA processes…",
+                            size=7, wraplength=350)
+    process_summary.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(1, 2))
+    process_canvas = tk.Canvas(process_card, height=78, background=BLACK,
+                               highlightthickness=0, bd=0)
+    process_canvas.grid(row=2, column=0, sticky="ew")
+    process_scroll = tk.Scrollbar(
+        process_card, orient="vertical", command=process_canvas.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    process_scroll.grid(row=2, column=1, sticky="ns")
+    process_canvas.configure(yscrollcommand=process_scroll.set)
+    process_rows_frame = tk.Frame(process_canvas, bg=BLACK)
+    process_rows_window = process_canvas.create_window(
+        (0, 0), window=process_rows_frame, anchor="nw")
+    process_rows_frame.bind(
+        "<Configure>",
+        lambda _event: process_canvas.configure(
+            scrollregion=process_canvas.bbox("all")))
+    process_canvas.bind(
+        "<Configure>",
+        lambda event: process_canvas.itemconfigure(
+            process_rows_window, width=event.width))
     process_buttons = tk.Frame(process_card, bg=BLACK)
-    process_buttons.grid(row=3, column=0, sticky="ew", pady=(2, 0))
+    process_buttons.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(2, 0))
     for column in range(4):
         process_buttons.grid_columnconfigure(column, weight=1)
+
+    refresh_process_button = button(
+        process_card, "Refresh", lambda: manual_process_refresh(), width=8)
+    refresh_process_button.grid(row=0, column=1, sticky="e")
 
     details = frame(content, padx=5, pady=3)
     details.grid(row=4, column=0, sticky="nsew", pady=(1, 0))
@@ -539,38 +578,54 @@ def run(status_provider: Callable[[], dict],
                 state["launch_timing_message"] = str(error)
         refresh()
 
-    state["instance_ids"] = []
+    def selected_process() -> dict | None:
+        selected_key = state.get("selected_process_key")
+        return next((row for row in state.get("rendered_processes", [])
+                     if row.get("process_key") == selected_key), None)
 
     def selected_instance() -> str:
-        selection = process_list.curselection()
-        if not selection:
+        process = selected_process()
+        if not process or process.get("source") != "managed":
             return ""
-        index = int(selection[0])
-        ids = state.get("instance_ids") or []
-        return ids[index] if 0 <= index < len(ids) else ""
+        return str(process.get("instance_id") or "")
 
     def send_instance(action: str) -> None:
         iid = selected_instance()
         if not iid:
-            action_status.configure(text="Select a process row first")
+            action_status.configure(text="Select a running dev-loop instance first")
             return
         send(action, instance_id=iid)
 
+    def stop_selected() -> None:
+        targets = []
+        for row in state.get("rendered_processes", []):
+            row_state = state.get("process_rows", {}).get(row.get("process_key"))
+            if not row_state or not row_state["variable"].get():
+                continue
+            targets.append({key: row.get(key) for key in (
+                "source", "instance_id", "pid", "role", "executable",
+                "command_line", "process_started_utc")})
+        if not targets:
+            action_status.configure(text="Check one or more running processes first")
+            return
+        send("stop-selected", targets=targets)
+
     def start_client() -> None:
-        client_count = sum(1 for iid in (state.get("instance_ids") or [])
-                           if str(iid).startswith("client-"))
+        clients = [row for row in (state.get("latest_model", {}).get("instances") or [])
+                   if row.get("role") == "client" and row.get("pid")
+                   and row.get("state") not in ("offline", "stopped", "failed")]
+        client_count = len(clients)
         send("start-client", name=f"Client {client_count + 1}")
 
     button(process_buttons, "Start server", lambda: send("start-server")).grid(
         row=0, column=0, sticky="ew", padx=(0, 3))
     button(process_buttons, "Start client", start_client).grid(
         row=0, column=1, sticky="ew", padx=(0, 3))
-    button(process_buttons, "Stop selected", lambda: send_instance("stop-instance")).grid(
+    button(process_buttons, "Stop selected", stop_selected).grid(
         row=0, column=2, sticky="ew", padx=(0, 3))
     button(process_buttons, "Restart selected",
            lambda: send_instance("restart-instance")).grid(
         row=0, column=3, sticky="ew")
-    process_list.bind("<<ListboxSelect>>", lambda _event: None)
 
     launch_button = button(controls, "Launch latest stable MiMITA.exe",
                            lambda: send("build-or-launch"))
@@ -743,10 +798,166 @@ def run(status_provider: Callable[[], dict],
             detail.configure(text=detail.full_text if expanded else detail.short_text)
         root.after_idle(refresh)
 
+    def queue_process_scan_result(processes=None, error=""):
+        state["process_scan_queue"].put((processes, error))
+
+    def request_process_scan(force=False):
+        now = time.monotonic()
+        if state["process_scan_in_flight"]:
+            if force:
+                state["process_scan_force_pending"] = True
+            return
+        if not force and now - state["process_scan_last_started"] < 2.0:
+            return
+        state["process_scan_in_flight"] = True
+        state["process_scan_last_started"] = now
+
+        def scan():
+            try:
+                if process_provider is not None:
+                    processes = process_provider()
+                else:
+                    processes = [dict(row) for row in
+                                 (state.get("latest_model", {}).get("instances") or [])
+                                 if row.get("pid") and row.get("state") not in
+                                 ("offline", "stopped", "failed")]
+                queue_process_scan_result(processes=processes or [])
+            except Exception as error:
+                queue_process_scan_result(error=str(error))
+
+        threading.Thread(target=scan, name="mimita-process-scan", daemon=True).start()
+
+    def apply_process_scan_result():
+        try:
+            processes, error = state["process_scan_queue"].get_nowait()
+        except queue.Empty:
+            return
+        state["process_scan_in_flight"] = False
+        if state.pop("process_scan_force_pending", False):
+            state["process_scan_last_started"] = 0.0
+        if error:
+            state["process_scan_error"] = error
+            return
+        state["process_scan_error"] = ""
+        state["processes"] = processes if isinstance(processes, list) else []
+        state["process_scan_last_success"] = _utc_now_iso()
+        state["process_scan_last_success_monotonic"] = time.monotonic()
+
+    def manual_process_refresh():
+        process_summary.configure(text="Scanning running MiMITA processes…")
+        action_status.configure(text="Refreshing process list…")
+        request_process_scan(force=True)
+
+    def live_process_rows(model):
+        managed_by_pid = {}
+        for instance in model.get("instances", []) or []:
+            try:
+                pid = int(instance.get("pid", 0) or 0)
+            except (TypeError, ValueError):
+                pid = 0
+            if pid and instance.get("state") not in ("offline", "stopped", "failed"):
+                managed_by_pid[pid] = instance
+
+        rows = []
+        for process in state.get("processes", []):
+            try:
+                pid = int(process.get("pid", 0) or 0)
+            except (TypeError, ValueError):
+                pid = 0
+            if pid <= 0:
+                continue
+            command_line = str(process.get("command_line") or "")
+            instance = managed_by_pid.get(pid)
+            role = (str(instance.get("role") or "unknown") if instance else
+                    "server" if "--server" in command_line.lower().split() else "client")
+            started = str(process.get("process_started_utc") or "")
+            row = dict(instance or {})
+            row.update({
+                "source": "managed" if instance else "external",
+                "process_key": f"{pid}:{started}",
+                "pid": pid,
+                "role": role,
+                "state": str((instance or {}).get("state") or "running"),
+                "executable": str(process.get("executable") or
+                                   (instance or {}).get("executable") or ""),
+                "command_line": command_line,
+                "process_started_utc": started,
+            })
+            if not instance:
+                row["instance_id"] = f"external-{pid}"
+                row["label"] = f"external {role}"
+            rows.append(row)
+        return sorted(rows, key=lambda row: (
+            row.get("role") != "server", row.get("source") != "managed", row.get("pid", 0)))
+
+    def render_process_rows(model):
+        rows = live_process_rows(model)
+        state["rendered_processes"] = rows
+        scan_time = state.get("process_scan_last_success") or "not yet"
+        count = len(rows)
+        noun = "process" if count == 1 else "processes"
+        if state.get("process_scan_error"):
+            summary = (f"Process scan failed · last successful scan {scan_time} · "
+                       f"{state['process_scan_error'][:100]}")
+        else:
+            summary = f"Found {count} running MiMITA {noun} · Last refreshed {scan_time}"
+        process_summary.configure(text=summary)
+
+        current_keys = {row["process_key"] for row in rows}
+        for key in list(state["process_rows"]):
+            if key in current_keys:
+                continue
+            widget = state["process_rows"].pop(key)["widget"]
+            widget.destroy()
+            if state.get("selected_process_key") == key:
+                state["selected_process_key"] = ""
+
+        for index, row in enumerate(rows):
+            key = row["process_key"]
+            row_state = state["process_rows"].get(key)
+            uptime = row.get("uptime_seconds")
+            uptime_text = (f"up={int(uptime) // 60:02d}:{int(uptime) % 60:02d}"
+                           if uptime is not None else "")
+            snapshot_age = row.get("snapshot_age_ms")
+            snapshot_text = (f"snap={snapshot_age / 1000.0:.1f}s"
+                             if snapshot_age is not None else "")
+            parts = [str(row.get("instance_id") or "MiMITA"), str(row.get("role") or "unknown"),
+                     str(row.get("state") or "running"), f"pid={row['pid']}"]
+            parts.extend(value for value in (uptime_text, snapshot_text) if value)
+            text = "  ".join(parts)
+            if row_state is None:
+                variable = tk.BooleanVar(value=False)
+                widget = tk.Checkbutton(
+                    process_rows_frame, text=text, variable=variable, anchor="w",
+                    bg=BLACK, fg=RED, activebackground=BLACK, activeforeground=WHITE,
+                    selectcolor=BLACK, disabledforeground="#660000", relief="flat",
+                    bd=0, highlightthickness=0, font=(family, 8),
+                    command=lambda process_key=key:
+                    state.__setitem__("selected_process_key", process_key))
+                state["process_rows"][key] = {"variable": variable, "widget": widget}
+            else:
+                widget = row_state["widget"]
+                widget.configure(text=text)
+            widget.grid(row=index, column=0, sticky="ew")
+            process_rows_frame.grid_columnconfigure(0, weight=1)
+        if not rows:
+            empty_text = ("Process scan unavailable" if state.get("process_scan_error")
+                          else "0 running MiMITA processes found")
+            if not state.get("process_empty_label"):
+                state["process_empty_label"] = label(process_rows_frame, empty_text, size=7)
+            else:
+                state["process_empty_label"].configure(text=empty_text)
+            state["process_empty_label"].grid(row=0, column=0, sticky="w")
+        elif state.get("process_empty_label"):
+            state["process_empty_label"].grid_forget()
+
     def refresh() -> None:
         if not state["frozen"]:
             try:
+                apply_process_scan_result()
                 model = status_provider() or {}
+                state["latest_model"] = model
+                request_process_scan()
                 modes = _configured_launch_modes()
                 modes_changed = modes != state["launch_modes"]
                 if modes_changed:
@@ -915,34 +1126,7 @@ def run(status_provider: Callable[[], dict],
                     f"builds {'MATCH' if same_build else 'DIFFER'}"
                     + ("\n" + "\n".join(instance_lines) if instance_lines else "")
                 ))
-                instances = model.get("instances") or []
-                servers = [i for i in instances if i.get("role") == "server"]
-                clients = [i for i in instances if i.get("role") == "client"]
-                server_online = sum(1 for i in servers if i.get("state") == "online")
-                client_online = sum(1 for i in clients if i.get("state") == "online")
-                frozen = sum(1 for i in instances if i.get("state") == "frozen")
-                process_summary.configure(text=(
-                    f"{len(servers)} servers ({server_online} online) · "
-                    f"{len(clients)} clients ({client_online} online)"
-                    + (f" · {frozen} frozen" if frozen else "")))
-                previous_selection = selected_instance()
-                process_list.delete(0, "end")
-                state["instance_ids"] = []
-                for inst in instances:
-                    iid = str(inst.get("instance_id", "?"))
-                    uptime = inst.get("uptime_seconds")
-                    uptime_text = (f"{int(uptime) // 60:02d}:{int(uptime) % 60:02d}"
-                                   if uptime is not None else "--:--")
-                    age = inst.get("snapshot_age_ms")
-                    age_text = f"{age / 1000.0:.1f}s" if age is not None else "-"
-                    process_list.insert("end",
-                        f"{iid:10} {str(inst.get('role', '?')):6} "
-                        f"{str(inst.get('state', '?')):9} "
-                        f"pid={inst.get('pid') or '-':>6} up={uptime_text} "
-                        f"snap={age_text:>6}")
-                    state["instance_ids"].append(iid)
-                    if iid == previous_selection:
-                        process_list.selection_set("end")
+                render_process_rows(model)
                 mode = str(model.get("mode") or "—")
                 map_name = str(model.get("map") or "—")
                 mode_value.configure(text=mode, fg=rainbow_color())
@@ -986,11 +1170,17 @@ def run(status_provider: Callable[[], dict],
                 pending_request = state.get("pending_request_id")
                 if (pending_request and last_control.get("request_id") == pending_request
                         and last_control.get("status") in ("completed", "failed", "rejected")):
+                    results = last_control.get("results") or []
+                    result_text = " · ".join(
+                        f"pid={result.get('pid', '?')} "
+                        f"{'stopped' if result.get('stopped') else 'failed'}"
+                        for result in results[:6] if isinstance(result, dict))
                     if not (pending_request == state["launch_request_id"]
                             and state["launch_timing_status"] in ("succeeded", "failed")):
                         action_status.configure(text=last_control.get("message") or
                                                  f"{last_control.get('action', 'action')}: "
-                                                 f"{last_control.get('status')}")
+                                                 f"{last_control.get('status')}"
+                                                 + (f" · {result_text}" if result_text else ""))
                     state["pending_request_id"] = ""
             except Exception as error:
                 action_status.configure(text=f"Status refresh failed: {error}")

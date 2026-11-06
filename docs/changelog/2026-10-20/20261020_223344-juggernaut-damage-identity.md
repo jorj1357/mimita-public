@@ -60,7 +60,7 @@ Juggernaut hits should visibly damage Fighters. Clarify the cause in plain langu
 
 ## Regression review
 
-- Regression added: `docs/regressions/2026-10-20/npc-damage-loses-team-identity-REG.md`.
+- Regression added: `docs/regressions/npc-movement/npc-damage-loses-REG-2026-10-20.md`.
 - Status remains `ATTEMPTED FIX (1)` until a fresh Juggernaut round proves enemy damage applies and same-team damage is rejected.
 
 ## Human acceptance

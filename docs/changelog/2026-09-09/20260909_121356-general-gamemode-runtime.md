@@ -43,7 +43,7 @@ selected by `config/gui/gamemode-meta-gui.json`.
   shared lifecycle ownership must use general gamemode/participant names.
 - `docs/architecture/json-configuration/json-configuration.md:57`: migrated
   the game-mode configuration table to `gamemode-good-maps.json`.
-- `docs/regressions/2026-09-09/duel-specific-gamemode-ownership-REG.md`:
+- `docs/regressions/gameplay/duel-specific-gamemode-REG-2026-09-09.md`:
   appended the requested architecture regression in the current regression
   format; it remains ATTEMPTED FIX pending live confirmation.
 

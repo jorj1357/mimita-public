@@ -7,7 +7,7 @@ Time: 2026-09-20T15:11:13Z
 Documented a dedicated persistent cold-build debt record. Future intentional
 cold builds append occurrences to:
 
-`docs/regressions/2026-09-20/cold-build-required-REG.md`
+`docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`
 
 The policy distinguishes cold-build migration debt from confirmed user-visible
 behavior regressions. Independent behavior regressions continue to use their
@@ -19,7 +19,7 @@ file.
 - `docs/regressions/README.md`
 - `docs/operations/task-completion/task-completion.md`
 - `docs/operations/build-and-exe/build-and-exe.md`
-- `docs/regressions/2026-09-20/cold-build-required-REG.md`
+- `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`
 
 ## Evidence
 

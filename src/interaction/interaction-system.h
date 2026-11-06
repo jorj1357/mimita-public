@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -24,6 +25,11 @@ struct InteractionContext {
 
 using InteractionAction = std::function<bool(const InteractionContext&)>;
 
+enum class InteractionInputMode {
+    Press,
+    Hold
+};
+
 struct InteractionTarget {
     uint32_t id = 0;
     std::string owner;
@@ -35,7 +41,33 @@ struct InteractionTarget {
     float radius = 1.0f;
     int priority = 0;
     bool enabled = true;
+    InteractionInputMode inputMode = InteractionInputMode::Press;
+    // Hold mode completes on this many fixed simulation ticks. Progress is
+    // advanced by tickHold(), never by render frames.
+    int holdTicks = 0;
+    float holdProgress = 0.0f;
     InteractionAction activate;
+};
+
+using WorldInteractionHandler =
+    std::function<bool(const InteractionContext&, const std::string& targetId)>;
+
+// Map data selects an action id from this registry. A map file can never name
+// an arbitrary native function; owners register the supported behavior here.
+class InteractionActionRegistry {
+public:
+    static InteractionActionRegistry& instance();
+
+    bool registerAction(const std::string& id, WorldInteractionHandler handler);
+    void unregisterAction(const std::string& id);
+    bool has(const std::string& id) const;
+    bool invoke(const std::string& id, const InteractionContext& context,
+                const std::string& targetId) const;
+    std::vector<std::string> actionIds() const;
+
+private:
+    InteractionActionRegistry() = default;
+    std::unordered_map<std::string, WorldInteractionHandler> mActions;
 };
 
 class InteractionSystem {
@@ -57,8 +89,18 @@ public:
     // of the moving camera/seat distance. 0 clears the sticky target.
     void setStickyTarget(uint32_t id) { mStickyTarget = id; }
 
-    // F edge. A valid target consumes F and wins over revive.
+    // F edge/held state. Press targets activate once on key-down; hold targets
+    // start a fixed-tick hold and cancel on release.
     bool handleKey(GLFWwindow* window, const Camera& camera);
+    // Advance an active hold by exactly one fixed simulation tick. Called from
+    // the 60 Hz gameplay loop, never from render.
+    void tickHold(const Camera& camera);
+    bool holding() const { return mHoldActive; }
+    uint32_t holdTargetId() const { return mHoldTargetId; }
+    // Runtime/scenario entry points. They use the same fixed-tick hold path as
+    // the F key; they do not fabricate a second gameplay implementation.
+    bool beginHold(uint32_t targetId, const Camera& camera);
+    void releaseHold();
     // Activate the currently selected target without a hardware key. Used by
     // terminal/scenario validation so the same action is tested.
     bool activateSelected(const Camera& camera);
@@ -77,4 +119,11 @@ private:
     uint32_t mLastPromptTarget = 0;
     uint32_t mStickyTarget = 0;
     int mMissingFrames = 0;
+    bool mHoldActive = false;
+    uint32_t mHoldTargetId = 0;
+    int mHoldElapsedTicks = 0;
+    bool mHoldKeyDown = false;
+    bool mHoldFromCommand = false;
+
+    void cancelHold(const char* reason);
 };

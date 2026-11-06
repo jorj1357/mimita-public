@@ -37,7 +37,7 @@ pre-existing before this session.
 - `docs/operations/build-and-exe/build-and-exe.md`
 - `docs/operations/task-completion/task-completion.md`
 - `docs/skills/spec-behavior-review-v1.md`
-- `docs/regressions/2026-09-29/dev-loop-server-closes-REG.md`
+- `docs/regressions/dev-loop/dev-loop-server-REG-2026-09-29.md`
 
 Finding: high-severity behavior regression. The client leave path reached
 `stopExternalServerProcess()` through the duel queue cleanup owner, allowing a

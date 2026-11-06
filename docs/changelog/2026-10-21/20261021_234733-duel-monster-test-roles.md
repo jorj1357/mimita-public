@@ -11,7 +11,7 @@
 The following changes were present before this task and were preserved:
 
 - Modified: `config/analytics.json`, `config/animations.json`, `config/audio/music-settings.json`, `config/movement/movement-source.json`, `config/playervisuals.json`, `config/ragdoll.json`, `devscripts/dev-loop.py`, and `docs/specs/movement/movement.md`.
-- Untracked: `assets/maps/payload1.glb`, `docs/changelog/2026-10-21/20261021_232030-dev-loop-start-recovery.md`, `docs/regressions/2026-10-21/dev-loop-status-write-race-REG.md`, and `docs/specs/fortnite/`.
+- Untracked: `assets/maps/payload1.glb`, `docs/changelog/2026-10-21/20261021_232030-dev-loop-start-recovery.md`, `docs/regressions/dev-loop/dev-loop-status-REG-2026-10-21.md`, and `docs/specs/fortnite/`.
 
 ## Changes
 

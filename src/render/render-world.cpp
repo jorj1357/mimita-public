@@ -16,6 +16,7 @@
 #include "map/map_loader.h"
 #include "world/world.h"
 #include "world/texture-store.h"
+#include "world/streamed-world-layer.h"
 #include "render/lighting-config.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
@@ -52,6 +53,8 @@ void renderWorld(const World& world, const Camera& cam)
     uploadMeshIfNeeded(world);
 
     renderWorldMeshBatches(world, cam);
+
+    StreamedWorldLayer::instance().render(cam);
 
     if (DebugVis::normals())
     {

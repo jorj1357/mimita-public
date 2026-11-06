@@ -3172,7 +3172,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
     const double npcSlowTotalMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - npcSlowStart).count();
-    if (npcSlowTotalMs > 25.0) {
+    constexpr double kNpcUpdateBudgetMs = 1000.0 / 60.0;
+    if (npcSlowTotalMs > kNpcUpdateBudgetMs) {
         static std::unordered_map<uint32_t, uint32_t> lastSlowUpdateTick;
         const uint32_t slowTick = (uint32_t)(npc.sensors.time * 60.0f);
         auto last = lastSlowUpdateTick.find(npc.id);
@@ -3184,9 +3185,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::NpcMovement, StructuredLevel::Important,
                 "npc.slow-update", std::to_string(npc.id),
-                "single_npc_update_exceeded_25ms", slowTick,
+                "single_npc_update_exceeded_60hz_budget", slowTick,
                 nlohmann::json{{"actor", npc.id},
                                {"team", npc.body.matchTeam},
+                               {"profile", npc.behaviorProfileId},
+                               {"preset", npc.actorPresetId},
+                               {"tick_budget_ms", kNpcUpdateBudgetMs},
+                               {"over_budget_ratio", npcSlowTotalMs / kNpcUpdateBudgetMs},
                                {"total_ms", npcSlowTotalMs},
                                {"sense_ms", npcSenseMs},
                                {"think_ms", npcThinkMs},

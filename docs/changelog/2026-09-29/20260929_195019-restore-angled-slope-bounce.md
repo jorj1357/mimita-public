@@ -22,9 +22,9 @@ straight-up normal; only numerically flat floors are canonicalized to world-up.
     normal and downward/inward movement.
   - The check requires both lateral and upward velocity when JSON bounce is
     enabled.
-- `docs/regressions/2026-09-29/slope-edge-snag-REG.md:254`
+- `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md:254`
   - Added Attempted Fix 7 and recorded that live acceptance is still pending.
-- `docs/regressions/2026-09-20/cold-build-required-REG.md`
+- `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`
   - Added cold-build occurrence 23.
 
 ## Why

@@ -46,8 +46,8 @@ generations 4, 5 and 13. The server advertised its ACTIVE generation
 (`phase:3`, `server-packets.cpp:1725-1769`) but the client never completed
 artifact acquisition, so `worldParticipationAllowed` stayed false indefinitely.
 This is the failure family already recorded in
-`docs/regressions/2026-09-20/generation-mismatch-repeats-REG.md` and
-`docs/regressions/2026-09-16/2026-09-16-server-client-generation-mismatch-spawn-lock.md`.
+`docs/regressions/networking/generation-mismatch-repeats-REG-2026-09-20.md` and
+`docs/regressions/networking/server-client-generation-REG-2026-09-16.md`.
 The hot `net.generation-policy` was the intended safety valve; the missing piece
 was a bounded failure for an unacquirable server generation.
 

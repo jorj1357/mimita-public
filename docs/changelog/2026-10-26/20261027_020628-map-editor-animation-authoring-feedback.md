@@ -4,7 +4,7 @@
 - Timestamp: 2026-10-27T02:06:28Z (2026-10-26 22:06:28 EDT)
 - Branch: `20261011zt`
 - Base commit: `1cc507aa449b7aa6aae66bdf2749d62e3c84bc7f`; no commit created.
-- Pre-existing edits: `config/accounts/default.json`, `config/analytics.json`, `config/devtimertips.json`, `config/video-settings.json`, `src/network/server-gamemode.cpp`, and `src/network/server-gamemode.h` were modified before this documentation update. `assets/maps/dust3bhopv1.glb`, `docs/changelog/2026-10-26/20261026_234627-payload-cart-map-route-sync.md`, `docs/regressions/2026-10-26/payload-cart-keeps-previous-map-route-REG.md`, and `docs/specs/gamemodes/clown.md` were also pre-existing untracked files. Preserved all.
+- Pre-existing edits: `config/accounts/default.json`, `config/analytics.json`, `config/devtimertips.json`, `config/video-settings.json`, `src/network/server-gamemode.cpp`, and `src/network/server-gamemode.h` were modified before this documentation update. `assets/maps/dust3bhopv1.glb`, `docs/changelog/2026-10-26/20261026_234627-payload-cart-map-route-sync.md`, `docs/regressions/gameplay/payload-cart-keeps-REG-2026-10-26.md`, and `docs/specs/gamemodes/clown.md` were also pre-existing untracked files. Preserved all.
 
 ## Changed
 

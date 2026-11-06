@@ -147,7 +147,9 @@ ProjectileVisualConfig projectileVisualConfigForWeapon(const std::string& weapon
         projectileParam(def, "projectileVisualFillR", 1.0f),
         projectileParam(def, "projectileVisualFillG", 1.0f),
         projectileParam(def, "projectileVisualFillB", 1.0f)};
-    cfg.texturePath = rocket ? "assets/textureshq/colorful2.png" : "assets/textureshq/meat1.png";
+    cfg.texturePath = rocket ? "assets/textureshq/colorful2.png"
+        : (def && def->grenadeEffect.enabled
+            ? "assets/textures/default.png" : "assets/textureshq/meat1.png");
     cfg.length = projectileParam(def, "projectileVisualLength", rocket ? 1.5f : 1.8f);
     cfg.radius = def && def->id == "deathball" && def->projectileRadius > 0.0f
         ? def->projectileRadius
@@ -453,7 +455,7 @@ void renderProjectile(
     // 2. Main fill pass: textured mesh with fill alpha
     {
         glm::mat4 fillModel = buildModelMatrix(position, orientation, cfg.rotationOffsetDegrees, cfg.scale);
-        bindShaderAndMesh(camera, fillModel, mesh, tex, glm::vec3(1.0f), 1.0f);
+        bindShaderAndMesh(camera, fillModel, mesh, tex, cfg.fillColor, 1.0f);
     }
 
     if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);

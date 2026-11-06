@@ -70,6 +70,12 @@ bool loadWorldTemplate(const char* path, World& outTemplate);
 void appendWorldInstance(World& target, const World& templateWorld,
                          const glm::mat4& transform);
 
+// Batched form for streaming: append many instances, then rebuild the
+// collision broadphase and publish one render revision exactly once.
+void appendWorldInstanceNoRebuild(World& target, const World& templateWorld,
+                                  const glm::mat4& transform);
+void commitWorldInstanceBatch(World& target);
+
 // Removes instances appended by appendWorldInstance by truncating the target's
 // render and collision arrays back to the recorded base counts, then rebuilding
 // the broadphase. The template's textures are not touched.

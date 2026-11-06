@@ -56,5 +56,5 @@ byte custom-format database archive passed its archive listing check. These
 checks show recovery and database reachability; the archive has not been
 restore-tested, and no human sign-in/signup acceptance was recorded. The new
 website source health endpoint and recovery/storage services are not yet
-deployed. See the [recurrence record](../regressions/2026-09-16/2026-09-16-website-auth-database-outage.md)
+deployed. See the [recurrence record](../regressions/gameplay/website-auth-database-REG-2026-09-16.md)
 and [2026-11-02 recovery changelog](../changelog/2026-11-02/20261102_142003-website-database-storage-turn-plan.md).

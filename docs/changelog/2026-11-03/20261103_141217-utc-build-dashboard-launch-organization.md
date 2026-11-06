@@ -16,7 +16,7 @@ While the live GUI/game launch was being verified, `config/analytics.json` incre
 - Published artifacts use UTC ISO 8601 IDs. A separate safe folder selector is used on disk; sidecar and SHA-256 validation protect launch selection; legacy numeric folders remain discoverable. Invalid newest artifacts fall back to the newest valid prior artifact.
 - The GUI wraps long activity lines, keeps a vertical scrollbar, and draws a gutter using the Tk text index at each visible row so wrapped rows repeat the logical entry number. It displays at most ten recent activity entries and retains the compact 400x500 window size. Control requests are correlated with their final daemon result.
 - The script inventory and dev-loop specification document the extracted module ownership, compatibility approach, timestamp IDs, and phased reference-audited organization of other scripts. No other script files were relocated in this phase.
-- Added `devscripts/dev_loop/test_artifacts.py` and regression record `docs/regressions/2026-11-03/dev-loop-utc-folder-launch-REG.md`.
+- Added `devscripts/dev_loop/test_artifacts.py` and regression record `docs/regressions/dev-loop/dev-loop-utc-REG-2026-11-03.md`.
 
 ## Validation evidence
 

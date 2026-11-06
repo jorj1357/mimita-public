@@ -671,7 +671,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
         player.avatarName = profile.avatarName;
     // The active mode's allow-list is authoritative for players as well as
     // NPCs. Never let a rejected/manual avatar survive a spawn.
-    if (profile.hasRole && !player.avatarName.empty() &&
+    if (!player.avatarName.empty() &&
         !isAvatarAllowedByPolicy(player.avatarName, profile.allowedAvatars, profile.deniedAvatars)) {
         std::string fallback = profile.avatarName;
         if (fallback.empty() || !isAvatarAllowedByPolicy(
@@ -686,7 +686,9 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
             nlohmann::json{{"player_id", player.id},
                            {"rejected", player.avatarName},
                            {"selected", fallback},
-                           {"role", profile.roleId}},
+                           {"role", profile.roleId},
+                           {"mode", serverGamemodeState().matchMode},
+                           {"policy", "mode_or_role_allow_deny_lists"}},
             __FILE__, __LINE__, __FUNCTION__);
         player.avatarName = fallback;
     }

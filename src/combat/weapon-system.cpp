@@ -26,6 +26,7 @@
 #include "pobjects/persistent-physics.h"
 #include "network/packets.h"
 #include "debug/debug-visuals.h"
+#include "render/dynamic-light.h"
 
 #include <algorithm>
 #include <cmath>
@@ -716,6 +717,22 @@ void WeaponSystem::render(const Camera& camera, const Player& player) const {
                 continue;
             renderProjectile(camera, obj.position, obj.rotation,
                              projectileVisualConfigForWeapon(obj.weaponId));
+            const auto getParam = [projectileDef](const char* key, float fallback) {
+                const auto it = projectileDef->customParams.find(key);
+                return it == projectileDef->customParams.end() ? fallback : it->second;
+            };
+            const glm::vec3 lightOffset(
+                getParam("projectileLightOffsetX", 0.0f),
+                getParam("projectileLightOffsetY", 0.0f),
+                getParam("projectileLightOffsetZ", 0.0f));
+            DynamicLightManager::instance().updateProjectileVisualLight(
+                obj.id, getParam("projectileLightEnabled", 0.0f) > 0.5f,
+                obj.position + lightOffset,
+                glm::vec3(getParam("projectileLightColorR", 1.0f),
+                          getParam("projectileLightColorG", 0.8f),
+                          getParam("projectileLightColorB", 0.2f)),
+                getParam("projectileLightIntensity", 1.0f),
+                getParam("projectileLightRadius", 3.0f));
         }
     }
 
@@ -981,8 +998,15 @@ RevolverShotResult WeaponSystem::fireGenericProjectile(
     const glm::vec3 muzzlePos = vm.muzzle;
     const WeaponFire::AimSolution aim = WeaponFire::computeAim(
         camera, world, npcs, muzzlePos, vm.forward, nullptr);
-    const glm::vec3 dir = WeaponFire::computeConfiguredProjectileDirection(
-        *def, *rt, glm::normalize(aim.direction));
+    // The authoritative server builds a deterministic volley for multi-pellet
+    // projectile weapons. Send its centerline unchanged so spread is applied
+    // once, across the pellets, rather than once to the whole volley and again
+    // per pellet.
+    const glm::vec3 aimDirection = glm::normalize(aim.direction);
+    const glm::vec3 dir = def->pelletCount > 1
+        ? aimDirection
+        : WeaponFire::computeConfiguredProjectileDirection(
+              *def, *rt, aimDirection);
 
     WeaponFire::applyRecoil(camera, player, *def, dir, mRecoilValue, 1.0f / 60.0f);
     notifyShotPresentation(player, *def);

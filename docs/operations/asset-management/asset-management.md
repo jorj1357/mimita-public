@@ -51,6 +51,20 @@ weapons and game objects. The library is a new organized area beneath that
 root, not a second asset loader. Map assets remain tracked under
 `assets/maps/`.
 
+## Public creator-project license metadata
+
+Public world-project uploads must carry explicit reuse license and author
+provenance metadata. The default code license is MIT. Public art, audio, and
+other media must use a creator-selected license that permits reuse with
+attribution; CC BY 4.0 is the initial default candidate. Private projects may
+remain private. Imported assets preserve their original creator and license;
+project owners cannot broaden those rights by re-exporting the package.
+
+The world-project manifest records the exact license for each package and
+dependency. A public fork can redistribute only files whose recorded license
+allows that use. Passwords, keys, and private profile data are never creator
+assets and must not be packaged.
+
 ## Creator source and generated content
 
 Do not commit secrets, account credentials, browser profiles, user-local

@@ -142,7 +142,7 @@ Visual acceptance remains pending.
 Time: 2026-09-30T12:03:55-04:00 (America/New_York)
 
 Added the append-only tracker
-`docs/regressions/2026-09-30/hybrid-arm-camera-aim-REG.md`.
+`docs/regressions/gameplay/hybrid-arm-camera-REG-2026-09-30.md`.
 
 The tracker records four attempted fixes, the exact code paths and builds, the
 weapon-specific evidence, and the planned fifth attempt. The current finding
@@ -168,7 +168,7 @@ Build: `python build_agent.py` returned `BUILD SUCCESS`, compiled 1 translation
 unit, skipped 496, and linked `C:\mimita-v9\mimita.exe`.
 
 Human visual review is intentionally left open in
-`docs/regressions/2026-09-30/hybrid-arm-camera-aim-REG.md`.
+`docs/regressions/gameplay/hybrid-arm-camera-REG-2026-09-30.md`.
 
 ## Follow-up: arm-only default/hybrid switch
 

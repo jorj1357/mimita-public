@@ -109,8 +109,10 @@ public:
 private:
     PersistentPhysicsSystem() = default;
 
-    void physicsStep(PersistentPhysicsObject& obj, float dt, const World& world);
-    void checkCollisions(PersistentPhysicsObject& obj, float dt, const World& world, Player& player, NpcSystem& npcs);
+    void physicsStep(PersistentPhysicsObject& obj, float dt, const World& world,
+                     uint64_t tick);
+    void checkCollisions(PersistentPhysicsObject& obj, float dt, const World& world,
+                         Player& player, NpcSystem& npcs, uint64_t tick);
     void doExplosion(PersistentPhysicsObject& obj, const World& world, Player& player, NpcSystem& npcs, class Camera* camera);
     void renderPrimitive(const PersistentPhysicsObject& obj, const Camera& camera) const;
 

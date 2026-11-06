@@ -442,6 +442,46 @@ including the thrower, and is avoided by NPCs. Smoke blocks NPC line of sight.
 Darkbang owns an effect radius, a short visual radius sphere, camera-inside
 world/GUI darkening, and global sound ducking.
 
+### Throwable projectile physics and presentation
+
+Frag, smoke, fire, and darkbang are inventory throwables that share the
+grenade-launcher projectile simulation. The held grenade is presentation only:
+it has no actor/world weapon collider. The spawned sphere projectile owns world
+contacts, bounces, fuse, and its rendered appearance. Throwing has no movement
+impulse on the thrower; camera/arm feedback may still run, and explosion
+knockback remains governed by that grenade's separate damage settings.
+
+Per-weapon launch and bounce tuning is resolved from the existing weapon
+definition: `projectile_speed` is forward launch speed, `custom_params.upBias`
+is added vertically, `custom_params.gravity` and `drag` govern flight, and
+`projectile_radius`, `bounceRestitution`, `bounceFriction`, and `maxBounceCount`
+govern the projectile collision and bounce. Grenade fuse remains exclusively
+`grenade_effect.fuse_ticks`. Clicking throws immediately; there is no charge
+hold. These values are loaded by the shared weapon snapshot, not by a separate
+grenade physics registry.
+
+The named grenade defaults currently use 22 m/s forward speed, 5.5 m/s upward
+bias, 0.28 m collision radius, 20 m/s² gravity, 0.05 drag, 0.92 restitution,
+0.04 friction, and at most 30 bounces. Tune each type in its own weapon config.
+The shared renderer uses its cached procedural cylinder when
+`projectileVisualSphere` is zero; its per-type dimensions, tint, outline, and
+glow are defined in that grenade's `custom_params`. `projectileModelPath` can
+select an optional GLB model. The optional dynamic point light is also per type:
+`projectileLightEnabled`, `projectileLightOffsetX/Y/Z`, color, intensity, and
+radius control a light that follows the projectile origin plus its configured
+offset. The light is submitted through the shared capped dynamic-light pool.
+
+The journal records `grenade.equipped-collision` when a held grenade is
+resolved without a collision capsule/mesh, `grenade.thrower-impulse` for the
+no-push throw contract, `grenade.spawn` with the authoritative projectile
+shape, velocity, and physics values, and `grenade.bounce` with contact normal,
+speed before/after, restitution, friction, and bounce count.
+
+The in-game Map Editor does not yet author reusable weapon/projectile model
+assets. Editor-based grenade model creation remains future work; current
+presentation uses the shared procedural cylinder and the existing optional GLB
+model reference.
+
 ### Linear impact falloff: revolver first (2026-10-20)
 
 The revolver's hit damage must vary linearly between a minimum of 15 and a

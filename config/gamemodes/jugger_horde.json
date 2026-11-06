@@ -11,6 +11,7 @@
   ],
   "goal_value": 0,
   "weapon_set_id": 1,
+  "force_weapon_set_for_all_actors": false,
   "time_limit_seconds": 300,
   "time_limit_winner_team": "juggernauts",
   "time_limit_outcome": "stalemate",
@@ -206,6 +207,7 @@
   "roles": {},
   "actor_preset": "juggernaut_arcade",
   "movement_preset": "",
+  "vehicle_profile": "",
   "npc_behavior_profile": "",
   "npc_targeting": {
     "enabled": true,
@@ -230,7 +232,6 @@
   },
   "aim": {
     "mode": "physical",
-    // "body_mode": "default",
     "body_mode": "hybrid",
     "body_enabled": true
   },
@@ -264,6 +265,7 @@
   "avatar": {
     "enabled": false,
     "forced": false,
+    "allow_live_change": true,
     "name": "",
     "allowed": [],
     "denied": [],

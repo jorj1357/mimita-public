@@ -19,4 +19,4 @@ Validation:
   still running; link and four runtime DLL stages completed.
 
 Related regression:
-`docs/regressions/2026-09-27/runtime-dll-staging-lock-REG.md`
+`docs/regressions/dev-loop/runtime-dll-staging-REG-2026-09-27.md`

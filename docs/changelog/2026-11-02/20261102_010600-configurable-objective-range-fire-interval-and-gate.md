@@ -30,7 +30,7 @@ systems.
     fields.
 - `AGENTS.md`
   - Added the mandatory `python devscripts/quality/agent-gate.py` gate.
-- `docs/regressions/2026-11-01/npc-closed-block-interior-REG.md`
+- `docs/regressions/collisions/npc-closed-block-REG-2026-11-01.md`
   - Added the repeatable wall-containment scenario occurrence.
 
 ## Configuration

@@ -31,7 +31,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 49: AttackRequestPacket carries validated client-first per-target hitscan
 //     aggregates so shotgun/revolver damage can match local prediction.
 // 50: DuelStatePacket carries the authoritative objective interaction range.
-constexpr uint16_t PROTOCOL_VERSION = 50;
+constexpr uint16_t PROTOCOL_VERSION = 51;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -1965,7 +1965,8 @@ static_assert(sizeof(DisasterStatePacket) <= 256, "DisasterStatePacket is too la
 enum PhysicalEntitySource : uint8_t
 {
     PHYSICAL_ENTITY_SOURCE_BOX = 0,
-    PHYSICAL_ENTITY_SOURCE_GLB = 1
+    PHYSICAL_ENTITY_SOURCE_GLB = 1,
+    PHYSICAL_ENTITY_SOURCE_SPHERE = 2
 };
 
 constexpr int MAX_PHYSICAL_ENTITY_PATH_BYTES = 128;

@@ -179,4 +179,14 @@ std::vector<glm::vec3> proceduralChunkBlockPositions(
     int32_t chunkX, int32_t chunkZ);
 uint64_t proceduralChunkHash(uint32_t seed, int32_t chunkX, int32_t chunkZ);
 
+// Authored-zone chunk identity. A seed alone is insufficient: the generator
+// version and chunk dependency identity participate in the hash so mismatched
+// content cannot be mistaken for deterministic agreement.
+uint64_t proceduralZoneChunkHash(uint32_t seed,
+                                 const std::string& generatorVersion,
+                                 const std::string& dependencyIdentity,
+                                 int32_t chunkX, int32_t chunkZ);
+
+bool proceduralZoneSelfTest(std::string& report);
+
 } // namespace MimitaProcedural

@@ -162,7 +162,7 @@ respawned there.
   commands, next todos, and acceptance status.
 - `docs/specs/entity-editor/entity-editor.md`: documented route flags, labels,
   validation, and radius/wait semantics.
-- `docs/regressions/2026-10-25/payload-npc-replication-and-spawn-collapse-REG.md`:
+- `docs/regressions/networking/payload-npc-replication-REG-2026-10-25.md`:
   append-only regression record.
 
 ## Validation

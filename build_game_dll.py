@@ -11,7 +11,7 @@ import subprocess
 import sys
 import atexit
 
-from build_toolchain import compiler, ccache, glfw_include
+from build_toolchain import compiler, ccache, glfw_include, run_tool
 from build_lock import (
     BuildLockBusy,
     acquire_checkout_build_lock,
@@ -75,7 +75,7 @@ command += [
 ]
 
 print("[HOT RELOAD] rebuilding DLL")
-result = subprocess.run(command, cwd=ROOT)
+result = run_tool(command, cwd=ROOT)
 if result.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(result.returncode)

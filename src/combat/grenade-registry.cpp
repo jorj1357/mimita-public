@@ -76,6 +76,12 @@ bool GrenadeRegistry::rebuildFromWeapons()
         mDefs.size());
     for (const auto& kv : mDefs) {
         const GrenadeDefinition& g = kv.second;
+        const WeaponDefinition* weapon = WeaponRegistry::instance().get(g.weaponId);
+        const auto param = [weapon](const char* key, float fallback) {
+            if (!weapon) return fallback;
+            const auto it = weapon->customParams.find(key);
+            return it == weapon->customParams.end() ? fallback : it->second;
+        };
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Weapons, StructuredLevel::Important,
             "grenade.config.resolved", g.id, "weapon-snapshot", 0,
@@ -92,6 +98,25 @@ bool GrenadeRegistry::rebuildFromWeapons()
                            {"visual_radius_m", g.visualRadius},
                            {"visual_alpha_start", g.visualAlphaStart},
                            {"visual_alpha_end", g.visualAlphaEnd},
+                           {"projectile_radius_m", weapon ? weapon->projectileRadius : 0.0f},
+                           {"forward_speed_mps", weapon ? weapon->projectileSpeed : 0.0f},
+                           {"upward_bias_mps", param("upBias", 0.0f)},
+                           {"gravity_mps2", param("gravity", 0.0f)},
+                           {"drag", param("drag", 0.0f)},
+                           {"restitution", param("bounceRestitution", 0.0f)},
+                           {"friction", param("bounceFriction", 0.0f)},
+                           {"max_bounces", param("maxBounceCount", 0.0f)},
+                           {"visual_shape", param("projectileVisualSphere", 0.0f) > 0.5f
+                               ? "sphere" : "procedural_cylinder"},
+                           {"visual_length_m", param("projectileVisualLength", 0.0f)},
+                           {"visual_radius_m", param("projectileVisualRadius", 0.0f)},
+                           {"outline_enabled", param("projectileOutlineEnabled", 0.0f) > 0.5f},
+                           {"glow_enabled", param("projectileGlowEnabled", 0.0f) > 0.5f},
+                           {"light_enabled", param("projectileLightEnabled", 0.0f) > 0.5f},
+                           {"light_offset", {param("projectileLightOffsetX", 0.0f),
+                                              param("projectileLightOffsetY", 0.0f),
+                                              param("projectileLightOffsetZ", 0.0f)}},
+                           {"light_radius_m", param("projectileLightRadius", 0.0f)},
                            {"camera_overlay", g.cameraOverlay}});
     }
     return !mDefs.empty();

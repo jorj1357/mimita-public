@@ -30,4 +30,4 @@ shared client/server destination.
 
 ## Related regression
 
-`docs/regressions/2026-09-29/slope-edge-snag-REG.md`
+`docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`

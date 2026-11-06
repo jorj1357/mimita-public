@@ -1,6 +1,10 @@
 2026 10 15 2016
-can u check new loading for avatars do we have a normalization for this issues? how did we fix boomer avatar it ahd teh same issues
-like do we have normalization function even 
+Historical note: to investigate a Boomer-like avatar loading failure, trace
+normalization at `src/entities/player-loader.cpp` and inspect that process's
+`events.jsonl` for `avatar.model.normalized-node` entries, the requested avatar,
+resolved model path, and source/model signature. Missing or malformed evidence
+should lead to a bounded diagnostic at the loader owner before changing asset
+normalization. The old capture did not establish the cause of a Boomer failure.
 
 also todo clean this doc!!!!!! cant have so much stuff inthis doc just spam 
 

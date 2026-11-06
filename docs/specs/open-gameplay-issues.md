@@ -1,4 +1,24 @@
-﻿# Open Gameplay Issues
+﻿2026 11 05 1719 jojr todo also 
+animations must be presendted betewen clients better
+like
+npcs need animatins
+plauers need animatins
+remote players
+
+client A connects to server A and client B is thre too
+
+with cleint B's existing info that is sent frmo server A , i get what state/what aniamtion client B should be in  and my client handles it servr doenst do the edits and presetnatnon 
+
+2026 11 06 1640
+
+jorj 
+
+
+we also need json checker for gui bc somethings dont update  some fields in gui things dont eidt in game beahvior 
+
+also need inventor defined better 
+
+# Open Gameplay Issues
 
 ## Purpose and audience
 

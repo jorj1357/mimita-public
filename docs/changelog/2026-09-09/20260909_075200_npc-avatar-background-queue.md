@@ -26,7 +26,7 @@ Exact files changed:
 - `src/engine/engine-tick-setup.cpp`: polls at most one completed avatar result per engine frame.
 - `src/main-systems.cpp`: attaches the existing replay worker to `AvatarSystem`.
 - `src/render/render-player.cpp`: prevents repeated render-frame avatar requests.
-- `docs/regressions/2026-09-09/npc-avatar-frame-stall-REG.md`: recorded the confirmed repeated-retry/frame-stall regression using the new README format.
+- `docs/regressions/performance/npc-avatar-frame-REG-2026-09-09.md`: recorded the confirmed repeated-retry/frame-stall regression using the new README format.
 
 ## Hypothesis
 

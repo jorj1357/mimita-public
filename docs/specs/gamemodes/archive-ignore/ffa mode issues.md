@@ -409,7 +409,7 @@ rate limits for high-frequency render, transport, and simulation state.
 - Networking: `docs/specs/networking/networking.md`
 - JSON architecture: `docs/architecture/json-configuration/json-configuration.md`
 - Ownership: `docs/architecture/code-ownership/code-ownership.md`
-- Regression: `docs/regressions/2026-09-09/gamemode-session-actors-REG.md`
+- Regression: `docs/regressions/gameplay/gamemode-session-actors-REG-2026-09-09.md`
 - Feature workflow: `docs/features/README.md`
 - Focused reviews: `docs/skills/spec-behavior-review-v1.md`,
   `docs/skills/gui-hardcoding-checker-v1.md`,
@@ -468,4 +468,4 @@ rate limits for high-frequency render, transport, and simulation state.
 ## Changelog and regression links
 
 - [Feature-record changelog](C:/mimita-priv-v8/docs/changelog/2026-09-09/20260909_174500-ffa-feature-record.md)
-- [Gamemode session and actor regression](C:/mimita-priv-v8/docs/regressions/2026-09-09/gamemode-session-actors-REG.md)
+- [Gamemode session and actor regression](../../../regressions/gameplay/gamemode-session-actors-REG-2026-09-09.md)

@@ -8,6 +8,7 @@
   "team_names": [],
   "goal_value": 0,
   "weapon_set_id": 1,
+  "force_weapon_set_for_all_actors": false,
   "time_limit_seconds": 0,
   "time_limit_winner_team": "",
   "time_limit_outcome": "high_score",
@@ -165,6 +166,7 @@
   "roles": {},
   "actor_preset": "",
   "movement_preset": "",
+  "vehicle_profile": "",
   "npc_behavior_profile": "",
   "npc_targeting": {
     "enabled": false,
@@ -222,6 +224,7 @@
   "avatar": {
     "enabled": false,
     "forced": false,
+    "allow_live_change": true,
     "name": "",
     "allowed": [],
     "denied": [],

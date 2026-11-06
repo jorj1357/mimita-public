@@ -24,6 +24,7 @@
 #include "gamemode/match-roles.h"
 #include "gamemode/gamemode.h"
 #include "config/player-settings.h"
+#include "debug/structured-log.h"
 
 namespace {
 
@@ -85,22 +86,31 @@ void registerActorCommands()
 {
     Terminal::instance().registerCommand({
         "actorlist",
-        "List match actors with controller, role, team, state, and movement profile",
+        "List match actors with controller, role, team, avatar, state, and policy",
         "actorlist",
         [](const std::vector<std::string>&) {
             using namespace MimitaNet;
 
             const ServerGamemodeState& d = serverGamemodeState();
             char buf[512];
+            nlohmann::json auditActors = nlohmann::json::array();
 
             // Prefer the server-owned descriptors (host/server process).
             if (!d.matchActors.empty()) {
                 for (uint32_t id : d.participants) {
+                    if (auditActors.size() >= 64) break;
                     auto it = d.matchActors.find(id);
                     if (it == d.matchActors.end()) continue;
                     const ActorMatchDescriptor& a = it->second;
+                    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(id);
+                    const std::string policy = !profile.allowAvatarLiveChange
+                        ? "live_change_disabled"
+                        : !profile.allowedAvatars.empty() ? "curated_allowlist" : "unrestricted";
+                    const bool avatarAllowed = profile.avatarName.empty() ||
+                        isAvatarAllowedByPolicy(profile.avatarName,
+                            profile.allowedAvatars, profile.deniedAvatars);
                     snprintf(buf, sizeof(buf),
-                        "actor=%u controller=%s role=%s preset_override=%s team=%d state=%s movement=%s",
+                        "actor=%u controller=%s role=%s preset_override=%s team=%d state=%s movement=%s avatar=%s avatar_policy=%s",
                         id,
                         a.controller == ActorController::Npc ? "npc" : "human",
                         a.roleId.empty() ? "none" : a.roleId.c_str(),
@@ -108,31 +118,98 @@ void registerActorCommands()
                             ? d.actorPresetOverridesByActorId.at(id).c_str() : "none",
                         a.teamId,
                         actorStateName(a.state),
-                        a.movementProfileId.empty() ? "none" : a.movementProfileId.c_str());
+                        a.movementProfileId.empty() ? "none" : a.movementProfileId.c_str(),
+                        profile.avatarName.empty() ? "unknown" : profile.avatarName.c_str(),
+                        policy.c_str());
                     Terminal::instance().addLog(buf);
+                    auditActors.push_back({{"actor_id", id}, {"controller", a.controller == ActorController::Npc ? "npc" : "human"},
+                        {"team", a.teamId}, {"role", a.roleId},
+                        {"selected_avatar", profile.avatarName}, {"avatar_policy", policy},
+                        {"avatar_policy_result", avatarAllowed ? "allowed_or_unresolved" : "rejected"}});
                 }
                 if (d.participants.empty())
                     Terminal::instance().addLog("actorlist: no participants");
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "actor.presentation.audit", d.matchMode,
+                    "explicit actor/avatar audit requested", d.currentServerTick,
+                    {{"mode", d.matchMode}, {"actor_count", auditActors.size()},
+                     {"actors", auditActors}});
                 return;
             }
 
             // Otherwise show what this client received from the server.
             const auto& actors = CommunityMatchClient::instance().actorIdentities();
+            const Gamemode& activeMode = GamemodeRegistry::instance().get(
+                CommunityMatchClient::instance().mode());
             if (actors.empty()) {
                 Terminal::instance().addLog("actorlist: no server or replicated actors");
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::General, StructuredLevel::Important,
+                    "actor.presentation.audit", CommunityMatchClient::instance().mode(),
+                    "explicit actor/avatar audit requested; no replicated actors are available",
+                    CommunityMatchClient::instance().serverTick(),
+                    {{"mode", CommunityMatchClient::instance().mode()},
+                     {"actor_count", 0}, {"actors", nlohmann::json::array()}});
                 return;
             }
             for (const auto& a : actors) {
                 const std::string& role = MatchRoleRegistry::instance().idForIndex(a.roleIndex);
+                const MatchRoleDefinition* roleDefinition = role.empty()
+                    ? nullptr : MatchRoleRegistry::instance().get(role);
+                std::string avatar = "unknown";
+                std::string controller = "replicated";
+                if (::gpMpContext) {
+                    if (a.actorId == ::gpMpContext->localPlayerId) {
+                        avatar = GetPlayerSettings().avatarName;
+                        controller = "local_human";
+                    }
+                    auto player = ::gpMpContext->remotePlayers.find(a.actorId);
+                    auto npc = ::gpMpContext->remoteNpcs.find(a.actorId);
+                    if (player != ::gpMpContext->remotePlayers.end()) {
+                        avatar = player->second.avatarName();
+                        controller = "human";
+                    } else if (npc != ::gpMpContext->remoteNpcs.end()) {
+                        avatar = npc->second.avatarName();
+                        controller = "npc";
+                    }
+                }
+                bool avatarAllowed = !avatar.empty() && avatar != "unknown";
+                if (activeMode.avatar.configured)
+                    avatarAllowed = avatarAllowed && isAvatarAllowedByPolicy(
+                        avatar, activeMode.avatar.allowed, activeMode.avatar.denied);
+                if (roleDefinition) {
+                    avatarAllowed = avatarAllowed && isAvatarAllowedByPolicy(
+                        avatar, roleDefinition->allowedAvatars,
+                        roleDefinition->deniedAvatars);
+                    if (roleDefinition->avatarForced && !roleDefinition->avatarName.empty())
+                        avatarAllowed = avatarAllowed && avatar == roleDefinition->avatarName;
+                }
                 snprintf(buf, sizeof(buf),
-                    "actor=%u controller=replicated role=%s preset_index=%u team=%d state=%s",
+                    "actor=%u controller=%s role=%s preset_index=%u team=%d state=%s avatar=%s avatar_policy_result=%s",
                     a.actorId,
+                    controller.c_str(),
                     role.empty() ? "none" : role.c_str(),
                     a.actorPresetIndex,
                     a.team == 0xFF ? -1 : (int)a.team,
-                    actorStateName((ActorState)a.state));
+                    actorStateName((ActorState)a.state), avatar.c_str(),
+                    !roleDefinition && !activeMode.avatar.configured
+                        ? "unknown_policy" : (avatarAllowed ? "allowed" : "rejected_or_unresolved"));
                 Terminal::instance().addLog(buf);
+                const char* avatarPolicyResult =
+                    (!roleDefinition && !activeMode.avatar.configured)
+                        ? "unknown_policy" : (avatarAllowed ? "allowed" : "rejected_or_unresolved");
+                auditActors.push_back({{"actor_id", a.actorId}, {"controller", controller},
+                    {"team", a.team == 0xFF ? -1 : (int)a.team}, {"role", role},
+                    {"selected_avatar", avatar},
+                    {"avatar_policy_result", avatarPolicyResult}});
             }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "actor.presentation.audit", CommunityMatchClient::instance().mode(),
+                "explicit actor/avatar audit requested", CommunityMatchClient::instance().serverTick(),
+                {{"mode", CommunityMatchClient::instance().mode()},
+                 {"actor_count", auditActors.size()}, {"actors", auditActors}});
         },
         "2026-09-10",
         CommandCategory::Debug

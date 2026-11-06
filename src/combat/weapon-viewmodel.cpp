@@ -462,7 +462,10 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
         muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
         forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
 
-        if (world) {
+        if (world)
+            player.weaponModelTransform = weaponTransform;
+
+        if (world && !(def && def->grenadeEffect.enabled)) {
             muzzle = glm::vec3(weaponTransform * glm::vec4(collisionMuzzle, 1.0f));
             forward = glm::normalize(glm::vec3(weaponTransform * glm::vec4(modelDirection, 0.0f)));
             Capsule weaponCap = weaponCapsuleFromTransform(
@@ -519,6 +522,13 @@ void WeaponViewModel::update(const Camera& camera, Player& player, float dt,
             player.weaponGripLocal = colGrip;
             player.weaponMuzzleLocal = colMuzzle;
             player.weaponRadiusLocal = colRadius;
+        } else if (world) {
+            player.collision.hasWeaponCollisionCapsule = false;
+            player.weaponCollisionCapsule = Capsule{};
+            player.weaponLocalToArm = glm::mat4(1.0f);
+            player.weaponGripLocal = glm::vec3(0.0f);
+            player.weaponMuzzleLocal = glm::vec3(0.0f);
+            player.weaponRadiusLocal = 0.0f;
         }
         if (def && !def->animationProfile.empty()) {
             glm::vec3 actionRotation(0.0f), actionOffset(0.0f);

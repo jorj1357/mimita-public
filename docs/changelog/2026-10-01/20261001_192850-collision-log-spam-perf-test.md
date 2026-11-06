@@ -66,7 +66,7 @@ incompleteness: a 42.4 ms frame had `simulation_ms` 13.5, `rendering_ms` 1.2,
 - `config/debuglogger.json`
 - `src/physics/physical-entity.{h,cpp}`
 - `src/game/game-cli.cpp`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 7)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 7)
 
 # Pre-existing work (not authored this session)
 

@@ -77,11 +77,11 @@ not networking.
 
 ## Regression records
 
-- `docs/regressions/2026-10-25/flat-floor-backed-face-dash-REG.md`
-- Updated `docs/regressions/2026-10-25/coolplace-limb-rollback-REG.md`
+- `docs/regressions/collisions/flat-floor-backed-REG-2026-10-25.md`
+- Updated `docs/regressions/collisions/coolplace-limb-rollback-REG-2026-10-25.md`
 
-Related older records: `docs/regressions/2026-09-29/slope-edge-snag-REG.md`
-and `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`.
+Related older records: `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`
+and `docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md`.
 
 ## Pre-existing work preserved
 

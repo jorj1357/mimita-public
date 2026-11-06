@@ -17,7 +17,14 @@ content-addressed tree that AI or a human can mutate while MiMITA.exe runs."
 The runtime generation is derived from a project version; the project version
 keeps history even after files are deleted or renamed.
 
-## Primitives (`src/project/`)
+## Target primitives (`src/project/`; not implemented)
+
+These are the intended architecture, not a claim that the source files or
+runtime commands currently exist. A repository search on 2026-11-05 found no
+`src/project/` implementation or `project-selftest` entry point. Current map
+authoring is owned by `MapEditor` and `MapConfigRegistry`; current project
+history/blob storage must be implemented before any feature can rely on the
+primitives below.
 
 - `ContentId { algorithm, digest }` (`project-types.*`): algorithm-agile
   content identity. Never treat one hash algorithm as the meaning of identity.
@@ -65,17 +72,17 @@ tree; the loader then detects the source change and builds a new runtime
 generation. Undo of code does not rewind world state unless a state migration or
 world replay is explicitly chosen.
 
-## First scope
+## Intended first scope
 
 `src/` only (`.cpp/.h/.hpp/.cc/.cxx/.c`, excluding `src/generated/`). Assets,
 shaders, and configs join the same tree later without changing the model.
 
-## Verification
+## Target verification (not available yet)
 
-`mimita.exe --project-selftest` (and the standalone primitives harness) covers
-blob dedupe, tree scan, add/modify/delete/rename diff, history
-record/undo/redo/checkpoint/restore, `.d` dependency affected set, and state
-schema migration.
+When implemented, `mimita.exe --project-selftest` and the standalone primitives
+harness should cover blob dedupe, tree scan, add/modify/delete/rename diff,
+history record/undo/redo/checkpoint/restore, `.d` dependency affected set, and
+state schema migration. The current checkout does not provide this self-test.
 
 ## Phase 4-6 additions
 
@@ -91,7 +98,8 @@ schema migration.
 - `CodeGenerationPacket` extended with logical vs platform identity and
   status/READY/SWITCH phases.
 
-`mimita.exe --phase456-selftest` covers the above primitives.
+When implemented, `mimita.exe --phase456-selftest` should cover the additions
+above. The current checkout does not provide this self-test.
 
 ## Related
 

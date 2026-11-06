@@ -32,7 +32,7 @@ expected run `20261013_234636`, build `2238`, while the server answered as run
 - `docs/architecture/terminal-commands/terminal-commands.md`
 - `docs/skills/terminal-command-checker-v1.md`
 - `docs/operations/task-completion/task-completion.md`
-- `docs/regressions/2026-09-20/generation-mismatch-repeats-REG.md`
+- `docs/regressions/networking/generation-mismatch-repeats-REG-2026-09-20.md`
 
 ## Validation
 

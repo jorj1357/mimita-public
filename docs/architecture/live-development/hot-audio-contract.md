@@ -343,7 +343,8 @@ human audible/visual acceptance.
 
 ## Related authoritative documents
 
-- Specification: `docs/features/live-code-development/live-code-development.md`
+- Specification: `docs/architecture/live-development/live-development.md` and
+  `docs/specs/hotreload/hotreload.md`
 - Architecture: `docs/architecture/live-development/hot-kernel.md`,
   `docs/architecture/live-development/hot-cold-audit.md`
 - Asset rules: `docs/operations/asset-management/asset-management.md`

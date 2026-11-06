@@ -11,7 +11,7 @@ The working tree already contained modifications to:
 
 - `docs/architecture/code-ownership/code-ownership.md`
 - `docs/specs/gamemodes/gamemodes.md`
-- `docs/regressions/2026-09-09/duel-specific-gamemode-ownership-REG.md`
+- `docs/regressions/gameplay/duel-specific-gamemode-REG-2026-09-09.md`
 
 Those files were not edited in this session.
 

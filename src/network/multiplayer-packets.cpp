@@ -1907,7 +1907,8 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     // otherwise replays its last frame forever. Treat snapshot starvation as a
     // connection failure and name it in the journal.
     const bool snapshotStarved =
-        before == ConnectionState::Connected &&
+        (before == ConnectionState::Connected ||
+         before == ConnectionState::WeakConnection) &&
         ctx.lastSnapshotReceivedMs > 0 &&
         snapshotAge > staleThreshold;
     if (snapshotStarved)
@@ -1937,9 +1938,8 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     }
     ConnectionState next = mpNextConnectionHealth(
         before, now, lastHeardAge, heardSinceDisconnect,
-        staleThreshold, hardTimeout, ctx.reconnectGraceDeadlineMs, graceMs);
-    if (snapshotStarved && next == before)
-        next = ConnectionState::Reconnecting;
+        staleThreshold, hardTimeout, snapshotStarved,
+        ctx.reconnectGraceDeadlineMs, graceMs);
 
     if (next == before)
         return;

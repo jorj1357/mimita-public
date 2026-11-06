@@ -16,11 +16,11 @@ The current working copy had a pre-existing edit in
 
 This matches the user's report and the prior Oct. 24 diagnosis: a shadow depth map reused between rendered frames can lag moving scene content and plausibly appear as flicker. The new code is the smallest correction, but the cause was not reproduced live in this session.
 
-The append-only detail record is `docs/regressions/2026-11-04/fullscreen-shadow-cadence-flicker-REG.md`; Entry 8 was appended to `docs/regressions/master/performance-REG.md`. The user-reported occurrence is dated Nov. 3 local time; the canonical artifact folder follows UTC and is Nov. 4.
+The append-only detail record is `docs/regressions/performance/fullscreen-shadow-cadence-REG-2026-11-04.md`; Entry 8 was appended to `docs/regressions/performance/README.md`. The user-reported occurrence is dated Nov. 3 local time; the canonical artifact folder follows UTC and is Nov. 4.
 
 ## Documents and review
 
-- Read `AGENTS.md`, `docs/ROUTER.md`, `docs/regressions/README.md`, `docs/regressions/master/README.md`, `docs/regressions/master/performance-REG.md`, `docs/specs/graphics/graphics-resolution.md`, `docs/specs/performance/performance.md`, `docs/skills/documentation-checker-v1.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/operations/build-and-exe/build-and-exe.md`, and `docs/operations/task-completion/task-completion.md`.
+- Read `AGENTS.md`, `docs/ROUTER.md`, `docs/regressions/README.md`, `docs/regressions/master/README.md`, `docs/regressions/performance/README.md`, `docs/specs/graphics/graphics-resolution.md`, `docs/specs/performance/performance.md`, `docs/skills/documentation-checker-v1.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/operations/build-and-exe/build-and-exe.md`, and `docs/operations/task-completion/task-completion.md`.
 - Documentation review: the new detail record links to the prior correction, authoritative fullscreen spec, and session changelog. No spec behavior was changed.
 - The worktree already contained many unrelated user changes. The renderer file itself already had changes to shadow cadence and SSBM presentation; only the cadence selection/comment were changed here. All other edits were preserved.
 

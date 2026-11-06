@@ -1,0 +1,380 @@
+{
+  "arena": {
+    "ball": {
+      "friction": 0.35,
+      "linearDamping": 0.03,
+      "massKg": 30.0,
+      "maxSpeed": 60.0,
+      "radius": 0.9125,
+      "restitution": 0.6,
+      "spawn": [
+        0.0,
+        0.0,
+        2.0
+      ],
+      "visualRadius": 0.95
+    },
+    "goals": [
+      {
+        "center": [
+          -30.0,
+          0.0,
+          3.0
+        ],
+        "enabled": true,
+        "facing": [
+          1.0,
+          0.0,
+          0.0
+        ],
+        "halfExtents": [
+          1.0,
+          6.0,
+          3.0
+        ],
+        "id": "blue_goal",
+        "team": "blue"
+      },
+      {
+        "center": [
+          30.0,
+          0.0,
+          3.0
+        ],
+        "enabled": true,
+        "facing": [
+          -1.0,
+          0.0,
+          0.0
+        ],
+        "halfExtents": [
+          1.0,
+          6.0,
+          3.0
+        ],
+        "id": "orange_goal",
+        "team": "orange"
+      }
+    ],
+    "kickoffs": [
+      {
+        "id": "blue_kickoff_1",
+        "position": [
+          -20.0,
+          0.0,
+          1.0
+        ],
+        "team": "blue",
+        "yaw": 0.0
+      },
+      {
+        "id": "orange_kickoff_1",
+        "position": [
+          20.0,
+          0.0,
+          1.0
+        ],
+        "team": "orange",
+        "yaw": 180.0
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "enabled": true,
+      "id": "wall_left_a",
+      "material": "",
+      "position": [
+        -30.0,
+        -13.0,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        14.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "wall_left_b",
+      "material": "",
+      "position": [
+        -30.0,
+        13.0,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        14.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "wall_right_a",
+      "material": "",
+      "position": [
+        30.0,
+        -13.0,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        14.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "wall_right_b",
+      "material": "",
+      "position": [
+        30.0,
+        13.0,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        14.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "wall_side_left",
+      "material": "",
+      "position": [
+        0.0,
+        -20.5,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        60.0,
+        1.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "wall_side_right",
+      "material": "",
+      "position": [
+        0.0,
+        20.5,
+        4.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        60.0,
+        1.0,
+        8.0
+      ],
+      "tags": [
+        "arena",
+        "wall"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "goal_back_left",
+      "material": "",
+      "position": [
+        -34.0,
+        0.0,
+        3.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        12.0,
+        6.0
+      ],
+      "tags": [
+        "arena",
+        "goal"
+      ]
+    },
+    {
+      "enabled": true,
+      "id": "goal_back_right",
+      "material": "",
+      "position": [
+        34.0,
+        0.0,
+        3.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        1.0,
+        12.0,
+        6.0
+      ],
+      "tags": [
+        "arena",
+        "goal"
+      ]
+    }
+  ],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "boost_pads": [
+    {
+      "enabled": true,
+      "id": "pad_big_center",
+      "kind": "big",
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "radius": 2.0,
+      "rechargeTicks": 600
+    },
+    {
+      "enabled": true,
+      "id": "pad_small_left",
+      "kind": "small",
+      "position": [
+        -12.0,
+        -10.0,
+        0.0
+      ],
+      "radius": 1.0,
+      "rechargeTicks": 240
+    },
+    {
+      "enabled": true,
+      "id": "pad_small_right",
+      "kind": "small",
+      "position": [
+        12.0,
+        10.0,
+        0.0
+      ],
+      "radius": 1.0,
+      "rechargeTicks": 240
+    }
+  ],
+  "entities": [],
+  "glb_objects": [],
+  "payload": {
+    "cart_origin": {
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "yaw": 0.0
+    },
+    "cart_size": [
+      2.0,
+      1.5,
+      1.0
+    ],
+    "facing_mode": "fixed",
+    "interaction_box": {
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        3.0,
+        2.25,
+        1.5
+      ]
+    },
+    "route": []
+  },
+  "vehicles": [
+    {
+      "id": "blue_car",
+      "template": "car_sedan",
+      "position": [-20.0, 0.0, 1.0],
+      "yaw": 0.0,
+      "enabled": true
+    },
+    {
+      "id": "orange_car",
+      "template": "car_sedan",
+      "position": [20.0, 0.0, 1.0],
+      "yaw": 180.0,
+      "enabled": true
+    }
+  ]
+}

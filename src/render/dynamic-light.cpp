@@ -29,6 +29,7 @@ DynamicLight* DynamicLightManager::spawn(const glm::vec3& position,
         if (light.active) continue;
         light.id = mNextId++;
         light.playerVisualOwner = 0;
+        light.projectileVisualOwner = 0;
         light.position = position;
         light.color = color;
         light.intensity = intensity;
@@ -46,6 +47,42 @@ DynamicLight* DynamicLightManager::spawn(const glm::vec3& position,
     Debug::logThrottled(Debug::Category::Render, "dlight-pool-full", 2.0f,
         "[DYNAMIC LIGHT] pool full (max=%d)\n", (int)MAX_LIGHTS);
     return nullptr;
+}
+
+void DynamicLightManager::updateProjectileVisualLight(uint32_t projectileId,
+    bool enabled, const glm::vec3& position, const glm::vec3& color,
+    float intensity, float radius)
+{
+    if (projectileId == 0) return;
+    DynamicLight* owned = nullptr;
+    DynamicLight* available = nullptr;
+    for (auto& light : mLights) {
+        if (light.active && light.projectileVisualOwner == projectileId) {
+            owned = &light;
+            break;
+        }
+        if (!light.active && !available) available = &light;
+    }
+    if (!enabled) {
+        if (owned) owned->active = false;
+        return;
+    }
+    if (!owned) {
+        if (!available) return;
+        owned = available;
+        owned->id = mNextId++;
+        owned->playerVisualOwner = 0;
+        owned->projectileVisualOwner = projectileId;
+        owned->active = true;
+    }
+    owned->position = position;
+    owned->color = color;
+    owned->intensity = intensity;
+    owned->radius = radius;
+    owned->lifetime = 0.5f;
+    owned->age = 0.0f;
+    owned->fadeIn = 0.0f;
+    owned->fadeOut = 0.0f;
 }
 
 void DynamicLightManager::updatePlayerVisualLight(uint32_t actorId, bool enabled,
@@ -74,6 +111,7 @@ void DynamicLightManager::updatePlayerVisualLight(uint32_t actorId, bool enabled
         owned = available;
         owned->id = mNextId++;
         owned->playerVisualOwner = actorId;
+        owned->projectileVisualOwner = 0;
         owned->active = true;
     }
     owned->position = position;

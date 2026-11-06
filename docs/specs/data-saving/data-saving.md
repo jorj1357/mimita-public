@@ -1696,3 +1696,26 @@ account-level statistics above. Local mode points are a deliberate,
 unranked carve-out, not a migration of those statistics away from the
 database. Multi-device synchronization and distributed storage are future
 design work.
+
+# 57. World-project data boundary — 2026-11-05
+
+The canonical account-level statistics and central database contract above
+remain authoritative for the public profile statistics already listed there.
+They do not define creator-owned world packages or the first RPG world's
+custom progression schema.
+
+RPG/world-project persistence is a separate design under
+[`../world-projects/world-projects.md`](../world-projects/world-projects.md).
+It uses account ID for player identity, stores progress by world lineage, and
+allows each world to add versioned fields without overwriting existing player
+records. World hosts may submit events for their own published world/version;
+they must not erase a player's earlier history. The world-project spec
+compares distributed storage designs and recommends a signed host log plus
+content-addressed versions and encrypted player backups for the first
+implementation. This does not silently migrate the existing `game_stats`
+contract away from the current backend.
+
+Platform-wide currency, shared inventory, cryptocurrency, and competitive
+rewards remain separate future designs. Do not write world-scoped custom
+fields into the canonical PvP statistics or imply that public website totals
+are stored on the world-project network.

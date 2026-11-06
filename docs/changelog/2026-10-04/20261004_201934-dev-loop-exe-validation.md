@@ -20,7 +20,7 @@ server startup.
     temporary file, compare SHA-256 hashes, and atomically publish the EXE.
   - Updated `newest_valid_published_build` to skip invalid published artifacts.
   - Replaced the direct `shutil.copy2` executable publication in `publish_build`.
-- `docs/regressions/2026-10-04/dev-loop-zero-filled-exe-REG.md`
+- `docs/regressions/dev-loop/dev-loop-zero-REG-2026-10-04.md`
   - Recorded the confirmed malformed-artifact regression and evidence.
 
 Unrelated pre-existing worktree changes were preserved.

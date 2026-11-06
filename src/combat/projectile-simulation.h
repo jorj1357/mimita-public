@@ -93,6 +93,7 @@ struct ProjectileStepResult
     glm::vec3 hitPosition{0.0f};
     glm::vec3 hitNormal{0.0f, 0.0f, 1.0f};
     glm::vec3 hitDirection{0.0f};
+    glm::vec3 incomingVelocity{0.0f};
     float impactSpeed = 0.0f;
     float travelDistance = 0.0f;
     uint32_t hitPlayerId = 0;

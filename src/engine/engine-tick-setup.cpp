@@ -41,6 +41,8 @@
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "gamemode/map-config.h"
+#include "interaction/world-interaction-runtime.h"
+#include "procedural/infinite-world-runtime.h"
 #include "hot-reload/hot-reload-system.h"
 #include "mapeditor/map-editor-config.h"
 #include "vehicles/vehicle-system.h"
@@ -196,7 +198,13 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
                       MapConfigRegistry::instance().load(mapId);
                   else
                       MapConfigRegistry::instance().pollReload();
-              } }
+              }
+              WorldInteractionRuntime::instance().syncIfChanged(
+                  MapConfigRegistry::instance().current(),
+                  MapConfigRegistry::instance().revision());
+              if (gpPlayer && gpWorld)
+                  InfiniteWorldRuntime::instance().tick(THE_PLAYER, THE_WORLD);
+            }
             WeaponHitFxConfig::instance().pollReload();
             ImpactDecalsConfig::instance().pollReload();
             NotificationSystem::instance().pollReload();

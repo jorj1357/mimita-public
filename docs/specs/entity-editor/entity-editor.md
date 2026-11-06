@@ -1012,3 +1012,172 @@ playtesting acceptance, extend map editing for arena iteration and connected
 modules; see `../procedural-infinite-world/procedural-infinite-world.md` for
 the later procedural-world direction. Arena rules and acceptance are owned by
 `../gamemodes/vehicle-arena.md`.
+
+### Arena objects, boost pads, and curve authoring (2026-11-05)
+
+The editor must author a complete playable arena without Blender. New authored
+object kinds:
+
+- `BallSpawn` with position and ball physics overrides,
+- `GoalVolume` with team, center, half extents or radius, facing, and enabled,
+- `KickoffPoint` with team, position, and yaw,
+- `BoostPad` with kind (`small`/`big`), position, radius, recharge ticks, and
+  enabled. Pad recharge is shown as a world-space timer.
+
+Curves use cubic Bezier control points with editable tangent handles, matching a
+Blender-style curve workflow. Commands add, move, delete, insert, and close
+points and handles; edits use the shared undo/autosave path and are logged as
+`mapeditor.curve.*` events. A curve stores radius, cross-section mode (`wall`,
+`ribbon`, or `tube`), and segment count.
+
+Curve and primitive geometry is sampled into the shared triangle render and
+collision meshes. The first implementation is triangle-only: there is no
+analytic quarter-sphere collider. Wheel raycasts may use the existing smooth
+seam/vertex normals so dense tessellation does not feel faceted. Collision
+triangle counts and validation are logged.
+
+`mapeditor bake_glb` optionally writes `assets/maps/<mapId>.glb` from authored
+geometry for tooling and sharing. `config/maps/<mapId>.json` remains
+authoritative; baking never overwrites creator data automatically.
+
+## World projects and collaborative live editing — 2026-11-05
+
+The RPG editor extends the existing map/entity editor rather than creating a
+second editing owner. Today the editor mutates the process-local
+`MapConfigRegistry` and saves `config/maps/<mapId>.json`. That local path is not
+the collaborative project/version system specified by
+[`../world-projects/world-projects.md`](../world-projects/world-projects.md).
+Do not treat editor-local JSON as a write to a remote host.
+
+The creator project browser must open, fork, save, and select immutable world
+versions. A public project is forkable; a private project remains private until
+its owner changes it. Project versions include map data, chunk templates,
+generation zones and rules, NPC placements and presets, interaction data,
+world overrides, and pinned dependencies. Project and asset licenses remain
+visible in the browser and attribution travels with every fork.
+
+The shared editor runs against one authoritative host session. Clients submit
+edit operations; the host validates and sequences them, then replicates accepted
+changes to all editors. Each accepted edit has a revision/sequence and stable
+operation identity. Clients detect gaps through acknowledgements/heartbeats,
+request retained operations, and fall back to a host snapshot if needed. Merge
+operations on independent properties; surface same-property conflicts for
+author resolution. Each editor can undo their own last accepted operation;
+the project owner can undo any operation. Undo appends a new inverse action.
+
+The owner has all editor capabilities. The owner may grant or revoke named
+capabilities for account IDs: geometry, chunks/generation, NPC authoring,
+weapon overrides, interactions, undo, and publish. Validate each operation on
+the host. The local client may preview its request but cannot save it as
+authoritative before the host accepts it.
+
+All clients keep rolling local recovery copies of the latest host-confirmed
+state and their pending operations. A disconnected client may resume at the
+last confirmed revision or continue as its own fork. The host saves the live
+session as a recoverable draft/version at shutdown. Disconnects must not erase
+confirmed edits.
+
+### Chunks and infinite-generation zones
+
+Creators can make reusable chunks/structures with explicit connection points
+and compatibility tags such as doorway, corridor, or open edge. Validation
+reports missing or incompatible required connections before publication.
+Generation may apply to the whole world or only to authored zones. A zone stores
+its seed, generator version, rule set, chunk/structure dependencies, and
+boundary connections. Authors can edit a zone's generation rules from the
+project browser without travelling to it, or while standing in the zone.
+
+Clients may generate nearby geometry immediately from the host-approved seed
+and generator version. The host remains authoritative for accepted generated
+chunk identity and world mutations. A seed alone is insufficient if generator
+code/data versions differ; mismatch requires the host's canonical chunk data
+or a compatible generator package. Generation work must be queued/budgeted so
+high movement speed cannot stall the fixed simulation tick.
+
+Recursive rooms, fractals, portals, and non-Euclidean topology are future
+extensions. Every generated location needs a stable world/zone/chunk/layer
+identity so two clients can refer to the same recursive room and rejoin it.
+Large-scale player-count and infinite-throughput claims require measured
+performance evidence before acceptance.
+
+### NPC, weapon, and interaction authoring
+
+The editor places NPC spawns and edits reusable NPC presets, role/loadout,
+movement/combat profile, appearance, animation, sounds, and world-specific
+reward values. Editing a live NPC preset offers an explicit choice to apply to
+existing NPCs or only future spawns. Existing actors retain identity; applying
+changes occurs at a safe simulation boundary.
+
+World weapon/NPC definitions inherit shared defaults and may pin or override
+supported values in a world version. Editing an override must not silently
+change other modes. NPC stats remain fixed across group sizes; more players
+increase the number of attackers. NPC implementation continues to use the
+shared player/NPC actor, movement, combat, animation, and damage owners.
+
+World objects may declare a named shared interaction action, its prompt data,
+range, and input mode. The initial input modes are `press` and `hold`; a hold
+interaction also declares a tick duration and exposes progress. Press continues
+to mean one activation on the F key-down edge. The shared action registry owns
+the behavior; a map file cannot name arbitrary native code. The in-game editor
+must let authors select these properties without editing raw JSON.
+
+### Extensibility and live source workflow
+
+Gameplay/editor presentation remains data-driven and hot-reloadable where the
+existing GUI and animation specs require it. First specify the authoring
+workflow and stable action/capability API; only then decide whether a Python
+tool should author data or present editor controls. Do not embed Python
+gameplay execution as a shortcut. Document sandboxed Lua as a future option,
+including capability restrictions, server authority, resource quotas, and
+deterministic failure behavior. Do not ship a script editor in the first
+editor slice. C++ source inspection/forks are an advanced development path,
+not executable content downloaded by joining a public world.
+
+### Infinite-world authoring quick start (2026-11-05)
+
+Use the normal in-game editor and terminal surface. No separate tool is
+required for the first loop:
+
+1. Enter the editor with `mapeditor 1`.
+2. Add built-in connector-aware chunk variants with `worldchunk defaults`.
+   They are `chunk_straight`, `chunk_corner`, `chunk_cross`, and
+   `chunk_deadend`, using the existing procedural room GLB.
+3. To add your own chunk:
+   `worldchunk add <id> <glb-path> <minX minY minZ> <maxX maxY maxZ> [tags...]`
+4. Add connection points to a chunk:
+   `worldconnector <chunkId> <connectorId> <side> <orientation> [tags...]`
+   Sides are `east`, `west`, `north`, `south`; orientation describes the
+   opening type, for example `doorway`.
+5. Create a generation zone:
+   `worldzone add <id> <seed> <generatorVersion> <minX minY minZ> <maxX maxY maxZ> [chunkIds...]`
+   If chunk IDs are omitted, the zone uses every authored chunk.
+6. Verify deterministic identity:
+   `worldzone hash <seed> <generatorVersion> <dependencyIdentity> <chunkX> <chunkZ>`
+   The same inputs must produce the same hash; changing the generator version
+   or dependencies must change it.
+7. Walk into the zone. The client streams chunks asynchronously around the
+   player and commits a bounded number per frame. The journal reports
+   `world-stream.template.loaded`, `world-stream.chunk.applied`,
+   `world-stream.commit`, and `world-stream.evict`.
+
+The generator chooses chunk variants deterministically from
+`seed + generatorVersion + dependencies + chunk coordinate`, then prefers
+variants whose connectors match already-committed neighbors. Missing or
+incompatible connections are reported rather than silently creating an
+impassable result.
+
+To persist the authored world, use `worldproject save` or the normal map
+editor save path. Authored chunks, connectors, zones, NPC presets, weapon
+overrides, and interaction definitions are part of the map/project data.
+
+### Authoring acceptance
+
+The initial collaborative editor slice must show two clients connected to one
+host. One edits a block, NPC placement/preset, interaction mode, and chunk or
+zone rule. Both clients must render the host-accepted values and report the
+same revision. Force a sequence gap and verify replay, then exceed retained
+history and verify snapshot recovery. Verify unauthorized edits are rejected,
+same-property conflicts remain visible, own-edit undo works, and each process
+recovers its last confirmed state after disconnect. These are runtime and
+human-visible acceptance requirements; a build or local JSON save alone does
+not satisfy them.

@@ -18,6 +18,24 @@ world text. The shared UI and presentation owners render those elements from
 the declared state. The aspiration to support a very large community of
 distinct modes is a direction, not a literal capacity guarantee.
 
+### Mode avatar policy
+
+The optional mode `avatar` policy owns whether avatar identity may change
+during a match. `allow_live_change` defaults to `true` when omitted so modes
+without an explicit rule preserve their current behavior. When false, the
+authoritative server rejects manifest changes that differ from the resolved
+mode/role avatar and reports the rejection reason. Role-forced avatars remain
+authoritative. A future curated-avatar mode can supply an `allowed` list while
+keeping live changes disabled; custom appearance editing is a separate policy.
+
+Identity replication must include only actors assigned to the authoritative
+match roster. Every listed actor must have a valid role/team where the mode
+requires them. Per-recipient packet fallbacks must not invent an actor row or
+replace a different actor's identity when the recipient is not rostered; the
+server must assign the joining actor or explicitly keep it unassigned until
+the next allowed roster boundary. Clients treat unknown team identity as
+neutral for team-colored presentation, never as confirmed enemy identity.
+
 Every mode with a timed objective must follow
 [the general objective and round HUD contract](objective-hud.md): phase,
 active timer, objective state, team hint, and result reason must be visible on
@@ -28,6 +46,7 @@ only when the mode omits a value.
 
 - [SSBM](supersmashbrosmelee.md)
 - [General Objective and Round HUD](objective-hud.md)
+- [Bloodtest](bloodtest.md)
 - [Skatepark](skatepark.md)
 - [Survive the Disasters](survive-the-disasters.md)
 - [Need for Madness](need-for-madness.md)
@@ -300,7 +319,7 @@ reported map (server `spawn_points=0`; client received the full map id and
 loaded the same file; `spawn.server-selected source=derived-probe
 validated=true` in bounds). Human visual confirmation of the in-bounds spawn
 remains outstanding; see
-`docs/regressions/2026-10-17/map-id-truncation-stale-ready-REG.md`.
+`docs/regressions/networking/map-id-truncation-REG-2026-10-17.md`.
 
 ## General NPC intent contract (objective / focus / patrol)
 

@@ -4257,7 +4257,7 @@ that route for immediate gameplay while coordinator registration continues.
 This does not prove that another computer can reach the server: remote clients
 still use the registered room through coordinator/ICE. A localhost-only test
 cannot count as external multiplayer acceptance. The regression
-`docs/regressions/2026-09-27/dev-loop-bypassed-room-code-REG.md` still applies
+`docs/regressions/dev-loop/dev-loop-bypassed-REG-2026-09-27.md` still applies
 to dev-loop scenarios that claim to validate remote room-code/ICE joins. Keep
 room lookup failure separate from a wrong run/build identity. The exact
 user-reported text “room identity not found” was not found as a literal in the
@@ -5078,3 +5078,72 @@ as what the local player sees, with avatar choice and saved state behaving
 consistently across clients and rejoin. Keep actor authority, avatar asset
 resolution, and animation replication with their existing owners. The open
 question about server/admin restrictions on avatar loading remains undecided.
+## Roster identity and avatar authority
+
+Every replicated match identity is assigned by the server roster. A recipient
+specific packet must not fabricate or overwrite an identity slot to include a
+recipient that is not in that roster. Round modes must either assign a joining
+active player a valid team and role before publication or leave it explicitly
+unassigned until the next permitted roster boundary. Team `255` means unknown;
+clients must not render an unknown identity as a confirmed enemy.
+
+Roster repair is selected from the active mode/round owner, not a legacy
+configuration field that may be empty while another authored field enables
+rounds. Once assigned, a role-forced avatar becomes the server's player avatar
+identity and is carried in authoritative actor snapshots so every client
+converges on the same presentation.
+
+The server also owns the selected avatar identity. It resolves the active mode
+and role policy before accepting an avatar manifest change. A mode may disable
+live avatar changes, constrain choices to a curated allow-list, or leave the
+policy unspecified to preserve existing behavior. Rejections must include the
+requested avatar, actor, mode/role policy, and reason in the canonical journal.
+Mode-level allow/deny rules still apply while a newly joined actor is waiting
+for its role assignment; the lack of a role does not bypass the active mode's
+avatar policy.
+Identity/avatar transition events are emitted when the resolved values change;
+full actor snapshots are emitted only on explicit inspection requests.
+
+## Authoritative collaborative world editing — 2026-11-05
+
+The map editor uses the existing authoritative server process; it does not
+create a client-local multiplayer world. Each edit request identifies the
+session/project, base project revision, operation ID, author account ID, target
+object/property, and requested value. The host validates the author's named
+editor capability, validates the target and value, assigns a monotonic accepted
+sequence, applies the change to authoritative project state, and broadcasts
+the accepted operation. Clients do not write the host's project files.
+
+Independent-property edits can merge against the latest accepted revision.
+Two edits to the same property produce a visible conflict requiring the author
+to reapply against the new revision or discard the pending edit. The server
+never silently accepts stale property state as if it were current. The owner
+may grant/revoke capabilities for geometry, chunks/generation, NPCs, weapon
+overrides, interactions, undo, and publishing.
+
+Every accepted edit is retained in an ordered session history with a stable
+operation identity. Clients acknowledge their last accepted sequence. A gap
+requests replay; if replay history has expired, the host sends a complete
+revisioned snapshot. Heartbeats detect a stale connection but cannot prove that
+the client received a particular edit. Rate and size limits apply to requests
+and snapshots so editor traffic cannot starve the authoritative 60 Hz
+simulation.
+
+An editor may undo their own latest accepted operation. The project owner may
+undo any accepted operation. Undo/redo are new ordered operations and preserve
+the original event history. Each client keeps a rolling temporary recovery copy
+of the latest confirmed revision and pending local edits. After disconnect, it
+may reconnect from the confirmed revision or branch into a fork. Clean host
+shutdown persists the live state as a recoverable draft/version.
+
+World generation uses the host-approved project/version, zone seed, and
+generator version. Clients may predict/generate nearby visual chunks locally;
+the host decides canonical chunk identity and all authoritative edits. If a
+client's generator version differs, it must load the compatible package or
+receive canonical chunk data before claiming agreement.
+
+Required runtime evidence is one host and two clients: accepted edit visible to
+both; denied capability; independent-property merge; same-property conflict;
+undo; sequence gap replay; snapshot fallback; disconnect recovery; and
+revision/hash agreement after reconnect. Use the multi-client dev-loop
+workflow, preserving each process's journal and exact build identity.

@@ -1,10 +1,77 @@
 {
+  "blocks": [],
   "bomb": {
     "defuse_seconds": 5.0,
     "explosion_seconds": 40.0,
     "plant_seconds": 3.0
   },
   "bomb_sites": [],
+  "boost_pads": [],
+  "chunks": [
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        204.87203979492188,
+        79.92210388183594,
+        415.5251159667969
+      ],
+      "bounds_min": [
+        100.87203979492188,
+        -24.077896118164063,
+        311.5251159667969
+      ],
+      "connectors": [
+        {
+          "id": "east_a",
+          "orientation": "doorway",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "side": "east",
+          "tags": []
+        },
+        {
+          "id": "west_a",
+          "orientation": "doorway",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "side": "west",
+          "tags": []
+        },
+        {
+          "id": "north_a",
+          "orientation": "doorway",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "side": "north",
+          "tags": []
+        },
+        {
+          "id": "south_a",
+          "orientation": "doorway",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "side": "south",
+          "tags": []
+        }
+      ],
+      "enabled": true,
+      "geometry": "assets/maps/procedural-mimitasizing5-infdgnslr-v5.glb",
+      "id": "chunk_a",
+      "tags": []
+    }
+  ],
   "entities": [
     {
       "activationRadius": 0.0,
@@ -16,6 +83,7 @@
       "enabled": true,
       "healthMultiplier": 1.0,
       "id": "spawnpoint_1",
+      "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
       "oneShot": false,
@@ -26,8 +94,11 @@
         21.314836502075195,
         315.38385009765625
       ],
+      "presetId": "",
       "radius": 1.0,
       "required": false,
+      "rewardGold": 0,
+      "rewardXp": 0,
       "size": [
         1.0,
         1.0,
@@ -37,7 +108,51 @@
       "spawnCount": 1,
       "tag": "",
       "type": "spawnpoint",
-      "visible": true
+      "visible": true,
+      "yaw": 0.0
     }
-  ]
+  ],
+  "generate_whole_world": false,
+  "generation_zones": [
+    {
+      "bounds_max": [
+        552.8720703125,
+        227.92210388183594,
+        712.525146484375
+      ],
+      "bounds_min": [
+        -247.12796020507813,
+        -72.07789611816406,
+        -87.47488403320313
+      ],
+      "chunk_dependencies": [
+        "chunk_a"
+      ],
+      "chunk_size": 104.0,
+      "enabled": true,
+      "generator_version": "1",
+      "id": "infinite_zone",
+      "name": "",
+      "rule_set": "default",
+      "seed": 583294,
+      "stream_radius_chunks": 1
+    }
+  ],
+  "glb_objects": [],
+  "interactions": [
+    {
+      "action": "world.debug",
+      "enabled": true,
+      "hold_ticks": 10,
+      "id": "hold_test",
+      "mode": "hold",
+      "prompt": "HoldTest",
+      "range": 6.0,
+      "target_id": "0",
+      "target_kind": "none"
+    }
+  ],
+  "npc_presets": [],
+  "vehicles": [],
+  "weapon_overrides": []
 }

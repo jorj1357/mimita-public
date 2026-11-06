@@ -25,6 +25,47 @@ constexpr float kMaxFont = 1.05f;
 
 } // namespace
 
+InteractionActionRegistry& InteractionActionRegistry::instance()
+{
+    static InteractionActionRegistry registry;
+    return registry;
+}
+
+bool InteractionActionRegistry::registerAction(const std::string& id,
+                                               WorldInteractionHandler handler)
+{
+    if (id.empty() || !handler) return false;
+    mActions[id] = std::move(handler);
+    return true;
+}
+
+void InteractionActionRegistry::unregisterAction(const std::string& id)
+{
+    mActions.erase(id);
+}
+
+bool InteractionActionRegistry::has(const std::string& id) const
+{
+    return mActions.find(id) != mActions.end();
+}
+
+bool InteractionActionRegistry::invoke(const std::string& id,
+                                       const InteractionContext& context,
+                                       const std::string& targetId) const
+{
+    const auto it = mActions.find(id);
+    return it != mActions.end() && it->second && it->second(context, targetId);
+}
+
+std::vector<std::string> InteractionActionRegistry::actionIds() const
+{
+    std::vector<std::string> ids;
+    ids.reserve(mActions.size());
+    for (const auto& entry : mActions)
+        ids.push_back(entry.first);
+    return ids;
+}
+
 InteractionSystem& InteractionSystem::instance()
 {
     static InteractionSystem system;
@@ -41,6 +82,8 @@ uint32_t InteractionSystem::add(InteractionTarget target)
 
 void InteractionSystem::remove(uint32_t id)
 {
+    if (mHoldActive && mHoldTargetId == id)
+        cancelHold("target-removed");
     mTargets.erase(
         std::remove_if(mTargets.begin(), mTargets.end(),
                        [id](const InteractionTarget& t) { return t.id == id; }),
@@ -65,6 +108,11 @@ void InteractionSystem::clear()
     mLastPromptTarget = 0;
     mStickyTarget = 0;
     mMissingFrames = 0;
+    mHoldActive = false;
+    mHoldTargetId = 0;
+    mHoldElapsedTicks = 0;
+    mHoldKeyDown = false;
+    mHoldFromCommand = false;
 }
 
 void InteractionSystem::updateTarget(uint32_t id,
@@ -155,10 +203,56 @@ bool InteractionSystem::handleKey(GLFWwindow* window, const Camera& camera)
     const bool held = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
     const bool pressed = held && !mPreviousKeyHeld;
     mPreviousKeyHeld = held;
+    mHoldKeyDown = held;
+
+    const InteractionTarget* target = selected(camera);
+    if (mHoldActive)
+    {
+        // A runtime/scenario hold is advanced by tickHold; the physical F key
+        // state must not cancel it on the next input poll.
+        if (!mHoldFromCommand && !held)
+        {
+            cancelHold("released");
+            return false;
+        }
+        if (!target || target->id != mHoldTargetId)
+        {
+            cancelHold("target-changed");
+            return false;
+        }
+        return true;
+    }
+
     if (!pressed)
         return false;
 
-    const InteractionTarget* target = selected(camera);
+    if (target && target->activate &&
+        target->inputMode == InteractionInputMode::Hold && target->holdTicks > 0)
+    {
+        mHoldActive = true;
+        mHoldFromCommand = false;
+        mHoldTargetId = target->id;
+        mHoldElapsedTicks = 0;
+        for (InteractionTarget& item : mTargets)
+        {
+            if (item.id == target->id)
+            {
+                item.holdProgress = 0.0f;
+                break;
+            }
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "interaction.hold.started", target->owner,
+            "F hold interaction started", 0,
+            {{"targetId", target->id},
+             {"owner", target->owner},
+             {"label", target->label},
+             {"holdTicks", target->holdTicks}},
+            __FILE__, __LINE__, __func__);
+        return true;
+    }
+
     const bool activated = target && target->activate
                                ? target->activate(InteractionContext{&camera})
                                : false;
@@ -188,6 +282,115 @@ bool InteractionSystem::handleKey(GLFWwindow* window, const Camera& camera)
              {"activated", true}},
             __FILE__, __LINE__, __func__);
     return activated;
+}
+
+bool InteractionSystem::beginHold(uint32_t targetId, const Camera& camera)
+{
+    const InteractionTarget* target = selected(camera);
+    if (!target || target->id != targetId || !target->activate ||
+        target->inputMode != InteractionInputMode::Hold || target->holdTicks <= 0)
+        return false;
+    mHoldActive = true;
+    mHoldFromCommand = true;
+    mHoldTargetId = targetId;
+    mHoldElapsedTicks = 0;
+    for (InteractionTarget& item : mTargets)
+        if (item.id == targetId) item.holdProgress = 0.0f;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "interaction.hold.started", target->owner,
+        "F hold interaction started", 0,
+        {{"targetId", target->id}, {"owner", target->owner},
+         {"label", target->label}, {"holdTicks", target->holdTicks},
+         {"source", "runtime_command"}},
+        __FILE__, __LINE__, __func__);
+    return true;
+}
+
+void InteractionSystem::releaseHold()
+{
+    cancelHold("released");
+}
+
+void InteractionSystem::cancelHold(const char* reason)
+{
+    if (!mHoldActive)
+        return;
+    const uint32_t targetId = mHoldTargetId;
+    for (InteractionTarget& item : mTargets)
+    {
+        if (item.id == mHoldTargetId)
+        {
+            item.holdProgress = 0.0f;
+            break;
+        }
+    }
+    mHoldActive = false;
+    mHoldFromCommand = false;
+    mHoldTargetId = 0;
+    mHoldElapsedTicks = 0;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "interaction.hold.cancelled", std::to_string(targetId),
+        "F hold interaction cancelled", 0,
+        {{"targetId", targetId}, {"reason", reason}},
+        __FILE__, __LINE__, __func__);
+}
+
+void InteractionSystem::tickHold(const Camera& camera)
+{
+    if (!mHoldActive)
+        return;
+
+    const InteractionTarget* target = selected(camera);
+    if (!target || target->id != mHoldTargetId || !target->enabled)
+    {
+        cancelHold("range-lost");
+        return;
+    }
+
+    ++mHoldElapsedTicks;
+    const int holdTicks = std::max(1, target->holdTicks);
+    const float progress = std::min(
+        1.0f, static_cast<float>(mHoldElapsedTicks) /
+                  static_cast<float>(holdTicks));
+    for (InteractionTarget& item : mTargets)
+    {
+        if (item.id == mHoldTargetId)
+        {
+            item.holdProgress = progress;
+            break;
+        }
+    }
+
+    if (mHoldElapsedTicks < holdTicks)
+        return;
+
+    const uint32_t targetId = mHoldTargetId;
+    const std::string owner = target->owner;
+    const std::string label = target->label;
+    const bool activated = target->activate(InteractionContext{&camera});
+    for (InteractionTarget& item : mTargets)
+    {
+        if (item.id == mHoldTargetId)
+        {
+            item.holdProgress = 1.0f;
+            break;
+        }
+    }
+    mHoldActive = false;
+    mHoldFromCommand = false;
+    mHoldTargetId = 0;
+    mHoldElapsedTicks = 0;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "interaction.hold.completed", owner,
+        "F hold interaction completed", 0,
+        {{"targetId", targetId},
+         {"owner", owner},
+         {"label", label},
+         {"activated", activated}},
+        __FILE__, __LINE__, __func__);
 }
 
 void InteractionSystem::draw(const Camera& camera)
@@ -238,7 +441,15 @@ void InteractionSystem::draw(const Camera& camera)
                                 kMaxPromptDistance),
         kMinFont, kMaxFont);
 
-    const std::string text = "Press F to " + target->label;
+    std::string text = (target->inputMode == InteractionInputMode::Hold
+                            ? "Hold F to "
+                            : "Press F to ") + target->label;
+    if (target->inputMode == InteractionInputMode::Hold)
+    {
+        const int percent = static_cast<int>(
+            std::clamp(target->holdProgress, 0.0f, 1.0f) * 100.0f);
+        text += "  " + std::to_string(percent) + "%";
+    }
     const float textWidth = uiMeasureText(text.c_str(), font);
     const float textHeight = font * 16.0f;
     const float keySize = textHeight + font * 10.0f;

@@ -14,7 +14,9 @@
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
 #include "procedural/procedural-world.h"
+#include "gamemode/arena-ball.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/map-config.h"
 #include "gamemode/match-roles.h"
 #include "gamemode/monster-pools.h"
 #include "gamemode/mode-pack-registry.h"
@@ -537,7 +539,10 @@ int runServer(const LaunchOptions& options)
 
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     World npcWorld;
-    bool npcWorldCollisionReady = false;
+    // Build the shared NPC collision world before the socket accepts clients.
+    // Its first construction can take seconds on authored maps, so it must not
+    // run inside the first fixed gameplay tick when an NPC becomes active.
+    buildNpcWorldCollision(npcWorld, world);
     NpcSystem npcSystem;
     Player mirrorPlayer;
     std::unordered_set<uint32_t> npcIdsAlive;
@@ -691,9 +696,41 @@ int runServer(const LaunchOptions& options)
             serverCommunityStartMatch(false);
     }
 
+    if (MapConfigRegistry::instance().current().arena.present)
+    {
+        std::string ballError;
+        if (ArenaBall::spawnFromMap(MapConfigRegistry::instance().current(),
+                                    &ballError) == 0 && !ballError.empty()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Physics, StructuredLevel::Errors,
+                "arena.ball.spawn-failed", mapName,
+                "map authored an arena ball but the server could not spawn it",
+                0, nlohmann::json{{"map", mapName}, {"error", ballError}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     // Startup NPCs (controlled by --npcs and --no-npcs flags)
     {
-        uint32_t npcCount = options.npcsEnabled ? options.npcCount : 0;
+        // Fun Counter Strike owns its NPC population through the authored
+        // round roster. A generic startup NPC has no FCS team/role and would
+        // otherwise be simulated and replicated before the first roster is
+        // built. Keep mode-assigned roster NPCs enabled at their normal owner.
+        const bool fcsOwnsNpcRoster = options.gameMode == "funcounterstrike";
+        const uint32_t npcCount = options.npcsEnabled && !fcsOwnsNpcRoster
+            ? options.npcCount : 0;
+        if (fcsOwnsNpcRoster && options.npcsEnabled && options.npcCount > 0) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Duel, StructuredLevel::Important,
+                "gamemode.npc.startup-suppressed", options.gameMode,
+                "generic startup NPCs suppressed because FCS builds an authored team roster",
+                0,
+                nlohmann::json{{"mode", options.gameMode},
+                               {"requested_startup_npcs", options.npcCount},
+                               {"spawned_startup_npcs", 0},
+                               {"reason", "mode_owned_team_roster"}},
+                __FILE__, __LINE__, __func__);
+        }
         for (uint32_t i = 0; i < npcCount; ++i)
         {
             ServerNpc npc;
@@ -1002,24 +1039,6 @@ int runServer(const LaunchOptions& options)
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
             const auto npcStart = std::chrono::steady_clock::now();
-            if (!npcWorldCollisionReady && !npcs.empty())
-            {
-                const auto npcWorldBuildStart = std::chrono::steady_clock::now();
-                buildNpcWorldCollision(npcWorld, world);
-                npcWorldCollisionReady = true;
-                const auto buildMs = std::chrono::duration_cast<
-                    std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - npcWorldBuildStart).count();
-                ::StructuredLogger::instance().writeEvent(
-                    StructuredCategory::NpcMovement, StructuredLevel::Important,
-                    "server.npc-collision-world.lazy-built", "server",
-                    "built NPC collision/navigation data when the first NPC became active",
-                    tick,
-                    nlohmann::json{{"npc_count", npcs.size()},
-                                   {"triangle_count", npcWorld.collisionMesh.triangles.size()},
-                                   {"build_ms", buildMs}},
-                    __FILE__, __LINE__, __func__);
-            }
             ScenarioServerPlayback::instance().tick(tick, players, npcSystem);
             simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
@@ -1081,12 +1100,6 @@ int runServer(const LaunchOptions& options)
                                     tick, totalPacketsIn, totalPacketsOut,
                                     &transportStats, &disagreementRetransmit);
 
-            if (!npcWorldCollisionReady &&
-                !MapConfigRegistry::instance().current().vehicles.empty())
-            {
-                buildNpcWorldCollision(npcWorld, world);
-                npcWorldCollisionReady = true;
-            }
             serverTickVehicles(dedicatedVehicleState, players, &npcWorld,
                                nextEntityId, tick);
             const auto snapshotStart = std::chrono::steady_clock::now();
@@ -1465,6 +1478,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         serverCommunitySetMode(settings->gameMode);
     if (settings && !settings->duelMode && settings->gameMode != "sandbox")
         serverCommunityStartMatch(false);
+    if (MapConfigRegistry::instance().current().arena.present)
+        ArenaBall::spawnFromMap(MapConfigRegistry::instance().current());
     gServerHostPlayerName = settings ? settings->hostPlayerName : "";
 
     // Startup NPCs

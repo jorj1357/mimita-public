@@ -7,6 +7,7 @@
 # DOES NOT select a different compiler silently when MIMITA_COMPILER is set.
 
 import os
+import subprocess
 import shutil
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +59,13 @@ def ccache(cxx):
         return _required_file(configured, "MIMITA_CCACHE")
     local = os.path.join(os.path.dirname(cxx), "ccache.exe")
     return shutil.which("ccache") or local
+
+
+def run_tool(command, **kwargs):
+    """Run a compiler tool without creating a Windows console window."""
+    if os.name == "nt":
+        kwargs.setdefault("creationflags", subprocess.CREATE_NO_WINDOW)
+    return subprocess.run(command, **kwargs)
 
 
 def runtime_path(cxx):

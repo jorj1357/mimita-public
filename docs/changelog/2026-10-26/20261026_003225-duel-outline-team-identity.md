@@ -37,9 +37,9 @@ The live Duel server uses `--weapon-set 1`. Its `npc.grenade-availability` event
 - `src/engine/engine-tick-render.cpp`: use replicated team identity for Duel outline selection.
 - `src/render/render-player.cpp`: reverse trail ribbon orientation, disable and restore face culling around the batch, and emit bounded trail submission diagnostics. Existing actor draw/render diagnostics use the enabled General category.
 - `src/network/server-gamemode.cpp`: inherit the active mode set for NPC spawn profiles without an explicit set and include resolved weapon data in the roster-profile event.
-- `docs/regressions/2026-10-26/duel-outline-team-identity-REG.md`
-- `docs/regressions/2026-10-26/player-trail-camera-visibility-REG.md`
-- `docs/regressions/2026-10-26/duel-npc-shared-weapon-set-REG.md`
+- `docs/regressions/gameplay/duel-outline-team-REG-2026-10-26.md`
+- `docs/regressions/gameplay/player-trail-camera-REG-2026-10-26.md`
+- `docs/regressions/gameplay/duel-npc-shared-REG-2026-10-26.md`
 
 Pre-existing dirty files were preserved: `config/accounts/default.json`, `config/analytics.json`, `config/audio/music-settings.json`, `config/gamemodes/duel.json`, `config/gamemodes/masterlist/gamemode-masterlist.json`, `config/playervisuals.json`, `config/video-settings.json`, `devscripts/config_selftest.py`, `docs/architecture/json-configuration/json-configuration.md`, `docs/changelog/2026-10-25/20261025_184028-weapon-cycle-outlines-canonical-gamemode-json.md`, and `src/gamemode/gamemode.cpp`. The Duel JSON file already had user changes before this session; those were preserved while updating the requested role/color fields.
 

@@ -77,7 +77,7 @@ no account, progression, or schema data was edited.
   or crypt remote is missing.
 - Added website architecture and operations documentation and appended the
   2026-11-02 recurrence to
-  `docs/regressions/2026-09-16/2026-09-16-website-auth-database-outage.md`.
+  `docs/regressions/gameplay/website-auth-database-REG-2026-09-16.md`.
   Disk exhaustion is documented as suspected only.
 - Corrected website, persistence, and regression routes in `docs/ROUTER.md`.
 - No unrelated pre-existing working-tree edits were changed.

@@ -15,6 +15,7 @@
 #include <cstdio>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "config/material-config.h"
@@ -72,7 +73,12 @@ void mpProcessPhysicalEntitySpawnEventPacket(
     MimitaImpact::BooleanMesh baseMesh;
     bool haveMeshBase = false;
 
-    if (event->sourceKind == PHYSICAL_ENTITY_SOURCE_GLB &&
+    if (event->sourceKind == PHYSICAL_ENTITY_SOURCE_SPHERE)
+    {
+        buildSphereCollisionTriangles(base, glm::vec3(0.0f),
+                                      std::max(halfExtents.x, 0.001f));
+    }
+    else if (event->sourceKind == PHYSICAL_ENTITY_SOURCE_GLB &&
         event->modelPath[0] != '\0' && (event->reserved & 2u) == 0u)
     {
         const MimitaImpact::DestructibleMeshLoad load =
@@ -128,6 +134,16 @@ void mpProcessPhysicalEntitySpawnEventPacket(
                                    event->angularVelocity[1],
                                    event->angularVelocity[2]);
     e->texturePath = event->texturePath;
+    const bool sphere = event->sourceKind == PHYSICAL_ENTITY_SOURCE_SPHERE;
+    if (sphere)
+    {
+        e->shape = PhysicalEntityShape::Sphere;
+        const float radius = std::max(halfExtents.x, 0.001f);
+        e->halfExtents = glm::vec3(radius);
+        const float volume = (4.0f / 3.0f) * glm::pi<float>() * radius * radius * radius;
+        e->mass = std::max(e->density * volume, 0.001f);
+        refreshEntityMassProperties(*e);
+    }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
         "physical_entity.mirror_spawned", std::to_string(event->networkId),
@@ -146,7 +162,7 @@ void mpProcessPhysicalEntitySpawnEventPacket(
     if (haveMeshBase)
         MimitaImpact::ImpactSystem::instance().initializeEntityFromMesh(
             *e, std::move(baseMesh), halfExtents, event->materialId);
-    else
+    else if (!sphere)
         MimitaImpact::ImpactSystem::instance().initializeEntity(*e, event->materialId,
                                                                 halfExtents);
 

@@ -34,7 +34,7 @@ At the start, unrelated worktree changes included config/gamemodes/sandbox.json,
 
 ## Documents and focused review
 
-Read docs/ROUTER.md, docs/specs/visuals/visuals.md, docs/architecture/json-configuration/json-configuration.md, docs/skills/spec-behavior-review-v1.md, docs/skills/documentation-checker-v1.md, docs/workflows/runtime-scenario-validation.md, docs/operations/build-and-exe/build-and-exe.md, docs/operations/task-completion/task-completion.md, docs/architecture/time-and-formatting/time-and-formatting.md, docs/architecture/live-development/live-development.md, docs/specs/dev-loop/dev-loop.md, and docs/regressions/2026-10-21/dev-loop-status-write-race-REG.md.
+Read docs/ROUTER.md, docs/specs/visuals/visuals.md, docs/architecture/json-configuration/json-configuration.md, docs/skills/spec-behavior-review-v1.md, docs/skills/documentation-checker-v1.md, docs/workflows/runtime-scenario-validation.md, docs/operations/build-and-exe/build-and-exe.md, docs/operations/task-completion/task-completion.md, docs/architecture/time-and-formatting/time-and-formatting.md, docs/architecture/live-development/live-development.md, docs/specs/dev-loop/dev-loop.md, and docs/regressions/dev-loop/dev-loop-status-REG-2026-10-21.md.
 
 - Specification review: docs/specs/visuals/visuals.md says V1 initially implements outline and describes trails as future capability. The user's direct request authorized this first trail/contrast experiment. brightness is a texture multiplier with optional tint; it is not a full contrast curve. Visual feel and exact values remain open to user review.
 - Router's docs/regressions/regressions-v1.md is absent in this checkout; the relevant current dev-loop recovery regression was read instead.

@@ -24,6 +24,110 @@ struct BombSite
     bool hasPosition = false;    // false = not yet authored/verified
 };
 
+struct AuthoredChunkConnector
+{
+    std::string id;
+    std::string side;        // east, west, north, south, up, down
+    std::string orientation; // doorway, tunnel, open, ...
+    std::string role = "bidirectional"; // entry, exit, bidirectional, none
+    std::vector<std::string> tags;
+    glm::vec3 position{0.0f};
+};
+
+struct ChunkPart
+{
+    std::string id;
+    std::string kind = "box"; // box, wall, floor, ceiling, tunnel, doorway, prop
+    glm::vec3 position{0.0f};
+    glm::vec3 size{1.0f};
+    glm::vec3 rotationEuler{0.0f};
+    // Per-part default material and optional per-face overrides.
+    // Face order: +X, -X, +Y, -Y, +Z, -Z.
+    std::string material;
+    std::string faceMaterials[6];
+    bool collision = true;
+    bool visible = true;
+};
+
+struct AuthoredChunk
+{
+    std::string id;
+    std::string geometryPath;
+    std::string blobSha256;
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    std::vector<ChunkPart> parts;
+    std::vector<AuthoredChunkConnector> connectors;
+    std::vector<std::string> tags;
+    bool enabled = true;
+};
+
+struct GenerationZone
+{
+    std::string id;
+    std::string name;
+    glm::vec3 boundsMin{0.0f};
+    glm::vec3 boundsMax{0.0f};
+    uint32_t seed = 0;
+    std::string generatorVersion = "1";
+    std::string ruleSet = "default";
+    std::vector<std::string> chunkDependencies;
+    std::string modeId;
+    // Grid model. XY is the default horizontal plane; Z is up.
+    std::string plane = "xy";
+    glm::ivec3 repeatAxes{1, 1, 0};
+    glm::vec3 origin{0.0f};
+    glm::vec3 cellSize{104.0f, 104.0f, 104.0f};
+    glm::vec3 chunkSizeVec{104.0f, 104.0f, 104.0f};
+    glm::ivec3 streamRadius{1, 1, 0};
+    std::string spacingMode = "center"; // center, connector
+    float connectorGap = 0.0f;
+    int maxBranchDepth = 8;
+    bool allowCycles = true;
+    // Legacy scalar kept for older map files and the existing room streamer.
+    float chunkSize = 104.0f;
+    int streamRadiusChunks = 1;
+    bool enabled = true;
+};
+
+struct NpcPreset
+{
+    std::string id;
+    std::string roleId;
+    std::string movementProfile;
+    std::string weaponSet;
+    std::string appearance;
+    std::string animation;
+    int rewardGold = 0;
+    int rewardXp = 0;
+    std::vector<std::string> tags;
+    bool enabled = true;
+};
+
+struct WorldWeaponOverride
+{
+    std::string id;
+    std::string weaponId;
+    std::string field;
+    std::string value;
+    bool enabled = true;
+};
+
+struct AuthoredInteraction
+{
+    std::string id;
+    std::string actionId;
+    std::string prompt;
+    std::string targetKind;
+    std::string targetId;
+    float range = 3.0f;
+    // "press" activates once on the F key-down edge. "hold" accumulates fixed
+    // simulation ticks and only activates on completion.
+    std::string inputMode = "press";
+    int holdTicks = 0;
+    bool enabled = true;
+};
+
 struct MapEntity
 {
     std::string id;
@@ -55,6 +159,11 @@ struct MapEntity
     float activationRadius = 0.0f;
     // Boss placeholder health multiplier (1 = role base health).
     float healthMultiplier = 1.0f;
+    // Reusable authoring references and world-defined rewards.
+    std::string presetId;
+    std::string interactionId;
+    int rewardGold = 0;
+    int rewardXp = 0;
     // Runtime-only activation state, never serialized.
     int runtimeSpawned = 0;
     bool runtimeCleared = false;
@@ -149,6 +258,56 @@ struct MapGLBObjectOverride
     std::string material;
 };
 
+struct ArenaBallConfig
+{
+    bool present = false;
+    glm::vec3 spawn{0.0f, 0.0f, 2.0f};
+    float radius = 0.9125f;
+    float visualRadius = 0.95f;
+    float massKg = 30.0f;
+    float restitution = 0.6f;
+    float friction = 0.35f;
+    float linearDamping = 0.03f;
+    float maxSpeed = 60.0f;
+};
+
+struct ArenaGoalConfig
+{
+    std::string id;
+    std::string team;
+    glm::vec3 center{0.0f};
+    glm::vec3 halfExtents{1.0f, 1.0f, 1.0f};
+    glm::vec3 facing{0.0f, 0.0f, 1.0f};
+    bool enabled = true;
+};
+
+struct ArenaKickoffConfig
+{
+    std::string id;
+    std::string team;
+    glm::vec3 position{0.0f};
+    float yaw = 0.0f;
+    bool enabled = true;
+};
+
+struct ArenaConfig
+{
+    bool present = false;
+    ArenaBallConfig ball;
+    std::vector<ArenaGoalConfig> goals;
+    std::vector<ArenaKickoffConfig> kickoffs;
+};
+
+struct BoostPadConfig
+{
+    std::string id;
+    std::string kind = "small";
+    glm::vec3 position{0.0f};
+    float radius = 1.0f;
+    int rechargeTicks = 240;
+    bool enabled = true;
+};
+
 struct MapObjectiveConfig
 {
     std::string mapId;
@@ -157,12 +316,25 @@ struct MapObjectiveConfig
     std::vector<AuthoredBlock> blocks;
     std::vector<MapVehicleSpawn> vehicles;
     std::vector<MapGLBObjectOverride> glbObjects;
+    std::vector<AuthoredChunk> chunks;
+    std::vector<GenerationZone> generationZones;
+    std::vector<NpcPreset> npcPresets;
+    std::vector<WorldWeaponOverride> weaponOverrides;
+    std::vector<AuthoredInteraction> interactions;
+    bool generateWholeWorld = false;
     PayloadConfig payload;
+    ArenaConfig arena;
+    std::vector<BoostPadConfig> boostPads;
     float plantSeconds = 3.0f;
     float defuseSeconds = 5.0f;
     float explosionSeconds = 40.0f;
     bool loaded = false;
 };
+
+// Validate the authored arena block fail-closed: a ball spawn and at least one
+// enabled goal are required before the mode runtime may score anything.
+bool validateArenaAuthoring(const MapObjectiveConfig& config,
+                            std::vector<PayloadAuthoringIssue>& issues);
 
 // True when a world point lies inside an authored entity's trigger volume: its
 // sphere of `radius`, or its box of `size` when the size exceeds the 1x1x1
@@ -179,6 +351,12 @@ public:
     // no sites (planting is disabled until sites are authored). Keeps the last
     // valid data on parse error.
     bool load(const std::string& mapId);
+    // Load a project/version document from an explicit path without moving it
+    // into config/maps. Used by the project browser and live edit session.
+    bool loadFromFile(const std::string& mapId, const std::string& path);
+    // Serialize the current authored document. The base preserves unknown
+    // top-level keys during a normal file save.
+    std::string toJsonString(bool pretty = true) const;
     // Re-read the current map file if it changed on disk.
     bool pollReload();
 
@@ -232,6 +410,17 @@ public:
     void setGLBObjectOverride(const std::string& id, const std::string& name,
                               const glm::vec3& position);
     void removeGLBObjectOverride(const std::string& id);
+
+    std::vector<AuthoredChunk>& chunksMutable() { return mCurrent.chunks; }
+    const std::vector<AuthoredChunk>& chunks() const { return mCurrent.chunks; }
+    std::vector<GenerationZone>& generationZonesMutable() { return mCurrent.generationZones; }
+    const std::vector<GenerationZone>& generationZones() const { return mCurrent.generationZones; }
+    std::vector<NpcPreset>& npcPresetsMutable() { return mCurrent.npcPresets; }
+    const std::vector<NpcPreset>& npcPresets() const { return mCurrent.npcPresets; }
+    std::vector<WorldWeaponOverride>& weaponOverridesMutable() { return mCurrent.weaponOverrides; }
+    const std::vector<WorldWeaponOverride>& weaponOverrides() const { return mCurrent.weaponOverrides; }
+    std::vector<AuthoredInteraction>& interactionsMutable() { return mCurrent.interactions; }
+    const std::vector<AuthoredInteraction>& interactions() const { return mCurrent.interactions; }
 
     const PayloadConfig& payload() const { return mCurrent.payload; }
     PayloadConfig& payloadMutable() { return mCurrent.payload; }

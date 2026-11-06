@@ -158,6 +158,6 @@ the regression remains `ATTEMPTED FIX (1)` until that review.
 
 ## Files created
 
-- `docs/regressions/2026-10-21/dev-loop-status-write-race-REG.md` — records
+- `docs/regressions/dev-loop/dev-loop-status-REG-2026-10-21.md` — records
   the confirmed failure and marks the fix attempted pending human review.
 - This final session changelog.

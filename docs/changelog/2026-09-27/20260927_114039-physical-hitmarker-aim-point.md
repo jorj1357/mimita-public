@@ -17,7 +17,7 @@ The following changes existed before this session and were preserved:
 - `config/analytics.json`
 - `config/weapons.json`
 - `config/accounts/default.json` (observed after validation and preserved)
-- `docs/regressions/2026-09-20/cold-build-required-REG.md`
+- `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`
 - `src/network/server-packet-chat.cpp`
 - `docs/changelog/2026-09-27/20260927_112700-linker-stale-objects.md`
 

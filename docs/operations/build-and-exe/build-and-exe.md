@@ -27,10 +27,12 @@ artifact folders remain readable and launchable.
 
 `build_agent.py`, `buildv2.py`, and setup entry points are compatibility
 wrappers that submit to this same dev-loop. `build.py build-only` and
-`build_game_dll.py` are internal compiler steps. A checkout-wide OS lock makes
-an accidental direct/overlapping compiler invocation fail clearly instead of
-running a second build concurrently. Do not use `buildv3.py` or direct compiler
-scripts as a separate live build path.
+`build_game_dll.py` are internal compiler steps. A per-checkout OS lock makes
+an accidental direct/overlapping compiler invocation fail clearly. Separate
+Git worktrees have independent locks and build outputs, so their builds can run
+concurrently. Use the lane workflow below for parallel agent work; do not share
+one mutable source checkout between agents. Do not use `buildv3.py` or direct
+compiler scripts as a separate live build path.
 
 The build never terminates a running game to publish an artifact. Build
 identity and process lifetime are separate: selecting a new artifact requires
@@ -63,27 +65,20 @@ Rules:
 
 If there is a TODO comment in the file you are working on, and it is easy enough to do, just do it and continue rather than skipping it.
 
-## Timestamped, non-colliding EXE output
+## Immutable EXE artifacts
 
-Every cold build links a **new, uniquely named** executable in the project root:
+The compiler links `mimita.exe` in its own checkout. After a successful build,
+the dev-loop verifies and copies that executable and required runtime DLLs into
+`.dev/builds/<UTC artifact ID>/`. It does not replace another checkout's
+executable or a running published artifact. The artifact ID and executable
+SHA-256 are stored in `build-identity.json`.
 
-```
-mimita-YYYYMMDDTHHMMSS.exe
-```
-
-For example, a build at 5:37:58 PM on Sep 16 2026 produces:
-
-```
-mimita-20260916T173758.exe
-```
-
-The name is generated per build, so:
-
-* Several agents and/or humans can each build and test their own changes without
-  being blocked by a different running `mimita*.exe`.
-* A running game never locks the next build's output.
-* Each executable is compiled from the same current source tree, just at a
-  different time; a build is a snapshot of that moment.
+Each agent build comes from a separate worktree, so agents can compile
+concurrently without sharing source, object files, PCH, executable output,
+dev-loop state, or the per-checkout build lock. Set `--jobs` per lane to keep
+compiler load within machine capacity. Each build also records its lane's
+source revision, submodule revisions, dirty-tree fingerprint, and whether the
+source changed while it was building.
 
 Build entry:
 
@@ -136,13 +131,87 @@ All contributors:
 python devscripts/dev-loop.py --request build --wait-for-build
 ```
 
-Then launch the produced `mimita-<timestamp>.exe` from the project root so its
-relative asset paths resolve (the executable-directory resolution in
-`src/utils/path_utils.cpp` expects to sit beside `assets/`, `config/`, etc.).
+Use the dev-loop launch request to run the selected published artifact. For an
+agent lane, use `python devscripts/agent-lane.py run <lane-id> --launch-mode
+<id>` so the lane's own dev-loop records the executable and exact runtime
+journals.
 
 Do not set `MIMITA_EXE_NAME` to overwrite a running executable and do not create
 alternate test executables. Never kill a running `mimita*.exe`; a new timestamped
 build is how you get your own executable to test.
+
+## Agent workflow mode 1 and mode 2
+
+Mode 1 preserves the existing shared-checkout dev-loop workflow and is the
+fallback. Build requests in that checkout use its one build owner. Mode 2 gives
+each agent an isolated worktree and independent build/run evidence. New mode 2
+lanes start from a recorded snapshot of current coordinator edits, including
+non-ignored untracked files; they do not disturb the coordinator's index.
+
+```text
+python devscripts/agent-workflow.py --mode 1 build
+python devscripts/agent-workflow.py --mode 1 run 1
+python devscripts/agent-workflow.py --mode 1 status
+python devscripts/agent-workflow.py --mode 2 create <lane-id>
+python devscripts/agent-workflow.py --mode 2 build <lane-id> [--jobs 1]
+python devscripts/agent-workflow.py --mode 2 run <lane-id> --launch-mode <id>
+python devscripts/agent-workflow.py --mode 2 check <lane-id>
+python devscripts/agent-workflow.py --mode 2 status <lane-id>
+```
+
+Mode 2 shares compiler cache storage, not build outputs: each lane still has
+its own object files, executable, dev-loop, and `events.jsonl`. First builds
+may compile every source file; matching compiler inputs can then be reused
+through ccache. Changed headers can require rebuilding dependent source files.
+One compiler job per lane is the default. Independent builds can still slow a
+computer when many agents compile unique changes at once.
+
+The dev-loop also watches compiler inputs and starts an incremental build after
+saved changes, with a short debounce. That is compile-and-publish automation;
+it does not guarantee that the already-running game receives the change. The
+watcher coalesces changes during a build and runs a follow-up for the newest
+source generation. A `.cpp` edit may affect one translation unit; a header
+edit may affect many. Linking and artifact publication still take place.
+
+Mode 3 is the future save-to-live-code direction described in
+`docs/specs/dev-loop/dev-loop.md` and
+`docs/architecture/live-development/live-development.md`. It is not currently
+a selectable command or a guarantee that arbitrary C++ changes can be loaded
+into a running process. Until code has a safe replaceable boundary, use the
+mode 1/2 executable build and run path. The final reviewed integration still
+needs a stable build.
+
+## Independent agent lanes and stable promotion
+
+Create one isolated worktree per agent task from the coordinator checkout:
+
+```text
+python devscripts/agent-lane.py create <lane-id> [--base <ref>]
+python devscripts/agent-lane.py build <lane-id> [--jobs 1]
+python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
+python devscripts/agent-lane.py check <lane-id> [--base <ref>]
+python devscripts/agent-lane.py status <lane-id>
+```
+
+Assign the agent the worktree path printed by `create`. Each lane has an
+independent dev-loop daemon and per-process journals. `check` runs focused
+checks selected from changed files; build results remain separate from runtime
+and human acceptance evidence. `cleanup <lane-id>` stops only that lane's
+dev-loop processes and preserves its worktree and evidence.
+
+After reviewing completed commits, assemble them in order in an integration
+worktree and inspect the combined diff:
+
+```text
+python devscripts/agent-lane.py promote integration --base <stable-branch> --commit <sha> [--commit <sha> ...]
+```
+
+Use `--build` on `promote` to build and publish in one operation. Stable
+promotion requires a clean integration tree that remains unchanged during the
+build. It copies the verified immutable artifact to `.dev/stable-builds/` and
+atomically points `.dev/stable-build.json` at it. That manifest contains the
+source revision, build ID, and executable path. Promotion never overwrites a
+running executable; previous stable artifacts remain available.
 
 After any build, check the status printed in the output and in
 `build/changelog.txt`. If the status is `NOTHING_CHANGED` but you expected a

@@ -127,7 +127,7 @@ does not have to remember.
 
 ## Regression record
 
-`docs/regressions/2026-10-17/map-id-truncation-stale-ready-REG.md`.
+`docs/regressions/networking/map-id-truncation-REG-2026-10-17.md`.
 
 ## Follow-up (same session, 2026-10-17T01:10:00Z)
 
@@ -190,7 +190,7 @@ Runtime evidence: in the adopted-server state a 6 s sampler counted 3 distinct
 `powershell.exe` PIDs (including the sampler) versus the prior per-render flood;
 the daemon still adopted the server and rendered status.
 
-Records: `docs/regressions/2026-10-17/dev-loop-helper-powershell-window-flood-REG.md`.
+Records: `docs/regressions/dev-loop/dev-loop-helper-REG-2026-10-17.md`.
 
 ## Follow-ups
 

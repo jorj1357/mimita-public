@@ -28,6 +28,6 @@ Reviewed the committed changes since the Oct 21 baseline and the existing uncomm
 
 ## Review and validation
 
-- Read `docs/ROUTER.md`, movement specification, collision architecture, networking specification, runtime-scenario workflow, regression record `docs/regressions/2026-09-29/slope-edge-snag-REG.md`, task-completion procedure, and `docs/skills/spec-behavior-review-v1.md`.
+- Read `docs/ROUTER.md`, movement specification, collision architecture, networking specification, runtime-scenario workflow, regression record `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`, task-completion procedure, and `docs/skills/spec-behavior-review-v1.md`.
 - `git diff --check` produced no whitespace errors. No new tests, build, dev-loop run, or source edits were made; the existing 3094/3099 runtime evidence is cited separately above.
 - Human visual/feel review remains open. For online attribution, repeat the same route while connected and correlate `collision.contact.before_response`/`after_response` with `movement.position-correction.applied` and server `blocking-geometry` validation. Inspect triangle 2440 in the authored map before changing its blocking response.

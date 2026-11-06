@@ -20,6 +20,7 @@
 #include "combat/weapon-registry.h"
 #include "config.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/debug-visuals.h"
 #include "effects/effect-part.h"
 #include "effects/hit-effects.h"
@@ -135,15 +136,17 @@ void PersistentPhysicsSystem::update(float dt, const World& world, Player& playe
             continue;
         }
 
-        physicsStep(obj, dt, world);
-        checkCollisions(obj, dt, world, player, npcs);
+        physicsStep(obj, dt, world, player.movementSimulationTick);
+        checkCollisions(obj, dt, world, player, npcs,
+                        player.movementSimulationTick);
 
         if (!obj.exploded)
             ++it;
     }
 }
 
-void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt, const World& world)
+void PersistentPhysicsSystem::physicsStep(PersistentPhysicsObject& obj, float dt,
+    const World& world, uint64_t tick)
 {
     if (obj.sleeping) return;
 
@@ -215,7 +218,7 @@ static glm::vec3 closestPointOnTriangleFn(const glm::vec3& p, const glm::vec3& a
 
 void PersistentPhysicsSystem::checkCollisions(
     PersistentPhysicsObject& obj, float dt,
-    const World& world, Player& player, NpcSystem& npcs)
+    const World& world, Player& player, NpcSystem& npcs, uint64_t tick)
 {
     if (obj.sleeping || obj.exploded) return;
 
@@ -283,6 +286,24 @@ void PersistentPhysicsSystem::checkCollisions(
                         normal.x, normal.y, normal.z,
                         speedBefore, speedAfter, restitution, friction,
                         obj.bounceCount, obj.cfg.maxBounceCount);
+
+                    const WeaponDefinition* grenade =
+                        WeaponRegistry::instance().get(obj.weaponId);
+                    if (grenade && grenade->grenadeEffect.enabled) {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::GrenadeLauncher,
+                            StructuredLevel::Important,
+                            "grenade.bounce", std::to_string(obj.id),
+                            "local grenade bounced from world geometry", tick,
+                            {{"projectile_id", obj.id}, {"weapon_id", obj.weaponId},
+                             {"bounce_count", obj.bounceCount},
+                             {"speed_before_mps", speedBefore},
+                             {"speed_after_mps", glm::length(obj.velocity)},
+                             {"restitution", restitution}, {"friction", friction},
+                             {"position", {obj.position.x, obj.position.y, obj.position.z}},
+                             {"contact_normal", {normal.x, normal.y, normal.z}}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
 
                     ReplayEffectEvent impactEvent;
                     impactEvent.type = "impact_world";

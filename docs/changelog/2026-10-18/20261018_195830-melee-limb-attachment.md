@@ -69,7 +69,7 @@ world transform.
      placement, and require skip-plus-diagnostic when a pose cannot be
      resolved.
 
-7. `docs/regressions/2026-10-18/melee-hit-feedback-and-hitbox-accuracy-REG.md:6,
+7. `docs/regressions/gameplay/melee-hit-feedback-REG-2026-10-18.md:6,
    54-88`
    - Before: status `ATTEMPTED FIX (1)` and the server/rendered limb mismatch
      remained open.

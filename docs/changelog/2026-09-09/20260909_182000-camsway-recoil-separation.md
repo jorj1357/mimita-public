@@ -9,4 +9,4 @@ Relevant files: `src/camera.h`, `src/camera.cpp`, `src/config/camera-config.h`, 
 
 Validation: `git diff --check` passed for the implementation files; the canonical build was started through `python build_agent.py` and final status must be read from `build/changelog.txt`. Runtime and human visual acceptance were not performed.
 
-Regression: `docs/regressions/2026-09-09/camera-sway-recoil-coupling-REG.md` remains `ATTEMPTED FIX (1)` until human confirmation.
+Regression: `docs/regressions/gameplay/camera-sway-recoil-REG-2026-09-09.md` remains `ATTEMPTED FIX (1)` until human confirmation.

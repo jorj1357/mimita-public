@@ -26,8 +26,10 @@ def create_parser() -> argparse.ArgumentParser:
                         help="stop one server/client instance")
     parser.add_argument("--restart-instance", metavar="INSTANCE_ID",
                         help="restart one server/client instance")
-    parser.add_argument("--server", default="server-01",
+    parser.add_argument("--server", default="",
                         help="server instance id for --start-client")
+    parser.add_argument("--inspect", metavar="PID_OR_INSTANCE_ID",
+                        help="inspect one MiMITA process without changing it")
     parser.add_argument("--name", default="",
                         help="display name for --start-client")
     parser.add_argument("--badconn-preset", default="",

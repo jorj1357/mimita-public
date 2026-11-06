@@ -217,7 +217,7 @@ Diagnostic run `logs/2026-10-28/20261028_014759/events.jsonl`, build `3549`:
 ## Regression
 
 New record:
-`docs/regressions/2026-10-28/stretched-teleport-outline-REG.md`
+`docs/regressions/gameplay/stretched-teleport-outline-REG-2026-10-28.md`
 
 Status: `ATTEMPTED FIX (1)`. The stale previous pose is confirmed by journal
 evidence. Human visual acceptance of the corrected outline remains pending.

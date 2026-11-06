@@ -13,7 +13,7 @@
 - Timestamp: `2026-09-21T02:54:48Z`
 - Scope: hot-reload polling, frame-time evidence, and bounded performance logging
 - Human result: the observed frame-time stuttering was resolved; ordinary play now feels smooth
-- Regression: `docs/regressions/2026-09-21/repeated-background-work-REG.md`
+- Regression: `docs/regressions/performance/repeated-background-work-REG-2026-09-21.md`
 - Changelog: `docs/changelog/2026-09-20/20260920_224012-event-driven-hot-reload-and-log-bounding.md`
 
 ## What made the diagnosis possible

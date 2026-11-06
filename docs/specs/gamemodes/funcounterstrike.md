@@ -53,6 +53,38 @@ Authoritative gameplay time is integer fixed ticks at 60 Hz.
   the `fun_counter_terrorist` / `fun_terrorist` roles.
 - Do not add a Fun-Counter-Strike-only respawn, health, or inventory path.
 
+## Team identity and avatars
+
+- Every active human and mode-rostered NPC has one authoritative team and role
+  before its identity is replicated. A client that joins during a round receives
+  a valid team and role or remains explicitly unassigned; it must never receive
+  a fabricated identity row with team `255`.
+- FCS may define its round lifecycle through `victory.type` and `rounds` while
+  the legacy `victory_condition` field is empty. Late-join team/role assignment
+  follows the active FCS roster boundary and must not be gated only on that
+  legacy field.
+- CT actors use the authored `fun_counter_terrorist` role avatar
+  (`abusiveboy`); T actors use `fun_terrorist` (`jason`). The server is the
+  authority for this selection and for avatar-manifest changes.
+- The selected role avatar is copied into the authoritative player identity
+  and replicated to peers with actor snapshots. A rejected custom manifest
+  cannot replace it; an explicit `actorlist` request reports each actor's
+  effective avatar-policy result in that process's journal.
+- Custom avatar changes and live avatar changes are disabled for this mode.
+  The avatar editor may still expose presentation fields only if they cannot
+  change the replicated avatar identity.
+- Unknown team identity is not evidence that an actor is an enemy. Until a
+  client has a known local team and the actor's known team, it must not apply the
+  enemy-team outline.
+- Only actors explicitly placed into the mode roster may participate. Generic
+  startup/map NPCs that have no mode team and role are removed or otherwise
+  prevented from entering the FCS match. NPCs intentionally assigned to either
+  team remain eligible.
+- The actor inspection command reports controller, team, role, selected avatar,
+  and the effective avatar-policy result. An explicit audit request writes one
+  bounded snapshot to that process's canonical `events.jsonl`; normal operation
+  logs identity/avatar transitions without dumping the full roster every tick.
+
 ## Bomb objective
 
 Bomb rules are the only round-win source:
@@ -198,6 +230,21 @@ local persistent-physics path all derive their fuse from `fuse_ticks`.
 Grenade projectiles are physically larger and bouncier than the legacy
 defaults. The configured projectile radius and bounce values are presentation
 and physics policy, not a separate gameplay system.
+
+Frag, smoke, fire, and darkbang are inventory throwables while held and must not
+contribute a weapon collision capsule or mesh to actor movement/world contact.
+After a click, the shared projectile owns its sphere collision and bounce. Each
+weapon tunes forward speed (`projectile_speed`), vertical launch bias
+(`custom_params.upBias`), gravity, drag, radius, restitution, friction, and
+maximum bounce count through its existing weapon definition. There is no
+charge-to-throw input. The act of throwing applies zero movement impulse to the
+thrower; explosion knockback remains separately configurable.
+
+The current readable projectile presentation is a procedural cylinder, with
+per-type tint, outline, and emissive glow. An optional per-type dynamic light
+follows the projectile origin plus its authored offset. See the shared weapon
+spec for these per-definition fields and the current limitation that the Map
+Editor does not author reusable weapon model assets yet.
 
 ### Frag
 
@@ -352,7 +399,8 @@ repeated):
   start/go/active/result.
 - Grenades: `area_effect.spawn`, `grenade.effect.damage`,
   `grenade.effect.expired`, `grenade.smoke.spawn`, `grenade.fire.spawn`,
-  `grenade.darkbang.exposure`.
+  `grenade.darkbang.exposure`, `grenade.equipped-collision`,
+  `grenade.thrower-impulse`, `grenade.spawn`, and `grenade.bounce`.
 - NPC: `npc.grenade-availability`, `npc.grenade-decision`,
   `npc.grenade-equipped`, `npc.grenade-thrown`.
 - Deathball: `deathball.config.resolve`, `deathball.local_scale`,

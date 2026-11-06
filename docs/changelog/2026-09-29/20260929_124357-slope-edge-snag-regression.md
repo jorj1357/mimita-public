@@ -30,7 +30,7 @@ edge, and add a regression/issue record if one does not already exist.
 
 # Exact implementation changes
 
-- Added `docs/regressions/2026-09-29/slope-edge-snag-REG.md`.
+- Added `docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`.
 - Added this session changelog.
 - No gameplay code was changed.
 

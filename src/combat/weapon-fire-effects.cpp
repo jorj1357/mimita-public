@@ -34,12 +34,29 @@ void applyRecoil(Camera& camera, Player& shooter, const WeaponDefinition& def,
         -shotDirection.y,
         0.0f
     );
+    const glm::vec3 impulseBefore = shooter.externalImpulse;
     if (glm::length(recoilDir) > 0.001f)
         recoilDir = glm::normalize(recoilDir);
-    shooter.externalImpulse += recoilDir * recoilStrength;
-    shooter.externalImpulse.z += recoilStrength * (def.shooterKnockbackVertical > 0.0f
-        ? def.shooterKnockbackVertical
-        : cfg.weaponRecoilUpKick * 0.01f);
+    // Throwables do not launch or push their thrower. Keep camera/arm feedback
+    // below, while leaving grenade blast knockback to the explosion owner.
+    if (!def.grenadeEffect.enabled) {
+        shooter.externalImpulse += recoilDir * recoilStrength;
+        shooter.externalImpulse.z += recoilStrength * (def.shooterKnockbackVertical > 0.0f
+            ? def.shooterKnockbackVertical
+            : cfg.weaponRecoilUpKick * 0.01f);
+    }
+    else {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "grenade.thrower-impulse", def.id,
+            "throwing a grenade applies no movement impulse", shooter.movementSimulationTick,
+            {{"weapon_id", def.id}, {"movement_impulse_applied", false},
+             {"external_impulse_before", {impulseBefore.x, impulseBefore.y, impulseBefore.z}},
+             {"external_impulse_after", {shooter.externalImpulse.x,
+                                          shooter.externalImpulse.y,
+                                          shooter.externalImpulse.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     float shotRecoil = 0.0f;
     float cameraKick = 0.0f;
     float cameraYawKick = 0.0f;

@@ -92,7 +92,7 @@ code and tuning. Objective/target selection stays mode-specific.
   redefine movement; all paths call the same functions.
 - `docs/specs/gamemodes/gamemodes.md`: modes are data/rules; shared runtime owns
   lifecycle and movement.
-- `docs/regressions/2026-10-04/counterstrike-npc-targeting-movement-REG.md`: the
+- `docs/regressions/npc-movement/counterstrike-npc-targeting-REG-2026-10-04.md`: the
   CS nearest-hostile target selection and open-direction stuck recovery are
   preserved; the unified executor is the architectural follow-through.
 

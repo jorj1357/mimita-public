@@ -624,6 +624,8 @@ void tickServerIceTransports(SOCKET sock,
         auto it = players.find(id);
         if (it != players.end())
         {
+            serverLogPlayerSessionRemoval(it->second, "client_explicit_disconnect",
+                                          nowMs(), tick, players.size());
             printf("[DEFERRED REMOVE] removing id=%u — players left: %zu\n",
                    id, players.size() - 1);
             serverClearActorPreset(id);

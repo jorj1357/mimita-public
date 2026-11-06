@@ -1,5 +1,6 @@
 // 2026-10-23
 #include "mapeditor/map-editor.h"
+#include "mapeditor/map-editor-projects.h"
 #include "mapeditor/map-editor-config.h"
 
 #include <algorithm>
@@ -2682,6 +2683,18 @@ void MapEditor::renderUI(GLFWwindow* window)
             cfg.rowScale, dim);
     }
 
+    {
+        const MapObjectiveConfig& mapConfig = MapConfigRegistry::instance().current();
+        const std::string project = currentWorldProjectId().empty()
+            ? "none" : currentWorldProjectId();
+        const std::string worldLine =
+            "world project=" + project +
+            " chunks=" + std::to_string(mapConfig.chunks.size()) +
+            " zones=" + std::to_string(mapConfig.generationZones.size()) +
+            " interactions=" + std::to_string(mapConfig.interactions.size()) +
+            " | add chunk/zone: mapeditor add chunk <glb> / add zone <seed>";
+        uiDrawText(worldLine.c_str(), 16.0f, h - 42.0f, cfg.helpScale, dim);
+    }
     uiDrawText("Commands are in docs/specs/entity-editor/entity-editor.md",
         16.0f, h - 22.0f, cfg.helpScale, dim);
 }

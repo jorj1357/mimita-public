@@ -38,7 +38,7 @@ Read `AGENTS.md`, `docs/ROUTER.md`, `docs/specs/gamemodes/teamdeathmatch.md`,
 `docs/specs/gamemodes/gamemodes.md`,
 `docs/specs/ragdoll-retrograd/ragdoll-retrograd.md`,
 `docs/regressions/README.md`,
-`docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`,
+`docs/regressions/gameplay/ragdoll-per-death-REG-2026-10-06.md`,
 and the related 2026-10-24 ragdoll changelog.
 
 - Documentation/spec review: PASS_WITH_HUMAN_REVIEW. Intake distinguishes

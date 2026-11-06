@@ -100,4 +100,4 @@ prove the live movement feel or identify the final root cause.
 
 # Related regression
 
-`docs/regressions/2026-09-29/slope-edge-snag-REG.md`
+`docs/regressions/collisions/slope-edge-snag-REG-2026-09-29.md`

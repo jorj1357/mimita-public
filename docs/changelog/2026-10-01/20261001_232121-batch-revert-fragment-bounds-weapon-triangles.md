@@ -55,7 +55,7 @@
 - `src/physics/movement/actor-triangle-solver.cpp`
 - `src/perf/perf-overlay.cpp`
 - `src/physics/physical-entity.cpp`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 12)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 12)
 
 # Pre-existing (not authored this session)
 

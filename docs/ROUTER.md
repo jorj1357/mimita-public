@@ -26,7 +26,7 @@ This is the map for the project documentation.
 - `docs/operations/`: build, deployment, assets, and completion procedures.
 - `docs/skills/`: focused review checklists used for the task.
 - `docs/regressions/`: confirmed failures and their permanent lessons;
-  `docs/regressions/master/` is the domain index, dated files own detail.
+  `docs/regressions/<domain>/README.md` is the domain index; flat files in that folder own detail.
 - `docs/changelog/`: one final record for every AI work session.
 - `docs/features/`: stable feature records linking goals, owners, tests, logs,
   changelogs, regressions, and human acceptance.
@@ -72,7 +72,7 @@ systems first. Use this default order:
 |---|---|
 | Documentation | the relevant docs folder, `docs/skills/documentation-checker-v1.md` |
 | Time, dates, filenames, or generated artifacts | `docs/architecture/time-and-formatting/time-and-formatting.md` |
-| UI, HUD, menus, text | `docs/specs/gui/gui.md`, `docs/skills/documentation-checker-v1.md` |
+| In-game UI, HUD, menus, text | `docs/specs/gui/guiv2.md`, `docs/skills/documentation-checker-v1.md` |
 | Vehicles, skateboards, BMX, vehicle controls, and the vehicle arena | `docs/specs/vehicles/vehicles.md`, `docs/specs/vehicles/vehicles-skateboard.md`, `docs/specs/vehicles/vehicles-bmx.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/gamemodes/vehicle-arena.md` |
 | Replay, in-game video creation, or distribution | `docs/specs/replay/replay.md`, `docs/specs/creator-tools/video-editor.md`, `docs/specs/distribution/distribution.md`, `docs/specs/performance/performance.md` |
 | Generated character speech or voice chat | `docs/specs/live-voice-generation/live-voice-generation.md`, `docs/specs/ingame-chat/voice-chat.md`, `docs/specs/moderation/moderation.md` |
@@ -81,9 +81,11 @@ systems first. Use this default order:
 | Movement, physics, collision | `docs/specs/movement/movement.md`, `docs/architecture/collision/collision.md` |
 | NPC behavior, combat profiles, or authored NPC movement | `docs/specs/npc-behavior/npc-behavior.md`, `docs/architecture/player-npc-systems/npc-movement.md` |
 | Actor presets, `roles.json`, actor loadouts, or mode team rosters | `docs/specs/actor-presets/actor-presets.md`, `docs/specs/gamemodes/gamemodes.md` |
+| Creator world projects, project versions/forks, distributed content, world-scoped saves | `docs/specs/world-projects/world-projects.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/networking/networking.md` |
+| Infinite RPG world authoring or connected procedural chunks | `docs/specs/gamemodes/rpg.md`, `docs/specs/entity-editor/entity-editor.md`, `docs/specs/procedural-infinite-world/procedural-infinite-world.md`, `docs/specs/networking/networking.md` |
 | Team Deathmatch rules | `docs/specs/gamemodes/teamdeathmatch.md`, `docs/specs/gamemodes/gamemodes.md`, `docs/specs/networking/networking.md` |
 | Fun Counter Strike, respawning bomb rounds, grenades, Deathball | `docs/specs/gamemodes/funcounterstrike.md`, `docs/specs/gamemodes/counterstrike.md`, `docs/specs/weapons/weapons.md`, `docs/specs/weapons/deathball.md`, `docs/specs/entity-editor/entity-editor.md` |
-| Objective/round HUD for any mode | `docs/specs/gamemodes/objective-hud.md`, `docs/specs/gui/gui.md`, `docs/specs/gamemodes/gamemodes.md` |
+| Objective/round HUD for any mode | `docs/specs/gamemodes/objective-hud.md`, `docs/specs/gui/guiv2.md`, `docs/specs/gamemodes/gamemodes.md` |
 | Zombie Tower phases, encounters, checkpoints, or monster roles | `docs/specs/gamemodes/zombie-tower/zombie-tower.md`, `docs/specs/actor-presets/actor-presets.md`, `docs/specs/npc-behavior/npc-behavior.md` |
 | Animation, rigs, monster/NPC clips, arbitrary body parts, flying/crawling actors | `docs/specs/animations/animations.md`, `docs/specs/avatar/avatar-editor.md`, `docs/skills/spec-behavior-review-v1.md` |
 | Multiplayer or server behavior | `docs/specs/networking/networking.md`, `docs/specs/gamemodes/gamemodes.md` |
@@ -93,15 +95,16 @@ systems first. Use this default order:
 | Runtime behavior validation | `docs/workflows/runtime-scenario-validation.md`, `docs/specs/dev-loop/quality-gates.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/architecture/terminal-commands/terminal-commands.md` |
 | Human-recorded scenarios, replay checkpoints, or collision trace capture | `docs/specs/dev-loop/scenario-input-recording.md`, `docs/workflows/runtime-scenario-validation.md`, `docs/specs/debug-logging/debug-logging.md`, `docs/specs/dev-loop/quality-gates.md` |
 | Quality gates, lint, dead/duplicate code, multi-client matrix | `docs/specs/dev-loop/quality-gates.md`, `docs/specs/dev-loop/dev-loop.md` |
-| Multi-server/client presentation, per-executable journals, or dev-loop process table | `docs/specs/dev-loop/multi-instance.md`, `docs/specs/debug-logging/canonical-jsonl.md`, `docs/specs/dev-loop/dev-loop.md` |
+| Dev-loop dashboard UI, process discovery, or dashboard controls | `docs/specs/dev-loop/dashboard.md`, `docs/specs/dev-loop/multi-instance.md`, `docs/specs/dev-loop/dev-loop.md` |
+| Multi-server/client presentation, per-executable journals, or dev-loop process table | `docs/specs/dev-loop/multi-instance.md`, `docs/specs/dev-loop/dashboard.md`, `docs/specs/debug-logging/canonical-jsonl.md`, `docs/specs/dev-loop/dev-loop.md` |
 | One server + multiple clients, same-machine interaction tests, or dev-loop process controls | `docs/workflows/multi-client-dev-testing.md`, `docs/specs/dev-loop/multi-instance.md`, `docs/specs/networking/bad-connection-simulation.md` |
 | Bad-connection presets, latency, loss, reorder, blackout, or impairment evidence | `docs/specs/networking/bad-connection-simulation.md`, `docs/specs/networking/networking.md`, `docs/specs/debug-logging/debug-logging.md` |
 | In-game chat | `docs/specs/ingame-chat/ingame-chat.md`, `docs/skills/chat-checker-v1.md` |
 | Moderation | `docs/specs/moderation/moderation.md`, `docs/skills/moderation-checker-v1.md` |
 | Assets or sound | `docs/operations/asset-management/asset-management.md`, `docs/skills/asset-checker-v1.md` |
-| Audio behavior, hot audio policy, sound recipes or sound resources | `docs/architecture/live-development/hot-audio-contract.md`, `docs/features/live-code-development/live-code-development.md`, `docs/skills/logging-checker-v1.md` |
+| Audio behavior, hot audio policy, sound recipes or sound resources | `docs/architecture/live-development/hot-audio-contract.md`, `docs/architecture/live-development/live-development.md`, `docs/skills/logging-checker-v1.md` |
 | Build or EXE | `docs/operations/build-and-exe/build-and-exe.md`, `docs/operations/task-completion/task-completion.md`, `docs/architecture/live-development/live-development.md` |
-| Live code, hot reload, or replaceable game modules | `docs/features/live-code-development/live-code-development.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
+| Live code, hot reload, or replaceable game modules | `docs/architecture/live-development/live-development.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/specs/hotreload/hotreload.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
 | Entity, component, or ECS migration | `docs/architecture/ecs-entity-etc/ecs.md`, `docs/architecture/ecs-entity-etc/ecs-migration.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/player-npc-systems/player-npc-systems.md` |
 | Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |

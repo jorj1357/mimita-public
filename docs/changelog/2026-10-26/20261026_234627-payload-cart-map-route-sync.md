@@ -35,7 +35,7 @@ runtime route reinitialization.
   reset.
 - `docs/specs/gamemodes/payload.md`: document the live transform boundary and
   clarify that route edits on the same map apply next round.
-- `docs/regressions/2026-10-26/payload-cart-keeps-previous-map-route-REG.md`:
+- `docs/regressions/gameplay/payload-cart-keeps-REG-2026-10-26.md`:
   record the previous-map route regression and evidence status.
 
 Prior source behavior copied only `cartYaw` and `cartFixedFacing` during the
@@ -57,7 +57,7 @@ the runtime route at a map switch.
 - Logging review: `docs/skills/logging-checker-v1.md` — completed. A bounded
   `payload.cart-map-reloaded` event records size, map-switch status, entity ID,
   route point count, position, facing, and interaction size.
-- Regression: `docs/regressions/2026-10-26/payload-cart-keeps-previous-map-route-REG.md`.
+- Regression: `docs/regressions/gameplay/payload-cart-keeps-REG-2026-10-26.md`.
 - `git diff --check`: passed.
 - Dev-loop build request completed successfully and published debug build
   3391. `latest_build_stale=false`; the running build stayed at 3389.

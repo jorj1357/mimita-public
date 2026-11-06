@@ -16,7 +16,7 @@ and documentation work as `26562692`. This session did not create that commit.
 Untracked/new Melee runtime scenarios created here are
 `devscripts/scenarios/melee_npc_death_v1.json` and
 `devscripts/scenarios/melee_shield_v1.json`. The pre-existing Melee regression
-record `docs/regressions/2026-10-19/melee-npc-death-stale-dependency-REG.md`
+record `docs/regressions/gameplay/melee-npc-death-REG-2026-10-19.md`
 was extended with runtime evidence. Two new regression records were added under
 `docs/regressions/2026-10-19/`.
 

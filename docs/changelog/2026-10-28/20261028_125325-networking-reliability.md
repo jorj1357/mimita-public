@@ -26,10 +26,10 @@ collision, flame, animation, or performance owners.
 - `docs/specs/debug-logging/debug-logging.md`
 - `docs/skills/logging-checker-v1.md`
 - `docs/skills/spec-behavior-review-v1.md`
-- `docs/regressions/2026-09-17/2026-09-17-ice-host-poll-not-fetched-after-first-join.md`
-- `docs/regressions/2026-09-27/dev-loop-bypassed-room-code-REG.md`
-- `docs/regressions/2026-10-17/map-id-truncation-stale-ready-REG.md`
-- `docs/regressions/2026-10-24/mode-one-server-port-REG.md`
+- `docs/regressions/networking/ice-host-poll-REG-2026-09-17.md`
+- `docs/regressions/dev-loop/dev-loop-bypassed-REG-2026-09-27.md`
+- `docs/regressions/networking/map-id-truncation-REG-2026-10-17.md`
+- `docs/regressions/networking/mode-one-server-REG-2026-10-24.md`
 
 ## Findings
 

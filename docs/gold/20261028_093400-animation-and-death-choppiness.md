@@ -66,7 +66,7 @@ spikes visible rather than hiding them in an average.
 ## Related records
 
 - [Detailed evidence, code, numbers, and method](20261028_094500-animation-death-choppiness-evidence.md)
-- [Performance regression record](../regressions/2026-10-28/animation-death-frame-choppiness-REG.md)
+- [Performance regression record](../regressions/performance/animation-death-frame-REG-2026-10-28.md)
 - [Investigation, implementation, and runtime evidence](../changelog/2026-10-28/20261028_041903-plan-a-gameplay-diagnostics.md)
 - [Performance specification](../specs/performance/performance.md)
 - [Open gameplay issues](../specs/open-gameplay-issues.md)

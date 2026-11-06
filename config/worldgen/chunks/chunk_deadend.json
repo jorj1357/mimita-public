@@ -1,0 +1,126 @@
+{
+  "bounds_max": [
+    5.0,
+    5.0,
+    4.0
+  ],
+  "bounds_min": [
+    -5.0,
+    -5.0,
+    0.0
+  ],
+  "connectors": [
+    {
+      "id": "west_entry",
+      "orientation": "tunnel",
+      "position": [
+        -5.0,
+        0.0,
+        2.0
+      ],
+      "role": "entry",
+      "side": "west",
+      "tags": [
+        "tunnel"
+      ]
+    }
+  ],
+  "enabled": true,
+  "format": 1,
+  "id": "chunk_deadend",
+  "parts": [
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "floor",
+      "kind": "floor",
+      "material": "stone_floor",
+      "position": [
+        0.0,
+        0.0,
+        -0.25
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        10.0,
+        10.0,
+        0.5
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "left_wall",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        -4.75,
+        0.0,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        10.0,
+        4.0
+      ],
+      "visible": true
+    },
+    {
+      "collision": true,
+      "faces": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "id": "right_wall",
+      "kind": "wall",
+      "material": "stone_wall",
+      "position": [
+        4.75,
+        0.0,
+        2.0
+      ],
+      "rotation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        0.5,
+        10.0,
+        4.0
+      ],
+      "visible": true
+    }
+  ],
+  "tags": [
+    "deadend"
+  ]
+}

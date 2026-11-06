@@ -69,6 +69,8 @@ WATCH_LOCK_PATH = DEV_ROOT / "dev-loop-watch.lock"
 WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
 WATCH_SCRIPT = ROOT / "devscripts" / "dev-loop-watch.py"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
+DASHBOARD_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard.lock"
+DASHBOARD_LOG_PATH = DEV_ROOT / "dev-loop-dashboard.log"
 DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
 DAEMON_READY_TIMEOUT_SECONDS = 60.0
 DAEMON_READY_STATUS_TIMEOUT_SECONDS = 8.0
@@ -592,6 +594,40 @@ def existing_dev_loop_pids() -> list[int]:
     return pids
 
 
+def existing_dashboard_pid() -> int:
+    """Find an already-visible dashboard for this checkout."""
+    if os.name != "nt":
+        return 0
+    script_text = str(Path(__file__).resolve()).replace("/", "\\").lower()
+    try:
+        result = run_hidden(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
+                "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    for line in result.stdout.splitlines():
+        try:
+            pid_text, command_line = line.split("\t", 1)
+            pid = int(pid_text.strip())
+        except (ValueError, TypeError):
+            continue
+        normalized_command = command_line.replace("/", "\\").lower()
+        if (pid != os.getpid() and script_text in normalized_command
+                and "--daemon" not in normalized_command
+                and ("--dev-loop-role=dashboard" in normalized_command
+                     or "--dev-loop-role dashboard" in normalized_command)):
+            return pid
+    return 0
+
+
 def windows_process_identity(pid: int, fresh: bool = False) -> dict | None:
     """Read identity data for one Windows process without changing it.
 
@@ -627,6 +663,53 @@ def windows_process_identity(pid: int, fresh: bool = False) -> dict | None:
     identity = value if isinstance(value, dict) else None
     _PROCESS_IDENTITY_CACHE[pid] = (now, identity)
     return identity
+
+
+def checkout_mimita_processes(*, strict: bool = False) -> list[dict]:
+    """List MiMITA executables under this checkout with stable process identity."""
+    if os.name != "nt":
+        if strict:
+            raise RuntimeError("MiMITA process discovery is available on Windows only")
+        return []
+    command = (
+        "Get-CimInstance Win32_Process -Filter \"Name='mimita.exe'\" | "
+        "Where-Object { $_.ExecutablePath -and "
+        "($_.ExecutablePath -like '" + str(ROOT).replace("'", "''") + "\\*') } | "
+        "ForEach-Object { [PSCustomObject]@{ pid=[int]$_.ProcessId; "
+        "executable=[string]$_.ExecutablePath; command_line=[string]$_.CommandLine; "
+        "process_started_utc=[string]($_.CreationDate.ToUniversalTime().ToString('o')) } } | "
+        "ConvertTo-Json -Compress"
+    )
+    try:
+        result = run_hidden(
+            ["powershell", "-NoProfile", "-Command", command],
+            capture_output=True, text=True, timeout=8, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        if strict:
+            raise RuntimeError(f"MiMITA process scan failed: {error}") from error
+        return []
+    if result.returncode != 0:
+        if strict:
+            detail = (result.stderr or result.stdout or "process query failed").strip()
+            raise RuntimeError(f"MiMITA process scan failed: {detail[:240]}")
+        return []
+    payload = (result.stdout or "").strip()
+    if not payload:
+        return []
+    try:
+        value = json.loads(payload)
+    except json.JSONDecodeError as error:
+        if strict:
+            raise RuntimeError("MiMITA process scan returned invalid JSON") from error
+        return []
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        if strict:
+            raise RuntimeError("MiMITA process scan returned an unexpected result")
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def acquire_dev_loop_lock() -> int:
@@ -853,7 +936,18 @@ def activate_stable_launch(stage_dir: Path) -> Path:
     moved_old = False
     try:
         if STABLE_LAUNCH_DIR.exists():
-            os.replace(STABLE_LAUNCH_DIR, backup_dir)
+            # Windows can keep the executable directory locked briefly after
+            # taskkill reports success. Retry the atomic swap while the OS
+            # releases those handles; never fall back to deleting the live path.
+            deadline = time.monotonic() + 10.0
+            while True:
+                try:
+                    os.replace(STABLE_LAUNCH_DIR, backup_dir)
+                    break
+                except PermissionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.25)
             moved_old = True
         os.replace(stage_dir, STABLE_LAUNCH_DIR)
     except Exception:
@@ -868,47 +962,60 @@ def activate_stable_launch(stage_dir: Path) -> Path:
 
 
 def publish_build(artifact_id: str, folder_name: str, source_generation: int,
-                  mode: str) -> Path:
+                  mode: str, source_at_start: dict | None = None,
+                  source_at_publish: dict | None = None) -> Path:
     source_exe = ROOT / "mimita.exe"
     if not source_exe.is_file():
         raise RuntimeError("build succeeded but mimita.exe was not produced")
 
     destination = BUILD_ROOT / folder_name
     destination.mkdir(parents=True, exist_ok=False)
-    _copy_verified_executable(source_exe, destination / "mimita.exe")
-
-    runtime_sources = {name: ROOT / name for name in RUNTIME_DLLS}
     try:
-        compiler_dir = Path(resolve_compiler()).parent
-        runtime_sources.update({
-            "libgcc_s_seh-1.dll": compiler_dir / "libgcc_s_seh-1.dll",
-            "libstdc++-6.dll": compiler_dir / "libstdc++-6.dll",
-            "libwinpthread-1.dll": compiler_dir / "libwinpthread-1.dll",
-        })
-        runtime_sources["glfw3.dll"] = Path(resolve_glfw_lib()) / "glfw3.dll"
-    except FileNotFoundError:
-        pass
+        _copy_verified_executable(source_exe, destination / "mimita.exe")
 
-    for name in RUNTIME_DLLS:
-        source = runtime_sources[name]
-        if source.is_file():
-            shutil.copy2(source, destination / name)
-        else:
-            print(f"[DEV] published build missing runtime DLL: {source}")
+        runtime_sources = {name: ROOT / name for name in RUNTIME_DLLS}
+        try:
+            compiler_dir = Path(resolve_compiler()).parent
+            runtime_sources.update({
+                "libgcc_s_seh-1.dll": compiler_dir / "libgcc_s_seh-1.dll",
+                "libstdc++-6.dll": compiler_dir / "libstdc++-6.dll",
+                "libwinpthread-1.dll": compiler_dir / "libwinpthread-1.dll",
+            })
+            runtime_sources["glfw3.dll"] = Path(resolve_glfw_lib()) / "glfw3.dll"
+        except FileNotFoundError:
+            pass
 
-    published_identity = executable_identity(destination / "mimita.exe")
-    metadata = {
-        "artifact_id": artifact_id,
-        "build_id": f"{artifact_id}:{published_identity.get('sha256', '')}",
-        "created_utc": artifact_id,
-        "sha256": published_identity.get("sha256", ""),
-        "source_generation": source_generation,
-        "build_mode": mode,
-        "executable": str(destination / "mimita.exe"),
-    }
-    (destination / "build-identity.json").write_text(
-        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
-    )
+        for name in RUNTIME_DLLS:
+            source = runtime_sources[name]
+            if source.is_file():
+                shutil.copy2(source, destination / name)
+            else:
+                print(f"[DEV] published build missing runtime DLL: {source}")
+
+        published_identity = executable_identity(destination / "mimita.exe")
+        metadata = {
+            "artifact_id": artifact_id,
+            "build_id": f"{artifact_id}:{published_identity.get('sha256', '')}",
+            "created_utc": artifact_id,
+            "sha256": published_identity.get("sha256", ""),
+            "source_generation": source_generation,
+            "build_mode": mode,
+            "executable": str(destination / "mimita.exe"),
+            "source_at_build_start": source_at_start or {},
+            "source_at_publish": source_at_publish or {},
+            "source_changed_during_build": (source_at_start or {}) != (source_at_publish or {}),
+        }
+        if not published_identity.get("valid"):
+            raise RuntimeError(
+                "refusing to publish invalid executable: "
+                f"{published_identity.get('validation') or 'identity validation failed'}"
+            )
+        (destination / "build-identity.json").write_text(
+            json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+        )
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
 
     for old in published_builds()[KEEP_BUILDS:]:
         shutil.rmtree(old, ignore_errors=True)
@@ -980,7 +1087,10 @@ class DevLoop:
         self.client_launch_ms: float = 0.0
         self.server_unavailable = False
         self.running_build = None
-        self.latest_build_folder = newest_published_build()
+        # A failed/interrupted publication may leave a timestamped directory
+        # without a complete identity sidecar. Never let that directory prevent
+        # daemon startup when an older verified artifact is available.
+        self.latest_build_folder = newest_valid_published_build()
         initial_identity = (
             published_identity_for_folder(BUILD_ROOT / self.latest_build_folder,
                                           executable_identity)
@@ -1324,11 +1434,19 @@ class DevLoop:
             try:
                 process.terminate()
                 process.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
+            except subprocess.TimeoutExpired:
                 try:
                     process.kill()
-                except OSError:
-                    pass
+                    process.wait(timeout=3)
+                except (OSError, subprocess.TimeoutExpired) as error:
+                    self.last_message = f"could not stop {instance_id} pid={process.pid}: {error}"
+                    return False
+            except OSError as error:
+                self.last_message = f"could not stop {instance_id} pid={process.pid}: {error}"
+                return False
+            if process.poll() is None:
+                self.last_message = f"could not stop {instance_id} pid={process.pid}: process remains alive"
+                return False
         self.client_instances.pop(instance_id, None)
         self.processes = [p for p in self.processes if p is not process]
         if not self.client_instances:
@@ -1566,8 +1684,16 @@ class DevLoop:
                          if build_snapshot["active_build_started_monotonic"] is not None
                          else build_snapshot["last_build_duration_seconds"])
         latest_identity = self.latest_build_identity()
+        effective_launch = _effective_launch_identity(list(self.server_args))
+        if not effective_launch["map"]:
+            effective_launch["map"] = self.current_map or ""
         return {
             "profile": self.profile.get("name", "unnamed"),
+            "effective_map": effective_launch["map"],
+            "effective_mode": effective_launch["mode"],
+            "effective_gamemode": effective_launch["gamemode"],
+            "effective_weapon_set": effective_launch["weapon_set"],
+            "effective_npcs": effective_launch["npcs"],
             "launch_mode": self.launch_mode_id,
             "running_build": self.running_build,
             "running_build_id": (self.run_metadata.get("build_id")
@@ -1652,10 +1778,14 @@ class DevLoop:
         self.last_control = {
             "request_id": str(request.get("request_id", "")),
             "action": str(request.get("action", "")),
+            "command": str(request.get("command", "")),
+            "client_id": str(request.get("client_id", "")),
             "status": status,
             "message": message,
             "updated_at": utc_now(),
         }
+        if isinstance(request.get("results"), list):
+            self.last_control["results"] = request["results"][:32]
         if not self.events_path:
             return
         record = {
@@ -1664,11 +1794,15 @@ class DevLoop:
             "event_id": f"DEV_CONTROL_{request.get('request_id', uuid.uuid4().hex)}",
             "fields": {
                 "action": request.get("action", ""),
+                "command": request.get("command", ""),
+                "client_id": request.get("client_id", ""),
                 "launch_mode": request.get("launch_mode"),
                 "request_id": request.get("request_id", ""),
                 "requested_by": request.get("requested_by", "ai"),
                 "status": status,
                 "message": message,
+                "results": request.get("results", [])[:32]
+                if isinstance(request.get("results"), list) else [],
             },
             "level": "IMPORTANT",
             "pid": os.getpid(),
@@ -2215,6 +2349,66 @@ class DevLoop:
                 self.record_control_event(
                     request, "completed" if stopped else "rejected", self.last_message)
                 self.save_state("instance_stopped" if stopped else "request_rejected")
+            elif action == "stop-selected":
+                targets = request.get("targets")
+                if not isinstance(targets, list) or not targets:
+                    self.last_message = "select at least one running MiMITA process"
+                    request["results"] = []
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.save_state("request_rejected")
+                    continue
+                results = []
+                for target in targets[:32]:
+                    if not isinstance(target, dict):
+                        continue
+                    try:
+                        if target.get("source") == "external":
+                            stopped = self.stop_external_mimita_process(target)
+                        else:
+                            iid = str(target.get("instance_id") or "")
+                            try:
+                                expected_pid = int(target.get("pid", 0) or 0)
+                            except (TypeError, ValueError):
+                                expected_pid = 0
+                            if iid == "server-01":
+                                if expected_pid and expected_pid == self.server_pid:
+                                    stopped = self.stop_server()
+                                else:
+                                    stopped = False
+                                    self.last_message = (
+                                        "refused to stop server: process identity changed")
+                            else:
+                                record = self.client_instances.get(iid)
+                                process = record.get("process") if record else None
+                                same_process = bool(process and process.pid == expected_pid
+                                                    and process.poll() is None)
+                                stopped = bool(same_process and self.stop_client_instance(iid))
+                                if not same_process:
+                                    self.last_message = f"refused to stop {iid}: process identity changed"
+                    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                        stopped = False
+                        self.last_message = f"stop failed: {error}"
+                    results.append({
+                        "instance_id": target.get("instance_id"),
+                        "source": target.get("source", "managed"),
+                        "pid": target.get("pid"),
+                        "role": target.get("role"),
+                        "executable": target.get("executable"),
+                        "process_started_utc": target.get("process_started_utc"),
+                        "stopped": bool(stopped),
+                        "message": self.last_message,
+                    })
+                request["results"] = results
+                successes = sum(1 for item in results if item["stopped"])
+                failures = len(results) - successes
+                self.last_message = (f"stopped {successes} of {len(results)} selected MiMITA processes"
+                                     if not failures else
+                                     f"stopped {successes} of {len(results)} selected MiMITA processes; "
+                                     f"{failures} failed")
+                self.record_control_event(
+                    request, "completed" if not failures else "failed", self.last_message)
+                self.save_state("selected_processes_stopped" if not failures
+                                else "selected_process_stop_failed")
             elif action == "restart-instance":
                 iid = str(request.get("instance_id", "") or "")
                 if iid == "server-01":
@@ -2493,6 +2687,32 @@ class DevLoop:
             args.extend(["--duel", "--gamemode", str(profile.get("gamemode", "duel"))])
         args.extend(str(value) for value in self.launch_mode.get("server_args", []))
         return args
+
+    def launch_identity_error(self, server_args: list[str]) -> tuple[str, dict, dict]:
+        """Compare effective launch values with the launch mode's expectations."""
+        expected_keys = {
+            "map": ("expect_map", "map"),
+            "mode": ("expect_mode", "mode"),
+            "gamemode": ("expect_gamemode", "gamemode"),
+            "weapon_set": ("expect_weapon_set", "weapon_set"),
+            "npcs": ("expect_npcs", "npcs"),
+        }
+        expected = {}
+        for key, (launch_key, _) in expected_keys.items():
+            if launch_key in self.launch_mode:
+                expected[key] = self.launch_mode.get(launch_key)
+        if not expected:
+            return "", {}, {}
+        actual = _effective_launch_identity(server_args)
+        problems = []
+        for key, want in expected.items():
+            got = actual.get(key)
+            if str(got) != str(want):
+                problems.append(f"{key}: expected {want!r} got {got!r}")
+        if not problems:
+            return "", expected, actual
+        return ("launch identity mismatch: " + "; ".join(problems),
+                expected, actual)
 
     def validate_firewall_policy(self) -> bool:
         """Prevent dev servers from requesting a public inbound firewall rule."""
@@ -3036,6 +3256,17 @@ class DevLoop:
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
             server_args = self.build_server_args(launch_exe, map_name, self.room_file_path)
+            identity_error, expected_identity, actual_identity = self.launch_identity_error(server_args)
+            if identity_error:
+                self.last_message = identity_error
+                self.record_runtime_event(
+                    "dev-loop.launch.identity-mismatch",
+                    {"expected": expected_identity, "actual": actual_identity},
+                    identity_error,
+                )
+                self.save_state("launch_identity_mismatch")
+                print(f"[DEV LAUNCH] BLOCKED {identity_error}", flush=True)
+                return False
             if not self.events_path:
                 self._ensure_run_layout()
             launch_journal_path = self.events_path
@@ -3564,35 +3795,65 @@ class DevLoop:
             "local gameplay continued but the coordinator room code did not arrive",
         )
 
-    def _checkout_mimita_processes(self) -> list[dict]:
-        """List mimita.exe processes whose executable is under this checkout."""
-        if os.name != "nt":
-            return []
-        command = (
-            "Get-CimInstance Win32_Process -Filter \"Name='mimita.exe'\" | "
-            "Where-Object { $_.ExecutablePath -and "
-            "($_.ExecutablePath -like '" + str(ROOT).replace("'", "''") + "\\*') } | "
-            "ForEach-Object { [PSCustomObject]@{ pid=[int]$_.ProcessId; "
-            "executable=[string]$_.ExecutablePath; command_line=[string]$_.CommandLine } } | "
-            "ConvertTo-Json -Compress"
+    def _checkout_mimita_processes(self, *, strict: bool = False) -> list[dict]:
+        """List checkout-owned MiMITA processes, optionally failing on scan errors."""
+        return checkout_mimita_processes(strict=strict)
+
+    def stop_external_mimita_process(self, target: dict) -> bool:
+        """Stop one external checkout MiMITA process after revalidating identity."""
+        try:
+            pid = int(target.get("pid", 0) or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        expected_started = str(target.get("process_started_utc") or "")
+        expected_executable = str(target.get("executable") or "")
+        expected_role = str(target.get("role") or "")
+        current = None
+        if pid > 0:
+            current = next((item for item in self._checkout_mimita_processes(strict=True)
+                            if int(item.get("pid", 0) or 0) == pid), None)
+        if current is None:
+            self.last_message = f"MiMITA process pid={pid or '?'} already exited"
+            return True
+
+        command_line = str(current.get("command_line") or "")
+        current_role = "server" if "--server" in command_line.lower().split() else "client"
+        same_identity = (
+            expected_role in ("server", "client")
+            and expected_started
+            and expected_started == str(current.get("process_started_utc") or "")
+            and os.path.normcase(expected_executable)
+            == os.path.normcase(str(current.get("executable") or ""))
+            and current_role == expected_role
         )
-        try:
-            result = run_hidden(
-                ["powershell", "-NoProfile", "-Command", command],
-                capture_output=True, text=True, timeout=8, check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return []
-        text = (result.stdout or "").strip()
-        if not text:
-            return []
-        try:
-            value = json.loads(text)
-        except json.JSONDecodeError:
-            return []
-        if isinstance(value, dict):
-            value = [value]
-        return [item for item in value if isinstance(item, dict)]
+        if not same_identity:
+            self.last_message = f"refused to stop pid={pid}: process identity changed or is unverified"
+            self.record_runtime_event(
+                "dev-loop.process.external_stop_result",
+                {"pid": pid, "executable": expected_executable,
+                 "process_started_utc": expected_started, "role": expected_role,
+                 "stopped": False}, self.last_message)
+            return False
+
+        result = run_hidden(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True, text=True, timeout=8, check=False,
+        )
+        _PROCESS_IDENTITY_CACHE.pop(pid, None)
+        remaining = next((item for item in self._checkout_mimita_processes(strict=True)
+                          if int(item.get("pid", 0) or 0) == pid
+                          and str(item.get("process_started_utc") or "") == expected_started), None)
+        stopped = remaining is None
+        self.last_message = (f"stopped external {expected_role} pid={pid}" if stopped else
+                             f"could not stop external {expected_role} pid={pid}: "
+                             f"{(result.stderr or result.stdout or 'process remains alive').strip()[:180]}")
+        self.record_runtime_event(
+            "dev-loop.process.external_stop_result",
+            {"pid": pid, "executable": expected_executable,
+             "process_started_utc": expected_started, "role": expected_role,
+             "taskkill_exit_code": result.returncode, "stopped": stopped},
+            self.last_message)
+        return stopped
 
     def reap_stray_mimita_processes(self) -> None:
         """Enforce the profile's process cap for this checkout.
@@ -4586,6 +4847,13 @@ def daemon_lock_pid() -> int:
     return _lock_pid(LOCK_PATH)
 
 
+def dashboard_pid() -> int:
+    pid = _lock_pid(DASHBOARD_LOCK_PATH)
+    if pid and pid_alive(pid):
+        return pid
+    return existing_dashboard_pid()
+
+
 def process_image_name() -> str:
     return os.path.basename(sys.executable) or "python.exe"
 
@@ -4662,6 +4930,15 @@ def start_daemon_detached(profile: str, launch_mode, visibility: str) -> int:
     return _spawn_detached(args, DAEMON_LOG_PATH)
 
 
+def start_dashboard_detached(profile: str, launch_mode, visibility: str) -> int:
+    args = [sys.executable, str(DEV_LOOP_SCRIPT),
+            "--dev-loop-role=dashboard", "--profile", str(profile)]
+    if launch_mode is not None:
+        args += ["--launch-mode", str(launch_mode)]
+    args.append("--headless" if visibility == "headless" else "--visible")
+    return _spawn_detached(args, DASHBOARD_LOG_PATH)
+
+
 def wait_for_daemon_ready(timeout: float):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -4673,7 +4950,8 @@ def wait_for_daemon_ready(timeout: float):
     return None
 
 
-def ensure_running(profile: str, launch_mode, visibility: str):
+def ensure_running(profile: str, launch_mode, visibility: str,
+                   open_dashboard: bool = True):
     """Ensure exactly one watchdog and one daemon, then return the ready state.
 
     Duplicates are impossible: the watchdog and daemon each hold a lock, and
@@ -4698,6 +4976,9 @@ def ensure_running(profile: str, launch_mode, visibility: str):
             started = start_daemon_detached(profile, launch_mode, visibility)
             events.append({"action": "daemon_start", "pid": started, "ok": bool(started)})
         current = wait_for_daemon_ready(DAEMON_READY_TIMEOUT_SECONDS)
+    if open_dashboard and not dashboard_pid():
+        started = start_dashboard_detached(profile, launch_mode, visibility)
+        events.append({"action": "dashboard_start", "pid": started, "ok": bool(started)})
     return current, events
 
 
@@ -4768,6 +5049,34 @@ def _build_label(executable, artifact_id=None) -> str:
     return os.path.basename(str(executable)) or "-"
 
 
+def _last_arg_value(args: list[str], name: str) -> str:
+    value = ""
+    for index, arg in enumerate(args[:-1]):
+        if arg == name:
+            value = args[index + 1]
+    return value
+
+
+def _effective_launch_identity(args: list[str]) -> dict:
+    """Resolve the values the server will actually use, last flag wins."""
+    npcs = 0
+    for index, arg in enumerate(args):
+        if arg == "--no-npcs":
+            npcs = 0
+        elif arg == "--npcs" and index + 1 < len(args):
+            try:
+                npcs = int(args[index + 1])
+            except ValueError:
+                npcs = 0
+    return {
+        "map": _last_arg_value(args, "--map"),
+        "mode": _last_arg_value(args, "--mode"),
+        "gamemode": _last_arg_value(args, "--gamemode"),
+        "weapon_set": _last_arg_value(args, "--weapon-set"),
+        "npcs": npcs,
+    }
+
+
 def _recent_activity(events_path: str, limit: int = 10) -> list[str]:
     if not events_path:
         return []
@@ -4800,8 +5109,13 @@ def _recent_activity(events_path: str, limit: int = 10) -> list[str]:
             continue
         fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
         reason = str(fields.get("reason") or fields.get("message") or "")
+        command = str(fields.get("command") or "")
+        client_id = str(fields.get("client_id") or "")
         source = str(record.get("source") or "runtime")
-        found.append(f"{record.get('wall_time', '')} [{source}] {name} {reason}".strip()[:180])
+        detail = reason
+        if command:
+            detail = f"AI command client={client_id or 'primary'} cmd=\"{command}\" result={reason}"
+        found.append(f"{record.get('wall_time', '')} [{source}] {name} {detail}".strip()[:240])
         if len(found) >= limit:
             break
     return list(reversed(found))
@@ -5031,7 +5345,13 @@ def run_dashboard(args: argparse.Namespace) -> int:
     ansi = bool(term is not None and term.supports_ansi())
 
     current, ensure_events = ensure_running(
-        args.profile, args.launch_mode, args.launch_visibility or "visible")
+        args.profile, args.launch_mode, args.launch_visibility or "visible",
+        open_dashboard=False)
+    try:
+        DASHBOARD_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        DASHBOARD_LOCK_PATH.write_text(str(os.getpid()), encoding="ascii")
+    except OSError:
+        pass
     role_pids = {"watchdog": watcher_pid(), "daemon": daemon_lock_pid(),
                  "dashboard": os.getpid()}
     events_path = str((current or {}).get("events_path") or "")
@@ -5178,8 +5498,11 @@ def run_dashboard(args: argparse.Namespace) -> int:
                             f"(PID {latest.get('server_pid') or '—'})  ·  "
                             f"client {'ready' if latest.get('client_ready') else 'not ready'} "
                             f"(PID {', '.join(map(str, latest.get('client_pids') or [])) or '—'})\n"
-                            f"mode {latest.get('launch_mode_name') or latest.get('launch_mode') or '—'}  ·  "
-                            f"map {latest.get('map') or '—'}  ·  "
+                            f"map {latest.get('effective_map') or latest.get('map') or '—'}  ·  "
+                            f"mode {latest.get('effective_mode') or '—'}  ·  "
+                            f"gamemode {latest.get('effective_gamemode') or '—'}  ·  "
+                            f"weapon_set {latest.get('effective_weapon_set') or '—'}  ·  "
+                            f"npcs {latest.get('effective_npcs', '—')}  ·  "
                             f"build match {'yes' if latest.get('builds_match') else 'no'}"
                         ),
                         "scenario": scenario,
@@ -5196,6 +5519,9 @@ def run_dashboard(args: argparse.Namespace) -> int:
                         ),
                     }
 
+                def gui_processes():
+                    return checkout_mimita_processes(strict=True)
+
                 def gui_control(action: str, **fields):
                     if action == "stop":
                         fields["explicit_stop"] = True
@@ -5205,7 +5531,8 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 return dev_loop_gui.run(
                     gui_status,
                     gui_control,
-                    title)
+                    title,
+                    gui_processes)
         except Exception:
             # Fall through to the terminal dashboard; a presentation failure
             # must not stop the daemon or hide status.
@@ -5272,6 +5599,11 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 break
             time.sleep(DASHBOARD_FRAME_SECONDS)
     finally:
+        try:
+            if _lock_pid(DASHBOARD_LOCK_PATH) == os.getpid():
+                DASHBOARD_LOCK_PATH.unlink(missing_ok=True)
+        except OSError:
+            pass
         _append_journal_event(events_path, "dev-loop.dashboard.detach", {
             "dashboard_pid": os.getpid(),
             "frames": frames,
@@ -5300,6 +5632,14 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
         f"visibility={current.get('launch_visibility', 'unknown')}"
     )
     print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")
+    effective = _effective_launch_identity(list(current.get("server_args") or []))
+    print(
+        f"[DEV STATUS] LAUNCH IDENTITY map={current.get('effective_map') or effective['map'] or '-'} "
+        f"mode={current.get('effective_mode') or effective['mode'] or '-'} "
+        f"gamemode={current.get('effective_gamemode') or effective['gamemode'] or '-'} "
+        f"weapon_set={current.get('effective_weapon_set') or effective['weapon_set'] or '-'} "
+        f"npcs={current.get('effective_npcs', effective['npcs'])}"
+    )
     print(
         f"[DEV STATUS] server pid={current.get('server_pid')} "
         f"alive={current.get('server_alive')} "
@@ -5314,6 +5654,8 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
 def _control_action(args: argparse.Namespace) -> str:
     if getattr(args, "ai_match", False):
         return "scenario-file"
+    if getattr(args, "inspect", ""):
+        return "inspect"
     if getattr(args, "list_instances", False):
         return "list-instances"
     if getattr(args, "start_server", False):
@@ -5525,8 +5867,7 @@ def run_control_client(args: argparse.Namespace) -> int:
             if inst.get("role") == "client" and (
                     not requested_client or inst.get("instance_id") == requested_client):
                 chosen = inst
-                if requested_client:
-                    break
+                break
         events_path = str((chosen or {}).get("journal_path") or
                           current.get("client_journal_path") or
                           current.get("events_path") or "")

@@ -15,6 +15,37 @@ context and do not block the current workflow.
 
 # Live development invariant
 
+## Current capability and mode 3 direction
+
+The mode 1/2 build workflow and C++ live reload are different things. The
+dev-loop watches compiler inputs, debounces saved changes, incrementally
+compiles and links, then publishes a new executable artifact. It preserves an
+already-running game; publication alone does not replace that game's code.
+
+The current hot DLL is a narrow exception, not a universal C++ reload path.
+`build_game_dll.py` compiles the focused source set in the active checkout, and
+`HotReloadSystem` watches those specific sources, rebuilds the DLL, validates
+its `GameAPI`, and loads a unique copy. Its compile step is currently invoked
+synchronously from the game process. It does not cover arbitrary `.cpp` or
+header edits.
+
+Mode 3 is the future goal: a file save triggers a debounced background
+dependency-aware compile for that agent's lane, followed by module linking and
+validated activation only when the affected code is safely replaceable. Edits
+made during a compile are coalesced into a check of the latest saved source;
+the same lane's incremental outputs are never built concurrently. Compile
+errors are reported to that lane and the last valid running generation stays
+active. Until a source is migrated behind a stable replaceable interface,
+automatic checking does not make it live: a full executable build is still
+required to run that edit.
+
+The long-term goal is to make every C++ edit eligible for this flow. That
+requires expanding the replaceable boundary, stable ABI and state ownership,
+dependency-aware module linking, compatibility validation, and rollback. Even
+when most development no longer waits for a complete executable build, the
+reviewed combined source still requires final integration validation and a
+stable release build. Mode 3 is not implemented as an all-C++ service today.
+
 > Historical policy below; disabled as of 2026-10-01.
 
 ## The invariant

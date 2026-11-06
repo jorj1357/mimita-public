@@ -26,7 +26,7 @@ invalid JSON file in an otherwise unused mode still blocked sandbox startup.
 
 - `config/gamemodes/retrograd.json`: removed seven `//` comment lines before
   the JSON object.
-- `docs/regressions/2026-09-27/dev-loop-server-crash-retry-and-rainbow-REG.md`:
+- `docs/regressions/dev-loop/server-crash-retry-REG-2026-09-27.md`:
   recorded the confirmed startup cause and runtime proof.
 
 ## Validation

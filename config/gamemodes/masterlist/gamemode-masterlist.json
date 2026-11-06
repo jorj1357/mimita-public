@@ -56,6 +56,12 @@
       "min": 1,
       "description": "Legacy numeric weapon set id."
     },
+    "force_weapon_set_for_all_actors": {
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "description": "When true, the mode weapon set overrides role and actor preset loadouts for players and NPCs."
+    },
     "time_limit_seconds": {
       "type": "integer",
       "required": false,
@@ -1168,6 +1174,12 @@
       "required": false,
       "default": ""
     },
+    "vehicle_profile": {
+      "type": "string",
+      "required": false,
+      "default": "",
+      "description": "Optional named vehicle control profile from config/vehicle-profiles/; empty keeps the standard vehicle controls."
+    },
     "npc_behavior_profile": {
       "type": "string",
       "required": false,
@@ -1486,6 +1498,12 @@
           "type": "boolean",
           "required": false,
           "default": false
+        },
+        "allow_live_change": {
+          "type": "boolean",
+          "required": false,
+          "default": true,
+          "description": "Whether actors may change avatar identity during a match; omitted preserves existing behavior."
         },
         "name": {
           "type": "string",

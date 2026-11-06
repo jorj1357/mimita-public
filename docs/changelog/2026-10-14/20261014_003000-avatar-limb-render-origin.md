@@ -84,7 +84,7 @@ render origin now use the authored node origin.
 
 ## Regression
 
-Recorded: `docs/regressions/2026-10-14/avatar-limb-render-origin-REG.md`
+Recorded: `docs/regressions/gameplay/avatar-limb-render-REG-2026-10-14.md`
 (`ATTEMPTED FIX (3)`, pending human visual confirmation).
 
 ## Human review still needed
@@ -124,7 +124,7 @@ was rejected (`reason=root_or_required_parts`) and no part identity matched.
   (exact names) re-verified with `~1e-4` error.
 
 Recorded regression:
-`docs/regressions/2026-10-14/avatar-node-suffix-detection-REG.md`.
+`docs/regressions/gameplay/avatar-node-suffix-REG-2026-10-14.md`.
 
 ## Data-driven avatar animation — first implementation slice
 

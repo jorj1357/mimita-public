@@ -36,7 +36,7 @@ server when the client left.
 - `src/duel/duel-queue.cpp:184,234,264,356,426,438`
   - Routed all six client-side external-server cleanup call sites through the
     ownership-aware wrapper.
-- `docs/regressions/2026-09-29/dev-loop-server-closes-REG.md`
+- `docs/regressions/dev-loop/dev-loop-server-REG-2026-09-29.md`
   - Appended Attempted Fix 3 with the cause, correction, and acceptance test.
 
 ## Documents and review
@@ -48,7 +48,7 @@ server when the client left.
 - `docs/operations/build-and-exe/build-and-exe.md`
 - `docs/operations/task-completion/task-completion.md`
 - `docs/skills/spec-behavior-review-v1.md`
-- Existing regression: `docs/regressions/2026-09-29/dev-loop-server-closes-REG.md`
+- Existing regression: `docs/regressions/dev-loop/dev-loop-server-REG-2026-09-29.md`
 
 Specification review result: `PASS_WITH_HUMAN_REVIEW`. The requested behavior
 matches the networking requirement that the server is an independent
@@ -58,7 +58,7 @@ human acceptance.
 ## Validation
 
 - `python -m py_compile devscripts/dev-loop.py`: passed.
-- `git diff --check -- devscripts/dev-loop.py src/duel/duel-queue.cpp docs/regressions/2026-09-29/dev-loop-server-closes-REG.md`: passed.
+- `git diff --check -- devscripts/dev-loop.py src/duel/duel-queue.cpp docs/regressions/dev-loop/dev-loop-server-REG-2026-09-29.md`: passed.
 - Forced the focused `duel-queue.cpp` translation unit to rebuild after the
   first incremental check skipped it.
 - `python build_agent.py`: `Status: SUCCESS`, return code `0`, duration

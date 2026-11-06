@@ -13,4 +13,4 @@ host name remains available for specialized profiles. No host command logic or
 `healthall` behavior was changed.
 
 Related regression:
-`docs/regressions/2026-09-27/dev-loop-first-client-not-host-REG.md`
+`docs/regressions/dev-loop/dev-loop-first-REG-2026-09-27.md`

@@ -454,6 +454,37 @@
       "map": "dust2cyberiav4",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "50": {
+      "name": "[2 CLIENTS] Vehicle Arena - 1v1",
+      "server_args": ["--mode", "vehicle_arena", "--gamemode", "vehicle_arena", "--no-npcs"],
+      "weapon_set": 1,
+      "expect_map": "arena1",
+      "expect_mode": "vehicle_arena",
+      "expect_gamemode": "vehicle_arena",
+      "expect_weapon_set": 1,
+      "expect_npcs": 0,
+      "client_args": [],
+      "clients": [
+        { "name": "Client BLUE", "badconn_preset": "", "team": 1 },
+        { "name": "Client ORANGE", "badconn_preset": "", "team": 2 }
+      ],
+      "map": "arena1",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "51": {
+      "name": "[2 CLIENTS] Bloodtest - Free for all",
+      "server_args": ["--mode", "bloodtest", "--gamemode", "bloodtest", "--no-npcs"],
+      "weapon_set": "auto",
+      "client_args": [],
+      "clients": [
+        { "name": "Bloodtest A", "badconn_preset": "" },
+        { "name": "Bloodtest B", "badconn_preset": "" }
+      ],
+      "map": "mimita-duels-map-v3",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

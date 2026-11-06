@@ -4,7 +4,7 @@
 * physics/render timers + numeric events.jsonl records) and pruned the
 * entity-vs-world collision narrowphase with an AABB tree. The remaining
 * collision-correctness and full local-space refactor items are tracked in
-* docs/regressions/2026-10-01/physical-objects-collision-REG.md (Attempt 6).
+* docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md (Attempt 6).
 */
 
 # Task
@@ -73,7 +73,7 @@ clamps each sample at 20 ms, so a multi-second stall barely moves the average.
 - `src/engine/engine-tick.cpp`, `src/engine/engine-tick-combat.cpp`
 - `src/physics/physical-entity.cpp`
 - `config/debuglogger.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 6
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 6
   appended)
 
 # Pre-existing work (not authored this session)

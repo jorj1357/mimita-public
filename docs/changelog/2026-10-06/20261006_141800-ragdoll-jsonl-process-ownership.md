@@ -21,7 +21,7 @@ logger startup.
   - `log_open` now reports records by process, startup identities, death-event
     count, ragdoll-event count, and an explicit warning when neither event
     family is present.
-- `docs/regressions/2026-10-06/ragdoll-jsonl-process-ownership-REG.md`
+- `docs/regressions/dev-loop/ragdoll-jsonl-process-REG-2026-10-06.md`
   - Records the recurring client/server journal ambiguity and prevention rules.
 
 ## Build evidence
@@ -164,7 +164,7 @@ Implemented:
   lethal authoritative local-player damage confirmation and logs local apply
   and duplicate-skip outcomes.
 - A detailed regression/spec record was added at
-  `docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`.
+  `docs/regressions/gameplay/ragdoll-per-death-REG-2026-10-06.md`.
 
 Validation:
 

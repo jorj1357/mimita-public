@@ -47,6 +47,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-runtime.h"
 #include "combat/weapon-types.h"
+#include "render/dynamic-light.h"
 #include "impact/impact-system.h"
 #include "physics/physical-entity.h"
 #include "physics/ray-utils.h"
@@ -597,6 +598,12 @@ uint32_t mpPredictProjectileAttack(
     const WeaponDefinition* def = WeaponRegistry::instance().get(*weaponId);
     if (!def || def->executionType != WeaponExecutionType::Projectile)
         return 0;
+    // A shotgun volley is created authoritatively as a set of independently
+    // simulated pellets. Do not create one local provisional projectile that
+    // could be mistaken for the complete volley; the server sends its pellet
+    // spawns back to the shooter for the same render path as other clients.
+    if (def->pelletCount > 1)
+        return 0;
     const uint8_t networkWeapon = networkWeaponTypeForDefinition(*def);
     if (!networkWeaponTypeIsProjectile(networkWeapon))
         return 0;
@@ -870,6 +877,22 @@ void mpProcessProjectileSpawnEventPacket(MultiplayerContext& ctx, const Projecti
         projectile.velocity.x, projectile.velocity.y, projectile.velocity.z,
         projectile.angularVelocity.x, projectile.angularVelocity.y, projectile.angularVelocity.z,
         projectile.radius, projectile.lifetime, event->spawnTick);
+
+    if (const WeaponDefinition* grenade =
+            projectileDefinition(projectile.weaponDefNetworkId, projectile.weaponType);
+        grenade && grenade->grenadeEffect.enabled) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+            "grenade.spawn", std::to_string(projectile.projectileId),
+            "client adopted authoritative throwable projectile", event->spawnTick,
+            {{"projectile_id", projectile.projectileId}, {"weapon_id", grenade->id},
+             {"position", {projectile.position.x, projectile.position.y, projectile.position.z}},
+             {"velocity", {projectile.velocity.x, projectile.velocity.y, projectile.velocity.z}},
+             {"speed_mps", glm::length(projectile.velocity)},
+             {"collision_shape", "sphere"}, {"collision_radius_m", projectile.radius},
+             {"fuse_ticks", grenade->grenadeEffect.fuseTicks},
+             {"predicted_projectile_adopted", adoptedPrediction}});
+    }
 
     printf("[PROJECTILE CLIENT SPAWN] projectileId=%u ownerPlayerId=%u "
            "weapon=%s position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f) "
@@ -2677,6 +2700,21 @@ void mpRenderNetworkProjectiles(const MultiplayerContext& ctx, const Camera& cam
         // the weapon definition.  This remains visible even when the texture
         // path used by the shared mesh renderer is unavailable.
         renderProjectile(camera, projectile.renderPosition, projectile.renderRotation, cfg);
+        if (fadeDef && fadeDef->grenadeEffect.enabled) {
+            const glm::vec3 lightOffset(
+                cp(fadeDef, "projectileLightOffsetX", 0.0f),
+                cp(fadeDef, "projectileLightOffsetY", 0.0f),
+                cp(fadeDef, "projectileLightOffsetZ", 0.0f));
+            DynamicLightManager::instance().updateProjectileVisualLight(
+                projectile.projectileId,
+                cp(fadeDef, "projectileLightEnabled", 0.0f) > 0.5f,
+                projectile.renderPosition + lightOffset,
+                glm::vec3(cp(fadeDef, "projectileLightColorR", 1.0f),
+                          cp(fadeDef, "projectileLightColorG", 0.8f),
+                          cp(fadeDef, "projectileLightColorB", 0.2f)),
+                cp(fadeDef, "projectileLightIntensity", 1.0f),
+                cp(fadeDef, "projectileLightRadius", 3.0f));
+        }
 
         if (projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE &&
             !projectile.trailHistory.empty())

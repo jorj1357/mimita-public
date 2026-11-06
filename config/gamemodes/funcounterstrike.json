@@ -11,6 +11,7 @@
   ],
   "goal_value": 0,
   "weapon_set_id": 30,
+  "force_weapon_set_for_all_actors": false,
   "time_limit_seconds": 0,
   "time_limit_winner_team": "",
   "time_limit_outcome": "high_score",
@@ -34,7 +35,6 @@
       "id": "ct",
       "display_name": "Counter-Terrorists",
       "capacity": 10,
-      // "capacity": 50,
       "respawn_seconds": null,
       "kill_heal_percent": null,
       "role": "fun_counter_terrorist",
@@ -53,7 +53,6 @@
       "id": "t",
       "display_name": "Terrorists",
       "capacity": 10,
-      // "capacity": 50,
       "respawn_seconds": null,
       "kill_heal_percent": null,
       "role": "fun_terrorist",
@@ -103,9 +102,7 @@
       "kind": "bomb",
       "carrier_team": "t",
       "site_group": "bomb_sites",
-      // "plant_seconds": 1,
       "plant_seconds": 5,
-      // "defuse_seconds": 5,
       "defuse_seconds": 5,
       "explosion_seconds": 40,
       "interaction_range_m": 6.0,
@@ -113,7 +110,6 @@
       "tap_progress_seconds": 0.1,
       "visual": {
         "pulse": true,
-        // "radius": 2.35,
         "radius": 5.35,
         "pulse_amplitude": 0.15,
         "period_seconds": 1.5,
@@ -131,7 +127,6 @@
     "rounds_to_win": 0,
     "endless_rounds": true,
     "round_seconds": 90,
-    // "round_seconds": 180,
     "freeze_seconds": 3,
     "countdown_seconds": 3,
     "intermission_seconds": 0,
@@ -261,6 +256,7 @@
   "roles": {},
   "actor_preset": "",
   "movement_preset": "",
+  "vehicle_profile": "",
   "npc_behavior_profile": "fun_cs_rush",
   "npc_targeting": {
     "enabled": true,
@@ -316,10 +312,14 @@
     "per_interval": 1
   },
   "avatar": {
-    "enabled": false,
+    "enabled": true,
     "forced": false,
+    "allow_live_change": false,
     "name": "",
-    "allowed": [],
+    "allowed": [
+      "abusiveboy",
+      "jason"
+    ],
     "denied": [],
     "group": ""
   },

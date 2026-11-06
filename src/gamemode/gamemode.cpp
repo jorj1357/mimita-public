@@ -427,6 +427,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             next.teamNames = {"RED", "BLUE"};
         next.goalValue = std::max(1, optInt(root, "goal_value", next.goalValue));
         next.weaponSetId = std::max(1, optInt(root, "weapon_set_id", next.weaponSetId));
+        next.forceWeaponSetForAllActors = optBool(root, "force_weapon_set_for_all_actors", next.forceWeaponSetForAllActors);
         next.timeLimitSeconds = std::max(0, optInt(root, "time_limit_seconds", next.timeLimitSeconds));
         next.timeLimitWinnerTeam = optString(root, "time_limit_winner_team", "");
         next.timeLimitOutcome = optString(root, "time_limit_outcome", next.timeLimitOutcome);
@@ -578,6 +579,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
             const auto& a = root["avatar"];
             next.avatar.configured = optBool(a, "enabled", true);
             next.avatar.forced = optBool(a, "forced", next.avatar.forced);
+            next.avatar.allowLiveChange = optBool(
+                a, "allow_live_change", next.avatar.allowLiveChange);
             next.avatar.name = optString(a, "name", next.avatar.name);
             next.avatar.group = optString(a, "group", next.avatar.group);
             if (a.contains("allowed") && a["allowed"].is_array()) {
@@ -871,6 +874,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
         next.winCondition = optString(root, "win_condition", next.winCondition);
         next.actorPresetId = optString(root, "actor_preset", next.actorPresetId);
         next.movementPreset = optString(root, "movement_preset", next.movementPreset);
+        next.vehicleProfile = optString(root, "vehicle_profile", next.vehicleProfile);
         next.npcBehaviorProfile = optString(
             root, "npc_behavior_profile", next.npcBehaviorProfile);
 

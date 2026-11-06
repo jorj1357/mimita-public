@@ -4,7 +4,7 @@ Date: 2026-09-23
 Status: hot + cold built; deterministic tests pass; live limb fix requires the new
 EXE; human acceptance pending
 
-Related regression: `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`
+Related regression: `docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md`
 
 Reference commit: `afad20a` ("npc stuff its cool", 2026-09-11).
 

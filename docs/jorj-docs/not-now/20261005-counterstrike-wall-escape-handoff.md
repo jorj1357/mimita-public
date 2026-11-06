@@ -171,7 +171,7 @@ live).
    bomb-site placeholder note, and the regression record requirement.
 5. **Regression record:** the human asked to record the regression in the
    existing Counter-Strike doc. A regression file already exists
-   (`docs/regressions/2026-10-04/counterstrike-npc-targeting-movement-REG.md`);
+   (`docs/regressions/npc-movement/counterstrike-npc-targeting-REG-2026-10-04.md`);
    append a follow-up there if a durable file is wanted, and/or summarize in the
    feature doc. Do not create a redundant new file without checking with the
    human.
@@ -233,7 +233,7 @@ Environment notes:
 - `src/game/game-cli.cpp` — `--npc-movement-policy-selftest` and its
   "local lateral correction" assertion (search the report string).
 - `docs/features/gamemodes/counterstrike.md` — append attempts here.
-- `docs/regressions/2026-10-04/counterstrike-npc-targeting-movement-REG.md` —
+- `docs/regressions/npc-movement/counterstrike-npc-targeting-REG-2026-10-04.md` —
   existing related regression file.
 
 ---

@@ -123,6 +123,9 @@ struct PhysicalEntity {
     std::string texturePath;
     unsigned int renderTextureHandle = 0; // client-owned GLB material texture
     bool collidesWithActors = true;
+    // Chunk collision proxies use their own streamed renderer; skip the generic
+    // physical-entity box/model draw for them.
+    bool renderEnabled = true;
 };
 
 class Camera;
@@ -242,6 +245,15 @@ void applyPhysicalEntityAngularImpulse(PhysicalEntity& entity,
 void buildBoxCollisionTriangles(std::vector<CollisionTriangle>& out,
                                 const glm::vec3& center,
                                 const glm::vec3& half);
+
+// Appends a tessellated sphere centered at `center` with radius `radius`, in
+// entity-local space, with outward normals. This keeps spheres on the shared
+// triangle collision path instead of adding a second collision world.
+void buildSphereCollisionTriangles(std::vector<CollisionTriangle>& out,
+                                   const glm::vec3& center,
+                                   float radius,
+                                   int stacks = 16,
+                                   int slices = 32);
 
 // Cached world-space expansion of one entity's local collision surface.
 struct EntitySurfaceCacheView

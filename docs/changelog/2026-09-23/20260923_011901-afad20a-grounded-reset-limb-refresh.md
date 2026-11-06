@@ -6,7 +6,7 @@ Status: hot-code built; deterministic tests pass; human live acceptance pending
 Related specification: `docs/specs/movement/movement.md`,
 `docs/architecture/collision/collision.md`
 
-Related regression: `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`
+Related regression: `docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md`
 
 Reference commit: `afad20a` ("npc stuff its cool", 2026-09-11).
 

@@ -28,4 +28,4 @@ Validation:
 - Windows Application Error evidence captured for the build-26 server crash.
 
 Related regression:
-`docs/regressions/2026-09-27/dev-loop-server-crash-retry-and-rainbow-REG.md`
+`docs/regressions/dev-loop/server-crash-retry-REG-2026-09-27.md`

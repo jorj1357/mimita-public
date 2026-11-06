@@ -12,6 +12,9 @@
 #include "combat/weapon-runtime.h"
 #include "network/snapshot-chunks.h"
 #include "network/destruction-replication-selftest.h"
+#include "worldproject/world-project-store.h"
+#include "worldproject/world-edit-session.h"
+#include "procedural/procedural-world.h"
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
@@ -2005,6 +2008,30 @@ bool handleGameCLI(int argc, char** argv)
         const bool ok = areaEffectSelfTest(report);
         printf("[AREA EFFECT SELFTEST]\n%s", report.c_str());
         printf("[AREA EFFECT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--world-project-selftest") {
+        std::string report;
+        const bool ok = MimitaWorldProject::worldProjectStoreSelfTest(report);
+        printf("[WORLD PROJECT SELFTEST]\n%s", report.c_str());
+        printf("[WORLD PROJECT SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--world-edit-session-selftest") {
+        std::string report;
+        const bool ok = MimitaWorldProject::worldEditSessionSelfTest(report);
+        printf("[WORLD EDIT SESSION SELFTEST]\n%s", report.c_str());
+        printf("[WORLD EDIT SESSION SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--generation-zone-selftest") {
+        std::string report;
+        const bool ok = MimitaProcedural::proceduralZoneSelfTest(report);
+        printf("[GENERATION ZONE SELFTEST]\n%s", report.c_str());
+        printf("[GENERATION ZONE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
         std::exit(ok ? 0 : 1);
     }
 

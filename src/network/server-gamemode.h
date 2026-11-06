@@ -481,6 +481,7 @@ struct ActorSpawnProfile
     std::string startingWeapon;
     std::string avatarName;
     bool avatarForced = false;
+    bool allowAvatarLiveChange = true;
     std::vector<std::string> allowedAvatars;
     std::vector<std::string> deniedAvatars;
     std::vector<std::string> weapons;     // resolved role loadout (may be empty)

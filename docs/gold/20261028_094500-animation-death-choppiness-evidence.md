@@ -23,7 +23,7 @@
 - Related changelog:
   [`../changelog/2026-10-28/20261028_041903-plan-a-gameplay-diagnostics.md`](../changelog/2026-10-28/20261028_041903-plan-a-gameplay-diagnostics.md)
 - Related regression:
-  [`../regressions/2026-10-28/animation-death-frame-choppiness-REG.md`](../regressions/2026-10-28/animation-death-frame-choppiness-REG.md)
+  [`../regressions/performance/animation-death-frame-REG-2026-10-28.md`](../regressions/performance/animation-death-frame-REG-2026-10-28.md)
 - Specification:
   [`../specs/performance/performance.md`](../specs/performance/performance.md)
 

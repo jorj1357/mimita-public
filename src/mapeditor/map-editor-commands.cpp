@@ -6,15 +6,17 @@
 #include <string>
 #include <vector>
 
+#include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "mapeditor/map-editor.h"
+#include "terminal/terminal-state.h"
 
 void registerMapEditorCommands()
 {
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart> [id]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart|chunk <geometry>|zone <seed>> [id]|chunk_connector <chunkId> <connectorId> <side> <orientation> [tags...]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -130,6 +132,37 @@ void registerMapEditorCommands()
                 }
                 return;
             }
+            if (command == "chunk_connector") {
+                if (args.size() < 5) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_connector <chunkId> <connectorId> <side> <orientation> [tag...]");
+                    return;
+                }
+                MapConfigRegistry& registry = MapConfigRegistry::instance();
+                for (auto& chunk : registry.chunksMutable()) {
+                    if (chunk.id != args[1]) continue;
+                    AuthoredChunkConnector connector;
+                    connector.id = args[2];
+                    connector.side = args[3];
+                    connector.orientation = args[4];
+                    for (size_t i = 5; i < args.size(); ++i)
+                        connector.tags.push_back(args[i]);
+                    chunk.connectors.push_back(std::move(connector));
+                    registry.markChanged();
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World, StructuredLevel::Important,
+                        "map-editor.chunk-connector-added", args[1],
+                        "authored chunk connector added through map editor", 0,
+                        {{"chunk", args[1]}, {"connector", args[2]},
+                         {"side", args[3]}, {"orientation", args[4]}},
+                        __FILE__, __LINE__, __func__);
+                    Terminal::instance().addLog("[MAPEDIT] connector added to " +
+                                                args[1]);
+                    return;
+                }
+                Terminal::instance().addLog("[MAPEDIT] chunk not found");
+                return;
+            }
             if (command == "focus") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 editor.focusSelection();
@@ -186,6 +219,67 @@ void registerMapEditorCommands()
                     editor.addRoutePoint(args.size() > 2 ? args[2] : "");
                 } else if (kind == "cart") {
                     editor.addCartOrigin();
+                } else if (kind == "chunk") {
+                    if (args.size() < 3) {
+                        Terminal::instance().addLog(
+                            "[MAPEDIT] add chunk <geometry> [id]");
+                        return;
+                    }
+                    MapConfigRegistry& registry = MapConfigRegistry::instance();
+                    AuthoredChunk chunk;
+                    chunk.id = args.size() > 3 ? args[3]
+                        : "chunk_" + std::to_string(registry.chunks().size() + 1);
+                    chunk.geometryPath = args[2];
+                    chunk.boundsMin = THE_PLAYER.pos + glm::vec3(-52.0f, -52.0f, -1.0f);
+                    chunk.boundsMax = THE_PLAYER.pos + glm::vec3(52.0f, 52.0f, 103.0f);
+                    registry.chunksMutable().push_back(std::move(chunk));
+                    registry.markChanged();
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World, StructuredLevel::Important,
+                        "map-editor.chunk-added", args[2],
+                        "authored chunk added through map editor", 0,
+                        {{"geometry", args[2]},
+                         {"chunk", registry.chunks().back().id},
+                         {"position", {THE_PLAYER.pos.x, THE_PLAYER.pos.y,
+                                       THE_PLAYER.pos.z}}},
+                        __FILE__, __LINE__, __func__);
+                    Terminal::instance().addLog("[MAPEDIT] added chunk " +
+                                                registry.chunks().back().id);
+                } else if (kind == "zone") {
+                    if (args.size() < 3) {
+                        Terminal::instance().addLog(
+                            "[MAPEDIT] add zone <seed> [id] [generatorVersion]");
+                        return;
+                    }
+                    MapConfigRegistry& registry = MapConfigRegistry::instance();
+                    GenerationZone zone;
+                    zone.id = args.size() > 3 ? args[3]
+                        : "zone_" + std::to_string(registry.generationZones().size() + 1);
+                    try {
+                        zone.seed = static_cast<uint32_t>(std::stoul(args[2]));
+                    } catch (const std::exception&) {
+                        Terminal::instance().addLog("[MAPEDIT] invalid seed");
+                        return;
+                    }
+                    zone.generatorVersion = args.size() > 4 ? args[4] : "1";
+                    zone.boundsMin = THE_PLAYER.pos + glm::vec3(-400.0f, -100.0f, -400.0f);
+                    zone.boundsMax = THE_PLAYER.pos + glm::vec3(400.0f, 200.0f, 400.0f);
+                    zone.chunkSize = 104.0f;
+                    for (const auto& chunk : registry.chunks())
+                        zone.chunkDependencies.push_back(chunk.id);
+                    registry.generationZonesMutable().push_back(std::move(zone));
+                    registry.markChanged();
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::World, StructuredLevel::Important,
+                        "map-editor.zone-added", args[2],
+                        "authored generation zone added through map editor", 0,
+                        {{"seed", args[2]},
+                         {"zone", registry.generationZones().back().id},
+                         {"chunk_dependencies",
+                          registry.generationZones().back().chunkDependencies}},
+                        __FILE__, __LINE__, __func__);
+                    Terminal::instance().addLog("[MAPEDIT] added zone " +
+                                                registry.generationZones().back().id);
                 } else {
                     Terminal::instance().addLog("[MAPEDIT] unknown add kind " + kind);
                 }

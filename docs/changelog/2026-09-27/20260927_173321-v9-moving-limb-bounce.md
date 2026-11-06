@@ -127,7 +127,7 @@ the bounce in v9 and to mark old code TO-DELETE instead of deleting.
 - Why: no previously working behavior is known broken; the root-only response
   path is byte-for-byte unchanged (default `partVelocity = 0`).
 - Related regression paths:
-  `docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`
+  `docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`
   (no-cooldown rule; this change adds no new timer).
 
 # Human acceptance

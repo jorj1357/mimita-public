@@ -192,7 +192,7 @@ Static/build evidence:
 
 - `python -m py_compile devscripts/dev-loop.py`: passed.
 - `git diff --check`: only a pre-existing trailing-whitespace warning in
-  `docs/regressions/2026-09-20/cold-build-required-REG.md` (from an earlier
+  `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md` (from an earlier
   session, not introduced here).
 - `python build_agent.py` (cold): the first attempt hit a stale incremental
   object for `ragdoll-mode.cpp` (`undefined reference to
@@ -223,7 +223,7 @@ The working tree already had uncommitted edits before this session:
 `config/accounts/default.json`, `config/analytics.json`,
 `config/networking/presets/default.json`, `config/networkingconfig.json`,
 `config/ragdoll.json`, `docs/changelog/2026-09-29/20260929_132503-aimbody-physical-mode.md`,
-`docs/regressions/2026-09-20/cold-build-required-REG.md`,
+`docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`,
 `src/config/networking-config.h`, `src/network/movement-validation.h`,
 `src/network/multiplayer-reconcile.cpp`, `src/network/server-players.cpp`. None
 were reverted or claimed. This session's edits are limited to the files listed

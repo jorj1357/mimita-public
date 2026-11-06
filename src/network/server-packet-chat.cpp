@@ -1505,6 +1505,10 @@ void handleClientTimeout(std::unordered_map<uint32_t, ServerPlayer>& players,
     }
 
     for (uint32_t id : toRemove) {
+        const auto it = players.find(id);
+        if (it != players.end())
+            serverLogPlayerSessionRemoval(it->second, "reconnect_grace_expired",
+                                          now, tick, players.size());
         serverClearActorPreset(id);
         players.erase(id);
     }

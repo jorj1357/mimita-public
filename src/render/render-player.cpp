@@ -539,10 +539,8 @@ void renderPlayerInternal(
     }
     const bool teamIdentityKnown = isLocal ||
         (localTeam >= 0 && resolvedActorTeam >= 0);
-    // Team identity still decides teammate-vs-enemy color. An actor with an
-    // unknown team uses the configured enemy layer rather than losing its
-    // outline entirely; the mode's player_outlines/friendly_outlines policy
-    // still gates whether that layer is allowed.
+    // Unknown identity is not enough evidence to classify this actor as an
+    // enemy. Team-colored layers are suppressed until both identities resolve.
     const bool modeForcesTeamOutline = !isLocal && teamIdentityKnown &&
         visualsConfig.hasPlayerOutlinesOverride() && visualsConfig.playerOutlinesEnabled() &&
         (!teammate || visualsConfig.friendlyOutlinesEnabled());
@@ -558,7 +556,8 @@ void renderPlayerInternal(
         configuredTeamOutline ||
         (isLocal && visualsConfig.hasPlayerOutlinesOverride() &&
          visualsConfig.playerOutlinesEnabled() && visualsConfig.friendlyOutlinesEnabled());
-    const bool outlineEnabled = modeForcesTeamOutline || outline->enabled;
+    const bool outlineEnabled = teamIdentityKnown &&
+        (modeForcesTeamOutline || outline->enabled);
     const bool friendlyActor = isLocal || teammate;
     const float outlineAlpha = !friendlyActor && visualsConfig.hasEnemyOutlineAlphaOverride()
         ? visualsConfig.effectiveEnemyOutlineAlpha(outline->alpha) : outline->alpha;

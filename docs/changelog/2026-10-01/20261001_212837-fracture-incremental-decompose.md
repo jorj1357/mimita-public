@@ -67,7 +67,7 @@ holey crates, so `applyFracture` ran nearly every tick while the queue drained.
   `destructible-world-config.cpp`, `destructible-selftest.cpp`
 - `src/physics/physical-entity.cpp`
 - `config/destructible-world.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 10)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 10)
 
 # Pre-existing (not authored this session)
 

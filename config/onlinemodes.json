@@ -43,6 +43,15 @@
       "max_players": 2
     },
     {
+      "id": "vehicle_arena",
+      "gamemode_id": "vehicle_arena",
+      "name": "Vehicle Arena",
+      "description": "1v1 car-and-ball arena. Drive, boost, jump, and score.",
+      "teams": 2,
+      "score_limit": 5,
+      "max_players": 2
+    },
+    {
       "id": "bomb_tag",
       "gamemode_id": "bombtag",
       "name": "Bomb Tag",
@@ -157,6 +166,14 @@
       "score_limit": 0,
       "max_players": 32,
       "private_by_default": true
+    },
+    {
+      "id": "bloodtest",
+      "gamemode_id": "bloodtest",
+      "name": "Bloodtest",
+      "description": "Free-for-all close-quarters combat and destruction test arena.",
+      "teams": -1,
+      "score_limit": 0
     }
   ]
 }

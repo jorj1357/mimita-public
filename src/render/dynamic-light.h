@@ -16,6 +16,7 @@
 struct DynamicLight {
     uint32_t id = 0;
     uint32_t playerVisualOwner = 0;
+    uint32_t projectileVisualOwner = 0;
     glm::vec3 position{0.0f};
     glm::vec3 color{1.0f, 1.0f, 1.0f};
     float intensity = 1.0f;
@@ -40,6 +41,9 @@ public:
     void updatePlayerVisualLight(uint32_t actorId, bool enabled,
                                  const glm::vec3& position, const glm::vec3& color,
                                  float intensity, float radius);
+    void updateProjectileVisualLight(uint32_t projectileId, bool enabled,
+                                     const glm::vec3& position, const glm::vec3& color,
+                                     float intensity, float radius);
 
     void update(float dt);
 

@@ -299,6 +299,13 @@
       "name": "Melee Only",
       "description": "Chainsaw, Mace, and Swordsword only.",
       "weapons": ["chainsaw", "mace", "swordsword", "nothing"]
+    },
+    {
+      "id": 33,
+      "key": "bloodtest",
+      "name": "Bloodtest",
+      "description": "Physical projectile revolver and shotgun, Swordsword, and Nothing.",
+      "weapons": ["bloodtest_revolver", "bloodtest_shotgun", "swordsword", "nothing"]
     }
   ]
 }

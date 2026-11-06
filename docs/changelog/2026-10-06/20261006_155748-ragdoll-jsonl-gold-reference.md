@@ -21,7 +21,7 @@ diagnose and fix the intermittent ragdoll problem.
   - `docs/specs/debug-logging/debug-logging.md`
   - `docs/specs/debug-logging/canonical-jsonl.md`
   - `docs/workflows/runtime-scenario-validation.md`
-  - `docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`
+  - `docs/regressions/gameplay/ragdoll-per-death-REG-2026-10-06.md`
 - Exact requirement: use one structured logger, the active `events.jsonl`, a
   newly identified executable, bounded owner-level diagnostics, and separate
   source/build/runtime/human evidence.
@@ -51,7 +51,7 @@ diagnose and fix the intermittent ragdoll problem.
   evidence-first fix as a permanent reference; it does not create a new
   failure.
 - Related regression:
-  `docs/regressions/2026-10-06/ragdoll-per-death-presentation-ATTEMPT-1-REG.md`
+  `docs/regressions/gameplay/ragdoll-per-death-REG-2026-10-06.md`
 
 # Human acceptance
 

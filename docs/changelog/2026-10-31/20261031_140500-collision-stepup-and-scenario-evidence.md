@@ -113,11 +113,11 @@ Status: SPECIFICATION ONLY. No collision code changed in this pass.
 - Updated entity editor, terminal commands, animations, movement, and NPC
   movement documentation to reference the same ownership rules.
 - Added regression records:
-  - `docs/regressions/2026-10-31/block-seam-speed-collapse-REG.md`
-  - `docs/regressions/2026-10-31/npc-final-pose-penetration-REG.md`
-  - `docs/regressions/2026-10-31/down-dash-slope-bounce-REG.md`
+  - `docs/regressions/collisions/block-seam-speed-REG-2026-10-31.md`
+  - `docs/regressions/collisions/npc-final-pose-REG-2026-10-31.md`
+  - `docs/regressions/collisions/down-dash-slope-REG-2026-10-31.md`
   - appended occurrence 2 to
-    `docs/regressions/2026-10-25/flat-floor-backed-face-dash-REG.md`
+    `docs/regressions/collisions/flat-floor-backed-REG-2026-10-25.md`
 
 ### Validation
 

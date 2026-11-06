@@ -57,7 +57,7 @@ This pass keeps that and adds the requested items.
 - `src/physics/physical-entity.{h,cpp}`
 - `src/physics/movement/physics-collision-shared.h`, `physics-collision-mesh.cpp`
 - `config/destructible-world.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 11)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 11)
 
 # Pre-existing (not authored this session)
 

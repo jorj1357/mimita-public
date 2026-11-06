@@ -13,7 +13,7 @@ The working tree was clean before these documentation changes. The implementatio
 ## Changes
 
 - Added `docs/gold/20261028_093400-animation-and-death-choppiness.md` with the identified animation sampling/allocation, hot-reload polling, walk/run flapping, corpse solver/diagnostic, and synchronous Opus decode causes; the measured improvements; the player's 09:34 EDT report that choppiness seems much better; and the reusable per-actor/per-tick scaling lesson.
-- Added `docs/regressions/2026-10-28/animation-death-frame-choppiness-REG.md` as a dedicated occurrence record linked to the implementation/runtime changelog. It records corrected owners and evidence, while leaving full performance acceptance open because the 240-FPS-for-60-seconds target was not met and other spikes remained.
+- Added `docs/regressions/performance/animation-death-frame-REG-2026-10-28.md` as a dedicated occurrence record linked to the implementation/runtime changelog. It records corrected owners and evidence, while leaving full performance acceptance open because the 240-FPS-for-60-seconds target was not met and other spikes remained.
 
 ## Instructions and review
 

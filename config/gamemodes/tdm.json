@@ -11,6 +11,7 @@
   ],
   "goal_value": 99999,
   "weapon_set_id": 29,
+  "force_weapon_set_for_all_actors": false,
   "time_limit_seconds": 99999,
   "time_limit_winner_team": "",
   "time_limit_outcome": "stalemate",
@@ -214,6 +215,7 @@
   "roles": {},
   "actor_preset": "",
   "movement_preset": "",
+  "vehicle_profile": "",
   "npc_behavior_profile": "elite_squad",
   "npc_targeting": {
     "enabled": true,
@@ -271,6 +273,7 @@
   "avatar": {
     "enabled": true,
     "forced": true,
+    "allow_live_change": true,
     "name": "",
     "allowed": [],
     "denied": [],

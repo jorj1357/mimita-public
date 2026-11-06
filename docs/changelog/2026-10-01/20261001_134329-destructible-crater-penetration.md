@@ -168,7 +168,7 @@ modified here.
 - `mimita.exe --moving-crate-selftest` -> PASS.
 - `mimita.exe --destruction-replication-selftest` -> PASS.
 - Cold-build debt record: appended `Cold-build occurrence 37` to
-  `docs/regressions/2026-09-20/cold-build-required-REG.md`.
+  `docs/regressions/dev-loop/cold-build-required-REG-2026-09-20.md`.
 
 # Specification/behavior review result
 

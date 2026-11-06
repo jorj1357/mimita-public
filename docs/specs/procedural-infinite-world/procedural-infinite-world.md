@@ -18,3 +18,35 @@ tools for duels, Payload routes, and other generated courses. Any later
 procedural arena must preserve server/client authority and the performance,
 networking, and deterministic chunk requirements in this specification. The
 arena itself is specified in `../gamemodes/vehicle-arena.md`.
+
+## RPG world editor: authored chunks and infinite zones — 2026-11-05
+
+World projects may combine authored finite regions with procedurally generated
+zones. The author chooses whether generation applies to the whole world or only
+to named zones. The in-game project browser and viewport editor both expose
+zone rules; the author need not travel to a zone to change its generation data.
+
+Reusable chunks and structures have stable IDs and explicit connection points.
+Doorway/corridor connectors declare the shape, orientation, and compatibility
+tags a neighboring chunk must satisfy. The generator may only connect
+compatible points; it must report a missing compatible neighbor instead of
+creating impassable or disconnected geometry. Blender-authored structures may
+be repeated as packages without duplicating their source asset.
+
+Every zone version pins a seed, generator version, rule tree, and chunk
+dependencies. Clients may quickly preview nearby geometry from those inputs,
+but the authoritative server confirms the canonical chunk/layer identity and
+accepted world edits. A mismatched generator version cannot be treated as
+deterministic agreement. Generation work uses bounded queues/budgets and must
+not run unbounded work in a fixed simulation tick.
+
+Generation can be activated by entering a configured region, including a room
+whose contents recursively contain more rooms. Recursive/fractal or
+non-Euclidean designs must assign stable room/layer/portal identities so
+players can rendezvous in the same apparent space and leave it deterministically.
+The current editor phase does not claim arbitrary-player-count throughput or
+unbounded generation performance; those need measured server/client budgets.
+
+The RPG editor and collaboration contracts are owned by
+[`../entity-editor/entity-editor.md`](../entity-editor/entity-editor.md) and
+[`../world-projects/world-projects.md`](../world-projects/world-projects.md).

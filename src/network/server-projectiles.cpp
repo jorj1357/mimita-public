@@ -44,6 +44,32 @@ namespace {
 ServerProjectilePerfStats gProjectilePerf;
 static std::unordered_map<uint32_t, uint32_t> sLastDeathballWallLogTick;
 
+struct ProjectileIterationTimer
+{
+    uint32_t projectileId = 0;
+    double& worstMs;
+    uint32_t& worstProjectileId;
+    std::chrono::steady_clock::time_point started;
+
+    ProjectileIterationTimer(uint32_t id, double& worst,
+                             uint32_t& worstId)
+        : projectileId(id), worstMs(worst), worstProjectileId(worstId),
+          started(std::chrono::steady_clock::now())
+    {
+    }
+
+    ~ProjectileIterationTimer()
+    {
+        const double elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        if (elapsedMs > worstMs)
+        {
+            worstMs = elapsedMs;
+            worstProjectileId = projectileId;
+        }
+    }
+};
+
 // ── ProjectileConfig and helpers (anonymous, file-local) ─────────────
 
 bool projectileIsSleeping(const ServerProjectile& projectile)
@@ -743,9 +769,22 @@ void explodeProjectile(SOCKET sock,
     // fixed-tick collision. It is a bullet terminal, not an explosion.
     if (directBullet)
     {
-        const WeaponDefinition* def = WeaponRegistry::instance().get("projectile_rifle");
+        const std::string* weaponId =
+            weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+        const WeaponDefinition* def = weaponId
+            ? WeaponRegistry::instance().get(*weaponId) : nullptr;
+        if (!def)
+            def = WeaponRegistry::instance().get("projectile_rifle");
+        const float impactSpeed = glm::length(projectile.velocity);
+        const float referenceSpeed = def
+            ? def->resolvedWorldImpactSpeedMps() : impactSpeed;
+        const float mass = def ? def->resolvedWorldImpactMassKg() : 0.02f;
+        const float impactEnergy = 0.5f * mass * impactSpeed * impactSpeed;
+        const float referenceEnergy = 0.5f * mass * referenceSpeed * referenceSpeed;
+        const float energyScale = referenceEnergy > 1e-6f
+            ? impactEnergy / referenceEnergy : 1.0f;
         const int damageValue = std::max(1, (int)std::round(
-            def ? def->damage : projectile.splashDamage));
+            (def ? def->damage : projectile.splashDamage) * energyScale));
         const glm::vec3 shotDir = glm::length(projectile.velocity) > 0.001f
             ? glm::normalize(projectile.velocity)
             : glm::vec3(0.0f, 1.0f, 0.0f);
@@ -814,7 +853,8 @@ void explodeProjectile(SOCKET sock,
                 if (ownerIt != players.end()) killerPos = ownerIt->second.pos;
                 serverGamemodeRecordKill(sock, players, &npcs,
                     ownerId, ownerKind, npc.entityId, ENTITY_NPC,
-                    "projectile_rifle", "Projectile Rifle",
+                    def ? def->id.c_str() : "projectile_rifle",
+                    def ? def->displayName.c_str() : "Projectile Rifle",
                     projectile.fireSerial, killerPos, npc.pos,
                     tick, totalPacketsOut);
             }
@@ -874,7 +914,7 @@ void explodeProjectile(SOCKET sock,
                     position, -shotDir, victimKnockback,
                     ServerDamageSource::Hitscan, projectile.weaponType,
                     projectile.fireSerial, projectile.id,
-                    projectile.ownerNpcId, "projectile_rifle");
+                    projectile.ownerNpcId, def ? def->id : "projectile_rifle");
                 if (damage.applied && packet.victimCount < MAX_PROJECTILE_DAMAGE_RESULTS)
                 {
                     auto& out = packet.victims[packet.victimCount++];
@@ -1315,59 +1355,23 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     const ProjectileConfig& cfg = *cfgOpt;
     const glm::vec3 dir = glm::normalize(direction);
 
-    ServerProjectile projectile;
-    projectile.id = nextProjectileId++;
-    if (nextProjectileId == 0)
-        nextProjectileId = 1;
-    projectile.ownerPlayerId = shooter.id;
-    projectile.fireSerial = requestId;
-    projectile.weaponType = networkWeapon;
-    projectile.weaponDefNetworkId = weaponDefNetworkIdFor(definition.id);
-    projectile.position = origin;
-    projectile.previousPosition = origin;
-    projectile.velocity = dir * cfg.speed + glm::vec3(0.0f, 0.0f, cfg.upBias);
-    projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
-    {
-        glm::vec3 forward = glm::length(dir) > 0.0001f ? dir : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 refUp = std::fabs(forward.z) < 0.99f
-            ? glm::vec3(0.0f, 0.0f, 1.0f)
-            : glm::vec3(1.0f, 0.0f, 0.0f);
-        glm::vec3 right = glm::normalize(glm::cross(forward, refUp));
-        projectile.angularVelocity = right * cfg.angularSpeed;
-    }
-    projectile.lifetime = cfg.lifetime;
-    projectile.radius = cfg.radius;
-    projectile.splashRadius = cfg.splashRadius;
-    projectile.splashDamage = cfg.splashDamage;
-    projectile.splashEdgeDamage = cfg.splashEdgeDamage;
-    projectile.splashExponent = cfg.splashExponent;
-    projectile.knockbackStrength = cfg.knockbackStrength;
-    projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
-    projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
-    projectile.gravity = cfg.gravity;
-    projectile.drag = cfg.drag;
-    projectile.restitution = cfg.restitution;
-    projectile.friction = cfg.friction;
-    projectile.armingDistance = cfg.armingDistance;
-    projectile.armingTime = cfg.armingTime;
-    projectile.minBounceSpeed = cfg.minBounceSpeed;
-    projectile.angularDrag = cfg.angularDrag;
-    projectile.maxBounceCount = cfg.maxBounceCount;
     auto cp = [&](const char* key, float fallback) -> float {
         auto it = definition.customParams.find(key);
         return it != definition.customParams.end() ? it->second : fallback;
     };
-    projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
-    projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
-    projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
-    projectile.penetrationsRemaining = std::max(1, definition.penetrationCount);
-    projectile.splashLineOfSight = cfg.splashLineOfSight;
     const uint32_t fireViewTick = estimateServerRewindTick(
         shooter, clientSimulationTick, tick);
-    projectile.spawnTick = tick;
-    projectile.fireViewTick = fireViewTick;
-    projectile.simulationTick = fireViewTick > 0 ? fireViewTick : tick;
+    const int pelletCapacity = std::clamp(definition.pelletCount, 1,
+                                          MAX_PELLETS_PER_BLAST);
+    glm::vec3 pelletDirections[MAX_PELLETS_PER_BLAST]{};
+    const int pelletCount = WeaponExecution::buildPelletDirections(
+        definition, dir, requestId * 73856093u, pelletDirections,
+        pelletCapacity);
+    if (pelletCount <= 0)
+    {
+        result.reason = 7;
+        return result;
+    }
 
     Debug::logThrottled(Debug::Category::Weapons, "projectile-replay", 1.0,
         "[PROJECTILE REPLAY] playerId=%u requestId=%u receiveTick=%u "
@@ -1388,40 +1392,118 @@ ServerProjectileAttackResult handleGenericProjectileAttack(
     shooter.nextProjectileFireTick = runtime.nextAllowedFireTick;
     shooter.projectileFireCooldown = cfg.fireDelay;
 
-    ProjectileSpawnEventPacket spawn{};
-    spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
-    spawn.header.tick = tick;
-    fillProjectilePose(spawn, projectile);
-    projectiles[projectile.id] = projectile;
-    if (const std::string* weaponId = weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
-        weaponId && *weaponId == "deathball") {
-        StructuredLogger::instance().writeEvent(
-            StructuredCategory::Weapons, StructuredLevel::Important,
-            "deathball.spawn", std::to_string(projectile.id),
-            "deathball spawned with configured projectile radius", tick,
-            {{"projectile", projectile.id}, {"weapon", *weaponId},
-             {"radius_m", projectile.radius},
-             {"visual_radius_m", cfg.radius},
-             {"lifetime_s", projectile.lifetime}});
+    uint32_t firstProjectileId = 0;
+    ServerProjectile firstProjectile;
+    for (int pellet = 0; pellet < pelletCount; ++pellet)
+    {
+        ServerProjectile projectile;
+        projectile.id = nextProjectileId++;
+        if (nextProjectileId == 0)
+            nextProjectileId = 1;
+        projectile.ownerPlayerId = shooter.id;
+        projectile.fireSerial = requestId;
+        projectile.weaponType = networkWeapon;
+        projectile.weaponDefNetworkId = weaponDefNetworkIdFor(definition.id);
+        projectile.position = origin;
+        projectile.previousPosition = origin;
+        projectile.velocity = pelletDirections[pellet] * cfg.speed +
+            glm::vec3(0.0f, 0.0f, cfg.upBias);
+        projectile.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        if (networkWeapon == NETWORK_WEAPON_GRENADE_LAUNCHER)
+        {
+            const glm::vec3 forward = pelletDirections[pellet];
+            const glm::vec3 refUp = std::fabs(forward.z) < 0.99f
+                ? glm::vec3(0.0f, 0.0f, 1.0f)
+                : glm::vec3(1.0f, 0.0f, 0.0f);
+            projectile.angularVelocity =
+                glm::normalize(glm::cross(forward, refUp)) * cfg.angularSpeed;
+        }
+        projectile.lifetime = cfg.lifetime;
+        projectile.radius = cfg.radius;
+        projectile.splashRadius = cfg.splashRadius;
+        projectile.splashDamage = cfg.splashDamage;
+        projectile.splashEdgeDamage = cfg.splashEdgeDamage;
+        projectile.splashExponent = cfg.splashExponent;
+        projectile.knockbackStrength = cfg.knockbackStrength;
+        projectile.selfKnockbackMultiplier = cfg.selfKnockbackMultiplier;
+        projectile.selfDamageMultiplier = cfg.selfDamageMultiplier;
+        projectile.gravity = cfg.gravity;
+        projectile.drag = cfg.drag;
+        projectile.restitution = cfg.restitution;
+        projectile.friction = cfg.friction;
+        projectile.armingDistance = cfg.armingDistance;
+        projectile.armingTime = cfg.armingTime;
+        projectile.minBounceSpeed = cfg.minBounceSpeed;
+        projectile.angularDrag = cfg.angularDrag;
+        projectile.maxBounceCount = cfg.maxBounceCount;
+        projectile.explodeOnPlayerImpact = cp("explodeOnPlayerImpact", 1.0f) > 0.0f;
+        projectile.explodeOnWorldImpact = cp("explodeOnWorldImpact", 0.0f) > 0.0f;
+        projectile.explodeOnLifetime = cp("explodeOnLifetime", 1.0f) > 0.0f;
+        projectile.penetrationsRemaining = std::max(1, definition.penetrationCount);
+        projectile.splashLineOfSight = cfg.splashLineOfSight;
+        projectile.spawnTick = tick;
+        projectile.fireViewTick = fireViewTick;
+        projectile.simulationTick = fireViewTick > 0 ? fireViewTick : tick;
+
+        if (pellet == 0)
+        {
+            firstProjectileId = projectile.id;
+            firstProjectile = projectile;
+            if (const std::string* weaponId =
+                    weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
+                weaponId && *weaponId == "deathball")
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Weapons, StructuredLevel::Important,
+                    "deathball.spawn", std::to_string(projectile.id),
+                    "deathball spawned with configured projectile radius", tick,
+                    {{"projectile", projectile.id}, {"weapon", *weaponId},
+                     {"radius_m", projectile.radius},
+                     {"visual_radius_m", cfg.radius},
+                     {"lifetime_s", projectile.lifetime}});
+            }
+            if (definition.grenadeEffect.enabled)
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                    "grenade.spawn", std::to_string(projectile.id),
+                    "authoritative throwable projectile created", tick,
+                    {{"projectile_id", projectile.id}, {"weapon_id", definition.id},
+                     {"position", {projectile.position.x, projectile.position.y, projectile.position.z}},
+                     {"velocity", {projectile.velocity.x, projectile.velocity.y, projectile.velocity.z}},
+                     {"speed_mps", glm::length(projectile.velocity)},
+                     {"forward_speed_mps", cfg.speed}, {"upward_bias_mps", cfg.upBias},
+                     {"collision_shape", "sphere"}, {"collision_radius_m", projectile.radius},
+                     {"gravity_mps2", projectile.gravity}, {"drag", projectile.drag},
+                     {"restitution", projectile.restitution}, {"friction", projectile.friction},
+                     {"fuse_ticks", definition.grenadeEffect.fuseTicks},
+                     {"thrower_impulse_mps", 0.0f}});
+            }
+        }
+        projectiles[projectile.id] = projectile;
+        ProjectileSpawnEventPacket spawn{};
+        spawn.header.type = PACKET_PROJECTILE_SPAWN_EVENT;
+        spawn.header.tick = tick;
+        fillProjectilePose(spawn, projectile);
+        // Pellet volleys are authoritative and are sent to their owner too;
+        // single projectiles retain the existing prediction/adoption contract.
+        broadcastPacket(sock, players, spawn, totalPacketsOut,
+                        pelletCount == 1 ? projectile.ownerPlayerId : 0);
     }
-    // Broadcast the spawn to everyone EXCEPT the shooter — the shooter's client
-    // already has its own instant predicted projectile and adopting a server copy
-    // back is what caused the "two rockets" duplicate on badconn.
-    broadcastPacket(sock, players, spawn, totalPacketsOut, projectile.ownerPlayerId);
 
     printf("%s [PROJECTILE GENERIC ACCEPT] playerId=%u requestId=%u "
            "projectileId=%u weapon=%s ammo=%d/%d nextAllowedTick=%llu "
            "position=(%.2f,%.2f,%.2f) velocity=(%.2f,%.2f,%.2f)\n",
-           serverTimestamp(), shooter.id, requestId, projectile.id,
+           serverTimestamp(), shooter.id, requestId, firstProjectileId,
            networkWeaponTypeName(networkWeapon),
            runtime.magazineAmmo, runtime.reserveAmmo,
            (unsigned long long)runtime.nextAllowedFireTick,
-           projectile.position.x, projectile.position.y, projectile.position.z,
-           projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+           firstProjectile.position.x, firstProjectile.position.y, firstProjectile.position.z,
+           firstProjectile.velocity.x, firstProjectile.velocity.y, firstProjectile.velocity.z);
 
     result.accepted = true;
     result.reason = 0;
-    result.projectileId = projectile.id;
+    result.projectileId = firstProjectileId;
     result.magazineAmmo = runtime.magazineAmmo;
     result.reserveAmmo = runtime.reserveAmmo;
     result.nextAllowedFireTick = runtime.nextAllowedFireTick;
@@ -1503,8 +1585,11 @@ void submitWorldImpact(const HeadlessWorld& world,
     impact.worldPoint = step.hitPosition;
     impact.worldNormal = step.hitNormal;
     impact.worldDirection = step.hitDirection;
-    impact.speed = std::max(step.impactSpeed,
-                            def ? def->resolvedWorldImpactSpeedMps() : 0.0f);
+    const bool directBullet = projectile.weaponType == NETWORK_WEAPON_PROJECTILE_RIFLE;
+    impact.speed = directBullet && step.impactSpeed > 0.0f
+        ? step.impactSpeed
+        : std::max(step.impactSpeed,
+                   def ? def->resolvedWorldImpactSpeedMps() : 0.0f);
     impact.mass = def ? def->resolvedWorldImpactMassKg() : 0.02f;
     impact.density = def ? def->resolvedWorldImpactDensityKgM3() : 7800.0f;
     impact.radius = def ? def->resolvedWorldImpactRadiusM() : 0.01f;
@@ -1521,9 +1606,44 @@ void tickServerProjectiles(SOCKET sock,
                            float /*dt*/, uint32_t tick, uint64_t& totalPacketsOut)
 {
     constexpr float tickDt = GAMEPLAY_FIXED_DT;
+    const auto tickStart = std::chrono::steady_clock::now();
     uint32_t activeCount = 0;
     uint32_t movingCount = 0;
     uint32_t sleepingCount = 0;
+    uint32_t worstProjectileId = 0;
+    uint32_t worstStepProjectileId = 0;
+    uint32_t worstExplosionProjectileId = 0;
+    uint32_t simulationSteps = 0;
+    uint64_t triangleQueries = 0;
+    uint64_t triangleCandidates = 0;
+    uint64_t playerCapsuleCandidates = 0;
+    double worstProjectileMs = 0.0;
+    double worstSimulationStepMs = 0.0;
+    double worstExplosionMs = 0.0;
+    double simulationMs = 0.0;
+    double explosionMs = 0.0;
+    uint32_t explosions = 0;
+
+    auto timedExplode = [&](ServerProjectile& target,
+                            const glm::vec3& position,
+                            const glm::vec3& normal,
+                            const char* impactType,
+                            uint32_t directTargetId,
+                            uint32_t targetTick) {
+        const auto started = std::chrono::steady_clock::now();
+        explodeProjectile(sock, world, players, npcs, target, position, normal,
+                          impactType, directTargetId, tick, targetTick,
+                          totalPacketsOut);
+        const double elapsedMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        explosionMs += elapsedMs;
+        ++explosions;
+        if (elapsedMs > worstExplosionMs)
+        {
+            worstExplosionMs = elapsedMs;
+            worstExplosionProjectileId = target.id;
+        }
+    };
 
     auto sendTerminalDespawn = [&](const ServerProjectile& projectile,
                                    uint8_t reason) {
@@ -1557,6 +1677,8 @@ void tickServerProjectiles(SOCKET sock,
     for (auto it = projectiles.begin(); it != projectiles.end(); )
     {
         ServerProjectile& projectile = it->second;
+        ProjectileIterationTimer projectileTimer{
+            projectile.id, worstProjectileMs, worstProjectileId};
         ++activeCount;
         if (projectileIsSleeping(projectile))
             ++sleepingCount;
@@ -1594,8 +1716,19 @@ void tickServerProjectiles(SOCKET sock,
                 auto simStart = std::chrono::steady_clock::now();
                 ProjectileStepResult step =
                     simulateProjectileTick(state, config, physicsWorld, tickDt);
-                gProjectilePerf.projectileSimUs += (uint64_t)std::chrono::duration<double, std::micro>(
+                const double stepSimMs = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - simStart).count();
+                simulationMs += stepSimMs;
+                ++simulationSteps;
+                if (stepSimMs > worstSimulationStepMs)
+                {
+                    worstSimulationStepMs = stepSimMs;
+                    worstStepProjectileId = projectile.id;
+                }
+                triangleQueries += step.triangleQueryCount;
+                triangleCandidates += step.triangleCandidateTotal;
+                playerCapsuleCandidates += step.playerCapsuleCandidateTotal;
+                gProjectilePerf.projectileSimUs += (uint64_t)(stepSimMs * 1000.0);
                 gProjectilePerf.triangleQueryCount += step.triangleQueryCount;
                 gProjectilePerf.triangleCandidateTotal += step.triangleCandidateTotal;
                 gProjectilePerf.triangleCandidateMax = std::max(
@@ -1616,6 +1749,22 @@ void tickServerProjectiles(SOCKET sock,
                     auto it = stepDef->customParams.find(key);
                     return it != stepDef->customParams.end() ? it->second : fallback;
                 };
+
+                if (stepDef && stepDef->grenadeEffect.enabled &&
+                    step.type == ProjectileCollisionType::WorldBounce) {
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::GrenadeLauncher, StructuredLevel::Important,
+                        "grenade.bounce", std::to_string(projectile.id),
+                        "authoritative grenade bounced from world geometry", stepTick,
+                        {{"projectile_id", projectile.id}, {"weapon_id", stepDef->id},
+                         {"bounce_count", projectile.bounceCount},
+                         {"speed_before_mps", glm::length(step.incomingVelocity)},
+                         {"speed_after_mps", glm::length(projectile.velocity)},
+                         {"restitution", projectile.restitution},
+                         {"friction", projectile.friction},
+                         {"position", {projectile.position.x, projectile.position.y, projectile.position.z}},
+                         {"contact_normal", {step.hitNormal.x, step.hitNormal.y, step.hitNormal.z}}});
+                }
 
                 if (step.passedThroughWorld) {
                     const float wallDecay = std::max(1.0f,
@@ -1795,9 +1944,9 @@ void tickServerProjectiles(SOCKET sock,
                 if (step.type == ProjectileCollisionType::LifetimeExpired)
                 {
                     if (projectile.explodeOnLifetime)
-                        explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                          glm::vec3(0.0f, 0.0f, 1.0f),
-                                          "lifetime", 0, tick, stepTick, totalPacketsOut);
+                        timedExplode(projectile, projectile.position,
+                                     glm::vec3(0.0f, 0.0f, 1.0f),
+                                     "lifetime", 0, stepTick);
                     else
                     {
                         sendTerminalDespawn(projectile, 1); // lifetime
@@ -1806,17 +1955,14 @@ void tickServerProjectiles(SOCKET sock,
                 }
                 else if (step.type == ProjectileCollisionType::PlayerImpact && projectile.explodeOnPlayerImpact)
                 {
-                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
-                                      step.hitNormal,
-                                      "player", step.hitPlayerId, tick, stepTick,
-                                      totalPacketsOut);
+                    timedExplode(projectile, step.hitPosition, step.hitNormal,
+                                 "player", step.hitPlayerId, stepTick);
                 }
                 else if (step.type == ProjectileCollisionType::WorldImpact && projectile.explodeOnWorldImpact)
                 {
                     submitWorldImpact(world, projectile, step, stepTick);
-                    explodeProjectile(sock, world, players, npcs, projectile, step.hitPosition,
-                                      step.hitNormal,
-                                      "world", 0, tick, stepTick, totalPacketsOut);
+                    timedExplode(projectile, step.hitPosition, step.hitNormal,
+                                 "world", 0, stepTick);
                 }
                 else if (step.type == ProjectileCollisionType::EntityImpact && projectile.explodeOnWorldImpact)
                 {
@@ -1840,9 +1986,8 @@ void tickServerProjectiles(SOCKET sock,
                     }
 
                     if (!continues)
-                        explodeProjectile(sock, world, players, npcs, projectile,
-                                          step.hitPosition, step.hitNormal,
-                                          "entity", 0, tick, stepTick, totalPacketsOut);
+                        timedExplode(projectile, step.hitPosition, step.hitNormal,
+                                     "entity", 0, stepTick);
                 }
 
                 if (!projectile.exploded &&
@@ -1864,10 +2009,9 @@ void tickServerProjectiles(SOCKET sock,
             if (projectile.age >= projectile.lifetime)
             {
                 if (projectile.explodeOnLifetime)
-                    explodeProjectile(sock, world, players, npcs, projectile, projectile.position,
-                                      glm::vec3(0.0f, 0.0f, 1.0f),
-                                      "lifetime", 0, tick, tick,
-                                      totalPacketsOut);
+                    timedExplode(projectile, projectile.position,
+                                 glm::vec3(0.0f, 0.0f, 1.0f),
+                                 "lifetime", 0, tick);
                 else
                 {
                     sendTerminalDespawn(projectile, 1); // lifetime
@@ -1964,6 +2108,36 @@ void tickServerProjectiles(SOCKET sock,
     gProjectilePerf.activeProjectiles = activeCount;
     gProjectilePerf.movingProjectiles = movingCount;
     gProjectilePerf.sleepingProjectiles = sleepingCount;
+
+    const double totalMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - tickStart).count();
+    if (totalMs >= 50.0 || worstProjectileMs >= 25.0)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "server.projectile.tick-cost", "server",
+            "projectile simulation or one projectile exceeded its cost budget", tick,
+            nlohmann::json{{"total_ms", totalMs},
+                           {"active_projectiles", activeCount},
+                           {"moving_projectiles", movingCount},
+                           {"sleeping_projectiles", sleepingCount},
+                           {"worst_projectile_ms", worstProjectileMs},
+                           {"worst_projectile_id", worstProjectileId},
+                           {"simulation_steps", simulationSteps},
+                           {"simulation_ms", simulationMs},
+                           {"worst_simulation_step_ms", worstSimulationStepMs},
+                           {"worst_step_projectile_id", worstStepProjectileId},
+                           {"triangle_queries", triangleQueries},
+                           {"triangle_candidates", triangleCandidates},
+                           {"player_capsule_candidates", playerCapsuleCandidates},
+                           {"explosion_count", explosions},
+                           {"explosion_ms", explosionMs},
+                           {"worst_explosion_ms", worstExplosionMs},
+                           {"worst_explosion_projectile_id", worstExplosionProjectileId},
+                           {"players", players.size()},
+                           {"npcs", npcs.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 void cancelDeadNpcProjectiles(

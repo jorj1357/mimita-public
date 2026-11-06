@@ -22,13 +22,16 @@ Read these gates before doing anything else:
    packet changes require the network-feature workflow selected by the router.
 
 4. RUNTIME EVIDENCE BEFORE NEW TESTS: For gameplay or user-visible behavior,
-   do not create a new synthetic self-test as the first response. Add bounded
-   owner-level StructuredLogger diagnostics, publish a newly identified
-   executable through the dev loop, run that exact `mimita.exe --versioninfo`
-   to capture the `EVENTS_JSONL_PATH`, exercise the real game or runtime
-   scenario, and inspect the live journal for expected/actual state and the
-   first divergence. Keep unit/component tests only for behavior they
-   genuinely isolate.
+   do not create a new synthetic self-test as the first response. As of
+   2026-11-05 16:45 EST (jorj1357), the preferred and primary test method is
+   dev-loop trial/error: implement the change, make it compile, publish and run
+   the exact executable through the dev loop, exercise the real behavior, and
+   inspect its live `events.jsonl` journal. Iterate until the journal shows
+   beyond reasonable doubt that the function worked as intended. Use bounded
+   owner-level StructuredLogger diagnostics rather than a new test harness.
+   Keep pure unit/component self-tests only for genuinely isolated logic such
+   as serialization, hashing, or a pure mathematical invariant; never treat a
+   self-test as proof of runtime or user-visible behavior.
 
 5. DEV LOOP IS THE LIVE BUILD/RUN AUTHORITY: For live gameplay or debugging
    fixes, run `python devscripts/dev-loop.py` from the repository root using

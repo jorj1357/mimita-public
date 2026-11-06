@@ -79,7 +79,7 @@ target for the local-space refactor.
 - `src/physics/physical-entity.{h,cpp}`
 - `src/impact/destructible-world-config.{h,cpp}`, `src/impact/impact-system.cpp`
 - `config/destructible-world.json`, `config/debuglogger.json`
-- `docs/regressions/2026-10-01/physical-objects-collision-REG.md` (Attempt 8)
+- `docs/regressions/collisions/physical-objects-collision-REG-2026-10-01.md` (Attempt 8)
 
 # Pre-existing (not authored this session)
 

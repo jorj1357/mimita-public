@@ -162,8 +162,12 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
             name != owner->second.avatarName)
         {
             const ActorSpawnProfile profile = serverResolveActorSpawnProfile(owner->first);
-            if (profile.hasRole && !isAvatarAllowedByPolicy(
-                    name, profile.allowedAvatars, profile.deniedAvatars)) {
+            const bool avatarPolicyRejects =
+                !profile.allowAvatarLiveChange &&
+                (profile.avatarName.empty() || name != profile.avatarName);
+            const bool avatarNotAllowed = !isAvatarAllowedByPolicy(
+                name, profile.allowedAvatars, profile.deniedAvatars);
+            if (avatarPolicyRejects || avatarNotAllowed) {
                 std::string fallback = profile.avatarName;
                 if (fallback.empty() || !isAvatarAllowedByPolicy(
                         fallback, profile.allowedAvatars, profile.deniedAvatars)) {
@@ -174,10 +178,14 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Avatar, StructuredLevel::Important,
                     "griever.avatar.policy_rejected", name,
-                    "server rejected avatar outside the active mode policy",
+                    avatarPolicyRejects
+                        ? "server rejected live avatar change disabled by mode policy"
+                        : "server rejected avatar outside the active mode policy",
                     (uint32_t)owner->second.spawnGeneration,
                     {{"avatar", name}, {"player_id", owner->first},
-                     {"role", profile.roleId}, {"fallback", fallback}},
+                     {"role", profile.roleId}, {"mode", serverGamemodeState().matchMode},
+                     {"policy", avatarPolicyRejects ? "live_change_disabled" : "not_allowed"},
+                     {"fallback", fallback}},
                     __FILE__, __LINE__, __FUNCTION__);
                 owner->second.avatarManifestChunks.erase(key);
                 return;
@@ -192,6 +200,14 @@ void handleAvatarManifestPacket(SOCKET sock, const sockaddr_in& from,
                 {{"avatar", name}, {"previous", previous},
                  {"player_id", owner->first}},
                 __FILE__, __LINE__, __FUNCTION__);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "match.actor.avatar-selected", std::to_string(owner->first),
+                "server accepted avatar identity under the active mode and role policy",
+                (uint32_t)owner->second.spawnGeneration,
+                {{"actor_id", owner->first}, {"mode", serverGamemodeState().matchMode},
+                 {"role", profile.roleId}, {"previous_avatar", previous},
+                 {"selected_avatar", name}, {"reason", "accepted_manifest"}});
         }
     }
 

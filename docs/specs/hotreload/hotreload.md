@@ -1,28 +1,52 @@
-2026 10 06 1323 jorj - todo explain  from here C:\mimita-v9\docs\features\gamemodes\counterstrike.md
-
-"2026 10 06 1323 jorj - todo explain the direction id like to go in where,
- everything is hot reloadable, 
- id love to ahve this stuff all be editable live.
-  especially like, 
-  you can edit one .cpp file live, 
-  compile live,
-   and it updates behavior live.
-    that would be awesome. 
-    just need to make a full spec for that as well "
-
-jorj: i believe this doc C:\mimita-v9\docs\specs\hotreload\hotreload.md here  is the one we should  edit to explain that 
-
 // 2026-09-08 10:13 EST
 /* purpose
-* document the current JSON hot-reload pipeline and its safe application boundary
+* document current JSON reload and the current C++ hot-reload boundary
 * identify the active owners, polling cadence, validation behavior, and commands
 * distinguish proven reloadable presentation from remaining hardcoded UI paths
 * DOES NOT define gameplay rules, network protocol behavior, or gamemode scoring
 * DOES NOT claim visual acceptance merely because a file parsed successfully
-* DOES NOT add overlap detection or replace the GUI behavior specification
+* DOES NOT claim all C++ is live-reloadable today
 */
 
-# MiMITA JSON Hot Reload
+# MiMITA Hot Reload: Current State and Direction
+
+## C++ file-save reload: current state and future mode 3
+
+The current dev-loop watches compiler inputs, debounces changes, and
+incrementally compiles and links changed source generations. It publishes a
+new executable artifact but does not automatically replace code in an already
+running game. A changed header can require recompiling many translation units;
+"incremental" means only affected outputs are rebuilt, not necessarily one
+file.
+
+The current C++ hot-reload DLL is limited to the sources listed in
+`build_game_dll.py`. `HotReloadSystem` watches that focused source set, invokes
+the DLL build synchronously, validates the exported `GameAPI`, and loads the
+candidate from a unique path. Arbitrary C++ files and their dependencies are
+not covered.
+
+Future mode 3 should make a saved file trigger a debounced background check in
+the owning agent lane. It should compile affected translation units, link the
+replaceable module, report errors to that lane, and activate a validated
+generation only at a safe runtime boundary. Changes during a build should be
+coalesced into one follow-up for the latest saved inputs. Unsaved keystrokes
+should not start compilers. A compile or link failure must leave the last valid
+runtime generation active.
+
+The long-term target is every C++ edit, reached by migrating code behind stable
+replaceable interfaces and defining persistent-state ownership, dependency
+tracking, compatibility checks, and rollback. Until a file is covered by that
+boundary, automatic compilation only proves it compiles; running it still
+requires a complete executable build. This goal does not remove review or the
+final stable build of the combined agent changes. Mode 3 is a direction, not a
+current command or a claim that arbitrary C++ can be reloaded safely.
+
+The agent build workflow and commands are documented in
+`docs/specs/dev-loop/dev-loop.md`.
+
+## JSON hot reload
+
+Status recorded: 2026-09-08T14:13:15Z / 2026-09-08T10:13:15-04:00 (Eastern Daylight Time).
 
 Status recorded: 2026-09-08T14:13:15Z / 2026-09-08T10:13:15-04:00 (Eastern Daylight Time).
 

@@ -38,7 +38,7 @@ The `2026-11-05` local-host request is consistent with the existing networking s
 - `python devscripts/quality/check_damage_authority.py`: 82 findings. The new/extra finding was not isolated to a change from this documentation task.
 - Runtime journal, visual review, multiplayer acceptance, and human gameplay review: not performed.
 
-The shared working tree also contained unrelated edits during validation. These were not changed by this task: `AGENTS.md`, `config/analytics.json`, `devscripts/blender-ai` (submodule), `devscripts/dev-launch-modes.json`, `devscripts/dev-loop.py`, `devscripts/quality/agent-gate.py`, `docs/specs/dev-loop/dev-loop.md`, `docs/regressions/2026-11-05/rmb-weapon-aim-reversal-REG.md`, `docs/regressions/master/gameplay-REG.md`, `src/network/server-players.cpp`, plus an untracked changelog and regression record for Fun Counter Strike loadout override. The cause of the gate’s additional finding was not established; the source and gate-script changes remain untouched.
+The shared working tree also contained unrelated edits during validation. These were not changed by this task: `AGENTS.md`, `config/analytics.json`, `devscripts/blender-ai` (submodule), `devscripts/dev-launch-modes.json`, `devscripts/dev-loop.py`, `devscripts/quality/agent-gate.py`, `docs/specs/dev-loop/dev-loop.md`, `docs/regressions/gameplay/rmb-weapon-aim-REG-2026-11-05.md`, `docs/regressions/gameplay/README.md`, `src/network/server-players.cpp`, plus an untracked changelog and regression record for Fun Counter Strike loadout override. The cause of the gate’s additional finding was not established; the source and gate-script changes remain untouched.
 
 ## Existing documentation TODO notes found
 

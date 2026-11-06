@@ -24,6 +24,8 @@ namespace MimitaNet {
 //                       (i.e. a packet arrived after reconnect started).
 //   staleThresholdMs — last packet age at which Connected becomes WeakConnection.
 //   hardTimeoutMs    — last packet age at which the session enters Reconnecting.
+//   snapshotStarved  — true when authoritative snapshots stopped despite a
+//                      previously received snapshot.
 //   graceDeadline    — wall-clock deadline of the reconnect grace window; 0 = none.
 //   graceMs          — length of the reconnect grace window (for tests; the
 //                       deadline is produced by the caller, not computed here).
@@ -40,6 +42,7 @@ ConnectionState mpNextConnectionHealth(
     bool heardSinceDisconnect,
     uint64_t staleThresholdMs,
     uint64_t hardTimeoutMs,
+    bool snapshotStarved,
     uint64_t graceDeadline,
     uint64_t graceMs);
 

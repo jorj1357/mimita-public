@@ -24,7 +24,7 @@ Scope: Player-controlled movement, collision, touch resets, knockback interactio
 >
 > The hot movement owns the input edge (the key-down transition). The input layer
 > only samples raw key state. Any buffer or cooldown added here is a regression:
-> see `docs/regressions/2026-09-23/dash-down-dash-press-buffer-cooldown-REG.md`.
+> see `docs/regressions/collisions/dash-down-dash-REG-2026-09-23.md`.
 
 ________________
 

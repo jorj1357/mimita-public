@@ -24,7 +24,7 @@ batch packet, and has explicit server NPC/player validation and application.
 Force Punch now uses the simpler server-owned equivalent: one generic attack
 request starts the one-tick shape, then the server tests the shape against both
 actor collections. The longer-term unification direction is recorded in
-`docs/regressions/2026-09-26/force-punch-npc-contact-REG.md`.
+`docs/regressions/collisions/force-punch-npc-REG-2026-09-26.md`.
 
 ## Validation
 

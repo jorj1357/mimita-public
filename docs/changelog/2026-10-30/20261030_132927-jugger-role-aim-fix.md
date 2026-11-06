@@ -14,7 +14,7 @@
 - `config/actor-presets/juggernaut_fighter.json` (line 7): `force_fov` changed from `false` to `true`, so the Fighter's configured 100 FOV wins over shared Juggernaut 50 FOV. Existing fast `retrograd_fast` movement remains.
 - `config/gamemodes/jugger_horde.json` (line 216) and `config/gamemodes/juggernaut.json` (line 233): `aim.body_mode` changed from `hybrid` to `default` to match Sandbox's arm-aim path. `aim.mode: physical` and `body_enabled: true` remain. Physical weapon firing still uses the weapon barrel.
 - `docs/specs/gamemodes/juggernaut.md` (lines 687-704): updated the aim behavior and retained the role-specific Horde preset documentation (lines 772-775).
-- Added `docs/regressions/2026-10-30/jugger-role-preset-REG.md` as `ATTEMPTED FIX (1)`. The user must visually accept the FOV, speed, and Revolver RMB pose before it can be marked solved.
+- Added `docs/regressions/npc-movement/jugger-role-preset-REG-2026-10-30.md` as `ATTEMPTED FIX (1)`. The user must visually accept the FOV, speed, and Revolver RMB pose before it can be marked solved.
 
 ## Evidence
 

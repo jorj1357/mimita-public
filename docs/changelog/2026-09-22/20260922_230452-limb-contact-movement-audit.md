@@ -18,7 +18,7 @@ Compared: `afad20a` to current `3150587` plus pre-existing working-tree edits.
   policy and `collision.main` path.
 - Recorded the exact ownership and ordering differences, the likely failure
   boundary, related risks, and the required falsification trace.
-- Added `docs/regressions/2026-09-22/limb-contact-ability-reset-REG.md`.
+- Added `docs/regressions/collisions/limb-contact-ability-REG-2026-09-22.md`.
 
 ## Evidence
 

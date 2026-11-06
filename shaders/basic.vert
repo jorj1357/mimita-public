@@ -19,6 +19,11 @@ layout (location = 3) in vec4 aDebugColor;
 // Combined player-body meshes carry the source part index per vertex. The
 // matching part matrix is supplied once per actor instead of one draw per part.
 layout (location = 8) in float aPartIndex;
+// Streamed chunk instancing: one mat4 per instance, locations 9..12.
+layout (location = 9) in vec4 aInstanceCol0;
+layout (location = 10) in vec4 aInstanceCol1;
+layout (location = 11) in vec4 aInstanceCol2;
+layout (location = 12) in vec4 aInstanceCol3;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -28,6 +33,7 @@ uniform int uOutlinePass;
 uniform float uOutlineThickness;
 uniform int uUsePartModels;
 uniform mat4 uPartModels[32];
+uniform int uUseInstanceModel;
 
 out vec2 vUV;
 out vec3 vWorldPos;
@@ -42,6 +48,10 @@ void main() {
         int partIndex = int(aPartIndex + 0.5);
         if (partIndex >= 0 && partIndex < 32)
             modelMatrix = uPartModels[partIndex];
+    }
+    if (uUseInstanceModel != 0) {
+        modelMatrix = mat4(aInstanceCol0, aInstanceCol1,
+                           aInstanceCol2, aInstanceCol3);
     }
 
     vec4 worldPos = modelMatrix * vec4(aPos, 1.0);

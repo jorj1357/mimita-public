@@ -26,7 +26,7 @@
 named only `KERNELBASE.dll` because `crash-handler.cpp` recorded only the
 `RaiseException` frame and had no terminate handler or stack symbolication. The
 exact failing function is still unknown, so the crash stays `UNRESOLVED`
-(see `docs/regressions/2026-10-01/destruction-uncaught-exception-REG.md`).
+(see `docs/regressions/gameplay/destruction-uncaught-exception-REG-2026-10-01.md`).
 
 ## Crash diagnostics
 

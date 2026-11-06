@@ -554,6 +554,30 @@ reference baseline in `docs/specs/gamemodes/vehicle-arena.md`; compare measured
 trajectories and handling rather than copying simulator force units. Keep the
 profile reusable by other modes.
 
+#### Arcade arena profile (2026-11-05)
+
+`vehicle_arena` selects `arcade_arena` through the gamemode's `vehicle_profile`
+field. The profile lives in `config/vehicle-profiles/<id>.json` and supplies
+input mapping, automatic transmission, auto-start, boost, jump, air-control,
+steering, powerslide, wall-adhesion, and ball-contact scales. It does not own a
+second car solver.
+
+- Ground: `W/S` throttle/brake, `A/D` steer, `Left Shift` powerslide with
+  friction x 1/3, `Left Mouse` boost, `Right Mouse` jump, `Space` ball cam.
+- Air: `W/S` pitch, `A/D` roll, no yaw; diagonals combine and opposing inputs
+  cancel that axis. Roll is torque/momentum based with profile damping.
+- All-four-wheel contact with any surface, including the ball, resets the jump
+  and enables the next double jump/flip.
+- Boost is a separate charge meter, not the engine turbo field. Capacity, drain
+  ticks, and force are profile data. MiMITA's first profile drains a full tank in
+  300 server ticks (5 s), which intentionally differs from the 3 s reference
+  baseline.
+- Car-local downforce and contact-plane damping replace world-Z assumptions so
+  wall driving stays stable. Near-vertical contacts use data-driven adhesion;
+  ceiling contacts do not, so gravity detaches the car.
+- Chassis contact uses shared restitution. Wheel-to-ball contact uses a much
+  smaller impulse scale than chassis-to-ball contact.
+
 The first trick-vehicle profile is shared by skateboard and BMX: W accelerates,
 S brakes and then reverses, A/D steer and lean, and holding Space while
 grounded charges a crouch/jump that releases into a higher jump. Airborne A/D

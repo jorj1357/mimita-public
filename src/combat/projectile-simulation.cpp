@@ -620,6 +620,7 @@ ProjectileStepResult simulateProjectileTick(
                     }
                     else if (shouldBounce)
                     {
+                        result.incomingVelocity = state.velocity;
                         applyBounce(state.velocity, state.angularVelocity,
                                     earliestNormal, config.restitution, config.friction,
                                     state.bounceCount);

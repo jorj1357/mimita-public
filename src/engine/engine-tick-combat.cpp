@@ -12,6 +12,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
+#include "interaction/interaction-system.h"
 #include "gui/hud/chat-window.h"
 #include <algorithm>
 #include <cstdio>
@@ -84,6 +85,8 @@ void engineTickCombat(Engine& engine, float dt)
         g_clientPredictionAccumulator -= kClientFixedDt;
         ++g_clientSimulationTick;
         ++clientSteps;
+
+        InteractionSystem::instance().tickHold(THE_CAMERA);
 
         // TODO: consume input buffer, advance predicted projectiles,
         // advance client-side cooldowns and reload timers.

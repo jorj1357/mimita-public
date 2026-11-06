@@ -19,6 +19,7 @@ ConnectionState mpNextConnectionHealth(
     bool heardSinceDisconnect,
     uint64_t staleThresholdMs,
     uint64_t hardTimeoutMs,
+    bool snapshotStarved,
     uint64_t graceDeadline,
     uint64_t graceMs)
 {
@@ -28,8 +29,11 @@ ConnectionState mpNextConnectionHealth(
     {
     case ConnectionState::Connected:
     case ConnectionState::WeakConnection:
-        // The session is supervised by packet freshness alone. A hard timeout
-        // beats a stale warning: the client enters the reconnect grace window.
+        // Missing authoritative snapshots are a connection failure even when
+        // non-snapshot packets keep refreshing the transport heartbeat.
+        if (snapshotStarved)
+            return ConnectionState::Reconnecting;
+        // A hard packet timeout beats a stale warning.
         if (lastHeardAge > hardTimeoutMs)
             return ConnectionState::Reconnecting;
         if (lastHeardAge > staleThresholdMs)

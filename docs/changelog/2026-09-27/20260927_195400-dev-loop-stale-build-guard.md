@@ -53,7 +53,7 @@ Read and followed:
 - `docs/regressions/README.md`
 
 Regression record:
-`docs/regressions/2026-09-27/dev-loop-stale-build-launch-REG.md`
+`docs/regressions/dev-loop/dev-loop-stale-REG-2026-09-27.md`
 
 ## Validation and limits
 

@@ -430,6 +430,31 @@ void logMovementValidation(const ServerPlayer& player,
 
 } // namespace
 
+void serverLogPlayerSessionRemoval(const ServerPlayer& player,
+                                  const char* reason,
+                                  uint64_t removalTimeMs,
+                                  uint32_t tick,
+                                  size_t playersBefore)
+{
+    const uint64_t silentMs = removalTimeMs >= player.lastHeardMs
+        ? removalTimeMs - player.lastHeardMs : 0;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.player.session.removed", std::to_string(player.id),
+        reason ? reason : "unspecified", tick,
+        nlohmann::json{{"player_id", player.id},
+                       {"removal_reason", reason ? reason : "unspecified"},
+                       {"last_heard_ms", player.lastHeardMs},
+                       {"silent_ms", silentMs},
+                       {"connection_stale", player.connectionStale},
+                       {"disconnect_notice_sent", player.connectionStateNotified},
+                       {"reconnect_token_retained", !player.reconnectToken.empty()},
+                       {"players_before", playersBefore},
+                       {"players_after", playersBefore > 0 ? playersBefore - 1 : 0},
+                       {"server_pid", GetCurrentProcessId()}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 // ── Global server code for coordinator validation ────────────────────
 // Set by the server when it registers with the coordinator.
 static std::string gServerCoordinatorCode;
@@ -1502,6 +1527,8 @@ void handleDisconnect(SOCKET sock, std::unordered_map<uint32_t, ServerPlayer>& p
         }
         else
         {
+            serverLogPlayerSessionRemoval(it->second, "client_explicit_disconnect",
+                                          nowMs(), tick, players.size());
             serverClearActorPreset(header->playerId);
             players.erase(it);
             printf("%s [SERVER POST-LEAVE] players=%zu — server continuing\n",
@@ -2304,7 +2331,8 @@ ServerPacketProcessResult processServerPacket(
     }
     else if (header->type == PACKET_DISCONNECT)
     {
-        handleDisconnect(sock, players, buffer, tick, totalPacketsOut);
+        handleDisconnect(sock, players, buffer, tick, totalPacketsOut,
+                         pendingRemovals);
         result.handled = true;
     }
     else if (header->type == PACKET_SPAWN_NPC_REQUEST)
