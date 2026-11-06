@@ -1,12 +1,7 @@
 {
   "allow_crossings": true,
   "allow_cycles": true,
-  "chunk_files": [
-    "config/worldgen/chunks/chunk_straight.json",
-    "config/worldgen/chunks/chunk_corner.json",
-    "config/worldgen/chunks/chunk_cross.json",
-    "config/worldgen/chunks/chunk_deadend.json"
-  ],
+  "chunk_files": [],
   "format": 1,
   "grid": {
     "cell_size": [

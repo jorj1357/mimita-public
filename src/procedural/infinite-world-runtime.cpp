@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <iterator>
 #include <string>
 #include <utility>
 #include <vector>
@@ -195,6 +196,37 @@ const AuthoredChunkConnector* connectorOnSide(const AuthoredChunk& chunk,
     return nullptr;
 }
 
+// A complete, mutually compatible edge set can be selected by cell hash
+// without walking a parent chain back to the anchor. This keeps the flat
+// connected-world trial bounded even with several authored tile variants.
+bool independentGrid(const GenerationZone& zone,
+                     const std::vector<const AuthoredChunk*>& candidates)
+{
+    if (zone.modeId != "connected_world" || zone.repeatAxes.z != 0 ||
+        zone.connectorGap != 0.0f || candidates.empty()) return false;
+    for (const AuthoredChunk* a : candidates) {
+        if (!a || a->parts.empty()) return false;
+        for (const AuthoredChunk* b : candidates) {
+            if (!b) return false;
+            for (Side side : {Side::East, Side::West, Side::North, Side::South}) {
+                if ((side == Side::East || side == Side::West)
+                        ? zone.repeatAxes.x == 0 : zone.repeatAxes.y == 0)
+                    continue;
+                const AuthoredChunkConnector* from = connectorOnSide(*a, side);
+                const AuthoredChunkConnector* to = connectorOnSide(
+                    *b, oppositeSide(side));
+                if (!from || !to || !from->links.empty() ||
+                    !to->links.empty() || !connectorsCompatible(*from, *to))
+                    return false;
+                const glm::vec3 step = sideDirection(side) * zone.cellSize;
+                if (glm::length(from->position - step - to->position) > 0.001f)
+                    return false;
+            }
+        }
+    }
+    return true;
+}
+
 void logEvent(const char* name, const std::string& subject,
               const nlohmann::json& fields)
 {
@@ -323,7 +355,8 @@ glm::vec3 InfiniteWorldRuntime::cellOrigin(int x, int y, int z,
 {
     const bool haveOrigin = zone.origin.x != 0.0f || zone.origin.y != 0.0f ||
                             zone.origin.z != 0.0f;
-    const glm::vec3 base = haveOrigin ? zone.origin : zone.boundsMin;
+    const glm::vec3 base = (haveOrigin || zone.modeId == "connected_world")
+        ? zone.origin : zone.boundsMin;
     const glm::vec3 size(zone.cellSize.x > 0.0f ? zone.cellSize.x : 104.0f,
                          zone.cellSize.y > 0.0f ? zone.cellSize.y : 104.0f,
                          zone.cellSize.z > 0.0f ? zone.cellSize.z : 104.0f);
@@ -337,7 +370,8 @@ int64_t InfiniteWorldRuntime::chunkCoord(const glm::vec3& point, int axis,
 {
     const float cell = axis == 0 ? zone.cellSize.x :
                        axis == 1 ? zone.cellSize.y : zone.cellSize.z;
-    const float base = axis == 0 ? (zone.origin.x != 0.0f ? zone.origin.x
+    const float base = zone.modeId == "connected_world" ? zone.origin[axis] :
+                       axis == 0 ? (zone.origin.x != 0.0f ? zone.origin.x
                                                           : zone.boundsMin.x) :
                        axis == 1 ? (zone.origin.y != 0.0f ? zone.origin.y
                                                           : zone.boundsMin.y) :
@@ -465,7 +499,7 @@ uint64_t InfiniteWorldRuntime::generationSignature(
 
 const InfiniteWorldRuntime::ResolvedCell& InfiniteWorldRuntime::resolveCell(
     int x, int y, int z, const GenerationZone& zone,
-    const std::vector<const AuthoredChunk*>& candidates)
+    const std::vector<const AuthoredChunk*>& candidates, bool independent)
 {
     const uint64_t key = cellKey(x, y, z);
     auto found = mResolved.find(key);
@@ -474,6 +508,16 @@ const InfiniteWorldRuntime::ResolvedCell& InfiniteWorldRuntime::resolveCell(
     ResolvedCell cell;
     cell.attempted = true;
     cell.transform = glm::translate(glm::mat4(1.0f), cellOrigin(x, y, z, zone));
+
+    // A single flat tile has no graph choice. Resolve it from its cell alone,
+    // so long travel does not recurse back through every previous cell.
+    if (independent) {
+        const uint64_t hash = mixCoord(zone.seed, zone.generatorVersion,
+                                       depsIdentity(zone), x, y, z);
+        cell.valid = true;
+        cell.chunkId = candidates[hash % candidates.size()]->id;
+        return mResolved.emplace(key, cell).first->second;
+    }
 
     auto reject = [&](const char* reason, Side side = Side::None,
                       const AuthoredChunk* parentChunk = nullptr,
@@ -526,7 +570,8 @@ const InfiniteWorldRuntime::ResolvedCell& InfiniteWorldRuntime::resolveCell(
     if (parentSide == Side::None)
         return reject("no-parent-direction");
 
-    const ResolvedCell parentCell = resolveCell(px, py, pz, zone, candidates);
+    const ResolvedCell parentCell = resolveCell(px, py, pz, zone, candidates,
+                                                independent);
     if (!parentCell.valid) {
         cell.valid = false;
         auto inserted = mResolved.emplace(key, cell);
@@ -711,11 +756,12 @@ const InfiniteWorldRuntime::ResolvedCell& InfiniteWorldRuntime::resolveCell(
 
 bool InfiniteWorldRuntime::placeChunk(
     int x, int y, int z, const GenerationZone& zone,
-    const std::vector<const AuthoredChunk*>& candidates)
+    const std::vector<const AuthoredChunk*>& candidates, bool independent)
 {
     const uint64_t key = cellKey(x, y, z);
     if (mLoaded.count(key) || mRejected.count(key)) return false;
-    const ResolvedCell& resolved = resolveCell(x, y, z, zone, candidates);
+    const ResolvedCell& resolved = resolveCell(x, y, z, zone, candidates,
+                                                independent);
     if (!resolved.valid) {
         mRejected.insert(key);
         return false;
@@ -760,7 +806,11 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
     const uint64_t revision = registry.revision();
     const std::string& gameModeId =
         MimitaNet::CommunityMatchClient::instance().mode();
-    const bool connectedWorldMode = gameModeId == "connected_world";
+    const bool connectedWorldMode = gameModeId == "connected_world" ||
+        std::any_of(config.generationZones.begin(), config.generationZones.end(),
+                    [](const GenerationZone& zone) {
+                        return zone.enabled && zone.modeId == "connected_world";
+                    });
 
     const GenerationZone* mapZone = nullptr;
     for (const auto& zone : config.generationZones) {
@@ -776,33 +826,35 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
         return;
     }
 
-    GenerationZone modeZone;
     const GenerationZone* activeZone = mapZone;
     if (connectedWorldMode) {
-        modeZone = *mapZone;
-        MimitaWorldGen::WorldGenMode profile;
-        std::string error;
-        if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
-                gameModeId, profile, &error)) {
-            logEvent("world-stream.mode-profile.missing", gameModeId,
-                     {{"mode", gameModeId}, {"error", error}});
-            if (mActive) reset();
-            return;
+        if (mSignatureDirty || revision != mLastConfigRevision ||
+            mModeZone.id != mapZone->id) {
+            MimitaWorldGen::WorldGenMode profile;
+            std::string error;
+            if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                    "connected_world", profile, &error)) {
+                logEvent("world-stream.mode-profile.missing", "connected_world",
+                         {{"mode", "connected_world"}, {"error", error}});
+                if (mActive) reset();
+                return;
+            }
+            mModeZone = *mapZone;
+            mModeZone.modeId = "connected_world";
+            mModeZone.chunkDependencies.clear();
+            mModeZone.plane = profile.grid.plane;
+            mModeZone.repeatAxes = profile.grid.repeatAxes;
+            mModeZone.origin = profile.grid.origin;
+            mModeZone.cellSize = profile.grid.cellSize;
+            mModeZone.chunkSizeVec = profile.grid.chunkSize;
+            mModeZone.streamRadius = profile.grid.streamRadius;
+            mModeZone.spacingMode = profile.grid.spacingMode;
+            mModeZone.connectorGap = profile.grid.connectorGap;
+            mModeZone.maxBranchDepth = profile.maxBranchDepth;
+            mModeZone.allowCycles = profile.allowCycles;
+            mModeZone.allowCrossings = profile.allowCrossings;
         }
-        modeZone.modeId = gameModeId;
-        modeZone.chunkDependencies.clear();
-        modeZone.plane = profile.grid.plane;
-        modeZone.repeatAxes = profile.grid.repeatAxes;
-        modeZone.origin = profile.grid.origin;
-        modeZone.cellSize = profile.grid.cellSize;
-        modeZone.chunkSizeVec = profile.grid.chunkSize;
-        modeZone.streamRadius = profile.grid.streamRadius;
-        modeZone.spacingMode = profile.grid.spacingMode;
-        modeZone.connectorGap = profile.grid.connectorGap;
-        modeZone.maxBranchDepth = profile.maxBranchDepth;
-        modeZone.allowCycles = profile.allowCycles;
-        modeZone.allowCrossings = profile.allowCrossings;
-        activeZone = &modeZone;
+        activeZone = &mModeZone;
     }
 
     if (!mActive || mZoneId != activeZone->id) {
@@ -836,6 +888,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
     std::vector<const AuthoredChunk*> candidates =
         resolveCandidates(*activeZone);
     if (candidates.empty()) return;
+    const bool independent = independentGrid(*activeZone, candidates);
 
     const bool needSignature = !mHasGeneration || mSignatureDirty ||
                                revision != mLastConfigRevision;
@@ -894,6 +947,12 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
         StreamedWorldLayer::instance().removeChunk(key);
         mLoaded.erase(key);
     }
+    if (independent) {
+        for (auto it = mResolved.begin(); it != mResolved.end();)
+            it = desired.count(it->first) ? std::next(it) : mResolved.erase(it);
+        for (auto it = mRejected.begin(); it != mRejected.end();)
+            it = desired.count(*it) ? std::next(it) : mRejected.erase(it);
+    }
 
     // Add the nearest missing cells first. This path runs on the render-thread
     // setup pass, so cap installation work and keep servicing the desired set
@@ -928,7 +987,8 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
     for (const glm::ivec3& cell : pending) {
         if (added >= kMaxChunksPerFrame) break;
         ++attempted;
-        if (placeChunk(cell.x, cell.y, cell.z, *activeZone, candidates))
+        if (placeChunk(cell.x, cell.y, cell.z, *activeZone, candidates,
+                       independent))
             ++added;
     }
 
@@ -937,8 +997,11 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                  {{"zone", activeZone->id},
                   {"plane", activeZone->plane},
                   {"cell", {hx, hy, hz}},
+                  {"player_position", {player.pos.x, player.pos.y,
+                                       player.pos.z}},
                   {"anchor", {mAnchorX, mAnchorY, mAnchorZ}},
                   {"spacing_mode", activeZone->spacingMode},
+                  {"independent_grid", independent},
                   {"whole_world", config.generateWholeWorld ||
                                       connectedWorldMode},
                   {"added", added},
@@ -947,7 +1010,8 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                   {"budget", kMaxChunksPerFrame},
                   {"removed", toRemove.size()},
                   {"loaded", mLoaded.size()},
-                  {"rejected", mRejected.size()}});
+                  {"rejected", mRejected.size()},
+                  {"resolved", mResolved.size()}});
 }
 
 void registerInfiniteWorldCommands()

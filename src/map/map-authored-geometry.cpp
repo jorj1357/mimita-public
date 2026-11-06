@@ -286,6 +286,44 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    world.connectedFlatGround = false;
+    for (const GenerationZone& zone : config.generationZones) {
+        if (!config.generateWholeWorld || !zone.enabled ||
+            zone.modeId != "connected_world" || zone.repeatAxes.x == 0 ||
+            zone.repeatAxes.y == 0 || zone.repeatAxes.z != 0) continue;
+        bool valid = !config.chunks.empty();
+        bool foundFloor = false;
+        float floorZ = 0.0f;
+        for (const AuthoredChunk& chunk : config.chunks) {
+            if (!chunk.enabled) continue;
+            for (const ChunkPart& part : chunk.parts) {
+                if (!part.collision) continue;
+                const float top = zone.origin.z + part.position.z +
+                                  part.size.z * 0.5f;
+                if (part.kind != "floor" || part.size.x != zone.cellSize.x ||
+                    part.size.y != zone.cellSize.y ||
+                    glm::length(part.rotationEuler) > 0.001f ||
+                    (foundFloor && std::abs(top - floorZ) > 0.001f)) {
+                    valid = false;
+                    break;
+                }
+                floorZ = top;
+                foundFloor = true;
+            }
+            if (!valid) break;
+        }
+        world.connectedFlatGround = valid && foundFloor;
+        world.connectedFlatGroundZ = floorZ;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "world-stream.server-ground-config", mapId,
+            world.connectedFlatGround ? "flat_floor_enabled" :
+                                        "flat_floor_not_eligible", 0,
+            {{"map", mapId}, {"enabled", world.connectedFlatGround},
+             {"floor_z", floorZ}, {"chunks", config.chunks.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+        break;
+    }
     applyGLBObjectOverrides(world, config.glbObjects);
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {

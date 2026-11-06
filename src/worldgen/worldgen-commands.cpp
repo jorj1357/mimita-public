@@ -246,6 +246,10 @@ void registerWorldGenCommands()
                 return;
             }
             if (args[0] == "add" && args.size() >= 2) {
+                if (findChunk(args[1])) {
+                    log("[WORLDCHUNK] chunk already exists: " + args[1]);
+                    return;
+                }
                 AuthoredChunk chunk;
                 chunk.id = args[1];
                 chunk.boundsMin = glm::vec3(-5.0f, -5.0f, 0.0f);
@@ -256,7 +260,7 @@ void registerWorldGenCommands()
                 log("[WORLDCHUNK] added " + args[1]);
                 return;
             }
-            if (args[0] == "part" && args.size() >= 9) {
+            if (args[0] == "part" && args.size() >= 10) {
                 AuthoredChunk* chunk = findChunk(args[1]);
                 if (!chunk) { log("[WORLDCHUNK] chunk not found"); return; }
                 ChunkPart part;
@@ -264,7 +268,7 @@ void registerWorldGenCommands()
                 part.kind = args[3];
                 if (!parseVec3(args, 4, part.position)) { log("[WORLDCHUNK] bad pos"); return; }
                 if (!parseVec3(args, 7, part.size)) { log("[WORLDCHUNK] bad size"); return; }
-                if (args.size() >= 10) part.material = args[9];
+                if (args.size() >= 11) part.material = args[10];
                 chunk->parts.push_back(std::move(part));
                 registry.markChanged();
                 StreamedWorldLayer::instance().refreshChunk(*chunk);
@@ -372,7 +376,7 @@ void registerWorldGenCommands()
                 }
                 return;
             }
-            if (args[0] == "add" && args.size() >= 10) {
+            if (args[0] == "add" && args.size() >= 9) {
                 AuthoredChunk* chunk = findChunk(args[1]);
                 if (!chunk) { log("[WORLDCONNECTOR] chunk not found"); return; }
                 AuthoredChunkConnector connector;

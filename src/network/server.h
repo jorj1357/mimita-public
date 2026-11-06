@@ -178,6 +178,11 @@ struct HeadlessGLBObject
 
 struct HeadlessWorld
 {
+    // Flat authored connected-world tiles share one horizontal support plane.
+    // The server resolves it in its fixed movement tick without retaining an
+    // unbounded set of generated triangles.
+    bool connectedFlatGround = false;
+    float connectedFlatGroundZ = 0.0f;
     std::vector<CollisionTriangle> triangles;
     std::vector<uint32_t> solidIds;
     std::vector<uint32_t> destructionBaselineSolidIds;

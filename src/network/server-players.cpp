@@ -232,6 +232,30 @@ void resolveWorldCollision(ServerPlayer& p, const HeadlessWorld& world)
         }
     }
 
+    if (world.connectedFlatGround) {
+        const float standingZ = world.connectedFlatGroundZ +
+                                PLAYER_HEIGHT * 0.5f;
+        if (p.pos.z <= standingZ + 0.01f && p.vel.z <= 0.0f) {
+            p.pos.z = standingZ;
+            p.vel.z = 0.0f;
+            p.onGround = true;
+            static uint64_t lastGroundSampleMs = 0;
+            const uint64_t now = nowMs();
+            if (now - lastGroundSampleMs >= 5000) {
+                lastGroundSampleMs = now;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "world-stream.server-ground", "connected_world",
+                    "fixed_tick_flat_floor_contact", p.input.tick,
+                    {{"player_id", p.id},
+                     {"position", {p.pos.x, p.pos.y, p.pos.z}},
+                     {"floor_z", world.connectedFlatGroundZ},
+                     {"on_ground", p.onGround}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+    }
+
     // Debug log when a real triangle collision resolves below the map bounds
     if (p.pos.z < world.boundsMin.z)
     {

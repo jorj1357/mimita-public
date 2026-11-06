@@ -490,7 +490,7 @@
       "name": "Connected World - editor-authored streaming",
       "server_args": ["--mode", "connected_world", "--gamemode", "connected_world", "--no-npcs"],
       "client_args": [],
-      "map": "funworld3",
+      "map": "connected_world",
       "require_client_connection": true,
       "require_mode_start": true
     }

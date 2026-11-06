@@ -2,8 +2,8 @@
 /* purpose
 * Stream authored primitive chunks into StreamedWorldLayer for generation
 * zones. Placement follows the zone/mode grid; the base world and its collision
-* broadphase are never rebuilt. The host remains authoritative for accepted
-* chunk identity in multiplayer.
+* broadphase are never rebuilt. Server chunk identity and collision authority
+* still need to be integrated for multiplayer.
 */
 #pragma once
 
@@ -48,7 +48,8 @@ private:
 
     uint64_t cellKey(int x, int y, int z) const;
     bool placeChunk(int x, int y, int z, const GenerationZone& zone,
-                    const std::vector<const AuthoredChunk*>& candidates);
+                    const std::vector<const AuthoredChunk*>& candidates,
+                    bool independent);
     void clearZone();
     int64_t chunkCoord(const glm::vec3& point, int axis,
                        const GenerationZone& zone) const;
@@ -61,7 +62,8 @@ private:
         const std::vector<const AuthoredChunk*>& candidates) const;
     const ResolvedCell& resolveCell(
         int x, int y, int z, const GenerationZone& zone,
-        const std::vector<const AuthoredChunk*>& candidates);
+        const std::vector<const AuthoredChunk*>& candidates,
+        bool independent);
 
     bool mActive = false;
     std::string mZoneId;
@@ -82,6 +84,7 @@ private:
     std::unordered_map<uint64_t, ResolvedCell> mResolved;
     std::vector<AuthoredChunk> mModeChunks;
     std::string mModeCacheId;
+    GenerationZone mModeZone;
 };
 
 struct WorldConnectorMatch
