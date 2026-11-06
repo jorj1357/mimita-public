@@ -246,8 +246,17 @@ bool RagdollModeConfig::load(const std::string& path)
 
         if (root.contains("head")) {
             const auto& h = root["head"];
+            next.headMode = h.value("mode", next.headMode);
+            if (next.headMode != "mouse_aim" && next.headMode != "free")
+                next.headMode = "mouse_aim";
             next.headRotationStrength = h.value("rotation_strength", next.headRotationStrength);
             next.headRotationSpeed = h.value("rotation_speed", next.headRotationSpeed);
+            next.headMovementInfluence = h.value(
+                "movement_influence", next.headMovementInfluence);
+            if (!std::isfinite(next.headMovementInfluence))
+                next.headMovementInfluence = 0.15f;
+            next.headMovementInfluence = std::clamp(
+                next.headMovementInfluence, 0.0f, 1.0f);
         }
 
         // Physical aim controller. Every value is clamped so a malformed or

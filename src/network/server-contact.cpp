@@ -30,6 +30,7 @@ struct BodyBox
 {
     glm::vec3 center{0.0f};
     glm::vec3 half{0.0f};
+    uint8_t actorPart = 0xFF;
 };
 
 struct ActorPose
@@ -73,7 +74,12 @@ int collectBodyBoxes(const ServerPlayer& player, uint32_t tick,
             const RagdollLimbState& limb = ragdoll.limbs[i];
             if (glm::length(limb.hitHalf) <= 1e-5f)
                 continue;
-            out[count++] = {limb.hitCenter, limb.hitHalf};
+            const ActorBodyPart actorPart = actorBodyPartFromRagdollIndex(i);
+            if (player.body.destroyed(actorPart))
+                continue;
+            out[count++] = {
+                limb.hitCenter, limb.hitHalf,
+                static_cast<uint8_t>(actorPart)};
         }
         if (count > 0)
             return count;
@@ -90,11 +96,14 @@ int collectBodyBoxes(const ServerPlayer& player, uint32_t tick,
     {
         if (count >= kMaxBodyBoxes)
             break;
+        if (part.actorPart != 0xFF &&
+            player.body.destroyed((ActorBodyPart)part.actorPart))
+            continue;
         const glm::vec3 offset(
             part.offset.x * c - part.offset.y * s,
             part.offset.x * s + part.offset.y * c,
             part.offset.z);
-        out[count++] = {pose.pos + offset, part.half};
+        out[count++] = {pose.pos + offset, part.half, part.actorPart};
     }
     return count;
 }
@@ -111,9 +120,13 @@ int collectBodyBoxes(const ServerNpc& npc, uint32_t tick,
         {
             for (int i = 0; i < partCount && count < kMaxBodyBoxes; ++i)
             {
+                if (parts[i].actorPart != 0xFF &&
+                    npc.body.destroyed((ActorBodyPart)parts[i].actorPart))
+                    continue;
                 out[count++] = {
                     {parts[i].cx, parts[i].cy, parts[i].cz},
-                    {parts[i].hx, parts[i].hy, parts[i].hz}};
+                    {parts[i].hx, parts[i].hy, parts[i].hz},
+                    parts[i].actorPart};
             }
             if (count > 0)
                 return count;
@@ -124,9 +137,13 @@ int collectBodyBoxes(const ServerNpc& npc, uint32_t tick,
                         count < kMaxBodyBoxes; ++i)
     {
         const ServerNpcBodyPartSample& part = npc.bodyParts[i];
+        if (part.actorPart != 0xFF &&
+            npc.body.destroyed((ActorBodyPart)part.actorPart))
+            continue;
         out[count++] = {
             {part.cx, part.cy, part.cz},
-            {part.hx, part.hy, part.hz}};
+            {part.hx, part.hy, part.hz},
+            part.actorPart};
     }
     return count;
 }
@@ -228,6 +245,22 @@ bool actorHitVolumeContains(const Actor& actor, uint32_t tick,
     float radius = 0.0f;
     actorCapsule(actor, tick, a, b, radius);
     return pointInCapsule(point, a, b, radius, tolerance);
+}
+
+template <typename Actor>
+ActorBodyPart actorPartAtPoint(const Actor& actor, uint32_t tick,
+                               const glm::vec3& point, float tolerance)
+{
+    std::array<BodyBox, kMaxBodyBoxes> boxes{};
+    const int count = collectBodyBoxes(actor, tick, boxes);
+    for (int i = 0; i < count; ++i)
+    {
+        if (!pointInExpandedAabb(point, boxes[i], tolerance))
+            continue;
+        if (boxes[i].actorPart != 0xFF)
+            return static_cast<ActorBodyPart>(boxes[i].actorPart);
+    }
+    return ActorBodyPart::Torso;
 }
 
 bool contactSegmentBlocked(const HeadlessWorld& world,
@@ -447,6 +480,15 @@ ServerContactResult resolveServerContact(
     damageRequest.damage = request.damage;
     damageRequest.knockback = request.knockback;
     damageRequest.source = request.source;
+    damageRequest.bodyPart = request.bodyPart;
+    if (damageRequest.bodyPart == ActorBodyPart::Unknown)
+    {
+        const float tolerance = std::max(0.0f, request.hitTolerance);
+        damageRequest.bodyPart = request.victimKind == ServerActorKind::Npc
+            ? actorPartAtPoint(*victim.npc, contactTick, request.point, tolerance)
+            : actorPartAtPoint(*victim.player, contactTick, request.point, tolerance);
+    }
+    damageRequest.hitPoint = request.point;
     damageRequest.weaponId = request.weaponId;
     damageRequest.weaponDisplayName = request.weaponDisplayName;
     damageRequest.serverTick = request.serverTick;

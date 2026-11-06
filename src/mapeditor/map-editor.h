@@ -27,7 +27,9 @@ enum class EditorObjectKind {
     BombSite,
     PayloadRoutePoint,
     PayloadCartOrigin,
-    MapGLBObject
+    MapGLBObject,
+    ChunkPart,
+    ChunkConnector
 };
 
 struct EditorObjectRef {
@@ -101,6 +103,11 @@ public:
     void setSelectedBombSiteRadius(float radius);
     std::string addRoutePoint(const std::string& id = {});
     void addCartOrigin();
+    bool previewChunk(const std::string& chunkId);
+    bool setSelectedChunkPartMaterial(const std::string& material);
+    bool setSelectedChunkPartUvScale(float u, float v);
+    bool setSelectedChunkConnectorField(const std::string& field,
+                                        const std::string& value);
     bool setSelectedRouteCheckpoint(bool checkpoint);
     bool setSelectedRouteFinal(bool final);
     bool setSelectedRouteEnabled(bool enabled);
@@ -185,8 +192,13 @@ private:
     UITextInputState mOutlinerSearch;
     bool mOutlinerSearchFocused = false;
     UITextInputState mPropertyPosition[3];
+    UITextInputState mPropertyMaterial;
+    UITextInputState mPropertyUvScale[2];
     bool mPropertyOwnerValid = false;
     EditorObjectRef mPropertyOwner;
+    bool mChunkPreviewValid = false;
+    std::string mChunkPreviewChunkId;
+    glm::vec3 mChunkPreviewOrigin{0.0f};
     float mCameraSpeedMultiplier = -1.0f;
     bool mCollisionDirty = false;
     bool mGeometryDirty = false;
@@ -208,6 +220,9 @@ private:
     int outlinerRowAt(double screenX, double screenY) const;
     void syncPropertyPositionFields();
     void applyPropertyPosition();
+    void syncChunkPropertyFields();
+    void applyChunkMaterial();
+    void applyChunkUvScale();
 
     void clearSelection();
     void selectOnly(const EditorObjectRef& ref);
@@ -218,6 +233,13 @@ private:
     const MapVehicleSpawn* vehicleFor(const EditorObjectRef& ref) const;
     const PayloadRoutePoint* routeFor(const EditorObjectRef& ref) const;
     MapGLBObject* mapObjectFor(const EditorObjectRef& ref) const;
+    AuthoredChunk* chunkFor(const EditorObjectRef& ref) const;
+    ChunkPart* chunkPartFor(const EditorObjectRef& ref) const;
+    AuthoredChunkConnector* chunkConnectorFor(const EditorObjectRef& ref) const;
+    static bool splitChunkRef(const std::string& id, std::string& chunkId,
+                              std::string& itemId);
+    bool ensureChunkPreview(const std::string& chunkId);
+    void refreshPreviewChunk();
 
     glm::vec3 objectPosition(const EditorObjectRef& ref) const;
     void setObjectPosition(const EditorObjectRef& ref, const glm::vec3& position);

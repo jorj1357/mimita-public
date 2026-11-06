@@ -71,6 +71,13 @@ glm::vec3 vec3FromJson(const json& value, const glm::vec3& fallback)
                      value[2].get<float>());
 }
 
+glm::vec2 vec2FromJson(const json& value, const glm::vec2& fallback)
+{
+    if (value.is_number()) return glm::vec2(value.get<float>());
+    if (!value.is_array() || value.size() < 2) return fallback;
+    return glm::vec2(value[0].get<float>(), value[1].get<float>());
+}
+
 json ivec3ToJson(const glm::ivec3& v)
 {
     return json::array({v.x, v.y, v.z});
@@ -96,6 +103,14 @@ json chunkToJson(const AuthoredChunk& chunk)
             {"faces", {part.faceMaterials[0], part.faceMaterials[1],
                        part.faceMaterials[2], part.faceMaterials[3],
                        part.faceMaterials[4], part.faceMaterials[5]}},
+            {"uv_scale", {part.uvScale.x, part.uvScale.y}},
+            {"face_uv_scale", {
+                {part.faceUvScale[0].x, part.faceUvScale[0].y},
+                {part.faceUvScale[1].x, part.faceUvScale[1].y},
+                {part.faceUvScale[2].x, part.faceUvScale[2].y},
+                {part.faceUvScale[3].x, part.faceUvScale[3].y},
+                {part.faceUvScale[4].x, part.faceUvScale[4].y},
+                {part.faceUvScale[5].x, part.faceUvScale[5].y}}},
             {"collision", part.collision}, {"visible", part.visible},
         });
     }
@@ -105,7 +120,7 @@ json chunkToJson(const AuthoredChunk& chunk)
             {"id", connector.id}, {"side", connector.side},
             {"orientation", connector.orientation}, {"role", connector.role},
             {"position", vec3ToJson(connector.position)},
-            {"tags", connector.tags},
+            {"tags", connector.tags}, {"links", connector.links},
         });
     }
     return json{
@@ -146,6 +161,14 @@ AuthoredChunk chunkFromJson(const json& root)
                 for (size_t i = 0; i < 6 && i < item["faces"].size(); ++i)
                     if (item["faces"][i].is_string())
                         part.faceMaterials[i] = item["faces"][i].get<std::string>();
+            if (item.contains("uv_scale"))
+                part.uvScale = vec2FromJson(item["uv_scale"], part.uvScale);
+            if (item.contains("face_uv_scale") &&
+                item["face_uv_scale"].is_array()) {
+                for (size_t i = 0; i < 6 && i < item["face_uv_scale"].size(); ++i)
+                    part.faceUvScale[i] = vec2FromJson(
+                        item["face_uv_scale"][i], part.faceUvScale[i]);
+            }
             chunk.parts.push_back(std::move(part));
         }
     }
@@ -162,6 +185,9 @@ AuthoredChunk chunkFromJson(const json& root)
             if (item.contains("tags") && item["tags"].is_array())
                 for (const auto& tag : item["tags"])
                     if (tag.is_string()) connector.tags.push_back(tag.get<std::string>());
+            if (item.contains("links") && item["links"].is_array())
+                for (const auto& link : item["links"])
+                    if (link.is_string()) connector.links.push_back(link.get<std::string>());
             chunk.connectors.push_back(std::move(connector));
         }
     }
@@ -232,7 +258,7 @@ AuthoredChunk makeTunnelChunk(const char* id, const char* tag,
     floor.kind = "floor";
     floor.position = glm::vec3(0.0f, 0.0f, -0.25f);
     floor.size = glm::vec3(10.0f, 10.0f, 0.5f);
-    floor.material = "stone_floor";
+    floor.material = "floorv2";
     chunk.parts.push_back(floor);
 
     if (std::string(id) != "chunk_cross") {
@@ -241,7 +267,7 @@ AuthoredChunk makeTunnelChunk(const char* id, const char* tag,
         left.kind = "wall";
         left.position = glm::vec3(-4.75f, 0.0f, 2.0f);
         left.size = glm::vec3(0.5f, 10.0f, 4.0f);
-        left.material = "stone_wall";
+        left.material = "wallv2";
         chunk.parts.push_back(left);
         ChunkPart right = left;
         right.id = "right_wall";
@@ -255,7 +281,7 @@ AuthoredChunk makeTunnelChunk(const char* id, const char* tag,
             post.size = glm::vec3(0.5f, 0.5f, 4.0f);
             post.position = glm::vec3(-4.75f + (i % 2) * 9.5f,
                                       -4.75f + (i / 2) * 9.5f, 2.0f);
-            post.material = "stone_wall";
+            post.material = "wallv2";
             chunk.parts.push_back(post);
         }
     }

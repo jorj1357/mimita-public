@@ -78,11 +78,28 @@ bool writeFile(const std::filesystem::path& path, const std::vector<uint8_t>& by
     std::error_code error;
     std::filesystem::create_directories(path.parent_path(), error);
     if (error) return false;
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file) return false;
-    file.write(reinterpret_cast<const char*>(bytes.data()),
-               static_cast<std::streamsize>(bytes.size()));
-    return file.good();
+
+    // Write atomically so a reader (avatar loader or another client) can
+    // never observe a partially written avatar.json or texture.
+    std::filesystem::path temporary = path;
+    temporary += ".tmp";
+    {
+        std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+        if (!file) return false;
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+        if (!file.good())
+            return false;
+    }
+    std::filesystem::remove(path, error);
+    error.clear();
+    std::filesystem::rename(temporary, path, error);
+    if (error)
+    {
+        std::filesystem::remove(temporary, error);
+        return false;
+    }
+    return true;
 }
 
 bool cacheHas(const RemoteAvatarAsset& asset)

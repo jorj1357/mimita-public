@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 21
+Entries: 22
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -165,3 +165,10 @@ correction in the detail file.
 - Status: ATTEMPTED FIX — bounded retry is in source; live daemon restart is deferred while the healthy game run is active
 - Summary: Windows denied renaming `.dev/current` immediately after the prior MiMITA processes were terminated, so a latest-artifact launch failed during stable-path activation.
 - Detail: [stable-launch-swap-lock-REG-2026-11-05.md](stable-launch-swap-lock-REG-2026-11-05.md)
+
+## Entry 22 — Build superseded during concurrent edits
+
+- Recorded: 2026-11-06T04:04:40Z (2026-11-05 23:04:40 EST)
+- Status: OPEN — observability and workflow risk; final build succeeded
+- Summary: A two-agent session changed 68 paths, including six widely included headers. The dev-loop's one-build-at-a-time policy queued rebuilds, source generation advanced 28→92, and the `03:08:24Z` artifact became stale before launch. The final `03:56:32Z` build succeeded in 221.8 seconds and was launched. A later failure was caused by only ~113 MB free disk space; freeing generated build cache/artifacts allowed the canonical build to publish `04:33:32Z`. This was not a lost build. Terminal windows seen during the session were Git scans from OpenCode/ChatGPT, not MiMITA build activity.
+- Detail: [build-superseded-stale-REG-2026-11-06.md](build-superseded-stale-REG-2026-11-06.md)

@@ -667,6 +667,7 @@ void resetPlayerForSpawn(ServerPlayer& player, bool isInitialSpawn)
                    : (profile.health > 0 ? profile.health : 100));
     player.maxHealth = maxHp;
     player.health = maxHp;
+    player.body.reset();
     if (!profile.avatarName.empty())
         player.avatarName = profile.avatarName;
     // The active mode's allow-list is authoritative for players as well as
@@ -2028,6 +2029,8 @@ SnapshotEntity makePlayerEntity(const ServerPlayer& player)
     }
     out.yaw = player.yaw;
     out.health = player.health;
+    for (int i = 0; i < 6; ++i)
+        out.partHealth[i] = player.body.partHealth[(size_t)i];
     out.meleePercent = player.meleePercent;
     {
         const auto& rules = MimitaMeleeRules::Config::instance().rules();

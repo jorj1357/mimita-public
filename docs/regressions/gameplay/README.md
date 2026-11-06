@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 32
+Entries: 33
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -237,3 +237,10 @@ Entries: 32
 - Status: ATTEMPTED FIX — build passed; fresh FCS runtime verification pending; reported Boomer identity unresolved
 - Summary: The generic startup `--npcs` path created actor 1000 with avatar `demongirl` before FCS had assigned a team and role, independently of the persistent NPC-spawn policy.
 - Detail: [funcounterstrike-unrostered-startup-npc-REG-2026-11-05.md](funcounterstrike-unrostered-startup-npc-REG-2026-11-05.md)
+
+## Entry 33 — Avatar model fallback stayed as a green capsule
+
+- Recorded: 2026-11-06T07:17:03Z
+- Status: FIXED IN SOURCE — runtime model load and movement verified; visual review pending
+- Summary: A bound avatar instance could leave `model_loaded=false` forever because `render-player.cpp` set `lazy_load_requested=true` without queueing a model load. The new procedural meat/bone layer generation also called a GL texture lookup from the async model-load worker, preventing model completion. Failed avatar loads were not retried. Runtime run `20261106_071418` now reports `model_loaded=true`, `body_mesh_count=6`, populated body parts, and successful `agent.move`.
+- Detail: [avatar-model-fallback-REG-2026-11-06.md](avatar-model-fallback-REG-2026-11-06.md)

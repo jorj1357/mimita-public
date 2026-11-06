@@ -306,7 +306,19 @@ void Player::renderCurrentPose(unsigned int shader,
 
         glActiveTexture(GL_TEXTURE0);
         bool combinedDrawn = false;
-        if (!hideHead && !outlinePass && !whiteOverride && !DebugConfig::DEBUG_CULL) {
+        bool allPartsSkin = true;
+        for (const PhysicalBodyPart& part : physicalBody.parts)
+        {
+            const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
+            if (actorPart == ActorBodyPart::Unknown)
+                continue;
+            if (body.layer(actorPart) != ActorBodyLayer::Skin)
+            {
+                allPartsSkin = false;
+                break;
+            }
+        }
+        if (allPartsSkin && !hideHead && !outlinePass && !whiteOverride && !DebugConfig::DEBUG_CULL) {
             bool validPartSet = true;
             for (const PhysicalBodyPart& part : physicalBody.parts) {
                 if (part.nodeIndex >= 0 &&
@@ -327,26 +339,45 @@ void Player::renderCurrentPose(unsigned int shader,
                 continue;
             if (hideHead && part.name == "head")
                 continue;
+            const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
+            const ActorBodyLayer layer = actorPart == ActorBodyPart::Unknown
+                ? ActorBodyLayer::Skin : body.layer(actorPart);
+            if (layer == ActorBodyLayer::Destroyed)
+                continue;
+            const Mesh* drawMesh = &mesh;
+            glm::vec3 layerTint(1.0f);
+            if (layer == ActorBodyLayer::Meat || layer == ActorBodyLayer::Bone)
+            {
+                const Mesh& layerMesh =
+                    part.layerMeshes[(size_t)layer];
+                if (!layerMesh.verts.empty())
+                    drawMesh = &layerMesh;
+                if (layer == ActorBodyLayer::Bone)
+                    layerTint = glm::vec3(0.86f, 0.82f, 0.70f);
+            }
 
             ++drawableParts;
-            drawableBatches += mesh.batches.size();
-            drawableVertices += mesh.verts.size();
+            drawableBatches += drawMesh->batches.size();
+            drawableVertices += drawMesh->verts.size();
 
-            uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
+            const std::string uploadKey =
+                renderUploadKey() + "|layer" + std::to_string((int)layer);
+            uploadBodyPartMeshPart(*drawMesh, (int)i, uploadKey);
 
             const glm::mat4 model = renderPartTransform(part);
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
 
             // Per-part color tint from outfit.json
-            glm::vec3 tint(1.0f);
-            if (!whiteOverride && i < outfitPartColors.size())
+            glm::vec3 tint = layerTint;
+            if (!whiteOverride && i < outfitPartColors.size() &&
+                layer == ActorBodyLayer::Skin)
                 tint = outfitPartColors[i];
             glUniform4f(uColorLoc, outlinePass ? outlineColor.r : tint.r,
                         outlinePass ? outlineColor.g : tint.g,
                         outlinePass ? outlineColor.b : tint.b,
                         outlinePass ? outlineColor.a : deathAlpha);
 
-            for (const Mesh::Batch& batch : mesh.batches)
+            for (const Mesh::Batch& batch : drawMesh->batches)
             {
                 MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
 

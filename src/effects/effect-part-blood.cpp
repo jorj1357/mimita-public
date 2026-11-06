@@ -534,6 +534,16 @@ void EffectPartSystem::spawnBloodSurfaceDecals(
         req.bitangent = bitangent;
         req.damageScale = damageScale;
         req.force = force;
+        // Bigger stamps near the impact and cone center, progressively smaller
+        // toward the cone edge and the far end. This is the requested blood
+        // splatter shape: dense large central splats with small edge spatter.
+        const float radial01 = decalConeRadius > 0.001f
+            ? std::clamp(radial / decalConeRadius, 0.0f, 1.0f) : 0.0f;
+        const float distance01 = coneDist > 0.5001f
+            ? std::clamp((dist - 0.5f) / (coneDist - 0.5f), 0.0f, 1.0f) : 0.0f;
+        req.radiusScale = std::clamp(
+            0.35f + 0.65f * (1.0f - radial01) * (1.0f - 0.45f * distance01) *
+            (0.65f + 0.35f * force), 0.2f, 1.25f);
         req.lifetimeScale = lifetimeScale;
         req.sourceActorId = sourceActorId;
         req.targetActorId = targetActorId;
@@ -610,8 +620,9 @@ void EffectPartSystem::processDeferredBloodDecals()
         }
 
         // Create the SurfaceDecal from the ray-trace result
-        const float decalRadius = bloodCfg.minRadius +
-            (bloodCfg.radius - bloodCfg.minRadius) * req.force;
+        const float decalRadius = (bloodCfg.minRadius +
+            (bloodCfg.radius - bloodCfg.minRadius) * req.force) *
+            std::clamp(req.radiusScale, 0.2f, 1.25f);
 
         SurfaceDecal decal;
         decal.position = surfaceHit.position;

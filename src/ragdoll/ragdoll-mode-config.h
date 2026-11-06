@@ -160,8 +160,12 @@ struct RagdollModeConfigData {
     float torsoMaxAngularStep = 15.0f;
 
     // Head aim
+    std::string headMode = "mouse_aim";
     float headRotationStrength = 12.0f;
     float headRotationSpeed = 18.0f;
+    // Retained head velocity relative to the actor: 0 tracks actor movement
+    // tightly; 1 leaves the head fully physical. Applied at init and each tick.
+    float headMovementInfluence = 0.15f;
 
     // Physical aim controller (normal-play "active ragdoll" and the ragdoll look
     // motor). Owned here per ragdoll-retrograd.md section 46; selected by

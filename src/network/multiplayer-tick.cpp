@@ -288,6 +288,8 @@ static void processSnapshotEntities(
             ctx.localServerOnGround = entity.onGround != 0;
             ctx.hasLocalServerPosition = true;
             ctx.localServerHealth = entity.health;
+            for (int part = 0; part < 6; ++part)
+                ctx.localServerPartHealth[part] = entity.partHealth[part];
             ctx.localServerMeleePercent = entity.meleePercent;
             ctx.localServerMeleeShield = (float)entity.meleeShield / 255.0f;
             ctx.localServerStateFlags = entity.stateFlags;
@@ -434,6 +436,8 @@ static void processSnapshotEntities(
         }
         Player& p = *replica;
         p.isNpcActor = entity.entityType == ENTITY_NPC;
+        for (int part = 0; part < 6; ++part)
+            p.body.partHealth[(size_t)part] = entity.partHealth[part];
         bool isNew = !existsBefore;
         EntityInterpolationState& interpolation = *interpolationState;
         const bool npcNewLife = entity.entityType == ENTITY_NPC && existsBefore &&
@@ -860,6 +864,8 @@ void applyAuthoritativeSpawn(MultiplayerContext& ctx, const PlayerRespawnedPacke
                        {"spawn_health", spawn->health},
                        {"position", {spawn->posX, spawn->posY, spawn->posZ}},
                        {"velocity", {spawn->velX, spawn->velY, spawn->velZ}},
+                       {"required_map_id", ctx.requiredMapId},
+                       {"server_address", ctx.serverAddress},
                        {"reliable_event_id", spawn->eventId}},
         __FILE__, __LINE__, __FUNCTION__);
     if (oldGen == 0)
@@ -1390,10 +1396,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 return;
             }
             ctx.localPlayerId = accept->assignedPlayerId;
+            // Resume transport sends so the server can keep producing
+            // authoritative state, but do not publish a Connected health
+            // state until that state has actually arrived.
             ctx.connected = true;
             ctx.connectFailed = false;
-            ctx.connectionState = ConnectionState::Connected;
-            ctx.connectionStatus = "Reconnected";
+            // The accept restores the player slot, but it is not a gameplay
+            // snapshot. Keep Reconnecting until mpUpdateConnectionHealth sees
+            // a fresh authoritative snapshot; otherwise a stale-snapshot
+            // reconnect immediately flips back to Connected and loops.
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
             ctx.reliableEventSessionId = accept->reliableEventSessionId;
@@ -1417,8 +1428,6 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpLogConnectStage(ctx, "reconnect_accept", "ok",
                 ctx.disconnectStartedMs ? nowMs() - ctx.disconnectStartedMs : 0,
                 0, "", "reconnect accept received");
-            mpNotifyConnectionStateChange(ctx, ConnectionState::Reconnecting,
-                                          ConnectionState::Connected);
         }
         else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
         {
@@ -1775,6 +1784,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (!mpAcceptReliableEventOnce(ctx, mc->eventId, mc->eventSessionId))
                 return;
             Debug::log(Debug::Category::Networking, "[NET MAP CHANGE] new=%s\n", mc->mapId);
+            // A map change replaces the authoritative world. Drop every remote
+            // actor/projectile from the previous map before the new snapshots
+            // arrive; otherwise ghosts render against the new map.
+            if (ctx.requiredMapId != mc->mapId)
+                mpClearRemoteWorldState(ctx, "map-change");
             // Re-arm the existing map-sync (engine-tick-net) so it loads the
             // new map and re-sends CLIENT_MAP_READY with the fresh id.
             ctx.requiredMapId = mc->mapId;

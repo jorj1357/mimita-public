@@ -41,6 +41,7 @@
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-config.h"
 #include "vehicles/vehicle-system.h"
+#include "world/streamed-world-layer.h"
 #include "world/world.h"
 
 extern Renderer* gRenderer;
@@ -66,8 +67,12 @@ MapConfigRegistry& registry()
     static std::string loaded;
     auto& reg = MapConfigRegistry::instance();
     const std::string mapId = activeMapId();
-    if (loaded != mapId || reg.mapId() != mapId) {
+    // Do not reload a map that is already active: editor-local authoring and
+    // worldchunk/worldedit commands may hold unsaved in-memory changes.
+    if (reg.mapId() != mapId) {
         reg.load(mapId);
+        loaded = mapId;
+    } else if (loaded != mapId) {
         loaded = mapId;
     }
     return reg;
@@ -272,13 +277,28 @@ void MapEditor::selectOnly(const EditorObjectRef& ref)
 {
     mSelection.clear();
     mSelection.push_back(ref);
+    std::string chunkId;
+    std::string itemId;
+    if ((ref.kind == EditorObjectKind::ChunkPart ||
+         ref.kind == EditorObjectKind::ChunkConnector) &&
+        splitChunkRef(ref.id, chunkId, itemId))
+        ensureChunkPreview(chunkId);
 }
 
 void MapEditor::toggleSelection(const EditorObjectRef& ref)
 {
     const auto it = std::find(mSelection.begin(), mSelection.end(), ref);
-    if (it == mSelection.end()) mSelection.push_back(ref);
-    else mSelection.erase(it);
+    if (it == mSelection.end()) {
+        mSelection.push_back(ref);
+        std::string chunkId;
+        std::string itemId;
+        if ((ref.kind == EditorObjectKind::ChunkPart ||
+             ref.kind == EditorObjectKind::ChunkConnector) &&
+            splitChunkRef(ref.id, chunkId, itemId))
+            ensureChunkPreview(chunkId);
+    } else {
+        mSelection.erase(it);
+    }
 }
 
 bool MapEditor::isSelected(const EditorObjectRef& ref) const
@@ -320,8 +340,113 @@ MapGLBObject* MapEditor::mapObjectFor(const EditorObjectRef& ref) const
     return nullptr;
 }
 
+bool MapEditor::splitChunkRef(const std::string& id, std::string& chunkId,
+                              std::string& itemId)
+{
+    const size_t separator = id.find('/');
+    if (separator == std::string::npos || separator == 0 ||
+        separator + 1 >= id.size())
+        return false;
+    chunkId = id.substr(0, separator);
+    itemId = id.substr(separator + 1);
+    return true;
+}
+
+AuthoredChunk* MapEditor::chunkFor(const EditorObjectRef& ref) const
+{
+    if (ref.kind != EditorObjectKind::ChunkPart &&
+        ref.kind != EditorObjectKind::ChunkConnector)
+        return nullptr;
+    std::string chunkId;
+    std::string itemId;
+    if (!splitChunkRef(ref.id, chunkId, itemId)) return nullptr;
+    for (AuthoredChunk& chunk : MapConfigRegistry::instance().chunksMutable())
+        if (chunk.id == chunkId) return &chunk;
+    return nullptr;
+}
+
+ChunkPart* MapEditor::chunkPartFor(const EditorObjectRef& ref) const
+{
+    if (ref.kind != EditorObjectKind::ChunkPart) return nullptr;
+    std::string chunkId;
+    std::string partId;
+    if (!splitChunkRef(ref.id, chunkId, partId)) return nullptr;
+    AuthoredChunk* chunk = chunkFor(ref);
+    if (!chunk) return nullptr;
+    for (ChunkPart& part : chunk->parts)
+        if (part.id == partId) return &part;
+    return nullptr;
+}
+
+AuthoredChunkConnector* MapEditor::chunkConnectorFor(
+    const EditorObjectRef& ref) const
+{
+    if (ref.kind != EditorObjectKind::ChunkConnector) return nullptr;
+    std::string chunkId;
+    std::string connectorId;
+    if (!splitChunkRef(ref.id, chunkId, connectorId)) return nullptr;
+    AuthoredChunk* chunk = chunkFor(ref);
+    if (!chunk) return nullptr;
+    for (AuthoredChunkConnector& connector : chunk->connectors)
+        if (connector.id == connectorId) return &connector;
+    return nullptr;
+}
+
+bool MapEditor::ensureChunkPreview(const std::string& chunkId)
+{
+    for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks())
+        if (chunk.id == chunkId) {
+            if (!mChunkPreviewValid || mChunkPreviewChunkId != chunkId) {
+                mChunkPreviewChunkId = chunkId;
+                mChunkPreviewOrigin = THE_CAMERA.pos + THE_CAMERA.front * 12.0f;
+                mChunkPreviewValid = true;
+            }
+            return true;
+        }
+    return false;
+}
+
+void MapEditor::refreshPreviewChunk()
+{
+    if (!mChunkPreviewValid) return;
+    for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks())
+        if (chunk.id == mChunkPreviewChunkId) {
+            StreamedWorldLayer::instance().refreshChunk(chunk);
+            return;
+        }
+}
+
+bool MapEditor::previewChunk(const std::string& chunkId)
+{
+    if (!ensureChunkPreview(chunkId)) {
+        notify("chunk not found: " + chunkId);
+        return false;
+    }
+    mChunkPreviewOrigin = THE_CAMERA.pos + THE_CAMERA.front * 12.0f;
+    notify("previewing chunk " + chunkId);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-preview", chunkId,
+        "chunk preview placed in the editor viewport", 0,
+        {{"chunk", chunkId},
+         {"origin", {mChunkPreviewOrigin.x, mChunkPreviewOrigin.y,
+                     mChunkPreviewOrigin.z}}},
+        __FILE__, __LINE__, __func__);
+    return true;
+}
+
 glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
 {
+    if (ref.kind == EditorObjectKind::ChunkPart) {
+        if (const ChunkPart* part = chunkPartFor(ref))
+            return mChunkPreviewOrigin + part->position;
+        return glm::vec3(0.0f);
+    }
+    if (ref.kind == EditorObjectKind::ChunkConnector) {
+        if (const AuthoredChunkConnector* connector = chunkConnectorFor(ref))
+            return mChunkPreviewOrigin + connector->position;
+        return glm::vec3(0.0f);
+    }
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
         return MapConfigRegistry::instance().payload().cartOrigin;
     if (ref.kind == EditorObjectKind::BombSite) {
@@ -340,6 +465,22 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
 void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& position)
 {
     auto& reg = MapConfigRegistry::instance();
+    if (ref.kind == EditorObjectKind::ChunkPart) {
+        if (ChunkPart* part = chunkPartFor(ref)) {
+            part->position = position - mChunkPreviewOrigin;
+            reg.markChanged();
+            refreshPreviewChunk();
+        }
+        return;
+    }
+    if (ref.kind == EditorObjectKind::ChunkConnector) {
+        if (AuthoredChunkConnector* connector = chunkConnectorFor(ref)) {
+            connector->position = position - mChunkPreviewOrigin;
+            reg.markChanged();
+            refreshPreviewChunk();
+        }
+        return;
+    }
     if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
         auto& payload = reg.payloadMutable();
         payload.present = true;
@@ -644,6 +785,34 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
             }
         }
     }
+    if (mChunkPreviewValid) {
+        for (const auto& chunk : config.chunks) {
+            if (chunk.id != mChunkPreviewChunkId) continue;
+            for (const auto& part : chunk.parts) {
+                if (!part.visible) continue;
+                float distance = 0.0f;
+                if (rayOBB(origin, direction,
+                           mChunkPreviewOrigin + part.position, part.size,
+                           part.rotationEuler, distance) && distance < best) {
+                    best = distance;
+                    bestRef = {EditorObjectKind::ChunkPart,
+                               chunk.id + "/" + part.id};
+                    found = true;
+                }
+            }
+            for (const auto& connector : chunk.connectors) {
+                float distance = 0.0f;
+                if (raySphere(origin, direction,
+                              mChunkPreviewOrigin + connector.position, 0.4f,
+                              distance) && distance < best) {
+                    best = distance;
+                    bestRef = {EditorObjectKind::ChunkConnector,
+                               chunk.id + "/" + connector.id};
+                    found = true;
+                }
+            }
+        }
+    }
     if (!found) return false;
     out = bestRef;
     outDistance = best;
@@ -942,6 +1111,8 @@ std::string MapEditor::kindName(EditorObjectKind kind)
         case EditorObjectKind::PayloadRoutePoint: return "route";
         case EditorObjectKind::PayloadCartOrigin: return "cart";
         case EditorObjectKind::MapGLBObject: return "glb";
+        case EditorObjectKind::ChunkPart: return "chunk_part";
+        case EditorObjectKind::ChunkConnector: return "chunk_connector";
     }
     return "object";
 }
@@ -1018,6 +1189,34 @@ void MapEditor::deleteSelection()
             auto& payload = MapConfigRegistry::instance().payloadMutable();
             payload.hasCartOrigin = false;
             MapConfigRegistry::instance().markChanged();
+        } else if (ref.kind == EditorObjectKind::ChunkPart ||
+                   ref.kind == EditorObjectKind::ChunkConnector) {
+            std::string chunkId;
+            std::string itemId;
+            if (!splitChunkRef(ref.id, chunkId, itemId)) continue;
+            for (AuthoredChunk& chunk :
+                 MapConfigRegistry::instance().chunksMutable()) {
+                if (chunk.id != chunkId) continue;
+                if (ref.kind == EditorObjectKind::ChunkPart) {
+                    chunk.parts.erase(
+                        std::remove_if(chunk.parts.begin(), chunk.parts.end(),
+                                       [&](const ChunkPart& part) {
+                                           return part.id == itemId;
+                                       }),
+                        chunk.parts.end());
+                } else {
+                    chunk.connectors.erase(
+                        std::remove_if(chunk.connectors.begin(),
+                                       chunk.connectors.end(),
+                                       [&](const AuthoredChunkConnector& connector) {
+                                           return connector.id == itemId;
+                                       }),
+                        chunk.connectors.end());
+                }
+                MapConfigRegistry::instance().markChanged();
+                refreshPreviewChunk();
+                break;
+            }
         }
     }
     clearSelection();
@@ -1203,6 +1402,21 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
             matches(vehicle.id + " " + vehicle.templateId + " vehicle car"))
             out.push_back({EditorObjectKind::Vehicle, vehicle.id});
     }
+    for (const auto& chunk : config.chunks) {
+        if (!chunk.enabled) continue;
+        for (const auto& part : chunk.parts) {
+            const std::string id = chunk.id + "/" + part.id;
+            if (matches(id + " " + part.kind + " " + part.material +
+                        " chunk part primitive"))
+                out.push_back({EditorObjectKind::ChunkPart, id});
+        }
+        for (const auto& connector : chunk.connectors) {
+            const std::string id = chunk.id + "/" + connector.id;
+            if (matches(id + " " + connector.side + " " + connector.role +
+                        " " + connector.orientation + " chunk connector"))
+                out.push_back({EditorObjectKind::ChunkConnector, id});
+        }
+    }
 }
 
 int MapEditor::outlinerRowAt(double screenX, double screenY) const
@@ -1232,7 +1446,180 @@ bool MapEditor::wantsTextInput() const
     if (mOutlinerSearchFocused) return true;
     for (const UITextInputState& field : mPropertyPosition)
         if (field.focused) return true;
+    if (mPropertyMaterial.focused) return true;
+    for (const UITextInputState& field : mPropertyUvScale)
+        if (field.focused) return true;
     return false;
+}
+
+void MapEditor::syncChunkPropertyFields()
+{
+    if (!mSelection.empty()) {
+        const EditorObjectRef& ref = mSelection.front();
+        const bool ownerChanged =
+            !mPropertyOwnerValid || !(mPropertyOwner == ref);
+        if (ownerChanged) {
+            mPropertyMaterial.focused = false;
+            for (UITextInputState& field : mPropertyUvScale)
+                field.focused = false;
+        }
+    }
+    if (mSelection.empty() ||
+        mSelection.front().kind != EditorObjectKind::ChunkPart) {
+        mPropertyMaterial.focused = false;
+        for (UITextInputState& field : mPropertyUvScale) field.focused = false;
+        return;
+    }
+    ChunkPart* part = chunkPartFor(mSelection.front());
+    if (!part) return;
+    bool anyFocused = mPropertyMaterial.focused;
+    for (const UITextInputState& field : mPropertyUvScale)
+        anyFocused = anyFocused || field.focused;
+    if (anyFocused) return;
+    if (mPropertyMaterial.value != part->material) {
+        mPropertyMaterial.value = part->material;
+        mPropertyMaterial.cursorPos = (int)mPropertyMaterial.value.size();
+        mPropertyMaterial.selectionStart = -1;
+    }
+    char value[32];
+    std::snprintf(value, sizeof(value), "%.3f", part->uvScale.x);
+    if (mPropertyUvScale[0].value != value) {
+        mPropertyUvScale[0].value = value;
+        mPropertyUvScale[0].cursorPos = (int)mPropertyUvScale[0].value.size();
+        mPropertyUvScale[0].selectionStart = -1;
+    }
+    std::snprintf(value, sizeof(value), "%.3f", part->uvScale.y);
+    if (mPropertyUvScale[1].value != value) {
+        mPropertyUvScale[1].value = value;
+        mPropertyUvScale[1].cursorPos = (int)mPropertyUvScale[1].value.size();
+        mPropertyUvScale[1].selectionStart = -1;
+    }
+}
+
+void MapEditor::applyChunkMaterial()
+{
+    setSelectedChunkPartMaterial(mPropertyMaterial.value);
+}
+
+void MapEditor::applyChunkUvScale()
+{
+    float u = 1.0f;
+    float v = 1.0f;
+    try {
+        u = std::stof(mPropertyUvScale[0].value);
+        v = std::stof(mPropertyUvScale[1].value);
+    } catch (const std::exception&) {
+        notify("invalid uv scale");
+        return;
+    }
+    setSelectedChunkPartUvScale(u, v);
+}
+
+bool MapEditor::setSelectedChunkPartMaterial(const std::string& material)
+{
+    if (mSelection.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.chunk-part-material-rejected", "",
+            "material edit rejected because selection is empty", 0,
+            {{"selection", ""}}, __FILE__, __LINE__, __func__);
+        return false;
+    }
+    ChunkPart* part = chunkPartFor(mSelection.front());
+    AuthoredChunk* chunk = chunkFor(mSelection.front());
+    if (!part || !chunk) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.chunk-part-material-rejected", mSelection.front().id,
+            "material edit rejected because the selection is not a chunk part",
+            0,
+            {{"selection", mSelection.front().id}},
+            __FILE__, __LINE__, __func__);
+        notify("select a chunk part first");
+        return false;
+    }
+    std::string chunkId;
+    std::string partId;
+    splitChunkRef(mSelection.front().id, chunkId, partId);
+    StreamedWorldLayer::instance().updateMaterial(chunkId, partId, -1,
+                                                  material);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-part-material", chunkId,
+        "chunk part material edited in the map editor", 0,
+        {{"chunk", chunkId}, {"part", partId}, {"material", material}},
+        __FILE__, __LINE__, __func__);
+    notify("material applied to " + partId);
+    return true;
+}
+
+bool MapEditor::setSelectedChunkPartUvScale(float u, float v)
+{
+    if (mSelection.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.chunk-part-uv-rejected", "",
+            "UV edit rejected because selection is empty", 0,
+            {{"selection", ""}}, __FILE__, __LINE__, __func__);
+        return false;
+    }
+    ChunkPart* part = chunkPartFor(mSelection.front());
+    AuthoredChunk* chunk = chunkFor(mSelection.front());
+    if (!part || !chunk) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.chunk-part-uv-rejected", mSelection.front().id,
+            "UV edit rejected because the selection is not a chunk part", 0,
+            {{"selection", mSelection.front().id}},
+            __FILE__, __LINE__, __func__);
+        notify("select a chunk part first");
+        return false;
+    }
+    part->uvScale = glm::vec2(std::max(0.001f, u), std::max(0.001f, v));
+    MapConfigRegistry::instance().markChanged();
+    refreshPreviewChunk();
+    std::string chunkId;
+    std::string partId;
+    splitChunkRef(mSelection.front().id, chunkId, partId);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-part-uv", chunkId,
+        "chunk part UV scale edited in the map editor", 0,
+        {{"chunk", chunkId}, {"part", partId}, {"u", u}, {"v", v}},
+        __FILE__, __LINE__, __func__);
+    notify("uv scale applied to " + partId);
+    return true;
+}
+
+bool MapEditor::setSelectedChunkConnectorField(const std::string& field,
+                                               const std::string& value)
+{
+    if (mSelection.empty()) return false;
+    AuthoredChunkConnector* connector = chunkConnectorFor(mSelection.front());
+    if (!connector) {
+        notify("select a chunk connector first");
+        return false;
+    }
+    if (field == "side") connector->side = value;
+    else if (field == "role") connector->role = value;
+    else if (field == "orientation") connector->orientation = value;
+    else if (field == "tag") {
+        if (std::find(connector->tags.begin(), connector->tags.end(), value) ==
+            connector->tags.end())
+            connector->tags.push_back(value);
+    } else {
+        notify("connector field expects side, role, orientation, or tag");
+        return false;
+    }
+    MapConfigRegistry::instance().markChanged();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-connector-edit", connector->id,
+        "chunk connector edited in the map editor", 0,
+        {{"connector", connector->id}, {"field", field}, {"value", value}},
+        __FILE__, __LINE__, __func__);
+    notify("connector " + field + " set");
+    return true;
 }
 
 bool MapEditor::handleChar(unsigned int codepoint)
@@ -1249,6 +1636,22 @@ bool MapEditor::handleChar(unsigned int codepoint)
         return true;
     }
     for (UITextInputState& field : mPropertyPosition) {
+        if (!field.focused) continue;
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleChar(field, codepoint, options);
+        return true;
+    }
+    if (mPropertyMaterial.focused) {
+        UITextInputOptions options;
+        options.maxLength = 64;
+        options.submitOnEnter = false;
+        uiTextInputHandleChar(mPropertyMaterial, codepoint, options);
+        return true;
+    }
+    for (UITextInputState& field : mPropertyUvScale) {
         if (!field.focused) continue;
         UITextInputOptions options;
         options.maxLength = 24;
@@ -1296,6 +1699,42 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         }
         return true;
     }
+    if (mPropertyMaterial.focused) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            mPropertyMaterial.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 64;
+        options.submitOnEnter = false;
+        uiTextInputHandleKey(glfwGetCurrentContext(), mPropertyMaterial, key,
+                             action, mods, options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            mPropertyMaterial.focused = false;
+            applyChunkMaterial();
+        }
+        return true;
+    }
+    for (UITextInputState& field : mPropertyUvScale) {
+        if (!field.focused) continue;
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            field.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+                             options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            for (UITextInputState& other : mPropertyUvScale) other.focused = false;
+            applyChunkUvScale();
+        }
+        return true;
+    }
     return false;
 }
 
@@ -1305,6 +1744,8 @@ void MapEditor::syncPropertyPositionFields()
         if (mPropertyOwnerValid) {
             mPropertyOwnerValid = false;
             for (UITextInputState& field : mPropertyPosition) field.focused = false;
+            mPropertyMaterial.focused = false;
+            for (UITextInputState& field : mPropertyUvScale) field.focused = false;
         }
         return;
     }
@@ -2156,6 +2597,33 @@ bool MapEditor::selectObject(const std::string& id)
             return true;
         }
     }
+    if (id.find('/') != std::string::npos) {
+        const EditorObjectRef partRef{EditorObjectKind::ChunkPart, id};
+        if (chunkPartFor(partRef)) {
+            selectOnly(partRef);
+            notify("selected " + describeRef(partRef));
+            return true;
+        }
+        const EditorObjectRef connectorRef{EditorObjectKind::ChunkConnector, id};
+        if (chunkConnectorFor(connectorRef)) {
+            selectOnly(connectorRef);
+            notify("selected " + describeRef(connectorRef));
+            return true;
+        }
+    }
+    size_t chunkCount = 0;
+    size_t partCount = 0;
+    for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks()) {
+        ++chunkCount;
+        partCount += chunk.parts.size();
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.select-missing", id,
+        "editor selection id was not present in the object list", 0,
+        {{"id", id}, {"objects", objects.size()}, {"chunks", chunkCount},
+         {"parts", partCount}},
+        __FILE__, __LINE__, __func__);
     notify("no object with id " + id);
     return false;
 }
@@ -2180,8 +2648,12 @@ bool MapEditor::selectKind(const std::string& kind)
         want = EditorObjectKind::PayloadRoutePoint;
     else if (normalized == "cart") want = EditorObjectKind::PayloadCartOrigin;
     else if (normalized == "glb") want = EditorObjectKind::MapGLBObject;
+    else if (normalized == "chunk_part" || normalized == "part")
+        want = EditorObjectKind::ChunkPart;
+    else if (normalized == "chunk_connector" || normalized == "connector")
+        want = EditorObjectKind::ChunkConnector;
     else {
-        notify("select_kind expects entity, block, vehicle, bombsite, route, cart, glb, or all");
+        notify("select_kind expects entity, block, vehicle, bombsite, route, cart, glb, part, connector, or all");
         return false;
     }
     std::vector<EditorObjectRef> objects;
@@ -2189,6 +2661,14 @@ bool MapEditor::selectKind(const std::string& kind)
     mSelection.clear();
     for (const EditorObjectRef& ref : objects)
         if (ref.kind == want) mSelection.push_back(ref);
+    if (!mSelection.empty() &&
+        (want == EditorObjectKind::ChunkPart ||
+         want == EditorObjectKind::ChunkConnector)) {
+        std::string chunkId;
+        std::string itemId;
+        if (splitChunkRef(mSelection.front().id, chunkId, itemId))
+            ensureChunkPreview(chunkId);
+    }
     if (mSelection.empty()) {
         notify("no " + kind + " objects to select");
         return false;
@@ -2456,6 +2936,55 @@ void MapEditor::renderWorld(Camera& camera)
             (entity.type + " " + entity.id).c_str(), color);
     }
 
+    if (mChunkPreviewValid) {
+        for (const auto& chunk : config.chunks) {
+            if (chunk.id != mChunkPreviewChunkId) continue;
+            for (const auto& part : chunk.parts) {
+                const EditorObjectRef ref{EditorObjectKind::ChunkPart,
+                                          chunk.id + "/" + part.id};
+                const bool selected = isSelected(ref);
+                const bool hovered = mHoverValid && mHover.kind == ref.kind &&
+                                     mHover.id == ref.id;
+                const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+                    : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                              : glm::vec4(0.55f, 0.85f, 1.0f, 0.8f);
+                drawOrientedBox(camera, mChunkPreviewOrigin + part.position,
+                                part.size, part.rotationEuler, color);
+                if (showLabel(ref, hovered))
+                    DebugVis::drawWorldLabel(
+                        mChunkPreviewOrigin + part.position +
+                            glm::vec3(0, 0, part.size.z * 0.5f + 0.4f),
+                        ("PART " + part.id + " " + part.kind).c_str(), color);
+            }
+            for (const auto& connector : chunk.connectors) {
+                const EditorObjectRef ref{EditorObjectKind::ChunkConnector,
+                                          chunk.id + "/" + connector.id};
+                const bool selected = isSelected(ref);
+                const bool hovered = mHoverValid && mHover.kind == ref.kind &&
+                                     mHover.id == ref.id;
+                const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+                    : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                              : glm::vec4(1.0f, 0.55f, 0.2f, 1);
+                const glm::vec3 center = mChunkPreviewOrigin + connector.position;
+                glm::vec3 direction(1, 0, 0);
+                if (connector.side == "west") direction = {-1, 0, 0};
+                else if (connector.side == "north") direction = {0, 1, 0};
+                else if (connector.side == "south") direction = {0, -1, 0};
+                else if (connector.side == "up") direction = {0, 0, 1};
+                else if (connector.side == "down") direction = {0, 0, -1};
+                DebugVis::drawWireSphere(camera, center, 0.35f, color);
+                DebugVis::drawLine(camera, center, center + direction * 1.2f,
+                                   color);
+                if (showLabel(ref, hovered))
+                    DebugVis::drawWorldLabel(
+                        center + glm::vec3(0, 0, 0.5f),
+                        ("CONNECTOR " + connector.id + " " + connector.side)
+                            .c_str(),
+                        color);
+            }
+        }
+    }
+
     if (!mSelection.empty()) {
         const glm::vec3 center = selectionCenter();
         const glm::vec3 axes[3] = {{1,0,0},{0,1,0},{0,0,1}};
@@ -2524,6 +3053,7 @@ void MapEditor::renderUI(GLFWwindow* window)
     mOutlinerFilter = mOutlinerSearch.value;
 
     syncPropertyPositionFields();
+    syncChunkPropertyFields();
 
     const float listY = py + kOutlinerHeaderHeight;
     const float listH = std::max(40.0f,
@@ -2674,13 +3204,57 @@ void MapEditor::renderUI(GLFWwindow* window)
                 if (scale[i] > 1e-5f) rotationBasis[i] /= scale[i];
             rotation = glm::degrees(glm::eulerAngles(glm::quat_cast(rotationBasis)));
             details = object->name + " verts=" + std::to_string(object->vertexCount);
+        } else if (const ChunkPart* part = chunkPartFor(ref)) {
+            rotation = part->rotationEuler;
+            scale = part->size;
+            details = part->kind + " material=" +
+                (part->material.empty() ? "default" : part->material) +
+                " collision=" + (part->collision ? "1" : "0") +
+                " visible=" + (part->visible ? "1" : "0");
+        } else if (const AuthoredChunkConnector* connector =
+                       chunkConnectorFor(ref)) {
+            std::string tags;
+            for (const std::string& tag : connector->tags) tags += " " + tag;
+            std::string links;
+            for (const std::string& link : connector->links)
+                links += " " + link;
+            details = "side=" + connector->side +
+                " role=" + connector->role +
+                " orientation=" + connector->orientation +
+                " tags=[" + tags + " ] links=[" + links + " ]";
         }
         std::snprintf(line, sizeof(line), "rot %.1f %.1f %.1f   scale %.2f %.2f %.2f",
             rotation.x, rotation.y, rotation.z, scale.x, scale.y, scale.z);
         uiDrawText(line, px + 10.0f, propY + 64.0f, cfg.rowScale, dim);
         uiDrawText(details.c_str(), px + 10.0f, propY + 88.0f, cfg.rowScale, dim);
-        uiDrawText("Enter applies | Ctrl+Z undo", px + 10.0f, propY + 112.0f,
-            cfg.rowScale, dim);
+        if (ref.kind == EditorObjectKind::ChunkPart) {
+            uiDrawText("material", px + 12.0f, propY + 108.0f, cfg.rowScale, dim);
+            UITextInputOptions materialOptions;
+            materialOptions.maxLength = 64;
+            materialOptions.submitOnEnter = false;
+            materialOptions.placeholder = "default";
+            UIRect materialField{px + 84.0f, propY + 104.0f,
+                                 pw - 100.0f, 24.0f};
+            mPropertyMaterial.focused = uiTextInputRenderScreen(
+                window, "mapeditor_part_material", materialField,
+                mPropertyMaterial, materialOptions);
+            uiDrawText("uv", px + 12.0f, propY + 136.0f, cfg.rowScale, dim);
+            for (int i = 0; i < 2; ++i) {
+                char id[48];
+                std::snprintf(id, sizeof(id), "mapeditor_part_uv_%d", i);
+                UITextInputOptions options;
+                options.maxLength = 24;
+                options.submitOnEnter = false;
+                options.characterFilter = isNumberChar;
+                UIRect field{px + 84.0f + i * 78.0f, propY + 132.0f, 70.0f,
+                             24.0f};
+                mPropertyUvScale[i].focused = uiTextInputRenderScreen(
+                    window, id, field, mPropertyUvScale[i], options);
+            }
+        } else {
+            uiDrawText("Enter applies | Ctrl+Z undo", px + 10.0f,
+                propY + 112.0f, cfg.rowScale, dim);
+        }
     }
 
     {

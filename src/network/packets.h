@@ -31,7 +31,7 @@ constexpr uint32_t PROTOCOL_MAGIC = 0x4d494d38; // MIM8
 // 49: AttackRequestPacket carries validated client-first per-target hitscan
 //     aggregates so shotgun/revolver damage can match local prediction.
 // 50: DuelStatePacket carries the authoritative objective interaction range.
-constexpr uint16_t PROTOCOL_VERSION = 51;
+constexpr uint16_t PROTOCOL_VERSION = 52;
 
 // ── Player state flags for remote visual replication ──────────────
 enum NetworkPlayerStateFlags : uint16_t
@@ -519,6 +519,9 @@ struct SnapshotEntity
     float vz = 0.0f;
     float yaw = 0.0f;
     int32_t health = 100;
+    // Authoritative six-part actor body health. Layer/detachment presentation is
+    // derived from these values with the shared actor-body thresholds.
+    uint8_t partHealth[6] = {100, 100, 100, 100, 100, 100};
     // Melee percent meter (0 outside SSBM).
     float meleePercent = 0.0f;
     // Melee shield remaining fraction, quantized to 0..255.
@@ -598,6 +601,7 @@ struct CompactEntityData
     float yaw = 0.0f;
     float aimX = 1.0f, aimY = 0.0f, aimZ = 0.0f;
     int32_t health = 100;
+    uint8_t partHealth[6] = {100, 100, 100, 100, 100, 100};
     // Melee percent meter, quantized to 4% steps (0..1020) to fit the fixed
     // CompactEntityData size and stay under the snapshot datagram limit.
     uint8_t meleePercent = 0;
@@ -640,7 +644,7 @@ struct CompactEntityData
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CompactEntityData) == 173, "CompactEntityData unexpected size");
+static_assert(sizeof(CompactEntityData) == 179, "CompactEntityData unexpected size");
 
 struct SnapshotChunkPacket
 {
@@ -655,7 +659,7 @@ struct SnapshotChunkPacket
 
 static_assert(sizeof(SnapshotChunkPacket) < MAX_GAME_DATAGRAM_BYTES,
               "SnapshotChunkPacket exceeds safe datagram limit");
-static_assert(sizeof(SnapshotChunkPacket) == 1070, "SnapshotChunkPacket wire size changed");
+static_assert(sizeof(SnapshotChunkPacket) == 1106, "SnapshotChunkPacket wire size changed");
 
 struct SpawnNpcRequestPacket
 {
@@ -883,6 +887,9 @@ struct DamageConfirmedEventPacket
     uint8_t weapon = NETWORK_WEAPON_NONE;
     uint8_t killed = 0;
     uint8_t attackerEntityType = ENTITY_PLAYER;
+    uint8_t bodyPart = 0xFF;          // ActorBodyPart (0..5), 0xFF = unknown
+    uint8_t partHealthAfter = 0;      // authoritative part health after the hit
+    uint8_t partDestroyed = 0;        // 1 when this hit destroyed the part
     uint16_t weaponDefNetworkId = 0;  // Dynamic weapon ID — use weaponIdForDefNetworkId() to resolve
     float hitX = 0.0f;
     float hitY = 0.0f;
@@ -1913,7 +1920,7 @@ static_assert(sizeof(ProjectileStateEventPacket) <= 112, "ProjectileStateEventPa
 static_assert(sizeof(ProjectileExplodeEventPacket) < MAX_GAME_DATAGRAM_BYTES,
               "ProjectileExplodeEventPacket exceeds safe datagram limit");
 static_assert(sizeof(MeleeHitEventPacket) <= 96, "MeleeHitEventPacket is too large");
-static_assert(sizeof(DamageConfirmedEventPacket) <= 112, "DamageConfirmedEventPacket is too large");
+static_assert(sizeof(DamageConfirmedEventPacket) <= 120, "DamageConfirmedEventPacket is too large");
 static_assert(sizeof(DisagreementPacket) <= 128, "DisagreementPacket is too large");
 static_assert(sizeof(PelletBlastRequestPacket) <= 80, "PelletBlastRequestPacket is too large");
 static_assert(sizeof(PelletBlastEventPacket) < MAX_GAME_DATAGRAM_BYTES,

@@ -1100,6 +1100,7 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                 sample.hy = part.half.y;
                 sample.hz = part.half.z;
                 sample.bodyPart = static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
+                sample.actorPart = static_cast<uint8_t>(ActorBodyPart::Torso);
             }
         }
         else
@@ -1135,6 +1136,8 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
                         : (part.name == "leftLeg" || part.name == "rightLeg")
                             ? static_cast<uint8_t>(WeaponExecution::HitBodyPart::Leg)
                             : static_cast<uint8_t>(WeaponExecution::HitBodyPart::Torso);
+                    sample.actorPart = static_cast<uint8_t>(
+                        actorBodyPartFromName(part.name));
                 }
             };
             appendParts(n.body.physicalBody.parts);
@@ -1143,6 +1146,10 @@ static void rebuildServerNpcMap(std::unordered_map<uint32_t, ServerNpc>& npcs,
         auto oldIt = npcs.find(sn.entityId);
         if (oldIt != npcs.end())
         {
+            if (oldIt->second.transformEpoch == sn.transformEpoch)
+                sn.body = oldIt->second.body;
+            else
+                sn.body.reset();
             sn.dashSerial = oldIt->second.dashSerial;
             sn.groundJumpSerial = oldIt->second.groundJumpSerial;
             sn.airJumpSerial = oldIt->second.airJumpSerial;
@@ -2583,6 +2590,8 @@ SnapshotEntity makeNpcEntity(const ServerNpc& npc)
     out.yaw = npc.yaw;
     out.sizeScale = npc.sizeScale;
     out.health = npc.health;
+    for (int i = 0; i < 6; ++i)
+        out.partHealth[i] = npc.body.partHealth[(size_t)i];
     out.meleePercent = npc.meleePercent;
     out.onGround = npc.onGround ? 1 : 0;
     out.equippedSlot = npc.equippedSlot;

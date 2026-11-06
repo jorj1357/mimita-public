@@ -21,6 +21,7 @@
 #include "physics/physics-types.h"
 #include "physics/config.h"
 #include "entities/avatar-rig.h"
+#include "entities/actor-body.h"
 #include "combat/weapon-execution.h"
 #include "combat/attack-timeline.h"
 #include "combat/weapon-quick-hit.h"
@@ -334,6 +335,9 @@ struct ServerPlayer
     uint32_t lastVehicleSeatRequestSerial = 0;
     uint32_t lastLoggedVehicleSeatRequestSerial = 0;
     int health = 100;
+    // Authoritative six-part body state. Part damage is applied alongside the
+    // ordinary health pool by the shared actor damage sink.
+    ActorBodyState body;
     // Role-resolved life maximum (includes any healthall override at spawn).
     // Used by kill-heal and damage clamping so role health is not overwritten.
     int maxHealth = 100;
@@ -685,7 +689,8 @@ struct ServerNpcBodyPartSample {
     float cx = 0.0f, cy = 0.0f, cz = 0.0f; // world AABB center
     float hx = 0.0f, hy = 0.0f, hz = 0.0f; // half extents
     uint8_t bodyPart = 0; // WeaponExecution::HitBodyPart (0=torso 1=head 2=leg)
-    uint8_t pad[3] = {};
+    uint8_t actorPart = 0xFF; // ActorBodyPart (six-part identity)
+    uint8_t pad[2] = {};
 };
 
 // Standard player body-part template (world-space offset from the body root at
@@ -698,7 +703,8 @@ struct ServerPlayerBodyPartTemplate {
     glm::vec3 half{0.0f};
     glm::mat4 restTransform{1.0f}; // node transform relative to the model root
     uint8_t bodyPart = 0; // WeaponExecution::HitBodyPart
-    uint8_t pad[3] = {};
+    uint8_t actorPart = 0xFF; // ActorBodyPart (six-part identity)
+    uint8_t pad[2] = {};
 };
 
 struct ServerNpcPositionSample {
@@ -729,6 +735,7 @@ struct ServerNpc
     // a change). Starts at 1, bumped once per respawn, never 0.
     uint16_t transformEpoch = 1;
     int health = 100;
+    ActorBodyState body;
     int matchTeam = -1;
     bool onGround = false;
     float phase = 0.0f;
@@ -838,6 +845,8 @@ struct ServerActorDamageRequest
     int damage = 0;
     glm::vec3 knockback{0.0f};
     ServerDamageSource source = ServerDamageSource::Hitscan;
+    ActorBodyPart bodyPart = ActorBodyPart::Unknown;
+    glm::vec3 hitPoint{0.0f};
     std::string weaponId;
     std::string weaponDisplayName;
     uint32_t eventId = 0;
@@ -852,6 +861,9 @@ struct ServerDamageResult
     bool killed = false;
     int healthBefore = 0;
     int healthAfter = 0;
+    ActorBodyPart bodyPart = ActorBodyPart::Unknown;
+    uint8_t partHealthAfter = 0;
+    bool partDestroyed = false;
     std::string rejectionReason;
     uint32_t eventId = 0;
     uint64_t correlationId = 0;
@@ -1467,7 +1479,9 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                                      uint32_t attackerPlayerId,
                                      int damage,
                                      const glm::vec3& knockback,
-                                     ServerDamageSource source);
+                                     ServerDamageSource source,
+                                     ActorBodyPart bodyPart = ActorBodyPart::Unknown,
+                                     const glm::vec3& hitPoint = glm::vec3(0.0f));
 
 // Shared typed damage boundary for both player and NPC attackers/victims.
 ServerDamageResult applyActorDamage(

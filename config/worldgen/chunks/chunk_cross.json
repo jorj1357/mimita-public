@@ -83,7 +83,7 @@
       ],
       "id": "floor",
       "kind": "floor",
-      "material": "stone_floor",
+      "material": "floorv2",
       "position": [
         0.0,
         0.0,
@@ -113,7 +113,7 @@
       ],
       "id": "post_0",
       "kind": "wall",
-      "material": "stone_wall",
+      "material": "wallv2",
       "position": [
         -4.75,
         -4.75,
@@ -143,7 +143,7 @@
       ],
       "id": "post_1",
       "kind": "wall",
-      "material": "stone_wall",
+      "material": "wallv2",
       "position": [
         4.75,
         -4.75,
@@ -173,7 +173,7 @@
       ],
       "id": "post_2",
       "kind": "wall",
-      "material": "stone_wall",
+      "material": "wallv2",
       "position": [
         -4.75,
         4.75,
@@ -203,7 +203,7 @@
       ],
       "id": "post_3",
       "kind": "wall",
-      "material": "stone_wall",
+      "material": "wallv2",
       "position": [
         4.75,
         4.75,

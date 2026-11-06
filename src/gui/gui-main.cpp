@@ -435,10 +435,23 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
     return true;
 }
 
+static void stopServerProcess();
+
 bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
 {
     if (MP_CONTEXT.active)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.gui-server.launch-rejected", "",
+            "refused to host while a multiplayer session is active",
+            MP_CONTEXT.tick,
+            {{"requested_map", settings.mapName},
+             {"requested_mode", settings.gameMode},
+             {"server_address", MP_CONTEXT.serverAddress}},
+            __FILE__, __LINE__, __func__);
         return false;
+    }
     gPendingLocalJoinFallbackRoomCode.clear();
     gPendingLocalJoinFallbackStartMs = 0;
 
@@ -497,9 +510,29 @@ bool launchServerPresetAndJoin(const MimitaNet::ServerLaunchSettings& settings)
                 gServerLaunchSettings.serverName == settings.serverName &&
                 gServerLaunchSettings.port == settings.port;
             if (!samePreset)
-                return false;
-            queueLocalJoin(gServerLaunchSettings);
-            return true;
+            {
+                // Stop the old local server before binding/joining a different
+                // preset. Leaving it alive lets its snapshots and NPCs leak into
+                // the newly loaded map.
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Network, StructuredLevel::Important,
+                    "network.gui-server.replaced", "",
+                    "stopping the previous local server before starting a new preset",
+                    MP_CONTEXT.tick,
+                    {{"old_map", gServerLaunchSettings.mapName},
+                     {"old_mode", gServerLaunchSettings.gameMode},
+                     {"old_port", gServerLaunchSettings.port},
+                     {"new_map", settings.mapName},
+                     {"new_mode", settings.gameMode},
+                     {"new_port", settings.port}},
+                    __FILE__, __LINE__, __func__);
+                stopServerProcess();
+            }
+            else
+            {
+                queueLocalJoin(gServerLaunchSettings);
+                return true;
+            }
         }
 
         CloseHandle(gServerProcessInfo.hProcess);

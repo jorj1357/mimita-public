@@ -267,8 +267,10 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     {
         const bool wasDead = player.dead;
         ctx.pendingVictimHealth.clear();
-        player.currentHp = ctx.localServerHealth;
-        player.maxHp = ctx.localServerHealth;
+    player.currentHp = ctx.localServerHealth;
+    player.maxHp = ctx.localServerHealth;
+    for (int part = 0; part < 6; ++part)
+        player.body.partHealth[(size_t)part] = ctx.localServerPartHealth[part];
         player.dead = false;
         player.netPredictedDead = false;
         player.networkDeathPresented = false;

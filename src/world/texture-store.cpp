@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 
 // And make sure this exists in ONE cpp: feb 9 2026 
@@ -36,6 +37,12 @@ GLuint TextureStore::get(const std::string& name) {
     }
 
     std::string path = "assets/textures/" + key + ".png";
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        Debug::logOnce(Debug::Category::Render, ("missing-texture:" + key).c_str(),
+                       "[TEXTURE] Missing texture name=%s; fallback checkerboard in use\n",
+                       key.c_str());
+    }
     GLuint tex = loadTexture(path.c_str()); // your loader
     map[key] = tex;
     Debug::logOnce(Debug::Category::Render, key.c_str(), "[TEXTURE] Registered texture name=%s tex=%u\n", key.c_str(), tex);

@@ -1182,6 +1182,38 @@ bool AvatarSystem::applyToPlayer(Player& player, bool reloadTextures) {
         player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
     }
 
+    // A model can report success while producing no usable body parts (for
+    // example a stale/failed cache entry or an avatar that references a
+    // broken model). Fall back to the canonical default body once so a player
+    // never remains a collision capsule for the whole session.
+    if (player.physicalBody.parts.empty())
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.model.empty-body", mAvatarName,
+            "avatar model produced no body parts; loading default body", 0,
+            {{"avatar", mAvatarName},
+             {"model_path", mAvatar.playerModel.empty()
+                 ? "assets/entity/player/default/mimita-char-no-animations-v4.glb"
+                 : mAvatar.playerModel}},
+            __FILE__, __LINE__, __FUNCTION__);
+        clearPlayerModelCache();
+        gAvatarUseModelTransforms = false;
+        gAvatarCanonicalizePlayerModel = false;
+        gAvatarBodypartOverrides = nullptr;
+        gAvatarRigExtraNodes.clear();
+        player.loadModel("assets/entity/player/default/mimita-char-no-animations-v4.glb");
+        if (player.physicalBody.parts.empty())
+        {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "avatar.model.empty-body", mAvatarName,
+                "default body also produced no parts", 0,
+                {{"avatar", mAvatarName}, {"permanent", true}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Avatar, StructuredLevel::Important,
         "avatar.model.transforms", mAvatarName,

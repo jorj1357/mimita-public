@@ -75,7 +75,8 @@ static uint64_t cooldownTickFor(const WeaponDefinition& def, uint32_t tick)
 // fall back to the static default-pose template at the rewound pose + yaw.
 static void buildTargetBodyPartBoxes(
     std::vector<WeaponExecution::PlayerTarget::BodyPartBox>& out,
-    const glm::vec3& pos, float yaw, const RagdollReplicationPose* pose)
+    const glm::vec3& pos, float yaw, const RagdollReplicationPose* pose,
+    const ActorBodyState* body = nullptr)
 {
     out.clear();
 
@@ -87,11 +88,15 @@ static void buildTargetBodyPartBoxes(
             const RagdollLimbState& limb = pose->limbs[i];
             if (glm::length(limb.hitHalf) <= 1e-5f)
                 continue;
+            const ActorBodyPart actorPart = actorBodyPartFromRagdollIndex(i);
+            if (body && body->destroyed(actorPart))
+                continue;
             WeaponExecution::PlayerTarget::BodyPartBox box;
             box.center = limb.hitCenter;
             box.half = limb.hitHalf;
             box.bodyPart =
                 (WeaponExecution::HitBodyPart)ragdollReplicatedBodyPart(i);
+            box.actorPart = (uint8_t)actorPart;
             out.push_back(box);
         }
         if (!out.empty())
@@ -105,6 +110,9 @@ static void buildTargetBodyPartBoxes(
         out.reserve(tpl->size());
         for (const auto& t : *tpl)
         {
+            if (body && t.actorPart != 0xFF &&
+                body->destroyed((ActorBodyPart)t.actorPart))
+                continue;
             const glm::vec3 off(t.offset.x * c - t.offset.y * s,
                                 t.offset.x * s + t.offset.y * c,
                                 t.offset.z);
@@ -112,6 +120,7 @@ static void buildTargetBodyPartBoxes(
             box.center = pos + off;
             box.half = t.half;
             box.bodyPart = (WeaponExecution::HitBodyPart)t.bodyPart;
+            box.actorPart = t.actorPart;
             out.push_back(box);
         }
     }
@@ -119,9 +128,10 @@ static void buildTargetBodyPartBoxes(
 
 static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
                                 const glm::vec3& pos, float yaw,
-                                const RagdollReplicationPose* pose = nullptr)
+                                const RagdollReplicationPose* pose = nullptr,
+                                const ActorBodyState* body = nullptr)
 {
-    buildTargetBodyPartBoxes(targetDesc.bodyParts, pos, yaw, pose);
+    buildTargetBodyPartBoxes(targetDesc.bodyParts, pos, yaw, pose, body);
 }
 
 // Does the claimed hit point land inside any reconstructed body-part box
@@ -130,10 +140,11 @@ static void fillTargetBodyParts(WeaponExecution::PlayerTarget& targetDesc,
 static bool claimedHitInBodyParts(const glm::vec3& claimedHit,
                                   const glm::vec3& pos, float yaw,
                                   float tolerance, uint8_t& claimPart,
-                                  const RagdollReplicationPose* pose = nullptr)
+                                  const RagdollReplicationPose* pose = nullptr,
+                                  const ActorBodyState* body = nullptr)
 {
     std::vector<WeaponExecution::PlayerTarget::BodyPartBox> boxes;
-    buildTargetBodyPartBoxes(boxes, pos, yaw, pose);
+    buildTargetBodyPartBoxes(boxes, pos, yaw, pose, body);
     for (const auto& box : boxes)
     {
         const glm::vec3 half = box.half + glm::vec3(tolerance);
@@ -168,10 +179,14 @@ static bool buildNpcTargetBodyPartBoxes(
         out.reserve(count);
         for (uint8_t i = 0; i < count; ++i)
         {
+            if (parts[i].actorPart != 0xFF &&
+                npc.body.destroyed((ActorBodyPart)parts[i].actorPart))
+                continue;
             WeaponExecution::PlayerTarget::BodyPartBox box;
             box.center = {parts[i].cx, parts[i].cy, parts[i].cz};
             box.half = {parts[i].hx, parts[i].hy, parts[i].hz};
             box.bodyPart = (WeaponExecution::HitBodyPart)parts[i].bodyPart;
+            box.actorPart = parts[i].actorPart;
             out.push_back(box);
         }
         return true;
@@ -183,10 +198,14 @@ static bool buildNpcTargetBodyPartBoxes(
                            i < npc.bodyParts.size(); ++i)
         {
             const ServerNpcBodyPartSample& part = npc.bodyParts[i];
+            if (part.actorPart != 0xFF &&
+                npc.body.destroyed((ActorBodyPart)part.actorPart))
+                continue;
             WeaponExecution::PlayerTarget::BodyPartBox box;
             box.center = {part.cx, part.cy, part.cz};
             box.half = {part.hx, part.hy, part.hz};
             box.bodyPart = (WeaponExecution::HitBodyPart)part.bodyPart;
+            box.actorPart = part.actorPart;
             out.push_back(box);
         }
         return !out.empty();
@@ -203,6 +222,7 @@ static WeaponExecution::PlayerTarget::BodyPartBox npcCapsuleBox(
     box.half = {PLAYER_RADIUS * scale, PLAYER_RADIUS * scale,
                 PLAYER_HEIGHT * scale * 0.5f};
     box.bodyPart = WeaponExecution::HitBodyPart::Torso;
+    box.actorPart = (uint8_t)ActorBodyPart::Torso;
     return box;
 }
 
@@ -717,7 +737,7 @@ void handleAttackRequest(
                 getPlayerRagdollPoseAtTick(target, rewindTick, ragdollPose))
                 ragdollPosePtr = &ragdollPose;
             fillTargetBodyParts(targetDesc, targetDesc.position, rewoundYaw,
-                                ragdollPosePtr);
+                                ragdollPosePtr, &target.body);
             targets.push_back(targetDesc);
         }
         // Also include NPCs as trace targets, validated at the pose the
@@ -900,7 +920,8 @@ void handleAttackRequest(
                                                        rewindTick, claimPose))
                             claimPosePtr = &claimPose;
                         if (claimedHitInBodyParts(claimedHit, rewoundPos, rewoundYaw,
-                                                  tolerance, claimPart, claimPosePtr))
+                                                  tolerance, claimPart, claimPosePtr,
+                                                  &playerClaimIt->second.body))
                             claimAccepted = true;
                     }
                 }
@@ -960,6 +981,7 @@ void handleAttackRequest(
                 agg.knockback = claimedDir / claimedDist *
                     (claimedDamage * traceConfig.knockbackPerDamage);
                 agg.headshot = claimPart == 1;
+                agg.actorPart = (uint8_t)actorBodyPartFromWireClaim(claimPart);
                 trace.aggregates.push_back(agg);
             }
             else
@@ -970,6 +992,8 @@ void handleAttackRequest(
                 aggregateIt->knockback = claimedDir / claimedDist *
                     (claimedDamage * traceConfig.knockbackPerDamage);
                 aggregateIt->headshot = claimPart == 1;
+                if (aggregateIt->actorPart == 0xFF)
+                    aggregateIt->actorPart = (uint8_t)actorBodyPartFromWireClaim(claimPart);
             }
 
             Debug::log(Debug::Category::Weapons,
@@ -1008,6 +1032,7 @@ void handleAttackRequest(
                 contact.damage = aggregate.damage;
                 contact.knockback = aggregate.knockback;
                 contact.source = ServerDamageSource::Hitscan;
+                contact.bodyPart = (ActorBodyPart)aggregate.actorPart;
                 contact.weaponId = def->id;
                 contact.weaponDisplayName = def->displayName;
                 contact.serverTick = tick;
@@ -1062,6 +1087,7 @@ void handleAttackRequest(
             contact.damage = aggregate.damage;
             contact.knockback = aggregate.knockback;
             contact.source = ServerDamageSource::Hitscan;
+            contact.bodyPart = (ActorBodyPart)aggregate.actorPart;
             contact.weaponId = def->id;
             contact.weaponDisplayName = def->displayName;
             contact.serverTick = tick;

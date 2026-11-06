@@ -35,6 +35,9 @@ struct ServerContactRequest
     int damage = 0;
     glm::vec3 knockback{0.0f};
     ServerDamageSource source = ServerDamageSource::Hitscan;
+    // Exact six-part target when the caller already knows it (hitscan trace).
+    // Unknown asks the shared contact path to classify from the hit point.
+    ActorBodyPart bodyPart = ActorBodyPart::Unknown;
     std::string weaponId;
     std::string weaponDisplayName;
     uint32_t serverTick = 0;

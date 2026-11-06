@@ -29,8 +29,8 @@ ConnectionState mpNextConnectionHealth(
     {
     case ConnectionState::Connected:
     case ConnectionState::WeakConnection:
-        // Missing authoritative snapshots are a connection failure even when
-        // non-snapshot packets keep refreshing the transport heartbeat.
+        // Missing authoritative snapshots require reconnect even when other
+        // packet types keep the transport heartbeat fresh.
         if (snapshotStarved)
             return ConnectionState::Reconnecting;
         // A hard packet timeout beats a stale warning.
@@ -41,10 +41,11 @@ ConnectionState mpNextConnectionHealth(
         return ConnectionState::Connected;
 
     case ConnectionState::Reconnecting:
-        // Any packet received after reconnect started proves the server session
-        // is alive again. ReconnectAccept restores full state; even a plain
-        // snapshot means the slot survived and we can resume.
-        if (heardSinceDisconnect)
+        // Do not treat a reconnect response or unrelated packet as recovered
+        // gameplay state. Snapshot starvation triggered this reconnect, so
+        // recovery requires a fresh authoritative snapshot; otherwise the
+        // stale-snapshot check immediately starts the same reconnect again.
+        if (heardSinceDisconnect && !snapshotStarved)
             return ConnectionState::Connected;
         // Give up once the 60-second grace window expires.
         if (graceDeadline != 0 && now >= graceDeadline)

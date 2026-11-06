@@ -23,45 +23,53 @@
       "connectors": [
         {
           "id": "east_a",
+          "links": [],
           "orientation": "doorway",
           "position": [
             0.0,
             0.0,
             0.0
           ],
+          "role": "bidirectional",
           "side": "east",
           "tags": []
         },
         {
           "id": "west_a",
+          "links": [],
           "orientation": "doorway",
           "position": [
             0.0,
             0.0,
             0.0
           ],
+          "role": "bidirectional",
           "side": "west",
           "tags": []
         },
         {
           "id": "north_a",
+          "links": [],
           "orientation": "doorway",
           "position": [
             0.0,
             0.0,
             0.0
           ],
+          "role": "bidirectional",
           "side": "north",
           "tags": []
         },
         {
           "id": "south_a",
+          "links": [],
           "orientation": "doorway",
           "position": [
             0.0,
             0.0,
             0.0
           ],
+          "role": "bidirectional",
           "side": "south",
           "tags": []
         }
@@ -69,6 +77,68 @@
       "enabled": true,
       "geometry": "assets/maps/procedural-mimitasizing5-infdgnslr-v5.glb",
       "id": "chunk_a",
+      "parts": [
+        {
+          "collision": true,
+          "face_uv_scale": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          "faces": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "id": "floor",
+          "kind": "floor",
+          "material": "wallv2",
+          "position": [
+            0.0,
+            0.0,
+            -0.25
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "size": [
+            10.0,
+            10.0,
+            0.5
+          ],
+          "uv_scale": [
+            2.0,
+            2.0
+          ],
+          "visible": true
+        }
+      ],
       "tags": []
     }
   ],
@@ -115,6 +185,8 @@
   "generate_whole_world": false,
   "generation_zones": [
     {
+      "allow_crossings": true,
+      "allow_cycles": true,
       "bounds_max": [
         552.8720703125,
         227.92210388183594,
@@ -125,16 +197,46 @@
         -72.07789611816406,
         -87.47488403320313
       ],
+      "cell_size": [
+        104.0,
+        104.0,
+        104.0
+      ],
       "chunk_dependencies": [
         "chunk_a"
       ],
       "chunk_size": 104.0,
+      "chunk_size_vec": [
+        104.0,
+        104.0,
+        104.0
+      ],
+      "connector_gap": 0.0,
       "enabled": true,
       "generator_version": "1",
       "id": "infinite_zone",
+      "max_branch_depth": 8,
+      "mode": "",
       "name": "",
+      "origin": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "plane": "xy",
+      "repeat_axes": [
+        true,
+        true,
+        false
+      ],
       "rule_set": "default",
       "seed": 583294,
+      "spacing_mode": "center",
+      "stream_radius": [
+        1,
+        1,
+        0
+      ],
       "stream_radius_chunks": 1
     }
   ],

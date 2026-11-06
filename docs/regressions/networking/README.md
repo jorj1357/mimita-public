@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 14
+Entries: 15
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -111,3 +111,10 @@ Entries: 14
 - Status: ATTEMPTED FIX — build passed; fresh FCS runtime verification pending
 - Summary: FCS's empty legacy `victory_condition` field prevented the active-player identity repair from assigning the late-joining client a team and role.
 - Detail: [funcounterstrike-late-join-identity-REG-2026-11-05.md](funcounterstrike-late-join-identity-REG-2026-11-05.md)
+
+## Entry 15 — Stale remote NPCs survived a client map switch
+
+- Recorded: 2026-11-06T05:56:43Z
+- Status: FIXED IN SOURCE; initial-load journal proof recorded; non-zero map-switch runtime proof pending
+- Summary: The client loaded skyhouse while 9 badhouse NPCs from the previous session remained visible at old-map coordinates until teardown. New map loads now clear remote actors/projectiles/ragdolls before the new world is shown.
+- Detail: [stale-remote-npcs-map-switch-REG-2026-11-06.md](stale-remote-npcs-map-switch-REG-2026-11-06.md)

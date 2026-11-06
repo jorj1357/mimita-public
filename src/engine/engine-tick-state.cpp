@@ -325,6 +325,10 @@ void engineTickState(Engine& engine, float dt)
                         Debug::log(Debug::Category::Networking,
                                    "[MAIN NET] loaded requested map for connecting path=%s\n",
                                    requestedMapPath.c_str());
+                        // The old server's actors belong to the old world. Clear
+                        // them before the connection can render the new map so
+                        // stale NPCs cannot walk on invisible/foreign geometry.
+                        mpClearRemoteWorldState(mpContext, "requested-map-loaded");
                     }
                     else
                     {

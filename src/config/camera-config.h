@@ -6,6 +6,9 @@
 #include <glm/glm.hpp>
 
 struct CameraConfigData {
+    // mouse = camera follows mouse directly; head_world = camera orientation
+    // follows the simulated head while mouse look remains its target.
+    std::string orientationMode = "mouse";
     glm::vec3 offset{2.0f, -3.5f, 1.0f};
     float fov = 100.0f;
     // Full-screen barrel/fisheye distortion. 0 = neutral; values above 100

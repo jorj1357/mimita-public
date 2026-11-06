@@ -71,6 +71,7 @@ Per-mode generator JSON in `config/worldgen/<mode>.json`.
 | `worldmode chunks <id> [chunk...]` | Set chunk library references. |
 | `worldmode branch <id> <depth>` | Max branch depth. |
 | `worldmode cycles <id> <0|1>` | Allow cycles. |
+| `worldmode crossings <id> <0|1>` | Allow cross-shaped chunk variants. |
 
 ## `worldchunk`
 
@@ -83,7 +84,10 @@ Reusable chunk library in `config/worldgen/chunks/<id>.json`.
 | `worldchunk list` | List chunk library files. |
 | `worldchunk save <id>` | Save a chunk to the library. |
 | `worldchunk part <chunk> <partId> <kind> <x> <y> <z> <sx> <sy> <sz> [material]` | Add a primitive part. |
-| `worldchunk face <chunk> <partId> <+x|-x|+y|-y|+z|-z> <material>` | Set a per-face material. |
+| `worldchunk face <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <material>` | Set a per-face or default material live. |
+| `worldchunk material <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <material>` | Alias of `face` for material controls. |
+| `worldchunk uv <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <u> <v>` | Set part or per-face UV density. |
+| `worldchunk remove <chunk> <partId>` | Remove a primitive part. |
 
 Part kinds: `box`, `wall`, `floor`, `ceiling`, `tunnel`, `doorway`, `prop`.
 
@@ -92,10 +96,15 @@ Part kinds: `box`, `wall`, `floor`, `ceiling`, `tunnel`, `doorway`, `prop`.
 | Command | Effect |
 |---|---|
 | `worldconnector add <chunk> <id> <side> <orientation> <x> <y> <z> <role> [tag...]` | Add a connector. |
-| `worldconnector list <chunk>` | List connectors. |
+| `worldconnector list <chunk>` | List connectors and their links. |
+| `worldconnector remove <chunk> <id>` | Remove a connector. |
+| `worldconnector connect <chunkA> <connA> <chunkB> <connB>` | Add a reciprocal manual link. |
+| `worldconnector disconnect <chunkA> <connA> <chunkB> <connB>` | Remove a reciprocal link. |
+| `worldconnector preview <chunk> <connector>` | List auto-compatible and linked matches. |
 
 Sides: `east`, `west`, `north`, `south`, `up`, `down`. Roles: `entry`, `exit`,
-`bidirectional`, `none`.
+`bidirectional`, `none`. Empty tags are unconstrained; non-empty tags match on
+intersection. Explicit links take precedence over auto-compatible matching.
 
 ## `worldzone`
 
@@ -132,10 +141,19 @@ Sides: `east`, `west`, `north`, `south`, `up`, `down`. Roles: `entry`, `exit`,
 
 ## `mapeditor` world-authoring subset
 
-- `mapeditor add chunk <geometry>` - add a chunk (GLB or primitive).
+- `mapeditor add chunk <geometry>` - add a chunk (GLB path or primitive).
 - `mapeditor add zone <seed> [id]` - add a zone around the player.
 - `mapeditor chunk_connector <chunkId> <id> <side> <orientation> [tags...]`
+- `mapeditor chunk_preview <chunkId>` - place a non-colliding preview at the editor camera.
+- `mapeditor chunk_part_material <chunkId/partId> <material>` - edit a loaded part material live.
+- `mapeditor chunk_part_uv <chunkId/partId> <u> <v>` - edit part UV density live.
+- `mapeditor chunk_connector_field <chunkId/connectorId> <side|role|orientation|tag> <value>`
 - `mapeditor save`, `reload`, `undo`, `redo`.
+
+The outliner lists `<chunkId>/<partId>` and `<chunkId>/<connectorId>` rows.
+Selecting one opens its preview; the properties panel edits part position,
+material, and UV scale. Connector side/role/links are shown and edited through
+the fields above.
 
 Existing object commands (`add entity/block/vehicle/bombsite/route/cart`,
 selection, nudge, set_position) continue to work for non-chunk authored data.

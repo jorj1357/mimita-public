@@ -24,12 +24,14 @@ public:
     static StreamedWorldLayer& instance();
     ~StreamedWorldLayer();
 
-    void setInstancing(bool enabled) { mInstancing = enabled; }
+    void setInstancing(bool enabled);
     bool instancing() const { return mInstancing; }
 
     void addChunk(uint64_t key, const AuthoredChunk& chunk,
                   const glm::mat4& transform);
     void removeChunk(uint64_t key);
+    // Rebuild visual data and loaded per-chunk VBOs without touching collision.
+    void refreshChunk(const AuthoredChunk& chunk);
     void updateMaterial(const std::string& chunkId, const std::string& partId,
                         int face, const std::string& material);
     void clear();
@@ -64,9 +66,14 @@ private:
     };
 
     Template* ensureTemplate(const std::string& chunkId);
+    Template* findTemplate(const std::string& chunkId);
     void rebuildTemplate(Template& templateData, const std::string& chunkId);
+    void rebuildTemplateFromChunk(Template& templateData,
+                                  const AuthoredChunk& chunk);
     void uploadTemplate(Template& templateData);
     void uploadInstanceBuffer(Template& templateData);
+    void rebuildRecordVbo(ChunkRecord& record, const Template& templateData);
+    void rebuildInstances();
     GLuint makeChunkVao(GLuint vbo, GLuint instanceVbo);
     void freeChunk(const ChunkRecord& record);
 

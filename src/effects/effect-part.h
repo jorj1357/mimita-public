@@ -294,6 +294,7 @@ private:
         glm::vec3 bitangent{0.0f};
         float damageScale = 1.0f;
         float force = 1.0f;
+        float radiusScale = 1.0f;
         float lifetimeScale = 1.0f;
         std::string sourceActorId;
         std::string targetActorId;

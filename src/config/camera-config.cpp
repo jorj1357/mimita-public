@@ -61,6 +61,9 @@ bool CamConfig::load(const std::string& path)
         root = json::parse(file, nullptr, true, true);
 
         CameraConfigData next;
+        next.orientationMode = root.value("orientationMode", next.orientationMode);
+        if (next.orientationMode != "mouse" && next.orientationMode != "head_world")
+            next.orientationMode = "mouse";
         if (root.contains("thirdPerson")) {
             const auto& tp = root["thirdPerson"];
 

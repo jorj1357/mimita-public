@@ -77,7 +77,8 @@ static ServerDamageResult applyPlayerDamageLegacy(
     bool attackerIsNpc,
     int damage,
     const glm::vec3& knockback,
-    ServerDamageSource source)
+    ServerDamageSource source,
+    ActorBodyPart bodyPart)
 {
     ServerDamageResult result;
     result.healthBefore = target.health;
@@ -183,6 +184,14 @@ static ServerDamageResult applyPlayerDamageLegacy(
     const int clampedDamage = std::max(1,
         (int)std::min<double>(damage, damageLimit));
     target.health = std::max(0, target.health - clampedDamage);
+    if (bodyPart == ActorBodyPart::Unknown)
+        bodyPart = ActorBodyPart::Torso;
+    const bool partDestroyed = target.body.applyDamage(bodyPart, clampedDamage);
+    if (partDestroyed && target.body.lethalPartDestroyed())
+        target.health = 0;
+    result.bodyPart = bodyPart;
+    result.partHealthAfter = target.body.health(bodyPart);
+    result.partDestroyed = partDestroyed;
     target.vel += knockback;
     recordServerMovementExternalImpulse(target, knockback);
     result.applied = true;
@@ -212,6 +221,9 @@ static ServerDamageResult applyPlayerDamageLegacy(
           {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
           {"dead_before", false}, {"dead_after", target.health <= 0},
           {"killed", target.health <= 0}, {"source", damageSourceName(source)},
+          {"body_part", actorBodyPartName(result.bodyPart)},
+          {"part_health_after", result.partHealthAfter},
+          {"part_destroyed", result.partDestroyed},
           {"spawn_generation", target.spawnGeneration},
           {"position", {target.pos.x, target.pos.y, target.pos.z}},
           {"knockback", {knockback.x, knockback.y, knockback.z}} },
@@ -294,6 +306,48 @@ static ServerDamageResult applyPlayerDamageLegacy(
     return result;
 }
 
+static ActorBodyPart classifyPlayerBodyPart(const ServerPlayer& target,
+                                             const glm::vec3& point)
+{
+    if (const auto* tpl = standardPlayerBodyTemplate())
+    {
+        const float c = std::cos(target.yaw);
+        const float s = std::sin(target.yaw);
+        for (const auto& part : *tpl)
+        {
+            if (part.actorPart != 0xFF &&
+                target.body.destroyed((ActorBodyPart)part.actorPart))
+                continue;
+            const glm::vec3 offset(part.offset.x * c - part.offset.y * s,
+                                   part.offset.x * s + part.offset.y * c,
+                                   part.offset.z);
+            const glm::vec3 center = target.pos + offset;
+            if (point.x >= center.x - part.half.x && point.x <= center.x + part.half.x &&
+                point.y >= center.y - part.half.y && point.y <= center.y + part.half.y &&
+                point.z >= center.z - part.half.z && point.z <= center.z + part.half.z)
+                return (ActorBodyPart)part.actorPart;
+        }
+    }
+    return ActorBodyPart::Torso;
+}
+
+static ActorBodyPart classifyNpcBodyPart(const ServerNpc& target,
+                                          const glm::vec3& point)
+{
+    for (uint8_t i = 0; i < target.bodyPartCount && i < target.bodyParts.size(); ++i)
+    {
+        const ServerNpcBodyPartSample& part = target.bodyParts[i];
+        if (part.actorPart != 0xFF &&
+            target.body.destroyed((ActorBodyPart)part.actorPart))
+            continue;
+        if (point.x >= part.cx - part.hx && point.x <= part.cx + part.hx &&
+            point.y >= part.cy - part.hy && point.y <= part.cy + part.hy &&
+            point.z >= part.cz - part.hz && point.z <= part.cz + part.hz)
+            return (ActorBodyPart)part.actorPart;
+    }
+    return ActorBodyPart::Torso;
+}
+
 ServerDamageResult applyActorDamage(
     std::unordered_map<uint32_t, ServerPlayer>& players,
     std::unordered_map<uint32_t, ServerNpc>& npcs,
@@ -331,6 +385,14 @@ ServerDamageResult applyActorDamage(
         "[ACTOR_DAMAGE_BEGIN] attacker=%u victim=%u damage=%d event=%u tick=%u\n",
         request.attacker.id, request.victim.id, request.damage,
         request.eventId, request.serverTick);
+    ActorBodyPart bodyPart = request.bodyPart;
+    if (bodyPart == ActorBodyPart::Unknown &&
+        glm::length(request.hitPoint) > 0.0001f)
+    {
+        bodyPart = request.victim.kind == ServerActorKind::Npc
+            ? classifyNpcBodyPart(*victim.npc, request.hitPoint)
+            : classifyPlayerBodyPart(*victim.player, request.hitPoint);
+    }
     int attackerTeam = attacker.player ? attacker.player->matchTeam
         : attacker.npc->matchTeam;
     if (attackerTeam < 0)
@@ -382,6 +444,15 @@ ServerDamageResult applyActorDamage(
             (int)std::min<double>(request.damage, damageLimit));
         target.health = std::max(0, target.health - appliedDamage);
         target.knockbackImpulse += request.knockback;
+        ActorBodyPart part = bodyPart;
+        if (part == ActorBodyPart::Unknown)
+            part = ActorBodyPart::Torso;
+        const bool partDestroyed = target.body.applyDamage(part, appliedDamage);
+        if (partDestroyed && target.body.lethalPartDestroyed())
+            target.health = 0;
+        result.bodyPart = part;
+        result.partHealthAfter = target.body.health(part);
+        result.partDestroyed = partDestroyed;
         result.applied = true;
         result.healthAfter = target.health;
         result.killed = target.health == 0;
@@ -396,6 +467,9 @@ ServerDamageResult applyActorDamage(
              {"damage_requested", request.damage}, {"damage_applied", appliedDamage},
              {"health_before", result.healthBefore}, {"health_after", result.healthAfter},
              {"killed", result.killed}, {"source", damageSourceName(request.source)},
+             {"body_part", actorBodyPartName(result.bodyPart)},
+             {"part_health_after", result.partHealthAfter},
+             {"part_destroyed", result.partDestroyed},
              {"knockback", {request.knockback.x, request.knockback.y, request.knockback.z}}},
             __FILE__, __LINE__, __FUNCTION__);
         result.eventId = request.eventId;
@@ -407,7 +481,8 @@ ServerDamageResult applyActorDamage(
                                      attacker.id, attackerTeam,
                                      attacker.kind == ServerActorKind::Npc,
                                      request.damage,
-                                     request.knockback, request.source);
+                                     request.knockback, request.source,
+                                     bodyPart);
     if (result.applied && !result.killed && attacker.kind == ServerActorKind::Npc) {
         victim.player->lastNpcDamageSourceId = attacker.id;
         victim.player->lastNpcDamageTick = request.serverTick;
@@ -427,7 +502,9 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
                                      uint32_t attackerPlayerId,
                                      int damage,
                                      const glm::vec3& knockback,
-                                     ServerDamageSource source)
+                                     ServerDamageSource source,
+                                     ActorBodyPart bodyPart,
+                                     const glm::vec3& hitPoint)
 {
     // Compatibility wrapper for existing callers. Player-to-player damage
     // now crosses the shared actor boundary; NPC callers retain their legacy
@@ -440,10 +517,12 @@ ServerDamageResult applyServerDamage(std::unordered_map<uint32_t, ServerPlayer>&
         request.damage = damage;
         request.knockback = knockback;
         request.source = source;
+        request.bodyPart = bodyPart;
+        request.hitPoint = hitPoint;
         return applyActorDamage(players, noNpcs, request);
     }
     return applyPlayerDamageLegacy(players, target, attackerPlayerId, -1, false,
-                                   damage, knockback, source);
+                                   damage, knockback, source, bodyPart);
 }
 
 ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
@@ -489,6 +568,9 @@ ReliableGameplayEventQueueResult queueServerDamageConfirmedEvent(
     event.healthAfter = result.healthAfter;
     event.source = damageConfirmedSource(source);
     event.weapon = weapon;
+    event.bodyPart = (uint8_t)result.bodyPart;
+    event.partHealthAfter = result.partHealthAfter;
+    event.partDestroyed = result.partDestroyed ? 1 : 0;
     event.contactForce = contactForce;
     event.weaponDefNetworkId = weaponDefId.empty() ? 0 : weaponDefNetworkIdFor(weaponDefId);
     event.killed = result.killed ? 1 : 0;

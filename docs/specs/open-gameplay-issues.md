@@ -1,4 +1,111 @@
-﻿2026 11 05 1719 jojr todo also 
+﻿2026 11 06 0828 jorj 
+i want to amke world chunks repeating and like
+make a new gamemode
+
+i want to be able to make new gamemodes in teh mapeditor in th egame
+
+as well as 
+avaatr doesnt show like i will just hav the avatar tat  have disappear
+
+camconfig head camera needs tobe smoothing
+more smoothing
+but ti good for bodycam mode
+
+but i wnat to do infinit world chunking and connect them and get it to be smooth and loading infinitely even at 100,000 m/s 
+
+also slowodnws
+
+
+can u invesitgate how coem serve perrfmance is like  doing much worse lower hz and reconnect issue like   also fps is low like fps jitter  framte time suttering  it sas networking is like 1 ms 2 ms 3 ms 6 ms sometimes  and it is slow in the networking like i keep like slow slow slowin gdown then stopping or not being able to connect  phsics also was 6 ms 
+
+12:18 AM
+What I found
+The server is repeatedly missing its 60 Hz tick budget in the current dev-loop run. Its journal records 308 ticks over 100 ms, with a worst tick of 642.7 ms. During the slow ticks, NPC simulation averaged 52.4 ms and contact/weapon work averaged 88.1 ms. Either can consume several 16.7 ms tick budgets by itself. The measurements are recorded in server.cpp (line 1163), with NPC costs reported by server-npcs.cpp (line 2556).
+
+The client’s recent frame summaries also show jitter: across the last 60 one-second windows, median FPS was about 195, median p95 frame time was 8.0 ms, median p99 was 14.9 ms, and the worst individual frame reached 118.5 ms. Logged networking work on the client was at most 0.046 ms in those windows. So the low FPS and stuttering are not explained by the client’s measured networking time; the server’s long tick stalls are a strong candidate for the freezes and delayed updates you feel. The client frame summaries are emitted by perf.cpp (line 1111).
+
+Reconnect problem
+The loop currently lists server PID 23344 at 127.0.0.1:50165 and client PID 33920 as stale. The client journal shows it trying to reconnect to 127.0.0.1:1357, room RCEAVWZ, and reaching ReconnectFailed after ten attempts. The server journal records a reconnect token rejection with players=0. That points to the client retrying against a server session that no longer has its player, rather than merely suffering a few milliseconds of network processing delay. The reconnect health transition is handled in multiplayer-packets.cpp (line 1885), and token rejection is logged in server-packets.cpp (line 2016).
+
+There’s also a run identity inconsistency to resolve: the client journal contains server records from PID 32956, while the run manifest lists PID 23344 as its server. That makes it harder to confidently attribute every client-side event to the server shown in the dashboard.
+
+Assessment
+Server tick rate: confirmed severe stalls in this run. NPC and contact/weapon work are the largest measured costs; the evidence doesn’t yet isolate the exact operation inside contact/weapon processing.
+Client frame pacing: confirmed intermittent large spikes. The user-visible feel still needs direct review.
+Reconnect: confirmed failure against an old address/room with a rejected token. The journal identity mismatch needs tracing before assigning the whole incident to one process.
+“Physics 6 ms” / network 1–6 ms: I can’t map those displayed numbers to the journal fields with confidence. The client’s logged networking phase is much smaller; server tick costs are much larger. A screenshot or the exact overlay labels would help identify which timers you’re reading.
+I made no code changes and did not restart or replace the running processes. The run evidence is in server-01/events.jsonl, client-01/events.jsonl, and run.json.
+
+12:20 AM
+can u see in live journal the issue like ti gets slower and slwoer until it stops
+is there somethign that relates to that in repo or change logs
+
+12:22 AM
+Yes. I need to correct my previous read: I looked at the journal after the worst slowdown, when the client had already disconnected and its frame rate had recovered. The earlier live entries do show the client getting dramatically slower.
+
+Between 05:16 and 05:18, the client’s one-second summaries report FPS falling to about 52–69, with average frame times reaching 42–53 ms. Individual frames reached 934 ms. During that same stretch, the measured Networking scope peaked at 580–690 ms. At 05:18:58, a 403 ms frame attributed 262 ms to that scope.
+
+The spike details narrow down what “Networking” means here: much of that time was spent in remote-entity updates starting audio. One spike records Audio::StartSound taking about 262 ms inside Network::RemoteEntities. The scope covers more than packet transport, so the overlay’s networking number does not prove the network connection itself took that long. The relevant paths are engine-tick-net.cpp (line 71), multiplayer-tick.cpp (line 2986), and audio.cpp (line 450). This makes remote-entity audio startup the clearest client-side lead in the live evidence.
+
+The server has a separate, serious problem in the same run: it logged 423 fixed-tick stalls over 100 ms between 05:15 and 05:22, with a worst stall of 642.7 ms. NPC simulation and contact/weapon processing repeatedly take far longer than the 16.7 ms budget for a 60 Hz tick. The stalls are frequent, though the records don’t show a steadily worsening server trend; the server was still writing events at 05:22. The client entered ReconnectFailed at 05:19:11, and the dev-loop currently reports it as stale.
+
+This closely matches existing unresolved records. The server tick budget regression says later NPC and weapon-contact stalls remained unresolved. The Nov. 5 investigation changelog records the same gap after an earlier fix: map setup and snapshot-starvation handling were addressed, but later tick overruns remained open. For the failed connection, the frozen-client regression describes a related stale-client/reconnect pattern.
+
+So the journal supports two connected leads: remote-entity audio work contributes to the client’s severe frame stalls, while server tick overruns delay authoritative updates and the client ultimately loses its session. It does not yet prove the exact server-side cause of the reconnect failure. The current run’s server and client journals are here and here.
+
+12:24 AM
+can u proove the serverside cause 
+
+12:27 AM
+Yes—the live server journal proves the stalls are happening inside the server’s simulation work, even when no clients are connected. It narrows the cause to NPC simulation and the melee/physical-contact phase. It does not yet identify the exact function inside that contact phase.
+
+In the current run, the server recorded 456 ticks taking over 100 ms between 05:15 and 05:28. The median was 147 ms, and the worst took 643 ms. The server is still alive and writing events; the journal shows it is falling far behind its 16.7 ms tick budget, rather than proving the server process itself has stopped.
+
+The phase timings make the cause more specific:
+
+NPC phase: over 16.7 ms in 417 of those ticks; median 51 ms, maximum 448 ms.
+Contact/weapon phase: over 16.7 ms in 425 ticks; median 88 ms, maximum 496 ms.
+Both phases exceeded 50 ms in 160 ticks.
+454 of the 456 stalls report zero connected players, while the server is simulating 19 NPCs.
+These are timed in the server tick itself. The NPC measurement wraps simulateSharedNpcs; the contact/weapon measurement wraps melee actions, physical-contact weapons, and world-impact processing in server.cpp (line 1038). That means the stall is not explained by waiting for a remote client. NPC work and contact/weapon processing are consuming the server’s tick time.
+
+The contact phase still groups several functions together, so the journal cannot tell me whether melee actions, NPC weapon contacts, or world-impact processing accounts for its largest spikes. The source shows NPCs continue through animated physical-contact processing even with no human players connected: server-physical-contact.cpp (line 533) and server-physical-contact-actors.cpp (line 439). That makes NPC contact work a strong candidate, but the current logs don’t time those inner functions separately.
+
+This matches the unresolved portion of the server tick budget record: the earlier fix removed a first-tick map-build stall, while later NPC and weapon-contact overruns remained open. The Nov. 5 changelog also says those later overruns were unresolved.
+
+One evidence limit: the running server uses build 2026-11-06T04:43:34Z; the dev loop reports a newer build published at 05:24:59Z, which is not the running server. So these results prove the behavior of the currently running executable, not whether the newer build changes it.
+
+The journals are server-01/events.jsonl and run.json. The next step to prove the exact inner cause is timing those existing contact-phase functions separately in a dev-loop build and comparing their measurements in that build’s live journal.
+
+12:29 AM
+yes do that
+
+12:32 AM
+I added separate timers for melee actions, physical-contact weapons, and world-impact flushing to the server’s existing stall event in server.cpp (line 1057). The patch passed git diff --check, and I recorded it in the changelog.
+
+I couldn’t build and run it: the dev-loop journal shows a later stop request at 05:44:39 UTC, and its watcher honored that shutdown at 05:46:18 UTC. I left the server process untouched. The new timings still need a fresh dev-loop build and runtime journal before I can identify which contact phase is responsible.
+
+May I restart the existing dev loop to finish that build and runtime check? Starting it again would override the recorded stop request.
+
+12:48 AM
+yes 
+
+12:48 AM
+Yes—this confirms a server-side tick performance problem in the FCS run.
+
+The instrumented server recorded five tick stalls between 05:56:25 and 05:58:09 UTC. They lasted 101–608 ms. In the worst stall, physical-contact processing took 415 ms; across the five stalls its median was 280 ms. Melee actions and impact flushing were each under 0.5 ms, so they don’t explain the spikes. NPC processing also took up to 213 ms and may contribute.
+
+This shows tickServerPhysicalContactWeapons() was the dominant measured phase in these stalls. It does not yet prove that this phase causes the progressively worsening slowdown or reconnect failures: the run only captured five stalls, and the dev loop’s 45-second check never saw FCS reach its “active” state, though the client did connect.
+
+The evidence and limits are recorded in the changelog. The instrumented build ran through the dev loop, and the final diff check passed.
+
+12:59 AM
+
+
+
+
+
+2026 11 05 1719 jojr todo also 
 animations must be presendted betewen clients better
 like
 npcs need animatins

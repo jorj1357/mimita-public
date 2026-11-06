@@ -419,6 +419,8 @@ struct HitEvent {
     std::string attackType = "unknown";
     float knockbackForce = 0.0f;
     float hitDistance = -1.0f;
+    // Scales blood spray/decals for gore events such as a destroyed body part.
+    float bloodAmountScale = 1.0f;
     bool spawnDamageNumber = true;
     // Melee: render the accepted percent delta as "+N%" through the same
     // world-space damage-number renderer instead of ordinary health damage.

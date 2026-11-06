@@ -135,7 +135,8 @@ public:
     void rebindAimToAuthoritativePlayer(Player& player);
     void updateAim(float dt, const World& world, Player& player,
                    const glm::vec3& camForward, const glm::vec3& camPosition,
-                   bool rightMouseHeld);
+                   bool rightMouseHeld,
+                   const glm::vec3& camUp = glm::vec3(0.0f, 0.0f, 1.0f));
     // Per-weapon right-arm-only physical mode. The caller supplies the equipped
     // weapon config and whether primary fire is held.
     void updateArmRagdoll(float dt, const World& world, Player& player,
@@ -254,7 +255,8 @@ private:
     void selfCollision(RagdollBody& b);
     void syncToPlayer(Player& player, RagdollBody& b);
     void syncAimToPlayer(Player& player, RagdollBody& b);
-    void applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt);
+    void applyAimMotor(RagdollBody& b, const glm::vec3& camForward,
+                       const glm::vec3& camUp, float dt);
     void applyRightArmPointMotor(RagdollBody& b, const Player& player,
                                  const glm::vec3& camForward,
                                  const glm::vec3& camPosition, float dt);
@@ -266,7 +268,8 @@ private:
     void stabilizeHybridArms(RagdollBody& b, const Player& player, float dt);
     void stepAimBody(float dt, const World& world, Player& player,
                      RagdollBody& body, const glm::vec3& aimForward,
-                     const glm::vec3& aimPosition, bool pointingWanted);
+                     const glm::vec3& aimPosition, bool pointingWanted,
+                     const glm::vec3& aimUp = glm::vec3(0.0f, 0.0f, 1.0f));
     void activateArmRagdoll(Player& player, const std::string& weaponId,
                             const ArmRagdollConfig& config);
     void activateArmRagdollBody(Player& player, RagdollBody& body,

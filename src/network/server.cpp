@@ -1055,9 +1055,15 @@ int runServer(const LaunchOptions& options)
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
             const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
             const auto contactWeaponStart = std::chrono::steady_clock::now();
+            const auto meleeActionsStart = std::chrono::steady_clock::now();
             tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
+            const uint64_t meleeActionsUs = elapsedMicroseconds(meleeActionsStart);
+            const auto physicalContactStart = std::chrono::steady_clock::now();
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
+            const uint64_t physicalContactUs = elapsedMicroseconds(physicalContactStart);
+            const auto worldImpactStart = std::chrono::steady_clock::now();
             flushServerWorldImpacts(world, npcWorld, serverGamemodeState().mapId, tick);
+            const uint64_t worldImpactFlushUs = elapsedMicroseconds(worldImpactStart);
             const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
 
             if (!options.proceduralMode.empty() &&
@@ -1170,6 +1176,9 @@ int runServer(const LaunchOptions& options)
                         {"gamemode_ms", static_cast<double>(gamemodeUs) / 1000.0},
                         {"projectile_ms", static_cast<double>(projectileUs) / 1000.0},
                         {"contact_weapon_ms", static_cast<double>(contactWeaponUs) / 1000.0},
+                        {"melee_actions_ms", static_cast<double>(meleeActionsUs) / 1000.0},
+                        {"physical_contact_ms", static_cast<double>(physicalContactUs) / 1000.0},
+                        {"world_impact_flush_ms", static_cast<double>(worldImpactFlushUs) / 1000.0},
                         {"players", players.size()},
                         {"npcs", npcs.size()},
                         {"steps", steps}},

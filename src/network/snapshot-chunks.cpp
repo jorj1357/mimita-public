@@ -145,6 +145,8 @@ CompactEntityData compactEntityFromSnapshot(const SnapshotEntity& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
+    for (int i = 0; i < 6; ++i)
+        out.partHealth[i] = entity.partHealth[i];
     out.meleePercent = (uint8_t)std::clamp((int)std::lround(entity.meleePercent * 0.25f), 0, 255);
     out.meleeShield = entity.meleeShield;
     out.onGround = entity.onGround;
@@ -203,6 +205,8 @@ SnapshotEntity snapshotEntityFromCompact(const CompactEntityData& entity)
     out.aimY = entity.aimY;
     out.aimZ = entity.aimZ;
     out.health = entity.health;
+    for (int i = 0; i < 6; ++i)
+        out.partHealth[i] = entity.partHealth[i];
     out.meleePercent = (float)entity.meleePercent * 4.0f;
     out.meleeShield = entity.meleeShield;
     out.onGround = entity.onGround;

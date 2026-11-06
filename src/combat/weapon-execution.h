@@ -12,6 +12,7 @@
 
 #include "combat/pellet-pattern.h"
 #include "combat/weapon-types.h"
+#include "entities/actor-body.h"
 
 #include <cstdint>
 #include <vector>
@@ -53,6 +54,8 @@ struct PlayerTarget
         glm::vec3 center{0.0f};
         glm::vec3 half{0.0f};
         HitBodyPart bodyPart = HitBodyPart::Torso;
+        // Shared six-part actor identity (ActorBodyPart). 0xFF = unknown.
+        uint8_t actorPart = 0xFF;
     };
     std::vector<BodyPartBox> bodyParts;
 };
@@ -69,6 +72,7 @@ struct HitscanPelletHit
     float damage = 0.0f;
     bool headshot = false;
     HitBodyPart bodyPart = HitBodyPart::Torso;
+    uint8_t actorPart = 0xFF;
 };
 
 struct HitscanDamageAggregate
@@ -81,6 +85,7 @@ struct HitscanDamageAggregate
     glm::vec3 hitNormal{0.0f, 0.0f, 1.0f};
     glm::vec3 knockback{0.0f};
     bool headshot = false;
+    uint8_t actorPart = 0xFF;
 };
 
 struct HitscanTraceConfig
@@ -152,6 +157,9 @@ struct PhysicalContactEpisode
     int pendingHealthAfter = 0;
     bool pendingKilled = false;
     uint8_t samplesSinceConfirmation = 0;
+    ActorBodyPart bodyPart = ActorBodyPart::Unknown;
+    uint8_t partHealthAfter = 0;
+    bool partDestroyed = false;
     glm::vec3 accumulatedKnockback{0.0f};
     glm::vec3 lastHitPosition{0.0f};
     glm::vec3 lastNormal{0.0f, 0.0f, 1.0f};

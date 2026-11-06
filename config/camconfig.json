@@ -1,4 +1,8 @@
 {
+  // mouse keeps the direct mouse camera; head_world follows the physical
+  // head quaternion while mouse movement remains the head's aim target.
+  "orientationMode": "mouse",
+  // "orientationMode": "head_world",
   // No 100 ceiling: 0 = neutral, 30 = noticeable, 359 = extreme.
   // Curve/zoom shape where and how strongly the warp appears.
   "lensDistortion": 0.0,
@@ -46,8 +50,12 @@
     // "fov": 90,
     // "fov": 70,
     // "fov": 40,
-    "positionStiffness": 9.0,
-    "rotationStiffness": 9.0,
+    // "positionStiffness": 9.0,
+    // "positionStiffness": 1.0,
+    "positionStiffness": 0.0,
+    // "rotationStiffness": 9.0,
+    // "rotationStiffness": 1.0,
+    "rotationStiffness": 0.0,
     "stiffnessEnabled": false,
     "collisionEnabled": true,
     "collisionPushEnabled": true,

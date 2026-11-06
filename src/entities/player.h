@@ -23,6 +23,7 @@
 #include "physics/physics-types.h"
 #include "gui/hud/chat-bubble.h"
 #include "entities/avatar-rig.h"
+#include "entities/actor-body.h"
 
 #include "avatar/avatar.h"
 #include "combat/weapon-collision-config.h"
@@ -150,6 +151,10 @@ struct PhysicalBodyPart {
     glm::mat4 worldTransform{1.0f};
     glm::mat4 previousWorldTransform{1.0f};
     bool hasPreviousWorldTransform = false;
+    // Procedural nested damage layers. Index 0 is the visible skin (the
+    // original part mesh); 1 is meat and 2 is bone. Built at model-load time by
+    // shrinking the source mesh toward the part center.
+    std::array<Mesh, 3> layerMeshes{};
 };
 
 struct PhysicalBody {
@@ -169,6 +174,7 @@ struct PendingPlayerModel {
     std::string renderModelKey;
     std::string glbDir;
     bool loadOk = false;
+    std::string error;
 
     std::vector<TransformNode> nodes;
     std::vector<glm::mat4> restLocalTransforms;
@@ -711,6 +717,9 @@ public:
     MovementCapsule movementCapsule;
     PerfectPoseSkeleton perfectPoseSkeleton;
     PhysicalBody physicalBody;
+    // Authoritative part health copied from snapshots; drives visible damage
+    // layers and part removal in the renderer.
+    ActorBodyState body;
     std::uint32_t lastWorldTransformCaptureTick = 0xFFFFFFFFu;
     glm::vec3 previousProceduralVelocity{0.0f};
     float proceduralTime = 0.0f;

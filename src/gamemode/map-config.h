@@ -31,6 +31,9 @@ struct AuthoredChunkConnector
     std::string orientation; // doorway, tunnel, open, ...
     std::string role = "bidirectional"; // entry, exit, bidirectional, none
     std::vector<std::string> tags;
+    // Explicit links override auto-compatible generation. Entries are
+    // "<chunkId>/<connectorId>" and are stored on both endpoints.
+    std::vector<std::string> links;
     glm::vec3 position{0.0f};
 };
 
@@ -45,6 +48,11 @@ struct ChunkPart
     // Face order: +X, -X, +Y, -Y, +Z, -Z.
     std::string material;
     std::string faceMaterials[6];
+    // Default primitive UVs repeat once per world unit. These multipliers
+    // scale that density; per-face entries override individual axes when > 0.
+    glm::vec2 uvScale{1.0f, 1.0f};
+    glm::vec2 faceUvScale[6]{{0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f},
+                            {0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f}};
     bool collision = true;
     bool visible = true;
 };
@@ -84,6 +92,7 @@ struct GenerationZone
     float connectorGap = 0.0f;
     int maxBranchDepth = 8;
     bool allowCycles = true;
+    bool allowCrossings = true;
     // Legacy scalar kept for older map files and the existing room streamer.
     float chunkSize = 104.0f;
     int streamRadiusChunks = 1;

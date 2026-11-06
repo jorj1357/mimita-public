@@ -135,6 +135,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
                 {"id", connector.id}, {"side", connector.side},
                 {"orientation", connector.orientation},
                 {"role", connector.role}, {"tags", connector.tags},
+                {"links", connector.links},
                 {"position", {connector.position.x, connector.position.y,
                               connector.position.z}},
             });
@@ -151,6 +152,14 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
                 {"faces", {part.faceMaterials[0], part.faceMaterials[1],
                            part.faceMaterials[2], part.faceMaterials[3],
                            part.faceMaterials[4], part.faceMaterials[5]}},
+                {"uv_scale", {part.uvScale.x, part.uvScale.y}},
+                {"face_uv_scale", {
+                    {part.faceUvScale[0].x, part.faceUvScale[0].y},
+                    {part.faceUvScale[1].x, part.faceUvScale[1].y},
+                    {part.faceUvScale[2].x, part.faceUvScale[2].y},
+                    {part.faceUvScale[3].x, part.faceUvScale[3].y},
+                    {part.faceUvScale[4].x, part.faceUvScale[4].y},
+                    {part.faceUvScale[5].x, part.faceUvScale[5].y}}},
                 {"collision", part.collision}, {"visible", part.visible},
             });
         }
@@ -183,6 +192,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"connector_gap", zone.connectorGap},
             {"max_branch_depth", zone.maxBranchDepth},
             {"allow_cycles", zone.allowCycles},
+            {"allow_crossings", zone.allowCrossings},
             {"chunk_size", zone.chunkSize},
             {"stream_radius_chunks", zone.streamRadiusChunks},
             {"enabled", zone.enabled},
@@ -533,6 +543,11 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
             return glm::vec3(value[0].get<float>(), value[1].get<float>(),
                              value[2].get<float>());
         };
+        auto readMapVec2 = [](const json& value, const glm::vec2& fallback) {
+            if (value.is_number()) return glm::vec2(value.get<float>());
+            if (!value.is_array() || value.size() < 2) return fallback;
+            return glm::vec2(value[0].get<float>(), value[1].get<float>());
+        };
 
         next.generateWholeWorld = root.value("generate_whole_world",
             root.value("generateWholeWorld", next.generateWholeWorld));
@@ -575,6 +590,16 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                                 if (partItem["faces"][face].is_string())
                                     part.faceMaterials[face] = partItem["faces"][face].get<std::string>();
                         }
+                        if (partItem.contains("uv_scale"))
+                            part.uvScale = readMapVec2(partItem["uv_scale"], part.uvScale);
+                        if (partItem.contains("face_uv_scale") &&
+                            partItem["face_uv_scale"].is_array()) {
+                            for (size_t face = 0; face < 6 &&
+                                 face < partItem["face_uv_scale"].size(); ++face)
+                                part.faceUvScale[face] = readMapVec2(
+                                    partItem["face_uv_scale"][face],
+                                    part.faceUvScale[face]);
+                        }
                         chunk.parts.push_back(std::move(part));
                     }
                 }
@@ -591,6 +616,10 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                         if (connectorItem.contains("tags") && connectorItem["tags"].is_array()) {
                             for (const auto& tag : connectorItem["tags"])
                                 if (tag.is_string()) connector.tags.push_back(tag.get<std::string>());
+                        }
+                        if (connectorItem.contains("links") && connectorItem["links"].is_array()) {
+                            for (const auto& link : connectorItem["links"])
+                                if (link.is_string()) connector.links.push_back(link.get<std::string>());
                         }
                         chunk.connectors.push_back(std::move(connector));
                     }
@@ -641,6 +670,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 zone.connectorGap = std::max(0.0f, item.value("connector_gap", zone.connectorGap));
                 zone.maxBranchDepth = std::max(0, item.value("max_branch_depth", zone.maxBranchDepth));
                 zone.allowCycles = item.value("allow_cycles", zone.allowCycles);
+                zone.allowCrossings = item.value("allow_crossings", zone.allowCrossings);
                 zone.chunkSize = std::max(4.0f, item.value("chunk_size",
                     item.value("chunkSize", zone.chunkSize)));
                 zone.streamRadiusChunks = std::clamp(item.value("stream_radius_chunks",

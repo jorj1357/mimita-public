@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <glad/glad.h>
@@ -54,6 +55,27 @@ const int kFaceOrder[6][4] = {
     {4, 5, 1, 0}, // -Z
 };
 
+// Local axes used for each face's U and V texture coordinates.
+const int kFaceUvAxis[6][2] = {
+    {2, 1}, // +X: z, y
+    {2, 1}, // -X
+    {0, 2}, // +Y: x, z
+    {0, 2}, // -Y
+    {0, 1}, // +Z: x, y
+    {0, 1}, // -Z
+};
+
+glm::vec2 faceUvScale(const ChunkPart& part, int face)
+{
+    glm::vec2 scale = part.uvScale;
+    if (scale.x <= 0.0f) scale.x = 1.0f;
+    if (scale.y <= 0.0f) scale.y = 1.0f;
+    const glm::vec2& overrideScale = part.faceUvScale[face];
+    if (overrideScale.x > 0.0f) scale.x = overrideScale.x;
+    if (overrideScale.y > 0.0f) scale.y = overrideScale.y;
+    return scale;
+}
+
 glm::mat4 partMatrix(const ChunkPart& part)
 {
     return glm::translate(glm::mat4(1.0f), part.position) *
@@ -66,14 +88,34 @@ glm::mat4 partMatrix(const ChunkPart& part)
            glm::scale(glm::mat4(1.0f), part.size);
 }
 
+std::string aliasedMaterial(const std::string& material)
+{
+    if (material == "stone_floor") return "floorv2";
+    if (material == "stone_wall") return "wallv2";
+    if (material == "stone") return "stonev2";
+    return material;
+}
+
 GLuint resolveMaterial(const std::string& material)
 {
     if (material.empty()) return gTextures.get("default");
-    if (material.find('/') != std::string::npos ||
-        material.find('\\') != std::string::npos ||
-        material.find('.') != std::string::npos)
-        return gTextures.getPath(material);
-    return gTextures.get(material);
+    std::string resolved = aliasedMaterial(material);
+    if (resolved != material) {
+        static std::unordered_set<std::string> logged;
+        if (logged.insert(material).second) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "world-stream.material.alias", material,
+                "legacy chunk material resolved to an existing texture", 0,
+                {{"requested", material}, {"resolved", resolved}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+    if (resolved.find('/') != std::string::npos ||
+        resolved.find('\\') != std::string::npos ||
+        resolved.find('.') != std::string::npos)
+        return gTextures.getPath(resolved);
+    return gTextures.get(resolved);
 }
 
 void appendFace(std::vector<Vertex>& out, const ChunkPart& part, int face,
@@ -84,14 +126,23 @@ void appendFace(std::vector<Vertex>& out, const ChunkPart& part, int face,
         glm::transpose(glm::inverse(glm::mat3(localTransform)));
     const size_t first = out.size();
     const int order[6] = {0, 1, 2, 0, 2, 3};
-    const glm::vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    // One texture repeat per world unit by default, then per-part and per-face
+    // scale overrides. UVs are derived from local face extents, not 0..1, so a
+    // large primitive keeps the same texel density as a small one.
+    const int uAxis = kFaceUvAxis[face][0];
+    const int vAxis = kFaceUvAxis[face][1];
+    const glm::vec2 scale = faceUvScale(part, face);
+    const float extentU = part.size[uAxis];
+    const float extentV = part.size[vAxis];
     for (int i : order) {
         const glm::vec3 local = kCubePositions[kFaceOrder[face][i]];
         Vertex v;
         v.pos = glm::vec3(localTransform * glm::vec4(local, 1.0f));
         const glm::vec3 n = glm::normalize(normalMatrix * kFaceNormals[face]);
         v.normal = n;
-        v.uv = uv[i];
+        v.uv = glm::vec2(
+            (local[uAxis] + 0.5f) * extentU * scale.x,
+            (local[vAxis] + 0.5f) * extentV * scale.y);
         out.push_back(v);
     }
     Mesh::Batch batch;
@@ -142,12 +193,19 @@ void StreamedWorldLayer::clear()
 StreamedWorldLayer::Template* StreamedWorldLayer::ensureTemplate(
     const std::string& chunkId)
 {
-    for (Template& templateData : mTemplates)
-        if (templateData.chunkId == chunkId) return &templateData;
+    if (Template* existing = findTemplate(chunkId)) return existing;
     Template templateData;
     templateData.chunkId = chunkId;
     mTemplates.push_back(std::move(templateData));
     return &mTemplates.back();
+}
+
+StreamedWorldLayer::Template* StreamedWorldLayer::findTemplate(
+    const std::string& chunkId)
+{
+    for (Template& templateData : mTemplates)
+        if (templateData.chunkId == chunkId) return &templateData;
+    return nullptr;
 }
 
 void StreamedWorldLayer::rebuildTemplate(Template& templateData,
@@ -157,10 +215,15 @@ void StreamedWorldLayer::rebuildTemplate(Template& templateData,
     for (const auto& candidate : MapConfigRegistry::instance().chunks())
         if (candidate.id == chunkId) { chunk = &candidate; break; }
     if (!chunk) return;
+    rebuildTemplateFromChunk(templateData, *chunk);
+}
 
+void StreamedWorldLayer::rebuildTemplateFromChunk(
+    Template& templateData, const AuthoredChunk& chunk)
+{
     templateData.verts.clear();
     templateData.batches.clear();
-    for (const ChunkPart& part : chunk->parts) {
+    for (const ChunkPart& part : chunk.parts) {
         if (!part.visible) continue;
         const glm::mat4 local = partMatrix(part);
         for (int face = 0; face < 6; ++face) {
@@ -216,6 +279,82 @@ void StreamedWorldLayer::uploadInstanceBuffer(Template& templateData)
                                                 : templateData.instances.data(),
                  GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void StreamedWorldLayer::rebuildRecordVbo(ChunkRecord& record,
+                                          const Template& templateData)
+{
+    record.batches = templateData.batches;
+    std::vector<Vertex> worldVerts;
+    worldVerts.reserve(templateData.verts.size());
+    for (const Vertex& v : templateData.verts) {
+        Vertex copy = v;
+        copy.pos = glm::vec3(record.transform * glm::vec4(v.pos, 1.0f));
+        worldVerts.push_back(copy);
+    }
+    if (record.vbo == 0) glGenBuffers(1, &record.vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, record.vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)(worldVerts.size() * sizeof(Vertex)),
+                 worldVerts.empty() ? nullptr : worldVerts.data(),
+                 GL_STATIC_DRAW);
+    if (record.vao == 0) record.vao = makeChunkVao(record.vbo, 0);
+}
+
+void StreamedWorldLayer::rebuildInstances()
+{
+    for (Template& templateData : mTemplates)
+        templateData.instances.clear();
+    for (const ChunkRecord& record : mChunks) {
+        Template* templateData = findTemplate(record.chunkId);
+        if (!templateData) continue;
+        templateData->instances.push_back(record.transform);
+    }
+    for (Template& templateData : mTemplates)
+        uploadInstanceBuffer(templateData);
+}
+
+void StreamedWorldLayer::setInstancing(bool enabled)
+{
+    if (mInstancing == enabled) return;
+    mInstancing = enabled;
+    size_t rebuilt = 0;
+    if (mInstancing) {
+        for (ChunkRecord& record : mChunks) {
+            if (record.vao) glDeleteVertexArrays(1, &record.vao);
+            if (record.vbo) glDeleteBuffers(1, &record.vbo);
+            record.vao = 0;
+            record.vbo = 0;
+            record.batches.clear();
+        }
+        for (Template& templateData : mTemplates) {
+            if (templateData.vao == 0 || templateData.vboDirty)
+                uploadTemplate(templateData);
+        }
+        rebuildInstances();
+    } else {
+        for (Template& templateData : mTemplates) {
+            templateData.instances.clear();
+            uploadInstanceBuffer(templateData);
+        }
+        for (ChunkRecord& record : mChunks) {
+            Template* templateData = findTemplate(record.chunkId);
+            if (!templateData) continue;
+            if (templateData->vao == 0 || templateData->vboDirty)
+                uploadTemplate(*templateData);
+            rebuildRecordVbo(record, *templateData);
+            ++rebuilt;
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "world-stream.backend.changed", enabled ? "instancing" : "vbo",
+        "streamed chunk backend switched without reloading chunks", 0,
+        {{"backend", enabled ? "instancing" : "vbo"},
+         {"chunks", mChunks.size()},
+         {"templates", mTemplates.size()},
+         {"rebuilt", rebuilt}},
+        __FILE__, __LINE__, __func__);
 }
 
 GLuint StreamedWorldLayer::makeChunkVao(GLuint vbo, GLuint /*instanceVbo*/)
@@ -275,20 +414,7 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         uploadInstanceBuffer(*templateData);
     } else {
         // Bake chunk-local geometry to world space and upload a per-chunk VBO.
-        std::vector<Vertex> worldVerts;
-        worldVerts.reserve(templateData->verts.size());
-        for (const Vertex& v : templateData->verts) {
-            Vertex copy = v;
-            copy.pos = glm::vec3(transform * glm::vec4(v.pos, 1.0f));
-            worldVerts.push_back(copy);
-        }
-        record.batches = templateData->batches;
-        glGenBuffers(1, &record.vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, record.vbo);
-        glBufferData(GL_ARRAY_BUFFER,
-                     (GLsizeiptr)(worldVerts.size() * sizeof(Vertex)),
-                     worldVerts.data(), GL_STATIC_DRAW);
-        record.vao = makeChunkVao(record.vbo, 0);
+        rebuildRecordVbo(record, *templateData);
     }
 
     if (!worldTriangles.empty()) {
@@ -340,10 +466,39 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
     }
 }
 
+void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk)
+{
+    Template* templateData = findTemplate(chunk.id);
+    if (!templateData) return;
+    rebuildTemplateFromChunk(*templateData, chunk);
+    uploadTemplate(*templateData);
+
+    size_t records = 0;
+    if (!mInstancing) {
+        for (ChunkRecord& record : mChunks) {
+            if (record.chunkId != chunk.id) continue;
+            rebuildRecordVbo(record, *templateData);
+            ++records;
+        }
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "world-stream.template.updated", chunk.id,
+        "loaded chunk template refreshed without collision rebuild", 0,
+        {{"chunk", chunk.id},
+         {"verts", templateData->verts.size()},
+         {"batches", templateData->batches.size()},
+         {"vbo_records", records},
+         {"backend", mInstancing ? "instancing" : "vbo"},
+         {"collision_rebuilt", false}},
+        __FILE__, __LINE__, __func__);
+}
+
 void StreamedWorldLayer::updateMaterial(const std::string& chunkId,
                                         const std::string& partId, int face,
                                         const std::string& material)
 {
+    AuthoredChunk* changed = nullptr;
     for (auto& chunk : MapConfigRegistry::instance().chunksMutable()) {
         if (chunk.id != chunkId) continue;
         for (auto& part : chunk.parts) {
@@ -353,22 +508,17 @@ void StreamedWorldLayer::updateMaterial(const std::string& chunkId,
             else if (face < 6)
                 part.faceMaterials[face] = material;
         }
+        changed = &chunk;
         MapConfigRegistry::instance().markChanged();
         break;
     }
-    for (Template& templateData : mTemplates) {
-        if (templateData.chunkId == chunkId) {
-            rebuildTemplate(templateData, chunkId);
-            uploadTemplate(templateData);
-            break;
-        }
-    }
+    if (changed) refreshChunk(*changed);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "chunk.part.material-changed", chunkId,
         "chunk part material changed live", 0,
         {{"chunk", chunkId}, {"part", partId}, {"face", face},
-         {"material", material}},
+         {"material", material}, {"found", changed != nullptr}},
         __FILE__, __LINE__, __func__);
 }
 
@@ -422,6 +572,11 @@ void StreamedWorldLayer::render(const Camera& camera)
             }
         }
     }
+    // Shared-shader state: leaving uUseInstanceModel enabled corrupts the next
+    // frame's base-world and actor draws because their VAOs have no instance
+    // matrix attributes.
+    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram,
+                                     "uUseInstanceModel"), 0);
     glBindVertexArray(0);
     glUseProgram(0);
 }

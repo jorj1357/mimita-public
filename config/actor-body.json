@@ -1,0 +1,9 @@
+{
+  "comment": "Shared six-part actor body damage. Layer thresholds are fractions of part_max_health: above meat_threshold is skin, above bone_threshold is exposed meat, above zero is bone, zero is destroyed.",
+  "part_max_health": 100,
+  "meat_threshold": 0.66,
+  "bone_threshold": 0.33,
+  "meat_shell_scale": 0.94,
+  "bone_shell_scale": 0.88,
+  "destroyed_blood_scale": 2.5
+}

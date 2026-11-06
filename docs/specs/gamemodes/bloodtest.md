@@ -1,7 +1,9 @@
 # Bloodtest
 
-**Status:** Initial multiplayer mode slice; biological layer destruction is
-still pending an actor-body damage owner.
+**Status:** Shared actor body-part damage, replication, procedural skin/meat/bone
+layers, part destruction, and force-scaled blood presentation are implemented.
+Runtime and visual acceptance remain open until exercised in a real multiplayer
+run.
 
 ## Purpose
 
@@ -19,6 +21,11 @@ map reload.
   or a match timer.
 - The mode selects the `bloodtest` movement preset and Bloodtest-specific
   projectile revolver and shotgun definitions, plus Swordsword.
+- NPCs use the shared `beginner` combat behavior profile. Their health and
+  damage remain controlled by the normal role and weapon owners.
+- NPCs respawn on the first eligible fixed simulation tick after death through
+  the shared respawn lifecycle. Bloodtest's `respawn_seconds: 0.01` is the
+  minimum nonzero mode respawn timer; it is not a zero-delay same-tick revive.
 - Map destruction is enabled and uses reset policy `never`, so a match boundary
   does not restore the map. A map reload uses the shared world reset owner.
 - Blood presentation and client blood feedback are enabled through the existing
@@ -38,14 +45,28 @@ map reload.
 
 ## Actor damage layers
 
-The intended visual model is nested skin, meat, and bone geometry beneath each
-visible body part. Strong impacts should expose and break successive layers, and
-extreme part damage should detach the part while an otherwise living actor can
-continue. These behaviors are **not implemented in this mode slice**. The
-existing actor representation has body-part meshes and contact hit locations,
-but no authoritative part-health state, nested material geometry, or replicated
-part-detachment state. Those must be added to the shared actor damage and body
-replication owners before Bloodtest can claim this behavior.
+Each visible body part has its own authoritative health in the shared actor body
+state. Players and NPCs use the same six parts: head, torso, left arm, right arm,
+left leg, and right leg. Each part starts at 100 health.
+
+- Above two thirds health the part shows skin.
+- At or below two thirds health the part exposes meat.
+- At or below one third health the part exposes bone.
+- At zero health the part is destroyed and disappears from rendering and hit
+  validation.
+- Head or torso destruction kills the actor.
+- Arm or leg destruction removes that part while the actor may continue;
+  destroyed parts remain gone on the corpse. A destroyed part is not left as a
+  persistent physical limb.
+- Part health resets on a new life and is replicated to every client through the
+  shared snapshot path. Confirmed-damage events identify the damaged part and
+  the resulting part state.
+- Skin, meat, and bone are procedural nested shells generated from the existing
+  part mesh; no separate authored layer geometry is required.
+
+Blood and gore presentation scale with impact force and damage. Destroying a part
+produces a larger spray, and surface splatter places larger decals near the
+impact center with smaller decals toward the cone edges.
 
 ## Acceptance
 
@@ -59,8 +80,14 @@ replication owners before Bloodtest can claim this behavior.
 6. Arena destruction persists across match boundaries and clears after a map
    reload.
 7. Blood presentation is visibly enabled in a real run.
+8. Bloodtest NPCs resolve the `beginner` combat profile and respawn on the
+   first eligible fixed simulation tick after death.
+9. Part health crosses the meat, bone, and destroyed thresholds in a real run;
+   head/torso destruction kills and limb destruction removes that part.
+10. Both clients observe the same part health and visible layer.
+11. Stronger impacts produce more and larger blood presentation than weak
+    impacts, with splatter shrinking toward the cone edges.
 
-Body-layer exposure, part health, gore fragments, and surviving limb detachment
-remain separate acceptance items until their shared actor owners exist. Build
-and configuration evidence do not prove runtime, visual, or multiplayer
-acceptance.
+Body-layer exposure, part destruction, replicated part state, and force-scaled
+blood remain runtime and human-review acceptance items. Build and configuration
+evidence do not prove runtime, visual, or multiplayer acceptance.

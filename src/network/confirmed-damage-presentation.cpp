@@ -19,6 +19,7 @@
 #include "config/weapon-hitfx-config.h"
 #include "debug/structured-log.h"
 #include "config/networking-config.h"
+#include "entities/actor-body.h"
 #include "network/multiplayer-context.h"
 #include "network/network-weapons.h"
 #include "effects/effect-part.h"
@@ -184,6 +185,10 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
         : -hit.normal;
     hit.hitEntity = true;
     hit.damage = event.damage;
+    hit.bodyPart = event.bodyPart < (uint8_t)ActorBodyPart::Count
+        ? actorBodyPartName((ActorBodyPart)event.bodyPart) : "torso";
+    if (event.partDestroyed)
+        hit.bloodAmountScale = ActorBodyConfig::instance().destroyedBloodScale;
     hit.attacker = playerNameFor(ctx, event.attackerPlayerId);
     hit.victim = playerNameFor(ctx, event.targetPlayerId);
     hit.weaponSource = weaponId;

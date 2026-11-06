@@ -246,6 +246,53 @@ static void logReconnectResourceProbe(const MultiplayerContext& ctx,
         __FILE__, __LINE__, __func__);
 }
 
+void mpClearRemoteWorldState(MultiplayerContext& ctx, const char* reason)
+{
+    const size_t npcCount = ctx.remoteNpcs.size();
+    const size_t playerCount = ctx.remotePlayers.size();
+    const size_t projectileCount = ctx.networkProjectiles.size();
+    const size_t ragdollCount = ctx.remoteRagdoll.size();
+
+    ctx.remotePlayers.clear();
+    ctx.remoteNpcs.clear();
+    ctx.remotePlayerInterpolation.clear();
+    ctx.remoteNpcInterpolation.clear();
+    ctx.remoteRagdoll.clear();
+    ctx.networkProjectiles.clear();
+    ctx.projectileTerminals.clear();
+    ctx.remoteSwordStates.clear();
+    ctx.predictedProjectileIds.clear();
+    ctx.predictedExplosions.clear();
+    ctx.predictedSelfKnockbacks.clear();
+    ctx.pendingVictimHealth.clear();
+    ctx.shotEvents.clear();
+    ctx.pendingShotEvents.clear();
+    ctx.pendingPelletBlastEvents.clear();
+    ctx.disagreementEvents.clear();
+    ctx.pendingKnockbacks.clear();
+    RagdollModeSystem::instance().clearAllReplicatedBodies();
+    RagdollModeSystem::instance().clearCorpses();
+
+    // Keep the local player's registry row; every other row belongs to the
+    // previous map/session and must be rebuilt from the new snapshots.
+    for (auto it = ctx.playerRegistry.begin(); it != ctx.playerRegistry.end();) {
+        if (it->first == ctx.localPlayerId) ++it;
+        else it = ctx.playerRegistry.erase(it);
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.client.map-world-cleared", "",
+        "cleared previous-map remote actors before showing the new map", ctx.tick,
+        {{"reason", reason ? reason : ""},
+         {"remote_npcs_before", npcCount},
+         {"remote_players_before", playerCount},
+         {"projectiles_before", projectileCount},
+         {"ragdolls_before", ragdollCount},
+         {"local_player_id", ctx.localPlayerId}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
 {
     logReconnectResourceProbe(ctx, "teardown-before", disconnectPolicyName(policy));
@@ -1906,12 +1953,15 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     // authoritative snapshots stop while other packets continue, the client
     // otherwise replays its last frame forever. Treat snapshot starvation as a
     // connection failure and name it in the journal.
-    const bool snapshotStarved =
+    // Keep this independent of the connection state: reconnect recovery must
+    // know whether a fresh authoritative snapshot has arrived since the
+    // reconnect began, instead of treating a reconnect acknowledgement as
+    // restored gameplay state.
+    const bool snapshotStarved = ctx.lastSnapshotReceivedMs > 0 &&
+                                 snapshotAge > staleThreshold;
+    if (snapshotStarved &&
         (before == ConnectionState::Connected ||
-         before == ConnectionState::WeakConnection) &&
-        ctx.lastSnapshotReceivedMs > 0 &&
-        snapshotAge > staleThreshold;
-    if (snapshotStarved)
+         before == ConnectionState::WeakConnection))
     {
         static thread_local uint64_t lastSnapshotTimeoutMs = 0;
         if (now - lastSnapshotTimeoutMs >= 1000)

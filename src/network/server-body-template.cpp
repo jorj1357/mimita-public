@@ -294,6 +294,7 @@ bool loadServerBodyTemplateFromGlb(const char* path,
             t.bodyPart = 2;
         else
             t.bodyPart = 0;
+        t.actorPart = static_cast<uint8_t>(actorBodyPartFromName(name));
         out.push_back(t);
     }
 

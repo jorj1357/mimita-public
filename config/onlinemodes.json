@@ -9,6 +9,14 @@
       "score_limit": 0
     },
     {
+      "id": "connected_world",
+      "gamemode_id": "connected_world",
+      "name": "Connected World",
+      "description": "Explore a continuously streamed world built from connected authored chunks.",
+      "teams": 0,
+      "score_limit": 0
+    },
+    {
       "id": "free_for_all",
       "gamemode_id": "ffa",
       "name": "Free For All",

@@ -626,6 +626,12 @@ void AvatarSystem::requestModelLoad(Player& player) {
         }
     }
 
+    if (modelPath.empty() ||
+        !std::filesystem::exists(std::filesystem::path(modelPath)))
+    {
+        modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+    }
+
     if (!modelPath.empty())
         player.requestModelLoad(modelPath);
 }
@@ -643,12 +649,13 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
     auto stateIt = mLoadStates.find(name);
     if (stateIt != mLoadStates.end())
     {
-        if (stateIt->second == AvatarLoadState::Failed &&
-            mRetryableAvatarLoads.erase(name) > 0)
-        {
-            mLoadStates.erase(stateIt);
-            queueAvatarLoad(name, true);
-            return nullptr;
+        const int attempts = mAvatarLoadAttempts[name];
+        const auto retryIt = mAvatarRetryAfter.find(name);
+        long long retryInMs = 0;
+        if (retryIt != mAvatarRetryAfter.end()) {
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                retryIt->second - std::chrono::steady_clock::now()).count();
+            retryInMs = std::max<long long>(0, remaining);
         }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
@@ -657,7 +664,10 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
             0,
             {{"avatar", name},
              {"load_state", static_cast<int>(stateIt->second)},
-             {"cache_ready", false}},
+             {"cache_ready", false},
+             {"attempts", attempts},
+             {"retry_in_ms", retryInMs},
+             {"failure_reason", mAvatarLoadFailureReason[name]}},
             __FILE__, __LINE__, __FUNCTION__);
         return nullptr;
     }
@@ -668,14 +678,17 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
 
 bool AvatarSystem::queueAvatarLoad(const std::string& name, bool retry) {
     mLoadStates[name] = AvatarLoadState::Loading;
+    const int attempt = ++mAvatarLoadAttempts[name];
+    mAvatarRetryAfter.erase(name);
     if (!mBackgroundWorker) {
         mLoadStates[name] = AvatarLoadState::Failed;
+        mAvatarLoadFailureReason[name] = "no_worker";
         Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] unavailable avatar='%s' reason=no_worker\n", name.c_str());
         return false;
     }
     const std::string basePath = AvatarSystem::avatarPath(name);
     const std::string jsonPath = basePath + "/avatar.json";
-    const bool accepted = mBackgroundWorker->enqueue([this, name, basePath, jsonPath]() {
+    const bool accepted = mBackgroundWorker->enqueue([this, name, basePath, jsonPath, attempt]() {
         PendingAvatarLoad pending;
         pending.name = name;
         pending.definition.clear();
@@ -683,15 +696,26 @@ bool AvatarSystem::queueAvatarLoad(const std::string& name, bool retry) {
         pending.definition.basePath = basePath;
         pending.success = parseAvatarJson(jsonPath, basePath, pending.definition);
         if (pending.success)
+        {
             pending.atlasPixels = buildAtlasPixels(pending.definition, basePath);
+        }
         else
-            pending.error = "avatar.json missing or invalid";
+        {
+            std::error_code ec;
+            const auto size = std::filesystem::exists(jsonPath, ec)
+                ? std::filesystem::file_size(jsonPath, ec) : 0ull;
+            pending.error = std::filesystem::exists(jsonPath, ec)
+                ? "avatar_json_parse_failed" : "avatar_json_missing";
+            pending.error += " path=" + jsonPath + " bytes=" + std::to_string(size);
+        }
         std::lock_guard<std::mutex> lock(mPendingAvatarMutex);
         mPendingAvatarLoads.push_back(std::move(pending));
     });
     if (!accepted) {
         mLoadStates[name] = AvatarLoadState::Failed;
         mRetryableAvatarLoads.insert(name);
+        mAvatarRetryAfter[name] = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        mAvatarLoadFailureReason[name] = "worker_queue_full";
         Debug::warn(Debug::Category::Avatar, "[AVATAR ASYNC] queue rejected avatar='%s' reason=worker_queue_full\n", name.c_str());
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
@@ -699,17 +723,18 @@ bool AvatarSystem::queueAvatarLoad(const std::string& name, bool retry) {
             "avatar load will retry after background worker capacity is available", 0,
             nlohmann::json{{"avatar", name}, {"retry", true},
                            {"retry_attempt", retry},
+                           {"attempt", attempt},
                            {"queue_depth", mBackgroundWorker->queueDepth()},
                            {"queue_limit", ReplaySaveWorker::kMaxQueuedJobs},
                            {"reason", "worker_queue_full"}});
     } else {
-        mRetryableAvatarLoads.erase(name);
-        Debug::log(Debug::Category::Avatar, "[AVATAR ASYNC] queued avatar='%s' worker=low_priority\n", name.c_str());
+        Debug::log(Debug::Category::Avatar, "[AVATAR ASYNC] queued avatar='%s' attempt=%d retry=%d worker=low_priority\n", name.c_str(), attempt, (int)retry);
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Verbose,
             "avatar.load.queued", name,
             retry ? "retryable avatar load queued" : "avatar load queued", 0,
             nlohmann::json{{"avatar", name}, {"retry", retry},
+                           {"attempt", attempt},
                            {"queue_depth", mBackgroundWorker->queueDepth()},
                            {"queue_limit", ReplaySaveWorker::kMaxQueuedJobs}});
     }
@@ -726,10 +751,23 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
         mBackgroundWorker->queueDepth() < ReplaySaveWorker::kMaxQueuedJobs &&
         !mRetryableAvatarLoads.empty())
     {
-        const std::string name = *mRetryableAvatarLoads.begin();
-        mRetryableAvatarLoads.erase(name);
-        mLoadStates.erase(name);
-        queueAvatarLoad(name, true);
+        const auto now = std::chrono::steady_clock::now();
+        std::vector<std::string> due;
+        for (const std::string& name : mRetryableAvatarLoads)
+        {
+            const auto retryIt = mAvatarRetryAfter.find(name);
+            if (retryIt == mAvatarRetryAfter.end() || retryIt->second <= now)
+                due.push_back(name);
+            if ((int)due.size() >= 4)
+                break;
+        }
+        for (const std::string& name : due)
+        {
+            mRetryableAvatarLoads.erase(name);
+            mAvatarRetryAfter.erase(name);
+            mLoadStates.erase(name);
+            queueAvatarLoad(name, true);
+        }
     }
 
     PendingAvatarLoad pending;
@@ -740,16 +778,44 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
         mPendingAvatarLoads.pop_front();
     }
     if (!pending.success) {
+        constexpr int kMaxAvatarLoadAttempts = 5;
+        const int attempts = mAvatarLoadAttempts[pending.name];
+        mAvatarLoadFailureReason[pending.name] = pending.error;
+        if (attempts < kMaxAvatarLoadAttempts)
+        {
+            const int backoffMs = std::min(4000, 500 << std::max(0, attempts - 1));
+            mLoadStates[pending.name] = AvatarLoadState::Failed;
+            mRetryableAvatarLoads.insert(pending.name);
+            mAvatarRetryAfter[pending.name] =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds(backoffMs);
+            Debug::warn(Debug::Category::Avatar,
+                "[AVATAR ASYNC] failed avatar='%s' attempt=%d reason=%s retry_in_ms=%d\n",
+                pending.name.c_str(), attempts, pending.error.c_str(), backoffMs);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "avatar.load.retry-scheduled", pending.name,
+                "avatar metadata or atlas preparation failed; retry scheduled", 0,
+                nlohmann::json{{"avatar", pending.name}, {"reason", pending.error},
+                               {"attempt", attempts},
+                               {"max_attempts", kMaxAvatarLoadAttempts},
+                               {"retry_in_ms", backoffMs},
+                               {"fallback", true}});
+            return;
+        }
+
         mRetryableAvatarLoads.erase(pending.name);
+        mAvatarRetryAfter.erase(pending.name);
         mLoadStates[pending.name] = AvatarLoadState::Failed;
         Debug::warn(Debug::Category::Avatar,
-            "[AVATAR ASYNC] failed avatar='%s' reason=%s fallback=1\n",
-            pending.name.c_str(), pending.error.c_str());
+            "[AVATAR ASYNC] failed avatar='%s' attempt=%d reason=%s fallback=1 permanent=1\n",
+            pending.name.c_str(), attempts, pending.error.c_str());
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
             "avatar.load.failed", pending.name, "avatar metadata or atlas preparation failed", 0,
             nlohmann::json{{"avatar", pending.name}, {"reason", pending.error},
-                           {"fallback", true}});
+                           {"attempt", attempts},
+                           {"max_attempts", kMaxAvatarLoadAttempts},
+                           {"fallback", true}, {"permanent", true}});
         return;
     }
     auto inst = std::make_unique<AvatarInstance>();
@@ -759,6 +825,10 @@ void AvatarSystem::pollBackgroundAvatarLoads() {
     inst->preparedAtlasPixels = std::move(pending.atlasPixels);
     mCache[pending.name] = std::move(inst);
     mLoadStates[pending.name] = AvatarLoadState::Ready;
+    mRetryableAvatarLoads.erase(pending.name);
+    mAvatarRetryAfter.erase(pending.name);
+    mAvatarLoadAttempts.erase(pending.name);
+    mAvatarLoadFailureReason.erase(pending.name);
     Debug::log(Debug::Category::Avatar,
         "[AVATAR ASYNC] ready avatar='%s' atlas_pixels=%zu\n",
         pending.name.c_str(), mCache[pending.name]->preparedAtlasPixels.size());
@@ -866,9 +936,11 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
             gAvatarBodypartOverrides = nullptr;
         fillAvatarRigExtraNodes(inst->definition.rig);
         player.setCosmetics(inst->definition.cosmetics);
-        const std::string modelPath = !inst->definition.playerModel.empty()
+        std::string modelPath = !inst->definition.playerModel.empty()
             ? inst->definition.playerModel
             : "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        if (!std::filesystem::exists(std::filesystem::path(modelPath)))
+            modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
         player.requestModelLoad(modelPath);
         Debug::log(Debug::Category::Avatar,
             "[AVATAR ASYNC] queued avatar='%s' player='%s' cosmetics=%zu",

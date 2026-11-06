@@ -164,7 +164,7 @@
   "actor_preset": "",
   "movement_preset": "bloodtest",
   "vehicle_profile": "",
-  "npc_behavior_profile": "",
+  "npc_behavior_profile": "beginner",
   "npc_targeting": {
     "enabled": false,
     "mode": "closest",

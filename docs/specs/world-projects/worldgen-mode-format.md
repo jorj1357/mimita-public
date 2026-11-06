@@ -41,6 +41,11 @@ default grid, chunk set, spacing, and branching policy. A map's
 - `spacing_mode`: `center` (uniform grid) or `connector` (port-aligned).
 - `connector_gap`: extra distance between an exit and the next entry.
 
+Zone entries may also carry `max_branch_depth`, `allow_cycles`, and
+`allow_crossings`. They override the mode profile for that zone. An empty
+connector tag list is treated as unconstrained so authored chunks without tags
+still connect; a non-empty list matches only when it intersects the neighbor.
+
 ## Chunk library
 
 Chunks live in `config/worldgen/chunks/<id>.json` and are referenced by
@@ -58,17 +63,21 @@ Chunks live in `config/worldgen/chunks/<id>.json` and are referenced by
       "kind": "floor",
       "position": [0, 0, -0.25],
       "size": [10, 10, 0.5],
-      "material": "stone_floor",
-      "faces": ["", "", "", "", "stone_floor", ""],
+      "material": "floorv2",
+      "faces": ["", "", "", "", "floorv2", ""],
+      "uv_scale": [1.0, 1.0],
+      "face_uv_scale": [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0]],
       "collision": true,
       "visible": true
     }
   ],
   "connectors": [
     { "id": "west_entry", "side": "west", "orientation": "tunnel",
-      "role": "entry", "position": [-5, 0, 2], "tags": ["tunnel"] },
+      "role": "entry", "position": [-5, 0, 2], "tags": ["tunnel"],
+      "links": ["chunk_corner/west_entry"] },
     { "id": "east_exit", "side": "east", "orientation": "tunnel",
-      "role": "exit", "position": [5, 0, 2], "tags": ["tunnel"] }
+      "role": "exit", "position": [5, 0, 2], "tags": ["tunnel"],
+      "links": [] }
   ],
   "tags": ["straight"],
   "enabled": true
@@ -82,12 +91,20 @@ Chunks live in `config/worldgen/chunks/<id>.json` and are referenced by
 Face material order: `+X`, `-X`, `+Y`, `-Y`, `+Z`, `-Z`. Empty means the part
 default `material`.
 
+Primitive face UVs default to one texture repeat per world unit. `uv_scale`
+multiplies both axes for the whole part; a `face_uv_scale` entry overrides an
+axis when its value is greater than zero. A zero entry inherits the part scale.
+
 ## Connectors
 
 - `side`: `east`, `west`, `north`, `south`, `up`, `down`.
 - `orientation`: `tunnel`, `doorway`, `open`, custom.
 - `role`: `entry`, `exit`, `bidirectional`, `none`.
-- `tags`: compatibility tags; connectors match when their tags intersect.
+- `tags`: compatibility tags; connectors match when their tags intersect. An
+  empty tag list is unconstrained.
+- `links`: explicit `<chunkId>/<connectorId>` endpoints. Links are preferred
+  over auto-compatible matching and are stored on both endpoints by
+  `worldconnector connect`.
 
 ## Precedence
 

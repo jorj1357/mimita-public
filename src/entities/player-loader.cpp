@@ -24,6 +24,7 @@
 #include <nlohmann/json.hpp>
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
+#include "entities/actor-body.h"
 
 // Global avatar bodypart overrides, set by AvatarSystem before loadModel.
 // Used by applyBodypartConfigOverrides to layer per-avatar overrides on
@@ -853,6 +854,54 @@ void appendNodeRenderMesh(
     }
 }
 
+// Build a progressively smaller copy of a body-part mesh for the meat/bone
+// layers. Shrinking toward the part's node-local collider center keeps the
+// layer inside the skin shell without requiring authored inner geometry.
+void buildInnerLayerMesh(const Mesh& source, const Collider& collider,
+                         float scale, GLuint texture, Mesh& out)
+{
+    out = source;
+    const glm::vec3 center = (collider.localMin + collider.localMax) * 0.5f;
+    for (Vertex& vertex : out.verts)
+        vertex.pos = center + (vertex.pos - center) * scale;
+    for (Mesh::Batch& batch : out.batches)
+    {
+        batch.texture = texture;
+        batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        batch.hasBounds = false;
+        const size_t end = std::min(out.verts.size(), batch.first + batch.count);
+        for (size_t i = batch.first; i < end; ++i)
+        {
+            batch.boundsMin = glm::min(batch.boundsMin, out.verts[i].pos);
+            batch.boundsMax = glm::max(batch.boundsMax, out.verts[i].pos);
+            batch.hasBounds = true;
+        }
+    }
+}
+
+// Build the nested meat/bone meshes on the main thread. Texture lookup and
+// upload must not run on the async model-load worker.
+static void buildPlayerPartLayerMeshes(Player& player)
+{
+    const ActorBodyConfig& bodyConfig = ActorBodyConfig::instance();
+    const GLuint meatTexture = gTextures.getPath("assets/textureshq/meat1.png");
+    const GLuint boneTexture = getOpaqueWhiteTexture();
+    const size_t count = std::min(player.physicalBody.parts.size(),
+                                  player.physicalBody.partMeshes.size());
+    for (size_t i = 0; i < count; ++i)
+    {
+        PhysicalBodyPart& part = player.physicalBody.parts[i];
+        const Mesh& source = player.physicalBody.partMeshes[i];
+        if (source.verts.empty())
+            continue;
+        buildInnerLayerMesh(source, part.collider, bodyConfig.meatShellScale,
+                            meatTexture, part.layerMeshes[1]);
+        buildInnerLayerMesh(source, part.collider, bodyConfig.boneShellScale,
+                            boneTexture, part.layerMeshes[2]);
+    }
+}
+
 // ── Shared CPU model builders ─────────────────────────────────────
 // These build the skeleton and per-part collision triangles from an already
 // parsed GLB with no GL calls. They are used by Player::loadModel (after the
@@ -1004,6 +1053,7 @@ bool Player::loadModel(const char* path)
         }
 
         updateModelWorldTransforms();
+        buildPlayerPartLayerMeshes(*this);
         printf("[AVATAR CACHE] model=%s result=hit\n", resolvedPath.c_str());
         return modelLoaded;
     }
@@ -1052,6 +1102,7 @@ bool Player::loadModel(const char* path)
     syncPoseSkeletonFromRestLocal(*this);
 
     buildBodyPartCollidersFromModel(model, *this, /*buildRenderMeshes=*/true);
+    buildPlayerPartLayerMeshes(*this);
 
     // Publish the full immutable parse result into the cache.
     cached.bodyColliders = bodyColliders;
@@ -1258,7 +1309,9 @@ static void modelLoadThreadFunc(PendingPlayerModel* d)
     if (!warn.empty()) printf("[PLAYER GLB WARNING] %s\n", warn.c_str());
     if (!err.empty()) printf("[PLAYER GLB ERROR] %s\n", err.c_str());
     if (!ok) {
-        printf("[PLAYER GLB ERROR] failed async load %s\n", d->path.c_str());
+        d->error = err.empty() ? "LoadBinaryFromFile failed" : err;
+        printf("[PLAYER GLB ERROR] failed async load %s reason=%s\n",
+               d->path.c_str(), d->error.c_str());
         d->ready = true;
         return;
     }
@@ -1341,7 +1394,22 @@ void Player::finalizeModelIfReady()
 
     PendingPlayerModel* d = mPendingModel.get();
     if (!d->loadOk) {
+        const std::string failedPath = d->path;
+        const std::string reason = d->error.empty() ? "unknown model load failure" : d->error;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "player.model.load.failed", failedPath,
+            "async player model load failed", 0,
+            {{"model_path", failedPath},
+             {"resolved_path", d->resolvedPath},
+             {"reason", reason},
+             {"player", username}},
+            __FILE__, __LINE__, __FUNCTION__);
         mPendingModel.reset();
+        static constexpr const char* kDefaultPlayerModel =
+            "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        if (failedPath != kDefaultPlayerModel)
+            requestModelLoad(kDefaultPlayerModel);
         return;
     }
 
@@ -1377,6 +1445,26 @@ void Player::finalizeModelIfReady()
     bodyPartMeshes = std::move(d->bodyPartMeshes);
     perfectPoseSkeleton = std::move(d->perfectPose);
     physicalBody = std::move(d->physicalBodyData);
+    buildPlayerPartLayerMeshes(*this);
+
+    if (physicalBody.parts.empty())
+    {
+        static constexpr const char* kDefaultPlayerModel =
+            "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        const std::string failedPath = d->path;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "player.model.empty-body", failedPath,
+            "async player model produced no body parts", 0,
+            {{"model_path", failedPath},
+             {"player", username},
+             {"fallback", failedPath != kDefaultPlayerModel}},
+            __FILE__, __LINE__, __FUNCTION__);
+        mPendingModel.reset();
+        if (failedPath != kDefaultPlayerModel)
+            requestModelLoad(kDefaultPlayerModel);
+        return;
+    }
 
     // Assign texture IDs to body part mesh batches (overwrite any existing)
     int tidx = 0;

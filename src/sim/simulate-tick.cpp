@@ -25,6 +25,7 @@
 #include "entities/player.h"
 #include "entities/player-avatar-animations.h"
 #include "entities/aimbody-config.h"
+#include "config/camera-config.h"
 #include "world/world.h"
 #include "config.h"
 #include "debug/debug-log.h"
@@ -342,9 +343,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 seatedDef->armRagdoll.enabled &&
                 (!seatedDef->armRagdoll.actionScoped ||
                  MimitaMelee::currentActionUsesPhysicalArm(seatedDef->id));
-            if ((AimBodyConfig::instance().bodyPhysicsMode() ||
+            const bool headCameraMode =
+                CamConfig::instance().data().orientationMode == "head_world";
+            if ((AimBodyConfig::instance().bodyPhysicsMode() || headCameraMode ||
                  seatedArmRagdoll) &&
-                (!sim.player->usesMeleeAuthoredPose() || seatedArmRagdoll)) {
+                (!sim.player->usesMeleeAuthoredPose() || seatedArmRagdoll ||
+                 headCameraMode)) {
                 MIMITA_PERF_SCOPE("SeatedAimBodyUpdate");
                 if (seatedArmRagdoll) {
                     ragdoll.updateArmRagdoll(
@@ -357,9 +361,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                     if (!ragdoll.aimActive())
                         ragdoll.activateAim(*sim.player);
                     ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
-                                      seatedInput.camForward,
+                                      headCameraMode ? THE_CAMERA.lookWishFront
+                                                     : seatedInput.camForward,
                                       THE_CAMERA.pos,
-                                      frame.extendRightMouse);
+                                      frame.extendRightMouse,
+                                      headCameraMode ? THE_CAMERA.lookWishUp
+                                                     : THE_CAMERA.up);
                 }
             } else if (ragdoll.armRagdollActive()) {
                 ragdoll.deactivateArmRagdoll(*sim.player);
@@ -412,8 +419,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                 equippedDef->armRagdoll.enabled &&
                 (!equippedDef->armRagdoll.actionScoped ||
                  MimitaMelee::currentActionUsesPhysicalArm(equippedDef->id));
-            if ((AimBodyConfig::instance().bodyPhysicsMode() || armRagdoll) &&
-                (!sim.player->usesMeleeAuthoredPose() || armRagdoll)) {
+            const bool headCameraMode =
+                CamConfig::instance().data().orientationMode == "head_world";
+            if ((AimBodyConfig::instance().bodyPhysicsMode() ||
+                 headCameraMode || armRagdoll) &&
+                (!sim.player->usesMeleeAuthoredPose() || armRagdoll ||
+                 headCameraMode)) {
                 MIMITA_PERF_SCOPE("AimBodyUpdate");
                 if (armRagdoll) {
                     ragdoll.updateArmRagdoll(
@@ -427,9 +438,12 @@ void simulateTick(SimContext& sim, const InputFrame& frame)
                     if (!ragdoll.aimActive())
                         ragdoll.activateAim(*sim.player);
                     ragdoll.updateAim(TICK_DT, *sim.world, *sim.player,
-                                      normalInput.camForward,
+                                      headCameraMode ? THE_CAMERA.lookWishFront
+                                                     : normalInput.camForward,
                                       THE_CAMERA.pos,
-                                      frame.extendRightMouse);
+                                      frame.extendRightMouse,
+                                      headCameraMode ? THE_CAMERA.lookWishUp
+                                                     : THE_CAMERA.up);
                 }
             } else if (ragdoll.armRagdollActive()) {
                 ragdoll.deactivateArmRagdoll(*sim.player);

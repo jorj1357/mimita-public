@@ -298,6 +298,9 @@ private:
     enum class AvatarLoadState { Queued, Loading, Ready, Failed };
     std::unordered_map<std::string, AvatarLoadState> mLoadStates;
     std::unordered_set<std::string> mRetryableAvatarLoads;
+    std::unordered_map<std::string, int> mAvatarLoadAttempts;
+    std::unordered_map<std::string, std::chrono::steady_clock::time_point> mAvatarRetryAfter;
+    std::unordered_map<std::string, std::string> mAvatarLoadFailureReason;
     struct PendingAvatarLoad {
         std::string name;
         AvatarDefinition definition;

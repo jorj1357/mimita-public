@@ -130,7 +130,8 @@ void HitEffects::onHit(const HitEvent& event)
             : 1.0f;
         EffectPartSystem::instance().spawnBloodEffect(
             event.position, event.direction, (float)event.damage,
-            event.attacker, event.victim, directness, event.hitDistance);
+            event.attacker, event.victim, directness, event.hitDistance,
+            event.bloodAmountScale);
     }
 
     // 6. Damage number - only for entity hits (not world geometry)

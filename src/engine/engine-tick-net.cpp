@@ -698,9 +698,10 @@ void engineTickNet(Engine& engine, float dt)
                     mpContext.mapLoadAttempts = 0;
                     printf("[CLIENT MAP SWITCH] old=%s new=%s attempts=%u\n",
                            oldMap.c_str(), requiredPath.c_str(), mpContext.mapLoadAttempts);
-                    player.reset();
-                    RagdollModeSystem::instance().clearCorpses();  // old map positions invalid
-                    clearRuntimeObjects("client-map-switch");
+                     mpClearRemoteWorldState(mpContext, "server-required-map-loaded");
+                     player.reset();
+                     RagdollModeSystem::instance().clearCorpses();  // old map positions invalid
+                     clearRuntimeObjects("client-map-switch");
                 }
                 else
                 {

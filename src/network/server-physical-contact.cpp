@@ -202,6 +202,9 @@ static void flushEpisode(SOCKET sock,
     confirmed.killed = episode.pendingKilled;
     confirmed.healthBefore = episode.pendingHealthBefore;
     confirmed.healthAfter = episode.pendingHealthAfter;
+    confirmed.bodyPart = episode.bodyPart;
+    confirmed.partHealthAfter = episode.partHealthAfter;
+    confirmed.partDestroyed = episode.partDestroyed;
     queueServerDamageConfirmedEvent(
         sock, players, tick, totalPacketsOut, attacker.id, targetIt->second,
         episode.pendingConfirmationDamage, confirmed,
@@ -494,7 +497,8 @@ static void applyPhysicalContactHit(SOCKET sock,
     const glm::vec3 knockback = physicalContactKnockback(def, shape, hit, damage, swordLunge);
     ServerDamageResult result = applyServerDamage(
         players, target, attacker.id, damage, knockback,
-        ServerDamageSource::PhysicalContact);
+        ServerDamageSource::PhysicalContact,
+        ActorBodyPart::Unknown, hit.hitPosition);
     if (!result.applied)
         return;
 
@@ -506,6 +510,9 @@ static void applyPhysicalContactHit(SOCKET sock,
         episode.pendingHealthBefore = result.healthBefore;
     episode.pendingHealthAfter = result.healthAfter;
     episode.pendingKilled = episode.pendingKilled || result.killed;
+    episode.bodyPart = result.bodyPart;
+    episode.partHealthAfter = result.partHealthAfter;
+    episode.partDestroyed = result.partDestroyed;
     episode.samplesSinceConfirmation++;
     episode.accumulatedKnockback += knockback;
     episode.lastHitPosition = hit.hitPosition;

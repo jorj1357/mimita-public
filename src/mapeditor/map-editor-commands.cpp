@@ -163,6 +163,55 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] chunk not found");
                 return;
             }
+            if (command == "chunk_preview") {
+                if (args.size() < 2) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_preview <chunkId>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.previewChunk(args[1]);
+                return;
+            }
+            if (command == "chunk_part_material" ||
+                command == "chunk_material") {
+                if (args.size() < 3) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_part_material <chunkId/partId> <material>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.selectObject(args[1]);
+                editor.setSelectedChunkPartMaterial(args[2]);
+                return;
+            }
+            if (command == "chunk_part_uv" || command == "chunk_uv") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_part_uv <chunkId/partId> <u> <v>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                try {
+                    editor.selectObject(args[1]);
+                    editor.setSelectedChunkPartUvScale(std::stof(args[2]),
+                                                      std::stof(args[3]));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid uv scale");
+                }
+                return;
+            }
+            if (command == "chunk_connector_field") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_connector_field <chunkId/connectorId> <side|role|orientation|tag> <value>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.selectObject(args[1]);
+                editor.setSelectedChunkConnectorField(args[2], args[3]);
+                return;
+            }
             if (command == "focus") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 editor.focusSelection();
@@ -429,6 +478,8 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] route_bonus <sec> | route_wait <ticks> | route_move <up|down> | route_validate");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | select_kind route | select_route | copy | paste | cut | duplicate | delete | undo | redo");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor set_position <x> <y> <z> | nudge <dx> <dy> <dz>");
+                Terminal::instance().addLog("[MAPEDIT] chunks: chunk_preview <chunk> | chunk_part_material <chunk/part> <material> | chunk_part_uv <chunk/part> <u> <v>");
+                Terminal::instance().addLog("[MAPEDIT] chunks: chunk_connector_field <chunk/connector> <side|role|orientation|tag> <value>");
                 Terminal::instance().addLog("[MAPEDIT] properties: click an outliner row; edit X/Y/Z fields, Enter applies");
                 return;
             }

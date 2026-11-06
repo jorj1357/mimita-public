@@ -168,6 +168,33 @@ editable rotation/scale overrides for GLB nodes are the next slice. GLB
 overrides currently persist position only. This follows the 2026-11-01 user
 direction to tune rotations in the editor without repeatedly editing JSON.
 
+### Chunk primitive authoring (2026-11-05)
+
+Map-authored primitive chunks appear in the outliner as
+`chunk_part <chunkId>/<partId>` and
+`chunk_connector <chunkId>/<connectorId>` rows. Selecting a row places a
+non-colliding preview at the editor camera when that chunk has no visible
+instance. The world preview draws part wire boxes and connector side markers,
+and the existing gizmo moves the selected part or connector in chunk-local
+space.
+
+The properties panel edits part position, material, and UV scale. Material and
+UV changes refresh already-loaded streamed templates without rebuilding chunk
+collision. Structural changes (position, size, collision, connectors, or part
+add/remove) mark the generation signature dirty so streamed chunks and their
+per-chunk collision proxies are regenerated. Terminal equivalents:
+
+```text
+mapeditor chunk_preview <chunkId>
+mapeditor chunk_part_material <chunkId>/<partId> <material>
+mapeditor chunk_part_uv <chunkId>/<partId> <u> <v>
+mapeditor chunk_connector_field <chunkId>/<connectorId> <side|role|orientation|tag> <value>
+```
+
+`worldchunk face|material|uv` and `worldconnector connect|disconnect|preview`
+use the same owners. Primitive face UVs default to one repeat per world unit;
+`uv_scale` and `face_uv_scale` provide per-part and per-face overrides.
+
 ### Drag handles
 
 The selection handle is a filled, camera-facing axis gizmo. The default values
@@ -1142,12 +1169,17 @@ required for the first loop:
 2. Add built-in connector-aware chunk variants with `worldchunk defaults`.
    They are `chunk_straight`, `chunk_corner`, `chunk_cross`, and
    `chunk_deadend`, using the existing procedural room GLB.
-3. To add your own chunk:
-   `worldchunk add <id> <glb-path> <minX minY minZ> <maxX maxY maxZ> [tags...]`
+3. To add your own primitive chunk:
+   `worldchunk add <id>`
+   `worldchunk part <id> floor floor 0 0 -0.25 10 10 0.5 floorv2`
+   `worldchunk save <id>`
 4. Add connection points to a chunk:
-   `worldconnector <chunkId> <connectorId> <side> <orientation> [tags...]`
-   Sides are `east`, `west`, `north`, `south`; orientation describes the
-   opening type, for example `doorway`.
+   `worldconnector add <chunkId> <connectorId> <side> <orientation> <x> <y> <z> <role> [tags...]`
+   Sides are `east`, `west`, `north`, `south`, `up`, `down`; orientation
+   describes the opening type, for example `doorway`. Empty tags are
+   unconstrained. Connect or preview matches with:
+   `worldconnector connect <chunkA> <connA> <chunkB> <connB>`
+   `worldconnector preview <chunk> <connector>`
 5. Create a generation zone:
    `worldzone add <id> <seed> <generatorVersion> <minX minY minZ> <maxX maxY maxZ> [chunkIds...]`
    If chunk IDs are omitted, the zone uses every authored chunk.

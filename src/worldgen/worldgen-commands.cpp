@@ -1,6 +1,7 @@
 // 2026-11-05
 #include "worldgen/worldgen-commands.h"
 
+#include <algorithm>
 #include <exception>
 #include <string>
 #include <vector>
@@ -10,6 +11,8 @@
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
+#include "procedural/infinite-world-runtime.h"
+#include "world/streamed-world-layer.h"
 #include "worldgen/worldgen-library.h"
 
 using MimitaWorldGen::WorldGenLibrary;
@@ -62,6 +65,43 @@ GenerationZone* findZone(const std::string& id)
     return nullptr;
 }
 
+AuthoredChunkConnector* findConnector(AuthoredChunk& chunk,
+                                      const std::string& id)
+{
+    for (AuthoredChunkConnector& connector : chunk.connectors)
+        if (connector.id == id) return &connector;
+    return nullptr;
+}
+
+std::string linkKey(const std::string& chunkId, const std::string& connectorId)
+{
+    return chunkId + "/" + connectorId;
+}
+
+bool hasLink(const AuthoredChunkConnector& connector,
+             const std::string& chunkId, const std::string& connectorId)
+{
+    const std::string key = linkKey(chunkId, connectorId);
+    return std::find(connector.links.begin(), connector.links.end(), key) !=
+           connector.links.end();
+}
+
+void addLink(AuthoredChunkConnector& connector, const std::string& chunkId,
+             const std::string& connectorId)
+{
+    if (hasLink(connector, chunkId, connectorId)) return;
+    connector.links.push_back(linkKey(chunkId, connectorId));
+}
+
+void removeLink(AuthoredChunkConnector& connector, const std::string& chunkId,
+                const std::string& connectorId)
+{
+    const std::string key = linkKey(chunkId, connectorId);
+    connector.links.erase(
+        std::remove(connector.links.begin(), connector.links.end(), key),
+        connector.links.end());
+}
+
 int faceIndexFromName(const std::string& name)
 {
     if (name == "+x" || name == "x+") return 0;
@@ -90,7 +130,7 @@ void registerWorldGenCommands()
     terminal.registerCommand({
         "worldmode",
         "Manage per-mode world-generation JSON profiles",
-        "worldmode <list|ensure|load <id>|save <id>|grid <id> <plane>|cell <id> <x> <y> <z>|size <id> <x> <y> <z>|radius <id> <x> <y> <z>|spacing <id> <center|connector>|chunks <id> [file...]|branch <id> <depth>|cycles <id> <0|1>>",
+        "worldmode <list|ensure|load <id>|save <id>|grid <id> <plane>|cell <id> <x> <y> <z>|size <id> <x> <y> <z>|radius <id> <x> <y> <z>|spacing <id> <center|connector>|chunks <id> [file...]|branch <id> <depth>|cycles <id> <0|1>|crossings <id> <0|1>>",
         [](const std::vector<std::string>& args) {
             WorldGenLibrary& lib = WorldGenLibrary::instance();
             if (args.empty() || args[0] == "list") {
@@ -150,6 +190,9 @@ void registerWorldGenCommands()
             } else if (action == "cycles") {
                 mode.allowCycles = args[2] != "0";
                 changed = true;
+            } else if (action == "crossings") {
+                mode.allowCrossings = args[2] != "0";
+                changed = true;
             } else if (action == "chunks") {
                 mode.chunkFiles.clear();
                 for (size_t i = 2; i < args.size(); ++i)
@@ -169,11 +212,14 @@ void registerWorldGenCommands()
     terminal.registerCommand({
         "worldchunk",
         "Author a reusable primitive chunk and save it to the shared library",
-        "worldchunk <add <id>|defaults|list|save <id>|part <chunk> <partId> <kind> <x> <y> <z> <sx> <sy> <sz> [material]|face <chunk> <partId> <+x|-x|+y|-y|+z|-z> <material>>",
+        "worldchunk <add <id>|defaults|list|save <id>|part <chunk> <partId> <kind> <x> <y> <z> <sx> <sy> <sz> [material]|face <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <material>|material <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <material>|uv <chunk> <partId> <+x|-x|+y|-y|+z|-z|all> <u> <v>|remove <chunk> <partId>>",
         [](const std::vector<std::string>& args) {
             WorldGenLibrary& lib = WorldGenLibrary::instance();
             MapConfigRegistry& registry = MapConfigRegistry::instance();
-            if (args.empty()) { log("[WORLDCHUNK] add|defaults|list|save|part|face"); return; }
+            if (args.empty()) {
+                log("[WORLDCHUNK] add|defaults|list|save|part|face|material|uv|remove");
+                return;
+            }
             if (args[0] == "defaults") {
                 std::string error;
                 if (lib.ensureDefaults(&error)) log("[WORLDCHUNK] defaults ready");
@@ -191,8 +237,12 @@ void registerWorldGenCommands()
                 AuthoredChunk* chunk = findChunk(args[1]);
                 if (!chunk) { log("[WORLDCHUNK] chunk not found"); return; }
                 std::string error;
-                if (lib.saveChunk(*chunk, &error)) log("[WORLDCHUNK] saved " + args[1]);
-                else log("[WORLDCHUNK] " + error);
+                if (lib.saveChunk(*chunk, &error)) {
+                    InfiniteWorldRuntime::instance().invalidateModeChunks();
+                    log("[WORLDCHUNK] saved " + args[1]);
+                } else {
+                    log("[WORLDCHUNK] " + error);
+                }
                 return;
             }
             if (args[0] == "add" && args.size() >= 2) {
@@ -217,28 +267,80 @@ void registerWorldGenCommands()
                 if (args.size() >= 10) part.material = args[9];
                 chunk->parts.push_back(std::move(part));
                 registry.markChanged();
+                StreamedWorldLayer::instance().refreshChunk(*chunk);
                 logEvent("worldgen.chunk.part-added", args[1],
                          {{"chunk", args[1]}, {"part", args[2]}, {"kind", args[3]}});
                 log("[WORLDCHUNK] part " + args[2] + " added to " + args[1]);
                 return;
             }
-            if (args[0] == "face" && args.size() >= 5) {
+            if ((args[0] == "face" || args[0] == "material") &&
+                args.size() >= 5) {
                 AuthoredChunk* chunk = findChunk(args[1]);
                 if (!chunk) { log("[WORLDCHUNK] chunk not found"); return; }
-                int face = faceIndexFromName(args[3]);
-                if (face < 0) { log("[WORLDCHUNK] bad face"); return; }
+                int face = args[3] == "all" ? -1 : faceIndexFromName(args[3]);
+                if (face < -1) { log("[WORLDCHUNK] bad face"); return; }
+                bool found = false;
+                for (const auto& part : chunk->parts)
+                    if (part.id == args[2]) { found = true; break; }
+                if (!found) { log("[WORLDCHUNK] part not found"); return; }
+                StreamedWorldLayer::instance().updateMaterial(
+                    args[1], args[2], face, args[4]);
+                logEvent(args[0] == "face" ? "worldgen.chunk.face-material"
+                                           : "worldgen.chunk.material",
+                         args[1],
+                         {{"chunk", args[1]}, {"part", args[2]},
+                          {"face", face}, {"material", args[4]}});
+                log("[WORLDCHUNK] material set");
+                return;
+            }
+            if (args[0] == "uv" && args.size() >= 6) {
+                AuthoredChunk* chunk = findChunk(args[1]);
+                if (!chunk) { log("[WORLDCHUNK] chunk not found"); return; }
+                int face = args[3] == "all" ? -1 : faceIndexFromName(args[3]);
+                if (face < -1) { log("[WORLDCHUNK] bad face"); return; }
+                float u = 1.0f;
+                float v = 1.0f;
+                try {
+                    u = std::stof(args[4]);
+                    v = std::stof(args[5]);
+                } catch (const std::exception&) {
+                    log("[WORLDCHUNK] bad uv scale");
+                    return;
+                }
                 for (auto& part : chunk->parts) {
-                    if (part.id == args[2]) {
-                        part.faceMaterials[face] = args[4];
-                        registry.markChanged();
-                        logEvent("worldgen.chunk.face-material", args[1],
-                                 {{"chunk", args[1]}, {"part", args[2]},
-                                  {"face", face}, {"material", args[4]}});
-                        log("[WORLDCHUNK] face material set");
-                        return;
-                    }
+                    if (part.id != args[2]) continue;
+                    if (face < 0) part.uvScale = glm::vec2(u, v);
+                    else part.faceUvScale[face] = glm::vec2(u, v);
+                    registry.markChanged();
+                    StreamedWorldLayer::instance().refreshChunk(*chunk);
+                    logEvent("worldgen.chunk.uv-scale", args[1],
+                             {{"chunk", args[1]}, {"part", args[2]},
+                              {"face", face}, {"u", u}, {"v", v}});
+                    log("[WORLDCHUNK] uv scale set");
+                    return;
                 }
                 log("[WORLDCHUNK] part not found");
+                return;
+            }
+            if (args[0] == "remove" && args.size() >= 3) {
+                AuthoredChunk* chunk = findChunk(args[1]);
+                if (!chunk) { log("[WORLDCHUNK] chunk not found"); return; }
+                const auto before = chunk->parts.size();
+                chunk->parts.erase(
+                    std::remove_if(chunk->parts.begin(), chunk->parts.end(),
+                                   [&](const ChunkPart& part) {
+                                       return part.id == args[2];
+                                   }),
+                    chunk->parts.end());
+                if (chunk->parts.size() == before) {
+                    log("[WORLDCHUNK] part not found");
+                    return;
+                }
+                registry.markChanged();
+                StreamedWorldLayer::instance().refreshChunk(*chunk);
+                logEvent("worldgen.chunk.part-removed", args[1],
+                         {{"chunk", args[1]}, {"part", args[2]}});
+                log("[WORLDCHUNK] part removed");
                 return;
             }
             log("[WORLDCHUNK] unknown command");
@@ -248,17 +350,26 @@ void registerWorldGenCommands()
 
     terminal.registerCommand({
         "worldconnector",
-        "Author a chunk connection point",
-        "worldconnector <add <chunk> <id> <side> <orientation> <x> <y> <z> <role> [tag...]|list <chunk>>",
+        "Author and link chunk connection points",
+        "worldconnector <add <chunk> <id> <side> <orientation> <x> <y> <z> <role> [tag...]|list <chunk>|remove <chunk> <id>|connect <chunkA> <connA> <chunkB> <connB>|disconnect <chunkA> <connA> <chunkB> <connB>|preview <chunk> <connector>>",
         [](const std::vector<std::string>& args) {
             MapConfigRegistry& registry = MapConfigRegistry::instance();
-            if (args.size() < 2) { log("[WORLDCONNECTOR] add <chunk> ..."); return; }
+            if (args.size() < 2) {
+                log("[WORLDCONNECTOR] add|list|remove|connect|disconnect|preview");
+                return;
+            }
             if (args[0] == "list") {
                 AuthoredChunk* chunk = findChunk(args[1]);
                 if (!chunk) { log("[WORLDCONNECTOR] chunk not found"); return; }
-                for (const auto& c : chunk->connectors)
+                for (const auto& c : chunk->connectors) {
+                    std::string tags;
+                    for (const std::string& tag : c.tags) tags += " " + tag;
+                    std::string links;
+                    for (const std::string& link : c.links) links += " " + link;
                     log("[WORLDCONNECTOR] " + c.id + " side=" + c.side +
-                        " role=" + c.role + " orientation=" + c.orientation);
+                        " role=" + c.role + " orientation=" + c.orientation +
+                        " tags=[" + tags + " ] links=[" + links + " ]");
+                }
                 return;
             }
             if (args[0] == "add" && args.size() >= 10) {
@@ -282,6 +393,79 @@ void registerWorldGenCommands()
                 log("[WORLDCONNECTOR] added " + args[2] + " to " + args[1]);
                 return;
             }
+            if (args[0] == "remove" && args.size() >= 3) {
+                AuthoredChunk* chunk = findChunk(args[1]);
+                if (!chunk) { log("[WORLDCONNECTOR] chunk not found"); return; }
+                const auto before = chunk->connectors.size();
+                chunk->connectors.erase(
+                    std::remove_if(chunk->connectors.begin(),
+                                   chunk->connectors.end(),
+                                   [&](const AuthoredChunkConnector& connector) {
+                                       return connector.id == args[2];
+                                   }),
+                    chunk->connectors.end());
+                if (chunk->connectors.size() == before) {
+                    log("[WORLDCONNECTOR] connector not found");
+                    return;
+                }
+                registry.markChanged();
+                logEvent("worldgen.connector.removed", args[1],
+                         {{"chunk", args[1]}, {"connector", args[2]}});
+                log("[WORLDCONNECTOR] removed " + args[2]);
+                return;
+            }
+            if ((args[0] == "connect" || args[0] == "disconnect") &&
+                args.size() >= 5) {
+                AuthoredChunk* chunkA = findChunk(args[1]);
+                AuthoredChunk* chunkB = findChunk(args[3]);
+                if (!chunkA || !chunkB) {
+                    log("[WORLDCONNECTOR] chunk not found");
+                    return;
+                }
+                AuthoredChunkConnector* connectorA =
+                    findConnector(*chunkA, args[2]);
+                AuthoredChunkConnector* connectorB =
+                    findConnector(*chunkB, args[4]);
+                if (!connectorA || !connectorB) {
+                    log("[WORLDCONNECTOR] connector not found");
+                    return;
+                }
+                if (args[0] == "connect") {
+                    addLink(*connectorA, args[3], args[4]);
+                    addLink(*connectorB, args[1], args[2]);
+                } else {
+                    removeLink(*connectorA, args[3], args[4]);
+                    removeLink(*connectorB, args[1], args[2]);
+                }
+                registry.markChanged();
+                logEvent(args[0] == "connect" ? "worldgen.connector.connected"
+                                              : "worldgen.connector.disconnected",
+                         args[1],
+                         {{"chunk_a", args[1]}, {"connector_a", args[2]},
+                          {"chunk_b", args[3]}, {"connector_b", args[4]}});
+                log("[WORLDCONNECTOR] " + args[0] + " " + args[1] + "/" +
+                    args[2] + " <-> " + args[3] + "/" + args[4]);
+                return;
+            }
+            if (args[0] == "preview" && args.size() >= 3) {
+                std::string error;
+                const auto matches = previewCompatibleConnectors(
+                    args[1], args[2], &error);
+                if (!error.empty()) {
+                    log("[WORLDCONNECTOR] " + error);
+                    return;
+                }
+                for (const auto& match : matches) {
+                    log("[WORLDCONNECTOR] match " + match.chunkId + "/" +
+                        match.connectorId + " side=" + match.side +
+                        " role=" + match.role +
+                        (match.explicitLink ? " linked" : " auto"));
+                }
+                logEvent("worldgen.connector.preview", args[1],
+                         {{"chunk", args[1]}, {"connector", args[2]},
+                          {"matches", matches.size()}});
+                return;
+            }
             log("[WORLDCONNECTOR] usage");
         },
         "2026-11-05", CommandCategory::Debug
@@ -290,7 +474,7 @@ void registerWorldGenCommands()
     terminal.registerCommand({
         "worldzone",
         "Author and tune a generation zone",
-        "worldzone <add <id> <seed> <version>|grid <id> <xy|xz|yz|all>|origin <id> <x> <y> <z>|cell <id> <x> <y> <z>|size <id> <x> <y> <z>|radius <id> <x> <y> <z>|spacing <id> <center|connector>|mode <id> <modeId>|axes <id> <x> <y> <z>|list|save>",
+        "worldzone <add <id> <seed> <version>|grid <id> <xy|xz|yz|all>|origin <id> <x> <y> <z>|cell <id> <x> <y> <z>|size <id> <x> <y> <z>|radius <id> <x> <y> <z>|spacing <id> <center|connector>|mode <id> <modeId>|axes <id> <x> <y> <z>|cycles <id> <0|1>|crossings <id> <0|1>|list|save>",
         [](const std::vector<std::string>& args) {
             MapConfigRegistry& registry = MapConfigRegistry::instance();
             if (args.empty() || args[0] == "list") {
@@ -339,6 +523,12 @@ void registerWorldGenCommands()
                 changed = true;
             } else if (action == "mode") {
                 zone->modeId = args[2];
+                changed = true;
+            } else if (action == "cycles") {
+                zone->allowCycles = args[2] != "0";
+                changed = true;
+            } else if (action == "crossings") {
+                zone->allowCrossings = args[2] != "0";
                 changed = true;
             }
             if (changed) {

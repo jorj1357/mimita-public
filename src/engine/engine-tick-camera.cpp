@@ -3,6 +3,7 @@
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
 #include <cmath>
+#include <glm/gtx/quaternion.hpp>
 #include <functional>
 #include <GLFW/glfw3.h>
 #include "camera.h"
@@ -74,6 +75,10 @@ const RocketLauncherState& replayRocketState() { return gReplayRocketState; }
 static void syncPlayerYawFromCamera(Player& player, const Camera& camera)
 {
     if (player.dead) return;
+    if (CamConfig::instance().data().orientationMode == "head_world") {
+        player.yaw = camera.yaw;
+        return;
+    }
     glm::vec2 flat(camera.front.x, camera.front.y);
     if (glm::length(flat) > 0.0001f) {
         flat = glm::normalize(flat);
@@ -1050,6 +1055,33 @@ void engineTickCamera(Engine& engine, float dt)
         camera.fov = camCfg.fov;
         camera.follow(player.pos, camCfg.offset, camCfg.positionStiffness);
         camera.smoothCollision(player.pos, world, dt, camCfg.positionStiffness, camCfg.stiffnessEnabled, camCfg.collisionEnabled, camCfg.collisionPushEnabled, camCfg.collisionPushback);
+    }
+
+    // In head-world mode mouse look remains the target, while the rendered
+    // camera uses the world-space orientation of the physical head.
+    if (CamConfig::instance().data().orientationMode == "head_world" &&
+        !player.dead && !player.voidDeathTriggered &&
+        (RagdollModeSystem::instance().isActive() ||
+         RagdollModeSystem::instance().aimActive())) {
+        const glm::mat4 headTransform =
+            RagdollModeSystem::instance().getHeadTransform();
+        const glm::quat headRotation = glm::normalize(
+            glm::quat_cast(glm::mat3(headTransform)));
+        const auto& ragdollConfig = RagdollModeConfig::instance().data();
+        glm::vec3 localForward(1.0f, 0.0f, 0.0f);
+        glm::vec3 localUp(0.0f, 0.0f, 1.0f);
+        const auto axes = ragdollConfig.aim.find("head");
+        if (axes != ragdollConfig.aim.end()) {
+            localForward = axes->second.frontAxis;
+            localUp = axes->second.upAxis;
+        }
+        camera.front = glm::normalize(headRotation * localForward);
+        camera.up = glm::normalize(headRotation * localUp);
+        camera.right = glm::normalize(glm::cross(camera.front, camera.up));
+        if (glm::length(camera.right) > 1e-4f)
+            camera.up = glm::normalize(glm::cross(camera.right, camera.front));
+        if (!camera.thirdPerson && !RagdollModeSystem::instance().isActive())
+            camera.pos = glm::vec3(headTransform[3]);
     }
 
     // RMB FOV zoom is presentation-only. A gamemode may own a mode-level

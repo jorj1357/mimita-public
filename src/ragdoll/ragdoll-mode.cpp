@@ -459,6 +459,19 @@ static glm::quat quatFromMatrixCanonical(const glm::mat4& m)
     return q;
 }
 
+// Keep the head's relative linear motion physical while reducing how much the
+// actor's movement acceleration pulls it away from the camera aim.
+static void dampHeadMovementInfluence(RigidBody& head,
+                                      const glm::vec3& movementVelocity,
+                                      float influence, float dt)
+{
+    const float response = 12.0f *
+        (1.0f - glm::clamp(influence, 0.0f, 1.0f));
+    const float retained = std::exp(-response * std::max(0.0f, dt));
+    head.linearVelocity = movementVelocity +
+        (head.linearVelocity - movementVelocity) * retained;
+}
+
 RagdollModeSystem& RagdollModeSystem::instance()
 {
     static RagdollModeSystem sys;
@@ -593,8 +606,13 @@ void RagdollModeSystem::buildAimBody(Player& player, RagdollBody& body)
     const float inherit =
         glm::clamp(RagdollModeConfig::instance().data().physicalAim.limbInheritance,
                    0.0f, 1.0f);
-    for (auto& part : body.parts)
-        part.body.linearVelocity = glm::mix(part.body.linearVelocity, player.vel, inherit);
+    const auto& ragdollCfg = RagdollModeConfig::instance().data();
+    for (auto& part : body.parts) {
+        const float partInherit = part.name == "head"
+            ? inherit * ragdollCfg.headMovementInfluence : inherit;
+        part.body.linearVelocity = glm::mix(
+            part.body.linearVelocity, player.vel, partInherit);
+    }
 }
 
 void RagdollModeSystem::activateAim(Player& player)
@@ -945,7 +963,8 @@ void RagdollModeSystem::tetherAimRoot(const Player& player, RagdollBody& b, floa
     torso.linearVelocity = player.vel;
 }
 
-void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForward, float dt)
+void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForward,
+                                      const glm::vec3& camUp, float dt)
 {
     const auto& cfg = RagdollModeConfig::instance().data();
 
@@ -956,7 +975,9 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
 
         glm::vec3 fwd = camForward;
         if (glm::length(fwd) < 1e-5f) return;
-        glm::quat target = aimLookRotation(fwd, glm::vec3(0.0f, 0.0f, 1.0f))
+        const glm::vec3 up = idx == b.headIndex
+            ? camUp : glm::vec3(0.0f, 0.0f, 1.0f);
+        glm::quat target = aimLookRotation(fwd, up)
                          * part.aimOffset;
 
         if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
@@ -976,7 +997,8 @@ void RagdollModeSystem::applyAimMotor(RagdollBody& b, const glm::vec3& camForwar
             body.angularVelocity *= cap / spd;
     };
 
-    motor(b.headIndex, cfg.physicalAim.headWeight);
+    if (cfg.headMode == "mouse_aim")
+        motor(b.headIndex, cfg.physicalAim.headWeight);
     motor(b.torsoIndex, cfg.physicalAim.torsoWeight);
 }
 
@@ -1410,14 +1432,16 @@ void RagdollModeSystem::syncAimToPlayer(Player& player, RagdollBody& b)
 void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
                                   const glm::vec3& camForward,
                                   const glm::vec3& camPosition,
-                                  bool rightMouseHeld)
+                                  bool rightMouseHeld,
+                                  const glm::vec3& camUp)
 {
     if (!mAimActive) return;
     RagdollBody& b = mAim;
     const AimBodyConfig& aimConfig = AimBodyConfig::instance();
     const bool pointingWanted = aimConfig.rightArmPointingRmb()
                              && rightMouseHeld && b.rightArmIndex >= 0;
-    stepAimBody(dt, world, player, b, camForward, camPosition, pointingWanted);
+    stepAimBody(dt, world, player, b, camForward, camPosition,
+                pointingWanted, camUp);
 
     if (mAimTransformTracePending) {
         logAimTransformSnapshot(player, b, "post_sync");
@@ -1443,7 +1467,7 @@ void RagdollModeSystem::updateAim(float dt, const World& world, Player& player,
 void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player,
                                     RagdollBody& b, const glm::vec3& aimForward,
                                     const glm::vec3& aimPosition,
-                                    bool pointingWanted)
+                                    bool pointingWanted, const glm::vec3& aimUp)
 {
     const float armRecovery = std::max(0.0f, player.weaponRecoilArmRecoveryRate);
     const float armStep = std::max(0.0f, dt) * armRecovery;
@@ -1480,7 +1504,12 @@ void RagdollModeSystem::stepAimBody(float dt, const World& world, Player& player
     b.rightArmPointing = pointingWanted || b.rightArmPointingBlend > 1e-3f;
 
     tetherAimRoot(player, b, dt);
-    applyAimMotor(b, aimForward, dt);
+    if (cfg.headMode == "mouse_aim" &&
+        b.headIndex >= 0 && b.headIndex < (int)b.parts.size()) {
+        dampHeadMovementInfluence(b.parts[b.headIndex].body, player.vel,
+                                  cfg.headMovementInfluence, dt);
+    }
+    applyAimMotor(b, aimForward, aimUp, dt);
     if (hybrid) applyHybridSprings(b, dt);
     applyRightArmPointMotor(b, player, aimForward, aimPosition, dt);
     applyLeftArmPointMotor(b, aimForward, dt);
@@ -2020,6 +2049,15 @@ void RagdollModeSystem::update(float dt, const World& world, Player& player,
 
     b.activationTime += dt;
 
+    if (cfg.headMode == "mouse_aim" && b.headIndex >= 0 &&
+        b.headIndex < (int)b.parts.size() && b.torsoIndex >= 0 &&
+        b.torsoIndex < (int)b.parts.size()) {
+        dampHeadMovementInfluence(
+            b.parts[b.headIndex].body,
+            b.parts[b.torsoIndex].body.linearVelocity,
+            cfg.headMovementInfluence, dt);
+    }
+
     // Step 1: Inputs and physical controls (head aim, arm extension, grabs).
     applyControls(dt, input, camera, b);
     processGrab(input, camera, world, b);
@@ -2124,11 +2162,12 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
                            float weight) {
         RigidBody& body = part.body;
 
-        glm::vec3 upHint(0.0f, 0.0f, 1.0f);
-        if (glm::length(glm::cross(camera.front, upHint)) < 0.05f)
-            upHint = camera.up;
-
-        glm::quat target = aimLookRotation(camera.front, upHint) * part.aimOffset;
+        const bool headAim = part.name == "head";
+        const glm::vec3 aimForward = part.name == "head"
+            ? camera.lookWishFront : camera.front;
+        const glm::vec3 upHint = headAim ? camera.lookWishUp
+                                         : glm::vec3(0.0f, 0.0f, 1.0f);
+        glm::quat target = aimLookRotation(aimForward, upHint) * part.aimOffset;
 
         if (cfg.physicalAim.damping == PhysicalAimDamping::Physical) {
             const glm::vec3 torque = computeAimTorque(
@@ -2158,7 +2197,8 @@ void RagdollModeSystem::applyControls(float dt, const InputState& input, const C
             body.angularVelocity *= maxSpeed / spd;
     };
 
-    if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size())
+    if (cfg.headMode == "mouse_aim" &&
+        b.headIndex >= 0 && b.headIndex < (int)b.parts.size())
         aimAtCamera(b.parts[b.headIndex], cfg.headRotationStrength,
                     cfg.headRotationSpeed, cfg.physicalAim.headWeight);
 
@@ -2551,7 +2591,7 @@ glm::vec3 RagdollModeSystem::getHeadPosition() const
 
 glm::mat4 RagdollModeSystem::getHeadTransform() const
 {
-    const RagdollBody& b = mAlive;
+    const RagdollBody& b = mActive ? mAlive : mAim;
     if (b.headIndex >= 0 && b.headIndex < (int)b.parts.size()) {
         const RigidBody& head = b.parts[b.headIndex].body;
         return glm::translate(glm::mat4(1.0f), head.position)

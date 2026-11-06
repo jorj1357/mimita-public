@@ -20,6 +20,10 @@ public:
 // z is up dec 19 2025 
 glm::vec3 pos{0, 0, 0};
 glm::vec3 front{0, 1, 0};
+// Mouse-controlled desired direction, kept separate when the rendered camera
+// follows a physical head orientation.
+glm::vec3 lookWishFront{0, 1, 0};
+glm::vec3 lookWishUp{0, 0, 1};
 glm::vec3 up{0, 0, 1};
 glm::vec3 right{1, 0, 0};
 

@@ -14,6 +14,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <nlohmann/json.hpp>
 #include "camera.h"
 #include "config.h"
@@ -362,12 +363,21 @@ void renderPlayerInternal(
         (!p.avatarInstance || p.avatarInstance->name != p.avatarName()))
         av.applyAvatarToPlayer(p, p.avatarName());
 
-    // Kick async load once per player
+    // Kick async load once per player. Always issue the request here: an avatar
+    // instance may be bound while its model request was never queued (for
+    // example an avatar that failed to load before the instance was cached).
+    // Leaving mLazyLoadRequested true without a pending model kept the player
+    // as the fallback collision capsule forever.
     if (!p.modelLoaded && !p.mLazyLoadRequested &&
         (av.hasAvatar() || p.avatarInstance)) {
         p.mLazyLoadRequested = true;
-        if (!p.avatarInstance)
-            av.requestModelLoad(p);
+        std::string modelPath =
+            "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        if (p.avatarInstance && !p.avatarInstance->definition.playerModel.empty())
+            modelPath = p.avatarInstance->definition.playerModel;
+        if (!std::filesystem::exists(std::filesystem::path(modelPath)))
+            modelPath = "assets/entity/player/default/mimita-char-no-animations-v4.glb";
+        p.requestModelLoad(modelPath);
     }
     p.finalizeModelIfReady();
     av.finalizeAtlasIfReady(p);

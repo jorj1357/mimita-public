@@ -142,6 +142,12 @@
       0.0
     ]
   },
-  "world_impact": null,
+  "world_impact": {
+    "mass_kg": 0.002,
+    "density_kg_m3": 11340.0,
+    "diameter_m": 0.006,
+    "speed_mps": 320.0,
+    "penetration_m": 0.03
+  },
   "world_impact_profile": "buckshot_pellet"
 }

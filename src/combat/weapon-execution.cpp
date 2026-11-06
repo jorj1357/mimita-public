@@ -272,6 +272,7 @@ bool rayPlayerTarget(const glm::vec3& origin,
                 ? sweepCenter - hit.hitNormal * grow
                 : sweepCenter;
             hit.bodyPart = part.bodyPart;
+            hit.actorPart = part.actorPart;
             hit.headshot = part.bodyPart == HitBodyPart::Head;
             best = hit;
             hitAny = true;
@@ -345,6 +346,7 @@ HitscanTraceResult traceHitscan(const WeaponDefinition& def,
             aggregate.hitPosition = closest.hitPosition;
             aggregate.hitNormal = closest.hitNormal;
             aggregate.headshot = closest.headshot;
+            aggregate.actorPart = closest.actorPart;
             result.aggregates.push_back(aggregate);
             aggregateIt = result.aggregates.end() - 1;
         }

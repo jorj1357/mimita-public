@@ -435,6 +435,7 @@ struct MultiplayerContext
     bool postGapResync = false;
     uint64_t postGapResyncDeadlineMs = 0;
     int localServerHealth = 100;
+    uint8_t localServerPartHealth[6] = {100, 100, 100, 100, 100, 100};
     int lastSeenServerHealth = 100;
     // Authoritative Melee meters from the local actor's own snapshot.
     float localServerMeleePercent = 0.0f;
@@ -919,6 +920,10 @@ enum class DisconnectPolicy : uint8_t {
 };
 const char* disconnectPolicyName(DisconnectPolicy policy);
 void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy);
+// Clear actors/projectiles/ragdolls that belong to the previous world while
+// preserving the connection, local player identity, and chat/session state.
+// Use when the authoritative map changes or a join loads a different map.
+void mpClearRemoteWorldState(MultiplayerContext& ctx, const char* reason);
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, ::World& world);

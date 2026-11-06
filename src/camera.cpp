@@ -3,8 +3,10 @@
 // its just old
 
 #include "camera.h"
+#include "config/camera-config.h"
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 #include "combat/weapon-fire.h"
 #include "physics/physics-types.h"
@@ -23,20 +25,18 @@ void Camera::updateMouse(double xpos, double ypos) {
     xoff *= 0.15f;
     yoff *= 0.15f;
 
-    // this makes me look left or right dec192025 ? 
+    // This makes me look left or right dec192025 ?
     yaw -= xoff;
     pitch += yoff;
 
-    // Expanded pitch range
-    if (pitch > 89.9f) pitch = 89.9f;
-    if (pitch < -89.9f) pitch = -89.9f;
+    // The regular mouse camera keeps its established pitch clamp. Head-world
+    // mode needs an unbounded pitch wish so quaternion head aiming can pass
+    // through vertical without snapping at the Euler pole.
+    if (CamConfig::instance().data().orientationMode != "head_world") {
+        pitch = glm::clamp(pitch, -89.9f, 89.9f);
+    }
 
-    glm::vec3 dir;
-    // dec 19 2025 z is up now 
-    dir.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    dir.y = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    dir.z = sin(glm::radians(pitch));
-    front = glm::normalize(dir);
+    updateVectors();
 }
 
 void Camera::follow(const glm::vec3& target, const glm::vec3& offset, float stiffness) {
@@ -49,17 +49,26 @@ void Camera::follow(const glm::vec3& target, const glm::vec3& offset, float stif
 }
 
 void Camera::updateVectors() {
-    float effectivePitch = glm::clamp(pitch + punchPitch + weaponRecoilPitch, -89.9f, 89.9f);
+    float effectivePitch = pitch + punchPitch + weaponRecoilPitch;
+    if (CamConfig::instance().data().orientationMode != "head_world")
+        effectivePitch = glm::clamp(effectivePitch, -89.9f, 89.9f);
     float effectiveYaw = yaw + punchYaw + weaponRecoilYaw;
 
-    front = glm::normalize(glm::vec3(
-        cos(glm::radians(effectiveYaw)) * cos(glm::radians(effectivePitch)),
-        sin(glm::radians(effectiveYaw)) * cos(glm::radians(effectivePitch)),
-        sin(glm::radians(effectivePitch))
-    ));
+    // Compose world yaw and local pitch as quaternions. This remains
+    // continuous when pitch passes through straight up or down.
+    const glm::quat yawRotation = glm::angleAxis(
+        glm::radians(effectiveYaw), glm::vec3(0.0f, 0.0f, 1.0f));
+    const glm::quat pitchRotation = glm::angleAxis(
+        glm::radians(effectivePitch), glm::vec3(0.0f, -1.0f, 0.0f));
+    const glm::quat lookRotation = glm::normalize(yawRotation * pitchRotation);
+    lookWishFront = glm::normalize(lookRotation * glm::vec3(1.0f, 0.0f, 0.0f));
+    lookWishUp = glm::normalize(lookRotation * glm::vec3(0.0f, 0.0f, 1.0f));
 
-    right = glm::normalize(glm::cross(front, glm::vec3(0,0,1)));
-    up    = glm::normalize(glm::cross(right, front));
+    front = lookWishFront;
+    up = lookWishUp;
+    right = glm::normalize(glm::cross(front, up));
+    if (glm::length(right) > 1e-4f)
+        up = glm::normalize(glm::cross(right, front));
 }
 
 void Camera::decayPunch(float dt, float decayRate) {
