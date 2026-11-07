@@ -9,7 +9,9 @@
       "x": 16,
       "y": 16,
       "width": 700,
-      "height": 104
+      "height": 104,
+      "backgroundColor": [0.04, 0.05, 0.08, 0.82],
+      "textColor": [0.9, 0.95, 1.0, 1.0]
     },
     {
       "id": "map-editor.toolbar",
@@ -88,6 +90,157 @@
       "height": 36,
       "text": "Reload",
       "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.toolbar-button",
+      "type": "button",
+      "backgroundColor": [0.16, 0.25, 0.34, 0.94],
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.title",
+      "type": "text",
+      "x": 26,
+      "y": 24,
+      "fontSize": 0.42,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.summary",
+      "type": "text",
+      "x": 26,
+      "y": 52,
+      "fontSize": 0.30,
+      "textColor": [0.65, 0.72, 0.82, 1.0]
+    },
+    {
+      "id": "map-editor.status",
+      "type": "text",
+      "x": 26,
+      "y": 78,
+      "fontSize": 0.30,
+      "textColor": [0.55, 1.0, 0.7, 1.0]
+    },
+    {
+      "id": "map-editor.outliner",
+      "type": "panel",
+      "backgroundColor": [0.04, 0.05, 0.08, 0.82],
+      "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.outliner-title",
+      "type": "text",
+      "fontSize": 0.30,
+      "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.search",
+      "type": "text_input",
+      "fontSize": 0.28,
+      "backgroundColor": [0.10, 0.12, 0.16, 1.0],
+      "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.properties",
+      "type": "panel",
+      "backgroundColor": [0.03, 0.04, 0.06, 0.9],
+      "textColor": [0.9, 0.95, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.row-selected",
+      "type": "panel",
+      "backgroundColor": [0.24, 0.42, 0.68, 0.9],
+      "outlineColor": [0.65, 0.85, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.row-glb",
+      "type": "text",
+      "textColor": [0.55, 0.9, 0.6, 1.0]
+    },
+    {
+      "id": "map-editor.row-bombsite",
+      "type": "text",
+      "textColor": [1.0, 0.35, 0.35, 1.0]
+    },
+    {
+      "id": "map-editor.row-route",
+      "type": "text",
+      "textColor": [1.0, 0.55, 0.2, 1.0]
+    },
+    {
+      "id": "map-editor.row-cart",
+      "type": "text",
+      "textColor": [1.0, 0.75, 0.2, 1.0]
+    },
+    {
+      "id": "map-editor.row-block",
+      "type": "text",
+      "textColor": [0.4, 0.8, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.row-vehicle",
+      "type": "text",
+      "textColor": [1.0, 0.65, 0.25, 1.0]
+    },
+    {
+      "id": "map-editor.row-entity",
+      "type": "text",
+      "textColor": [0.7, 0.8, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.row-chunk-part",
+      "type": "text",
+      "textColor": [0.55, 0.85, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.row-connector",
+      "type": "text",
+      "textColor": [1.0, 0.65, 0.2, 1.0]
+    },
+    {
+      "id": "map-editor.row-spawn",
+      "type": "text",
+      "textColor": [0.35, 1.0, 0.55, 1.0]
+    },
+    {
+      "id": "map-editor.context-menu",
+      "type": "panel",
+      "backgroundColor": [0.05, 0.06, 0.09, 0.96],
+      "outlineColor": [0.5, 0.7, 0.9, 1.0]
+    },
+    {
+      "id": "map-editor.context-button",
+      "type": "button",
+      "backgroundColor": [0.14, 0.20, 0.28, 0.95],
+      "textColor": [1.0, 1.0, 1.0, 1.0],
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.box-select-fill",
+      "type": "panel",
+      "backgroundColor": [0.25, 0.55, 1.0, 0.12]
+    },
+    {
+      "id": "map-editor.box-select-outline",
+      "type": "panel",
+      "outlineColor": [0.4, 0.8, 1.0, 1.0]
+    },
+    {
+      "id": "map-editor.help-world",
+      "type": "text",
+      "x": 16,
+      "y": -42,
+      "fontSize": 0.24,
+      "textColor": [0.65, 0.72, 0.82, 1.0]
+    },
+    {
+      "id": "map-editor.help-commands",
+      "type": "text",
+      "x": 16,
+      "y": -22,
+      "fontSize": 0.24,
+      "textColor": [0.65, 0.72, 0.82, 1.0]
     }
   ]
 }

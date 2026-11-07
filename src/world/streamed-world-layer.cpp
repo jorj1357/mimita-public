@@ -14,9 +14,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "camera.h"
+#include "config/collision-lod-config.h"
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
+#include "hot-reload/module-host.h"
+#include "map/map-static-union.h"
+#include "modules/api/chunk-collision-api.h"
 #include "physics/physical-entity.h"
+#include "render/world-box-mesh.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 
@@ -25,56 +30,6 @@ extern TextureStore gTextures;
 extern void setUniforms(GLuint shader, const glm::vec3& cameraPos);
 
 namespace {
-
-const glm::vec3 kCubePositions[8] = {
-    {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},
-    {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f},
-    {-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f},
-    {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f},
-};
-
-const int kCubeFaces[6][4] = {
-    {4, 5, 6, 7}, // +X
-    {1, 0, 3, 2}, // -X
-    {3, 7, 6, 2}, // +Y
-    {0, 1, 5, 4}, // -Y
-    {3, 2, 1, 0}, // +Z
-    {4, 5, 6, 7}, // -Z (unused in normal mapping, kept for indexing)
-};
-
-// Face order used for material overrides: +X, -X, +Y, -Y, +Z, -Z.
-const glm::vec3 kFaceNormals[6] = {
-    {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1},
-};
-const int kFaceOrder[6][4] = {
-    {4, 5, 6, 7}, // +X
-    {1, 0, 3, 2}, // -X
-    {3, 7, 6, 2}, // +Y
-    {0, 1, 5, 4}, // -Y
-    {7, 6, 2, 3}, // +Z
-    {4, 5, 1, 0}, // -Z
-};
-
-// Local axes used for each face's U and V texture coordinates.
-const int kFaceUvAxis[6][2] = {
-    {2, 1}, // +X: z, y
-    {2, 1}, // -X
-    {0, 2}, // +Y: x, z
-    {0, 2}, // -Y
-    {0, 1}, // +Z: x, y
-    {0, 1}, // -Z
-};
-
-glm::vec2 faceUvScale(const ChunkPart& part, int face)
-{
-    glm::vec2 scale = part.uvScale;
-    if (scale.x <= 0.0f) scale.x = 1.0f;
-    if (scale.y <= 0.0f) scale.y = 1.0f;
-    const glm::vec2& overrideScale = part.faceUvScale[face];
-    if (overrideScale.x > 0.0f) scale.x = overrideScale.x;
-    if (overrideScale.y > 0.0f) scale.y = overrideScale.y;
-    return scale;
-}
 
 glm::mat4 partMatrix(const ChunkPart& part)
 {
@@ -118,46 +73,158 @@ GLuint resolveMaterial(const std::string& material)
     return gTextures.get(resolved);
 }
 
-void appendFace(std::vector<Vertex>& out, const ChunkPart& part, int face,
-                const std::string& material, std::vector<Mesh::Batch>& batches,
-                const glm::mat4& localTransform)
+void appendBoxFaces(std::vector<Vertex>& out, const ChunkPart& part,
+                    std::vector<Mesh::Batch>& batches,
+                    const glm::mat4& localTransform)
 {
-    const glm::mat3 normalMatrix =
-        glm::transpose(glm::inverse(glm::mat3(localTransform)));
-    const size_t first = out.size();
+    mimita_world_rendering::BoxMeshV1 request{};
+    const float* transformValues = &localTransform[0][0];
+    for (int i = 0; i < 16; ++i)
+        request.transform[i] = transformValues[i];
+    request.size[0] = part.size.x;
+    request.size[1] = part.size.y;
+    request.size[2] = part.size.z;
+    request.uvScale[0] = part.uvScale.x > 0.0f ? part.uvScale.x : 1.0f;
+    request.uvScale[1] = part.uvScale.y > 0.0f ? part.uvScale.y : 1.0f;
+    for (int face = 0; face < 6; ++face) {
+        const std::string& material = part.faceMaterials[face].empty()
+            ? part.material : part.faceMaterials[face];
+        std::snprintf(request.materials[face], sizeof(request.materials[face]),
+                      "%s", material.c_str());
+        request.faceUvScale[face][0] = part.faceUvScale[face].x;
+        request.faceUvScale[face][1] = part.faceUvScale[face].y;
+    }
+
+    mimita_world_rendering::BoxMeshV1 result{};
+    if (!buildBoxMesh(request, result))
+        return;
+
     const int order[6] = {0, 1, 2, 0, 2, 3};
-    // One texture repeat per world unit by default, then per-part and per-face
-    // scale overrides. UVs are derived from local face extents, not 0..1, so a
-    // large primitive keeps the same texel density as a small one.
-    const int uAxis = kFaceUvAxis[face][0];
-    const int vAxis = kFaceUvAxis[face][1];
-    const glm::vec2 scale = faceUvScale(part, face);
-    const float extentU = part.size[uAxis];
-    const float extentV = part.size[vAxis];
-    for (int i : order) {
-        const glm::vec3 local = kCubePositions[kFaceOrder[face][i]];
-        Vertex v;
-        v.pos = glm::vec3(localTransform * glm::vec4(local, 1.0f));
-        const glm::vec3 n = glm::normalize(normalMatrix * kFaceNormals[face]);
-        v.normal = n;
-        v.uv = glm::vec2(
-            (local[uAxis] + 0.5f) * extentU * scale.x,
-            (local[vAxis] + 0.5f) * extentV * scale.y);
-        out.push_back(v);
+    for (int face = 0; face < 6; ++face) {
+        const mimita_world_rendering::MeshFaceV1& faceMesh = result.faces[face];
+        const size_t first = out.size();
+        for (int i : order) {
+            Vertex vertex;
+            vertex.pos = glm::vec3(faceMesh.positions[i][0],
+                                   faceMesh.positions[i][1],
+                                   faceMesh.positions[i][2]);
+            vertex.normal = glm::vec3(faceMesh.normal[0], faceMesh.normal[1],
+                                      faceMesh.normal[2]);
+            vertex.uv = glm::vec2(faceMesh.uv[i][0], faceMesh.uv[i][1]);
+            out.push_back(vertex);
+        }
+        Mesh::Batch batch;
+        const std::string material = faceMesh.material;
+        batch.materialName = material.empty() ? "default" : material;
+        batch.texture = resolveMaterial(material);
+        batch.first = first;
+        batch.count = 6;
+        batch.hasBounds = true;
+        batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t i = first; i < out.size(); ++i) {
+            batch.boundsMin = glm::min(batch.boundsMin, out[i].pos);
+            batch.boundsMax = glm::max(batch.boundsMax, out[i].pos);
+        }
+        batches.push_back(std::move(batch));
     }
-    Mesh::Batch batch;
-    batch.materialName = material.empty() ? "default" : material;
-    batch.texture = resolveMaterial(material);
-    batch.first = first;
-    batch.count = 6;
-    batch.hasBounds = true;
-    batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
-    batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
-    for (size_t i = first; i < out.size(); ++i) {
-        batch.boundsMin = glm::min(batch.boundsMin, out[i].pos);
-        batch.boundsMax = glm::max(batch.boundsMax, out[i].pos);
+}
+
+void buildChunkCollision(const AuthoredChunk& chunk, const glm::mat4& transform,
+                         std::vector<CollisionTriangle>& out,
+                         std::vector<uint32_t>& solidIds,
+                         StaticUnionStats* unionStats)
+{
+    out.clear();
+    solidIds.clear();
+    std::vector<mimita_chunk_collision::CollisionPartV1> parts;
+    parts.reserve(chunk.parts.size());
+    for (const ChunkPart& part : chunk.parts) {
+        if (!part.collision)
+            continue;
+        mimita_chunk_collision::CollisionPartV1 view{};
+        std::snprintf(view.id, sizeof(view.id), "%s", part.id.c_str());
+        view.position[0] = part.position.x;
+        view.position[1] = part.position.y;
+        view.position[2] = part.position.z;
+        view.size[0] = part.size.x;
+        view.size[1] = part.size.y;
+        view.size[2] = part.size.z;
+        view.rotation[0] = part.rotationEuler.x;
+        view.rotation[1] = part.rotationEuler.y;
+        view.rotation[2] = part.rotationEuler.z;
+        view.collision = part.collision ? 1 : 0;
+        parts.push_back(view);
     }
-    batches.push_back(std::move(batch));
+    if (parts.empty())
+        return;
+
+    std::vector<mimita_chunk_collision::TriangleV1> triangles(
+        mimita_chunk_collision::MAX_OUTPUT_TRIANGLES);
+    std::vector<uint32_t> triangleSolidIds(
+        mimita_chunk_collision::MAX_OUTPUT_TRIANGLES);
+    mimita_chunk_collision::BuildChunkV1 request{};
+    std::snprintf(request.chunkId, sizeof(request.chunkId), "%s",
+                  chunk.id.c_str());
+    const float* transformValues = &transform[0][0];
+    for (int i = 0; i < 16; ++i)
+        request.chunkTransform[i] = transformValues[i];
+    request.parts = parts.data();
+    request.partCount = static_cast<uint32_t>(parts.size());
+    request.outTriangles = triangles.data();
+    request.outSolidIds = triangleSolidIds.data();
+    request.capacity = static_cast<uint32_t>(triangles.size());
+
+    bool built = ModuleHost::instance().chunkCollisionBuild(&request) &&
+        request.result && request.outCount > 0;
+    if (!built) {
+        // Safety fallback before the module is loaded: use the shared box
+        // triangle helper with the same world transform.
+        for (const ChunkPart& part : chunk.parts) {
+            if (!part.collision)
+                continue;
+            std::vector<CollisionTriangle> local;
+            buildBoxCollisionTriangles(local, glm::vec3(0.0f),
+                                       part.size * 0.5f);
+            const glm::mat4 localToWorld = transform * partMatrix(part);
+            const glm::mat3 normalMatrix =
+                glm::transpose(glm::inverse(glm::mat3(localToWorld)));
+            const uint32_t solidId = static_cast<uint32_t>(solidIds.size() / 12) + 1;
+            for (const CollisionTriangle& source : local) {
+                CollisionTriangle world;
+                world.a = glm::vec3(localToWorld * glm::vec4(source.a, 1.0f));
+                world.b = glm::vec3(localToWorld * glm::vec4(source.b, 1.0f));
+                world.c = glm::vec3(localToWorld * glm::vec4(source.c, 1.0f));
+                world.normal = glm::normalize(normalMatrix * source.normal);
+                out.push_back(world);
+                solidIds.push_back(solidId);
+            }
+        }
+    } else {
+        out.reserve(request.outCount);
+        solidIds.reserve(request.outCount);
+        for (uint32_t i = 0; i < request.outCount; ++i) {
+            const auto& source = triangles[i];
+            CollisionTriangle triangle;
+            triangle.a = glm::vec3(source.a[0], source.a[1], source.a[2]);
+            triangle.b = glm::vec3(source.b[0], source.b[1], source.b[2]);
+            triangle.c = glm::vec3(source.c[0], source.c[1], source.c[2]);
+            triangle.normal =
+                glm::vec3(source.normal[0], source.normal[1], source.normal[2]);
+            out.push_back(triangle);
+            solidIds.push_back(triangleSolidIds[i]);
+        }
+    }
+
+    if (!out.empty() && CollisionLodConfig::instance().staticSolidUnion()) {
+        unionStaticSolidGroups(
+            out, solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            unionStats,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
+        if (CollisionLodConfig::instance().staticFaceRemoval())
+            removeFullyCoveredStaticTriangles(out, solidIds);
+    }
 }
 
 } // namespace
@@ -224,14 +291,10 @@ void StreamedWorldLayer::rebuildTemplateFromChunk(
     templateData.verts.clear();
     templateData.batches.clear();
     for (const ChunkPart& part : chunk.parts) {
-        if (!part.visible) continue;
-        const glm::mat4 local = partMatrix(part);
-        for (int face = 0; face < 6; ++face) {
-            const std::string material = part.faceMaterials[face].empty()
-                ? part.material : part.faceMaterials[face];
-            appendFace(templateData.verts, part, face, material,
-                       templateData.batches, local);
-        }
+        if (!part.visible)
+            continue;
+        appendBoxFaces(templateData.verts, part, templateData.batches,
+                       partMatrix(part));
     }
     templateData.vboDirty = true;
 }
@@ -386,23 +449,13 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         uploadTemplate(*templateData);
 
     // Collision proxy: world-space triangles registered as a static entity.
+    // The live chunk-collision module selects collidable parts and applies the
+    // chunk/part transforms; the host owns the static-union and registration.
     std::vector<CollisionTriangle> worldTriangles;
-    for (const ChunkPart& part : chunk.parts) {
-        if (!part.collision) continue;
-        std::vector<CollisionTriangle> local;
-        buildBoxCollisionTriangles(local, glm::vec3(0.0f), part.size * 0.5f);
-        const glm::mat4 localToWorld = transform * partMatrix(part);
-        const glm::mat3 normalMatrix =
-            glm::transpose(glm::inverse(glm::mat3(localToWorld)));
-        for (const CollisionTriangle& t : local) {
-            CollisionTriangle world;
-            world.a = glm::vec3(localToWorld * glm::vec4(t.a, 1.0f));
-            world.b = glm::vec3(localToWorld * glm::vec4(t.b, 1.0f));
-            world.c = glm::vec3(localToWorld * glm::vec4(t.c, 1.0f));
-            world.normal = glm::normalize(normalMatrix * t.normal);
-            worldTriangles.push_back(world);
-        }
-    }
+    std::vector<uint32_t> solidIds;
+    StaticUnionStats unionStats;
+    buildChunkCollision(chunk, transform, worldTriangles, solidIds,
+                        &unionStats);
 
     ChunkRecord record;
     record.key = key;
@@ -434,6 +487,14 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         "streamed chunk installed", 0,
         {{"chunk", chunk.id}, {"key", key}, {"chunks", mChunks.size()},
          {"triangles", worldTriangles.size()},
+         {"solid_groups", static_cast<uint32_t>(std::count_if(
+              chunk.parts.begin(), chunk.parts.end(),
+              [](const ChunkPart& part) { return part.collision; }))},
+         {"union_solids", unionStats.unionSolids},
+         {"union_input_triangles", unionStats.unionInputTriangles},
+         {"union_output_triangles", unionStats.unionOutputTriangles},
+         {"union_fallback", unionStats.unionFallback},
+         {"union_fallback_reason", unionStats.unionFallbackReason},
          {"backend", mInstancing ? "instancing" : "vbo"}},
         __FILE__, __LINE__, __func__);
 }
@@ -466,7 +527,8 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
     }
 }
 
-void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk)
+void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk,
+                                      bool rebuildCollision)
 {
     Template* templateData = findTemplate(chunk.id);
     if (!templateData) return;
@@ -474,23 +536,50 @@ void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk)
     uploadTemplate(*templateData);
 
     size_t records = 0;
-    if (!mInstancing) {
-        for (ChunkRecord& record : mChunks) {
-            if (record.chunkId != chunk.id) continue;
+    size_t collisionTriangles = 0;
+    StaticUnionStats unionStats;
+    for (ChunkRecord& record : mChunks) {
+        if (record.chunkId != chunk.id) continue;
+        if (!mInstancing)
             rebuildRecordVbo(record, *templateData);
-            ++records;
+        ++records;
+        if (!rebuildCollision)
+            continue;
+        if (record.collisionEntity) {
+            PhysicalEntitySystem::instance().remove(record.collisionEntity);
+            record.collisionEntity = 0;
+        }
+        std::vector<CollisionTriangle> triangles;
+        std::vector<uint32_t> solidIds;
+        buildChunkCollision(chunk, record.transform, triangles, solidIds,
+                            &unionStats);
+        collisionTriangles += triangles.size();
+        if (!triangles.empty()) {
+            record.collisionEntity = PhysicalEntitySystem::instance().add(
+                triangles, glm::mat4(1.0f), PhysicalEntityMotion::Static, 0);
+            if (PhysicalEntity* entity = PhysicalEntitySystem::instance().find(
+                    record.collisionEntity)) {
+                entity->renderEnabled = false;
+                entity->collidesWithActors = true;
+            }
         }
     }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "world-stream.template.updated", chunk.id,
-        "loaded chunk template refreshed without collision rebuild", 0,
+        rebuildCollision ? "loaded chunk template and collision refreshed"
+                         : "loaded chunk template refreshed without collision rebuild",
+        0,
         {{"chunk", chunk.id},
          {"verts", templateData->verts.size()},
          {"batches", templateData->batches.size()},
-         {"vbo_records", records},
+         {"records", records},
          {"backend", mInstancing ? "instancing" : "vbo"},
-         {"collision_rebuilt", false}},
+         {"collision_rebuilt", rebuildCollision},
+         {"collision_triangles", collisionTriangles},
+         {"union_solids", unionStats.unionSolids},
+         {"union_fallback", unionStats.unionFallback},
+         {"union_fallback_reason", unionStats.unionFallbackReason}},
         __FILE__, __LINE__, __func__);
 }
 
@@ -512,7 +601,7 @@ void StreamedWorldLayer::updateMaterial(const std::string& chunkId,
         MapConfigRegistry::instance().markChanged();
         break;
     }
-    if (changed) refreshChunk(*changed);
+    if (changed) refreshChunk(*changed, false);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "chunk.part.material-changed", chunkId,

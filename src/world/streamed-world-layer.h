@@ -30,8 +30,10 @@ public:
     void addChunk(uint64_t key, const AuthoredChunk& chunk,
                   const glm::mat4& transform);
     void removeChunk(uint64_t key);
-    // Rebuild visual data and loaded per-chunk VBOs without touching collision.
-    void refreshChunk(const AuthoredChunk& chunk);
+    // Rebuild visual data and loaded per-chunk VBOs. Collision proxies are
+    // rebuilt when geometry changed; material/UV-only refresh can skip it.
+    void refreshChunk(const AuthoredChunk& chunk,
+                      bool rebuildCollision = true);
     void updateMaterial(const std::string& chunkId, const std::string& partId,
                         int face, const std::string& material);
     void clear();

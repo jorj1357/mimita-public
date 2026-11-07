@@ -106,6 +106,15 @@ behavior that use those mechanisms should move behind module interfaces over
 time. The kernel remains small in responsibility and stable in interface; it
 need not be a small EXE by byte count for module edits to be fast.
 
+Long-term modularity direction: make the renderer's remaining upload/resource
+calls, world-loader upload path, and editor host glue as thin and as
+module-owned as practical. This is a direction, not a current requirement. The
+implemented slice deliberately keeps GPU/device/resource lifetime, CPU world
+data, document persistence, and editor state authority in the host so module
+source saves stay fast and safe. Moving more of that surface behind module
+capabilities should be done incrementally with parity and runtime evidence, not
+as an unverified rewrite.
+
 ## 3. Save-to-live build and activation contract
 
 1. Detect a completed save, debounce editor writes, and resolve every changed
@@ -501,9 +510,123 @@ and a six-face audit was handled by world-rendering generation 2. A valid shader
 swap and a failed candidate that retained the prior program were also observed.
 A later trial recorded `module.build.failed` with the exact compiler error while
 `map-editor` generation 3 kept handling edits; reverting the source activated
-generation 4 in the same PID. The full draw-path extraction, complete
-editor-state schema ownership, and the remaining acceptance scenarios are still
-future work and must not be reported as complete.
+generation 4 in the same PID. Successful module and shader activations now show
+a dark-green/green notification with the full edited paths; failures show a red
+notification with the failing path and reason. The map editor presentation is
+now primarily JSON-defined in `config/gui/map-editor.json`. The `map-editor`
+module also now owns the drag-delta projection math and gizmo axis hit-distance
+math; a live edit doubling the plane drag scale activated a new generation and
+changed the reported probe delta in the same process. Selection command behavior
+(`select`, `select_kind`, `select_route`, `selectall`) is now parsed by the
+module and applied through a host selection service. Clipboard/undo/redo,
+save/reload/autosave, focus, nudge, transform fields, bomb-site radius, and
+rename commands are also parsed by the module and applied through host-owned
+document services. A mode-6 cursor/box-select/click-priority fix currently lives
+in host `src/mapeditor/map-editor.cpp`; it is the next candidate for live input
+extraction. Full input handling, outliner/properties, remaining
+commands/projects/overlays, and the full draw-path extraction remain future work
+and must not be reported as complete.
+
+### Infinite World hot boundary slice (2026-11-07)
+
+The module ABI is now the generic `mimita_module::ModuleV1` lifecycle/event
+interface. `ModuleHost` no longer switches on module names during validation or
+activation; catalog entries declare `events`, `capabilities`, and an activation
+boundary. The running source includes four modules:
+
+- `map-editor` — selection, transform, command, add-chunk, chunk-part,
+  connector, and connection-preview decisions through the editor capability;
+- `world-rendering` — the canonical six-face box geometry and world-unit UV
+  policy used by both authored blocks and streamed chunks;
+- `infinite-worldgen` — connector compatibility, quarter-turn placement,
+  deterministic neighbor choice, chunk bounds, and grid-cell placement;
+- `chunk-collision` — collidable-part selection and world-space box triangles
+  after chunk and part transforms.
+
+Host capabilities cover editor operations, world-generation tables, mesh face
+submission, and collision-proxy construction. The host keeps documents, unsaved
+editor state, GPU/VBO lifetimes, static-union processing, and physical-entity
+registration.
+
+`WorldGenLibrary::pollReload` watches the active profile and its referenced
+chunk files, validates a candidate, and commits only on success.
+`MapConfigRegistry::pollReload` defers applying an external map edit while the
+editor has unsaved changes. Connector-mode `stream_radius` is interpreted as
+world-space meters; regular grid mode keeps cell counts. Connector streaming
+uses a bounded distance frontier rather than grid offsets, so mixed-size and
+rectangular chunks share the same placement path.
+
+Writing `*-module.cpp` sources does not relink the EXE; module builds are
+excluded from the executable source list. The module worker discovers
+transitive headers with `-MMD`, writes `deps.json`, and prepends the compiler's
+runtime directory to `PATH` so the Windows `cc1plus` helper can start. A failed
+module build or validation keeps the previous generation active.
+
+## 10. Collaborative live C++ proposals — future goal (not implemented)
+
+This section records the desired multiplayer development direction only. It is
+not implemented by the first module slice.
+
+The target topology is one authoritative host process and several clients:
+
+```text
+client A (host + server) <-> client B <-> client C <-> client D
+```
+
+Any connected client may propose a native C++ module change, for example a
+niche bug fix found in live multiplayer. A proposal is not an edit to a running
+generation. It is a bounded, reviewable transaction:
+
+1. Client creates a proposal with a stable proposal ID, module name, source
+   snapshot or patch, target ABI, dependency set, state schema, and source hash.
+2. Host distributes the proposal identity and a bounded summary to every client
+   editor. Source and artifacts are content-addressed; the preview is not active
+   code.
+3. Each client accepts or rejects. The host/owner makes the final decision. The
+   recommended default is host/owner approval after client votes, not automatic
+   unanimous execution.
+4. The host builds or verifies the candidate through the same snapshot-pinned
+   module worker and validates ABI, dependency, state-schema, and capability
+   compatibility.
+5. Activation happens only at the owning subsystem boundary. Server-authoritative
+   changes defer to a fixed-tick or session/round boundary. Clients never
+   silently apply conflicting authoritative code.
+6. Every process publishes its accepted module-set hash in `run.json` and
+   `events.jsonl`. A mismatch blocks activation and is reported rather than
+   hidden.
+7. The host can roll back to the prior module set without restarting. A
+   disconnected client resumes the last confirmed module set or forks.
+
+Proposal events are bounded and transition-based:
+
+```text
+module.proposal.created
+module.proposal.distributed
+module.proposal.vote
+module.proposal.accepted
+module.proposal.rejected
+module.compatibility.rejected
+module.activation.pending
+module.activation.activated
+module.rollback
+```
+
+Security and trust rules are mandatory:
+
+- A public or untrusted server must not accept arbitrary unapproved native code.
+- Proposal mode is opt-in and requires explicit host/owner policy and client
+  consent.
+- Artifacts are identified by source hash, ABI, dependencies, and module-set
+  hash; a `latest` mutable path is never sufficient identity.
+- A client whose toolchain, platform, ABI, or dependency set cannot build the
+  candidate rejects it instead of running a guessed replacement.
+- Activation must not bypass the fixed 60 Hz authoritative boundary, damage
+  validation, collision, or server authority.
+- The host records who proposed, who voted, what was accepted, what activated,
+  and why a candidate failed.
+
+This is a specification goal for later work. It does not claim that clients may
+currently submit executable code to one another.
 
 ## JSON hot reload
 

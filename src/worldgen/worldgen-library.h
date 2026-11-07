@@ -5,7 +5,9 @@
 */
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gamemode/map-config.h"
@@ -24,6 +26,14 @@ public:
                   std::string* error = nullptr);
     bool saveMode(const WorldGenMode& mode, std::string* error = nullptr);
 
+    // Watch the active profile and its referenced chunk files. A successful
+    // validated change updates `out`/`chunks`; a parse/validation failure keeps
+    // the last committed values and reports why. Returns true when new data was
+    // applied, with `changed` set to true.
+    bool pollReload(const std::string& id, WorldGenMode& out,
+                    std::vector<AuthoredChunk>& chunks, bool* changed = nullptr,
+                    std::string* error = nullptr);
+
     bool loadChunksForMode(const WorldGenMode& mode,
                            std::vector<AuthoredChunk>& out,
                            std::string* error = nullptr);
@@ -38,6 +48,16 @@ public:
 
 private:
     WorldGenLibrary() = default;
+
+    struct WatchEntry
+    {
+        std::string id;
+        std::uint64_t modeWrite = 0;
+        std::vector<std::pair<std::string, std::uint64_t>> chunkWrites;
+    };
+
+    WatchEntry* findWatch(const std::string& id);
+    std::vector<WatchEntry> mWatches;
 };
 
 } // namespace MimitaWorldGen

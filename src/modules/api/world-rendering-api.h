@@ -12,8 +12,9 @@
 
 namespace mimita_world_rendering {
 
-constexpr std::uint32_t ABI_VERSION = 1;
+constexpr std::uint32_t ABI_VERSION = 2;
 constexpr std::uint32_t FACE_COUNT = 6;
+constexpr std::uint32_t FACE_MATERIAL_CAPACITY = 64;
 
 struct HostServicesV1
 {
@@ -30,20 +31,37 @@ struct FaceAuditV1
     std::int32_t cameraOutside;
 };
 
-struct ModuleV1
+struct AnalyzeFacesV1
 {
-    mimita_module::BaseV1 base;
-    int (MIMITA_MODULE_CALL* initialize)(const HostServicesV1* services);
-    void (MIMITA_MODULE_CALL* shutdown)();
-    // Transform is a column-major 4x4 model matrix. Unit-cube local centers
-    // and outward normals are transformed by the module. Returns 1 on success.
-    int (MIMITA_MODULE_CALL* analyzeFaces)(
-        const float transform[16], const float cameraPosition[3],
-        FaceAuditV1* outFaces, std::uint32_t faceCapacity);
-    std::uint32_t (MIMITA_MODULE_CALL* exportState)(
-        std::uint8_t* buffer, std::uint32_t capacity);
-    int (MIMITA_MODULE_CALL* importState)(
-        const std::uint8_t* buffer, std::uint32_t size);
+    float transform[16];
+    float cameraPosition[3];
+    FaceAuditV1 faces[FACE_COUNT];
+    std::uint32_t capacity;
+    int result;
+};
+
+// One canonical quad for a box face. Face order is +X, -X, +Y, -Y, +Z, -Z.
+struct MeshFaceV1
+{
+    std::int32_t faceIndex;
+    float normal[3];
+    float positions[4][3];
+    float uv[4][2];
+    char material[FACE_MATERIAL_CAPACITY];
+};
+
+struct BoxMeshV1
+{
+    float transform[16];
+    float size[3];
+    char materials[FACE_COUNT][FACE_MATERIAL_CAPACITY];
+    // Default UV repeat multiplier. 1/1 means one texture repeat per world unit.
+    float uvScale[2];
+    // Per-face overrides; <= 0 falls back to uvScale on that axis.
+    float faceUvScale[FACE_COUNT][2];
+    MeshFaceV1 faces[FACE_COUNT];
+    std::uint32_t faceCount;
+    int result;
 };
 
 } // namespace mimita_world_rendering

@@ -5,9 +5,13 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <unordered_set>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -20,10 +24,14 @@
 #include "debug/structured-log.h"
 #include "config/collision-lod-config.h"
 #include "gamemode/map-config.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/worldgen-api.h"
+#include "worldgen/worldgen-library.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
 #include "network/server.h"
 #include "physics/physical-entity.h"
+#include "render/world-box-mesh.h"
 #include "world/texture-store.h"
 #include "world/world.h"
 
@@ -38,26 +46,6 @@ uint64_t serverCellHash(uint32_t seed, const std::string& version,
     h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ull;
     return h ^ (h >> 27);
 }
-
-const glm::vec3 kCubePositions[8] = {
-    {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},
-    {0.5f, 0.5f, -0.5f}, {-0.5f, 0.5f, -0.5f},
-    {-0.5f, -0.5f, 0.5f}, {0.5f, -0.5f, 0.5f},
-    {0.5f, 0.5f, 0.5f}, {-0.5f, 0.5f, 0.5f},
-};
-
-const int kCubeFaces[6][4] = {
-    {4, 5, 6, 7}, // +Z
-    {1, 0, 3, 2}, // -Z
-    {5, 1, 2, 6}, // +X
-    {0, 4, 7, 3}, // -X
-    {3, 7, 6, 2}, // +Y
-    {0, 1, 5, 4}, // -Y
-};
-
-const glm::vec3 kCubeNormals[6] = {
-    {0, 0, 1}, {0, 0, -1}, {1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0},
-};
 
 GLuint resolveBlockTexture(const std::string& material)
 {
@@ -90,7 +78,6 @@ glm::mat4 blockTransform(const AuthoredBlock& block)
 void appendBlockMesh(World& world, const AuthoredBlock& block)
 {
     const glm::mat4 transform = blockTransform(block);
-    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
 
     std::array<std::string, 6> faceMaterial;
     bool uniformMaterial = true;
@@ -102,9 +89,27 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
             uniformMaterial = false;
     }
 
+    mimita_world_rendering::BoxMeshV1 request{};
+    const float* transformValues = &transform[0][0];
+    for (int i = 0; i < 16; ++i)
+        request.transform[i] = transformValues[i];
+    request.size[0] = block.size.x;
+    request.size[1] = block.size.y;
+    request.size[2] = block.size.z;
+    request.uvScale[0] = 1.0f;
+    request.uvScale[1] = 1.0f;
+    for (int face = 0; face < 6; ++face) {
+        std::snprintf(request.materials[face], sizeof(request.materials[face]),
+                      "%s", faceMaterial[face].c_str());
+    }
+    mimita_world_rendering::BoxMeshV1 result{};
+    if (!buildBoxMesh(request, result))
+        return;
+
     struct FaceRange {
         int index = 0;
         std::string material;
+        glm::vec3 normal{0.0f};
         size_t first = 0;
         size_t count = 0;
     };
@@ -113,29 +118,6 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
     const size_t objectFirst = world.mesh.verts.size();
     glm::vec3 objectBoundsMin(std::numeric_limits<float>::max());
     glm::vec3 objectBoundsMax(std::numeric_limits<float>::lowest());
-
-    auto appendFace = [&](int face, Mesh::Batch& batch) {
-        FaceRange range;
-        range.index = face;
-        range.material = faceMaterial[face];
-        range.first = world.mesh.verts.size();
-        const int order[6] = {0, 1, 2, 0, 2, 3};
-        const glm::vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
-        for (int i : order) {
-            const glm::vec3 local = kCubePositions[kCubeFaces[face][i]];
-            Vertex v;
-            v.pos = glm::vec3(transform * glm::vec4(local, 1.0f));
-            v.normal = glm::normalize(normalMatrix * kCubeNormals[face]);
-            v.uv = uv[i];
-            world.mesh.verts.push_back(v);
-            batch.boundsMin = glm::min(batch.boundsMin, v.pos);
-            batch.boundsMax = glm::max(batch.boundsMax, v.pos);
-            objectBoundsMin = glm::min(objectBoundsMin, v.pos);
-            objectBoundsMax = glm::max(objectBoundsMax, v.pos);
-        }
-        range.count = world.mesh.verts.size() - range.first;
-        faceRanges.push_back(range);
-    };
 
     auto makeBatch = [&](const std::string& material, size_t first) {
         Mesh::Batch batch;
@@ -149,27 +131,60 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
         return batch;
     };
 
-    if (uniformMaterial) {
-        Mesh::Batch batch = makeBatch(faceMaterial[0], world.mesh.verts.size());
-        for (int face = 0; face < 6; ++face)
-            appendFace(face, batch);
-        batch.count = world.mesh.verts.size() - batch.first;
-        world.mesh.batches.push_back(std::move(batch));
-    } else {
-        for (int face = 0; face < 6; ++face) {
-            Mesh::Batch batch = makeBatch(faceMaterial[face], world.mesh.verts.size());
-            appendFace(face, batch);
+    Mesh::Batch uniformBatch;
+    if (uniformMaterial)
+        uniformBatch = makeBatch(faceMaterial[0], world.mesh.verts.size());
+
+    const int order[6] = {0, 1, 2, 0, 2, 3};
+    for (int face = 0; face < 6; ++face) {
+        const mimita_world_rendering::MeshFaceV1& faceMesh = result.faces[face];
+        Mesh::Batch batch = uniformMaterial
+            ? Mesh::Batch{}
+            : makeBatch(faceMaterial[face], world.mesh.verts.size());
+        FaceRange range;
+        range.index = face;
+        range.material = faceMaterial[face];
+        range.normal = glm::vec3(faceMesh.normal[0], faceMesh.normal[1],
+                                 faceMesh.normal[2]);
+        range.first = world.mesh.verts.size();
+        for (int i : order) {
+            Vertex v;
+            v.pos = glm::vec3(faceMesh.positions[i][0],
+                              faceMesh.positions[i][1],
+                              faceMesh.positions[i][2]);
+            v.normal = range.normal;
+            v.uv = glm::vec2(faceMesh.uv[i][0], faceMesh.uv[i][1]);
+            world.mesh.verts.push_back(v);
+            objectBoundsMin = glm::min(objectBoundsMin, v.pos);
+            objectBoundsMax = glm::max(objectBoundsMax, v.pos);
+        }
+        range.count = world.mesh.verts.size() - range.first;
+        faceRanges.push_back(range);
+        if (!uniformMaterial) {
             batch.count = world.mesh.verts.size() - batch.first;
+            for (size_t i = batch.first; i < world.mesh.verts.size(); ++i) {
+                batch.boundsMin = glm::min(batch.boundsMin, world.mesh.verts[i].pos);
+                batch.boundsMax = glm::max(batch.boundsMax, world.mesh.verts[i].pos);
+            }
             world.mesh.batches.push_back(std::move(batch));
         }
+    }
+    if (uniformMaterial) {
+        uniformBatch.count = world.mesh.verts.size() - uniformBatch.first;
+        for (size_t i = uniformBatch.first; i < world.mesh.verts.size(); ++i) {
+            uniformBatch.boundsMin = glm::min(uniformBatch.boundsMin,
+                                              world.mesh.verts[i].pos);
+            uniformBatch.boundsMax = glm::max(uniformBatch.boundsMax,
+                                              world.mesh.verts[i].pos);
+        }
+        world.mesh.batches.push_back(std::move(uniformBatch));
     }
 
     nlohmann::json faces = nlohmann::json::array();
     for (const FaceRange& range : faceRanges) {
-        const glm::vec3 normal = glm::normalize(kCubeNormals[range.index]);
         faces.push_back({
             {"index", range.index},
-            {"normal", {normal.x, normal.y, normal.z}},
+            {"normal", {range.normal.x, range.normal.y, range.normal.z}},
             {"winding", "ccw"},
             {"material", range.material.empty() ? "default" : range.material},
             {"first", range.first},
@@ -414,8 +429,31 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
         for (const AuthoredChunk& chunk : config.chunks)
             if (chunk.enabled && !chunk.parts.empty())
                 candidates.push_back(&chunk);
-        const int radiusX = std::clamp(zone.streamRadius.x, 0, 10);
-        const int radiusY = std::clamp(zone.streamRadius.y, 0, 10);
+        std::vector<AuthoredChunk> modeChunks;
+        if (zone.modeId == "connected_world" || config.generateWholeWorld) {
+            MimitaWorldGen::WorldGenMode profile;
+            std::string profileError;
+            if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                    mapId, profile, &profileError) &&
+                MimitaWorldGen::WorldGenLibrary::instance().loadChunksForMode(
+                    profile, modeChunks, &profileError)) {
+                for (const AuthoredChunk& chunk : modeChunks) {
+                    if (!chunk.enabled || chunk.parts.empty())
+                        continue;
+                    const bool shadowed = std::any_of(
+                        candidates.begin(), candidates.end(),
+                        [&chunk](const AuthoredChunk* authored) {
+                            return authored && authored->id == chunk.id;
+                        });
+                    if (!shadowed)
+                        candidates.push_back(&chunk);
+                }
+            }
+        }
+        if (candidates.empty())
+            continue;
+        const int radiusX = std::clamp(zone.streamRadius.x, 0, 64);
+        const int radiusY = std::clamp(zone.streamRadius.y, 0, 64);
         size_t cells = 0;
         size_t partsAdded = 0;
         size_t spawnsAdded = 0;
@@ -424,47 +462,243 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
             if (!deps.empty()) deps += ",";
             deps += dep;
         }
-        for (int cy = -radiusY; cy <= radiusY; ++cy)
-            for (int cx = -radiusX; cx <= radiusX; ++cx) {
-                const glm::vec3 cellOrigin = zone.origin +
-                    glm::vec3((float)cx * zone.cellSize.x,
-                              (float)cy * zone.cellSize.y, 0.0f);
-                const uint64_t hash = serverCellHash(
-                    zone.seed, zone.generatorVersion, deps, cx, cy, 0);
-                const AuthoredChunk* chunk =
-                    candidates[hash % candidates.size()];
-                ++cells;
+
+        auto addChunkInstance = [&](const AuthoredChunk& chunk,
+                                    const glm::mat4& chunkTransform) {
+            for (const ChunkPart& part : chunk.parts) {
+                if (!part.collision) continue;
+                MimitaNet::HeadlessWorld partWorld;
+                buildBoxCollisionTriangles(partWorld.triangles, glm::vec3(0.0f),
+                                           part.size * 0.5f);
+                glm::mat4 rotation(1.0f);
+                rotation = glm::rotate(rotation,
+                    glm::radians(part.rotationEuler.z), glm::vec3(0, 0, 1));
+                rotation = glm::rotate(rotation,
+                    glm::radians(part.rotationEuler.y), glm::vec3(0, 1, 0));
+                rotation = glm::rotate(rotation,
+                    glm::radians(part.rotationEuler.x), glm::vec3(1, 0, 0));
+                const glm::mat4 transform = chunkTransform *
+                    glm::translate(glm::mat4(1.0f), part.position) * rotation;
+                MimitaNet::appendHeadlessWorldInstance(world, partWorld,
+                                                       transform);
+                ++partsAdded;
+            }
+            for (const ChunkSpawnPoint& spawn : chunk.spawnPoints) {
+                if (!spawn.enabled) continue;
+                MimitaNet::ServerSpawnPoint point;
+                point.position = glm::vec3(
+                    chunkTransform * glm::vec4(spawn.position, 1.0f));
+                point.tag = spawn.allowedActors;
+                world.spawnPoints.push_back(std::move(point));
+                ++spawnsAdded;
+            }
+        };
+
+        if (zone.spacingMode == "connector" &&
+            ModuleHost::instance().moduleLoaded("infinite-worldgen")) {
+            std::vector<mimita_worldgen::ChunkV1> chunkViews;
+            std::vector<mimita_worldgen::PartV1> partViews;
+            std::vector<mimita_worldgen::ConnectorV1> connectorViews;
+            std::vector<uint32_t> connectorOffsets;
+            for (const AuthoredChunk* chunk : candidates) {
+                mimita_worldgen::ChunkV1 view{};
+                std::snprintf(view.id, sizeof(view.id), "%s",
+                              chunk->id.c_str());
+                view.boundsMin[0] = chunk->boundsMin.x;
+                view.boundsMin[1] = chunk->boundsMin.y;
+                view.boundsMin[2] = chunk->boundsMin.z;
+                view.boundsMax[0] = chunk->boundsMax.x;
+                view.boundsMax[1] = chunk->boundsMax.y;
+                view.boundsMax[2] = chunk->boundsMax.z;
+                view.enabled = chunk->enabled ? 1 : 0;
+                view.partOffset = static_cast<uint32_t>(partViews.size());
+                view.connectorOffset =
+                    static_cast<uint32_t>(connectorViews.size());
+                connectorOffsets.push_back(view.connectorOffset);
                 for (const ChunkPart& part : chunk->parts) {
-                    if (!part.collision) continue;
-                    MimitaNet::HeadlessWorld partWorld;
-                    buildBoxCollisionTriangles(partWorld.triangles,
-                                               glm::vec3(0.0f),
-                                               part.size * 0.5f);
-                    glm::mat4 rotation(1.0f);
-                    rotation = glm::rotate(rotation,
-                        glm::radians(part.rotationEuler.z),
-                        glm::vec3(0, 0, 1));
-                    rotation = glm::rotate(rotation,
-                        glm::radians(part.rotationEuler.y),
-                        glm::vec3(0, 1, 0));
-                    rotation = glm::rotate(rotation,
-                        glm::radians(part.rotationEuler.x),
-                        glm::vec3(1, 0, 0));
-                    const glm::mat4 transform = glm::translate(
-                        glm::mat4(1.0f), cellOrigin + part.position) * rotation;
-                    MimitaNet::appendHeadlessWorldInstance(
-                        world, partWorld, transform);
-                    ++partsAdded;
+                    mimita_worldgen::PartV1 p{};
+                    std::snprintf(p.id, sizeof(p.id), "%s", part.id.c_str());
+                    p.position[0] = part.position.x;
+                    p.position[1] = part.position.y;
+                    p.position[2] = part.position.z;
+                    p.size[0] = part.size.x;
+                    p.size[1] = part.size.y;
+                    p.size[2] = part.size.z;
+                    partViews.push_back(p);
                 }
-                for (const ChunkSpawnPoint& spawn : chunk->spawnPoints) {
-                    if (!spawn.enabled) continue;
-                    MimitaNet::ServerSpawnPoint point;
-                    point.position = cellOrigin + spawn.position;
-                    point.tag = spawn.allowedActors;
-                    world.spawnPoints.push_back(std::move(point));
-                    ++spawnsAdded;
+                for (const AuthoredChunkConnector& connector :
+                     chunk->connectors) {
+                    mimita_worldgen::ConnectorV1 c{};
+                    std::snprintf(c.id, sizeof(c.id), "%s",
+                                  connector.id.c_str());
+                    std::snprintf(c.side, sizeof(c.side), "%s",
+                                  connector.side.c_str());
+                    std::snprintf(c.orientation, sizeof(c.orientation), "%s",
+                                  connector.orientation.c_str());
+                    std::snprintf(c.role, sizeof(c.role), "%s",
+                                  connector.role.c_str());
+                    c.position[0] = connector.position.x;
+                    c.position[1] = connector.position.y;
+                    c.position[2] = connector.position.z;
+                    c.radius = connector.radius;
+                    connectorViews.push_back(c);
+                }
+                view.partCount =
+                    static_cast<uint32_t>(partViews.size()) - view.partOffset;
+                view.connectorCount =
+                    static_cast<uint32_t>(connectorViews.size()) -
+                    view.connectorOffset;
+                chunkViews.push_back(view);
+            }
+            mimita_worldgen::TablesV1 tables{};
+            tables.chunks = chunkViews.data();
+            tables.chunkCount = static_cast<uint32_t>(chunkViews.size());
+            tables.parts = partViews.data();
+            tables.partCount = static_cast<uint32_t>(partViews.size());
+            tables.connectors = connectorViews.data();
+            tables.connectorCount =
+                static_cast<uint32_t>(connectorViews.size());
+
+            mimita_worldgen::ZoneV1 zoneView{};
+            std::snprintf(zoneView.id, sizeof(zoneView.id), "%s",
+                          zone.id.c_str());
+            std::snprintf(zoneView.spacingMode, sizeof(zoneView.spacingMode),
+                          "%s", zone.spacingMode.c_str());
+            std::snprintf(zoneView.generatorVersion,
+                          sizeof(zoneView.generatorVersion), "%s",
+                          zone.generatorVersion.c_str());
+            std::snprintf(zoneView.dependencies, sizeof(zoneView.dependencies),
+                          "%s", deps.c_str());
+            zoneView.seed = zone.seed;
+            zoneView.repeatAxes[0] = zone.repeatAxes.x;
+            zoneView.repeatAxes[1] = zone.repeatAxes.y;
+            zoneView.repeatAxes[2] = zone.repeatAxes.z;
+            zoneView.streamRadius[0] = zone.streamRadius.x;
+            zoneView.streamRadius[1] = zone.streamRadius.y;
+            zoneView.streamRadius[2] = zone.streamRadius.z;
+            zoneView.connectorGap = zone.connectorGap;
+            zoneView.maxBranchDepth = zone.maxBranchDepth;
+            zoneView.allowCycles = zone.allowCycles ? 1 : 0;
+            zoneView.allowCrossings = zone.allowCrossings ? 1 : 0;
+
+            const float radiusMeters = static_cast<float>(std::max(
+                {zone.streamRadius.x, zone.streamRadius.y,
+                 zone.streamRadius.z, 1}));
+            auto withinRadius = [&](const glm::vec3& boundsMin,
+                                    const glm::vec3& boundsMax) {
+                const glm::vec3 closest =
+                    glm::clamp(zone.origin, boundsMin, boundsMax);
+                return glm::dot(closest - zone.origin,
+                                closest - zone.origin) <=
+                       radiusMeters * radiusMeters;
+            };
+            auto placementKey = [](const glm::mat4& transform) {
+                const int64_t values[3] = {
+                    static_cast<int64_t>(std::llround(transform[3][0] * 100.0f)),
+                    static_cast<int64_t>(std::llround(transform[3][1] * 100.0f)),
+                    static_cast<int64_t>(std::llround(transform[3][2] * 100.0f)),
+                };
+                uint64_t hash = 1469598103934665603ull;
+                const unsigned char* bytes =
+                    reinterpret_cast<const unsigned char*>(values);
+                for (size_t i = 0; i < sizeof(values); ++i) {
+                    hash ^= bytes[i];
+                    hash *= 1099511628211ull;
+                }
+                return hash;
+            };
+
+            struct Placed {
+                int chunkIndex = -1;
+                glm::mat4 transform{1.0f};
+                glm::vec3 boundsMin{0.0f};
+                glm::vec3 boundsMax{0.0f};
+            };
+            std::deque<Placed> queue;
+            std::unordered_set<uint64_t> seen;
+            mimita_worldgen::ResolveV1 seed{};
+            seed.tables = &tables;
+            seed.zone = zoneView;
+            seed.zone.origin[0] = zone.origin.x;
+            seed.zone.origin[1] = zone.origin.y;
+            seed.zone.origin[2] = zone.origin.z;
+            seed.requestKind = 0;
+            seed.cell[0] = seed.cell[1] = seed.cell[2] = 0;
+            if (ModuleHost::instance().worldgenResolve(&seed) && seed.outValid &&
+                seed.outChunk >= 0) {
+                Placed placed;
+                placed.chunkIndex = seed.outChunk;
+                std::memcpy(&placed.transform[0][0], seed.outTransform,
+                            sizeof(float) * 16);
+                placed.boundsMin = glm::vec3(seed.outBoundsMin[0],
+                                             seed.outBoundsMin[1],
+                                             seed.outBoundsMin[2]);
+                placed.boundsMax = glm::vec3(seed.outBoundsMax[0],
+                                             seed.outBoundsMax[1],
+                                             seed.outBoundsMax[2]);
+                seen.insert(placementKey(placed.transform));
+                queue.push_back(placed);
+            }
+            while (!queue.empty() && cells < 256) {
+                const Placed placed = queue.front();
+                queue.pop_front();
+                const AuthoredChunk* chunk = candidates[placed.chunkIndex];
+                if (!chunk)
+                    continue;
+                addChunkInstance(*chunk, placed.transform);
+                ++cells;
+                for (size_t connectorIndex = 0;
+                     connectorIndex < chunk->connectors.size();
+                     ++connectorIndex) {
+                    mimita_worldgen::ResolveV1 request{};
+                    request.tables = &tables;
+                    request.zone = zoneView;
+                    request.requestKind = 1;
+                    request.parentChunk = placed.chunkIndex;
+                    request.parentConnector = static_cast<int>(
+                        connectorOffsets[placed.chunkIndex] + connectorIndex);
+                    std::memcpy(request.parentTransform, &placed.transform[0][0],
+                                sizeof(float) * 16);
+                    if (!ModuleHost::instance().worldgenResolve(&request) ||
+                        !request.outValid || request.outChunk < 0)
+                        continue;
+                    glm::mat4 transform(1.0f);
+                    std::memcpy(&transform[0][0], request.outTransform,
+                                sizeof(float) * 16);
+                    const uint64_t key = placementKey(transform);
+                    if (!seen.insert(key).second)
+                        continue;
+                    const glm::vec3 boundsMin(request.outBoundsMin[0],
+                                              request.outBoundsMin[1],
+                                              request.outBoundsMin[2]);
+                    const glm::vec3 boundsMax(request.outBoundsMax[0],
+                                              request.outBoundsMax[1],
+                                              request.outBoundsMax[2]);
+                    if (!withinRadius(boundsMin, boundsMax))
+                        continue;
+                    Placed child;
+                    child.chunkIndex = request.outChunk;
+                    child.transform = transform;
+                    child.boundsMin = boundsMin;
+                    child.boundsMax = boundsMax;
+                    queue.push_back(child);
                 }
             }
+        } else {
+            for (int cy = -radiusY; cy <= radiusY; ++cy)
+                for (int cx = -radiusX; cx <= radiusX; ++cx) {
+                    const glm::vec3 cellOrigin = zone.origin +
+                        glm::vec3((float)cx * zone.cellSize.x,
+                                  (float)cy * zone.cellSize.y, 0.0f);
+                    const uint64_t hash = serverCellHash(
+                        zone.seed, zone.generatorVersion, deps, cx, cy, 0);
+                    const AuthoredChunk* chunk =
+                        candidates[hash % candidates.size()];
+                    ++cells;
+                    addChunkInstance(*chunk,
+                                     glm::translate(glm::mat4(1.0f), cellOrigin));
+                }
+        }
         std::string descriptorIdentity = mapId + "|" +
             std::to_string(zone.seed) + "|" + zone.generatorVersion + "|" +
             zone.ruleSet + "|" + deps;

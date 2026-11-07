@@ -1058,6 +1058,21 @@ bool MapConfigRegistry::pollReload()
     const auto write = getLastWrite(mPath);
     if (write == std::filesystem::file_time_type{} || write == mLastWrite)
         return false;
+    if (dirty()) {
+        static std::filesystem::file_time_type lastDeferred{};
+        if (write != lastDeferred) {
+            lastDeferred = write;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.reload.deferred-unsaved", mCurrent.mapId,
+                "external map change detected while editor edits are unsaved",
+                0,
+                {{"map", mCurrent.mapId}, {"config_path", mPath},
+                 {"revision", mRevision}, {"saved_revision", mSavedRevision}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        return false;
+    }
     Debug::warn(Debug::Category::Duel,
         "[MAP CONFIG] detected change: %s\n", mPath.c_str());
     return loadFromFile(mCurrent.mapId, mPath);

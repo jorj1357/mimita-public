@@ -185,6 +185,10 @@ namespace DebugVis {
 
     // World to screen projection
     bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
+    // Projection for interaction math where the point may be outside the
+    // visible NDC range (for example a long gizmo axis endpoint).
+    bool projectToScreenUnclamped(const Camera& camera, glm::vec3 worldPos,
+                                  float& x, float& y);
 }
 
 

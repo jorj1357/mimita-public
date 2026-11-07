@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "id": "mixed_25",
+  "bounds_min": [-12.5, -12.5, -0.5],
+  "bounds_max": [12.5, 12.5, 4.0],
+  "parts": [
+    {
+      "id": "floor",
+      "kind": "floor",
+      "position": [0.0, 0.0, -0.25],
+      "size": [25.0, 25.0, 0.5],
+      "rotation": [0.0, 0.0, 0.0],
+      "material": "floorv2",
+      "collision": true,
+      "visible": true
+    },
+    {
+      "id": "marker",
+      "kind": "wall",
+      "position": [0.0, 0.0, 0.75],
+      "size": [2.0, 0.5, 1.5],
+      "rotation": [0.0, 0.0, 0.0],
+      "material": "wallv2",
+      "collision": true,
+      "visible": true
+    }
+  ],
+  "connectors": [
+    {"id": "east", "side": "east", "orientation": "doorway", "role": "bidirectional", "position": [12.5, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "west", "side": "west", "orientation": "doorway", "role": "bidirectional", "position": [-12.5, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "north", "side": "north", "orientation": "doorway", "role": "bidirectional", "position": [0.0, 12.5, 0.0], "tags": ["flat"]},
+    {"id": "south", "side": "south", "orientation": "doorway", "role": "bidirectional", "position": [0.0, -12.5, 0.0], "tags": ["flat"]}
+  ],
+  "tags": ["flat"],
+  "enabled": true
+}

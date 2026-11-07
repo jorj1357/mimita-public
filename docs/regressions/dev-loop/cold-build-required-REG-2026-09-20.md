@@ -2618,3 +2618,348 @@ Extract the remaining `MapEditor` surfaces and the `render-world`/streamed-layer
 draw path behind the same host capabilities, then prove a real edit, six-face
 visibility from each outside face, and renderer/shader rollback in one pinned
 run.
+
+## Cold-build occurrence 48
+
+UTC time:
+`2026-11-07T20:53:07Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The hot-reload notice hook, notification accent/style parsing, map-editor JSON
+style elements, shader error capture, and module-failure path attribution are
+host mechanisms. Installing them required EXE builds; module source saves after
+installation still activate without relinking the EXE.
+
+### Exact cold source / boundary
+
+- `src/notifications/notifications.{h,cpp}`
+- `src/hot-reload/module-host.cpp`
+- `src/renderer/renderer.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `config/gui/map-editor.json`, `config/gui/notifications.json`,
+  `config/notifications.json`
+- `docs/specs/hotreload/hotreload.md`
+
+### Build result
+
+Dev-loop builds at `2026-11-07T20:49:17Z`, `20:51:16Z`, and `20:53:07Z`
+succeeded. `map-editor` generation 6 and `world-rendering` generation 2 were
+active; a live module source save produced a green success notice and a broken
+candidate produced one red failure notice with the full source path and first
+compiler error.
+
+### What the cold build was needed to prove
+
+That successful and failed hot reloads can notify the player with full edited
+paths and reasons, that the map editor reads its presentation from
+`config/gui/map-editor.json`, and that module/shader notices do not duplicate on
+the same failed source hash.
+
+### Why live activation was impossible
+
+The notification system, module host callback, renderer error capture, and
+engine-side UI hooks are host mechanisms.
+
+### Smallest change that would make this hot
+
+Continue moving editor presentation and renderer submission behind module
+capabilities. The notification host hook can remain a small stable capability
+rather than per-feature code.
+
+### Next migration/falsification step
+
+Extract the remaining editor and renderer paths, then verify a live editor
+presentation edit, a live shader failure notice, and a six-face visibility run
+from one pinned build.
+
+## Cold-build occurrence 49
+
+UTC time:
+`2026-11-07T21:05:15Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The map-editor module ABI grew new drag/gizmo math entries, and the host call
+sites in `MapEditor::updateDrag`/`handleAtCursor` plus the diagnostics command
+are EXE-side mechanisms. Installing the new ABI and host dispatch required a
+cold build.
+
+### Exact cold source / boundary
+
+- `src/modules/api/map-editor-api.h`
+- `src/mapeditor/map-editor-module.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/hot-reload/module-host.{h,cpp}`
+
+### Build result
+
+Dev-loop builds at `2026-11-07T21:03:35Z` and `21:05:15Z` succeeded. The live
+client loaded `map-editor` generation 7, then generation 8 after a live drag
+math edit, then generation 9 after reverting.
+
+### What the cold build was needed to prove
+
+That the module can own and live-update drag/gizmo math while the host still
+owns document state and undo.
+
+### Why live activation was impossible
+
+The new ABI fields and the host drag/gizmo call sites are kernel/module-host
+mechanisms.
+
+### Smallest change that would make this hot
+
+Continue moving editor behavior into the module. Only the service-table/host
+dispatch surface should remain cold.
+
+### Next migration/falsification step
+
+Move editor input handling, selection/outliner/properties, command/project
+workflow, then the full renderer draw/upload path. Verify a real mouse drag and
+renderer source save in one pinned run.
+
+## Cold-build occurrence 50
+
+UTC time:
+`2026-11-07T21:19:45Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The module ABI gained a command service table and `executeCommand`, and the host
+terminal handler gained the module-first selection command dispatch.
+
+### Exact cold source / boundary
+
+- `src/modules/api/map-editor-api.h`
+- `src/mapeditor/map-editor-module.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/hot-reload/module-host.{h,cpp}`
+- `src/mapeditor/map-editor.h`
+
+### Build result
+
+Dev-loop build `2026-11-07T21:19:45Z` succeeded. The running client loaded
+`map-editor` generation 11 and executed `select`, `selectall`, and
+`select_kind block` with `handled_by_module=true`.
+
+### What the cold build was needed to prove
+
+That selection command behavior can live in the module while the host retains
+selection/document authority and journal evidence.
+
+### Why live activation was impossible
+
+The new ABI table and host command call site are kernel/module-host mechanisms.
+
+### Smallest change that would make this hot
+
+Continue moving command behavior and editor state behind the same service table.
+Only the service table and host dispatch should remain cold.
+
+### Next migration/falsification step
+
+Move real input/selection state, outliner/properties, clipboard/undo-redo
+service calls, remaining commands, projects, overlays, then renderer draw/upload.
+Verify real mouse drag and a renderer source save in one pinned run.
+
+## Cold-build occurrence 51
+
+UTC time:
+`2026-11-07T21:24:21Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The command service table gained host-owned clipboard/undo/redo/save/transform
+services, and the terminal dispatch now routes those commands through the
+module first.
+
+### Exact cold source / boundary
+
+- `src/modules/api/map-editor-api.h`
+- `src/mapeditor/map-editor-module.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/hot-reload/module-host.cpp`
+
+### Build result
+
+Dev-loop build `2026-11-07T21:24:21Z` succeeded. The running client loaded
+`map-editor` generation 13 and handled `select`, `nudge`, and `undo` commands
+through the module.
+
+### What the cold build was needed to prove
+
+That terminal command behavior and host-owned clipboard/undo/transform services
+can be driven by the module without moving document authority.
+
+### Why live activation was impossible
+
+The expanded service table and host command routing are kernel/module-host
+mechanisms.
+
+### Smallest change that would make this hot
+
+Continue moving editor behavior and command families behind the same service
+table; only the host service surface should remain cold.
+
+### Next migration/falsification step
+
+Move real input/selection storage, outliner/properties, remaining commands,
+projects, overlays, then renderer draw/upload. Verify real mouse drag and a
+renderer source save in one pinned run.
+
+## Cold-build occurrence 52
+
+UTC time:
+`2026-11-07T21:49:59Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The cursor-coordinate, UI-hitbox, click-priority, and diagnostics changes are
+currently in host `src/mapeditor/map-editor.cpp`. They do not yet live in the
+hot module.
+
+### Exact cold source / boundary
+
+- `src/mapeditor/map-editor.cpp`
+- `config/gui/map-editor.json` (runtime data, no build required)
+- `config/video-settings.json` (mode 6 test input)
+
+### Build result
+
+Dev-loop build `2026-11-07T21:49:59Z` succeeded. Real mouse input was injected
+for mode 6 and mode 0 tests.
+
+### What the cold build was needed to prove
+
+That mapped scene cursor coordinates now drive box selection, UI hit tests, click
+thresholds, and context-menu placement in mode 6, and that different-object
+clicks take priority over nearby handles.
+
+### Why live activation was impossible
+
+The input hit-test and click-priority code is still host code. Once selection and
+input are extracted into the module, these fixes become module-only edits.
+
+### Smallest change that would make this hot
+
+Move `updateInput`, selection state, UI hit testing, box select, click priority,
+and overlays into the map-editor module.
+
+### Next migration/falsification step
+
+Extract selection into the module state blob and move input/overlay behavior,
+then repeat the mode-6/mode-0 real mouse trial without an EXE build.
+
+## Cold-build occurrence 53
+
+UTC time:
+`2026-11-07T22:34:19Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+Handle priority, unclamped gizmo endpoint projection, drag-axis projection, and
+the new hover/cursor diagnostics are currently in host
+`src/mapeditor/map-editor.cpp` and `src/debug/debug-visuals-labels.cpp`.
+
+### Exact cold source / boundary
+
+- `src/mapeditor/map-editor.cpp`
+- `src/debug/debug-visuals.h`
+- `src/debug/debug-visuals-labels.cpp`
+- host compatibility wrappers in `map-editor.h/.cpp`
+
+### Build result
+
+Dev-loop build `2026-11-07T22:34:19Z` succeeded. Repeated real injected mouse
+handle drags both selected `begin_handle_drag` with axis 0 and moved/autosaved
+the object.
+
+### What the cold build was needed to prove
+
+That selected handles win over objects underneath and that long off-screen gizmo
+endpoints remain pickable and draggable every time.
+
+### Why live activation was impossible
+
+The input/click priority and projection math are still host code.
+
+### Smallest change that would make this hot
+
+Move input, selection, gizmo picking, and overlay behavior into the map-editor
+module state and services.
+
+### Next migration/falsification step
+
+Repeat repeated handle drags and mode-6 box selection after input/selection are
+module-owned, with no EXE rebuild.
+
+## Cold-build occurrence 54
+
+UTC time:
+`2026-11-07T22:45:30Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The generic module ABI gained editor input/click events, selection snapshot
+services, and the host now requests cursor mapping and click actions from the
+module. The module worker also gained a compiler `PATH` fix.
+
+### Exact cold source / boundary
+
+- `src/modules/api/module-abi.h`
+- `src/modules/api/map-editor-api.h`
+- `src/mapeditor/map-editor-module.cpp`
+- `src/mapeditor/map-editor.cpp`, `map-editor.h`
+- `src/hot-reload/module-host.{h,cpp}`
+- `devscripts/module-build-worker.py`
+- `config/modules/modules.json`
+
+### Build result
+
+Dev-loop build `2026-11-07T22:45:30Z` succeeded. `map-editor` generation 24
+activated live. Selection exported/imported through the module state blob and a
+real handle drag used module action 3.
+
+### What the cold build was needed to prove
+
+That cursor mapping and click/handle priority decisions can run in the module,
+and that selection survives module activation through the versioned state blob.
+
+### Why live activation was impossible
+
+The new event payloads, selection services, and host dispatch are kernel/module
+mechanisms.
+
+### Smallest change that would make this hot
+
+Finish moving selection storage and input callbacks fully into the module so
+ordinary editor fixes are module-only.
+
+### Next migration/falsification step
+
+Move the live selection container and remaining input/outliner/property behavior
+into module state, then repeat mode-6/mode-0 real mouse trials without an EXE
+rebuild.

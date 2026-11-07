@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -20,6 +21,8 @@
 #include "devtools/terminal.h"
 #include "entities/player.h"
 #include "gamemode/map-config.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/worldgen-api.h"
 #include "network/community-match-client.h"
 #include "network/multiplayer-context.h"
 #include "network/server-gamemode.h"
@@ -35,6 +38,8 @@ namespace {
 // work out of a burst when a player crosses several cells at once, and let the
 // pending neighborhood drain over subsequent frames.
 constexpr int kMaxChunksPerFrame = 2;
+constexpr size_t kMaxConnectorLoaded = 256;
+constexpr size_t kMaxConnectorPending = 64;
 
 uint64_t mixCoord(uint32_t seed, const std::string& version,
                   const std::string& deps, int x, int y, int z)
@@ -378,6 +383,36 @@ uint64_t InfiniteWorldRuntime::cellKey(int x, int y, int z) const
            uint64_t(uint32_t(z));
 }
 
+uint64_t InfiniteWorldRuntime::placementKey(const glm::mat4& transform,
+                                            int /*chunkIndex*/) const
+{
+    const int64_t x = static_cast<int64_t>(std::llround(transform[3][0] * 100.0f));
+    const int64_t y = static_cast<int64_t>(std::llround(transform[3][1] * 100.0f));
+    const int64_t z = static_cast<int64_t>(std::llround(transform[3][2] * 100.0f));
+    uint64_t hash = 1469598103934665603ull;
+    const int64_t values[3] = {x, y, z};
+    const unsigned char* bytes = reinterpret_cast<const unsigned char*>(values);
+    for (size_t i = 0; i < sizeof(values); ++i) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+    hash ^= hash >> 30;
+    hash *= 0xbf58476d1ce4e5b9ull;
+    return hash ^ (hash >> 27);
+}
+
+bool InfiniteWorldRuntime::withinStreamRadius(const glm::vec3& playerPos,
+                                              const glm::vec3& boundsMin,
+                                              const glm::vec3& boundsMax) const
+{
+    const glm::vec3 closest = glm::clamp(playerPos, boundsMin, boundsMax);
+    const float radius = static_cast<float>(std::max(
+        {mModeZone.streamRadius.x, mModeZone.streamRadius.y,
+         mModeZone.streamRadius.z, 1}));
+    const glm::vec3 delta = closest - playerPos;
+    return glm::dot(delta, delta) <= radius * radius;
+}
+
 glm::vec3 InfiniteWorldRuntime::cellOrigin(int x, int y, int z,
                                            const GenerationZone& zone) const
 {
@@ -415,6 +450,10 @@ void InfiniteWorldRuntime::clearZone()
     mLoaded.clear();
     mRejected.clear();
     mResolved.clear();
+    mConnectorLoaded.clear();
+    mConnectorTried.clear();
+    mConnectorPending.clear();
+    mConnectorSeeded = false;
 }
 
 std::vector<const AuthoredChunk*> InfiniteWorldRuntime::resolveCandidates(
@@ -434,8 +473,10 @@ std::vector<const AuthoredChunk*> InfiniteWorldRuntime::resolveCandidates(
     // Map-authored chunks remain the editable source for a zone. A named mode
     // contributes its reusable library chunks alongside them, with a map
     // chunk winning when both sources use the same stable ID.
-    const std::string modeId = zone.modeId.empty()
+    std::string modeId = zone.modeId.empty()
         ? (candidates.empty() ? "tunnel" : "") : zone.modeId;
+    if (modeId == "connected_world" && !mModeProfile.id.empty())
+        modeId = mModeProfile.id;
     if (modeId.empty()) return candidates;
     if (mModeCacheId != modeId || mSignatureDirty) {
         mModeChunks.clear();
@@ -822,6 +863,357 @@ bool InfiniteWorldRuntime::placeChunk(
     return true;
 }
 
+void InfiniteWorldRuntime::tickConnectorStream(
+    const Player& player, const GenerationZone& zone,
+    const std::vector<const AuthoredChunk*>& candidates, uint64_t revision)
+{
+    if (candidates.empty())
+        return;
+
+    std::vector<mimita_worldgen::ChunkV1> chunkViews;
+    std::vector<mimita_worldgen::PartV1> partViews;
+    std::vector<mimita_worldgen::ConnectorV1> connectorViews;
+    std::vector<uint32_t> connectorOffsets;
+    chunkViews.reserve(candidates.size());
+    connectorOffsets.reserve(candidates.size());
+    for (const AuthoredChunk* chunk : candidates) {
+        if (!chunk)
+            continue;
+        mimita_worldgen::ChunkV1 view{};
+        std::snprintf(view.id, sizeof(view.id), "%s", chunk->id.c_str());
+        view.boundsMin[0] = chunk->boundsMin.x;
+        view.boundsMin[1] = chunk->boundsMin.y;
+        view.boundsMin[2] = chunk->boundsMin.z;
+        view.boundsMax[0] = chunk->boundsMax.x;
+        view.boundsMax[1] = chunk->boundsMax.y;
+        view.boundsMax[2] = chunk->boundsMax.z;
+        view.enabled = chunk->enabled ? 1 : 0;
+        view.partOffset = static_cast<uint32_t>(partViews.size());
+        view.connectorOffset = static_cast<uint32_t>(connectorViews.size());
+        connectorOffsets.push_back(view.connectorOffset);
+        for (const ChunkPart& part : chunk->parts) {
+            mimita_worldgen::PartV1 p{};
+            std::snprintf(p.id, sizeof(p.id), "%s", part.id.c_str());
+            std::snprintf(p.kind, sizeof(p.kind), "%s", part.kind.c_str());
+            p.position[0] = part.position.x;
+            p.position[1] = part.position.y;
+            p.position[2] = part.position.z;
+            p.size[0] = part.size.x;
+            p.size[1] = part.size.y;
+            p.size[2] = part.size.z;
+            p.rotation[0] = part.rotationEuler.x;
+            p.rotation[1] = part.rotationEuler.y;
+            p.rotation[2] = part.rotationEuler.z;
+            p.collision = part.collision ? 1 : 0;
+            p.visible = part.visible ? 1 : 0;
+            partViews.push_back(p);
+        }
+        for (const AuthoredChunkConnector& connector : chunk->connectors) {
+            mimita_worldgen::ConnectorV1 c{};
+            std::snprintf(c.id, sizeof(c.id), "%s", connector.id.c_str());
+            std::snprintf(c.side, sizeof(c.side), "%s", connector.side.c_str());
+            std::snprintf(c.orientation, sizeof(c.orientation), "%s",
+                          connector.orientation.c_str());
+            std::snprintf(c.role, sizeof(c.role), "%s", connector.role.c_str());
+            c.position[0] = connector.position.x;
+            c.position[1] = connector.position.y;
+            c.position[2] = connector.position.z;
+            c.radius = connector.radius;
+            std::string tags;
+            for (const std::string& tag : connector.tags) {
+                if (!tags.empty()) tags += "|";
+                tags += tag;
+            }
+            std::snprintf(c.tags, sizeof(c.tags), "%s", tags.c_str());
+            std::string links;
+            for (const std::string& link : connector.links) {
+                if (!links.empty()) links += "|";
+                links += link;
+            }
+            std::snprintf(c.links, sizeof(c.links), "%s", links.c_str());
+            connectorViews.push_back(c);
+        }
+        view.partCount = static_cast<uint32_t>(partViews.size()) - view.partOffset;
+        view.connectorCount = static_cast<uint32_t>(connectorViews.size()) -
+                              view.connectorOffset;
+        chunkViews.push_back(view);
+    }
+    if (chunkViews.empty())
+        return;
+
+    mimita_worldgen::TablesV1 tables{};
+    tables.chunks = chunkViews.data();
+    tables.chunkCount = static_cast<uint32_t>(chunkViews.size());
+    tables.parts = partViews.data();
+    tables.partCount = static_cast<uint32_t>(partViews.size());
+    tables.connectors = connectorViews.data();
+    tables.connectorCount = static_cast<uint32_t>(connectorViews.size());
+
+    mimita_worldgen::ZoneV1 zoneView{};
+    std::snprintf(zoneView.id, sizeof(zoneView.id), "%s", zone.id.c_str());
+    std::snprintf(zoneView.plane, sizeof(zoneView.plane), "%s", zone.plane.c_str());
+    std::snprintf(zoneView.spacingMode, sizeof(zoneView.spacingMode), "%s",
+                  zone.spacingMode.c_str());
+    std::snprintf(zoneView.generatorVersion, sizeof(zoneView.generatorVersion),
+                  "%s", zone.generatorVersion.c_str());
+    std::snprintf(zoneView.ruleSet, sizeof(zoneView.ruleSet), "%s",
+                  zone.ruleSet.c_str());
+    std::string deps;
+    for (const std::string& dep : zone.chunkDependencies) {
+        if (!deps.empty()) deps += ",";
+        deps += dep;
+    }
+    std::snprintf(zoneView.dependencies, sizeof(zoneView.dependencies), "%s",
+                  deps.c_str());
+    zoneView.seed = zone.seed;
+    zoneView.origin[0] = zone.origin.x;
+    zoneView.origin[1] = zone.origin.y;
+    zoneView.origin[2] = zone.origin.z;
+    zoneView.cellSize[0] = zone.cellSize.x;
+    zoneView.cellSize[1] = zone.cellSize.y;
+    zoneView.cellSize[2] = zone.cellSize.z;
+    zoneView.chunkSize[0] = zone.chunkSizeVec.x;
+    zoneView.chunkSize[1] = zone.chunkSizeVec.y;
+    zoneView.chunkSize[2] = zone.chunkSizeVec.z;
+    zoneView.repeatAxes[0] = zone.repeatAxes.x;
+    zoneView.repeatAxes[1] = zone.repeatAxes.y;
+    zoneView.repeatAxes[2] = zone.repeatAxes.z;
+    zoneView.streamRadius[0] = zone.streamRadius.x;
+    zoneView.streamRadius[1] = zone.streamRadius.y;
+    zoneView.streamRadius[2] = zone.streamRadius.z;
+    zoneView.connectorGap = zone.connectorGap;
+    zoneView.maxBranchDepth = zone.maxBranchDepth;
+    zoneView.allowCycles = zone.allowCycles ? 1 : 0;
+    zoneView.allowCrossings = zone.allowCrossings ? 1 : 0;
+
+    auto placeInstance = [&](const mimita_worldgen::ResolveV1& resolved,
+                             int depth) {
+        if (!resolved.outValid || resolved.outChunk < 0 ||
+            static_cast<size_t>(resolved.outChunk) >= chunkViews.size())
+            return;
+        const AuthoredChunk* chunk = candidates[resolved.outChunk];
+        if (!chunk || chunk->parts.empty())
+            return;
+        glm::mat4 transform(1.0f);
+        std::memcpy(&transform[0][0], resolved.outTransform, sizeof(float) * 16);
+        const uint64_t key = placementKey(transform, resolved.outChunk);
+        if (mConnectorLoaded.count(key) || mLoaded.count(key))
+            return;
+        ConnectorInstance instance;
+        instance.key = key;
+        instance.chunkIndex = resolved.outChunk;
+        instance.transform = transform;
+        instance.boundsMin = glm::vec3(resolved.outBoundsMin[0],
+                                       resolved.outBoundsMin[1],
+                                       resolved.outBoundsMin[2]);
+        instance.boundsMax = glm::vec3(resolved.outBoundsMax[0],
+                                       resolved.outBoundsMax[1],
+                                       resolved.outBoundsMax[2]);
+        instance.quarterTurns = resolved.outQuarterTurns;
+        instance.depth = depth;
+        StreamedWorldLayer::instance().addChunk(key, *chunk, transform);
+        mLoaded.insert(key);
+        mConnectorLoaded[key] = instance;
+        mConnectorTried.insert(key);
+        logEvent("world-stream.connector.matched", zone.id,
+                 {{"zone", zone.id},
+                  {"chunk", chunk->id},
+                  {"cell", {instance.depth, 0, 0}},
+                  {"quarter_turns", instance.quarterTurns},
+                  {"transform",
+                   {transform[3][0], transform[3][1], transform[3][2]}},
+                  {"bounds_min", {instance.boundsMin.x, instance.boundsMin.y,
+                                  instance.boundsMin.z}},
+                  {"bounds_max", {instance.boundsMax.x, instance.boundsMax.y,
+                                  instance.boundsMax.z}},
+                  {"stream_distance_m", glm::length(
+                       glm::clamp(player.pos, instance.boundsMin,
+                                  instance.boundsMax) - player.pos)}});
+    };
+
+    if (!mConnectorSeeded || mConnectorLoaded.empty()) {
+        const bool haveOrigin = zone.origin.x != 0.0f || zone.origin.y != 0.0f ||
+                                zone.origin.z != 0.0f;
+        const glm::vec3 seedPoint = haveOrigin ? zone.origin : player.pos;
+        mimita_worldgen::ResolveV1 seed{};
+        seed.tables = &tables;
+        seed.zone = zoneView;
+        seed.zone.origin[0] = seedPoint.x;
+        seed.zone.origin[1] = seedPoint.y;
+        seed.zone.origin[2] = seedPoint.z;
+        seed.requestKind = 0;
+        seed.cell[0] = seed.cell[1] = seed.cell[2] = 0;
+        if (ModuleHost::instance().worldgenResolve(&seed) && seed.outValid) {
+            mConnectorAnchor = seedPoint;
+            mConnectorSeeded = true;
+            placeInstance(seed, 0);
+            logEvent("world-stream.anchor", zone.id,
+                     {{"zone", zone.id},
+                      {"seed_point", {seedPoint.x, seedPoint.y, seedPoint.z}},
+                      {"mode", "connector-distance"},
+                      {"stream_radius_m", {zone.streamRadius.x,
+                                           zone.streamRadius.y,
+                                           zone.streamRadius.z}}});
+        }
+    }
+
+    for (auto it = mConnectorLoaded.begin(); it != mConnectorLoaded.end();) {
+        if (withinStreamRadius(player.pos, it->second.boundsMin,
+                               it->second.boundsMax)) {
+            ++it;
+            continue;
+        }
+        StreamedWorldLayer::instance().removeChunk(it->first);
+        mLoaded.erase(it->first);
+        mConnectorTried.erase(it->first);
+        it = mConnectorLoaded.erase(it);
+    }
+
+    int added = 0;
+    for (size_t i = 0;
+         i < mConnectorPending.size() && added < kMaxChunksPerFrame &&
+         mConnectorLoaded.size() < kMaxConnectorLoaded;) {
+        const ConnectorInstance pending = mConnectorPending[i];
+        mConnectorPending.erase(mConnectorPending.begin() + i);
+        if (mConnectorLoaded.count(pending.key) || mLoaded.count(pending.key))
+            continue;
+        if (!withinStreamRadius(player.pos, pending.boundsMin,
+                                pending.boundsMax))
+            continue;
+        const AuthoredChunk* chunk = candidates[pending.chunkIndex];
+        if (!chunk || chunk->parts.empty())
+            continue;
+        StreamedWorldLayer::instance().addChunk(pending.key, *chunk,
+                                                pending.transform);
+        mLoaded.insert(pending.key);
+        mConnectorLoaded[pending.key] = pending;
+        mConnectorTried.insert(pending.key);
+        logEvent("world-stream.connector.matched", zone.id,
+                 {{"zone", zone.id},
+                  {"chunk", chunk->id},
+                  {"quarter_turns", pending.quarterTurns},
+                  {"transform", {pending.transform[3][0],
+                                 pending.transform[3][1],
+                                 pending.transform[3][2]}},
+                  {"bounds_min", {pending.boundsMin.x, pending.boundsMin.y,
+                                  pending.boundsMin.z}},
+                  {"bounds_max", {pending.boundsMax.x, pending.boundsMax.y,
+                                  pending.boundsMax.z}},
+                  {"depth", pending.depth},
+                  {"stream_distance_m", glm::length(
+                       glm::clamp(player.pos, pending.boundsMin,
+                                  pending.boundsMax) - player.pos)}});
+        ++added;
+    }
+
+    const size_t attempts = mConnectorPending.size();
+    std::vector<ConnectorInstance> loadedSnapshot;
+    if (mConnectorLoaded.size() < kMaxConnectorLoaded &&
+        mConnectorPending.size() < kMaxConnectorPending) {
+        loadedSnapshot.reserve(mConnectorLoaded.size());
+        for (const auto& pair : mConnectorLoaded)
+            if (withinStreamRadius(player.pos, pair.second.boundsMin,
+                                   pair.second.boundsMax))
+                loadedSnapshot.push_back(pair.second);
+    }
+
+    for (const ConnectorInstance& instance : loadedSnapshot) {
+        if (mConnectorPending.size() >= kMaxConnectorPending)
+            break;
+        if (instance.chunkIndex < 0 ||
+            static_cast<size_t>(instance.chunkIndex) >= candidates.size())
+            continue;
+        const AuthoredChunk* parent = candidates[instance.chunkIndex];
+        if (!parent)
+            continue;
+        for (size_t connectorIndex = 0;
+             connectorIndex < parent->connectors.size(); ++connectorIndex) {
+            mimita_worldgen::ResolveV1 request{};
+            request.tables = &tables;
+            request.zone = zoneView;
+            request.requestKind = 1;
+            request.parentChunk = instance.chunkIndex;
+            request.parentConnector = static_cast<int>(
+                connectorOffsets[instance.chunkIndex] + connectorIndex);
+            std::memcpy(request.parentTransform, &instance.transform[0][0],
+                        sizeof(float) * 16);
+            if (!ModuleHost::instance().worldgenResolve(&request) ||
+                !request.outValid) {
+                if (request.reason[0])
+                    logEvent("world-stream.connector.missing", zone.id,
+                             {{"zone", zone.id},
+                              {"parent_chunk", parent->id},
+                              {"parent_connector",
+                               parent->connectors[connectorIndex].id},
+                              {"reason", request.reason}});
+                continue;
+            }
+            if (request.outChunk < 0 ||
+                static_cast<size_t>(request.outChunk) >= candidates.size())
+                continue;
+            glm::mat4 transform(1.0f);
+            std::memcpy(&transform[0][0], request.outTransform,
+                        sizeof(float) * 16);
+            const uint64_t key = placementKey(transform, request.outChunk);
+            if (mConnectorLoaded.count(key) || mLoaded.count(key) ||
+                mConnectorTried.count(key))
+                continue;
+            const glm::vec3 boundsMin(request.outBoundsMin[0],
+                                      request.outBoundsMin[1],
+                                      request.outBoundsMin[2]);
+            const glm::vec3 boundsMax(request.outBoundsMax[0],
+                                      request.outBoundsMax[1],
+                                      request.outBoundsMax[2]);
+            if (!withinStreamRadius(player.pos, boundsMin, boundsMax))
+                continue;
+            ConnectorInstance child;
+            child.key = key;
+            child.chunkIndex = request.outChunk;
+            child.transform = transform;
+            child.boundsMin = boundsMin;
+            child.boundsMax = boundsMax;
+            child.quarterTurns = request.outQuarterTurns;
+            child.depth = instance.depth + 1;
+            mConnectorTried.insert(key);
+            mConnectorPending.push_back(child);
+        }
+    }
+
+    const int hx = static_cast<int>(std::floor(
+        (player.pos.x - mConnectorAnchor.x) /
+        std::max(1.0f, zone.chunkSizeVec.x)));
+    const int hy = static_cast<int>(std::floor(
+        (player.pos.y - mConnectorAnchor.y) /
+        std::max(1.0f, zone.chunkSizeVec.y)));
+    const int hz = static_cast<int>(std::floor(
+        (player.pos.z - mConnectorAnchor.z) /
+        std::max(1.0f, zone.chunkSizeVec.z)));
+    const bool cellChanged = !mHasCell || hx != mLastCellX || hy != mLastCellY ||
+                             hz != mLastCellZ;
+    if (cellChanged) {
+        mLastCellX = hx;
+        mLastCellY = hy;
+        mLastCellZ = hz;
+        mHasCell = true;
+    }
+    if (cellChanged || added > 0) {
+        logEvent("world-stream.update", zone.id,
+                 {{"zone", zone.id},
+                  {"mode", "connector-distance"},
+                  {"cell", {hx, hy, hz}},
+                  {"player_position", {player.pos.x, player.pos.y, player.pos.z}},
+                  {"anchored", std::to_string(mConnectorSeeded) == "1"},
+                  {"added", added},
+                  {"pending", mConnectorPending.size()},
+                  {"attempted", attempts},
+                  {"budget", kMaxChunksPerFrame},
+                  {"loaded", mConnectorLoaded.size()},
+                  {"radius_m", {zone.streamRadius.x, zone.streamRadius.y,
+                                zone.streamRadius.z}},
+                  {"revision", revision}});
+    }
+}
+
 void InfiniteWorldRuntime::tick(const Player& player, World&)
 {
     static bool defaultsReady = false;
@@ -858,19 +1250,18 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
 
     const GenerationZone* activeZone = mapZone;
     if (connectedWorldMode) {
-        if (mSignatureDirty || revision != mLastConfigRevision ||
-            mModeZone.id != mapZone->id) {
-            MimitaWorldGen::WorldGenMode profile;
-            std::string error;
-            const std::string mapId = config.mapId.empty()
-                ? "connected_world" : config.mapId;
-            std::string profileId = mapId;
+        const std::string mapId = config.mapId.empty()
+            ? "connected_world" : config.mapId;
+        std::string profileId = mapId;
+        std::string error;
+        bool profileApplied = false;
+        if (mModeProfile.id.empty() || mModeProfile.id != mapId) {
             if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
-                    profileId, profile, &error)) {
+                    profileId, mModeProfile, &error)) {
                 profileId = "connected_world";
                 error.clear();
                 if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
-                        profileId, profile, &error)) {
+                        profileId, mModeProfile, &error)) {
                     logEvent("world-stream.mode-profile.missing", profileId,
                              {{"mode", profileId}, {"error", error},
                               {"map", mapId}});
@@ -878,20 +1269,52 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                     return;
                 }
             }
+            mModeProfile.id = profileId;
+            std::vector<AuthoredChunk> chunks;
+            if (!MimitaWorldGen::WorldGenLibrary::instance().loadChunksForMode(
+                    mModeProfile, chunks, &error)) {
+                logEvent("world-stream.mode-profile.missing", profileId,
+                         {{"mode", profileId}, {"error", error},
+                          {"map", mapId}});
+                if (mActive) reset();
+                return;
+            }
+            mModeChunks = std::move(chunks);
+            mModeCacheId = profileId;
+            ++mModeProfileRevision;
+            mSignatureDirty = true;
+            profileApplied = true;
+        } else {
+            bool changed = false;
+            if (MimitaWorldGen::WorldGenLibrary::instance().pollReload(
+                    profileId, mModeProfile, mModeChunks, &changed, &error) &&
+                changed) {
+                mModeProfile.id = profileId;
+                mModeCacheId = profileId;
+                ++mModeProfileRevision;
+                mSignatureDirty = true;
+                profileApplied = true;
+                logEvent("world-stream.profile.reloaded", profileId,
+                         {{"profile", profileId},
+                          {"revision", mModeProfileRevision}});
+            }
+        }
+
+        if (profileApplied || mModeZone.id != mapZone->id) {
             mModeZone = *mapZone;
             mModeZone.modeId = "connected_world";
             mModeZone.chunkDependencies.clear();
-            mModeZone.plane = profile.grid.plane;
-            mModeZone.repeatAxes = profile.grid.repeatAxes;
-            mModeZone.origin = profile.grid.origin;
-            mModeZone.cellSize = profile.grid.cellSize;
-            mModeZone.chunkSizeVec = profile.grid.chunkSize;
-            mModeZone.streamRadius = profile.grid.streamRadius;
-            mModeZone.spacingMode = profile.grid.spacingMode;
-            mModeZone.connectorGap = profile.grid.connectorGap;
-            mModeZone.maxBranchDepth = profile.maxBranchDepth;
-            mModeZone.allowCycles = profile.allowCycles;
-            mModeZone.allowCrossings = profile.allowCrossings;
+            mModeZone.plane = mModeProfile.grid.plane;
+            mModeZone.repeatAxes = mModeProfile.grid.repeatAxes;
+            mModeZone.origin = mModeProfile.grid.origin;
+            mModeZone.cellSize = mModeProfile.grid.cellSize;
+            mModeZone.chunkSizeVec = mModeProfile.grid.chunkSize;
+            mModeZone.streamRadius = mModeProfile.grid.streamRadius;
+            mModeZone.spacingMode = mModeProfile.grid.spacingMode;
+            mModeZone.connectorGap = mModeProfile.grid.connectorGap;
+            mModeZone.maxBranchDepth = mModeProfile.maxBranchDepth;
+            mModeZone.allowCycles = mModeProfile.allowCycles;
+            mModeZone.allowCrossings = mModeProfile.allowCrossings;
             const std::string descriptorIdentity = mapId + "|" +
                 std::to_string(mapZone->seed) + "|" +
                 mapZone->generatorVersion + "|" + mapZone->ruleSet + "|" +
@@ -905,14 +1328,21 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             logEvent("world-stream.profile", profileId,
                      {{"map", mapId}, {"profile", profileId},
                       {"seed", mapZone->seed},
+                      {"profile_revision", mModeProfileRevision},
                       {"cell_size", {mModeZone.cellSize.x, mModeZone.cellSize.y,
                                      mModeZone.cellSize.z}},
+                      {"chunk_size", {mModeZone.chunkSizeVec.x,
+                                      mModeZone.chunkSizeVec.y,
+                                      mModeZone.chunkSizeVec.z}},
                       {"repeat_axes", {mModeZone.repeatAxes.x,
                                        mModeZone.repeatAxes.y,
                                        mModeZone.repeatAxes.z}},
                       {"stream_radius", {mModeZone.streamRadius.x,
                                          mModeZone.streamRadius.y,
-                                         mModeZone.streamRadius.z}}});
+                                         mModeZone.streamRadius.z}},
+                      {"stream_radius_units",
+                       mModeZone.spacingMode == "connector" ? "meters" : "cells"},
+                      {"spacing_mode", mModeZone.spacingMode}});
         }
         activeZone = &mModeZone;
     }
@@ -960,6 +1390,10 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             mLoaded.clear();
             mRejected.clear();
             mResolved.clear();
+            mConnectorLoaded.clear();
+            mConnectorTried.clear();
+            mConnectorPending.clear();
+            mConnectorSeeded = false;
             mHasCell = false;
             mLastRadius = glm::ivec3(-1);
             mDesired.clear();
@@ -973,6 +1407,11 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
         }
         mSignatureDirty = false;
         mLastConfigRevision = revision;
+    }
+
+    if (activeZone->spacingMode == "connector") {
+        tickConnectorStream(player, *activeZone, candidates, revision);
+        return;
     }
 
     const int hx = (int)chunkCoord(player.pos, 0, *activeZone);

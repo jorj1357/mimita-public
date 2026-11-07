@@ -94,16 +94,28 @@ public:
     bool modulePrimarySelection(char* id, unsigned int idCapacity, int* kind,
                                 glm::vec3& position) const;
     bool moduleApplyPrimaryPosition(const glm::vec3& position);
+    void moduleClearSelection() { clearSelection(); }
+    unsigned int moduleSelectionCount() const {
+        return static_cast<unsigned int>(mSelection.size());
+    }
+    bool moduleSelectionAt(unsigned int index, int* kind, char* id,
+                           unsigned int idCapacity) const;
+    void moduleSetSelection(const std::vector<EditorObjectRef>& refs) {
+        mSelection = refs;
+    }
 
     // Commands that intentionally mutate authored map data through the editor,
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
     std::string addBlock(const std::string& id = {});
     std::string addChunk(const std::string& id = {});
+    std::string addChunkWithFootprint(const std::string& id,
+                                      const glm::vec3& footprint);
     std::string addChunkPart(const std::string& kind = "box");
     bool addConnector(const std::string& side = "east");
     std::string addChunkSpawn(const std::string& allowedActors = "any");
     void previewConnections();
+    std::string previewConnectionsReport() const;
     void openContextMenu(const EditorObjectRef& target);
     std::string createAttachment();
     bool setAttachmentAnchored(bool anchored);

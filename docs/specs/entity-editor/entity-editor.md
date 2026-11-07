@@ -578,7 +578,7 @@ Run `mapeditor help` in the game for the compact list.
 | `mapeditor` | `mapeditor route_final <0\|1>` | Set the final flag. |
 | `mapeditor` | `mapeditor route_enabled <0\|1>` | Enable or disable selected route points. |
 | `mapeditor` | `mapeditor route_radius <m>` | Set arrival radius. |
-| `mapeditor` | `mapeditor route_bonus <sec>` | Set checkpoint time bonus. |
+| `mapeditor` | `mapeditor route_bonus <se`c>` | Set checkpoint time bonus. |
 | `mapeditor` | `mapeditor route_wait <ticks>` | Set arrival wait in 60 Hz ticks. |
 | `mapeditor` | `mapeditor route_move <up\|down>` | Reorder selected route points. |
 | `mapeditor` | `mapeditor route_validate` | Validate route ids, order, flags, distances, radii, and bonuses. |
@@ -785,8 +785,10 @@ incomplete and does not cover every spawn entry path.
 ## Map Editor interaction overhaul (2026-11-07)
 
 - Viewport selection uses a click threshold: a press/release without 3-4 px
-  movement selects (or Shift-toggles) without starting a transform. Clicking a
-  different object takes priority over nearby gizmo handles.
+  movement selects (or Shift-toggles) without starting a transform. Selected
+  gizmo handles take priority over objects underneath them: pressing a handle
+  starts a transform of the current selection even when another object is under
+  the cursor.
 - Left-drag on empty viewport space is a selection box. Shift adds and Ctrl
   toggles. Dragging an object still moves it.
 - F2 starts display-name editing for the selected outliner object. Stable IDs
@@ -838,6 +840,50 @@ fall back to `material`. The controlled map
 material, submitted batch range, and culling expectation. The audit is
 diagnostic evidence; it does not replace human visual review, and a face or
 operation that was not reached is `NOT_COVERED`.
+
+Map-editor panel, toolbar, outliner, properties, context menu, box selection,
+row colors, and help presentation are defined in
+`config/gui/map-editor.json`; `config/mapeditor.json` remains the behavior and
+overlay-alpha owner. Successful module or shader hot reloads show a
+dark-green/green notification with the full edited path and generation; failures
+show a red notification with the failing path and reason. These notices are
+client/editor presentation only.
+
+The `map-editor` module now owns drag-delta projection and gizmo axis
+hit-distance math. `mapeditor drag_probe` is a bounded diagnostic that records
+`map-editor.drag-probe` with the computed delta, picked axis, and module
+generation. Host code still polls input, mutates the document, records undo, and
+refreshes collision/geometry. Selection command behavior for `select`,
+`select_kind`, `select_route`, and `selectall` is parsed by the module and
+applied through a host selection service; selection storage remains host-owned.
+Clipboard, undo/redo, save/reload/autosave, focus, nudge, transform fields,
+bomb-site radius, and rename command parsing also live in the module and call
+host-owned document services. `mapeditor drag_probe` is diagnostics-only; real
+mouse-drag acceptance remains separate.
+
+### Cursor-space and click-priority diagnostics
+
+Editor input now maps the raw GLFW cursor into the renderer scene space once and
+uses that mapped cursor for box selection, outliner/UI hit tests, click
+thresholds, and context-menu placement. Mode 6
+(`BorderlessFullFrameStretched`, 1024×768 scene on a desktop-sized window) must
+behave like windowed mode. `map-editor.cursor.map` records raw/window/framebuffer/
+scene/UI sizes and the mapped cursor on mode change or at most once per second.
+`map-editor.handle.pick` records cursor, object under cursor, handle axis,
+selection count, and the chosen action on click. Selected gizmo handles take
+priority over objects underneath them so a handle press reliably starts a
+selection transform. Gizmo endpoint projection for interaction uses unclamped
+screen projection so a long handle remains pickable and draggable even when its
+far endpoint is off-screen. `map-editor.gizmo.hover` records hover-axis changes.
+
+When the `map-editor` module is loaded, cursor mapping and click resolution are
+requested from the module through `EVENT_EDITOR_INPUT` and
+`EVENT_EDITOR_CLICK`. The module returns the mapped scene cursor and a click
+action (`handle drag`, `select`, `toggle`, `click candidate`, or `box select`);
+the host still performs picking and applies the action. Selection IDs are
+serialized in the module state blob and restored on activation through host
+selection services. `map-editor.state.export`/`map-editor.state.import` record
+the selection count and blob size.
 
 ## Bomb-site zones
 

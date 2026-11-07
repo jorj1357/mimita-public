@@ -396,3 +396,29 @@ events: world-stream.identity
 A valid run shows identical `descriptor_hash` on server and clients, the same
 chunk ID in the same cell, connected connectors within radius, and loaded cells
 bounded by the configured radius.
+
+### Mixed-size connector streaming and live reload (2026-11-07)
+
+Connector-mode placement is owned by the live `infinite-worldgen` module. It
+derives the child transform from the parent connector's world frame and the
+child connector's authored local frame, including quarter-turn yaw, and uses
+authored chunk bounds rather than `cell_size`. `cell_size` remains the regular
+grid step; `chunk_size` is the editor's default new-chunk footprint.
+
+In connector mode, `stream_radius` is measured in world-space meters. The client
+and server maintain a bounded frontier of loaded chunks and compatible
+connectors; chunks whose AABB is outside the radius are removed. The pending
+frontier is capped so mixed-size cycles cannot create an unbounded queue.
+
+`config/worldgen/infinite_mixed.json` and `config/maps/infinite_mixed.json`
+provide the controlled acceptance world: `mixed_10` (10 m), `mixed_25` (25 m),
+`mixed_rect` (16 x 8 m), `mixed_turn`, and `mixed_corridor`. Saving the profile
+or a referenced chunk file is watched by `WorldGenLibrary::pollReload`; a valid
+candidate replaces the active profile/chunks, and an invalid candidate is
+rejected with the previous generation retained.
+
+Chunk collision is built by the live `chunk-collision` module from every
+collidable part after chunk and part transforms. The host runs the existing
+static-solid-union and face-removal path with a raw-triangle fallback, then
+registers the streamed collision proxy. Editing chunk geometry refreshes the
+proxy; material/UV-only edits refresh rendering only.

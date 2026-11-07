@@ -45,6 +45,7 @@
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
+#include "hot-reload/module-host.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
 #include "audio/audio.h"
@@ -412,6 +413,7 @@ int runServer(const LaunchOptions& options)
     VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
+    ModuleHost::instance().startup();
     auto logServerExit = [&](int exitCode, const char* reason,
                              const std::string& roomCode, uint32_t serverTick) {
         ::StructuredLogger::instance().writeEvent(
@@ -826,6 +828,7 @@ int runServer(const LaunchOptions& options)
                                               AuthSystem::instance().user().id);
     while (true)
     {
+        ModuleHost::instance().poll();
         auto loopStart = std::chrono::steady_clock::now();
         bool registrationReady = false;
         bool registrationOk = false;

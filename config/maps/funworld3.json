@@ -181,7 +181,17 @@
       "stream_radius_chunks": 1
     }
   ],
-  "glb_objects": [],
+  "glb_objects": [
+    {
+      "id": "node:90",
+      "name": "Cube.056",
+      "position": [
+        109.58926391601563,
+        -49.93947982788086,
+        304.6072998046875
+      ]
+    }
+  ],
   "interactions": [
     {
       "action": "world.debug",
@@ -196,6 +206,153 @@
     }
   ],
   "npc_presets": [],
+  "payload": {
+    "cart_origin": {
+      "position": [
+        140.0,
+        -13.14900016784668,
+        311.3599853515625
+      ],
+      "yaw": 0.0
+    },
+    "cart_size": [
+      5.0,
+      5.5,
+      5.0
+    ],
+    "facing_mode": "route",
+    "interaction_box": {
+      "offset": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "size": [
+        8.0,
+        6.25,
+        6.5
+      ]
+    },
+    "route": [
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route1",
+        "name": "",
+        "order": 0,
+        "position": [
+          140.0,
+          -13.14900016784668,
+          311.3599853515625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route2",
+        "name": "",
+        "order": 1,
+        "position": [
+          130.89744567871094,
+          6.3171186447143555,
+          311.652587890625
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route3",
+        "name": "",
+        "order": 2,
+        "position": [
+          158.90191650390625,
+          44.59479522705078,
+          313.6555480957031
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route4",
+        "name": "",
+        "order": 3,
+        "position": [
+          218.00376892089844,
+          14.990541458129883,
+          313.55120849609375
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route5",
+        "name": "",
+        "order": 4,
+        "position": [
+          293.1388854980469,
+          -39.022605895996094,
+          312.5906677246094
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route6",
+        "name": "",
+        "order": 5,
+        "position": [
+          308.69915771484375,
+          -98.24836730957031,
+          311.5013122558594
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      },
+      {
+        "checkpoint": true,
+        "enabled": true,
+        "final": false,
+        "id": "route_1",
+        "name": "",
+        "order": 6,
+        "position": [
+          290.0,
+          -200.0,
+          311.5010070800781
+        ],
+        "radius": 2.0,
+        "time_bonus_seconds": 0.0,
+        "waitTicks": 0
+      }
+    ]
+  },
   "vehicles": [],
   "weapon_overrides": []
 }

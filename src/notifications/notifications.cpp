@@ -144,6 +144,7 @@ void NotificationSystem::loadConfig()
         mCharsPerTick = j.value("chars_per_tick", 1u);
         if (mCharsPerTick < 1) mCharsPerTick = 1;
         mTypewriterDelayTicks = j.value("typewriter_delay_ticks", 4u);
+        mHotReloadNotice = j.value("hot_reload_notice", true);
         float hours = j.value("temp_mute_hours", 0.0f);
         mTempMuteUntilTick = hours > 0.0f
             ? nowTick() + (uint64_t)(hours * 3600.0 * 60.0)
@@ -173,6 +174,7 @@ void NotificationSystem::saveConfig()
         j["enabled"] = mEnabled;
         j["show_in_game"] = mShowInGame;
         j["typewriter_enabled"] = mTypewriterEnabled;
+        j["hot_reload_notice"] = mHotReloadNotice;
         j["chars_per_tick"] = mCharsPerTick;
         j["typewriter_delay_ticks"] = mTypewriterDelayTicks;
         j["temp_mute_hours"] = (float)tempMuteRemainingTicks() / (3600.0f * 60.0f);
@@ -220,6 +222,27 @@ void NotificationSystem::loadGuiConfig()
                 throw std::runtime_error("dev_timer_tip colors must be RGB values in [0,1]");
             mDevTimerTitleColor = std::move(titleColor);
             mDevTimerTextColor = std::move(textColor);
+        }
+        if (r.contains("hot_reload")) {
+            const auto& warm = r.at("hot_reload");
+            auto readColor = [](const json& value, const char* key,
+                                std::vector<float> fallback) {
+                if (!value.contains(key) || !value[key].is_array())
+                    return fallback;
+                auto color = value[key].get<std::vector<float>>();
+                if (color.size() != 4)
+                    return fallback;
+                for (float c : color)
+                    if (c < 0.0f || c > 1.0f)
+                        return fallback;
+                return color;
+            };
+            mHotReloadPanelColor = readColor(
+                warm, "panel_color", mHotReloadPanelColor);
+            auto title = readColor(warm, "title_color", {0.55f, 1.0f, 0.65f, 1.0f});
+            auto text = readColor(warm, "text_color", {0.65f, 1.0f, 0.72f, 1.0f});
+            mHotReloadTitleColor = {title[0], title[1], title[2]};
+            mHotReloadTextColor = {text[0], text[1], text[2]};
         }
         std::error_code ec;
         mGuiConfigLastWrite = std::filesystem::last_write_time(mGuiConfigPath, ec);
@@ -513,6 +536,24 @@ void NotificationSystem::pushImportant(const std::string& title,
     pushWithAccent(title, message, durationTicks, {}, Accent::Important);
 }
 
+void NotificationSystem::pushHotReload(const std::string& title,
+                                       const std::string& message,
+                                       uint64_t durationTicks)
+{
+    if (!mHotReloadNotice)
+        return;
+    pushWithAccent(title, message, durationTicks, {}, Accent::HotReload);
+}
+
+void NotificationSystem::pushHotReloadFailure(const std::string& title,
+                                              const std::string& message,
+                                              uint64_t durationTicks)
+{
+    if (!mHotReloadNotice)
+        return;
+    pushWithAccent(title, message, durationTicks, {}, Accent::Critical);
+}
+
 void NotificationSystem::pushBuildNotice()
 {
     char exePath[MAX_PATH];
@@ -785,6 +826,12 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
         color.g = mDevTimerTextColor[1];
         color.b = mDevTimerTextColor[2];
     }
+    else if (notif.accent == Accent::HotReload &&
+             mHotReloadTextColor.size() >= 3) {
+        color.r = mHotReloadTextColor[0];
+        color.g = mHotReloadTextColor[1];
+        color.b = mHotReloadTextColor[2];
+    }
     float yPx = sy + vShift - sc.scrollY;
     for (const std::string& ln : L.lines) {
         float lx = sx;
@@ -899,6 +946,12 @@ void NotificationSystem::render(bool inGameplay)
             GuiElement tmp = *panelEl;
             if (tmp.backgroundColor.size() >= 4) {
                 tmp.backgroundColor[3] = L.alpha * mPanelAlpha;
+                if (notif.accent == Accent::HotReload &&
+                    mHotReloadPanelColor.size() >= 4) {
+                    tmp.backgroundColor[0] = mHotReloadPanelColor[0];
+                    tmp.backgroundColor[1] = mHotReloadPanelColor[1];
+                    tmp.backgroundColor[2] = mHotReloadPanelColor[2];
+                }
                 if (hovered) {
                     tmp.backgroundColor[0] = std::min(1.0f, tmp.backgroundColor[0] + mHoverBrighten);
                     tmp.backgroundColor[1] = std::min(1.0f, tmp.backgroundColor[1] + mHoverBrighten);
@@ -931,6 +984,11 @@ void NotificationSystem::render(bool inGameplay)
                     tmp.textColor[0] = mDevTimerTitleColor[0];
                     tmp.textColor[1] = mDevTimerTitleColor[1];
                     tmp.textColor[2] = mDevTimerTitleColor[2];
+                } else if (notif.accent == Accent::HotReload &&
+                           mHotReloadTitleColor.size() >= 3) {
+                    tmp.textColor[0] = mHotReloadTitleColor[0];
+                    tmp.textColor[1] = mHotReloadTitleColor[1];
+                    tmp.textColor[2] = mHotReloadTitleColor[2];
                 }
             }
             UIRect r = {box.x + padX, box.y + padY,

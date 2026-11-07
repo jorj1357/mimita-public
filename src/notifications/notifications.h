@@ -29,7 +29,7 @@ public:
     static NotificationSystem& instance();
 
     enum class ActionType { None, OpenUrl, Callback };
-    enum class Accent { Default, Critical, Important, HostCommand, DevTimer };
+    enum class Accent { Default, Critical, Important, HostCommand, DevTimer, HotReload };
 
     struct Action {
         ActionType type = ActionType::None;
@@ -82,6 +82,13 @@ public:
                          uint64_t durationTicks = 0);
     void pushImportant(const std::string& title, const std::string& message,
                        uint64_t durationTicks = 0);
+    // Development hot-module and shader rebuild notices. Successful changes use
+    // the dark-green HotReload accent; failures use the critical accent.
+    void pushHotReload(const std::string& title, const std::string& message,
+                       uint64_t durationTicks = 0);
+    void pushHotReloadFailure(const std::string& title, const std::string& message,
+                              uint64_t durationTicks = 0);
+    bool hotReloadNoticeEnabled() const { return mHotReloadNotice; }
     void pushBuildNotice();
     void pushTip(bool force = false);
     bool devTimerTipsEnabled() const { return mDevTimerTipsEnabled; }
@@ -171,6 +178,10 @@ private:
     int mLastDevTimerMessage = -1;
     std::vector<float> mDevTimerTitleColor{1.0f, 1.0f, 1.0f};
     std::vector<float> mDevTimerTextColor{1.0f, 1.0f, 1.0f};
+    std::vector<float> mHotReloadPanelColor{0.04f, 0.16f, 0.08f, 0.95f};
+    std::vector<float> mHotReloadTitleColor{0.55f, 1.0f, 0.65f};
+    std::vector<float> mHotReloadTextColor{0.65f, 1.0f, 0.72f};
+    bool mHotReloadNotice = true;
 
     int mMaxCount = 3;
     uint64_t mDefaultDurationTicks = 300;

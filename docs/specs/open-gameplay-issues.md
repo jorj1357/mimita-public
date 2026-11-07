@@ -1,4 +1,31 @@
-﻿2026 11 07 1428 jojr
+﻿2026 11 07 1716 jorj
+
+big red outlines of enemies nto good
+
+also npcs getting stuck in the ground enemies on funwordl3
+ALSO
+WE NEED TO MAEKIT SO 
+SPAWNPOITNS IN THE GAME IS WHAT SPAWNS ARE USED
+NOT THE BELNDER ONES 
+
+2026 11 07 1710 jorj 
+position corerciton issue when im in funworld3 map
+payload
+map editor
+likeim getting caught on  nothing right now 
+the big spehre 
+idk
+
+still having issues where 
+60hz svrre its fine
+but i am stuck and getting like
+reconecint issue
+fo
+
+like i build up somethign
+idk what tproblem is but it ugh ugh ugh whtvr bro 
+
+2026 11 07 1428 jojr
 issue in live game  reconnceingt isuse for no reason
 ncps wont update idk hat the problem is 
 

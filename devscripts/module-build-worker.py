@@ -19,7 +19,11 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from build_toolchain import compiler, ccache, glfw_include  # noqa: E402
+from build_toolchain import compiler, ccache, glfw_include, runtime_path  # noqa: E402
+
+# GCC invokes cc1plus from lib/gcc/...; on Windows that helper needs the
+# toolchain bin directory on PATH for its own runtime DLLs.
+os.environ["PATH"] = runtime_path(compiler()) + os.pathsep + os.environ.get("PATH", "")
 
 CATALOG = os.path.join(ROOT, "config", "modules", "modules.json")
 BUILD_ROOT = os.path.join(ROOT, "build", "modules")
@@ -50,18 +54,71 @@ def expand_patterns(patterns):
     return files
 
 
-def source_hash(module, sources, headers):
+def previous_dependencies(output_dir):
+    path = os.path.join(output_dir, "deps.json")
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            values = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(values, list):
+        return []
+    result = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        absolute = os.path.join(ROOT, value)
+        if os.path.isfile(absolute):
+            result.append(absolute)
+    return result
+
+
+def source_hash(module, sources, headers, dependencies):
     digest = hashlib.sha256()
     digest.update(module["name"].encode("utf-8"))
     digest.update(str(module.get("abi", 1)).encode("utf-8"))
     digest.update(str(module.get("state_schema", 1)).encode("utf-8"))
-    for path in sorted(sources + headers):
+    unique = sorted(set(sources + headers + dependencies))
+    for path in unique:
         relative = os.path.relpath(path, ROOT).replace("\\", "/")
         digest.update(relative.encode("utf-8"))
         with open(path, "rb") as handle:
             for chunk in iter(lambda: handle.read(65536), b""):
                 digest.update(chunk)
     return digest.hexdigest()
+
+
+def parse_depfile(path, snapshot_dir):
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        return []
+    text = text.replace("\\\n", " ")
+    if ":" not in text:
+        return []
+    dependencies = text.split(":", 1)[1].split()
+    result = []
+    seen = set()
+    for dependency in dependencies:
+        normalized = os.path.normpath(dependency.replace("\\\\", "\\"))
+        original = None
+        if normalized.startswith(snapshot_dir):
+            relative = os.path.relpath(normalized, snapshot_dir)
+            original = os.path.join(ROOT, relative)
+        elif os.path.isabs(normalized) and normalized.startswith(ROOT):
+            original = normalized
+        if not original or not os.path.isfile(original):
+            continue
+        relative = os.path.relpath(original, ROOT).replace("\\", "/")
+        if relative not in seen:
+            seen.add(relative)
+            result.append(relative)
+    return sorted(result)
 
 
 def next_generation(output_dir, code_hash):
@@ -107,14 +164,16 @@ def build_module(module):
     output_dir = os.path.join(BUILD_ROOT, name)
     sources = expand_patterns(module.get("sources", []))
     headers = expand_patterns(module.get("headers", []))
-    missing = [path for path in sources + headers if not os.path.isfile(path)]
+    dependencies = previous_dependencies(output_dir)
+    inputs = list(dict.fromkeys(sources + headers + dependencies))
+    missing = [path for path in inputs if not os.path.isfile(path)]
     if missing:
         return {"status": "failed", "module": name,
                 "error": "missing module input: " + ", ".join(missing)}
     if not sources:
         return {"status": "failed", "module": name, "error": "no module sources"}
 
-    code_hash = source_hash(module, sources, headers)
+    code_hash = source_hash(module, sources, headers, dependencies)
     generation = next_generation(output_dir, code_hash)
     if generation == 0:
         return {"status": "skipped", "module": name, "generation": 0,
@@ -130,7 +189,7 @@ def build_module(module):
         os.makedirs(snapshot_dir, exist_ok=True)
 
         snapshot_sources = []
-        for path in sources + headers:
+        for path in inputs:
             relative = os.path.relpath(path, ROOT)
             target = os.path.join(snapshot_dir, relative)
             os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -171,10 +230,15 @@ def build_module(module):
             command.append(f"-I{glfw_include()}")
         except FileNotFoundError:
             pass
+        depfile = os.path.join(generation_dir, f"{name}-g{generation}.d")
+        command += ["-MMD", "-MF", depfile]
         command += snapshot_sources
         command += ["-o", staging]
 
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        build_env = os.environ.copy()
+        build_env["PATH"] = runtime_path(compiler()) + os.pathsep + build_env.get("PATH", "")
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
+                                env=build_env)
         output = (result.stdout or "") + (result.stderr or "")
         if result.returncode != 0:
             return {
@@ -187,12 +251,17 @@ def build_module(module):
             }
 
         os.replace(staging, final)
+        dependency_files = parse_depfile(depfile, snapshot_dir)
+        if dependency_files:
+            write_json_atomic(os.path.join(output_dir, "deps.json"),
+                              dependency_files)
         current = {
             "status": "ok",
             "module": name,
             "generation": generation,
             "code_hash": code_hash,
             "dll": final,
+            "dependencies": dependency_files,
             "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
         write_json_atomic(os.path.join(output_dir, "current.json"), current)
@@ -202,19 +271,60 @@ def build_module(module):
             "generation": generation,
             "code_hash": code_hash,
             "dll": final,
+            "dependency_count": len(dependency_files),
         }
     finally:
         release_lock(descriptor, lock_path)
+
+
+def audit_modules(modules):
+    owners = {}
+    event_owners = {}
+    capability_owners = {}
+    ok = True
+    for module in modules:
+        name = module.get("name", "")
+        sources = expand_patterns(module.get("sources", []))
+        headers = expand_patterns(module.get("headers", []))
+        print(f"[MODULE AUDIT] {name}: sources={len(sources)} headers={len(headers)} "
+              f"events={module.get('events', [])} "
+              f"capabilities={module.get('capabilities', [])}")
+        for path in sources:
+            relative = os.path.relpath(path, ROOT).replace("\\", "/")
+            previous = owners.get(relative)
+            if previous and previous != name:
+                print(f"[MODULE AUDIT] SOURCE OVERLAP {relative}: {previous} and {name}")
+                ok = False
+            owners[relative] = name
+        for path in headers:
+            relative = os.path.relpath(path, ROOT).replace("\\", "/")
+            owners.setdefault(relative, name)
+        for event in module.get("events", []):
+            previous = event_owners.get(event)
+            if previous and previous != name:
+                print(f"[MODULE AUDIT] EVENT OVERLAP {event}: {previous} and {name}")
+                ok = False
+            event_owners[event] = name
+        for capability in module.get("capabilities", []):
+            capability_owners.setdefault(capability, []).append(name)
+    if not ok:
+        print("[MODULE AUDIT] FAIL")
+        return 1
+    print(f"[MODULE AUDIT] PASS files={len(owners)} events={len(event_owners)}")
+    return 0
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--module", action="append", default=[])
     parser.add_argument("--all", action="store_true")
+    parser.add_argument("--audit", action="store_true")
     arguments = parser.parse_args()
 
     catalog = read_json(CATALOG)
     modules = catalog.get("modules", [])
+    if arguments.audit:
+        return audit_modules(modules)
     selected = [m for m in modules if arguments.all or m.get("name") in arguments.module]
     if not selected:
         print("[MODULE WORKER] no matching modules")

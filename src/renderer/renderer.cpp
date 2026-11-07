@@ -30,8 +30,11 @@ extern bool gAiLaunchMode;
 #include "debug/gl-debug.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "notifications/notifications.h"
 
 namespace {
+
+std::string gLastShaderError;
 
 std::uint64_t shaderFileWriteTime(const char* path)
 {
@@ -51,6 +54,14 @@ std::uint64_t shaderTextHash(const std::string& text)
         hash *= 1099511628211ull;
     }
     return hash;
+}
+
+std::string absoluteShaderPath(const char* path)
+{
+    std::error_code error;
+    const std::filesystem::path absolute =
+        std::filesystem::absolute(resolveAssetPath(path), error);
+    return error ? std::string(path) : absolute.string();
 }
 
 } // namespace
@@ -98,6 +109,7 @@ static GLuint compileShader(GLenum type, const char* src, const char* debugName)
         char log[2048];
         MIMITA_GL_CALL(glGetShaderInfoLog(shader, sizeof(log), nullptr, log));
         printf("[RENDERER] Shader compile failed: %s\n%s\n", debugName, log);
+        gLastShaderError += std::string(debugName) + ": " + log + "\n";
         MIMITA_GL_CALL(glDeleteShader(shader));
         return 0;
     } else {
@@ -109,6 +121,7 @@ static GLuint compileShader(GLenum type, const char* src, const char* debugName)
 
 static GLuint createProgramFromFiles(const char* vertPath, const char* fragPath)
 {
+    gLastShaderError.clear();
     printf("[RENDERER] loading shaders\n");
     std::string vertText = readTextFile(vertPath);
     std::string fragText = readTextFile(fragPath);
@@ -147,6 +160,7 @@ static GLuint createProgramFromFiles(const char* vertPath, const char* fragPath)
         char log[2048];
         MIMITA_GL_CALL(glGetProgramInfoLog(program, sizeof(log), nullptr, log));
         printf("[RENDERER] Program link failed:\n%s\n", log);
+        gLastShaderError += std::string("link: ") + log + "\n";
         MIMITA_GL_CALL(glDeleteProgram(program));
         return 0;
     } else {
@@ -287,13 +301,34 @@ bool Renderer::reloadWorldShaderIfChanged()
     const GLuint nextProgram = createProgramFromFiles(
         "shaders/basic.vert", "shaders/basic.frag");
     if (!nextProgram) {
+        const std::string vertAbsolute = absoluteShaderPath("shaders/basic.vert");
+        const std::string fragAbsolute = absoluteShaderPath("shaders/basic.frag");
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Rendering, StructuredLevel::Errors,
             "shader.compile.failed", "basic",
             "world shader candidate failed; previous program retained", 0,
             nlohmann::json{{"program", "basic"},
                            {"source_hash", std::to_string(sourceHash)},
-                           {"active_generation", mShaderGeneration}},
+                           {"active_generation", mShaderGeneration},
+                           {"paths", {vertAbsolute, fragAbsolute}},
+                           {"error", gLastShaderError}},
+            __FILE__, __LINE__, __FUNCTION__);
+        std::string message =
+            "Previous shader generation " + std::to_string(mShaderGeneration) +
+            " remains active.\n" + vertAbsolute + "\n" + fragAbsolute;
+        if (!gLastShaderError.empty())
+            message += "\n" + gLastShaderError.substr(
+                0, std::min<size_t>(gLastShaderError.size(), 1200));
+        NotificationSystem::instance().pushHotReloadFailure(
+            "Hot reload failed: shader", message);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "shader.notice.shown", "basic",
+            "shader reload failure notice", 0,
+            nlohmann::json{{"accent", "critical"},
+                           {"active_generation", mShaderGeneration},
+                           {"paths", {vertAbsolute, fragAbsolute}},
+                           {"error", gLastShaderError}},
             __FILE__, __LINE__, __FUNCTION__);
         return false;
     }
@@ -301,6 +336,8 @@ bool Renderer::reloadWorldShaderIfChanged()
     const GLuint previousProgram = shaderProgram;
     shaderProgram = nextProgram;
     ++mShaderGeneration;
+    const std::string vertAbsolute = absoluteShaderPath("shaders/basic.vert");
+    const std::string fragAbsolute = absoluteShaderPath("shaders/basic.frag");
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Rendering, StructuredLevel::Important,
         "shader.compile.succeeded", "basic",
@@ -309,7 +346,20 @@ bool Renderer::reloadWorldShaderIfChanged()
                        {"source_hash", std::to_string(sourceHash)},
                        {"generation", mShaderGeneration},
                        {"previous_program", previousProgram},
-                       {"active_program", shaderProgram}},
+                       {"active_program", shaderProgram},
+                       {"paths", {vertAbsolute, fragAbsolute}}},
+        __FILE__, __LINE__, __FUNCTION__);
+    NotificationSystem::instance().pushHotReload(
+        "Hot reload: shader",
+        "Shader generation " + std::to_string(mShaderGeneration) +
+            " active\n" + vertAbsolute + "\n" + fragAbsolute);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "shader.notice.shown", "basic",
+        "shader reload success notice", 0,
+        nlohmann::json{{"accent", "hot_reload"},
+                       {"generation", mShaderGeneration},
+                       {"paths", {vertAbsolute, fragAbsolute}}},
         __FILE__, __LINE__, __FUNCTION__);
     if (previousProgram)
         MIMITA_GL_CALL(glDeleteProgram(previousProgram));

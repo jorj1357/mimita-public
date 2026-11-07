@@ -2,14 +2,17 @@
 #include "worldgen/worldgen-library.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <system_error>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 
 namespace MimitaWorldGen {
@@ -302,6 +305,80 @@ void addConnector(AuthoredChunk& chunk, const char* id, const char* side,
     chunk.connectors.push_back(std::move(connector));
 }
 
+std::uint64_t writeTime(const fs::path& path)
+{
+    std::error_code error;
+    const auto time = fs::last_write_time(path, error);
+    if (error)
+        return 0;
+    return static_cast<std::uint64_t>(time.time_since_epoch().count());
+}
+
+bool finiteVec(const glm::vec3& value)
+{
+    return std::isfinite(value.x) && std::isfinite(value.y) &&
+           std::isfinite(value.z);
+}
+
+bool validSide(const std::string& side)
+{
+    return side == "east" || side == "west" || side == "north" ||
+           side == "south" || side == "up" || side == "down";
+}
+
+bool validateProfile(const WorldGenMode& mode, std::string* error)
+{
+    if (!finiteVec(mode.grid.cellSize) || !finiteVec(mode.grid.chunkSize) ||
+        mode.grid.cellSize.x <= 0.0f || mode.grid.cellSize.y <= 0.0f ||
+        mode.grid.cellSize.z <= 0.0f || mode.grid.chunkSize.x <= 0.0f ||
+        mode.grid.chunkSize.y <= 0.0f || mode.grid.chunkSize.z <= 0.0f)
+        return fail(error, "worldgen profile has non-positive or non-finite sizes");
+    if (mode.grid.spacingMode != "connector" && mode.grid.spacingMode != "center")
+        return fail(error, "worldgen spacing_mode must be connector or center");
+    for (int axis = 0; axis < 3; ++axis) {
+        if (mode.grid.repeatAxes[axis] < 0)
+            return fail(error, "worldgen repeat_axes must be 0 or 1");
+        if (mode.grid.streamRadius[axis] < 0)
+            return fail(error, "worldgen stream_radius must be non-negative");
+    }
+    return true;
+}
+
+bool validateChunks(const std::vector<AuthoredChunk>& chunks, std::string* error)
+{
+    std::unordered_set<std::string> ids;
+    for (const AuthoredChunk& chunk : chunks) {
+        if (chunk.id.empty())
+            return fail(error, "worldgen chunk has an empty id");
+        if (!ids.insert(chunk.id).second)
+            return fail(error, "duplicate worldgen chunk id: " + chunk.id);
+        if (!finiteVec(chunk.boundsMin) || !finiteVec(chunk.boundsMax))
+            return fail(error, "chunk " + chunk.id + " has non-finite bounds");
+        if (chunk.boundsMax.x < chunk.boundsMin.x ||
+            chunk.boundsMax.y < chunk.boundsMin.y ||
+            chunk.boundsMax.z < chunk.boundsMin.z)
+            return fail(error, "chunk " + chunk.id + " has inverted bounds");
+        for (const ChunkPart& part : chunk.parts) {
+            if (!finiteVec(part.position) || !finiteVec(part.size) ||
+                part.size.x <= 0.0f || part.size.y <= 0.0f ||
+                part.size.z <= 0.0f)
+                return fail(error, "chunk " + chunk.id + " part " + part.id +
+                                       " has invalid geometry");
+        }
+        for (const AuthoredChunkConnector& connector : chunk.connectors) {
+            if (!validSide(connector.side))
+                return fail(error, "chunk " + chunk.id + " connector " +
+                                       connector.id + " has invalid side");
+            if (!std::isfinite(connector.position.x) ||
+                !std::isfinite(connector.position.y) ||
+                !std::isfinite(connector.position.z))
+                return fail(error, "chunk " + chunk.id + " connector " +
+                                       connector.id + " has non-finite position");
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 WorldGenLibrary& WorldGenLibrary::instance()
@@ -332,7 +409,118 @@ bool WorldGenLibrary::loadMode(const std::string& id, WorldGenMode& out,
 
 bool WorldGenLibrary::saveMode(const WorldGenMode& mode, std::string* error)
 {
-    return writeAtomic(modePath(mode.id), modeToJson(mode).dump(2) + "\n", error);
+    return writeAtomic(modePath(mode.id), modeToJson(mode).dump(2) + "\n",
+                       error);
+}
+
+WorldGenLibrary::WatchEntry* WorldGenLibrary::findWatch(const std::string& id)
+{
+    for (WatchEntry& entry : mWatches)
+        if (entry.id == id)
+            return &entry;
+    WatchEntry entry;
+    entry.id = id;
+    mWatches.push_back(std::move(entry));
+    return &mWatches.back();
+}
+
+bool WorldGenLibrary::pollReload(const std::string& id, WorldGenMode& out,
+                                 std::vector<AuthoredChunk>& chunks,
+                                 bool* changed, std::string* error)
+{
+    if (changed)
+        *changed = false;
+    if (id.empty())
+        return false;
+
+    WatchEntry* watch = findWatch(id);
+    const fs::path modeFile = modePath(id);
+    const std::uint64_t modeWrite = writeTime(modeFile);
+    if (modeWrite == 0)
+        return false;
+
+    WorldGenMode candidate;
+    if (!loadMode(id, candidate, error))
+        return false;
+
+    bool fileChanged = modeWrite != watch->modeWrite;
+    const bool firstObservation = watch->modeWrite == 0;
+    std::vector<std::pair<std::string, std::uint64_t>> chunkWrites;
+    chunkWrites.reserve(candidate.chunkFiles.size());
+    for (const std::string& file : candidate.chunkFiles) {
+        const std::uint64_t write = writeTime(file);
+        chunkWrites.emplace_back(file, write);
+        if (write == 0)
+            fileChanged = true;
+        else {
+            auto previous = std::find_if(
+                watch->chunkWrites.begin(), watch->chunkWrites.end(),
+                [&file](const std::pair<std::string, std::uint64_t>& item) {
+                    return item.first == file;
+                });
+            if (previous == watch->chunkWrites.end() || previous->second != write)
+                fileChanged = true;
+        }
+    }
+    if (!fileChanged && !firstObservation)
+        return false;
+
+    watch->modeWrite = modeWrite;
+    watch->chunkWrites = chunkWrites;
+
+    if (!validateProfile(candidate, error)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "worldgen.profile.rejected", id,
+            "invalid worldgen profile kept previous data active", 0,
+            {{"profile", id}, {"reason", error ? *error : "validation failed"}},
+            __FILE__, __LINE__, __func__);
+        return false;
+    }
+
+    std::vector<AuthoredChunk> candidateChunks;
+    std::string chunkError;
+    if (!loadChunksForMode(candidate, candidateChunks, &chunkError)) {
+        if (error)
+            *error = chunkError;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "worldgen.profile.rejected", id,
+            "worldgen chunk load failed; previous data retained", 0,
+            {{"profile", id}, {"reason", chunkError}},
+            __FILE__, __LINE__, __func__);
+        return false;
+    }
+    if (!validateChunks(candidateChunks, &chunkError)) {
+        if (error)
+            *error = chunkError;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "worldgen.profile.rejected", id,
+            "worldgen chunk validation failed; previous data retained", 0,
+            {{"profile", id}, {"reason", chunkError}},
+            __FILE__, __LINE__, __func__);
+        return false;
+    }
+
+    out = std::move(candidate);
+    chunks = std::move(candidateChunks);
+    if (changed)
+        *changed = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "worldgen.profile.reloaded", id,
+        "validated worldgen profile and chunks applied", 0,
+        {{"profile", id}, {"chunks", chunks.size()},
+         {"cell_size", {out.grid.cellSize.x, out.grid.cellSize.y,
+                        out.grid.cellSize.z}},
+         {"chunk_size", {out.grid.chunkSize.x, out.grid.chunkSize.y,
+                         out.grid.chunkSize.z}},
+         {"stream_radius", {out.grid.streamRadius.x, out.grid.streamRadius.y,
+                            out.grid.streamRadius.z}},
+         {"spacing_mode", out.grid.spacingMode}},
+        __FILE__, __LINE__, __func__);
+    return true;
 }
 
 bool WorldGenLibrary::listModes(std::vector<std::string>& out,

@@ -1,9 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
   "modules": [
     {
       "name": "map-editor",
-      "abi": 1,
+      "abi": 2,
       "state_schema": 1,
       "activation": "main_thread_editor_boundary",
       "sources": [
@@ -12,11 +12,24 @@
       "headers": [
         "src/modules/api/module-abi.h",
         "src/modules/api/map-editor-api.h"
+      ],
+      "events": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107
+      ],
+      "capabilities": [
+        1
       ]
     },
     {
       "name": "world-rendering",
-      "abi": 1,
+      "abi": 2,
       "state_schema": 1,
       "activation": "main_thread_before_render",
       "sources": [
@@ -25,6 +38,52 @@
       "headers": [
         "src/modules/api/module-abi.h",
         "src/modules/api/world-rendering-api.h"
+      ],
+      "events": [
+        200,
+        201
+      ],
+      "capabilities": [
+        3
+      ]
+    },
+    {
+      "name": "infinite-worldgen",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_fixed_world_tick",
+      "sources": [
+        "src/worldgen/infinite-worldgen-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/worldgen-api.h"
+      ],
+      "events": [
+        300,
+        301
+      ],
+      "capabilities": [
+        2
+      ]
+    },
+    {
+      "name": "chunk-collision",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_chunk_install",
+      "sources": [
+        "src/world/chunk-collision-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/chunk-collision-api.h"
+      ],
+      "events": [
+        400
+      ],
+      "capabilities": [
+        4
       ]
     }
   ]

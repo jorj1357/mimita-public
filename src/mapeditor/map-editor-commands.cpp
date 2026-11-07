@@ -2,13 +2,16 @@
 #include "mapeditor/map-editor-commands.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <exception>
 #include <string>
 #include <vector>
 
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
+#include "hot-reload/module-host.h"
 #include "mapeditor/map-editor.h"
+#include "modules/api/map-editor-api.h"
 #include "terminal/terminal-state.h"
 
 void registerMapEditorCommands()
@@ -66,6 +69,49 @@ void registerMapEditorCommands()
                 if (!editor.active() && !editor.setActive(true)) return;
                 editor.routeStartToCartOrigin();
                 return;
+            }
+            const bool moduleCommand =
+                command == "select" || command == "select_kind" ||
+                command == "select_route" || command == "selectall" ||
+                command == "clear_selection" || command == "select_none" ||
+                command == "copy" || command == "paste" || command == "cut" ||
+                command == "duplicate" || command == "delete" ||
+                command == "undo" || command == "redo" ||
+                command == "save" || command == "reload" ||
+                command == "autosave" || command == "rebuild_collision" ||
+                command == "focus" || command == "nudge" ||
+                command == "set_position" || command == "set_pos" ||
+                command == "set_rotation" || command == "set_rot" ||
+                command == "set_scale" || command == "set_size" ||
+                command == "resize" || command == "set_radius" ||
+                command == "site_radius" || command == "rename";
+            if (moduleCommand) {
+                const bool needsActive =
+                    command != "save" && command != "reload" &&
+                    command != "autosave" && command != "rebuild_collision";
+                if (needsActive && !editor.active() && !editor.setActive(true))
+                    return;
+                std::string moduleArgs;
+                for (size_t i = 1; i < args.size(); ++i) {
+                    if (!moduleArgs.empty()) moduleArgs += ' ';
+                    moduleArgs += args[i];
+                }
+                const bool moduleHandled =
+                    ModuleHost::instance().mapEditorLoaded() &&
+                    ModuleHost::instance().mapEditorExecuteCommand(
+                        command.c_str(), moduleArgs.c_str());
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "map-editor.command", command,
+                    "map editor command dispatched", 0,
+                    nlohmann::json{{"command", command},
+                                   {"arguments", moduleArgs},
+                                   {"handled_by_module", moduleHandled},
+                                   {"generation", ModuleHost::instance().activeGeneration(
+                                        "map-editor")}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                if (moduleHandled)
+                    return;
             }
             if (command == "select") {
                 if (!editor.active() && !editor.setActive(true)) return;
@@ -322,11 +368,27 @@ void registerMapEditorCommands()
                 } else if (kind == "cart") {
                     editor.addCartOrigin();
                 } else if (kind == "chunk") {
-                    editor.addChunk(args.size() > 2 ? args[2] : "");
+                    char created[64] = {};
+                    if (!ModuleHost::instance().mapEditorAddChunk(
+                            args.size() > 2 ? args[2].c_str() : "", created,
+                            sizeof(created)))
+                        editor.addChunk(args.size() > 2 ? args[2] : "");
+                    else
+                        Terminal::instance().addLog(std::string(
+                            "[MAPEDIT] module added chunk ") + created);
                 } else if (kind == "chunk_part") {
-                    editor.addChunkPart(args.size() > 2 ? args[2] : "box");
+                    char created[64] = {};
+                    if (!ModuleHost::instance().mapEditorAddChunkPart(
+                            args.size() > 2 ? args[2].c_str() : "box", created,
+                            sizeof(created)))
+                        editor.addChunkPart(args.size() > 2 ? args[2] : "box");
+                    else
+                        Terminal::instance().addLog(std::string(
+                            "[MAPEDIT] module added chunk part ") + created);
                 } else if (kind == "connector") {
-                    editor.addConnector(args.size() > 2 ? args[2] : "east");
+                    if (!ModuleHost::instance().mapEditorAddConnector(
+                            args.size() > 2 ? args[2].c_str() : "east"))
+                        editor.addConnector(args.size() > 2 ? args[2] : "east");
                 } else if (kind == "chunk_spawn" || kind == "spawn") {
                     editor.addChunkSpawn(args.size() > 2 ? args[2] : "any");
                 } else if (kind == "zone") {
@@ -370,7 +432,14 @@ void registerMapEditorCommands()
                 return;
             }
             if (command == "preview_connections") {
-                editor.previewConnections();
+                char report[2048] = {};
+                if (ModuleHost::instance().mapEditorPreviewConnections(
+                        report, sizeof(report))) {
+                    Terminal::instance().addLog(std::string("[MAPEDIT] ") +
+                                                report);
+                } else {
+                    editor.previewConnections();
+                }
                 return;
             }
             if (command == "attach") {
@@ -511,6 +580,62 @@ void registerMapEditorCommands()
                     if (end == std::string::npos) break;
                     start = end + 1;
                 }
+                return;
+            }
+            if (command == "drag_probe") {
+                if (!ModuleHost::instance().mapEditorLoaded()) {
+                    Terminal::instance().addLog("[MAPEDIT] drag_probe: no map-editor module");
+                    return;
+                }
+                mimita_map_editor::DragMathV1 drag{};
+                drag.mode = 0;
+                drag.mouseDelta[0] = 10.0f;
+                drag.mouseDelta[1] = -5.0f;
+                drag.cameraRight[0] = 1.0f;
+                drag.cameraUp[1] = 1.0f;
+                drag.unitsPerPixel = 0.01f;
+                float delta[3] = {0.0f, 0.0f, 0.0f};
+                const bool dragOk = ModuleHost::instance().mapEditorComputeDragDelta(
+                    &drag, delta);
+                mimita_map_editor::GizmoPickV1 pick{};
+                pick.cursor[0] = 60.0f;
+                pick.cursor[1] = 50.0f;
+                pick.center[0] = 50.0f;
+                pick.center[1] = 50.0f;
+                pick.axisEnd[0][0] = 100.0f;
+                pick.axisEnd[0][1] = 50.0f;
+                pick.axisEnd[1][0] = 50.0f;
+                pick.axisEnd[1][1] = 100.0f;
+                pick.axisEnd[2][0] = 50.0f;
+                pick.axisEnd[2][1] = 50.0f;
+                pick.scaleEnd[0][0] = 0.0f;
+                pick.scaleEnd[0][1] = 50.0f;
+                pick.scaleEnd[1][0] = 50.0f;
+                pick.scaleEnd[1][1] = 0.0f;
+                pick.scaleEnd[2][0] = 50.0f;
+                pick.scaleEnd[2][1] = 50.0f;
+                pick.allowScale = 1;
+                pick.pickPixels = 20.0f;
+                int axis = -1;
+                const bool pickOk = ModuleHost::instance().mapEditorPickGizmoAxis(
+                    &pick, &axis);
+                char message[256];
+                std::snprintf(message, sizeof(message),
+                    "[MAPEDIT] drag_probe delta=(%.3f,%.3f,%.3f) axis=%d drag=%d pick=%d",
+                    delta[0], delta[1], delta[2], axis,
+                    dragOk ? 1 : 0, pickOk ? 1 : 0);
+                Terminal::instance().addLog(message);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "map-editor.drag-probe", "map-editor",
+                    "bounded module drag/gizmo math probe", 0,
+                    nlohmann::json{{"delta", {delta[0], delta[1], delta[2]}},
+                                   {"axis", axis},
+                                   {"drag_ok", dragOk},
+                                   {"pick_ok", pickOk},
+                                   {"generation",
+                                    ModuleHost::instance().activeGeneration("map-editor")}},
+                    __FILE__, __LINE__, __FUNCTION__);
                 return;
             }
             if (command == "selectall") {

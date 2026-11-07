@@ -9,5 +9,6 @@
   "typewriter_enabled": true,
   "chars_per_tick": 1,
   "typewriter_delay_ticks": 4,
+  "hot_reload_notice": true,
   "temp_mute_hours": 0
 }

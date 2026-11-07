@@ -14,6 +14,11 @@
     "gap_title_text": 6,
     "gap_text_action": 8,
     "max_text_height": 1320,
+    "hot_reload": {
+      "panel_color": [0.04, 0.16, 0.08, 0.95],
+      "title_color": [0.55, 1.0, 0.65, 1.0],
+      "text_color": [0.65, 1.0, 0.72, 1.0]
+    },
     "dev_timer_tip": {
       "title_color": [1.0, 1.0, 1.0],
       "text_color": [1.0, 1.0, 1.0]

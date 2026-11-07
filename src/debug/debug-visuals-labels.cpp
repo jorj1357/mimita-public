@@ -56,6 +56,29 @@ bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& 
     return true;
 }
 
+bool projectToScreenUnclamped(const Camera& camera, glm::vec3 worldPos,
+                              float& x, float& y)
+{
+    if (!gRenderer)
+        return false;
+
+    const glm::mat4 view = camera.getView();
+    const glm::mat4 proj = camera.getProj(
+        (float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
+    const glm::vec4 clip = proj * view * glm::vec4(worldPos, 1.0f);
+    if (clip.w <= 0.001f)
+        return false;
+
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    const float screenWidth = (float)(gRenderer->stretchesWholeFrame()
+        ? gRenderer->sceneWidth : gRenderer->width);
+    const float screenHeight = (float)(gRenderer->stretchesWholeFrame()
+        ? gRenderer->sceneHeight : gRenderer->height);
+    x = (ndc.x * 0.5f + 0.5f) * screenWidth;
+    y = (1.0f - (ndc.y * 0.5f + 0.5f)) * screenHeight;
+    return true;
+}
+
 void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color)
 {
     if (!text || !*text)
@@ -125,6 +148,11 @@ void drawWorldLabelFaded(glm::vec3 worldPos, const char* text, glm::vec4 color,
 
 bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y) {
     return ::projectToScreen(camera, worldPos, x, y);
+}
+
+bool projectToScreenUnclamped(const Camera& camera, glm::vec3 worldPos,
+                              float& x, float& y) {
+    return ::projectToScreenUnclamped(camera, worldPos, x, y);
 }
 
 } // namespace DebugVis

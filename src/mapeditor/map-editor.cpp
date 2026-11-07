@@ -35,6 +35,7 @@
 #include "gui/ui-system.h"
 #include "hot-reload/module-host.h"
 #include "input/mouse-lock.h"
+#include "modules/api/map-editor-api.h"
 #include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
 #include "network/multiplayer-context.h"
@@ -914,11 +915,49 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
     (void)colors;
 
     const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+    const bool allowScale = mSelection.size() == 1 &&
+        (blockFor(mSelection.front()) || chunkPartFor(mSelection.front()));
+    if (ModuleHost::instance().mapEditorLoaded()) {
+        mimita_map_editor::GizmoPickV1 input{};
+        input.cursor[0] = px;
+        input.cursor[1] = py;
+        input.center[0] = cx;
+        input.center[1] = cy;
+        input.allowScale = allowScale ? 1 : 0;
+        input.pickPixels = cfg.handlePickPixels;
+        bool projected = true;
+        for (int i = 0; i < 3; ++i) {
+            float ex = 0.0f, ey = 0.0f;
+            if (!DebugVis::projectToScreenUnclamped(THE_CAMERA,
+                    center + axes[i] * cfg.handleLength, ex, ey)) {
+                projected = false;
+                break;
+            }
+            input.axisEnd[i][0] = ex;
+            input.axisEnd[i][1] = ey;
+            float sx = cx, sy = cy;
+            if (allowScale)
+                DebugVis::projectToScreenUnclamped(THE_CAMERA,
+                    center - axes[i] * cfg.handleLength, sx, sy);
+            input.scaleEnd[i][0] = sx;
+            input.scaleEnd[i][1] = sy;
+        }
+        if (projected) {
+            int picked = -1;
+            if (ModuleHost::instance().mapEditorPickGizmoAxis(&input, &picked)) {
+                out = mSelection.front();
+                axis = picked;
+                return true;
+            }
+            return false;
+        }
+    }
+
     int bestAxis = -1;
     float bestDistance = cfg.handlePickPixels;
     for (int i = 0; i < 3; ++i) {
         float ex = 0.0f, ey = 0.0f;
-        if (!DebugVis::projectToScreen(THE_CAMERA, center + axes[i] * cfg.handleLength, ex, ey))
+        if (!DebugVis::projectToScreenUnclamped(THE_CAMERA, center + axes[i] * cfg.handleLength, ex, ey))
             continue;
         const float distance = pointSegmentDistance(px, py, cx, cy, ex, ey);
         if (distance < bestDistance) {
@@ -928,7 +967,7 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
         if (mSelection.size() == 1 &&
             (blockFor(mSelection.front()) || chunkPartFor(mSelection.front()))) {
             float sx = 0.0f, sy = 0.0f;
-            if (DebugVis::projectToScreen(THE_CAMERA,
+            if (DebugVis::projectToScreenUnclamped(THE_CAMERA,
                 center - axes[i] * cfg.handleLength, sx, sy)) {
                 const float scaleDistance = glm::length(glm::vec2(px - sx, py - sy));
                 if (scaleDistance < bestDistance) {
@@ -1035,25 +1074,74 @@ void MapEditor::updateDrag()
         std::max(1.0f, screenHeight());
 
     glm::vec3 delta(0.0f);
-    if (mDrag.mode == DragMode::ObjectPlane) {
-        delta = THE_CAMERA.right * (mouseDelta.x * unitsPerPixel) +
-                THE_CAMERA.up * (-mouseDelta.y * unitsPerPixel);
-    } else {
-        const glm::vec3 axis = mDrag.mode == DragMode::AxisX || mDrag.mode == DragMode::ScaleX ? glm::vec3(1, 0, 0) :
-                               mDrag.mode == DragMode::AxisY || mDrag.mode == DragMode::ScaleY ? glm::vec3(0, 1, 0) :
-                                                               glm::vec3(0, 0, 1);
-        float cx = 0.0f, cy = 0.0f, ex = 0.0f, ey = 0.0f;
-        const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
-        if (DebugVis::projectToScreen(THE_CAMERA, mDrag.startCenter, cx, cy) &&
-            DebugVis::projectToScreen(THE_CAMERA,
-                mDrag.startCenter + axis * cfg.handleLength *
-                    (mDrag.mode == DragMode::ScaleX || mDrag.mode == DragMode::ScaleY ||
-                     mDrag.mode == DragMode::ScaleZ ? -1.0f : 1.0f), ex, ey)) {
-            const glm::vec2 axisScreen(ex - cx, ey - cy);
-            const float axisScreenLength = glm::length(axisScreen);
-            if (axisScreenLength > 1.0f) {
-                const float alongPixels = glm::dot(mouseDelta, axisScreen / axisScreenLength);
-                delta = axis * (alongPixels * cfg.handleLength / axisScreenLength);
+    bool moduleHandled = false;
+    if (ModuleHost::instance().mapEditorLoaded()) {
+        mimita_map_editor::DragMathV1 input{};
+        input.mode = mDrag.mode == DragMode::ObjectPlane
+            ? 0 : static_cast<int>(mDrag.mode) - 1;
+        input.mouseDelta[0] = mouseDelta.x;
+        input.mouseDelta[1] = mouseDelta.y;
+        input.cameraRight[0] = THE_CAMERA.right.x;
+        input.cameraRight[1] = THE_CAMERA.right.y;
+        input.cameraRight[2] = THE_CAMERA.right.z;
+        input.cameraUp[0] = THE_CAMERA.up.x;
+        input.cameraUp[1] = THE_CAMERA.up.y;
+        input.cameraUp[2] = THE_CAMERA.up.z;
+        input.unitsPerPixel = unitsPerPixel;
+        input.handleLength = MapEditorConfig::instance().data().handleLength;
+
+        bool haveAxisScreen = mDrag.mode == DragMode::ObjectPlane;
+        if (!haveAxisScreen) {
+            const glm::vec3 axis =
+                mDrag.mode == DragMode::AxisX || mDrag.mode == DragMode::ScaleX
+                    ? glm::vec3(1, 0, 0)
+                    : mDrag.mode == DragMode::AxisY ||
+                              mDrag.mode == DragMode::ScaleY
+                          ? glm::vec3(0, 1, 0)
+                          : glm::vec3(0, 0, 1);
+            float cx = 0.0f, cy = 0.0f, ex = 0.0f, ey = 0.0f;
+            const float sign =
+                mDrag.mode == DragMode::ScaleX ||
+                        mDrag.mode == DragMode::ScaleY ||
+                        mDrag.mode == DragMode::ScaleZ
+                    ? -1.0f : 1.0f;
+            if (DebugVis::projectToScreen(THE_CAMERA, mDrag.startCenter, cx, cy) &&
+                DebugVis::projectToScreenUnclamped(THE_CAMERA,
+                    mDrag.startCenter + axis * input.handleLength * sign, ex, ey)) {
+                input.axisScreen[0] = ex - cx;
+                input.axisScreen[1] = ey - cy;
+                haveAxisScreen = true;
+            }
+        }
+        if (haveAxisScreen) {
+            float moduleDelta[3] = {0.0f, 0.0f, 0.0f};
+            moduleHandled = ModuleHost::instance().mapEditorComputeDragDelta(
+                &input, moduleDelta);
+            if (moduleHandled)
+                delta = glm::vec3(moduleDelta[0], moduleDelta[1], moduleDelta[2]);
+        }
+    }
+    if (!moduleHandled) {
+        if (mDrag.mode == DragMode::ObjectPlane) {
+            delta = THE_CAMERA.right * (mouseDelta.x * unitsPerPixel) +
+                    THE_CAMERA.up * (-mouseDelta.y * unitsPerPixel);
+        } else {
+            const glm::vec3 axis = mDrag.mode == DragMode::AxisX || mDrag.mode == DragMode::ScaleX ? glm::vec3(1, 0, 0) :
+                                   mDrag.mode == DragMode::AxisY || mDrag.mode == DragMode::ScaleY ? glm::vec3(0, 1, 0) :
+                                                                   glm::vec3(0, 0, 1);
+            float cx = 0.0f, cy = 0.0f, ex = 0.0f, ey = 0.0f;
+            const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
+            if (DebugVis::projectToScreen(THE_CAMERA, mDrag.startCenter, cx, cy) &&
+                DebugVis::projectToScreenUnclamped(THE_CAMERA,
+                    mDrag.startCenter + axis * cfg.handleLength *
+                        (mDrag.mode == DragMode::ScaleX || mDrag.mode == DragMode::ScaleY ||
+                         mDrag.mode == DragMode::ScaleZ ? -1.0f : 1.0f), ex, ey)) {
+                const glm::vec2 axisScreen(ex - cx, ey - cy);
+                const float axisScreenLength = glm::length(axisScreen);
+                if (axisScreenLength > 1.0f) {
+                    const float alongPixels = glm::dot(mouseDelta, axisScreen / axisScreenLength);
+                    delta = axis * (alongPixels * cfg.handleLength / axisScreenLength);
+                }
             }
         }
     }
@@ -1683,12 +1771,11 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
 
 int MapEditor::outlinerRowAt(double screenX, double screenY) const
 {
-    GLFWwindow* window = glfwGetCurrentContext();
-    const glm::vec2 cursor = cursorScreen(window, screenX, screenY);
+    const glm::vec2 cursor((float)screenX, (float)screenY);
     const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
-    const float x = uiScreenW() - cfg.outlinerWidth;
+    const float x = screenWidth() - cfg.outlinerWidth;
     const float y = cfg.outlinerTop;
-    const float panelHeight = uiScreenH() - y - cfg.outlinerBottomPadding;
+    const float panelHeight = screenHeight() - y - cfg.outlinerBottomPadding;
     const float listY = y + kOutlinerHeaderHeight;
     const float listH = std::max(40.0f,
         panelHeight - kOutlinerHeaderHeight - cfg.propertiesHeight - kOutlinerListGap);
@@ -2552,9 +2639,78 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     }
 
     glfwGetCursorPos(window, &mMouseX, &mMouseY);
+    int windowW = 0, windowH = 0, framebufferW = 0, framebufferH = 0;
+    glfwGetWindowSize(window, &windowW, &windowH);
+    glfwGetFramebufferSize(window, &framebufferW, &framebufferH);
+    glm::vec2 screenCursor = cursorScreen(window, mMouseX, mMouseY);
+    if (ModuleHost::instance().mapEditorLoaded()) {
+        mimita_map_editor::EditorInputV1 input{};
+        input.rawCursor[0] = (float)mMouseX;
+        input.rawCursor[1] = (float)mMouseY;
+        input.windowSize[0] = windowW;
+        input.windowSize[1] = windowH;
+        input.framebufferSize[0] = framebufferW;
+        input.framebufferSize[1] = framebufferH;
+        input.sceneSize[0] = (int)screenWidth();
+        input.sceneSize[1] = (int)screenHeight();
+        input.uiSize[0] = (int)uiScreenW();
+        input.uiSize[1] = (int)uiScreenH();
+        input.stretchedWholeFrame =
+            gRenderer && gRenderer->stretchesWholeFrame() ? 1 : 0;
+        if (ModuleHost::instance().mapEditorMapCursor(&input)) {
+            screenCursor = glm::vec2(input.mappedCursor[0],
+                                     input.mappedCursor[1]);
+        }
+    }
+    const MapEditorConfigData& editorCfg = MapEditorConfig::instance().data();
+    {
+        static double lastCursorMapLog = -1.0;
+        const double now = glfwGetTime();
+        if (lastCursorMapLog < 0.0 || now - lastCursorMapLog >= 1.0) {
+            lastCursorMapLog = now;
+            float gizmoX = 0.0f, gizmoY = 0.0f;
+            bool hasGizmo = false;
+            nlohmann::json axisScreens = nlohmann::json::array();
+            if (!mSelection.empty()) {
+                const glm::vec3 center = selectionCenter();
+                hasGizmo = DebugVis::projectToScreen(
+                    THE_CAMERA, center, gizmoX, gizmoY);
+                const glm::vec3 axes[3] = {
+                    {1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+                for (int i = 0; i < 3; ++i) {
+                    float ex = 0.0f, ey = 0.0f;
+                    const bool ok = DebugVis::projectToScreenUnclamped(
+                        THE_CAMERA,
+                        center + axes[i] * editorCfg.handleLength, ex, ey);
+                    axisScreens.push_back(
+                        {{"axis", i}, {"ok", ok}, {"x", ex}, {"y", ey}});
+                }
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map-editor.cursor.map", mapId(),
+                "editor cursor mapping between window and scene coordinates", 0,
+                nlohmann::json{
+                    {"raw_window_cursor", {mMouseX, mMouseY}},
+                    {"mapped_scene_cursor", {screenCursor.x, screenCursor.y}},
+                    {"window_size", {windowW, windowH}},
+                    {"framebuffer_size", {framebufferW, framebufferH}},
+                    {"scene_size", {gRenderer ? gRenderer->sceneWidth : 0,
+                                    gRenderer ? gRenderer->sceneHeight : 0}},
+                    {"ui_size", {uiScreenW(), uiScreenH()}},
+                    {"stretched_whole_frame",
+                     gRenderer ? gRenderer->stretchesWholeFrame() : false},
+                    {"has_gizmo", hasGizmo},
+                    {"gizmo_center_screen", {gizmoX, gizmoY}},
+                    {"gizmo_axis_screens", axisScreens},
+                    {"selection_count", mSelection.size()},
+                    {"mode", "editor_input"}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     const bool right = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (right && !mRightPrev) {
-        const int row = outlinerRowAt(mMouseX, mMouseY);
+        const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
             std::vector<EditorObjectRef> objects;
             collectEditorObjects(objects);
@@ -2585,7 +2741,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
 
     const bool left = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     if (left && !mLeftPrev) {
-        const int row = outlinerRowAt(mMouseX, mMouseY);
+        const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
             std::vector<EditorObjectRef> objects;
             collectEditorObjects(objects);
@@ -2621,18 +2777,44 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         }
     }
     if (left && !mLeftPrev) {
-        const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
-        const bool overTopPanel = mMouseX >= 16.0 && mMouseX <= 716.0 &&
-                                  mMouseY >= 16.0 && mMouseY <= 164.0;
-        const bool overOutliner = mMouseX >= uiScreenW() - cfg.outlinerWidth &&
-                                  mMouseY >= cfg.outlinerTop;
-        const bool overHelp = mMouseY >= uiScreenH() - 30.0;
+        GuiLayout& editorLayout =
+            GuiLayoutManager::instance().getLayout("config/gui/map-editor.json");
+        auto pointIn = [](const glm::vec2& p, const UIRect& r) {
+            return p.x >= r.x && p.x <= r.x + r.w &&
+                   p.y >= r.y && p.y <= r.y + r.h;
+        };
+        auto sizedRect = [&](const char* id, const UIRect& fallback) {
+            const GuiElement* element = editorLayout.get(id);
+            if (!element || element->w <= 0.0f || element->h <= 0.0f)
+                return fallback;
+            return editorLayout.getRect(id, fallback);
+        };
+        const UIRect panelRect = sizedRect(
+            "map-editor.panel", {16.0f, 16.0f, 700.0f, 104.0f});
+        const UIRect toolbarRect = sizedRect(
+            "map-editor.toolbar", {16.0f, 124.0f, 660.0f, 36.0f});
+        const UIRect outlinerRect = sizedRect(
+            "map-editor.outliner",
+            {screenWidth() - editorCfg.outlinerWidth, editorCfg.outlinerTop,
+             editorCfg.outlinerWidth,
+             screenHeight() - editorCfg.outlinerTop -
+                 editorCfg.outlinerBottomPadding});
+        const UIRect helpWorldRect = sizedRect(
+            "map-editor.help-world", {16.0f, screenHeight() - 42.0f, 0.0f, 0.0f});
+        const UIRect helpCommandsRect = sizedRect(
+            "map-editor.help-commands", {16.0f, screenHeight() - 22.0f, 0.0f, 0.0f});
+        const bool overTopPanel =
+            pointIn(screenCursor, panelRect) || pointIn(screenCursor, toolbarRect);
+        const bool overOutliner = pointIn(screenCursor, outlinerRect);
+        const bool overHelp =
+            pointIn(screenCursor, helpWorldRect) ||
+            pointIn(screenCursor, helpCommandsRect);
         if (overTopPanel || overOutliner || overHelp) {
             mLeftPrev = left;
             return;
         }
     }
-    const glm::vec2 cursorNow((float)mMouseX, (float)mMouseY);
+    const glm::vec2 cursorNow = screenCursor;
     const bool shiftNow = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
                           glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
     const bool ctrlNow = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
@@ -2640,40 +2822,96 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     if (left && !mLeftPrev && mDrag.mode == DragMode::None) {
         EditorObjectRef handleRef;
         int axis = -1;
-        if (!mSelection.empty() && handleAtCursor(handleRef, axis)) {
-            beginDrag(handleRef, axis == 0 ? DragMode::AxisX :
-                              axis == 1 ? DragMode::AxisY :
-                              axis == 2 ? DragMode::AxisZ :
-                              axis == 3 ? DragMode::ScaleX :
-                              axis == 4 ? DragMode::ScaleY : DragMode::ScaleZ,
+        const bool handleHit =
+            !mSelection.empty() && handleAtCursor(handleRef, axis);
+        EditorObjectRef hit;
+        float distance = 0.0f;
+        const bool objectHit = pickAtCursor(hit, distance);
+        const bool differentObject =
+            objectHit && (mSelection.empty() || !isSelected(hit));
+
+        int action = 0;
+        if (ModuleHost::instance().mapEditorLoaded()) {
+            mimita_map_editor::EditorClickV1 click{};
+            click.cursor[0] = cursorNow.x;
+            click.cursor[1] = cursorNow.y;
+            click.objectHit = objectHit ? 1 : 0;
+            click.objectKind = objectHit ? static_cast<int>(hit.kind) : -1;
+            if (objectHit)
+                std::snprintf(click.objectId, sizeof(click.objectId), "%s",
+                              hit.id.c_str());
+            click.objectDistance = objectHit ? distance : -1.0f;
+            click.differentObject = differentObject ? 1 : 0;
+            click.handleHit = handleHit ? 1 : 0;
+            click.handleAxis = axis;
+            click.selectionCount = (int)mSelection.size();
+            click.shift = shiftNow ? 1 : 0;
+            click.ctrl = ctrlNow ? 1 : 0;
+            if (ModuleHost::instance().mapEditorResolveClick(&click))
+                action = click.action;
+        }
+        if (action == 0) {
+            if (handleHit) action = 3;
+            else if (objectHit && (differentObject || shiftNow))
+                action = shiftNow ? 2 : 1;
+            else if (objectHit) action = 4;
+            else action = 5;
+        }
+
+        const char* chosenAction = "box_select";
+        if (action == 3) {
+            beginDrag(handleRef,
+                      axis == 0 ? DragMode::AxisX :
+                      axis == 1 ? DragMode::AxisY :
+                      axis == 2 ? DragMode::AxisZ :
+                      axis == 3 ? DragMode::ScaleX :
+                      axis == 4 ? DragMode::ScaleY : DragMode::ScaleZ,
                       selectionCenter());
             mClick.active = false;
+            chosenAction = "begin_handle_drag";
+        } else if (action == 1 || action == 2 || action == 4) {
+            if (action == 2) toggleSelection(hit);
+            else if (!isSelected(hit)) selectOnly(hit);
+            mClick.active = true;
+            mClick.ref = hit;
+            mClick.pressScreen = cursorNow;
+            mClick.shift = shiftNow;
+            chosenAction = "select_object";
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map-editor.pick", hit.id, "viewport object picked", 0,
+                {{"kind", kindName(hit.kind)}, {"id", hit.id},
+                 {"distance", distance},
+                 {"selection_count", mSelection.size()},
+                 {"cursor", {cursorNow.x, cursorNow.y}}},
+                __FILE__, __LINE__, __func__);
         } else {
-            EditorObjectRef hit;
-            float distance = 0.0f;
-            if (pickAtCursor(hit, distance)) {
-                if (shiftNow) toggleSelection(hit);
-                else if (!isSelected(hit)) selectOnly(hit);
-                mClick.active = true;
-                mClick.ref = hit;
-                mClick.pressScreen = cursorNow;
-                mClick.shift = shiftNow;
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::World, StructuredLevel::Important,
-                    "map-editor.pick", hit.id, "viewport object picked", 0,
-                    {{"kind", kindName(hit.kind)}, {"id", hit.id},
-                     {"distance", distance},
-                     {"selection_count", mSelection.size()},
-                     {"cursor", {cursorNow.x, cursorNow.y}}},
-                    __FILE__, __LINE__, __func__);
-            } else {
-                if (!shiftNow && !ctrlNow) clearSelection();
-                mClick.active = false;
-                mBoxSelecting = true;
-                mBoxStartScreen = cursorNow;
-                mBoxEndScreen = cursorNow;
-            }
+            if (!shiftNow && !ctrlNow) clearSelection();
+            mClick.active = false;
+            mBoxSelecting = true;
+            mBoxStartScreen = cursorNow;
+            mBoxEndScreen = cursorNow;
+            chosenAction = "box_select";
         }
+
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.handle.pick", handleHit ? handleRef.id :
+                (objectHit ? hit.id : "none"),
+            "editor click resolved with module action", 0,
+            nlohmann::json{
+                {"cursor", {cursorNow.x, cursorNow.y}},
+                {"object", objectHit ? hit.id : std::string()},
+                {"object_kind", objectHit ? kindName(hit.kind) : std::string()},
+                {"object_distance", objectHit ? distance : -1.0f},
+                {"different_object", differentObject},
+                {"handle_hit", handleHit},
+                {"handle_axis", axis},
+                {"hover_axis", mHoverAxis},
+                {"module_action", action},
+                {"selection_count", mSelection.size()},
+                {"chosen_action", chosenAction}},
+            __FILE__, __LINE__, __func__);
     } else if (left && mClick.active && mDrag.mode == DragMode::None) {
         if (glm::length(cursorNow - mClick.pressScreen) >= 4.0f &&
             !mSelection.empty()) {
@@ -2711,7 +2949,21 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         if (mHoverValid) mHover = hit;
         int axis = -1;
         EditorObjectRef handleRef;
-        mHoverAxis = handleAtCursor(handleRef, axis) ? axis : -1;
+        const int previousHoverAxis = mHoverAxis;
+        const int nextHoverAxis =
+            handleAtCursor(handleRef, axis) ? axis : -1;
+        if (nextHoverAxis != previousHoverAxis) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map-editor.gizmo.hover", handleRef.id,
+                "editor gizmo hover axis changed", 0,
+                nlohmann::json{{"cursor", {screenCursor.x, screenCursor.y}},
+                               {"axis", nextHoverAxis},
+                               {"previous_axis", previousHoverAxis},
+                               {"selection_count", mSelection.size()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        mHoverAxis = nextHoverAxis;
     }
     mLeftPrev = left;
 }
@@ -2962,6 +3214,12 @@ std::string MapEditor::addBlock(const std::string& id)
 
 std::string MapEditor::addChunk(const std::string& id)
 {
+    return addChunkWithFootprint(id, glm::vec3(10.0f, 10.0f, 4.0f));
+}
+
+std::string MapEditor::addChunkWithFootprint(const std::string& id,
+                                             const glm::vec3& footprint)
+{
     MapConfigRegistry& registry = MapConfigRegistry::instance();
     std::string created = id;
     if (created.empty()) {
@@ -2978,16 +3236,23 @@ std::string MapEditor::addChunk(const std::string& id)
             notify("chunk id already exists: " + created);
             return {};
         }
+
+    const float width = std::max(0.5f, footprint.x);
+    const float depth = std::max(0.5f, footprint.y);
+    const float height = std::max(0.5f, footprint.z);
+    const float halfW = width * 0.5f;
+    const float halfD = depth * 0.5f;
+
     pushUndo("add chunk");
     AuthoredChunk chunk;
     chunk.id = created;
-    chunk.boundsMin = {-5.0f, -5.0f, -0.5f};
-    chunk.boundsMax = {5.0f, 5.0f, 4.0f};
+    chunk.boundsMin = {-halfW, -halfD, -0.5f};
+    chunk.boundsMax = {halfW, halfD, height};
     ChunkPart floor;
     floor.id = "floor";
     floor.kind = "floor";
     floor.position = {0.0f, 0.0f, -0.25f};
-    floor.size = {10.0f, 10.0f, 0.5f};
+    floor.size = {width, depth, 0.5f};
     chunk.parts.push_back(floor);
     for (const char* side : {"east", "west", "north", "south"}) {
         AuthoredChunkConnector connector;
@@ -2995,10 +3260,11 @@ std::string MapEditor::addChunk(const std::string& id)
         connector.side = side;
         connector.role = "bidirectional";
         connector.orientation = "doorway";
-        connector.position = side == std::string("east") ? glm::vec3(5, 0, 0) :
-            side == std::string("west") ? glm::vec3(-5, 0, 0) :
-            side == std::string("north") ? glm::vec3(0, 5, 0) :
-                                               glm::vec3(0, -5, 0);
+        connector.position =
+            side == std::string("east") ? glm::vec3(halfW, 0, 0) :
+            side == std::string("west") ? glm::vec3(-halfW, 0, 0) :
+            side == std::string("north") ? glm::vec3(0, halfD, 0) :
+                                           glm::vec3(0, -halfD, 0);
         chunk.connectors.push_back(connector);
     }
     registry.chunksMutable().push_back(std::move(chunk));
@@ -3008,7 +3274,8 @@ std::string MapEditor::addChunk(const std::string& id)
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-editor.chunk.added", created, "chunk added through map editor", 0,
-        {{"chunk", created}, {"parts", 1}, {"connectors", 4}, {"spawns", 0}},
+        {{"chunk", created}, {"parts", 1}, {"connectors", 4}, {"spawns", 0},
+         {"footprint", {width, depth, height}}},
         __FILE__, __LINE__, __func__);
     notify("added chunk " + created);
     return created;
@@ -3146,7 +3413,7 @@ void MapEditor::openContextMenu(const EditorObjectRef& target)
 {
     mContextMenuTarget = target;
     mContextMenuOpen = true;
-    mContextMenuPos = glm::vec2((float)mMouseX, (float)mMouseY);
+    mContextMenuPos = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-editor.context_menu", target.id, "object context menu opened", 0,
@@ -3274,16 +3541,24 @@ bool MapEditor::setSelectedAttachmentProperties(float mass, float density,
     return changed;
 }
 
-void MapEditor::previewConnections()
+std::string MapEditor::previewConnectionsReport() const
 {
-    if (!mChunkPreviewValid) {
-        notify("preview a chunk first");
-        return;
-    }
+    std::string report;
+    if (!mChunkPreviewValid)
+        return "preview a chunk first";
     const AuthoredChunk* chunk = nullptr;
     for (const AuthoredChunk& candidate : MapConfigRegistry::instance().chunks())
         if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
-    if (!chunk) return;
+    if (!chunk)
+        return "chunk not found";
+
+    report += "chunk " + chunk->id + " bounds min(" +
+        std::to_string(chunk->boundsMin.x) + "," +
+        std::to_string(chunk->boundsMin.y) + "," +
+        std::to_string(chunk->boundsMin.z) + ") max(" +
+        std::to_string(chunk->boundsMax.x) + "," +
+        std::to_string(chunk->boundsMax.y) + "," +
+        std::to_string(chunk->boundsMax.z) + ")\n";
     size_t missing = 0;
     for (const auto& connector : chunk->connectors) {
         std::string error;
@@ -3291,15 +3566,55 @@ void MapEditor::previewConnections()
             connector.id, &error);
         if (matches.empty()) {
             ++missing;
-            Terminal::instance().addLog("[MAPEDIT] missing connection " +
-                chunk->id + "/" + connector.id + " " + error);
-        } else {
-            Terminal::instance().addLog("[MAPEDIT] " + chunk->id + "/" +
-                connector.id + " matches=" + std::to_string(matches.size()));
+            report += chunk->id + "/" + connector.id +
+                " missing: " + error + "\n";
+            continue;
         }
+        report += chunk->id + "/" + connector.id + " matches=" +
+            std::to_string(matches.size());
+        float transform[16] = {};
+        char reason[128] = {};
+        if (ModuleHost::instance().mapEditorEvaluateConnectorPair(
+                chunk->id.c_str(), connector.id.c_str(),
+                matches.front().chunkId.c_str(),
+                matches.front().connectorId.c_str(), transform, reason,
+                sizeof(reason))) {
+            const float yaw = std::atan2(transform[1], transform[0]) *
+                180.0f / 3.14159265358979323846f;
+            report += " -> " + matches.front().chunkId + "/" +
+                matches.front().connectorId + " pos(" +
+                std::to_string(transform[12]) + "," +
+                std::to_string(transform[13]) + "," +
+                std::to_string(transform[14]) + ") yaw=" +
+                std::to_string(yaw);
+        } else if (reason[0]) {
+            report += " incompatible: " + std::string(reason);
+        }
+        report += "\n";
     }
-    notify("connections: " + std::to_string(chunk->connectors.size() - missing) +
-           " compatible, " + std::to_string(missing) + " missing");
+    report += "connections: " +
+        std::to_string(chunk->connectors.size() - missing) +
+        " compatible, " + std::to_string(missing) + " missing";
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.connection.preview", chunk->id,
+        "chunk bounds and connector transforms previewed", 0,
+        {{"chunk", chunk->id}, {"report", report},
+         {"bounds_min", {chunk->boundsMin.x, chunk->boundsMin.y,
+                         chunk->boundsMin.z}},
+         {"bounds_max", {chunk->boundsMax.x, chunk->boundsMax.y,
+                         chunk->boundsMax.z}},
+         {"connectors", chunk->connectors.size()},
+         {"missing", missing}},
+        __FILE__, __LINE__, __func__);
+    return report;
+}
+
+void MapEditor::previewConnections()
+{
+    const std::string report = previewConnectionsReport();
+    Terminal::instance().addLog("[MAPEDIT] " + report);
+    notify(report);
 }
 
 std::string MapEditor::addVehicle(const std::string& templateId,
@@ -3812,6 +4127,21 @@ bool MapEditor::modulePrimarySelection(char* id, unsigned int idCapacity, int* k
     return true;
 }
 
+bool MapEditor::moduleSelectionAt(unsigned int index, int* kind, char* id,
+                                  unsigned int idCapacity) const
+{
+    if (index >= mSelection.size())
+        return false;
+    const EditorObjectRef& ref = mSelection[index];
+    if (id && idCapacity > 0) {
+        std::strncpy(id, ref.id.c_str(), idCapacity - 1);
+        id[idCapacity - 1] = '\0';
+    }
+    if (kind)
+        *kind = static_cast<int>(ref.kind);
+    return true;
+}
+
 bool MapEditor::moduleApplyPrimaryPosition(const glm::vec3& position)
 {
     if (mSelection.empty())
@@ -4218,27 +4548,63 @@ void MapEditor::renderUI(GLFWwindow* window)
     const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
     const float w = uiScreenW();
     const float h = uiScreenH();
-    const glm::vec4 panel(0.04f, 0.05f, 0.08f, 0.82f);
-    const glm::vec4 text(0.9f, 0.95f, 1.0f, 1.0f);
-    const glm::vec4 dim(0.65f, 0.72f, 0.82f, 1.0f);
+    GuiLayout& layout =
+        GuiLayoutManager::instance().getLayout("config/gui/map-editor.json");
+    auto element = [&](const char* id) { return layout.get(id); };
+    auto rectOf = [&](const char* id, const UIRect& fallback) {
+        return layout.getRect(id, fallback);
+    };
+    auto bgOf = [&](const char* id, const glm::vec4& fallback) {
+        const GuiElement* el = element(id);
+        return el ? el->getBackgroundColorVec() : fallback;
+    };
+    auto textOf = [&](const char* id, const glm::vec4& fallback) {
+        const GuiElement* el = element(id);
+        return el ? el->getTextColorVec() : fallback;
+    };
+    auto outlineOf = [&](const char* id, const glm::vec4& fallback) {
+        const GuiElement* el = element(id);
+        return el && el->hasOutlineColor() ? el->getOutlineColorVec() : fallback;
+    };
+    auto fontOf = [&](const char* id, float fallback) {
+        const GuiElement* el = element(id);
+        return el && el->fontSize > 0.0f ? el->fontSize : fallback;
+    };
 
-    uiDrawRect({16.0f, 16.0f, 700.0f, 104.0f}, panel, "map-editor-panel");
+    const glm::vec4 panel = bgOf("map-editor.panel", {0.04f, 0.05f, 0.08f, 0.82f});
+    const glm::vec4 text = textOf("map-editor.title", {0.9f, 0.95f, 1.0f, 1.0f});
+    const glm::vec4 dim = textOf("map-editor.summary", {0.65f, 0.72f, 0.82f, 1.0f});
+
+    const UIRect panelRect = rectOf(
+        "map-editor.panel", {16.0f, 16.0f, 700.0f, 104.0f});
+    uiDrawRect(panelRect, panel, "map-editor-panel");
     char line[512];
     std::snprintf(line, sizeof(line), "MAP EDITOR  %s%s  freeze=%s%s",
         mapId().c_str(), dirty() ? " *" : "",
         mFreezeWorld ? "on" : "off",
         mCollisionDirty ? "  collision pending" : "");
-    uiDrawText(line, 26.0f, 24.0f, cfg.titleScale, text);
+    const UIRect titleRect = rectOf(
+        "map-editor.title", {26.0f, 24.0f, 0.0f, 0.0f});
+    uiDrawText(line, titleRect.x, titleRect.y,
+        fontOf("map-editor.title", cfg.titleScale), text);
     std::snprintf(line, sizeof(line), "selected %zu  blocks=%zu  routes=%zu  entities=%zu  glb=%zu",
         mSelection.size(), MapConfigRegistry::instance().current().blocks.size(),
         MapConfigRegistry::instance().current().payload.route.size(),
         MapConfigRegistry::instance().current().entities.size(),
         gpWorld ? gpWorld->mesh.objects.size() : 0);
-    uiDrawText(line, 26.0f, 52.0f, cfg.bodyScale, dim);
-    uiDrawText(mStatus.c_str(), 26.0f, 78.0f, cfg.bodyScale,
-        glm::vec4(0.55f, 1.0f, 0.7f, 1.0f));
+    const UIRect summaryRect = rectOf(
+        "map-editor.summary", {26.0f, 52.0f, 0.0f, 0.0f});
+    uiDrawText(line, summaryRect.x, summaryRect.y,
+        fontOf("map-editor.summary", cfg.bodyScale), dim);
+    const UIRect statusRect = rectOf(
+        "map-editor.status", {26.0f, 78.0f, 0.0f, 0.0f});
+    uiDrawText(mStatus.c_str(), statusRect.x, statusRect.y,
+        fontOf("map-editor.status", cfg.bodyScale),
+        textOf("map-editor.status", {0.55f, 1.0f, 0.7f, 1.0f}));
 
-    const glm::vec4 actionColor(0.16f, 0.25f, 0.34f, 0.94f);
+    const glm::vec4 actionColor = bgOf(
+        "map-editor.toolbar-button", {0.16f, 0.25f, 0.34f, 0.94f});
+    const float actionFont = fontOf("map-editor.toolbar-button", 0.28f);
     const char* actions[] = {"Add Block", "Add Chunk", "Add Connector",
                              "Add Spawn", "Preview Connections", "Save",
                              "Reload"};
@@ -4247,8 +4613,6 @@ void MapEditor::renderUI(GLFWwindow* window)
                                "map-editor.add-spawn",
                                "map-editor.preview-connections",
                                "map-editor.save", "map-editor.reload"};
-    GuiLayout& layout =
-        GuiLayoutManager::instance().getLayout("config/gui/map-editor.json");
     static bool layoutLogged = false;
     if (!layoutLogged && !layout.elementIds().empty()) {
         layoutLogged = true;
@@ -4272,7 +4636,8 @@ void MapEditor::renderUI(GLFWwindow* window)
         const UIRect rect = layout.getRect(actionIds[i], fallback);
         if (uiButton(window, actions[i],
                      {rect.x, rect.y, rect.w, rect.h}, actionColor,
-                     actions[i]).clicked) {
+                     actions[i], nullptr, nullptr, nullptr, nullptr,
+                     actionFont).clicked) {
             switch (i) {
             case 0: if (mChunkPreviewValid) addChunkPart(); else addBlock(); break;
             case 1: addChunk(); break;
@@ -4291,9 +4656,12 @@ void MapEditor::renderUI(GLFWwindow* window)
     const float py = cfg.outlinerTop;
     const float pw = cfg.outlinerWidth;
     const float ph = h - py - cfg.outlinerBottomPadding;
-    uiDrawRect({px, py, pw, ph}, panel, "map-editor-outliner");
+    uiDrawRect({px, py, pw, ph}, bgOf("map-editor.outliner", panel),
+               "map-editor-outliner");
     std::snprintf(line, sizeof(line), "OBJECTS %zu", objects.size());
-    uiDrawText(line, px + 10.0f, py + 8.0f, cfg.bodyScale, text);
+    uiDrawText(line, px + 10.0f, py + 8.0f,
+        fontOf("map-editor.outliner-title", cfg.bodyScale),
+        textOf("map-editor.outliner-title", text));
 
     UIRect searchRect{px + 8.0f, py + 32.0f, pw - 20.0f, 26.0f};
     UITextInputOptions searchOptions;
@@ -4348,24 +4716,36 @@ void MapEditor::renderUI(GLFWwindow* window)
         if (selected) {
             uiDrawRect({px + 8.0f, rowY, listRect.w - scrollbarSpace - 8.0f,
                 cfg.rowHeight - 2.0f},
-                {0.24f, 0.42f, 0.68f, 0.9f}, "map-editor-row-selected");
+                bgOf("map-editor.row-selected", {0.24f, 0.42f, 0.68f, 0.9f}),
+                "map-editor-row-selected");
             uiDrawRectOutline({px + 8.0f, rowY, listRect.w - scrollbarSpace - 8.0f,
                 cfg.rowHeight - 2.0f},
-                {0.65f, 0.85f, 1.0f, 1.0f}, "map-editor-row-selected-outline");
+                outlineOf("map-editor.row-selected", {0.65f, 0.85f, 1.0f, 1.0f}),
+                "map-editor-row-selected-outline");
         }
         glm::vec4 color = selected ? glm::vec4(1, 0.95f, 0.55f, 1) : text;
         if (!selected) {
             switch (ref.kind) {
-                case EditorObjectKind::MapGLBObject: color = {0.55f, 0.9f, 0.6f, 1}; break;
-                case EditorObjectKind::BombSite: color = {1, 0.35f, 0.35f, 1}; break;
-                case EditorObjectKind::PayloadRoutePoint: color = {1, 0.55f, 0.2f, 1}; break;
-                case EditorObjectKind::PayloadCartOrigin: color = {1, 0.75f, 0.2f, 1}; break;
-                case EditorObjectKind::Block: color = {0.4f, 0.8f, 1, 1}; break;
-                case EditorObjectKind::Vehicle: color = {1, 0.65f, 0.25f, 1}; break;
-                case EditorObjectKind::Entity: color = {0.7f, 0.8f, 1, 1}; break;
-                case EditorObjectKind::ChunkPart: color = {0.55f, 0.85f, 1, 1}; break;
-                case EditorObjectKind::ChunkConnector: color = {1.0f, 0.65f, 0.2f, 1}; break;
-                case EditorObjectKind::ChunkSpawn: color = {0.35f, 1.0f, 0.55f, 1}; break;
+                case EditorObjectKind::MapGLBObject:
+                    color = textOf("map-editor.row-glb", {0.55f, 0.9f, 0.6f, 1}); break;
+                case EditorObjectKind::BombSite:
+                    color = textOf("map-editor.row-bombsite", {1, 0.35f, 0.35f, 1}); break;
+                case EditorObjectKind::PayloadRoutePoint:
+                    color = textOf("map-editor.row-route", {1, 0.55f, 0.2f, 1}); break;
+                case EditorObjectKind::PayloadCartOrigin:
+                    color = textOf("map-editor.row-cart", {1, 0.75f, 0.2f, 1}); break;
+                case EditorObjectKind::Block:
+                    color = textOf("map-editor.row-block", {0.4f, 0.8f, 1, 1}); break;
+                case EditorObjectKind::Vehicle:
+                    color = textOf("map-editor.row-vehicle", {1, 0.65f, 0.25f, 1}); break;
+                case EditorObjectKind::Entity:
+                    color = textOf("map-editor.row-entity", {0.7f, 0.8f, 1, 1}); break;
+                case EditorObjectKind::ChunkPart:
+                    color = textOf("map-editor.row-chunk-part", {0.55f, 0.85f, 1, 1}); break;
+                case EditorObjectKind::ChunkConnector:
+                    color = textOf("map-editor.row-connector", {1.0f, 0.65f, 0.2f, 1}); break;
+                case EditorObjectKind::ChunkSpawn:
+                    color = textOf("map-editor.row-spawn", {0.35f, 1.0f, 0.55f, 1}); break;
             }
         }
         char rowText[256];
@@ -4391,7 +4771,8 @@ void MapEditor::renderUI(GLFWwindow* window)
     const float propY = listY + listH + kOutlinerListGap;
     const float propH = std::max(0.0f, py + ph - propY);
     uiDrawRect({px + 4.0f, propY, pw - 8.0f, propH},
-        {0.03f, 0.04f, 0.06f, 0.9f}, "map-editor-properties");
+        bgOf("map-editor.properties", {0.03f, 0.04f, 0.06f, 0.9f}),
+        "map-editor-properties");
     if (mSelection.empty()) {
         uiDrawText("select an object to edit properties", px + 10.0f, propY + 10.0f,
             cfg.rowScale, dim);
@@ -4545,17 +4926,24 @@ void MapEditor::renderUI(GLFWwindow* window)
         const float menuH = rowH * 5.0f + 10.0f;
         const float mx = std::min(mContextMenuPos.x, w - menuW - 8.0f);
         const float my = std::min(mContextMenuPos.y, h - menuH - 8.0f);
-        uiDrawRect({mx, my, menuW, menuH}, {0.05f, 0.06f, 0.09f, 0.96f},
+        uiDrawRect({mx, my, menuW, menuH},
+                   bgOf("map-editor.context-menu", {0.05f, 0.06f, 0.09f, 0.96f}),
                    "map-editor-context-menu");
-        uiDrawRectOutline({mx, my, menuW, menuH}, {0.5f, 0.7f, 0.9f, 1.0f},
+        uiDrawRectOutline({mx, my, menuW, menuH},
+                          outlineOf("map-editor.context-menu",
+                                    {0.5f, 0.7f, 0.9f, 1.0f}),
                           "map-editor-context-menu-outline");
         const char* items[] = {"Add Attachment", "Anchor", "Unanchor",
                                "Remove Attachment", "Close"};
+        const float contextFont = fontOf("map-editor.context-button", 0.28f);
         for (int i = 0; i < 5; ++i) {
             if (uiButton(window, items[i],
                          {mx + 5.0f, my + 5.0f + i * rowH,
                           menuW - 10.0f, rowH - 2.0f},
-                         {0.14f, 0.20f, 0.28f, 0.95f}, items[i]).clicked) {
+                         bgOf("map-editor.context-button",
+                              {0.14f, 0.20f, 0.28f, 0.95f}),
+                         items[i], nullptr, nullptr, nullptr, nullptr,
+                         contextFont).clicked) {
                 if (i == 0) createAttachment();
                 else if (i == 1) setAttachmentAnchored(true);
                 else if (i == 2) setAttachmentAnchored(false);
@@ -4572,9 +4960,13 @@ void MapEditor::renderUI(GLFWwindow* window)
         const float minY = std::min(mBoxStartScreen.y, mBoxEndScreen.y);
         const float maxY = std::max(mBoxStartScreen.y, mBoxEndScreen.y);
         uiDrawRect({minX, minY, maxX - minX, maxY - minY},
-                   {0.25f, 0.55f, 1.0f, 0.12f}, "map-editor-box-select-fill");
+                   bgOf("map-editor.box-select-fill",
+                        {0.25f, 0.55f, 1.0f, 0.12f}),
+                   "map-editor-box-select-fill");
         uiDrawRectOutline({minX, minY, maxX - minX, maxY - minY},
-                          {0.4f, 0.8f, 1.0f, 1.0f}, "map-editor-box-select");
+                          outlineOf("map-editor.box-select-outline",
+                                    {0.4f, 0.8f, 1.0f, 1.0f}),
+                          "map-editor-box-select");
     }
 
     {
@@ -4587,8 +4979,18 @@ void MapEditor::renderUI(GLFWwindow* window)
             " zones=" + std::to_string(mapConfig.generationZones.size()) +
             " interactions=" + std::to_string(mapConfig.interactions.size()) +
             " | add chunk/zone: mapeditor add chunk <glb> / add zone <seed>";
-        uiDrawText(worldLine.c_str(), 16.0f, h - 42.0f, cfg.helpScale, dim);
+        const UIRect helpWorld = rectOf(
+            "map-editor.help-world", {16.0f, h - 42.0f, 0.0f, 0.0f});
+        uiDrawText(worldLine.c_str(), helpWorld.x,
+            helpWorld.y > 0.0f ? helpWorld.y : h - 42.0f,
+            fontOf("map-editor.help-world", cfg.helpScale),
+            textOf("map-editor.help-world", dim));
     }
+    const UIRect helpCommands = rectOf(
+        "map-editor.help-commands", {16.0f, h - 22.0f, 0.0f, 0.0f});
     uiDrawText("Commands are in docs/specs/entity-editor/entity-editor.md",
-        16.0f, h - 22.0f, cfg.helpScale, dim);
+        helpCommands.x,
+        helpCommands.y > 0.0f ? helpCommands.y : h - 22.0f,
+        fontOf("map-editor.help-commands", cfg.helpScale),
+        textOf("map-editor.help-commands", dim));
 }
