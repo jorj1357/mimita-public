@@ -105,6 +105,15 @@ void uploadMeshIfNeeded(const World& world)
     gBuiltBatchCount = mesh.batches.size();
     gBuiltRevision = world.renderRevision;
 
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "world-render.mesh-upload", "world",
+        "world mesh uploaded to GPU after render revision change", 0,
+        nlohmann::json{{"render_revision", world.renderRevision},
+                       {"vertex_count", mesh.verts.size()},
+                       {"batch_count", mesh.batches.size()}},
+        __FILE__, __LINE__, __FUNCTION__);
+
     MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
 
@@ -305,6 +314,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
     const Mesh& mesh = world.mesh;
     size_t drawCalls = 0;
+    size_t skippedBatches = 0;
     GLuint boundTexture = 0;
     auto& renderPerf = Perf::state().renderPerf;
     renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
@@ -355,6 +365,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     {
         if (!batchVisible(batch, viewProjection)) {
             renderPerf.worldSkippedBatches++;
+            ++skippedBatches;
             continue;
         }
         if (captureProximityDiag && batch.hasBounds) {
@@ -423,6 +434,29 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             glEnable(GL_CULL_FACE);
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
+
+    static uint64_t lastDrawSummaryRevision = (uint64_t)-1;
+    static uint32_t lastDrawSummaryCulling = 0xffffffffu;
+    const uint32_t cullingMode = gRenderBackfaces ? 0u : 1u;
+    if (world.renderRevision != lastDrawSummaryRevision ||
+        cullingMode != lastDrawSummaryCulling) {
+        lastDrawSummaryRevision = world.renderRevision;
+        lastDrawSummaryCulling = cullingMode;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "world-render.draw-summary", "world",
+            "world mesh draw ranges and culling submitted after revision change", 0,
+            nlohmann::json{{"render_revision", world.renderRevision},
+                           {"backface_culling_enabled", cullingMode != 0},
+                           {"backface_toggle", gRenderBackfaces},
+                           {"batch_count", mesh.batches.size()},
+                           {"vertex_count", mesh.verts.size()},
+                           {"submitted_batches", drawCalls},
+                           {"skipped_batches", skippedBatches},
+                           {"shader_program", shader}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     if (captureProximityDiag) {
         proximityDiagLast = proximityDiagNow;
         const bool hasVisibleBounds = std::isfinite(nearestVisibleBoundsDistance);

@@ -113,6 +113,7 @@
 #include "avatar/avatar-commands.h"
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/module-host.h"
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
@@ -597,6 +598,7 @@ int main(int argc, char** argv)
             gpMpContext ? gpMpContext->tick : 0);
     }
     AnalyticsManager::instance().shutdown();
+    ModuleHost::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();
     perfStopResourceWatchdog();

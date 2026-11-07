@@ -2,12 +2,17 @@
   // mouse keeps the direct mouse camera; head_world follows the physical
   // head quaternion while mouse movement remains the head's aim target.
   "orientationMode": "mouse",
-  "proximityFade": {
-    "enabled": true,
-    "startDistanceMeters": 1.0,
-    "endDistanceMeters": 2.0
-  },
   // "orientationMode": "head_world",
+  "proximityFade": {
+    // "enabled": true,
+    "enabled": false,
+    // "startDistanceMeters": 1.0,
+    "startDistanceMeters": 2.0,
+    // "startDistanceMeters": 3.0,
+    // "endDistanceMeters": 2.0
+    "endDistanceMeters": 3.0
+  //  "endDistanceMeters": 4.0
+  },
   // No 100 ceiling: 0 = neutral, 30 = noticeable, 359 = extreme.
   // Curve/zoom shape where and how strongly the warp appears.
   "lensDistortion": 0.0,

@@ -341,7 +341,7 @@ def find_cpp_files():
 
     for root, dirs, files in os.walk(SRC_DIR):
         for f in files:
-            if f.endswith(".cpp"):
+            if f.endswith(".cpp") and not f.endswith("-module.cpp"):
                 out.append(os.path.join(root, f))
 
     return out
@@ -410,6 +410,15 @@ game_dll_build = subprocess.run(
 if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(game_dll_build.returncode)
+
+module_build = subprocess.run(
+    [sys.executable, os.path.join(ROOT, "devscripts", "module-build-worker.py"), "--all"],
+    cwd=ROOT,
+)
+if module_build.returncode != 0:
+    # A module failure keeps the last validated generation and must not block
+    # publishing the EXE. The runtime journal reports the failed candidate.
+    print("[MODULE WORKER] module build failed; publishing EXE with last active module")
 
 print("==================================================")
 print(" MiMITA Build System")

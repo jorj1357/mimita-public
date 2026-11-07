@@ -103,7 +103,11 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
             {"position", {block.position.x, block.position.y, block.position.z}},
             {"size", {block.size.x, block.size.y, block.size.z}},
             {"rotationEuler", {block.rotationEuler.x, block.rotationEuler.y, block.rotationEuler.z}},
-            {"material", block.material}, {"enabled", block.enabled}
+            {"material", block.material},
+            {"faces", {block.faceMaterials[0], block.faceMaterials[1],
+                       block.faceMaterials[2], block.faceMaterials[3],
+                       block.faceMaterials[4], block.faceMaterials[5]}},
+            {"enabled", block.enabled}
         };
         b["tags"] = block.tags;
         root["blocks"].push_back(std::move(b));
@@ -522,6 +526,11 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                         (*rotation)[2].get<float>());
                 }
                 block.material = item.value("material", std::string{});
+                if (item.contains("faces") && item["faces"].is_array()) {
+                    for (size_t face = 0; face < 6 && face < item["faces"].size(); ++face)
+                        if (item["faces"][face].is_string())
+                            block.faceMaterials[face] = item["faces"][face].get<std::string>();
+                }
                 block.enabled = item.value("enabled", true);
                 if (item.contains("tags") && item["tags"].is_array()) {
                     for (const auto& tag : item["tags"])

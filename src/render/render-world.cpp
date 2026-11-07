@@ -12,6 +12,11 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/gl-debug.h"
+#include "debug/structured-log.h"
+#include "gamemode/map-config.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/world-rendering-api.h"
+#include "terminal/terminal-state.h"
 #include "renderer/renderer.h"
 #include "map/map_common.h"
 #include "map/map_loader.h"
@@ -26,6 +31,7 @@
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
+extern Camera* gpCamera;
 
 extern GLuint gVao;
 extern void uploadMeshIfNeeded(const World& world);
@@ -104,6 +110,136 @@ void renderWorld(const World& world, const Camera& cam)
 
 void registerWorldTextureCommands()
 {
+    Terminal::instance().registerCommand({
+        "worldrender",
+        "Audit authored box face normals, winding, materials, and culling expectation",
+        "worldrender audit_faces <blockId>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2 || args[0] != "audit_faces") {
+                Terminal::instance().addLog(
+                    "[WORLD RENDER] usage: worldrender audit_faces <blockId>");
+                return;
+            }
+            if (!gpWorld || !gpCamera) {
+                Terminal::instance().addLog(
+                    "[WORLD RENDER] no world or camera loaded");
+                return;
+            }
+            const std::string objectId = "block:" + args[1];
+            const MapGLBObject* object = nullptr;
+            for (const MapGLBObject& candidate : gpWorld->mesh.objects) {
+                if (candidate.id == objectId) {
+                    object = &candidate;
+                    break;
+                }
+            }
+            if (!object) {
+                for (const MapGLBObject& candidate : gpWorld->authoredObjects) {
+                    if (candidate.id == objectId) {
+                        object = &candidate;
+                        break;
+                    }
+                }
+            }
+            if (!object) {
+                Terminal::instance().addLog(
+                    "[WORLD RENDER] no authored block object: " + objectId);
+                return;
+            }
+
+            static const glm::vec3 normals[6] = {
+                {0, 0, 1}, {0, 0, -1}, {1, 0, 0},
+                {-1, 0, 0}, {0, 1, 0}, {0, -1, 0},
+            };
+            mimita_world_rendering::FaceAuditV1 moduleFaces[6]{};
+            const float cameraPosition[3] = {
+                gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z};
+            const bool moduleHandled = ModuleHost::instance().worldRenderingAnalyzeFaces(
+                &object->transform[0][0], cameraPosition, moduleFaces, 6);
+            const glm::mat3 normalMatrix =
+                glm::transpose(glm::inverse(glm::mat3(object->transform)));
+
+            nlohmann::json faces = nlohmann::json::array();
+            size_t outsideCount = 0;
+            for (int face = 0; face < 6; ++face) {
+                glm::vec3 center(0.0f);
+                glm::vec3 normal(0.0f);
+                bool cameraOutside = false;
+                if (moduleHandled) {
+                    center = glm::vec3(moduleFaces[face].center[0],
+                                       moduleFaces[face].center[1],
+                                       moduleFaces[face].center[2]);
+                    normal = glm::vec3(moduleFaces[face].normal[0],
+                                       moduleFaces[face].normal[1],
+                                       moduleFaces[face].normal[2]);
+                    cameraOutside = moduleFaces[face].cameraOutside != 0;
+                } else {
+                    center = glm::vec3(object->transform *
+                        glm::vec4(normals[face] * 0.5f, 1.0f));
+                    normal = glm::normalize(normalMatrix * normals[face]);
+                    cameraOutside =
+                        glm::dot(normal, gpCamera->pos - center) > 0.0f;
+                }
+                if (cameraOutside)
+                    ++outsideCount;
+
+                std::string material;
+                size_t first = 0;
+                size_t count = 0;
+                const size_t expectedFirst =
+                    object->vertexFirst + static_cast<size_t>(face) * 6;
+                for (const Mesh::Batch& batch : gpWorld->mesh.batches) {
+                    if (batch.first < object->vertexFirst ||
+                        batch.first >= object->vertexFirst + object->vertexCount)
+                        continue;
+                    if (expectedFirst >= batch.first &&
+                        expectedFirst < batch.first + batch.count) {
+                        material = batch.materialName;
+                        first = batch.first;
+                        count = batch.count;
+                        break;
+                    }
+                }
+                faces.push_back({
+                    {"index", face},
+                    {"normal", {normal.x, normal.y, normal.z}},
+                    {"center", {center.x, center.y, center.z}},
+                    {"winding", "ccw"},
+                    {"material", material},
+                    {"batch_first", first},
+                    {"batch_count", count},
+                    {"camera_outside", cameraOutside},
+                });
+            }
+
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "world-render.face-audit", objectId,
+                "controlled six-face culling/winding/material audit", 0,
+                nlohmann::json{{"map", MapConfigRegistry::instance().mapId()},
+                               {"object", objectId},
+                               {"backface_culling_enabled", !gRenderBackfaces},
+                               {"backface_toggle", gRenderBackfaces},
+                               {"handled_by_world_module", moduleHandled},
+                               {"world_module_generation",
+                                ModuleHost::instance().activeGeneration("world-rendering")},
+                               {"shader_program", gRenderer ? gRenderer->shaderProgram : 0},
+                               {"vertex_first", object->vertexFirst},
+                               {"vertex_count", object->vertexCount},
+                               {"camera_position", {gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z}},
+                               {"faces_outside_camera", outsideCount},
+                               {"faces", faces}},
+                __FILE__, __LINE__, __FUNCTION__);
+
+            Terminal::instance().addLog(
+                "[WORLD RENDER] face audit " + objectId + ": faces=6 outside=" +
+                std::to_string(outsideCount) + " culling=" +
+                (gRenderBackfaces ? "off" : "on") +
+                " (human visual review remains separate)");
+        },
+        "2026-11-07", CommandCategory::Debug
+    });
+
     Terminal::instance().registerCommand({
         "world_debug_color", "Force world to solid magenta (diagnose shader/lighting issues)",
         "world_debug_color [0|1]",

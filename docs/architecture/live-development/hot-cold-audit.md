@@ -15,9 +15,9 @@ This file contains dated audit/history entries. Their `HOT`, `implemented`, and
 `proven` labels describe the source state recorded at the time; they are not a
 current implementation inventory. A check of the present tracked C++ tree
 found only the narrow `build_game_dll.py` DLL for effect-part and quick-hit
-debug-visual code. The current NPC decision and behavior owners remain in the
-normal EXE source path, and the historical `src/hot-reload/modules/` files are
-not present in the current tracked tree.
+debug-visual code. The current NPC decision owners and map-editor behavior
+remain in the normal EXE source path, and the historical
+`src/hot-reload/modules/` files are not present in the current tracked tree.
 
 For current status and the desired all-systems migration map, use
 [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md).

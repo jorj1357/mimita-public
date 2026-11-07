@@ -7,6 +7,7 @@
 #endif
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <cstdint>
 #include "video/video-mode.h"
 
 struct Renderer {
@@ -27,6 +28,8 @@ struct Renderer {
     void endFrame();
     bool shouldClose();
     void shutdown();
+    bool reloadWorldShaderIfChanged();
+    std::uint32_t shaderGeneration() const { return mShaderGeneration; }
     FullscreenMode applyVideoMode(int gameWidth, int gameHeight, FullscreenMode mode);
     bool stretchesWholeFrame() const { return fullscreenModeStretchesWholeFrame(mAppliedVideoMode); }
     void setVSync(bool on);
@@ -45,4 +48,8 @@ private:
     int mDesktopWidth = 0;
     int mDesktopHeight = 0;
     int mDesktopRefreshRate = GLFW_DONT_CARE;
+    std::uint64_t mShaderVertWriteTime = 0;
+    std::uint64_t mShaderFragWriteTime = 0;
+    std::uint32_t mShaderGeneration = 0;
+    bool mShaderObserved = false;
 };

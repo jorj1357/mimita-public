@@ -89,6 +89,12 @@ public:
     size_t selectionCount() const { return mSelection.size(); }
     bool dirty() const;
 
+    // Host-side adapters used by the reloadable map-editor module. They do not
+    // call back into module code.
+    bool modulePrimarySelection(char* id, unsigned int idCapacity, int* kind,
+                                glm::vec3& position) const;
+    bool moduleApplyPrimaryPosition(const glm::vec3& position);
+
     // Commands that intentionally mutate authored map data through the editor,
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});

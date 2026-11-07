@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "name": "map-editor",
+      "abi": 1,
+      "state_schema": 1,
+      "activation": "main_thread_editor_boundary",
+      "sources": [
+        "src/mapeditor/map-editor-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/map-editor-api.h"
+      ]
+    },
+    {
+      "name": "world-rendering",
+      "abi": 1,
+      "state_schema": 1,
+      "activation": "main_thread_before_render",
+      "sources": [
+        "src/render/world-rendering-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/world-rendering-api.h"
+      ]
+    }
+  ]
+}

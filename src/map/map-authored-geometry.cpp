@@ -2,6 +2,7 @@
 #include "map/map-authored-geometry.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -91,16 +92,33 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
     const glm::mat4 transform = blockTransform(block);
     const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(transform)));
 
-    Mesh::Batch batch;
-    batch.materialName = block.material.empty() ? "default" : block.material;
-    batch.texture = resolveBlockTexture(block.material);
-    batch.first = world.mesh.verts.size();
-    batch.count = 36;
-    batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
-    batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
-    batch.hasBounds = true;
-
+    std::array<std::string, 6> faceMaterial;
+    bool uniformMaterial = true;
     for (int face = 0; face < 6; ++face) {
+        faceMaterial[face] = block.faceMaterials[face].empty()
+            ? block.material
+            : block.faceMaterials[face];
+        if (faceMaterial[face] != faceMaterial[0])
+            uniformMaterial = false;
+    }
+
+    struct FaceRange {
+        int index = 0;
+        std::string material;
+        size_t first = 0;
+        size_t count = 0;
+    };
+    std::vector<FaceRange> faceRanges;
+
+    const size_t objectFirst = world.mesh.verts.size();
+    glm::vec3 objectBoundsMin(std::numeric_limits<float>::max());
+    glm::vec3 objectBoundsMax(std::numeric_limits<float>::lowest());
+
+    auto appendFace = [&](int face, Mesh::Batch& batch) {
+        FaceRange range;
+        range.index = face;
+        range.material = faceMaterial[face];
+        range.first = world.mesh.verts.size();
         const int order[6] = {0, 1, 2, 0, 2, 3};
         const glm::vec2 uv[4] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
         for (int i : order) {
@@ -112,22 +130,74 @@ void appendBlockMesh(World& world, const AuthoredBlock& block)
             world.mesh.verts.push_back(v);
             batch.boundsMin = glm::min(batch.boundsMin, v.pos);
             batch.boundsMax = glm::max(batch.boundsMax, v.pos);
+            objectBoundsMin = glm::min(objectBoundsMin, v.pos);
+            objectBoundsMax = glm::max(objectBoundsMax, v.pos);
+        }
+        range.count = world.mesh.verts.size() - range.first;
+        faceRanges.push_back(range);
+    };
+
+    auto makeBatch = [&](const std::string& material, size_t first) {
+        Mesh::Batch batch;
+        batch.materialName = material.empty() ? "default" : material;
+        batch.texture = resolveBlockTexture(material);
+        batch.first = first;
+        batch.count = 0;
+        batch.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        batch.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        batch.hasBounds = true;
+        return batch;
+    };
+
+    if (uniformMaterial) {
+        Mesh::Batch batch = makeBatch(faceMaterial[0], world.mesh.verts.size());
+        for (int face = 0; face < 6; ++face)
+            appendFace(face, batch);
+        batch.count = world.mesh.verts.size() - batch.first;
+        world.mesh.batches.push_back(std::move(batch));
+    } else {
+        for (int face = 0; face < 6; ++face) {
+            Mesh::Batch batch = makeBatch(faceMaterial[face], world.mesh.verts.size());
+            appendFace(face, batch);
+            batch.count = world.mesh.verts.size() - batch.first;
+            world.mesh.batches.push_back(std::move(batch));
         }
     }
-    const size_t firstVertex = batch.first;
-    const size_t vertexCount = batch.count;
-    const glm::vec3 blockBoundsMin = batch.boundsMin;
-    const glm::vec3 blockBoundsMax = batch.boundsMax;
-    world.mesh.batches.push_back(std::move(batch));
+
+    nlohmann::json faces = nlohmann::json::array();
+    for (const FaceRange& range : faceRanges) {
+        const glm::vec3 normal = glm::normalize(kCubeNormals[range.index]);
+        faces.push_back({
+            {"index", range.index},
+            {"normal", {normal.x, normal.y, normal.z}},
+            {"winding", "ccw"},
+            {"material", range.material.empty() ? "default" : range.material},
+            {"first", range.first},
+            {"count", range.count}
+        });
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "world-render.face-template", "block:" + block.id,
+        "authored box face template generated", 0,
+        nlohmann::json{{"object", "block:" + block.id},
+                       {"block", block.id},
+                       {"uniform_material", uniformMaterial},
+                       {"face_count", faceRanges.size()},
+                       {"vertex_count", world.mesh.verts.size() - objectFirst},
+                       {"batch_count", uniformMaterial ? 1 : 6},
+                       {"faces", faces},
+                       {"render_revision", world.renderRevision}},
+        __FILE__, __LINE__, __FUNCTION__);
 
     MapGLBObject object;
     object.id = "block:" + block.id;
     object.name = block.id;
     object.transform = transform;
-    object.vertexFirst = firstVertex;
-    object.vertexCount = vertexCount;
-    object.boundsMin = blockBoundsMin;
-    object.boundsMax = blockBoundsMax;
+    object.vertexFirst = objectFirst;
+    object.vertexCount = world.mesh.verts.size() - objectFirst;
+    object.boundsMin = objectBoundsMin;
+    object.boundsMax = objectBoundsMax;
     world.authoredObjects.push_back(std::move(object));
 }
 

@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+# 2026-11-07
+# purpose
+# Standalone background module compiler. Reads config/modules/modules.json,
+# snapshots the module's declared sources/headers, and produces an immutable
+# generation DLL plus current.json for the running host to validate and load.
+# Does NOT link mimita.exe and does NOT require the game process to stop.
+
+import argparse
+import glob
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from build_toolchain import compiler, ccache, glfw_include  # noqa: E402
+
+CATALOG = os.path.join(ROOT, "config", "modules", "modules.json")
+BUILD_ROOT = os.path.join(ROOT, "build", "modules")
+
+
+def read_json(path):
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def write_json_atomic(path, payload):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+    os.replace(temporary, path)
+
+
+def expand_patterns(patterns):
+    files = []
+    for pattern in patterns:
+        absolute = os.path.join(ROOT, pattern)
+        matches = sorted(glob.glob(absolute))
+        if not matches and os.path.isfile(absolute):
+            matches = [absolute]
+        files.extend(matches)
+    return files
+
+
+def source_hash(module, sources, headers):
+    digest = hashlib.sha256()
+    digest.update(module["name"].encode("utf-8"))
+    digest.update(str(module.get("abi", 1)).encode("utf-8"))
+    digest.update(str(module.get("state_schema", 1)).encode("utf-8"))
+    for path in sorted(sources + headers):
+        relative = os.path.relpath(path, ROOT).replace("\\", "/")
+        digest.update(relative.encode("utf-8"))
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def next_generation(output_dir, code_hash):
+    current_path = os.path.join(output_dir, "current.json")
+    if not os.path.isfile(current_path):
+        return 1
+    try:
+        current = read_json(current_path)
+    except (OSError, ValueError):
+        return 1
+    if current.get("code_hash") == code_hash and os.path.isfile(current.get("dll", "")):
+        return 0
+    return int(current.get("generation", 0)) + 1
+
+
+def acquire_lock(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    lock_path = os.path.join(output_dir, ".build.lock")
+    try:
+        if os.path.isfile(lock_path) and time.time() - os.path.getmtime(lock_path) > 120:
+            os.remove(lock_path)
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(descriptor, str(os.getpid()).encode("ascii"))
+        return descriptor, lock_path
+    except FileExistsError:
+        return None, lock_path
+
+
+def release_lock(descriptor, lock_path):
+    if descriptor is not None:
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
+    try:
+        os.remove(lock_path)
+    except OSError:
+        pass
+
+
+def build_module(module):
+    name = module["name"]
+    output_dir = os.path.join(BUILD_ROOT, name)
+    sources = expand_patterns(module.get("sources", []))
+    headers = expand_patterns(module.get("headers", []))
+    missing = [path for path in sources + headers if not os.path.isfile(path)]
+    if missing:
+        return {"status": "failed", "module": name,
+                "error": "missing module input: " + ", ".join(missing)}
+    if not sources:
+        return {"status": "failed", "module": name, "error": "no module sources"}
+
+    code_hash = source_hash(module, sources, headers)
+    generation = next_generation(output_dir, code_hash)
+    if generation == 0:
+        return {"status": "skipped", "module": name, "generation": 0,
+                "code_hash": code_hash, "reason": "source hash unchanged"}
+
+    descriptor, lock_path = acquire_lock(output_dir)
+    if descriptor is None:
+        return {"status": "skipped", "module": name, "reason": "build already running"}
+    try:
+        snapshot_dir = os.path.join(output_dir, "snapshots", code_hash[:16])
+        if os.path.isdir(snapshot_dir):
+            shutil.rmtree(snapshot_dir)
+        os.makedirs(snapshot_dir, exist_ok=True)
+
+        snapshot_sources = []
+        for path in sources + headers:
+            relative = os.path.relpath(path, ROOT)
+            target = os.path.join(snapshot_dir, relative)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(path, target)
+        for path in sources:
+            relative = os.path.relpath(path, ROOT)
+            snapshot_sources.append(os.path.join(snapshot_dir, relative))
+
+        identity_path = os.path.join(snapshot_dir, "module-identity.h")
+        with open(identity_path, "w", encoding="utf-8") as handle:
+            handle.write("#pragma once\n")
+            handle.write(f"#define MIMITA_MODULE_GENERATION {generation}u\n")
+            handle.write(f'#define MIMITA_MODULE_SOURCE_HASH "{code_hash}"\n')
+            handle.write(
+                f"#define MIMITA_MODULE_STATE_SCHEMA "
+                f"{int(module.get('state_schema', 1))}u\n")
+
+        generation_dir = os.path.join(output_dir, f"generation-{generation}")
+        os.makedirs(generation_dir, exist_ok=True)
+        staging = os.path.join(generation_dir, f"{name}-g{generation}.build.dll")
+        final = os.path.join(generation_dir, f"{name}-g{generation}.dll")
+
+        command = []
+        ccache_path = ccache(compiler())
+        if os.path.isfile(ccache_path):
+            command.append(ccache_path)
+        command += [
+            compiler(),
+            "-std=c++17",
+            "-O1",
+            "-g",
+            "-shared",
+            "-DMIMITA_MODULE_BUILD",
+            f"-I{snapshot_dir}",
+            f"-I{os.path.join(snapshot_dir, 'src')}",
+        ]
+        try:
+            command.append(f"-I{glfw_include()}")
+        except FileNotFoundError:
+            pass
+        command += snapshot_sources
+        command += ["-o", staging]
+
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        output = (result.stdout or "") + (result.stderr or "")
+        if result.returncode != 0:
+            return {
+                "status": "failed",
+                "module": name,
+                "generation": generation,
+                "code_hash": code_hash,
+                "exit_code": result.returncode,
+                "compiler_output": output[-12000:],
+            }
+
+        os.replace(staging, final)
+        current = {
+            "status": "ok",
+            "module": name,
+            "generation": generation,
+            "code_hash": code_hash,
+            "dll": final,
+            "built_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        write_json_atomic(os.path.join(output_dir, "current.json"), current)
+        return {
+            "status": "ok",
+            "module": name,
+            "generation": generation,
+            "code_hash": code_hash,
+            "dll": final,
+        }
+    finally:
+        release_lock(descriptor, lock_path)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--module", action="append", default=[])
+    parser.add_argument("--all", action="store_true")
+    arguments = parser.parse_args()
+
+    catalog = read_json(CATALOG)
+    modules = catalog.get("modules", [])
+    selected = [m for m in modules if arguments.all or m.get("name") in arguments.module]
+    if not selected:
+        print("[MODULE WORKER] no matching modules")
+        return 2
+
+    exit_code = 0
+    for module in selected:
+        result = build_module(module)
+        result_path = os.path.join(BUILD_ROOT, module["name"], "result.json")
+        write_json_atomic(result_path, result)
+        print(f"[MODULE WORKER] {module['name']}: {result.get('status')}")
+        if result.get("status") == "failed":
+            if result.get("compiler_output"):
+                print(result["compiler_output"])
+            exit_code = 1
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

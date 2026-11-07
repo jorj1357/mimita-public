@@ -2560,3 +2560,61 @@ boundary so hitboxes and cut cadence reload without a relink.
 
 In a live run, confirm full-auto holds the 240 fps floor; if a single batch still
 spikes, lower `cutBatchMax` further or move the CSG to a worker (spec section 45).
+
+## Cold-build occurrence 47
+
+UTC time:
+`2026-11-07T20:12:45Z`
+
+Related changelog:
+`docs/changelog/2026-11-07/20261107_202200-hot-module-map-editor-world-rendering.md`
+
+### Why the cold build was required
+
+The generic module catalog, module loader/activation path, host service
+adapter, shader compile/swap service, and the engine call-site wiring did not
+exist in the running executable. Installing them required one intentional EXE
+build. After that installation, `map-editor` and `world-rendering` source saves
+activated new generations in the same process without relinking the EXE.
+
+### Exact cold source / boundary
+
+- `src/hot-reload/module-host.{h,cpp}`
+- `src/modules/api/*`
+- `src/mapeditor/map-editor-module.cpp`
+- `src/render/world-rendering-module.cpp`
+- `src/engine/engine-tick-setup.cpp`, `src/main.cpp`, `src/mapeditor/map-editor.cpp`,
+  `src/render/render-world.cpp`, `src/renderer/renderer.cpp`
+- `config/modules/modules.json`, `devscripts/module-build-worker.py`
+
+### Build result
+
+Dev-loop build `2026-11-07T20:12:45.990083Z` succeeded. Later host-side fixes
+for the face-audit command and shader failure handling were also EXE builds; the
+module source saves themselves did not require those rebuilds.
+
+### What the cold build was needed to prove
+
+That the host can load and activate a validated module generation in a running
+client, that the map-editor module can handle a real property edit through host
+services, that the world-rendering module can handle a six-face audit, and that
+shader assets can swap independently without treating GLSL as C++.
+
+### Why live activation was impossible
+
+The loader/validator/service table and the engine dispatch sites are
+mechanisms, not gameplay policy; a running process cannot add new call sites or
+a new ABI by itself.
+
+### Smallest change that would make this hot
+
+Continue moving editor behavior and the full renderer draw/upload path behind
+the existing module ABI. Future module-internal edits then stay live; only the
+kernel/ABI/service surface remains a full-build boundary.
+
+### Next migration/falsification step
+
+Extract the remaining `MapEditor` surfaces and the `render-world`/streamed-layer
+draw path behind the same host capabilities, then prove a real edit, six-face
+visibility from each outside face, and renderer/shader rollback in one pinned
+run.

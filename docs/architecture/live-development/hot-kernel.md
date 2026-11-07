@@ -14,8 +14,11 @@
 
 This file describes the **target architecture**, not the current set of tracked
 hot modules. The current source has a narrow `build_game_dll.py` target for
-effect-part and quick-hit debug-visual code; NPC behavior and the other gameplay
-systems remain in the normal EXE source path. Older examples and round notes in
+effect-part and quick-hit debug-visual code; the map editor, NPC behavior, and
+other gameplay systems remain in the normal EXE source path. The map editor's
+first module goal is specified in
+[`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md).
+Older examples and round notes in
 this architecture file are not proof that those module sources still exist in
 the checkout. Use
 [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md) for
@@ -59,6 +62,7 @@ THE BEHAVIOR CHANGES
 - explosion falloff and knockback policy
 - projectile motion policy
 - NPC intent and actor decisions
+- map-editor interaction and authoring behavior
 - gamemode rules
 - presentation tuning
 - future gameplay systems

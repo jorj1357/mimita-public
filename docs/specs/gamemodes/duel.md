@@ -64,13 +64,15 @@ setup, and the decisions that remain open after the initial implementation.
 ## Rocket Launcher Duel variant
 
 `rocket_duel` is a separate selectable one-versus-one mode. One local human
-plays against one NPC when no second human joins. Both actors have only the
-Rocket Launcher from weapon set ID `3`; the mode's team roles must not supply
-another weapon set. It retains standard Duel's shared spawn, 20-kill goal,
+plays against one NPC when no second human joins. Both actors must use weapon
+set ID `3` (`Rocket Launcher`) and start equipped with `rocket_launcher`. The
+mode forces that set for every actor and uses Rocket Duel-specific team and NPC
+roles that independently declare the `rocket_launcher` set and starting weapon;
+standard Duel roles remain unchanged. Respawning NPCs resolve the same role and
+reapply the same loadout. It retains standard Duel's shared spawn, 20-kill goal,
 three-minute stalemate timeout, immediate respawn, phases, camera, and avatar.
-The new mode uses the shared roster, loadout, score, and respawn owners. The
-Rocket Launcher movement preset remains a separate tuning decision and is not
-required for this initial variant.
+The Rocket Launcher movement preset remains a separate tuning decision and is
+not required for this variant.
 
 ## Round phases
 

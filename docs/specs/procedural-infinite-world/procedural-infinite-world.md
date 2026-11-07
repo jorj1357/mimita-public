@@ -202,3 +202,197 @@ authoritative chunk identity and general generated-chunk collision, background g
 240 FPS per-frame performance, and visual editor acceptance still require
 implementation and runtime proof. The mode must not be described as a
 multiplayer-authoritative infinite world until those paths are complete.
+
+## Infinite World quick reference (2026-11-07)
+
+### Enter and inspect
+
+```text
+python devscripts/dev-loop.py --request launch --launch-mode 52
+infiniteworld list
+infiniteworld status
+infiniteworld load cramped
+worldstream status
+worldstream render instancing
+worldstream render vbo
+worldstream clear
+```
+
+`infiniteworld load <name>` requests a host map change. It does not prove the
+server accepted the request.
+
+### Files
+
+```text
+config/gamemodes/connected_world.json      named world list / display name
+config/maps/infinite_cramped.json          authored chunks, connectors, spawns
+config/worldgen/infinite_cramped.json      seed-independent grid/profile
+assets/maps/infinite_cramped.glb           optional chunk GLB source
+config/mapeditor.json                      editor scales, layout, alpha
+config/gui/map-editor.json                 toolbar/button rects
+```
+
+### Create a 10 x 10 m floor chunk
+
+Terminal:
+
+```text
+worldchunk add chunk4
+worldchunk part chunk4 floor floor 0 0 -0.25 10 10 0.5 floorv2
+worldconnector add chunk4 east_4 east doorway 5 0 0 bidirectional
+worldconnector add chunk4 west_4 west doorway -5 0 0 bidirectional
+worldconnector add chunk4 north_4 north doorway 0 5 0 bidirectional
+worldconnector add chunk4 south_4 south doorway 0 -5 0 bidirectional
+worldconnector preview chunk4 east_4
+mapeditor 1
+mapeditor chunk_preview chunk4
+mapeditor save
+mapeditor reload
+mapeditor 0
+```
+
+`worldchunk part` arguments are `<chunk> <partId> <kind> <x> <y> <z> <sx> <sy>
+<sz> [material]`. Sizes are full meters, not half extents.
+
+In the Map Editor:
+
+```text
+mapeditor add chunk chunk6
+mapeditor chunk_preview chunk6
+mapeditor add chunk_part floor
+mapeditor select chunk6/floor2
+mapeditor set_position 0 0 -0.25
+mapeditor set_size 10 10 0.5
+```
+
+### Change a part texture/material
+
+```text
+mapeditor chunk_part_material chunk6/floor2 stonev2
+mapeditor chunk_part_uv chunk6/floor2 2 2
+worldchunk material chunk6 floor2 all stonev2
+worldchunk face chunk6 floor2 +z floorv2
+worldchunk uv chunk6 floor2 +z 2 2
+```
+
+Materials are IDs from `config/materials.json`.
+
+### Add a block to a chunk
+
+```text
+mapeditor 1
+mapeditor chunk_preview chunk6
+mapeditor add chunk_part wall
+mapeditor select chunk6/wall2
+mapeditor set_position 0 0 1
+mapeditor set_size 4 0.5 3
+mapeditor set_rotation 0 0 30
+mapeditor chunk_part_material chunk6/wall2 brickv2
+mapeditor save
+mapeditor reload
+```
+
+`mapeditor add block` creates a map-level block. `mapeditor add chunk_part`
+creates a part inside the previewed chunk.
+
+### Add/connect another chunk
+
+```text
+mapeditor add chunk chunk7
+mapeditor chunk_preview chunk7
+mapeditor select chunk7/north_chunk7
+mapeditor set_position 0 5 0
+mapeditor set_scale 0.5 0.5 0.5
+mapeditor chunk_connector_field chunk7/north_chunk7 role bidirectional
+mapeditor chunk_connector_field chunk7/north_chunk7 orientation doorway
+mapeditor chunk_connector_field chunk7/north_chunk7 tag flat
+mapeditor preview_connections
+worldconnector preview chunk7 north_chunk7
+worldconnector connect chunk6 east_chunk6 chunk7 north_chunk7
+worldconnector disconnect chunk6 east_chunk6 chunk7 north_chunk7
+mapeditor save
+mapeditor reload
+```
+
+A connection requires the expected opposite side and a position within the two
+connectors' combined radius. `set_scale <r> <r> <r>` on a selected connector
+sets its radius from the X value. Position is chunk-local.
+
+### Spawn anchors
+
+```text
+mapeditor chunk_preview chunk6
+mapeditor add chunk_spawn human
+mapeditor select chunk6/spawn1
+mapeditor set_position 0 0 1
+mapeditor set_scale 0.75 0.75 0.75
+mapeditor save
+```
+
+The first spawn gets `spawn1`; later spawns use `spawn2`, `spawn3`, and so on.
+
+Allowed classes are `human`, `npc`, and `any`. Selecting a spawn row shows its
+class, radius, chunk, and preview state.
+
+### Grid and radius
+
+```text
+worldmode cell infinite_cramped 10 10 10
+worldmode size infinite_cramped 10 10 4
+worldmode radius infinite_cramped 10 10 0
+worldmode grid infinite_cramped xy
+worldmode spacing infinite_cramped connector
+worldmode save infinite_cramped
+```
+
+```text
+worldzone grid infinite_zone xy
+worldzone cell infinite_zone 10 10 10
+worldzone size infinite_zone 10 10 4
+worldzone axes infinite_zone 1 1 0
+worldzone radius infinite_zone 10 10 0
+worldzone origin infinite_zone 0 0 0
+worldzone spacing infinite_zone connector
+worldzone mode infinite_zone connected_world
+```
+
+### Selection, rename, transforms, attachments
+
+```text
+mapeditor select <id>
+mapeditor select_kind block|entity|part|connector|spawn|all
+mapeditor rename My Name
+mapeditor set_position <x> <y> <z>
+mapeditor set_rotation <x> <y> <z>
+mapeditor set_scale <x> <y> <z>
+mapeditor nudge <dx> <dy> <dz>
+mapeditor attach
+mapeditor attachment_anchor <0|1>
+mapeditor attachment_set <mass> <density> <strength>
+mapeditor attachment_remove
+```
+
+In the viewport: left-click select, left-drag empty space box-select,
+Shift/Ctrl modify selection, F2 rename, right-click outliner object attachment
+menu.
+
+### Verify
+
+```text
+events: world-stream.identity
+        world-stream.profile
+        world-stream.update
+        world-stream.connector.matched
+        world-stream.connector.missing
+        world-stream.chunk.applied
+        world-stream.server.cells
+        world-stream.spawn.registered
+        map-editor.pick
+        map-editor.rename.apply
+        map-editor.transform.apply
+        map-editor.connection.preview
+```
+
+A valid run shows identical `descriptor_hash` on server and clients, the same
+chunk ID in the same cell, connected connectors within radius, and loaded cells
+bounded by the configured radius.

@@ -208,6 +208,9 @@ struct AuthoredBlock
     glm::vec3 size{1.0f};
     glm::vec3 rotationEuler{0.0f};
     std::string material;
+    // Optional per-face material overrides. Face order: +X, -X, +Y, -Y, +Z, -Z.
+    // Empty entries fall back to `material`.
+    std::string faceMaterials[6];
     bool enabled = true;
     std::vector<std::string> tags;
     std::string name;

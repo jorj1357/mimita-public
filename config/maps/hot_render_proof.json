@@ -1,0 +1,65 @@
+{
+  "attachments": [],
+  "blocks": [
+    {
+      "enabled": true,
+      "faces": [
+        "checker.png",
+        "grass.png",
+        "stonev2.png",
+        "floorv2.png",
+        "carpet.png",
+        "bluev1.png"
+      ],
+      "id": "proof_box",
+      "material": "checker.png",
+      "name": "Six Face Proof Box",
+      "position": [
+        7.029688358306885,
+        -0.6293652057647705,
+        2.0
+      ],
+      "rotationEuler": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "shape": "box",
+      "size": [
+        2.0,
+        2.0,
+        2.0
+      ],
+      "tags": [
+        "hot-render-proof",
+        "six-face"
+      ]
+    }
+  ],
+  "bomb": {
+    "defuse_seconds": 5.0,
+    "explosion_seconds": 40.0,
+    "plant_seconds": 3.0
+  },
+  "bomb_sites": [],
+  "boost_pads": [],
+  "chunks": [],
+  "entities": [],
+  "generate_whole_world": false,
+  "generation_zones": [],
+  "glb_objects": [
+    {
+      "id": "node:0",
+      "name": "connected_world_start_floor",
+      "position": [
+        1.0296878814697266,
+        -0.6293652057647705,
+        -0.25
+      ]
+    }
+  ],
+  "interactions": [],
+  "npc_presets": [],
+  "vehicles": [],
+  "weapon_overrides": []
+}

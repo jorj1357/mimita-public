@@ -1,4 +1,35 @@
-﻿2026 11 07 1333 jorj
+﻿2026 11 07 1428 jojr
+issue in live game  reconnceingt isuse for no reason
+ncps wont update idk hat the problem is 
+
+2026 11 07 1411 jorj
+map editor infinite world issue
+it onl works with 10x10
+not like 25x25 liek iw ant 
+
+its lik eoffset bad
+when i get far from the spawn point, it generates not like 
+its like  i go 10 meters awa but it thinks im going 25 meters awa
+25 meters = like 50 meters
+50 =100
+it not genrating wher i actually am  its like hardocdede fr me to be 10x10
+needto make it work not liek ttha
+
+also how do we put blocks on blocks
+so taht i can put tunnels and walls etc for the blocks
+
+and ned the texture rendingg and stuff to work, and npcs moving in the world meanas these generate chunks too
+not just me or clients
+it is all actors gnereate chunks 
+
+also textures not showing for all blocks 
+and im stuck 
+in the chunks
+
+like i put a block and it should have a lot of space but i cant walk thru it 
+npcs cant walk on the geometry i think eiterh ? idk 
+
+2026 11 07 1333 jorj
 
 "how to amke it so native c++ doesnt have to be compiled
 and all things are modules

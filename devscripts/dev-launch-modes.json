@@ -388,7 +388,7 @@
     },
     "43": {
       "name": "rocket launcher duel",
-      "server_args": ["--mode", "rocket_duel", "--gamemode", "rocket_duel", "--no-npcs"],
+      "server_args": ["--mode", "rocket_duel", "--gamemode", "rocket_duel"],
       "client_args": [],
       "map": "funworld3",
       "require_client_connection": true,
@@ -494,6 +494,14 @@
       "map": "infinite_cramped",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "53": {
+      "name": "Hot render proof - six face box",
+      "server_args": ["--mode", "sandbox", "--gamemode", "sandbox", "--no-npcs"],
+      "client_args": [],
+      "map": "hot_render_proof",
+      "require_client_connection": true,
+      "require_mode_start": false
     }
   }
 }

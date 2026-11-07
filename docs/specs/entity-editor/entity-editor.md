@@ -813,6 +813,32 @@ Each interaction writes a bounded `events.jsonl` event:
 `map-editor.scroll`/`ui.scroll.drag`, `map-editor.context_menu`,
 `map-editor.attachment.added`, and `map-editor.spawn.inspect`.
 
+## Live module boundary and editor evidence (2026-11-07)
+
+Map editor behavior is owned by the reloadable `map-editor` module specified in
+[`../hotreload/hotreload.md`](../hotreload/hotreload.md) section 5. The host keeps
+the `MapConfigRegistry` document, dirty/saved revisions, JSON save/backup,
+collision/geometry refresh, window/input, renderer/device lifetimes, and stable
+object handles. The module receives versioned plain-data inputs and asks host
+services to apply edits; no `MapEditor*`, registry reference, GLFW window,
+camera, STL container, or module-owned pointer crosses the module ABI.
+
+The first implemented module path handles property-panel position edits. A
+successful edit emits `map-editor.module.position` from the module and
+`map-editor.transform.apply` from the host, then the existing debounced
+`map-editor.autosaved`. Reload emits `map-editor.reload.result`. Every record
+identifies the module generation where applicable. Saving `config/maps/<map>.json`
+externally and reloading still works as data; reload failure keeps the previous
+valid document.
+
+Authored blocks support per-face materials through `faces[6]`. Empty entries
+fall back to `material`. The controlled map
+`config/maps/hot_render_proof.json` provides a six-face box. Use
+`worldrender audit_faces proof_box` to record each face's normal, winding,
+material, submitted batch range, and culling expectation. The audit is
+diagnostic evidence; it does not replace human visual review, and a face or
+operation that was not reached is `NOT_COVERED`.
+
 ## Bomb-site zones
 
 Bomb sites are authored map data owned by `MapConfigRegistry` and persisted in
@@ -1204,6 +1230,16 @@ including capability restrictions, server authority, resource quotas, and
 deterministic failure behavior. Do not ship a script editor in the first
 editor slice. C++ source inspection/forks are an advanced development path,
 not executable content downloaded by joining a public world.
+
+For native editor code, the target is one reloadable `map-editor` module that
+owns editor-specific input interpretation, selection, editing tools, commands,
+undo/redo policy, viewport/UI behavior, and editor mode policy. The module and
+its first position-edit/save/reload proof are specified in
+[`docs/specs/hotreload/hotreload.md`](../hotreload/hotreload.md), section 5.
+`MapConfigRegistry`, the authored map/project document, file persistence,
+window/input, renderer, geometry, and collision mechanisms remain host-owned
+services. This describes the migration target; it does not claim the current
+editor C++ source already reloads as a module.
 
 ### Infinite-world authoring quick start (2026-11-05)
 

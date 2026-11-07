@@ -44,6 +44,7 @@
 #include "interaction/world-interaction-runtime.h"
 #include "procedural/infinite-world-runtime.h"
 #include "hot-reload/hot-reload-system.h"
+#include "hot-reload/module-host.h"
 #include "mapeditor/map-editor-config.h"
 #include "vehicles/vehicle-system.h"
 #include "config/player-visuals-config.h"
@@ -94,6 +95,9 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
       if (sHotReloadEnabled && dllNow >= nextDllPoll) {
           nextDllPoll = dllNow + HOT_RELOAD_POLL_INTERVAL;
           HotReloadSystem::instance().reloadGameDLLIfChanged();
+          ModuleHost::instance().poll();
+          if (engine.renderer)
+              engine.renderer->reloadWorldShaderIfChanged();
       } }
     // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
     // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack
@@ -108,6 +112,7 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
     static bool sFirstFrame = true;
     if (sFirstFrame) {
         loadHotReloadConfig();
+        ModuleHost::instance().startup();
         RewardPopupConfig::instance().load();
         KillfeedConfig::instance().load();
         KillfeedManager::instance().setMode(KillfeedConfig::instance().data().mode);

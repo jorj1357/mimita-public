@@ -366,6 +366,52 @@
       "avatar_forced": true
     },
     {
+      "id": "rocket_duel_red",
+      "display_name": "Rocket Duel RED",
+      "team": 0,
+      "team_id": "red",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "rocket_launcher",
+      "starting_weapon": "rocket_launcher"
+    },
+    {
+      "id": "rocket_duel_blue",
+      "display_name": "Rocket Duel BLUE",
+      "team": 1,
+      "team_id": "blue",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "rocket_launcher",
+      "starting_weapon": "rocket_launcher"
+    },
+    {
+      "id": "rocket_duel_red_npc",
+      "display_name": "Rocket Duel RED Opponent",
+      "team": 0,
+      "team_id": "red",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "rocket_launcher",
+      "starting_weapon": "rocket_launcher",
+      "behavior_profile": "balanced"
+    },
+    {
+      "id": "rocket_duel_blue_npc",
+      "display_name": "Rocket Duel BLUE Opponent",
+      "team": 1,
+      "team_id": "blue",
+      "actor_preset": "duel_standard",
+      "health": 100,
+      "movement_preset": "source",
+      "weapon_set": "rocket_launcher",
+      "starting_weapon": "rocket_launcher",
+      "behavior_profile": "balanced"
+    },
+    {
       "id": "duel_monster_test_red",
       "display_name": "Duel Monster Test RED",
       "team": 0,

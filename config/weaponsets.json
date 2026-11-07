@@ -14,6 +14,7 @@
     },
     {
       "id": 3,
+      "key": "rocket_launcher",
       "name": "Rocket Launcher",
       "description": "Rocket Launcher (1) only.",
       "weapons": ["rocket_launcher", "nothing"]

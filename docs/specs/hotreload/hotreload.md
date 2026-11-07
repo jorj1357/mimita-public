@@ -39,7 +39,7 @@ selected small policies change without compiling native C++, but it must use
 the same state, authority, safe-activation, and evidence rules. It is a later
 design and is not a claim that C++ source itself runs without compilation.
 
-This specification defines the target and an NPC proof slice. It does not
+This specification defines the target and a map-editor proof slice. It does not
 claim that the general module workflow is implemented today. Full integration
 and release builds remain required when the kernel, module ABI, or other
 non-reloadable mechanism changes.
@@ -48,8 +48,8 @@ non-reloadable mechanism changes.
 
 ### 2.1 Module ownership
 
-A module is one cohesive behavior boundary such as `npc-behavior`,
-`map-editor`, `movement-policy`, or `weapon-policy`. Its ordinary source files
+A module is one cohesive behavior boundary such as `map-editor`,
+`npc-behavior`, `movement-policy`, or `weapon-policy`. Its ordinary source files
 remain in understandable subsystem locations. A module catalog maps paths or
 source globs to one module and declares its dependencies. The watcher assigns
 saved, added, renamed, and removed files through that catalog; contributors do
@@ -67,14 +67,20 @@ The kernel is the stable EXE host. It owns process lifetime, module loading,
 simulation scheduling, persistent world/session state, and the core mechanisms
 used by modules. Common actor state—including identity, transform/position,
 velocity, health, team/role, and target relationships—is host-owned and remains
-available while module code is replaced.
+available while module code is replaced. Authored map/project documents and
+their dirty/saved revisions likewise remain in host-owned registry/storage;
+reloading editor code must never reload the document from disk or discard
+unsaved edits.
 
 Modules read state through stable, documented host capabilities and request
 changes through the owning gameplay system. A module must not bypass authority,
 damage validation, collision, fixed-tick execution, or the host's state owner.
-For example, an NPC behavior module may request an actor action; the host still
-validates and applies movement, attacks, health changes, and collision using
-their existing authoritative mechanisms.
+For example, the map-editor module may request an authored transform edit; the
+host validates the target and applies it through the map registry, undo history,
+geometry, collision, and persistence services. An NPC behavior module may
+request an actor action; the host still validates and applies movement,
+attacks, health changes, and collision using their existing authoritative
+mechanisms.
 
 The host must support versioned module-owned state schemas for behavior-specific
 state so adding a behavior field does not require adding a field to a fixed
@@ -147,35 +153,44 @@ read a moving source tree or load a mutable `latest` DLL path.
 
 Each process has one run identity and an active generation map keyed by module
 name. The run manifest records the EXE build identity and, for every loaded
-module, its generation, source/content hash, ABI version, and activation tick.
+module, its generation, source/content hash, ABI version, and activation
+boundary (simulation tick for gameplay or editor frame for the map editor).
 Each process writes its own canonical `events.jsonl`; server and client
 journals are correlated by run/session identity, not merged into one writer.
 
 The journal records module build start/success/failure, candidate validation,
 activation, and rollback with the module name, old/new generation, source hash,
-and relevant simulation tick. Feature behavior events identify the generation
-that made the decision. Events remain transition-based and bounded; a module
-must not log every actor decision every frame merely to establish identity.
+and relevant simulation tick or subsystem activation boundary. Feature
+behavior events identify the generation that handled the operation. Events
+remain transition-based and bounded; a module must not log every editor frame
+merely to establish identity.
 
-Illustrative records for one server process:
+Illustrative records for one client process editing a map:
 
 ```json
-{"event":"module.activated","run_id":"run-id","instance_id":"server-01","pid":1234,"build_id":"exe-id:sha256","module":"npc-behavior","generation":13,"code_hash":"sha256","tick":820}
-{"event":"npc.utility-decision","run_id":"run-id","instance_id":"server-01","pid":1234,"build_id":"exe-id:sha256","module":"npc-behavior","generation":13,"actor":41,"goal":"approach","action":"move_to_target","tick":821}
+{"event":"module.activated","run_id":"run-id","instance_id":"client-01","pid":1234,"build_id":"exe-id:sha256","module":"map-editor","generation":3,"code_hash":"sha256","boundary":"before_editor_frame","frame":420,"tick":820}
+{"event":"map-editor.transform.apply","run_id":"run-id","instance_id":"client-01","pid":1234,"build_id":"exe-id:sha256","module":"map-editor","generation":3,"map":"proof_map","object":"proof_block","field":"position","before":[0,0,0],"after":[3,0,0],"source":"property_panel","revision":18,"operation_sequence":23,"frame":421,"tick":821}
+{"event":"map-editor.autosaved","run_id":"run-id","instance_id":"client-01","pid":1234,"build_id":"exe-id:sha256","module":"map-editor","generation":3,"map":"proof_map","path":"config/maps/proof_map.json","revision":18,"frame":448,"tick":848}
 ```
 
 The active module map is also recorded in `run.json`/process-start evidence so
 the journal remains attributable even when a module makes no decision change
-immediately after activation. The first relevant post-activation decision is
-logged once for the exercised actor, then ordinary change-edge or bounded
+immediately after activation. The first relevant post-activation operation is
+logged once for the exercised map/object, then ordinary change-edge or bounded
 sampling rules apply. Runtime records use `StructuredLogger` and the
 canonical per-executable journal; module code must not add a second file logger
 or use console text as the only proof of activation or behavior.
 
+Local map-editor behavior is proved from the client/editor process that accepted
+the edit, using that process's journal and the exact project document it
+changed. This first proof is local authoring. Collaborative world editing is a
+later server-authoritative slice and must separately prove accepted operations,
+revision agreement, and client generation compatibility before editor code
+that affects shared state activates across a session.
+
 Authoritative NPC and gameplay decisions are proved from the server process's
-journal. A module active only in a client proves presentation behavior, not
-server authority. Modules that affect both server and client behavior must use
-a generation-compatibility gate: they may not silently apply conflicting
+journal. Modules that affect both server and client behavior must use a
+generation-compatibility gate: they may not silently apply conflicting
 authoritative rules. Until the live protocol can confirm compatible code and a
 safe shared switch, activation is deferred to a session/round boundary or
 restricted to the authoritative process.
@@ -185,37 +200,170 @@ running process and journal, confirms the new module generation activated,
 exercises the real behavior, and checks the owner-level inputs, decision, and
 result. Visual or gameplay acceptance is reported separately.
 
-## 5. First proof: NPC utility goal/action selection
+## 5. First proof: map-editor transform and save
 
-The first vertical slice moves only NPC utility goal/action selection behind a
-hot module. The current decision path is in `src/npc/npc.cpp::senseWorld`,
-using `selectUtilityGoal` and `actionForGoal` from `src/npc/npc-utility.cpp`.
-The authoritative server NPC simulation is driven through
-`src/network/server-npcs.cpp::simulateSharedNpcs`. Existing bounded evidence
-includes `npc.target-sense`, `npc.utility-decision`, `npc.pursuit-state`,
-`npc.movement-decision`, and `npc.target-changed`.
+The first module goal is to make all map-editor-specific C++ behavior
+reloadable as one `map-editor` module. Related editor files are grouped into
+one module; they do not each become separate DLLs. The target covers the
+viewport, selection/outliner, property editing, gizmos, add/delete/duplicate,
+undo/redo, editor commands, chunk/world-edit tools, project/editor workflows,
+editor overlays, and editor mode/input policy. New or renamed editor behavior
+files are assigned to this module through the source catalog automatically.
 
-The module receives a stable observation/context built by the host, including
-the actor's identity, current position/health/team, target relationship and
-perception result, relevant objective/hazard facts, and versioned module-owned
-decision state. It returns a goal/action decision. The host applies the result
-through existing navigation, movement, combat, collision, and damage systems.
-This first slice does not move NPC physics, weapon execution, collision
-mechanisms, lifecycle, or network transport into the module.
+The first live proof is deliberately one end-to-end action: select a
+map-authored block, change its position in the properties panel, allow the
+existing debounced autosave, reload that same map, and confirm the block still
+appears at the new position. This proves that a new module generation handled
+a real editor input, changed the visible scene, and persisted the result; an
+activation message by itself is insufficient.
 
-An NPC C++ save builds the candidate in the background. The authoritative
-server validates it and activates it only at a fixed simulation-tick boundary.
-The module's decision state migrates without resetting NPC position, health,
-target, life, or the match. The first trial verifies a real NPC encounter and
-shows, in the same server `events.jsonl`, the old generation, activation tick,
-first decision from the new generation, and the resulting movement/action
-state. Compilation or reload failure leaves the old NPC decision generation
-active.
+### 5.1 Source path and module membership
 
-The legacy decision implementation may remain as a temporary migration fallback
-until a real scenario proves parity and last-known-good behavior. Exactly one
-decision owner may control an NPC in a tick; the cold fallback and module must
-not both apply decisions.
+The current property-edit path is:
+
+```text
+src/input/input-commands.cpp::MapEditor::handleTextKey
+  -> src/mapeditor/map-editor.cpp::handleTextKey / applyPropertyPosition
+  -> MapEditor::setSelectedPosition / nudgeSelection
+  -> MapConfigRegistry authored-data mutation + markChanged
+  -> src/mapeditor/map-editor.cpp::tick / autosave
+  -> src/gamemode/map-config.cpp::MapConfigRegistry::save
+  -> config/maps/<map-id>.json
+  -> MapEditor::reload / MapConfigRegistry::load and viewport redraw
+```
+
+`src/mapeditor/*.cpp` is the initial source group, including
+`map-editor.cpp`, `map-editor-commands.cpp`, `world-edit-commands.cpp`,
+`map-editor-projects.cpp`, and editor-specific configuration application.
+Editor behavior embedded at current integration sites such as
+`src/engine/engine-tick-camera.cpp`, `src/engine/engine-tick-ui.cpp`,
+`src/engine/engine-tick-render.cpp`, `src/engine/engine-tick.cpp`,
+`src/input/input-commands.cpp`, and `src/main-init.cpp` moves behind the same
+module entry points. Those EXE call sites remain thin dispatch adapters; they
+must not retain a second editor implementation or policy branch.
+
+The editor module owns editor behavior: interpreting editor input, selection,
+property and gizmo actions, command behavior, undo/redo policy, editor UI and
+world overlays, and deciding which host edit services to call. The host owns
+the window and raw platform input, renderer/GPU/device lifetime, map/project
+document and dirty revision in `MapConfigRegistry`, JSON/file persistence,
+atomic save/backup, world geometry and collision mechanisms, and stable object
+handles. `MapEditorConfig` values and GUI layouts remain hot-reloadable data;
+they are passed to the module as validated settings rather than compiled into
+the module.
+
+The module boundary uses versioned plain-data inputs/results and opaque host
+handles. It does not pass `MapEditor*`, `MapConfigRegistry&`, `GLFWwindow*`,
+`Camera&`, STL containers, or module-owned pointers across the DLL ABI. The
+host provides explicit capabilities for map-object lookup/edit transactions,
+undo snapshots, geometry/collision refresh, save/reload, input state, and
+render/UI commands. The persistent map document stays in the host. The editor's
+transient state—active/frozen mode, selected stable IDs, clipboard, text
+fields, undo/redo history, drag state, and pending autosave data—is captured
+and restored through a versioned schema. A reload must preserve unsaved edits
+and may not replace them by reading the last saved JSON again.
+
+### 5.2 Safe reload and behavior parity
+
+The module compiles in the background when a mapped editor C++ source is saved.
+The candidate is validated and activated on the main thread at a safe editor
+boundary: after the current editor callback returns and before the next input,
+update, or render callback starts. Never unload a generation while its code is
+executing. Preserve the current editor session state and map revision during
+the swap. A failed build, ABI check, capability check, or state migration
+leaves the previous editor generation active and reports the failure.
+
+The initial extraction copies the current editor behavior without changing
+selection, transform math, undo/redo, geometry refresh, save semantics, or
+commands. For the first proof, the property edit must have the same before/after
+position and saved JSON as the current code. During migration, a candidate may
+be compared with the previous implementation using copies of the same editor
+state and operation; only one result may mutate the map document. After parity
+is established, a later editor behavior fix must state one intended change,
+the exact input/action, the expected visible and persisted result, and which
+neighboring editor operations remain unchanged.
+
+After the one-time host/module-loader installation build, make and save an
+internal, behavior-preserving edit to a `src/mapeditor/*.cpp` implementation.
+Verify that the running process loads the new `map-editor` generation without
+rebuilding or restarting the EXE, then perform the property-position scenario
+through that generation. This proves source-save activation and real editor
+behavior in the same trial.
+
+### 5.3 Journal proof and contributor checklist
+
+The editor process journal identifies the EXE, active `map-editor` generation,
+project/map ID, stable object ID, prior/new property values, operation sequence,
+dirty/saved revision, and source hash. Extend the existing bounded
+`map-editor.transform.apply` event to cover position edits; the current source
+logs transform events for some fields, while `MapEditor::setSelectedPosition`
+currently does not emit a position event. Correlate it with
+`map-editor.autosaved`, a `map-editor.reload.result` event, and a read-back of
+the exact map JSON. The reload event reports map ID, success/failure, resulting
+revision, and module generation; failed reload preserves the last valid map
+state. Each record uses the canonical process identity and journal; do not
+write a second debug file. Human-visible confirmation of the block at the new
+position is reported separately from source, build, and JSON evidence.
+
+Before changing editor code, the contributor records:
+
+1. the one editor behavior being changed and its module owner;
+2. the input-to-edit-to-render/save path and expected result;
+3. adjacent behavior held constant (selection, undo, collision, autosave,
+   commands, or other editor surfaces);
+4. the real map/project scenario and exact journal fields proving success; and
+5. any path the run did not reach, marked `NOT_COVERED`.
+
+Do not bundle separate editor failures into a general cleanup. If the object
+was not selected, the property input was rejected, the document did not become
+dirty, autosave did not run, or the reload did not read the edited map, record
+the first missing step and fix that owner before changing a neighboring one.
+
+This first proof is local map authoring. Collaborative project editing,
+multi-client revision agreement, conflict resolution, and server-authoritative
+edit permissions remain a later project/network migration and require their
+own process journals and acceptance scenarios.
+
+### 5.4 Second module: shared world rendering and shader assets
+
+The shared world rendering boundary is the `world-rendering` module. Its target
+scope covers authored-box face construction and face/culling analysis for
+`src/render/render-world.cpp`, `src/render/render-world-mesh.cpp`,
+`src/world/streamed-world-layer.cpp`, and the renderer side of
+`src/world/world-gltf-loader.cpp`. The host keeps GPU/device lifetime, texture
+handles, world/collision data, file IO, and the actual GL draw submission. The
+implemented first slice owns the authored-box face/culling calculation; moving
+the full draw submission and upload path remains the next renderer slice.
+
+The host owns a shader program service. `shaders/basic.vert` and
+`shaders/basic.frag` are asset inputs, not C++ translation units. Saving either
+file compiles and links a candidate program on the main thread at a frame
+boundary. A successful program becomes the active world program; a failed
+compile or link leaves the prior program active and emits
+`shader.compile.failed` with the source hash. Shader generations are independent
+of module generations.
+
+The module host uses a generic catalog at `config/modules/modules.json`. Each
+entry declares source/header globs, ABI version, state schema, activation
+boundary, and required host services. `devscripts/module-build-worker.py`
+captures a source snapshot, builds an immutable generation DLL under
+`build/modules/<module>/generation-<n>/`, and publishes `current.json`. The
+running process validates name, ABI, state schema, generation, and source hash
+before activating. Build, validation, interface, or state-migration failure
+keeps the last active generation.
+
+A controlled proof map, `config/maps/hot_render_proof.json`, contains one
+authored box with six distinct per-face materials. Authored blocks now support
+`faces[6]`; empty entries fall back to `material`. The renderer records
+`world-render.face-template` at generation, `world-render.mesh-upload` on mesh
+revision change, `world-render.draw-summary` when culling or revision changes,
+and `world-render.face-audit` when `worldrender audit_faces <blockId>` runs.
+The audit reports each face's normal, winding, material, submitted batch range,
+and whether the camera is outside it with culling enabled. Human visual review
+remains a separate claim; an unreached face is `NOT_COVERED`.
+
+This six-face scenario verifies the hot rendering path. It does not claim that an
+unspecified existing missing-face bug has been diagnosed or fixed.
 
 ## 6. All-systems migration inventory
 
@@ -226,14 +374,14 @@ runtime proof per behavior. The initial inventory is:
 
 | Subsystem | Current native-code status | Kernel state/services and module dependencies | Migration order and real behavior proof |
 |---|---|---|---|
-| NPC decisions | Native decision, navigation, combat, and lifecycle owners remain in `src/npc/` and server adapters; profile/config data has separate reload owners. | Host actor state and perception/context; returned intent uses existing actor-action capabilities. | **1 — first proof:** utility goal/action selection; exercise a real server NPC encounter and correlate decision, action, position/target result, and generation in the server journal. |
-| Player movement and collision | Native movement and physics owners remain EXE code; collision settings have their own config reload owners. | Host Transform/Velocity/runtime state, fixed tick, cached broadphase, collision queries, and result application. | **2:** move a bounded movement policy after NPC intent works; replay a human-observed movement/collision case and inspect fixed-tick state and contact evidence. |
-| Weapons and projectiles | Native combat and server execution remain EXE code; weapon definitions are separate data. | Host action validation, ammo/cooldown state, physics contact, damage application, and replication. | **3:** migrate a bounded weapon or projectile policy; use a real fire/impact trial and inspect accepted action, contact, damage, and resulting state. |
-| Match and gamemode rules | Native server/match owners remain EXE code; mode data is separately loaded. | Host match state, authority, lifecycle mechanisms, and generic event dispatch. | **4:** migrate one round rule after actor/action state is stable; exercise a full real phase transition and score/result event. |
-| Map editor and creation tools | Native editor/tool code remains EXE code; project data/storage has its own owner. | Host project persistence, entity/resource handles, input, renderer, and window lifetime. | **5:** migrate one editor action; change a real project, save/reopen it, inspect journal records, and review the visible editor result. |
-| UI, animation, and presentation | Native update/draw code remains EXE code; selected layouts/configs/resources reload as data. | Host GPU/device/resource lifetimes, UI state, and render-boundary coordination. | **5:** migrate one presentation or interaction owner after host resource lifetime is documented; verify the live generation and visible result. |
-| Networking policy | Native prediction/reconciliation/relevance and transport code remain EXE code. | Host sockets, packet framing, connection lifecycle, server authority, and module-generation compatibility. | **6:** migrate policy only after two-process generation agreement is proven; verify server/client journals and a real connected session. |
-| World generation, effects, and audio policy | Native behavior remains EXE code except the narrow effect/debug DLL pilot; asset/config data may have separate reload paths. | Host world/asset IO, effect pools, audio device, and resource lifetimes. | **7:** migrate bounded policies independently; exercise a real generated-world or audio/effect path and inspect owning-process evidence. |
+| Map editor and creation tools | `src/mapeditor/*.cpp` and editor policy at engine/input call sites remain native EXE code; map document persistence and JSON settings have separate owners. | Host map registry/document, input/window, renderer, geometry/collision, stable object handles, and save/backup services; module owns editor interaction and authoring behavior. | **1 — first proof:** edit an authored block position through the property panel, verify the same visible result, autosave and reload the exact map JSON, and correlate edit/revision/generation in the client/editor journal. |
+| NPC decisions | Native selection, navigation, combat, and lifecycle owners remain in `src/npc/` and server adapters; profile/config data has separate reload owners. | Host actor state and perception/context; module returns the utility goal/action result to the host. | **2:** after the editor module proves stateful reload, port the existing utility decisions without behavior changes and prove one live NPC path. |
+| Player movement and collision | Native movement and physics owners remain EXE code; collision settings have their own config reload owners. | Host Transform/Velocity/runtime state, fixed tick, cached broadphase, collision queries, and result application. | **3:** move a bounded movement policy after NPC decision ownership is migrated; replay a human-observed movement/collision case and inspect fixed-tick state and contact evidence. |
+| Weapons and projectiles | Native combat and server execution remain EXE code; weapon definitions are separate data. | Host action validation, ammo/cooldown state, physics contact, damage application, and replication. | **4:** migrate a bounded weapon or projectile policy; use a real fire/impact trial and inspect accepted action, contact, damage, and resulting state. |
+| Match and gamemode rules | Native server/match owners remain EXE code; mode data is separately loaded. | Host match state, authority, lifecycle mechanisms, and generic event dispatch. | **5:** migrate one round rule after actor/action state is stable; exercise a full real phase transition and score/result event. |
+| UI, animation, and presentation | Native update/draw code remains EXE code; selected layouts/configs/resources reload as data. | Host GPU/device/resource lifetimes, UI state, and render-boundary coordination. | **6:** migrate one presentation or interaction owner after host resource lifetime is documented; verify the live generation and visible result. |
+| Networking policy | Native prediction/reconciliation/relevance and transport code remain EXE code. | Host sockets, packet framing, connection lifecycle, server authority, and module-generation compatibility. | **7:** migrate policy only after two-process generation agreement is proven; verify server/client journals and a real connected session. |
+| World generation, effects, and audio policy | Native behavior remains EXE code except the narrow effect/debug DLL pilot; asset/config data may have separate reload paths. | Host world/asset IO, effect pools, audio device, and resource lifetimes. | **8:** migrate bounded policies independently; exercise a real generated-world or audio/effect path and inspect owning-process evidence. |
 | Process, platform, and runtime kernel | EXE-owned process, platform, scheduler, storage, loader, logger, renderer/device, transport, and physics mechanisms. | This is the stable service boundary used by modules. | **0 and continuous:** install and verify the module/state/diagnostic substrate first; keep mechanisms cold unless a separate design proves a safe replacement boundary. |
 
 This is a migration map, not a claim that every row has an existing module.
@@ -256,9 +404,9 @@ individual stages:
 - total time from diagnosed issue to verified next trial.
 
 Measure at least ten repeated trials for each workload: a no-op/save with no
-module input change, one internal NPC module `.cpp` edit, and a shared module
-interface/header change. Report the median and range initially; do not call a
-small sample a stable p95. Record warm/cold cache state, compiler/toolchain,
+module input change, one internal map-editor module `.cpp` edit, and a shared
+module interface/header change. Report the median and range initially; do not
+call a small sample a stable p95. Record warm/cold cache state, compiler/toolchain,
 changed-file/dependency count, and build generation. Set and review latency
 targets only after these measurements. The aim is to make a normal module edit
 approach the compile/link/activation floor, then reduce repeated human setup and
@@ -269,27 +417,41 @@ evidence-search time through automatic testing and journal correlation.
 The module workflow is acceptable only when all of the following are shown in
 the real game process:
 
-- Saving an internal NPC module `.cpp` starts the module build automatically;
-  a successful change activates without changing the EXE build identity or
-  restarting the process.
-- The NPC decision event after activation identifies the new module generation
-  and is correlated with its real fixed-tick action and resulting actor state.
-- Host-owned actor/world state survives activation unchanged except for changes
-  intentionally caused by normal gameplay decisions.
+- Saving an internal `src/mapeditor/*.cpp` file starts the `map-editor` module
+  build automatically. A successful edit activates without changing the EXE
+  build identity or restarting the process.
+- The editor module inventory covers viewport input, selection/outliner,
+  property editing, gizmos, add/delete/duplicate, undo/redo, terminal commands,
+  chunk/world editing, projects, overlays, and editor mode policy. Remaining
+  EXE code is limited to stable host dispatch and core platform/render/storage
+  services; no second editor behavior owner remains.
+- The first property-position proof records the active generation, exact map
+  and object IDs, old/new positions, project revision, autosave, and reload.
+  The reloaded document contains the new value and the viewport shows that same
+  object at that position. The tested source save occurs after the initial
+  module-loader EXE installation and before this edit operation.
+- Behavior-preserving extraction produces the same selected object, transform,
+  undo/redo result, map revision, and save output for the same operation before
+  an intentional editor behavior change is accepted.
+- Host-owned project/document state and unsaved edits survive module activation;
+  editor state migration preserves stable selection IDs, undo/redo history,
+  clipboard, active/frozen mode, pending operation, and save status where
+  compatible. Incompatible migration leaves the old module and document active.
 - Compile, ABI, dependency, and state-schema failures leave the last known good
   module and state active, with an actionable reason in the dev-loop result
   and process journal.
-- Activation happens only at the authoritative fixed-tick boundary for
-  gameplay modules, does not cause render-frame-driven gameplay, and preserves
-  the 60 Hz fixed-tick contract.
+- Gameplay modules activate only at the authoritative fixed-tick boundary and
+  preserve the 60 Hz contract. The local editor module activates on the main
+  thread after the current editor callback and before the next input, update,
+  or render callback; it is never unloaded while executing.
 - A source edit rebuilds only its owning module and dependency-affected modules;
   unrelated modules are not relinked. Shared-interface edits rebuild their
   actual dependents.
-- One real scenario exercises the changed behavior. The journal identifies the
-  exact EXE and module generation and shows inputs, decision, action, and result.
-  A missing required path is `NOT_COVERED`, not a pass. Human visual/feel
-  acceptance is reported separately when appearance or feel is part of the
-  change.
+- One real local editing scenario exercises the module-driven behavior. The
+  exact editor process journal and map JSON show the input, edit result,
+  revision, save, reload, and visible outcome. A missing required path is
+  `NOT_COVERED`, not a pass. Human visual review remains separate from source,
+  build, and persistence evidence.
 - Each all-systems inventory row advances only after its own owner-level
   runtime proof, safe failure/rollback proof, and source-backed status update.
 
@@ -301,11 +463,15 @@ The tracked source currently contains a narrow `build_game_dll.py` target with
 focused source set (and its API header), invokes `python build_game_dll.py`
 synchronously, validates `GameAPI`, copies/loads a unique DLL path, and swaps
 the small function table. This does not provide a general module catalog,
-background per-subsystem build, authoritative tick activation transaction,
-generic module-state migration, or module generation fields in all NPC events.
+background per-subsystem build, subsystem-boundary activation transaction,
+generic module-state migration, or module generation fields in editor events.
 
-The current NPC utility selection, movement, combat, and lifecycle code remains
-in the normal EXE source path. The tracked `src/hot-reload` tree does not contain
+The current map editor remains normal EXE source code in `src/mapeditor/` with
+direct integration calls from engine/input files. `MapConfigRegistry` owns
+authored map data and persistence; the editor's C++ behavior is not currently
+an independently reloadable module. The current NPC utility selection,
+movement, combat, and lifecycle code also remains in the normal EXE source path.
+The tracked `src/hot-reload` tree does not contain
 the historical `src/hot-reload/modules/` implementation described in older
 architecture notes and changelogs. Those notes are historical evidence only;
 they must not be used as proof of current source behavior. The current
@@ -316,6 +482,28 @@ The first kernel/loader installation will require an intentional full EXE build.
 Thereafter, native behavior edits wholly contained behind a validated module
 interface should compile and link only that module and activate in the running
 process. Kernel/API edits remain a full-build boundary.
+
+### Implemented first slice (2026-11-07)
+
+The tracked source now contains the generic catalog/worker/host substrate, a
+live `map-editor` module that owns the property-position decision, a live
+`world-rendering` module that owns authored-box face/culling analysis, and a
+host-owned shader compile/swap service. The map-module position path calls the
+host document/undo/collision/persistence services; the host keeps selection and
+the map document. The world-rendering module currently owns policy calculation;
+moving the full draw submission and world loader upload path behind the same
+boundary remains the next renderer slice.
+
+Source-save activation was verified in one running client: `map-editor`
+generations 2 and 3 and `world-rendering` generations 1 and 2 activated without
+restarting, a property edit was handled by module generation 3 and autosaved,
+and a six-face audit was handled by world-rendering generation 2. A valid shader
+swap and a failed candidate that retained the prior program were also observed.
+A later trial recorded `module.build.failed` with the exact compiler error while
+`map-editor` generation 3 kept handling edits; reverting the source activated
+generation 4 in the same PID. The full draw-path extraction, complete
+editor-state schema ownership, and the remaining acceptance scenarios are still
+future work and must not be reported as complete.
 
 ## JSON hot reload
 

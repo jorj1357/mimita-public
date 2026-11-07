@@ -1,8 +1,8 @@
 {
     "firstBootComplete": true,
-    "musicEnabled": true,
+    "musicEnabled": false,
     "musicVolume": 0.0,
-    "personalMusic": false,
+    "personalMusic": true,
     "playbackSpeed": 0.6999999284744263,
     "playlistMode": "shuffle"
 }

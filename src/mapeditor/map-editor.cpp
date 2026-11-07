@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <exception>
 #include <iterator>
 #include <limits>
@@ -26,12 +27,13 @@
 #include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
-#include "gamemode/map-config.h"
 #include "game/game-state.h"
+#include "gamemode/map-config.h"
 #include "gui/gui-layout.h"
 #include "gui/hud/chat-window.h"
 #include "gui/menus/pause-menu.h"
 #include "gui/ui-system.h"
+#include "hot-reload/module-host.h"
 #include "input/mouse-lock.h"
 #include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
@@ -2884,6 +2886,15 @@ bool MapEditor::save(bool writeBackup)
 bool MapEditor::reload()
 {
     const bool ok = MapConfigRegistry::instance().load(mapId());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.reload.result", mapId(),
+        ok ? "map JSON reloaded" : "map JSON reload failed; previous state retained", 0,
+        nlohmann::json{{"map", mapId()},
+                       {"success", ok},
+                       {"revision", MapConfigRegistry::instance().revision()},
+                       {"path", MapConfigRegistry::instance().configPath()}},
+        __FILE__, __LINE__, __FUNCTION__);
     if (ok) {
         mUndo.clear();
         mRedo.clear();
@@ -3785,15 +3796,66 @@ bool MapEditor::selectKind(const std::string& kind)
     return true;
 }
 
+bool MapEditor::modulePrimarySelection(char* id, unsigned int idCapacity, int* kind,
+                                       glm::vec3& position) const
+{
+    if (mSelection.empty())
+        return false;
+    const EditorObjectRef& primary = mSelection.front();
+    if (id && idCapacity > 0) {
+        std::strncpy(id, primary.id.c_str(), idCapacity - 1);
+        id[idCapacity - 1] = '\0';
+    }
+    if (kind)
+        *kind = static_cast<int>(primary.kind);
+    position = objectPosition(primary);
+    return true;
+}
+
+bool MapEditor::moduleApplyPrimaryPosition(const glm::vec3& position)
+{
+    if (mSelection.empty())
+        return false;
+    const glm::vec3 delta = position - objectPosition(mSelection.front());
+    if (glm::length(delta) <= 0.0001f)
+        return true;
+    nudgeSelection(delta);
+    return true;
+}
+
 bool MapEditor::setSelectedPosition(const glm::vec3& position)
 {
     if (mSelection.empty()) {
         notify("select an object first");
         return false;
     }
-    const glm::vec3 delta = position - objectPosition(mSelection.front());
+    const EditorObjectRef& primary = mSelection.front();
+    const glm::vec3 before = objectPosition(primary);
+    const glm::vec3 delta = position - before;
     if (glm::length(delta) <= 0.0001f) return true;
-    nudgeSelection(delta);
+
+    bool handledByModule = false;
+    if (ModuleHost::instance().mapEditorLoaded()) {
+        const float target[3] = {position.x, position.y, position.z};
+        handledByModule = ModuleHost::instance().mapEditorSetSelectedPosition(target);
+    }
+    if (!handledByModule)
+        nudgeSelection(delta);
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.transform.apply", primary.id,
+        "property panel position edit applied", 0,
+        nlohmann::json{{"map", mapId()},
+                       {"object", primary.id},
+                       {"kind", kindName(primary.kind)},
+                       {"field", "position"},
+                       {"before", {before.x, before.y, before.z}},
+                       {"after", {position.x, position.y, position.z}},
+                       {"source", "property_panel"},
+                       {"handled_by_module", handledByModule},
+                       {"revision", MapConfigRegistry::instance().revision()}},
+        __FILE__, __LINE__, __FUNCTION__);
     notify("position set to " + std::to_string(position.x) + " " +
         std::to_string(position.y) + " " + std::to_string(position.z));
     return true;

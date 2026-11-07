@@ -1,4 +1,5 @@
 {
+  "attachments": [],
   "blocks": [],
   "bomb": {
     "defuse_seconds": 5.0,
@@ -8,6 +9,7 @@
   "bomb_sites": [
     {
       "id": "1",
+      "name": "",
       "position": [
         320.0,
         0.0,
@@ -31,125 +33,13 @@
         -24.077896118164063,
         311.5251159667969
       ],
-      "connectors": [
-        {
-          "id": "east_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "east",
-          "tags": []
-        },
-        {
-          "id": "west_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "west",
-          "tags": []
-        },
-        {
-          "id": "north_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "north",
-          "tags": []
-        },
-        {
-          "id": "south_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "south",
-          "tags": []
-        }
-      ],
+      "connectors": [],
       "enabled": true,
       "geometry": "assets/maps/procedural-mimitasizing5-infdgnslr-v5.glb",
       "id": "chunk_a",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "wallv2",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            2.0,
-            2.0
-          ],
-          "visible": true
-        }
-      ],
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
       "tags": []
     }
   ],
@@ -163,55 +53,18 @@
       "damageType": "generic",
       "enabled": true,
       "healthMultiplier": 1.0,
-      "id": "spawnpoint_1",
-      "interactionId": "",
-      "maxAlive": 1,
-      "monsterPool": "default",
-      "oneShot": false,
-      "order": 0,
-      "pickupId": "",
-      "position": [
-        141.59002685546875,
-        21.314836502075195,
-        315.38385009765625
-      ],
-      "presetId": "",
-      "radius": 1.0,
-      "required": false,
-      "rewardGold": 0,
-      "rewardXp": 0,
-      "size": [
-        1.0,
-        1.0,
-        1.0
-      ],
-      "spawnCooldownTicks": 60,
-      "spawnCount": 1,
-      "tag": "",
-      "type": "spawnpoint",
-      "visible": true,
-      "yaw": 0.0
-    },
-    {
-      "activationRadius": 0.0,
-      "bossId": "",
-      "checkpointRequirement": 0,
-      "damage": 0,
-      "damageIntervalTicks": 60,
-      "damageType": "generic",
-      "enabled": true,
-      "healthMultiplier": 1.0,
       "id": "ct",
       "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
+      "name": "",
       "oneShot": false,
       "order": 0,
       "pickupId": "",
       "position": [
         120.0,
         90.0,
-        315.0
+        325.0
       ],
       "presetId": "",
       "radius": 1.0,
@@ -243,13 +96,14 @@
       "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
+      "name": "spawnpoint_terrorist",
       "oneShot": false,
       "order": 0,
       "pickupId": "",
       "position": [
-        170.0,
-        -249.0,
-        315.0
+        330.0,
+        -210.0,
+        320.0
       ],
       "presetId": "",
       "radius": 1.0,

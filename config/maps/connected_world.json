@@ -1,4 +1,5 @@
 {
+  "attachments": [],
   "blocks": [],
   "bomb": {
     "defuse_seconds": 5.0,
@@ -20,125 +21,13 @@
         -5.0,
         -0.5
       ],
-      "connectors": [
-        {
-          "id": "east_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "east",
-          "tags": []
-        },
-        {
-          "id": "west_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "west",
-          "tags": []
-        },
-        {
-          "id": "north_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            5.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "north",
-          "tags": []
-        },
-        {
-          "id": "south_a",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            -5.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "south",
-          "tags": []
-        }
-      ],
+      "connectors": [],
       "enabled": true,
       "geometry": "assets/maps/connected_world.glb",
       "id": "chunk_a",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "wallv2",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            2.0,
-            2.0
-          ],
-          "visible": true
-        }
-      ],
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
       "tags": []
     },
     {
@@ -153,133 +42,13 @@
         -5.0,
         0.0
       ],
-      "connectors": [
-        {
-          "id": "east_b",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "east",
-          "tags": [
-            "flat"
-          ]
-        },
-        {
-          "id": "west_b",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "west",
-          "tags": [
-            "flat"
-          ]
-        },
-        {
-          "id": "north_b",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            5.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "north",
-          "tags": [
-            "flat"
-          ]
-        },
-        {
-          "id": "south_b",
-          "links": [],
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            -5.0,
-            0.0
-          ],
-          "role": "bidirectional",
-          "side": "south",
-          "tags": [
-            "flat"
-          ]
-        }
-      ],
+      "connectors": [],
       "enabled": true,
       "geometry": "",
       "id": "chunk2",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "floorv2",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            1.0,
-            1.0
-          ],
-          "visible": true
-        }
-      ],
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
       "tags": []
     },
     {
@@ -294,55 +63,84 @@
         -5.0,
         0.0
       ],
+      "connectors": [],
+      "enabled": true,
+      "geometry": "",
+      "id": "chunk3",
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
+      "tags": []
+    },
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        5.0,
+        5.0,
+        4.0
+      ],
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        -0.5
+      ],
       "connectors": [
         {
-          "id": "east_c",
+          "id": "east_chunk4",
           "links": [],
+          "name": "",
           "orientation": "doorway",
           "position": [
-            5.0,
-            0.0,
+            11.567123413085938,
+            18.878332138061523,
             0.0
           ],
+          "radius": 0.5,
           "role": "bidirectional",
           "side": "east",
           "tags": []
         },
         {
-          "id": "west_c",
+          "id": "west_chunk4",
           "links": [],
+          "name": "",
           "orientation": "doorway",
           "position": [
-            -5.0,
-            0.0,
-            0.0
+            -11.973381042480469,
+            17.84964370727539,
+            9.775161743164063e-05
           ],
+          "radius": 5.0,
           "role": "bidirectional",
           "side": "west",
           "tags": []
         },
         {
-          "id": "north_c",
+          "id": "north_chunk4",
           "links": [],
+          "name": "",
           "orientation": "doorway",
           "position": [
-            0.0,
-            5.0,
-            0.0
+            -0.000362396240234375,
+            30.84964370727539,
+            0.1970977783203125
           ],
+          "radius": 0.5,
           "role": "bidirectional",
           "side": "north",
           "tags": []
         },
         {
-          "id": "south_c",
+          "id": "south_chunk4",
           "links": [],
+          "name": "",
           "orientation": "doorway",
           "position": [
-            0.0,
-            -5.0,
+            0.15926742553710938,
+            6.968079566955566,
             0.0
           ],
+          "radius": 0.5,
           "role": "bidirectional",
           "side": "south",
           "tags": []
@@ -350,7 +148,8 @@
       ],
       "enabled": true,
       "geometry": "",
-      "id": "chunk3",
+      "id": "chunk4",
+      "name": "",
       "parts": [
         {
           "collision": true,
@@ -391,10 +190,72 @@
           "id": "floor",
           "kind": "floor",
           "material": "stonev2",
+          "name": "",
           "position": [
             0.0,
-            0.0,
+            18.616409301757813,
             -0.25
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "size": [
+            25.0,
+            25.0,
+            0.5
+          ],
+          "uv_scale": [
+            0.05000000074505806,
+            0.05000000074505806
+          ],
+          "visible": true
+        },
+        {
+          "collision": true,
+          "face_uv_scale": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          "faces": [
+            "",
+            "",
+            "",
+            "",
+            "",
+            ""
+          ],
+          "id": "box2",
+          "kind": "box",
+          "material": "floorv2",
+          "name": "",
+          "position": [
+            0.00027060508728027344,
+            17.761741638183594,
+            5.741560935974121
           ],
           "rotation": [
             0.0,
@@ -404,15 +265,37 @@
           "size": [
             10.0,
             10.0,
-            0.5
+            10.0
           ],
           "uv_scale": [
-            1.0,
-            1.0
+            0.10000000149011612,
+            0.10000000149011612
           ],
           "visible": true
         }
       ],
+      "spawn_points": [],
+      "tags": []
+    },
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        5.0,
+        5.0,
+        4.0
+      ],
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        -0.5
+      ],
+      "connectors": [],
+      "enabled": true,
+      "geometry": "",
+      "id": "chunk5",
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
       "tags": []
     }
   ],
@@ -430,6 +313,7 @@
       "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
+      "name": "",
       "oneShot": false,
       "order": 0,
       "pickupId": "",
