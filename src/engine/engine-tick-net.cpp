@@ -690,6 +690,11 @@ void engineTickNet(Engine& engine, float dt)
 
                 GAME_STATE = GAME_LOADING_MAP;
                 bool loadOk = loadWorldFromGLB(world, requiredPath.c_str());
+                const uint64_t loadElapsedMs = MimitaNet::nowMs() - now;
+                MimitaNet::mpLogConnectStage(mpContext, "map_load",
+                    loadOk ? "ok" : "failed", loadElapsedMs, 0,
+                    loadOk ? "" : "map_load_failed",
+                    "loaded server-required map");
                 if (loadOk)
                 {
                     const std::string oldMap = ACTIVE_MAP_PATH;
@@ -721,7 +726,8 @@ void engineTickNet(Engine& engine, float dt)
                             mpContext.tick,
                             {{"required_map_id", mpContext.requiredMapId},
                              {"required_path", requiredPath},
-                             {"load_attempts", mpContext.mapLoadAttempts}},
+                             {"load_attempts", mpContext.mapLoadAttempts},
+                             {"duration_ms", loadElapsedMs}},
                             __FILE__, __LINE__, __FUNCTION__);
                     }
                     if (mpContext.mapLoadAttempts >= 30)

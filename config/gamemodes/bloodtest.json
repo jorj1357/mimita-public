@@ -75,6 +75,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "gold_reward_popup": null,
     "damage_numbers": null,
     "hit_effects": null,
     "world_impact_effects": null,

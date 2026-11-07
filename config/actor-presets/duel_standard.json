@@ -33,13 +33,9 @@
   },
 
   "avatar": {
-    // "forced": true,
     "forced": false,
-    // "name": "monstertest1",
-    "name": "jason",
-    // "allowed": ["monstertest1"],
+    "name": "",
     "allowed": [],
-    // "denied": []
     "denied": ["monster*"]
   },
   "movement_preset": "source"

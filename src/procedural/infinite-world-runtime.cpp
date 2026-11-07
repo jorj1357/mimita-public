@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <functional>
 #include <iterator>
 #include <string>
@@ -20,9 +21,13 @@
 #include "entities/player.h"
 #include "gamemode/map-config.h"
 #include "network/community-match-client.h"
+#include "network/multiplayer-context.h"
+#include "network/server-gamemode.h"
 #include "procedural/procedural-world.h"
 #include "world/streamed-world-layer.h"
 #include "worldgen/worldgen-library.h"
+
+extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
 
@@ -219,7 +224,10 @@ bool independentGrid(const GenerationZone& zone,
                     !to->links.empty() || !connectorsCompatible(*from, *to))
                     return false;
                 const glm::vec3 step = sideDirection(side) * zone.cellSize;
-                if (glm::length(from->position - step - to->position) > 0.001f)
+                const float contactRadius =
+                    std::max(0.01f, from->radius) + std::max(0.01f, to->radius);
+                if (glm::length(from->position - step - to->position) >
+                    contactRadius)
                     return false;
             }
         }
@@ -330,6 +338,23 @@ void InfiniteWorldRuntime::invalidateModeChunks()
     mSignatureDirty = true;
 }
 
+nlohmann::json InfiniteWorldRuntime::statusJson() const
+{
+    return {
+        {"active", mActive},
+        {"zone", mZoneId},
+        {"anchor", {mAnchorX, mAnchorY, mAnchorZ}},
+        {"cell", {mLastCellX, mLastCellY, mLastCellZ}},
+        {"radius", {mLastRadius.x, mLastRadius.y, mLastRadius.z}},
+        {"desired", mDesired.size()},
+        {"pending", mPendingOffsets.size()},
+        {"loaded", mLoaded.size()},
+        {"rejected", mRejected.size()},
+        {"resolved", mResolved.size()},
+        {"chunks", StreamedWorldLayer::instance().chunkCount()},
+    };
+}
+
 void InfiniteWorldRuntime::reset()
 {
     clearZone();
@@ -342,6 +367,9 @@ void InfiniteWorldRuntime::reset()
     mAnchorX = 0;
     mAnchorY = 0;
     mAnchorZ = 0;
+    mLastRadius = glm::ivec3(-1);
+    mDesired.clear();
+    mPendingOffsets.clear();
 }
 
 uint64_t InfiniteWorldRuntime::cellKey(int x, int y, int z) const
@@ -748,6 +776,8 @@ const InfiniteWorldRuntime::ResolvedCell& InfiniteWorldRuntime::resolveCell(
                   {"parent_chunk", parentChunk ? parentChunk->id : ""},
                   {"connector", chosen.second->id},
                   {"parent_connector", parentConnector->id},
+                  {"connector_radius", chosen.second->radius},
+                  {"parent_connector_radius", parentConnector->radius},
                   {"depth", cell.depth},
                   {"spacing", zone.spacingMode}});
     }
@@ -832,12 +862,21 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             mModeZone.id != mapZone->id) {
             MimitaWorldGen::WorldGenMode profile;
             std::string error;
+            const std::string mapId = config.mapId.empty()
+                ? "connected_world" : config.mapId;
+            std::string profileId = mapId;
             if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
-                    "connected_world", profile, &error)) {
-                logEvent("world-stream.mode-profile.missing", "connected_world",
-                         {{"mode", "connected_world"}, {"error", error}});
-                if (mActive) reset();
-                return;
+                    profileId, profile, &error)) {
+                profileId = "connected_world";
+                error.clear();
+                if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                        profileId, profile, &error)) {
+                    logEvent("world-stream.mode-profile.missing", profileId,
+                             {{"mode", profileId}, {"error", error},
+                              {"map", mapId}});
+                    if (mActive) reset();
+                    return;
+                }
             }
             mModeZone = *mapZone;
             mModeZone.modeId = "connected_world";
@@ -853,6 +892,27 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             mModeZone.maxBranchDepth = profile.maxBranchDepth;
             mModeZone.allowCycles = profile.allowCycles;
             mModeZone.allowCrossings = profile.allowCrossings;
+            const std::string descriptorIdentity = mapId + "|" +
+                std::to_string(mapZone->seed) + "|" +
+                mapZone->generatorVersion + "|" + mapZone->ruleSet + "|" +
+                depsIdentity(*mapZone);
+            logEvent("world-stream.identity", profileId,
+                     {{"side", "client"}, {"map", mapId},
+                      {"seed", mapZone->seed},
+                      {"generator_version", mapZone->generatorVersion},
+                      {"descriptor_hash",
+                       std::hash<std::string>{}(descriptorIdentity)}});
+            logEvent("world-stream.profile", profileId,
+                     {{"map", mapId}, {"profile", profileId},
+                      {"seed", mapZone->seed},
+                      {"cell_size", {mModeZone.cellSize.x, mModeZone.cellSize.y,
+                                     mModeZone.cellSize.z}},
+                      {"repeat_axes", {mModeZone.repeatAxes.x,
+                                       mModeZone.repeatAxes.y,
+                                       mModeZone.repeatAxes.z}},
+                      {"stream_radius", {mModeZone.streamRadius.x,
+                                         mModeZone.streamRadius.y,
+                                         mModeZone.streamRadius.z}}});
         }
         activeZone = &mModeZone;
     }
@@ -901,6 +961,9 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             mRejected.clear();
             mResolved.clear();
             mHasCell = false;
+            mLastRadius = glm::ivec3(-1);
+            mDesired.clear();
+            mPendingOffsets.clear();
             mGenerationSignature = signature;
             mHasGeneration = true;
             logEvent("world-stream.reset", activeZone->id,
@@ -931,61 +994,57 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                             activeZone->repeatAxes.z
                                 ? activeZone->streamRadius.z : 0);
 
-    // Desired set.
-    std::unordered_set<uint64_t> desired;
+    // Cache the desired neighborhood and its distance-sorted install order.
+    // Rebuild only when the player crosses a cell or the radius changes; the
+    // install pass below still services a few cells every frame.
     const int rz = std::clamp(radius.z, 0, 3);
-    for (int dz = -rz; dz <= rz; ++dz)
-        for (int dy = -radius.y; dy <= radius.y; ++dy)
-            for (int dx = -radius.x; dx <= radius.x; ++dx)
-                desired.insert(cellKey(hx + dx, hy + dy, hz + dz));
+    if (cellChanged || radius != mLastRadius) {
+        mLastRadius = radius;
+        mDesired.clear();
+        mPendingOffsets.clear();
+        for (int dz = -rz; dz <= rz; ++dz)
+            for (int dy = -radius.y; dy <= radius.y; ++dy)
+                for (int dx = -radius.x; dx <= radius.x; ++dx) {
+                    const int x = hx + dx;
+                    const int y = hy + dy;
+                    const int z = hz + dz;
+                    mDesired.insert(cellKey(x, y, z));
+                    mPendingOffsets.emplace_back(x, y, z);
+                }
+        std::sort(mPendingOffsets.begin(), mPendingOffsets.end(), [hx, hy, hz](
+            const glm::ivec3& a, const glm::ivec3& b) {
+            const int ad = std::abs(a.x - hx) + std::abs(a.y - hy) +
+                           std::abs(a.z - hz);
+            const int bd = std::abs(b.x - hx) + std::abs(b.y - hy) +
+                           std::abs(b.z - hz);
+            if (ad != bd) return ad < bd;
+            if (a.z != b.z) return a.z < b.z;
+            if (a.y != b.y) return a.y < b.y;
+            return a.x < b.x;
+        });
+    }
 
     // Remove cells that left the radius.
     std::vector<uint64_t> toRemove;
     for (uint64_t key : mLoaded)
-        if (!desired.count(key)) toRemove.push_back(key);
+        if (!mDesired.count(key)) toRemove.push_back(key);
     for (uint64_t key : toRemove) {
         StreamedWorldLayer::instance().removeChunk(key);
         mLoaded.erase(key);
     }
     if (independent) {
         for (auto it = mResolved.begin(); it != mResolved.end();)
-            it = desired.count(it->first) ? std::next(it) : mResolved.erase(it);
+            it = mDesired.count(it->first) ? std::next(it) : mResolved.erase(it);
         for (auto it = mRejected.begin(); it != mRejected.end();)
-            it = desired.count(*it) ? std::next(it) : mRejected.erase(it);
+            it = mDesired.count(*it) ? std::next(it) : mRejected.erase(it);
     }
-
-    // Add the nearest missing cells first. This path runs on the render-thread
-    // setup pass, so cap installation work and keep servicing the desired set
-    // every frame. Returning only when the player changes cells strands any
-    // neighborhood larger than the initial per-frame budget forever.
-    std::vector<glm::ivec3> pending;
-    pending.reserve(desired.size());
-    for (int dz = -rz; dz <= rz; ++dz)
-        for (int dy = -radius.y; dy <= radius.y; ++dy)
-            for (int dx = -radius.x; dx <= radius.x; ++dx) {
-                const int x = hx + dx;
-                const int y = hy + dy;
-                const int z = hz + dz;
-                const uint64_t key = cellKey(x, y, z);
-                if (!mLoaded.count(key) && !mRejected.count(key))
-                    pending.emplace_back(x, y, z);
-            }
-    std::sort(pending.begin(), pending.end(), [hx, hy, hz](
-        const glm::ivec3& a, const glm::ivec3& b) {
-        const int ad = std::abs(a.x - hx) + std::abs(a.y - hy) +
-                       std::abs(a.z - hz);
-        const int bd = std::abs(b.x - hx) + std::abs(b.y - hy) +
-                       std::abs(b.z - hz);
-        if (ad != bd) return ad < bd;
-        if (a.z != b.z) return a.z < b.z;
-        if (a.y != b.y) return a.y < b.y;
-        return a.x < b.x;
-    });
 
     int added = 0;
     size_t attempted = 0;
-    for (const glm::ivec3& cell : pending) {
+    for (const glm::ivec3& cell : mPendingOffsets) {
         if (added >= kMaxChunksPerFrame) break;
+        const uint64_t key = cellKey(cell.x, cell.y, cell.z);
+        if (mLoaded.count(key) || mRejected.count(key)) continue;
         ++attempted;
         if (placeChunk(cell.x, cell.y, cell.z, *activeZone, candidates,
                        independent))
@@ -1005,17 +1064,86 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                   {"whole_world", config.generateWholeWorld ||
                                       connectedWorldMode},
                   {"added", added},
-                  {"pending", pending.size() - attempted},
+                  {"pending", mPendingOffsets.size() - attempted},
                   {"attempted", attempted},
                   {"budget", kMaxChunksPerFrame},
                   {"removed", toRemove.size()},
                   {"loaded", mLoaded.size()},
                   {"rejected", mRejected.size()},
-                  {"resolved", mResolved.size()}});
+                  {"resolved", mResolved.size()},
+                  {"desired", mDesired.size()},
+                  {"radius", {radius.x, radius.y, radius.z}}});
 }
 
 void registerInfiniteWorldCommands()
 {
+    Terminal::instance().registerCommand({
+        "infiniteworld",
+        "List, inspect, or request a named Infinite World",
+        "infiniteworld <list|status|load <world>>",
+        [](const std::vector<std::string>& args) {
+            Terminal& terminal = Terminal::instance();
+            if (args.empty() || args[0] == "list") {
+                std::ifstream file("config/gamemodes/connected_world.json");
+                if (!file.is_open()) {
+                    terminal.addLog("[INFINITEWORLD] gamemode config missing");
+                    return;
+                }
+                try {
+                    const nlohmann::json root = nlohmann::json::parse(file);
+                    terminal.addLog("[INFINITEWORLD] named worlds:");
+                    if (root.contains("maps") && root["maps"].is_array()) {
+                        for (const auto& item : root["maps"]) {
+                            if (!item.is_string()) continue;
+                            std::string id = item.get<std::string>();
+                            std::string display = id;
+                            const std::string prefix = "infinite_";
+                            if (display.rfind(prefix, 0) == 0)
+                                display = display.substr(prefix.size());
+                            terminal.addLog("[INFINITEWORLD]   " + display +
+                                            " -> " + id);
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    terminal.addLog(std::string("[INFINITEWORLD] parse error: ") +
+                                    e.what());
+                }
+                return;
+            }
+            if (args[0] == "status") {
+                const nlohmann::json status =
+                    InfiniteWorldRuntime::instance().statusJson();
+                terminal.addLog("[INFINITEWORLD] map=" +
+                    MapConfigRegistry::instance().mapId() +
+                    " " + status.dump());
+                return;
+            }
+            if (args[0] == "load" && args.size() >= 2) {
+                std::string mapId = args[1];
+                if (mapId.rfind("infinite_", 0) != 0)
+                    mapId = "infinite_" + mapId;
+                if (::gpMpContext && ::gpMpContext->active) {
+                    MimitaNet::mpSendServerCommand(*::gpMpContext,
+                                                   "changemap " + mapId);
+                } else if (MimitaNet::isServerHost()) {
+                    MimitaNet::serverGamemodeRequestMapChange(mapId);
+                } else {
+                    terminal.addLog(
+                        "[INFINITEWORLD] load requires the host or an active "
+                        "multiplayer connection");
+                    return;
+                }
+                logEvent("infiniteworld.load.requested", mapId,
+                         {{"map", mapId}, {"host_only_request", true}});
+                terminal.addLog("[INFINITEWORLD] requested load " + mapId +
+                                " (server acceptance not yet proven)");
+                return;
+            }
+            terminal.addLog(
+                "[INFINITEWORLD] list | status | load <world>");
+        },
+        "2026-11-07", CommandCategory::Debug
+    });
     Terminal::instance().registerCommand({
         "worldstream",
         "Control streamed chunk rendering backend and budget",

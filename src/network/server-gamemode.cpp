@@ -472,8 +472,10 @@ ActorSpawnProfile serverResolveActorSpawnProfile(uint32_t actorId)
     if (!def->deniedAvatars.empty()) out.deniedAvatars = def->deniedAvatars;
     if (!def->actorPresetId.empty()) {
         if (const MatchRoleDefinition* preset = MatchRoleRegistry::instance().getActorPreset(def->actorPresetId)) {
-            out.allowedAvatars = preset->allowedAvatars;
-            out.deniedAvatars = preset->deniedAvatars;
+            if (!preset->allowedAvatars.empty())
+                out.allowedAvatars = preset->allowedAvatars;
+            if (!preset->deniedAvatars.empty())
+                out.deniedAvatars = preset->deniedAvatars;
             if (out.avatarName.empty() && !preset->avatarName.empty()) {
                 out.avatarName = preset->avatarName;
                 out.avatarForced = preset->avatarForced;
@@ -2122,12 +2124,55 @@ void assignGamemodeSpawns(ServerGamemodeState& d, const HeadlessWorld& world)
     }
     else
     {
-        d.spawnA = glm::vec3(1.0f, 5.0f, 30.0f);
-        d.spawnB = d.spawnA;
-        d.sharedAnchor = d.spawnA;
+        // A GLB/map with no authored spawn point must still be joinable. Find
+        // the highest walkable surface under the map-bounds center and spawn
+        // above it; log the fallback so missing authoring is visible.
+        const glm::vec3 center = (world.boundsMin + world.boundsMax) * 0.5f;
+        const glm::vec3 origin(center.x, center.y, world.boundsMax.z + 8.0f);
+        const glm::vec3 direction(0.0f, 0.0f, -1.0f);
+        float bestT = -1.0f;
+        for (const CollisionTriangle& tri : world.triangles) {
+            if (tri.normal.z < 0.2f) continue;
+            const glm::vec3 edge1 = tri.b - tri.a;
+            const glm::vec3 edge2 = tri.c - tri.a;
+            const glm::vec3 h = glm::cross(direction, edge2);
+            const float det = glm::dot(edge1, h);
+            if (std::abs(det) < 1e-6f) continue;
+            const float invDet = 1.0f / det;
+            const glm::vec3 s = origin - tri.a;
+            const float u = glm::dot(s, h) * invDet;
+            if (u < 0.0f || u > 1.0f) continue;
+            const glm::vec3 q = glm::cross(s, edge1);
+            const float v = glm::dot(direction, q) * invDet;
+            if (v < 0.0f || u + v > 1.0f) continue;
+            const float t = glm::dot(edge2, q) * invDet;
+            if (t >= 0.0f && (bestT < 0.0f || t < bestT)) bestT = t;
+        }
+        glm::vec3 spawn = origin;
+        bool grounded = false;
+        if (bestT >= 0.0f) {
+            spawn = origin + direction * bestT;
+            spawn.z += 0.9f;
+            grounded = true;
+        }
+        d.spawnA = spawn;
+        d.spawnB = spawn;
+        d.sharedAnchor = spawn;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map.spawn-fallback", d.mapId,
+            "map has no authored spawn point; using bounds-center fallback", 0,
+            {{"map", d.mapId}, {"position", {spawn.x, spawn.y, spawn.z}},
+             {"grounded", grounded},
+             {"triangles", world.triangles.size()},
+             {"bounds_min", {world.boundsMin.x, world.boundsMin.y,
+                              world.boundsMin.z}},
+             {"bounds_max", {world.boundsMax.x, world.boundsMax.y,
+                              world.boundsMax.z}}},
+            __FILE__, __LINE__, __FUNCTION__);
         Debug::warn(Debug::Category::Duel,
-            "[DuelFallback] map=%s reason=no_spawn_points final=(%.3f,%.3f,%.3f)\n",
-            d.mapId.c_str(), d.spawnA.x, d.spawnA.y, d.spawnA.z);
+            "[DuelFallback] map=%s reason=no_spawn_points grounded=%d final=(%.3f,%.3f,%.3f)\n",
+            d.mapId.c_str(), (int)grounded, d.spawnA.x, d.spawnA.y, d.spawnA.z);
     }
     const Gamemode& gm = GamemodeRegistry::instance().get(d.matchMode);
     if (gm.teams.size() >= 2) {
@@ -2591,6 +2636,29 @@ void broadcastMapChange(SOCKET sock,
     std::strncpy(pkt.mapId, mapId.c_str(), sizeof(pkt.mapId) - 1);
     pkt.duelId = d.duelId;
     pkt.mapVersion = d.mapVersion;
+    {
+        const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+        for (const GenerationZone& zone : config.generationZones) {
+            if (!zone.enabled) continue;
+            pkt.worldSeed = zone.seed;
+            std::strncpy(pkt.generatorVersion, zone.generatorVersion.c_str(),
+                         sizeof(pkt.generatorVersion) - 1);
+            std::string identity = mapId + "|" + std::to_string(zone.seed) +
+                "|" + zone.generatorVersion + "|" + zone.ruleSet;
+            for (const std::string& dep : zone.chunkDependencies)
+                identity += "|" + dep;
+            pkt.descriptorHash = std::hash<std::string>{}(identity);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "world-stream.server.descriptor", mapId,
+                "server broadcast canonical world descriptor", 0,
+                {{"map", mapId}, {"seed", zone.seed},
+                 {"generator_version", zone.generatorVersion},
+                 {"descriptor_hash", pkt.descriptorHash}},
+                __FILE__, __LINE__, __FUNCTION__);
+            break;
+        }
+    }
     for (const auto& kv : players)
     {
         if (kv.second.spawnState != ServerPlayer::Active)

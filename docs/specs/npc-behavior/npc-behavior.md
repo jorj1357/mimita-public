@@ -63,10 +63,40 @@ collision, and fixed-tick actor execution rules as players. A behavior profile
 chooses when and how to request an action; it does not grant extra shots,
 invent ammunition, bypass cooldowns, or bypass movement ability availability.
 
+The default high-skill combat profile is elite. Elite competence means strong
+target selection, team coordination, weapon choice, and context-aware movement;
+it does not mean guaranteed hits, extra ammunition, or bypassed weapon and
+movement rules. Lower difficulty profiles reduce these decision skills through
+their profile settings. Debug options that force hits are not valid for normal
+gameplay profiles.
+
+### Elite enemy knowledge
+
+An explicitly selected elite profile may know the exact current positions of
+all living enemies, including through walls, and may share that information
+with its team. This is an intentional high-difficulty advantage. It grants
+target and route knowledge only: NPCs still need legal line of sight to aim and
+fire, and they must use ordinary navigation and collision to reach a target.
+Knowledge does not reveal future movement or inputs. Profiles below elite use
+their configured perception and team-shared reports instead.
+
 ## 2. Sustained-fire weapon rotation
 
 A selectable combat profile may request a sustained-fire cycle over the
 weapons available in that NPC's resolved loadout.
+
+The default elite weapon policy is varied and difficult to predict. At a new
+combat cycle, choose a usable starting weapon from the resolved loadout using
+the NPC's deterministic per-actor random stream; do not always begin with the
+same weapon in the same order. For each visit, choose a bounded firing segment
+from profile-authored minimum and maximum values. For magazine weapons, the
+segment may use a random portion of the usable magazine or the whole magazine,
+but can never exceed available ammunition. For melee or other weapons without
+a magazine, define the visit by a bounded accepted-action count or duration.
+Selection may weight choices by range, role, and current tactical value, while
+retaining enough variation that equally valid encounters do not always produce
+the same sequence. A profile may still explicitly request a fixed cycle when
+that is the intended behavior.
 
 The cycle must:
 
@@ -106,6 +136,16 @@ weapon definition because other actors and profiles may use the same weapon
 with different tactics. Resolved role/mode loadout remains the authority for
 which weapons exist.
 
+Randomness must remain reproducible: the same NPC seed, loadout, profile, and
+combat events produce the same selection sequence. Every shot still respects
+the weapon's configured cadence, any profile minimum interval, ammunition,
+reload, and attack validation. Aim error and reaction delay remain effective;
+normal elite play must not use a force-hit override. In particular, a revolver
+must not empty its magazine at a cadence faster than its legal weapon interval
+and profile floor, and one burst must leave the player a reasonable opportunity
+to react. Balance that opportunity through the existing difficulty and weapon
+timing owners, not by changing revolver ammunition or hit validation globally.
+
 ## 3. Authored movement repertoire
 
 NPCs should be able to select a movement move from a JSON-authored library,
@@ -125,6 +165,8 @@ Each move definition should be able to state:
 - repetition limits and completion conditions;
 - interruption conditions, so danger, target loss, death, or an invalid path
   can cancel the move and return control to the normal actor behavior.
+- whether the move is intended for travel, combat, recovery, or reaching an
+  authored navigation point, so unrelated actions do not compete for control.
 
 Selection may be randomized among eligible moves using the NPC's deterministic
 per-actor random stream. Randomness selects an authored, context-valid
@@ -163,6 +205,44 @@ While airborne, the move changes camera/facing-relative directional input to
 steer under the selected movement preset's air-control rules. The movement
 specification owns the physics and grounded-versus-airborne distinction.
 
+### Airborne point approach
+
+When an authored navigation or tactical point is within the profile's
+configured reach and has a clear, physically reachable landing area, an NPC
+may jump or remain airborne and air-strafe toward it. The point is a destination
+for navigation, not a command to teleport or freeze in midair. On arrival, the
+NPC transitions to the point's authored action, such as holding position,
+defending, or resuming its team objective. If the point is blocked, unreachable,
+or no longer useful, the NPC cancels the move and returns to navigation or
+combat behavior.
+
+### Slope contact dash chain
+
+An eligible profile may use a repeated dash technique while traversing a
+downward-facing slope. On a valid downward-slope contact, request down-dash;
+on the next fixed tick, request forward dash only if the shared movement state
+reports dash available and the resulting motion is still advancing along the
+route. Repeat after the next qualifying slope contact. Continue only while the
+NPC remains on the downhill route, abilities are available, and measured
+progress remains positive. Do not down-dash into an uphill-facing surface or
+repeat a sequence that redirects the NPC backward, loses progress, leaves the
+slope, or conflicts with a higher-priority combat, hazard, or recovery action.
+Use ordinary dash where it advances over an uphill or neutral slope. Ability
+resets and contact eligibility come from shared movement rules; the NPC must
+never fabricate a reset or assume every wall touch restores an ability.
+
+### Anticipatory wall avoidance
+
+NPCs must use their existing route corridor and bounded look-ahead geometry to
+steer around walls before contact. A visible obstacle that blocks the next
+route segment causes the navigator to select a legal open direction or request
+a route update. The NPC must not keep selecting a blocked direction, grind into
+the wall, or oscillate between sides. If no legal route exists, report the
+blocked or unreachable goal and choose a valid recovery or alternate objective
+instead of repeatedly pushing into geometry. Wall probes and candidate
+geometry must reuse the existing spatial query path and avoid per-tick heap
+allocations.
+
 ### Forward-only facing sweep
 
 The move holds forward while turning the NPC's facing/aim direction. Since
@@ -181,6 +261,13 @@ The proposed data split is:
 - a JSON move library defines reusable movement sequences;
 - the existing weapon and movement configurations continue to own weapon
   statistics, movement presets, and physics values.
+
+High-level profile names should hide confusing low-level combinations. A
+designer should be able to select an elite, standard, or beginner behavior and
+get a coherent bundle of target knowledge, combat decision quality, weapon
+variation, and eligible movement techniques. Individual fields remain
+available for deliberate tuning, but a designer must not need to coordinate
+unrelated global fallback settings to obtain the named behavior.
 
 This is a desired data contract, not a claim that a move-library JSON schema or
 runtime loader already exists. Future implementation should keep values and
@@ -473,6 +560,24 @@ let an actor fall through a stable support.
   priority threat interrupts the move without corrupting movement state.
 - The same seeded NPC and same fixed-tick inputs choose the same randomized
   move sequence for deterministic reproduction.
+- Across different NPC seeds, elite combat does not always start with the same
+  weapon or use the same visit length; every selection stays within the
+  resolved loadout and actual ammunition.
+- Melee visits terminate by their configured action count or duration and do
+  not depend on nonexistent magazine ammunition.
+- Elite enemies can use exact enemy positions through walls to choose targets
+  and routes, but do not aim or fire through walls; lower profiles follow their
+  perception and team-report rules.
+- On a downhill route, the contact dash chain requests down-dash then forward
+  dash only when contact, ability availability, and positive route progress
+  permit it. It stops on uphill faces, route exit, blocked progress, or
+  interruption.
+- On a route with a wall ahead and a legal open route around it, the NPC turns
+  before contact and makes positive progress without repeated wall-grinding or
+  side-to-side oscillation. An actually unreachable goal is reported rather
+  than pursued through solid geometry.
+- With normal gameplay settings, elite revolver aim error is not overridden by
+  forced hits; shots respect cadence, ammunition, and reaction opportunity.
 
 ## 6. Current implementation status
 
@@ -717,9 +822,13 @@ bunny-hop timing, and hazard reaction windows are expressed in ticks.
 ### Counter-Terrorist response
 
 - CTs do **not** receive the Terrorists' round site choice.
-- CTs use perception-gated shared reports and memory only. A team report must
-  come from an actor that actually perceived the target; the team must not
-  receive exact positions of every living enemy every tick.
+- Below-elite CT profiles use perception-gated shared reports and memory. A
+  team report must come from an actor that actually perceived the target; these
+  profiles must not receive exact positions of every living enemy every tick.
+- An explicitly selected elite profile may use the exact enemy-position
+  knowledge exception in section 1. CTs still do not receive the Terrorists'
+  round site choice, and no profile may aim or fire through blocked line of
+  sight.
 - With a report, CTs rush toward the reported enemy area, fight, and try to
   prevent a plant. Without a report, they defend usable sites and rotate on new
   reports.

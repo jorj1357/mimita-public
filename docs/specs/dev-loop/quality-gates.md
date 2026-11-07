@@ -2,7 +2,15 @@
 
 Time created: `2026-10-29T17:13:46Z`
 
-Status: TARGET CONTRACT
+Status: TARGET CONTRACT; AGENT QUALITY GATE NOT TRUSTED
+
+## Agent quality gate status (2026-11-07 11:03)
+
+The agent quality gate is **not trusted and is not required** as of
+`2026-11-07 11:03` (jorj). Do not use it as a completion, acceptance, or
+blocking check. Runtime `events.jsonl` evidence and human review remain the
+acceptance path. The gate scripts and historical records may stay in the
+repository for future repair, but they do not gate current work.
 
 ## Purpose
 

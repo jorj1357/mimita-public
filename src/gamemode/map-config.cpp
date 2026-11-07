@@ -64,7 +64,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     root["bomb_sites"] = json::array();
     for (const auto& site : current.bombSites) {
         root["bomb_sites"].push_back({
-            {"id", site.id},
+            {"id", site.id}, {"name", site.name},
             {"position", {site.position.x, site.position.y, site.position.z}},
             {"radius", site.radius},
             {"visible_debug", site.visibleDebug},
@@ -78,7 +78,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     root["entities"] = json::array();
     for (const auto& entity : current.entities) {
         root["entities"].push_back({
-            {"id", entity.id}, {"type", entity.type},
+            {"id", entity.id}, {"name", entity.name}, {"type", entity.type},
             {"position", {entity.position.x, entity.position.y, entity.position.z}},
             {"size", {entity.size.x, entity.size.y, entity.size.z}},
             {"yaw", entity.yaw},
@@ -99,7 +99,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     root["blocks"] = json::array();
     for (const auto& block : current.blocks) {
         json b = {
-            {"id", block.id}, {"shape", block.shape},
+            {"id", block.id}, {"name", block.name}, {"shape", block.shape},
             {"position", {block.position.x, block.position.y, block.position.z}},
             {"size", {block.size.x, block.size.y, block.size.z}},
             {"rotationEuler", {block.rotationEuler.x, block.rotationEuler.y, block.rotationEuler.z}},
@@ -111,7 +111,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     root["vehicles"] = json::array();
     for (const auto& vehicle : current.vehicles) {
         root["vehicles"].push_back({
-            {"id", vehicle.id},
+            {"id", vehicle.id}, {"name", vehicle.name},
             {"template", vehicle.templateId},
             {"position", {vehicle.position.x, vehicle.position.y, vehicle.position.z}},
             {"yaw", vehicle.yaw},
@@ -132,18 +132,20 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
         json connectors = json::array();
         for (const auto& connector : chunk.connectors) {
             connectors.push_back({
-                {"id", connector.id}, {"side", connector.side},
+                {"id", connector.id}, {"name", connector.name},
+                {"side", connector.side},
                 {"orientation", connector.orientation},
                 {"role", connector.role}, {"tags", connector.tags},
                 {"links", connector.links},
                 {"position", {connector.position.x, connector.position.y,
                               connector.position.z}},
+                {"radius", connector.radius},
             });
         }
         json parts = json::array();
         for (const auto& part : chunk.parts) {
             parts.push_back({
-                {"id", part.id}, {"kind", part.kind},
+                {"id", part.id}, {"name", part.name}, {"kind", part.kind},
                 {"position", {part.position.x, part.position.y, part.position.z}},
                 {"size", {part.size.x, part.size.y, part.size.z}},
                 {"rotation", {part.rotationEuler.x, part.rotationEuler.y,
@@ -163,13 +165,40 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
                 {"collision", part.collision}, {"visible", part.visible},
             });
         }
+        json spawns = json::array();
+        for (const auto& spawn : chunk.spawnPoints) {
+            spawns.push_back({
+                {"id", spawn.id}, {"name", spawn.name},
+                {"position", {spawn.position.x, spawn.position.y,
+                              spawn.position.z}},
+                {"radius", spawn.radius},
+                {"allowed_actors", spawn.allowedActors},
+                {"enabled", spawn.enabled},
+            });
+        }
         root["chunks"].push_back({
-            {"id", chunk.id}, {"geometry", chunk.geometryPath},
+            {"id", chunk.id}, {"name", chunk.name},
+            {"geometry", chunk.geometryPath},
             {"blob_sha256", chunk.blobSha256},
             {"bounds_min", {chunk.boundsMin.x, chunk.boundsMin.y, chunk.boundsMin.z}},
             {"bounds_max", {chunk.boundsMax.x, chunk.boundsMax.y, chunk.boundsMax.z}},
-            {"parts", parts}, {"connectors", connectors}, {"tags", chunk.tags},
+            {"parts", parts}, {"connectors", connectors},
+            {"spawn_points", spawns}, {"tags", chunk.tags},
             {"enabled", chunk.enabled},
+        });
+    }
+    root["attachments"] = json::array();
+    for (const auto& attachment : current.attachments) {
+        root["attachments"].push_back({
+            {"id", attachment.id}, {"name", attachment.name},
+            {"parent_kind", attachment.parentKind},
+            {"parent_id", attachment.parentId},
+            {"child_kind", attachment.childKind},
+            {"child_id", attachment.childId},
+            {"anchored", attachment.anchored},
+            {"mass", attachment.mass},
+            {"density", attachment.density},
+            {"material_strength", attachment.materialStrength},
         });
     }
     root["generation_zones"] = json::array();
@@ -255,7 +284,7 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
         payload["route"] = json::array();
         for (const auto& point : current.payload.route) {
             payload["route"].push_back({
-                {"id", point.id},
+                {"id", point.id}, {"name", point.name},
                 {"position", {point.position.x, point.position.y, point.position.z}},
                 {"radius", point.radius}, {"order", point.order},
                 {"waitTicks", point.waitTicks}, {"enabled", point.enabled},
@@ -399,6 +428,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 BombSite site;
                 site.id = item.value("id", std::string{});
                 if (site.id.empty()) continue;
+                site.name = item.value("name", std::string{});
                 site.radius = std::max(0.5f, item.value("radius", site.radius));
                 site.visibleDebug = item.value("visible_debug", false);
                 if (item.contains("position") && item["position"].is_array() &&
@@ -418,6 +448,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 if (!item.is_object()) continue;
                 MapEntity entity;
                 entity.id = item.value("id", std::string{});
+                entity.name = item.value("name", std::string{});
                 entity.type = item.value("type", std::string{});
                 if (entity.id.empty() || entity.type.empty()) continue;
                 if (item.contains("position") && item["position"].is_array() && item["position"].size() >= 3)
@@ -463,6 +494,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 AuthoredBlock block;
                 block.id = item.value("id", std::string{});
                 if (block.id.empty()) continue;
+                block.name = item.value("name", std::string{});
                 block.shape = item.value("shape", std::string{"box"});
                 if (item.contains("position") && item["position"].is_array() &&
                     item["position"].size() >= 3) {
@@ -505,6 +537,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 MapVehicleSpawn vehicle;
                 vehicle.id = item.value("id", std::string{});
                 if (vehicle.id.empty()) continue;
+                vehicle.name = item.value("name", std::string{});
                 vehicle.templateId = item.value("template", std::string{"car_sedan"});
                 if (item.contains("position") && item["position"].is_array() &&
                     item["position"].size() >= 3) {
@@ -558,6 +591,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                 AuthoredChunk chunk;
                 chunk.id = item.value("id", std::string{});
                 if (chunk.id.empty()) continue;
+                chunk.name = item.value("name", std::string{});
                 chunk.geometryPath = item.value("geometry", item.value("geometry_path", std::string{}));
                 chunk.blobSha256 = item.value("blob_sha256", item.value("blobSha256", std::string{}));
                 if (item.contains("bounds_min"))
@@ -575,6 +609,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                         ChunkPart part;
                         part.id = partItem.value("id", std::string{});
                         if (part.id.empty()) continue;
+                        part.name = partItem.value("name", std::string{});
                         part.kind = partItem.value("kind", part.kind);
                         if (partItem.contains("position"))
                             part.position = readMapVec(partItem["position"], part.position);
@@ -608,9 +643,12 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                         if (!connectorItem.is_object()) continue;
                         AuthoredChunkConnector connector;
                         connector.id = connectorItem.value("id", std::string{});
+                        connector.name = connectorItem.value("name", std::string{});
                         connector.side = connectorItem.value("side", std::string{});
                         connector.orientation = connectorItem.value("orientation", std::string{});
                         connector.role = connectorItem.value("role", connector.role);
+                        connector.radius = std::max(0.01f, connectorItem.value(
+                            "radius", connector.radius));
                         if (connectorItem.contains("position"))
                             connector.position = readMapVec(connectorItem["position"], connector.position);
                         if (connectorItem.contains("tags") && connectorItem["tags"].is_array()) {
@@ -624,7 +662,49 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                         chunk.connectors.push_back(std::move(connector));
                     }
                 }
+                if (item.contains("spawn_points") && item["spawn_points"].is_array()) {
+                    for (const auto& spawnItem : item["spawn_points"]) {
+                        if (!spawnItem.is_object()) continue;
+                        ChunkSpawnPoint spawn;
+                        spawn.id = spawnItem.value("id", std::string{});
+                        if (spawn.id.empty()) continue;
+                        spawn.name = spawnItem.value("name", std::string{});
+                        if (spawnItem.contains("position"))
+                            spawn.position = readMapVec(spawnItem["position"], spawn.position);
+                        spawn.radius = std::max(0.05f, spawnItem.value(
+                            "radius", spawn.radius));
+                        spawn.allowedActors = spawnItem.value(
+                            "allowed_actors", spawnItem.value(
+                                "allowedActors", spawn.allowedActors));
+                        if (spawn.allowedActors != "human" &&
+                            spawn.allowedActors != "npc" &&
+                            spawn.allowedActors != "any")
+                            spawn.allowedActors = "any";
+                        spawn.enabled = spawnItem.value("enabled", true);
+                        chunk.spawnPoints.push_back(std::move(spawn));
+                    }
+                }
                 next.chunks.push_back(std::move(chunk));
+            }
+        }
+
+        if (root.contains("attachments") && root["attachments"].is_array()) {
+            for (const auto& item : root["attachments"]) {
+                if (!item.is_object()) continue;
+                MapAttachment attachment;
+                attachment.id = item.value("id", std::string{});
+                if (attachment.id.empty()) continue;
+                attachment.name = item.value("name", std::string{});
+                attachment.parentKind = item.value("parent_kind", std::string{});
+                attachment.parentId = item.value("parent_id", std::string{});
+                attachment.childKind = item.value("child_kind", std::string{});
+                attachment.childId = item.value("child_id", std::string{});
+                attachment.anchored = item.value("anchored", true);
+                attachment.mass = std::max(0.001f, item.value("mass", 1.0f));
+                attachment.density = std::max(0.001f, item.value("density", 700.0f));
+                attachment.materialStrength = std::max(
+                    0.001f, item.value("material_strength", 100.0f));
+                next.attachments.push_back(std::move(attachment));
             }
         }
 
@@ -664,7 +744,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                     item["stream_radius"].size() >= 3) {
                     for (int axis = 0; axis < 3; ++axis)
                         zone.streamRadius[axis] = std::clamp(
-                            item["stream_radius"][axis].get<int>(), 0, 8);
+                            item["stream_radius"][axis].get<int>(), 0, 16);
                 }
                 zone.spacingMode = item.value("spacing_mode", zone.spacingMode);
                 zone.connectorGap = std::max(0.0f, item.value("connector_gap", zone.connectorGap));
@@ -793,6 +873,7 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
                     PayloadRoutePoint point;
                     point.id = item.value("id", std::string{});
                     if (point.id.empty()) continue;
+                    point.name = item.value("name", std::string{});
                     if (item.contains("position") && item["position"].is_array() &&
                         item["position"].size() >= 3) {
                         point.position = glm::vec3(

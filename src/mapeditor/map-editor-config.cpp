@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "utils/json-comments.h"
 
 using json = nlohmann::json;
@@ -89,6 +90,20 @@ bool MapEditorConfig::load(const std::string& path)
             readFloat(root, "handle_thickness", next.handleThickness, 0.01f, 2.0f);
         next.blockWireAlpha =
             readFloat(root, "block_wire_alpha", next.blockWireAlpha, 0.0f, 1.0f);
+        next.entityAlpha =
+            readFloat(root, "entity_alpha", next.entityAlpha, 0.0f, 1.0f);
+        next.blockAlpha =
+            readFloat(root, "block_alpha", next.blockAlpha, 0.0f, 1.0f);
+        next.chunkPartAlpha =
+            readFloat(root, "chunk_part_alpha", next.chunkPartAlpha, 0.0f, 1.0f);
+        next.connectorAlpha =
+            readFloat(root, "connector_alpha", next.connectorAlpha, 0.0f, 1.0f);
+        next.spawnAlpha =
+            readFloat(root, "spawn_alpha", next.spawnAlpha, 0.0f, 1.0f);
+        next.glbAlpha =
+            readFloat(root, "glb_alpha", next.glbAlpha, 0.0f, 1.0f);
+        next.bombSiteAlpha =
+            readFloat(root, "bomb_site_alpha", next.bombSiteAlpha, 0.0f, 1.0f);
         next.focusMinDistance =
             readFloat(root, "focus_min_distance", next.focusMinDistance, 0.1f, 100.0f);
         next.focusPadding = readFloat(root, "focus_padding", next.focusPadding, 0.5f, 5.0f);
@@ -104,6 +119,20 @@ bool MapEditorConfig::load(const std::string& path)
         mData = next;
         mPath = path;
         mLastModified = modifiedTime(path);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "map-editor.config.loaded", path,
+            "map editor config loaded", 0,
+            {{"path", path},
+             {"properties_height", next.propertiesHeight},
+             {"entity_alpha", next.entityAlpha},
+             {"block_alpha", next.blockAlpha},
+             {"chunk_part_alpha", next.chunkPartAlpha},
+             {"connector_alpha", next.connectorAlpha},
+             {"spawn_alpha", next.spawnAlpha},
+             {"glb_alpha", next.glbAlpha},
+             {"bomb_site_alpha", next.bombSiteAlpha}},
+            __FILE__, __LINE__, __func__);
         Debug::warn(Debug::Category::Render,
             "[MAP EDITOR CONFIG] loaded %s\n", path.c_str());
         return true;

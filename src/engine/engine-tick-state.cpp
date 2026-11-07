@@ -309,7 +309,16 @@ void engineTickState(Engine& engine, float dt)
                 if (!worldLoaded || (!mci.mapName.empty() && !requestedMapLoaded))
                 {
                     const std::string oldMap = activeMapPath;
-                    if (loadWorldFromGLB(world, requestedMapPath.c_str()))
+                    const uint64_t mapLoadStartedMs = MimitaNet::nowMs();
+                    const bool requestedMapLoadOk =
+                        loadWorldFromGLB(world, requestedMapPath.c_str());
+                    const uint64_t mapLoadElapsedMs =
+                        MimitaNet::nowMs() - mapLoadStartedMs;
+                    MimitaNet::mpLogConnectStage(mpContext, "map_load",
+                        requestedMapLoadOk ? "ok" : "failed", mapLoadElapsedMs, 0,
+                        requestedMapLoadOk ? "" : "map_load_failed",
+                        "loaded requested join map");
+                    if (requestedMapLoadOk)
                     {
                         activeMapPath = requestedMapPath;
                         worldLoaded = true;
@@ -320,7 +329,8 @@ void engineTickState(Engine& engine, float dt)
                             mpContext.tick,
                             {{"requested_map", mci.mapName},
                              {"previous_map_path", oldMap},
-                             {"loaded_map_path", requestedMapPath}},
+                             {"loaded_map_path", requestedMapPath},
+                             {"duration_ms", mapLoadElapsedMs}},
                             __FILE__, __LINE__, __func__);
                         Debug::log(Debug::Category::Networking,
                                    "[MAIN NET] loaded requested map for connecting path=%s\n",
@@ -339,7 +349,8 @@ void engineTickState(Engine& engine, float dt)
                             mpContext.tick,
                             {{"requested_map", mci.mapName},
                              {"requested_map_path", requestedMapPath},
-                             {"previous_map_path", oldMap}},
+                             {"previous_map_path", oldMap},
+                             {"duration_ms", mapLoadElapsedMs}},
                             __FILE__, __LINE__, __func__);
                     }
                 }

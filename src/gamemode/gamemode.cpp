@@ -673,6 +673,7 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     value = p[key].get<bool>();
                 }
             };
+            readFlag("gold_reward_popup", next.presentation.hasGoldRewardPopup, next.presentation.goldRewardPopup);
             readFlag("damage_numbers", next.presentation.hasDamageNumbers, next.presentation.damageNumbers);
             readFlag("hit_effects", next.presentation.hasHitEffects, next.presentation.hitEffects);
             readFlag("world_impact_effects", next.presentation.hasWorldImpactEffects, next.presentation.worldImpactEffects);

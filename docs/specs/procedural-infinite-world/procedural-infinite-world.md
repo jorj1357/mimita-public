@@ -19,6 +19,34 @@ procedural arena must preserve server/client authority and the performance,
 networking, and deterministic chunk requirements in this specification. The
 arena itself is specified in `../gamemodes/vehicle-arena.md`.
 
+## Server authority, connector contact, and spawn anchors — 2026-11-07
+
+- The worldgen profile is resolved from the active map ID. A map named
+  `infinite_cramped` loads `config/worldgen/infinite_cramped.json`; it must not
+  be silently replaced by the legacy `connected_world` radius.
+- `infiniteworld list` lists named worlds from the gamemode map list.
+  `infiniteworld status` reports map, seed, anchor, radius, desired/pending/
+  loaded/rejected/resolved counts, and rendered chunks. `infiniteworld load
+  <world>` requests the existing host-controlled map change; a request is not
+  proof of server acceptance.
+- Neighboring chunks connect only when opposite connectors are on the expected
+  side and their positions are within the sum of their per-connector radii
+  (default 0.5 m). The journal records distance and radii for every match or
+  miss.
+- Chunk templates may author typed spawn anchors: `human`, `npc`, or `any`.
+  Loading a generated cell registers those anchors for player/NPC spawn and
+  respawn. Spawn anchors are separate from monster-zone wave spawning.
+- The server sends a canonical world descriptor (map, seed, generator version,
+  dependency identity, descriptor hash) with map changes. Clients log the
+  received descriptor as `world-stream.identity`.
+- The server builds an initial authoritative chunk-collision and spawn-anchor
+  footprint from the authored templates. Live per-cell server streaming around
+  moving actors, full wall collision authority beyond the initial footprint,
+  and measured 240 FPS acceptance remain required follow-ups.
+- A map/GLB with no authored spawn point must still join: the server finds the
+  highest walkable surface under the map-bounds center and logs
+  `map.spawn-fallback`; an ungrounded fallback is reported, not hidden.
+
 ## RPG world editor: authored chunks and infinite zones — 2026-11-05
 
 World projects may combine authored finite regions with procedurally generated

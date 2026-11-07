@@ -253,8 +253,13 @@
     //
     // 9999 is intentionally effectively unlimited for normal gameplay.
     "max_external_impulse_speed": 9999.0,
-    // "external_impulse_resistance_multiplier": 1.0,
-    "external_impulse_resistance_multiplier": 5.0,
+    // 2026 11 07 1140 just need a big rebalance for all weapons 
+    // bc rocket launcher needs to have that knockback for self for rocket jumping 
+    // but setting this to antthing above 1.0 means
+    // other knockbaskcs dont work
+    // sooo whatever 2026 11 07 1141
+    "external_impulse_resistance_multiplier": 1.0,
+    // "external_impulse_resistance_multiplier": 5.0,
     // "external_impulse_resistance_multiplier": 10.0,
     // "external_impulse_resistance_multiplier": 3.0,
     // "external_impulse_resistance_multiplier": 99.0,

@@ -11,6 +11,9 @@ struct CameraConfigData {
     std::string orientationMode = "mouse";
     glm::vec3 offset{2.0f, -3.5f, 1.0f};
     float fov = 100.0f;
+    bool proximityFadeEnabled = true;
+    float proximityFadeStartDistanceMeters = 1.0f;
+    float proximityFadeEndDistanceMeters = 2.0f;
     // Full-screen barrel/fisheye distortion. 0 = neutral; values above 100
     // remain meaningful for deliberately extreme experiments.
     float lensDistortion = 0.0f;

@@ -174,6 +174,77 @@ void uiPlaceholderImageButton(GLFWwindow* win, const char* label, UIRect r)
 
 namespace {
 
+void handleScrollbarInput(UIRect fbArea, float contentHeight,
+                          UIScrollState& scroll, float scrollbarWidth,
+                          float scrollbarInset, const char* id)
+{
+    const float maxScroll = std::max(0.0f, contentHeight - fbArea.h);
+    if (maxScroll <= 0.0f || !gWindow) {
+        scroll.dragging = false;
+        return;
+    }
+    const float sbW = std::max(4.0f, scrollbarWidth);
+    const float sbX = fbArea.x + std::max(0.0f, fbArea.w - sbW - scrollbarInset);
+    const float thumbH = std::clamp(fbArea.h * (fbArea.h / contentHeight),
+        std::min(44.0f, fbArea.h), fbArea.h);
+    const float thumbY = fbArea.y +
+        (scroll.scrollY / maxScroll) * (fbArea.h - thumbH);
+
+    double mx = 0.0;
+    double my = 0.0;
+    glfwGetCursorPos(gWindow, &mx, &my);
+    double fbx = mx;
+    double fby = my;
+    GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
+    const bool inTrack = fbx >= sbX && fbx <= sbX + sbW &&
+                         fby >= fbArea.y && fby <= fbArea.y + fbArea.h;
+    const bool inThumb = inTrack && fby >= thumbY && fby <= thumbY + thumbH;
+
+    if (gMouseClickEdge && inThumb) {
+        scroll.dragging = true;
+        scroll.dragStartY = (float)fby;
+        scroll.dragScrollStart = scroll.scrollY;
+    }
+    if (!gMouseDown) scroll.dragging = false;
+    if (scroll.dragging && gMouseDown) {
+        const float travel = std::max(1.0f, fbArea.h - thumbH);
+        scroll.scrollY = std::clamp(
+            scroll.dragScrollStart +
+                ((float)fby - scroll.dragStartY) * (maxScroll / travel),
+            0.0f, maxScroll);
+        if (StructuredLogger::instance().shouldLog(
+                StructuredCategory::Gui, StructuredLevel::Important)) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "ui.scroll.drag", id ? id : "scroll",
+                "scrollbar thumb dragged", 0,
+                {{"scroll_y", scroll.scrollY},
+                 {"max_scroll", maxScroll},
+                 {"thumb_y", thumbY},
+                 {"thumb_h", thumbH},
+                 {"cursor", {(float)fbx, (float)fby}}},
+                __FILE__, __LINE__, __func__);
+        }
+        return;
+    }
+    if (gMouseClickEdge && inTrack && !inThumb) {
+        scroll.scrollY = std::clamp(
+            scroll.scrollY + (fby < thumbY ? -fbArea.h * 0.8f : fbArea.h * 0.8f),
+            0.0f, maxScroll);
+        if (StructuredLogger::instance().shouldLog(
+                StructuredCategory::Gui, StructuredLevel::Important)) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "ui.scroll.track", id ? id : "scroll",
+                "scrollbar track clicked", 0,
+                {{"scroll_y", scroll.scrollY},
+                 {"max_scroll", maxScroll},
+                 {"cursor", {(float)fbx, (float)fby}}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+}
+
 void beginScreenScrollArea(GLFWwindow* win, UIRect area, float contentHeight,
                            UIScrollState& scroll)
 {
@@ -209,6 +280,8 @@ void endScreenScrollArea(UIRect area, float contentHeight, UIScrollState& scroll
 
     const float maxScroll = std::max(0.0f, contentHeight - area.h);
     if (maxScroll <= 0.0f) return;
+    handleScrollbarInput(area, contentHeight, scroll, scrollbarWidth,
+                         scrollbarInset, "screen-scroll");
 
     const float sbW = std::max(4.0f, scrollbarWidth);
     const float sbX = area.x + std::max(0.0f, area.w - sbW - scrollbarInset);
@@ -263,6 +336,9 @@ void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll)
     const float maxScroll = std::max(0.0f, contentHeight - area.h);
     if (maxScroll <= 0.0f) return;
 
+    const UIRect fbArea = cs.designToScreen(area);
+    handleScrollbarInput(fbArea, contentHeight, scroll, 8.0f, 4.0f,
+                         "design-scroll");
     const float sbW = 8.0f;
     const float sbX = area.x + area.w - sbW - 4.0f;
     const float thumbH = std::max(30.0f, area.h * (area.h / contentHeight));

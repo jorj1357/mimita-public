@@ -1,0 +1,93 @@
+{
+  "format": "mimita-gui-layout",
+  "version": 2,
+  "_purpose": "Map Editor screen-space layout. Edit these rects instead of hardcoding button positions.",
+  "elements": [
+    {
+      "id": "map-editor.panel",
+      "type": "panel",
+      "x": 16,
+      "y": 16,
+      "width": 700,
+      "height": 104
+    },
+    {
+      "id": "map-editor.toolbar",
+      "type": "container",
+      "x": 16,
+      "y": 124,
+      "width": 660,
+      "height": 36
+    },
+    {
+      "id": "map-editor.add-block",
+      "type": "button",
+      "x": 16,
+      "y": 124,
+      "width": 90,
+      "height": 36,
+      "text": "Add Block",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.add-chunk",
+      "type": "button",
+      "x": 109,
+      "y": 124,
+      "width": 90,
+      "height": 36,
+      "text": "Add Chunk",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.add-connector",
+      "type": "button",
+      "x": 202,
+      "y": 124,
+      "width": 104,
+      "height": 36,
+      "text": "Add Connector",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.add-spawn",
+      "type": "button",
+      "x": 309,
+      "y": 124,
+      "width": 88,
+      "height": 36,
+      "text": "Add Spawn",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.preview-connections",
+      "type": "button",
+      "x": 400,
+      "y": 124,
+      "width": 140,
+      "height": 36,
+      "text": "Preview Connections",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.save",
+      "type": "button",
+      "x": 543,
+      "y": 124,
+      "width": 62,
+      "height": 36,
+      "text": "Save",
+      "fontSize": 0.28
+    },
+    {
+      "id": "map-editor.reload",
+      "type": "button",
+      "x": 608,
+      "y": 124,
+      "width": 62,
+      "height": 36,
+      "text": "Reload",
+      "fontSize": 0.28
+    }
+  ]
+}

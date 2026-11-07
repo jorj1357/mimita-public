@@ -29,7 +29,8 @@
   "farSwitchDist": 20.0,
   "fireDelayMax": 0.5,
   "fireDelayMin": 0.009999999776482582,
-  "forceHit": true,
+  // is this even read 2026 11 07 1117
+  "forceHit": false,
   "forceWeapon": "",
   "freezeChance": 1.0,
   "freezeDuringWaveBanner": false,

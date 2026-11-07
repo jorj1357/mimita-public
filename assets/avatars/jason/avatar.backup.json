@@ -357,6 +357,7 @@
   },
   "advanced_mode": true,
   "avatar_id": "local_dec812ee1ac269ec",
+  "body_transform_source": "legacy_overrides",
   "colors": {
     "head": [
       1.0,
@@ -419,19 +420,19 @@
       ],
       "slot": "",
       "texture": {
-        "brightness": 4.827110767364502,
+        "brightness": 2.4112608432769775,
         "color": [
-          2.555079221725464,
-          2.578029155731201,
-          2.0501832962036133
+          0.6119951009750366,
+          0.6242350339889526,
+          0.5263158082962036
         ],
-        "image": "hairsides.png",
-        "offset_x": -998.4700317382813,
-        "offset_y": -998.4700317382813,
+        "image": "Screenshot 2026-08-21 203108.png",
+        "offset_x": -711.1383056640625,
+        "offset_y": -843.3292236328125,
         "opacity": 1.0,
         "rotation": 51.4993782043457,
-        "scale_x": 1.3820452690124512,
-        "scale_y": 0.9253441095352173
+        "scale_x": 0.987760066986084,
+        "scale_y": 0.9268665313720703
       },
       "type": ""
     }
@@ -445,5 +446,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-23T17:09:39Z"
+  "updated_at": "2026-11-07T11:52:00Z"
 }

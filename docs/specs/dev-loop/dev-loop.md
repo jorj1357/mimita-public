@@ -515,6 +515,86 @@ processes or processes outside the current dev-loop run. After unblocking, keep
 going through the runtime matrix; a publish blockage is not a reason to stop
 the task.
 
+## 5.3 Immutable build snapshots and artifact-pinned runs — desired
+
+The canonical dev loop must build from a frozen input snapshot so edits made
+while a build is running cannot change what that build compiles. The snapshot
+also identifies the runtime data needed to run and inspect that build. This is
+an implementation target for the canonical single-checkout dev loop; it does
+not authorize using experimental mode 2 lanes.
+
+### Snapshot capture
+
+When a build generation is accepted, the daemon captures an immutable snapshot
+of its complete build inputs and the runtime files needed by the selected
+launch mode. The snapshot includes the user's saved tracked changes and
+non-ignored untracked files that belong to those inputs, without changing the
+user's index or working files. It records a unique snapshot ID and a manifest
+of relative paths and content hashes. The manifest also identifies the source
+generation, build mode, toolchain/configuration inputs, and runtime-data
+generation.
+
+If capture fails or a required input cannot be read, the build fails before
+compilation with a specific reason. The daemon must never silently fall back to
+reading a moving checkout during that build.
+
+### Build isolation and publication
+
+The compiler and linker read only from the captured snapshot and write to
+build-owned outputs. The current checkout remains editable while that work
+runs. A later save is accepted immediately and coalesced into one follow-up
+build for the newest source generation, as required by section 5. A later
+checkout edit cannot alter the active snapshot, its compiler inputs, or its
+outputs. Any reused compiler cache must be keyed by all relevant source,
+dependency, toolchain, and build-option inputs.
+
+Every successful artifact has an immutable artifact ID and manifest that bind
+it to the snapshot ID, source generation, executable and runtime-library
+hashes, and runtime-data manifest. It remains publishable if the checkout
+changes during compilation. If its snapshot no longer matches the checkout,
+the artifact is marked `stale` relative to the checkout but remains
+`runnable` by its explicit artifact ID. Only an artifact matching the latest
+accepted generation may be labeled `current`. A failed build is never
+presented as a runnable artifact.
+
+### Pinned launch and evidence
+
+A run request selects an artifact ID and launches those exact executable and
+runtime files from an isolated, immutable runtime bundle or equivalent
+content-addressed store. Its working directory and configuration/data lookup
+must resolve to that same bundle, not to files that can change in the checkout
+or a mutable `latest` directory. Publishing a newer artifact must not replace
+files used by an active run. Existing process-ownership and safe-replacement
+rules continue to apply.
+
+Each run manifest and `events.jsonl` identifies the run ID, artifact ID,
+snapshot ID, executable hash, selected launch mode, and hashes/generation of
+runtime configuration and data. Runtime diagnostics used for acceptance identify
+the same run and artifact so the journal can demonstrate which build produced
+the observed behavior. An evidence check must reject or label as inconclusive
+any journal whose identity does not match the requested artifact. For a camera
+proximity-fade trial, for example, the run must identify the loaded fade
+settings and record bounded render-owner evidence of the computed distance and
+effective alpha for representative visuals; those records must come from the
+same pinned run.
+
+### Status and acceptance
+
+Status must show the current checkout generation separately from the active
+build snapshot and each published artifact. It must be possible to report
+“checkout changed; artifact A is stale relative to it but can still be run”
+without implying that artifact A contains newer edits. A run or evidence request
+that asks for the latest generation must wait for that generation's successful
+artifact; a request that names an older artifact may run it explicitly and must
+display that identity.
+
+Acceptance requires evidence that (1) editing files during a build leaves its
+snapshot and result unchanged, (2) the edit creates one follow-up generation,
+(3) each published artifact can be launched by its ID with matching runtime
+data, and (4) its journal and feature diagnostics identify that exact artifact
+and run. Build success alone does not satisfy runtime or user-visible
+acceptance.
+
 ## 6. Build and publish contract
 
 The loop invokes the canonical build-only command and captures its output and
@@ -791,6 +871,31 @@ Each event must include UTC time, event name, process/PID, run ID, build ID,
 role, result, and reason where applicable. Events describe transitions and
 bounded observations; they must not log every render frame.
 
+### Owner-level detail for diagnosing behavior
+
+For gameplay and collision work, the selected executable's journal should
+expose enough useful owner-level detail by default that an investigator can
+find the first divergence without needing the user to know a special debug
+command. Correlated records should make the failure chain readable in order:
+the actor and tick, the relevant input or movement request, collision backend
+and query result, accepted or rejected response, and resulting position,
+velocity, support, or recovery. Include the reason and the geometry/contact
+identity when those facts decided the outcome.
+
+Keep this detail bounded: retain decisive transitions and first failures, then
+rate-limit or summarize repeats. A generic “NPC fell” event is not enough when
+the owner can report the attempted correction, its direction, the solid or
+contact, and the resulting state. See
+[`docs/gold/20261107_161115-npc-collision-automatic-diagnosis.md`](../../gold/20261107_161115-npc-collision-automatic-diagnosis.md)
+for a live example where existing journal records exposed a downward NPC
+recovery and directly guided a promising correction.
+
+Finding a plausible cause in the journal and implementing a plausible fix are
+diagnosis and source evidence. They do not prove the fix. Report build identity,
+runtime evidence from that exact executable, and human acceptance separately.
+If the candidate fix is not yet exercised on the live behavior, say so plainly;
+keep the first-divergence evidence and continue from it.
+
 ## 12. AI-fix-live validation procedure
 
 For gameplay behavior, this is the only required proving loop:
@@ -924,6 +1029,11 @@ changes.
   already started with an older script keeps its old behavior and status
   schema until it is safely restarted. Status fields written by that daemon
   may therefore omit the newer fields or show them as null.
+- The current build pipeline does not yet fulfill section 5.3's immutable
+  snapshot contract: builds run against the checkout's shared build inputs,
+  and published executables do not include an immutable runtime-data bundle.
+  Build identity and journal evidence must not be described as snapshot-pinned
+  until the implementation and runtime checks establish that behavior.
 - A live status snapshot is evidence only for the daemon and executable that
   produced it. It cannot prove behavior from newer source until a fresh daemon
   and fresh executable are launched.
@@ -2569,7 +2679,12 @@ checkout, so agents using it share that build owner and can wait on one another.
 The published executable becomes the launch choice; a running game is not
 automatically replaced by the executable build.
 
-### Mode 2: separate agent lanes (available parallel workflow)
+### Mode 2: separate agent lanes (experimental; do not use)
+
+**Do not use parallel agent lanes as of `2026-11-07 10:59` (jorj).** Lane
+worktrees, lane daemons, lane promotion, and parallel builds are experimental.
+They need to be revisited later. Use one worktree and the canonical single
+dev-loop owner until the user explicitly re-enables lanes.
 
 Each agent gets a worktree with its own source, incremental object files and
 PCH, executable artifact, dev-loop, run state, command queue, and

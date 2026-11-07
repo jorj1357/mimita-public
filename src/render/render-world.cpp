@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 
 #include "camera.h"
+#include "config/camera-config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
 #include "debug/gl-debug.h"
@@ -52,9 +53,25 @@ void renderWorld(const World& world, const Camera& cam)
     MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world);
 
+    const GLboolean blendWas = glIsEnabled(GL_BLEND);
+    GLint blendSrcRgbWas = GL_ONE, blendDstRgbWas = GL_ZERO;
+    GLint blendSrcAlphaWas = GL_ONE, blendDstAlphaWas = GL_ZERO;
+    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgbWas);
+    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgbWas);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlphaWas);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlphaWas);
+    if (CamConfig::instance().data().proximityFadeEnabled) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
     renderWorldMeshBatches(world, cam);
 
     StreamedWorldLayer::instance().render(cam);
+
+    glBlendFuncSeparate((GLenum)blendSrcRgbWas, (GLenum)blendDstRgbWas,
+                        (GLenum)blendSrcAlphaWas, (GLenum)blendDstAlphaWas);
+    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
 
     if (DebugVis::normals())
     {

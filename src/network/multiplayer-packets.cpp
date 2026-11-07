@@ -1896,6 +1896,29 @@ std::string mpConnectionHealthText(const MultiplayerContext& ctx)
         return "Disconnected";
 
     const uint64_t now = nowMs();
+    const bool reconnecting = ctx.connectionState == ConnectionState::Reconnecting ||
+        ctx.connectionState == ConnectionState::ReconnectFailed;
+    const bool ready = ctx.connected && !ctx.waitingForMapLoad &&
+        ctx.clientMapReadySent && ctx.hasLocalServerPosition;
+    const bool loading = !reconnecting && !ready &&
+        ctx.connectionState != ConnectionState::HostClosed &&
+        ctx.connectionState != ConnectionState::Kicked &&
+        ctx.connectionState != ConnectionState::ServerCrashed;
+    if (loading)
+    {
+        const char* step = ctx.waitingForMapLoad ? "loading map" :
+            (!ctx.connected ? connectionStateName(ctx.connectionState) :
+             (!ctx.clientMapReadySent ? "synchronizing map" : "waiting for spawn"));
+        const uint64_t elapsedMs = ctx.connectStartMs && now >= ctx.connectStartMs
+            ? now - ctx.connectStartMs : 0;
+        char loadingText[192];
+        snprintf(loadingText, sizeof(loadingText),
+                 "Loading: %s  %.3f s (%llu ms)", step,
+                 (double)elapsedMs / 1000.0,
+                 (unsigned long long)elapsedMs);
+        return loadingText;
+    }
+
     char buf[192];
     switch (ctx.connectionState)
     {

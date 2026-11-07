@@ -5147,3 +5147,11 @@ both; denied capability; independent-property merge; same-property conflict;
 undo; sequence gap replay; snapshot fallback; disconnect recovery; and
 revision/hash agreement after reconnect. Use the multi-client dev-loop
 workflow, preserving each process's journal and exact build identity.
+
+## Loading and reconnecting presentation contract — 2026-11-07
+
+An initial join or game/map synchronization is **Loading**, with the current stage and total elapsed time visible to the client, until local readiness is reached. Initial loading, a slow step, or a watchdog wait must not be labeled Reconnecting. **Reconnecting** is reserved for an established session that the connection-health owner has judged lost. A reconnect transition must cite the previously established session and the observed loss condition.
+
+The client reports total loading elapsed time in seconds and milliseconds, the current step, and completed-step durations. Stage boundaries use the existing owners and monotonic clock. Each step uses its existing watchdog; when it expires, explain which step stalled and offer Retry or Cancel. Do not add an unrelated global timeout or restart the session merely because a stage is still loading.
+
+Measure loading from the user's action to client-ready and measure each owned stage separately. The product target is to minimize avoidable waiting across the repository; 0.01 seconds (10 ms) is an ideal measurement target, not a guarantee or universal gate. Optimize only after evidence identifies the waiting step. Preserve server/client run identity and inspect both per-process journals when diagnosing transitions.

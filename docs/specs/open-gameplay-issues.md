@@ -1,4 +1,75 @@
-﻿2026 11 07 1042 jojr 
+﻿2026 11 07 1333 jorj
+
+"how to amke it so native c++ doesnt have to be compiled
+and all things are modules
+
+would it be cool to ahve npc health/pos/target etc in the kernel as well?
+givinga s much power to the module as possible so that we dont have to do
+builds for
+idk adding things like struct npc health, target, going to  npc struct health, target, pos,  like thats fine no issue
+
+i agree thats good, safe gameplay tick is good bc not frame based i want to do it tck based ensure that is in spec 
+
+can u exaplin more how
+ignore parallel agent work
+we should foucs just on the modules can u explain how we can 
+
+we need to define the actual problems like in numbers and then how modules would work and how we can  solution the problems with numberrs that modules improve 
+
+e.g.
+npc behavior ; something that is kinda buried in .cpp
+so u need to edit like 5 min,
+wait to build, test, like 1-2 min
+trial/error,  like 5-10 min? 
+
+if we putin modules
+then
+edit like 5 min
+skip build
+trial/error at the same time as edit almost, 5-10 min
+
+but the issue is trial/error is 5-10 min beacues u ahve to start at edit again 
+
+if module works how i think it wokrs, then, 
+
+given npc behavior problem
+its in a module
+its
+problem, implement code chanegs to fix
+start the .exe
+test with events.jsonl for npc behavior
+error found
+edit code to fix error according to events.jsonl
+that code change happens live, no build, no restarting the .exe
+u just see the edit and see if the code change worksk live 
+
+how do we do that, for all systems in the game, live editing, without breaking or making the code more complex or doing thigns that  agents or contriubutors wont understand
+
+we shoul ddo spec writign first and iw ant to understand it directly first"
+
+wi think this is best
+we tried this before
+if this is true , live edits
+for antthing module wise
+thatis awesome 
+lets do that 
+
+2026 11 07 1203 jorj todo explain
+what id 
+do we need to ahve server go to like 10 hz 5 hz 
+when things are building?
+why does tha thappen
+how do w sto that
+
+how do we amke it so liek
+npcs update on their own thread
+well idk
+matbe just a solo mode
+i wnana have th at
+liek speedrun modes like
+put checkpoints downinto the map and u ahve to do those as fast as u can 
+
+2026 11 07 1042 jojr 
 
 npcs behavior im watchingthe ai pla as teh npc
 and the np

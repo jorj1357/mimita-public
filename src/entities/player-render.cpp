@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "config.h"
+#include "config/camera-config.h"
 #include "debug/debug-diag.h"
 #include "debug/debug-visuals.h"
 #include "physics/config.h"
@@ -205,6 +206,8 @@ void Player::renderCurrentPose(unsigned int shader,
         static GLint uCosmeticUvOffsetLoc = -1, uCosmeticUvScaleLoc = -1;
         static GLint uCosmeticUvRotationLoc = -1, uCosmeticBrightnessLoc = -1;
         static GLint uCosmeticOpacityLoc = -1;
+        static GLint uCameraFadeEnabledLoc = -1, uCameraFadeStartLoc = -1;
+        static GLint uCameraFadeEndLoc = -1, uCameraPositionLoc = -1;
         if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
         if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
         if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
@@ -228,9 +231,27 @@ void Player::renderCurrentPose(unsigned int shader,
             uCosmeticBrightnessLoc = glGetUniformLocation(shader, "uCosmeticBrightness");
         if (uCosmeticOpacityLoc < 0)
             uCosmeticOpacityLoc = glGetUniformLocation(shader, "uCosmeticOpacity");
+        if (uCameraFadeEnabledLoc < 0)
+            uCameraFadeEnabledLoc = glGetUniformLocation(shader, "uCameraProximityFadeEnabled");
+        if (uCameraFadeStartLoc < 0)
+            uCameraFadeStartLoc = glGetUniformLocation(shader, "uCameraProximityFadeStart");
+        if (uCameraFadeEndLoc < 0)
+            uCameraFadeEndLoc = glGetUniformLocation(shader, "uCameraProximityFadeEnd");
+        if (uCameraPositionLoc < 0)
+            uCameraPositionLoc = glGetUniformLocation(shader, "uCameraPos");
 
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
         MIMITA_GL_CALL(glUseProgram(shader));
+        const CameraConfigData& cameraConfig = CamConfig::instance().data();
+        const glm::vec3 cameraPosition = glm::vec3(glm::inverse(view)[3]);
+        if (uCameraFadeEnabledLoc >= 0)
+            glUniform1i(uCameraFadeEnabledLoc, cameraConfig.proximityFadeEnabled ? 1 : 0);
+        if (uCameraFadeStartLoc >= 0)
+            glUniform1f(uCameraFadeStartLoc, cameraConfig.proximityFadeStartDistanceMeters);
+        if (uCameraFadeEndLoc >= 0)
+            glUniform1f(uCameraFadeEndLoc, cameraConfig.proximityFadeEndDistanceMeters);
+        if (uCameraPositionLoc >= 0)
+            glUniform3f(uCameraPositionLoc, cameraPosition.x, cameraPosition.y, cameraPosition.z);
         glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
         glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
         if (uOutlinePassLoc >= 0) glUniform1i(uOutlinePassLoc, outlinePass ? 1 : 0);

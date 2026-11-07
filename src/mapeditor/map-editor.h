@@ -29,7 +29,8 @@ enum class EditorObjectKind {
     PayloadCartOrigin,
     MapGLBObject,
     ChunkPart,
-    ChunkConnector
+    ChunkConnector,
+    ChunkSpawn
 };
 
 struct EditorObjectRef {
@@ -95,7 +96,16 @@ public:
     std::string addChunk(const std::string& id = {});
     std::string addChunkPart(const std::string& kind = "box");
     bool addConnector(const std::string& side = "east");
+    std::string addChunkSpawn(const std::string& allowedActors = "any");
     void previewConnections();
+    void openContextMenu(const EditorObjectRef& target);
+    std::string createAttachment();
+    bool setAttachmentAnchored(bool anchored);
+    bool removeAttachmentForSelection();
+    bool setSelectedAttachmentProperties(float mass, float density,
+                                         float strength);
+    void beginRenameSelection();
+    bool setSelectedName(const std::string& name);
     std::string addVehicle(const std::string& templateId = "car_sedan",
                            const std::string& id = {});
     bool spawnSelectedVehicle();
@@ -111,6 +121,8 @@ public:
     bool setSelectedChunkPartMaterial(const std::string& material);
     bool setSelectedChunkPartUvScale(float u, float v);
     bool setSelectedSize(const glm::vec3& size);
+    bool setSelectedRotation(const glm::vec3& rotation);
+    bool setSelectedScale(const glm::vec3& scale);
     bool setSelectedChunkConnectorField(const std::string& field,
                                         const std::string& value);
     bool setSelectedRouteCheckpoint(bool checkpoint);
@@ -173,6 +185,13 @@ private:
         bool moved = false;
     };
 
+    struct ClickCandidate {
+        bool active = false;
+        EditorObjectRef ref;
+        glm::vec2 pressScreen{0.0f};
+        bool shift = false;
+    };
+
     bool mActive = false;
     bool mFreezeWorld = true;
     bool mPrevFreecam = false;
@@ -200,8 +219,11 @@ private:
     int mLastLayoutObjectCount = -1;
     UITextInputState mOutlinerSearch;
     bool mOutlinerSearchFocused = false;
+    UITextInputState mPropertyName;
     UITextInputState mPropertyPosition[3];
     UITextInputState mPropertySize[3];
+    UITextInputState mPropertyRotation[3];
+    UITextInputState mPropertyScale[3];
     UITextInputState mPropertyMaterial;
     UITextInputState mPropertyUvScale[2];
     bool mPropertyOwnerValid = false;
@@ -221,6 +243,13 @@ private:
     std::vector<std::string> mRedoLabels;
     std::vector<glm::vec3> mFramePositions;
     DragState mDrag;
+    ClickCandidate mClick;
+    bool mBoxSelecting = false;
+    glm::vec2 mBoxStartScreen{0.0f};
+    glm::vec2 mBoxEndScreen{0.0f};
+    bool mContextMenuOpen = false;
+    glm::vec2 mContextMenuPos{0.0f};
+    EditorObjectRef mContextMenuTarget;
     glm::vec3 mSnapTarget{0.0f};
     bool mSnapTargetValid = false;
     int mOutlinerOffset = 0;
@@ -231,6 +260,14 @@ private:
     void syncPropertyPositionFields();
     void applyPropertyPosition();
     void applyPropertySize();
+    void applyPropertyRotation();
+    void applyPropertyScale();
+    void syncPropertyTransformFields();
+    std::string objectName(const EditorObjectRef& ref) const;
+    bool setObjectRotation(const EditorObjectRef& ref, const glm::vec3& rotation);
+    bool setObjectScale(const EditorObjectRef& ref, const glm::vec3& scale);
+    void updateBoxSelection();
+    void finishBoxSelection();
     void syncChunkPropertyFields();
     void applyChunkMaterial();
     void applyChunkUvScale();
@@ -247,6 +284,7 @@ private:
     AuthoredChunk* chunkFor(const EditorObjectRef& ref) const;
     ChunkPart* chunkPartFor(const EditorObjectRef& ref) const;
     AuthoredChunkConnector* chunkConnectorFor(const EditorObjectRef& ref) const;
+    ChunkSpawnPoint* chunkSpawnFor(const EditorObjectRef& ref) const;
     static bool splitChunkRef(const std::string& id, std::string& chunkId,
                               std::string& itemId);
     bool ensureChunkPreview(const std::string& chunkId);

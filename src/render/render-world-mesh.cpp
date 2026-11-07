@@ -13,11 +13,13 @@
 #include "camera.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "map/map_common.h"
 #include "world/world.h"
 #include "render/lighting-config.h"
+#include "config/camera-config.h"
 #include "render/dynamic-light.h"
 #include "effects/zombie-tower-effects.h"
 #include "shadow/shadow-config.h"
@@ -161,6 +163,14 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
     setInt(shader, "uDebugView", DebugVis::shaderDebugView());
 
     setVec3(shader, "uTint", glm::vec3(1.0f));
+    const CameraConfigData& cameraConfig = CamConfig::instance().data();
+    setInt(shader, "uCameraProximityFadeEnabled",
+           cameraConfig.proximityFadeEnabled ? 1 : 0);
+    setFloat(shader, "uCameraProximityFadeStart",
+             cameraConfig.proximityFadeStartDistanceMeters);
+    setFloat(shader, "uCameraProximityFadeEnd",
+             cameraConfig.proximityFadeEndDistanceMeters);
+    setVec3(shader, "uCameraPos", cameraPos);
     setVec3(shader, "uLightDir", cfg.lightDir());
     setFloat(shader, "uAmbientStrength", cfg.ambientStrength());
     setFloat(shader, "uDiffuseStrength", cfg.diffuseStrength());
@@ -299,6 +309,14 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     auto& renderPerf = Perf::state().renderPerf;
     renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
     renderPerf.worldBackfaceCulling = gRenderBackfaces ? 0u : 1u;
+    const CameraConfigData& proximityConfig = CamConfig::instance().data();
+    const double proximityDiagNow = glfwGetTime();
+    static double proximityDiagLast = -1.0;
+    const bool captureProximityDiag = proximityConfig.proximityFadeEnabled &&
+        (proximityDiagLast < 0.0 || proximityDiagNow - proximityDiagLast >= 1.0);
+    float nearestVisibleBoundsDistance = std::numeric_limits<float>::infinity();
+    uint32_t visibleBoundsCount = 0;
+    uint32_t nearFadeCandidateCount = 0;
 
     // Destructible map nodes are hidden without touching the VBO. Build the
     // merged hidden vertex ranges once per frame and split affected batches.
@@ -338,6 +356,17 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
         if (!batchVisible(batch, viewProjection)) {
             renderPerf.worldSkippedBatches++;
             continue;
+        }
+        if (captureProximityDiag && batch.hasBounds) {
+            const glm::vec3 outside = glm::max(
+                glm::max(batch.boundsMin - cam.pos, cam.pos - batch.boundsMax),
+                glm::vec3(0.0f));
+            const float boundsDistance = glm::length(outside);
+            nearestVisibleBoundsDistance = std::min(
+                nearestVisibleBoundsDistance, boundsDistance);
+            ++visibleBoundsCount;
+            if (boundsDistance < proximityConfig.proximityFadeEndDistanceMeters)
+                ++nearFadeCandidateCount;
         }
         GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
         if (gWorldTextureDebug)
@@ -394,4 +423,34 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             glEnable(GL_CULL_FACE);
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
+    if (captureProximityDiag) {
+        proximityDiagLast = proximityDiagNow;
+        const bool hasVisibleBounds = std::isfinite(nearestVisibleBoundsDistance);
+        float expectedBoundsAlpha = 1.0f;
+        if (hasVisibleBounds) {
+            expectedBoundsAlpha = std::clamp(
+                (nearestVisibleBoundsDistance - proximityConfig.proximityFadeStartDistanceMeters) /
+                    (proximityConfig.proximityFadeEndDistanceMeters -
+                     proximityConfig.proximityFadeStartDistanceMeters),
+                0.0f, 1.0f);
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "camera.proximity_fade.world", "camera_proximity_fade",
+            "shared world shader submitted with proximity fade enabled", 0,
+            nlohmann::json{
+                {"enabled", true},
+                {"fade_start_meters", proximityConfig.proximityFadeStartDistanceMeters},
+                {"fade_end_meters", proximityConfig.proximityFadeEndDistanceMeters},
+                {"blend_enabled", glIsEnabled(GL_BLEND) == GL_TRUE},
+                {"world_draw_calls", drawCalls},
+                {"visible_bounds_count", visibleBoundsCount},
+                {"near_fade_candidate_count", nearFadeCandidateCount},
+                {"nearest_visible_bounds_distance_meters",
+                 hasVisibleBounds ? nlohmann::json(nearestVisibleBoundsDistance) : nlohmann::json(nullptr)},
+                {"expected_alpha_at_nearest_bounds",
+                 hasVisibleBounds ? nlohmann::json(expectedBoundsAlpha) : nlohmann::json(nullptr)},
+                {"distance_basis", "nearest_visible_batch_aabb_point"}},
+            __FILE__, __LINE__, __func__);
+    }
 }

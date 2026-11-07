@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 #include "camera.h"
 #include "config.h"
+#include "config/camera-config.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
 #include "avatar/cosmetic-system.h"
@@ -712,8 +713,48 @@ void renderPlayerInternal(
         }
     }
     const bool hideHead = isLocal && !cam.thirdPerson;
+    const GLboolean blendWas = glIsEnabled(GL_BLEND);
+    GLint blendSrcRgbWas = GL_ONE, blendDstRgbWas = GL_ZERO;
+    GLint blendSrcAlphaWas = GL_ONE, blendDstAlphaWas = GL_ZERO;
+    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgbWas);
+    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgbWas);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlphaWas);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlphaWas);
+    if (CamConfig::instance().data().proximityFadeEnabled) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
       player.render(gRenderer->shaderProgram, view, proj, hideHead, playerTint); }
+    if (isLocal && CamConfig::instance().data().proximityFadeEnabled) {
+        static double lastLocalFadeDiag = -1.0;
+        const double now = glfwGetTime();
+        if (lastLocalFadeDiag < 0.0 || now - lastLocalFadeDiag >= 1.0) {
+            lastLocalFadeDiag = now;
+            const CameraConfigData& fadeConfig = CamConfig::instance().data();
+            const float rootDistance = glm::length(player.pos - cam.pos);
+            const float rootAlpha = std::clamp(
+                (rootDistance - fadeConfig.proximityFadeStartDistanceMeters) /
+                    (fadeConfig.proximityFadeEndDistanceMeters -
+                     fadeConfig.proximityFadeStartDistanceMeters),
+                0.0f, 1.0f);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "camera.proximity_fade.local_actor", "camera_proximity_fade",
+                "local actor body submitted with shared proximity fade shader", 0,
+                nlohmann::json{
+                    {"enabled", true},
+                    {"fade_start_meters", fadeConfig.proximityFadeStartDistanceMeters},
+                    {"fade_end_meters", fadeConfig.proximityFadeEndDistanceMeters},
+                    {"distance_to_actor_root_meters", rootDistance},
+                    {"expected_alpha_at_actor_root", rootAlpha},
+                    {"distance_basis", "actor_root_approximation"}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+    glBlendFuncSeparate((GLenum)blendSrcRgbWas, (GLenum)blendDstRgbWas,
+                        (GLenum)blendSrcAlphaWas, (GLenum)blendDstAlphaWas);
+    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     auto drawTrail = [&]() {
         if (gPlayerVisualLayerFilter != 0) return;
         if (trail && !isLocal) appendPlayerTrail(player, cam, networkEntityId, *trail);

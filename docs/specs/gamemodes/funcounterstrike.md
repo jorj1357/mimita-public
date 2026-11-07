@@ -355,8 +355,11 @@ Terrorist NPCs:
 
 Counter-Terrorist NPCs:
 
-- Do not receive the Terrorists' round site choice. They use perception-gated
-  team reports and memory only.
+- Do not receive the Terrorists' round site choice. Below-elite profiles use
+  perception-gated team reports and memory only. An explicitly selected elite
+  profile may use the exact enemy-position knowledge defined by the NPC
+  behavior spec, including through walls, but still needs legal line of sight
+  to aim and fire.
 - With a report, they rush toward the reported enemy area at maximum useful
   speed, fight, and try to prevent a plant.
 - Without a report, they defend usable sites and rotate on new reports.
@@ -374,9 +377,13 @@ Fun Counter Strike NPC rush:
   120-tick minimum gap between shots, and a 0.1 chance for optional
   objective-route dashes. Dashes required to traverse a gap or large step remain
   available to preserve valid navigation. The shared dash ability still decides
-  whether a request can be accepted. The two profiles share the same objective,
-  formation, and movement behavior.
+  whether a request can be accepted. The profiles share objective and formation
+  behavior; their optional combat and movement technique use may differ.
 - NPCs may combine jump/bunny-hop and air-strafe movement to reduce travel time.
+  Elite profiles may also use the NPC behavior spec's context-aware dash,
+  down-dash, slope-contact chain, and anticipatory wall-avoidance rules. Easier
+  profiles may reduce optional technique use while retaining movement needed
+  for legal navigation.
 - Rush behavior is a Fun Counter Strike behavior-profile choice, not a change to
   human Counter Strike movement.
 - All timing is expressed and logged in fixed ticks; display seconds are derived.

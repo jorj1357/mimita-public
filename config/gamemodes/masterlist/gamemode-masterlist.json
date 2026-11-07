@@ -655,6 +655,13 @@
       "type": "object",
       "required": false,
       "fields": {
+        "gold_reward_popup": {
+          "type": "boolean",
+          "required": false,
+          "default": null,
+          "nullable": true,
+          "description": "null preserves shared reward-popup behavior; true or false controls gold-line visibility only."
+        },
         "damage_numbers": {
           "type": "boolean",
           "required": false,
@@ -1621,25 +1628,36 @@
     "competitive_no_headless": {
       "allowed": [
         "abusiveboy",
-        "abusivegirl",
-        "abusivegirl2",
         "abusivegirl3",
+        "angel",
         "boiledboy",
         "clown",
-        "jason"
-      ],
-      "denied": [
+        "demongirl",
+        "girllargev3",
         "headless",
-        "headlessgirl",
+        "headlessredux",
         "headlessgirl2",
         "headlessgirl3",
-        "headlessredux",
-        "headlessredux2",
-        "abusivegirlheadless",
-        "abusivegirlheadless2",
-        "abusivegirlheadless3",
-        "abusivegirlheadless4",
+        "jason",
         "jasonheadless"
+      ],
+      // 2026 11 07 1149 testing allowing headless
+      // bc its like just up to u 
+      // to make headless competitive 
+      // its doable
+      "denied": [
+        "monster*"
+        // "headless",
+        // "headlessgirl",
+        // "headlessgirl2",
+        // "headlessgirl3",
+        // "headlessredux",
+        // "headlessredux2",
+        // "abusivegirlheadless",
+        // "abusivegirlheadless2",
+        // "abusivegirlheadless3",
+        // "abusivegirlheadless4",
+        // "jasonheadless"
       ]
     }
   }

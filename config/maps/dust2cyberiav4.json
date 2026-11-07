@@ -27,6 +27,8 @@
       "visible_debug": true
     }
   ],
+  "boost_pads": [],
+  "chunks": [],
   "entities": [
     {
       "activationRadius": 0.0,
@@ -38,6 +40,7 @@
       "enabled": true,
       "healthMultiplier": 1.0,
       "id": "ct_spawnpoint",
+      "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
       "oneShot": false,
@@ -48,8 +51,11 @@
         122.62106323242188,
         2349.300048828125
       ],
+      "presetId": "",
       "radius": 1.0,
       "required": false,
+      "rewardGold": 0,
+      "rewardXp": 0,
       "size": [
         1.0,
         1.0,
@@ -72,6 +78,7 @@
       "enabled": true,
       "healthMultiplier": 1.0,
       "id": "t_spawnpoint",
+      "interactionId": "",
       "maxAlive": 1,
       "monsterPool": "default",
       "oneShot": false,
@@ -82,8 +89,11 @@
         28.294063568115234,
         2366.224853515625
       ],
+      "presetId": "",
       "radius": 1.0,
       "required": false,
+      "rewardGold": 0,
+      "rewardXp": 0,
       "size": [
         1.0,
         1.0,
@@ -97,5 +107,48 @@
       "yaw": 0.0
     }
   ],
-  "glb_objects": []
+  "generate_whole_world": false,
+  "generation_zones": [],
+  "glb_objects": [
+    {
+      "id": "node:310",
+      "name": "Cube.1157",
+      "position": [
+        -853.0,
+        -28.0,
+        2357.0
+      ]
+    },
+    {
+      "id": "node:309",
+      "name": "Cube.1156",
+      "position": [
+        -868.0,
+        -30.135000228881836,
+        2358.0
+      ]
+    },
+    {
+      "id": "node:134",
+      "name": "Cube.958",
+      "position": [
+        -773.7100219726563,
+        150.0,
+        2361.31201171875
+      ]
+    },
+    {
+      "id": "node:333",
+      "name": "Cube.1180",
+      "position": [
+        -715.140869140625,
+        147.9079132080078,
+        2359.076171875
+      ]
+    }
+  ],
+  "interactions": [],
+  "npc_presets": [],
+  "vehicles": [],
+  "weapon_overrides": []
 }

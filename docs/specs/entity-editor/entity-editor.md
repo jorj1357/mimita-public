@@ -782,6 +782,37 @@ consumes enabled authored spawnpoint entities in some gamemode-managed spawn
 paths, with optional team spawn-group tag matching. That consumption is
 incomplete and does not cover every spawn entry path.
 
+## Map Editor interaction overhaul (2026-11-07)
+
+- Viewport selection uses a click threshold: a press/release without 3-4 px
+  movement selects (or Shift-toggles) without starting a transform. Clicking a
+  different object takes priority over nearby gizmo handles.
+- Left-drag on empty viewport space is a selection box. Shift adds and Ctrl
+  toggles. Dragging an object still moves it.
+- F2 starts display-name editing for the selected outliner object. Stable IDs
+  do not change. `name` is stored in map JSON; search matches both name and ID.
+- The properties panel exposes editable position, rotation, and scale for
+  blocks, chunk parts, entities, vehicles, connectors, spawn points, bomb
+  sites, routes, and the payload cart where those values exist.
+- Outliner scrollbars support thumb drag and track paging in addition to wheel
+  scrolling.
+- The toolbar/panel layout is defined in `config/gui/map-editor.json`; button
+  rects and text scale come from that file rather than hardcoded positions.
+- `config/mapeditor.json` defines per-category overlay alpha for entities,
+  blocks, chunk parts, connectors, spawn points, GLB objects, and bomb sites.
+- Right-clicking an outliner object opens a context menu with Add Attachment,
+  Anchor, Unanchor, and Remove Attachment. Attachments are authored records with
+  stable IDs, parent/child references, anchored state, mass, density, and
+  material strength. Anchored children follow parent moves in the editor.
+- Selecting a chunk spawn point shows its allowed actor class
+  (`human`, `npc`, `any`), radius, owning chunk, and preview state.
+
+Each interaction writes a bounded `events.jsonl` event:
+`map-editor.pick`, `map-editor.click.action`, `map-editor.box_select`,
+`map-editor.rename.apply`, `map-editor.transform.apply`,
+`map-editor.scroll`/`ui.scroll.drag`, `map-editor.context_menu`,
+`map-editor.attachment.added`, and `map-editor.spawn.inspect`.
+
 ## Bomb-site zones
 
 Bomb sites are authored map data owned by `MapConfigRegistry` and persisted in

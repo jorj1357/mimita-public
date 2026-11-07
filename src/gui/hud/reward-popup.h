@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <string>
+#include <optional>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -57,6 +58,7 @@ struct ActiveRewardPopup
 {
     int xpAmount = 0;
     int goldAmount = 0;
+    bool showGold = true;
     int elapsedTicks = 0;
     uint8_t kind = 0;
     std::string name, confirmedAt;
@@ -67,7 +69,8 @@ class RewardPopupSystem
 public:
     static RewardPopupSystem& instance();
 
-    void pushProgression(uint8_t kind, const std::string& name, const std::string& confirmedAt);
+    void pushProgression(uint8_t kind, const std::string& name, const std::string& confirmedAt,
+                         std::optional<bool> showGoldOverride = std::nullopt);
     void tick();
     void render() const;
 

@@ -111,13 +111,15 @@ RewardPopupSystem& RewardPopupSystem::instance()
     return sys;
 }
 
-void RewardPopupSystem::pushProgression(uint8_t kind, const std::string& name, const std::string& confirmedAt)
+void RewardPopupSystem::pushProgression(uint8_t kind, const std::string& name, const std::string& confirmedAt,
+                                         std::optional<bool> showGoldOverride)
 {
     ActiveRewardPopup p;
     const auto& rewards = getDefaultRewards();
     p.kind = kind; p.name = name; p.confirmedAt = confirmedAt;
     p.xpAmount = kind == 0 ? rewards.playerKillXp : (kind == 1 ? rewards.npcKillXp : 0);
     p.goldAmount = kind == 0 ? rewards.playerKillGold : (kind == 1 ? rewards.npcKillGold : -1);
+    p.showGold = showGoldOverride.value_or(true);
     // Backend UTC ISO timestamp, displayed in the specification's exact format.
     if (confirmedAt.size() >= 19)
         p.confirmedAt = confirmedAt.substr(5,2) + "-" + confirmedAt.substr(8,2) + "-" +
@@ -187,7 +189,7 @@ void RewardPopupSystem::render() const
         }
 
         // Zero gold is a real NPC reward and must remain visible as +0 Gold.
-        if (p.goldAmount >= 0)
+        if (p.showGold && p.goldAmount >= 0)
         {
             draw(cfg.goldText, cfg.goldColor, p.goldAmount);
         }

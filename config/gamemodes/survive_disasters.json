@@ -4,7 +4,7 @@
 {
   "id": "survive_disasters",
   "name": "Survive the Disasters",
-  "description": "Random weapons, one life. Last actor standing wins.",
+  "description": "Survive crazy disasters like exploding ducks, acid volcanoes, and crazy monsters.",
   "team_names": [],
   "goal_value": 0,
   "weapon_set_id": 1,
@@ -77,6 +77,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "gold_reward_popup": null,
     "damage_numbers": null,
     "hit_effects": null,
     "world_impact_effects": null,

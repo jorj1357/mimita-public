@@ -180,7 +180,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -193,7 +193,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -206,7 +206,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -219,7 +219,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -232,7 +232,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -245,7 +245,7 @@
       "offset_x": 131,
       "offset_y": 1,
       "opacity": 0.9923501014709473,
-      "rotation": -73.14566040039062,
+      "rotation": -73.14566040039063,
       "saturation": -0.024480819702148438,
       "scale_x": 0.05761157348752022,
       "scale_y": 2.158437490463257,
@@ -325,7 +325,7 @@
     "torso_front": {
       "offset_x": -28,
       "offset_y": -31,
-      "rotation": 178.84329223632812,
+      "rotation": 178.84329223632813,
       "scale_x": 0.08044663816690445,
       "scale_y": 0.08044663816690445,
       "texture": "Screenshot 2026-08-21 203159.png"
@@ -357,6 +357,7 @@
   },
   "advanced_mode": true,
   "avatar_id": "local_dec812ee1ac269ec",
+  "body_transform_source": "legacy_overrides",
   "colors": {
     "head": [
       1.0,
@@ -419,19 +420,19 @@
       ],
       "slot": "",
       "texture": {
-        "brightness": 4.827110767364502,
+        "brightness": 2.4112608432769775,
         "color": [
-          2.555079221725464,
-          2.578029155731201,
-          2.0501832962036133
+          0.6119951009750366,
+          0.6242350339889526,
+          0.5263158082962036
         ],
-        "image": "hairsides.png",
-        "offset_x": -998.4700317382812,
-        "offset_y": -998.4700317382812,
+        "image": "Screenshot 2026-08-21 203108.png",
+        "offset_x": -711.1383056640625,
+        "offset_y": -843.3292236328125,
         "opacity": 1.0,
         "rotation": 51.4993782043457,
-        "scale_x": 1.3820452690124512,
-        "scale_y": 0.9253441095352173
+        "scale_x": 0.987760066986084,
+        "scale_y": 0.9268665313720703
       },
       "type": ""
     }
@@ -445,38 +446,5 @@
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-27T16:54:15Z",
-  "animation_profile": {
-    "version": 2,
-    "poseComposition": "layered",
-    "set": "general_set_1",
-    "include": [
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_idle_003.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_walk.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_sprint_001.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_jump_002.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_falling_001.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_landing_001.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_crouched.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_hurt_normal_001.json",
-      "config/animations/library/imported/mimita_sizing_6/mimita_sizing_6_dead.json"
-    ],
-    "states": {
-      "default": "mimita_sizing_6_idle_003",
-      "locomotion": {
-        "walk": "mimita_sizing_6_walk",
-        "fly": "mimita_sizing_6_walk",
-        "crawl": "mimita_sizing_6_walk",
-        "swim": "mimita_sizing_6_walk"
-      },
-      "run": "mimita_sizing_6_sprint_001",
-      "jump": "mimita_sizing_6_jump_002",
-      "fall": "mimita_sizing_6_falling_001",
-      "land": "mimita_sizing_6_landing_001",
-      "crouch": "mimita_sizing_6_crouched",
-      "crouchWalk": "mimita_sizing_6_crouch_walk_001",
-      "hurt": "mimita_sizing_6_hurt_normal_001",
-      "death": "mimita_sizing_6_dead"
-    }
-  }
+  "updated_at": "2026-11-07T11:52:23Z"
 }

@@ -11,7 +11,10 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
 #include <nlohmann/json.hpp>
+
+#include "procedural/procedural-world.h"
 
 #include "debug/structured-log.h"
 #include "config/collision-lod-config.h"
@@ -24,6 +27,16 @@
 #include "world/world.h"
 
 namespace {
+
+uint64_t serverCellHash(uint32_t seed, const std::string& version,
+                        const std::string& deps, int x, int y, int z)
+{
+    uint64_t h = MimitaProcedural::proceduralZoneChunkHash(seed, version, deps,
+                                                           x, y);
+    h ^= (uint64_t(uint32_t(z)) * 0xC2B2AE3D27D4EB4Full) + 0x9E3779B97F4A7C15ull;
+    h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ull;
+    return h ^ (h >> 27);
+}
 
 const glm::vec3 kCubePositions[8] = {
     {-0.5f, -0.5f, -0.5f}, {0.5f, -0.5f, -0.5f},
@@ -321,6 +334,90 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                                         "flat_floor_not_eligible", 0,
             {{"map", mapId}, {"enabled", world.connectedFlatGround},
              {"floor_z", floorZ}, {"chunks", config.chunks.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+
+        // Build the server-authoritative collision/spawn neighborhood from
+        // the same authored chunk templates the client streams. This is the
+        // fixed 60 Hz server's initial authoritative footprint; live streaming
+        // around moving actors is a separate follow-up.
+        std::vector<const AuthoredChunk*> candidates;
+        for (const AuthoredChunk& chunk : config.chunks)
+            if (chunk.enabled && !chunk.parts.empty())
+                candidates.push_back(&chunk);
+        const int radiusX = std::clamp(zone.streamRadius.x, 0, 10);
+        const int radiusY = std::clamp(zone.streamRadius.y, 0, 10);
+        size_t cells = 0;
+        size_t partsAdded = 0;
+        size_t spawnsAdded = 0;
+        std::string deps;
+        for (const std::string& dep : zone.chunkDependencies) {
+            if (!deps.empty()) deps += ",";
+            deps += dep;
+        }
+        for (int cy = -radiusY; cy <= radiusY; ++cy)
+            for (int cx = -radiusX; cx <= radiusX; ++cx) {
+                const glm::vec3 cellOrigin = zone.origin +
+                    glm::vec3((float)cx * zone.cellSize.x,
+                              (float)cy * zone.cellSize.y, 0.0f);
+                const uint64_t hash = serverCellHash(
+                    zone.seed, zone.generatorVersion, deps, cx, cy, 0);
+                const AuthoredChunk* chunk =
+                    candidates[hash % candidates.size()];
+                ++cells;
+                for (const ChunkPart& part : chunk->parts) {
+                    if (!part.collision) continue;
+                    MimitaNet::HeadlessWorld partWorld;
+                    buildBoxCollisionTriangles(partWorld.triangles,
+                                               glm::vec3(0.0f),
+                                               part.size * 0.5f);
+                    glm::mat4 rotation(1.0f);
+                    rotation = glm::rotate(rotation,
+                        glm::radians(part.rotationEuler.z),
+                        glm::vec3(0, 0, 1));
+                    rotation = glm::rotate(rotation,
+                        glm::radians(part.rotationEuler.y),
+                        glm::vec3(0, 1, 0));
+                    rotation = glm::rotate(rotation,
+                        glm::radians(part.rotationEuler.x),
+                        glm::vec3(1, 0, 0));
+                    const glm::mat4 transform = glm::translate(
+                        glm::mat4(1.0f), cellOrigin + part.position) * rotation;
+                    MimitaNet::appendHeadlessWorldInstance(
+                        world, partWorld, transform);
+                    ++partsAdded;
+                }
+                for (const ChunkSpawnPoint& spawn : chunk->spawnPoints) {
+                    if (!spawn.enabled) continue;
+                    MimitaNet::ServerSpawnPoint point;
+                    point.position = cellOrigin + spawn.position;
+                    point.tag = spawn.allowedActors;
+                    world.spawnPoints.push_back(std::move(point));
+                    ++spawnsAdded;
+                }
+            }
+        std::string descriptorIdentity = mapId + "|" +
+            std::to_string(zone.seed) + "|" + zone.generatorVersion + "|" +
+            zone.ruleSet + "|" + deps;
+        const uint64_t descriptorHash =
+            std::hash<std::string>{}(descriptorIdentity);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "world-stream.identity", mapId,
+            "server canonical world identity", 0,
+            {{"side", "server"}, {"map", mapId}, {"seed", zone.seed},
+             {"generator_version", zone.generatorVersion},
+             {"descriptor_hash", descriptorHash}},
+            __FILE__, __LINE__, __FUNCTION__);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "world-stream.server.cells", mapId,
+            "server built authoritative chunk collision and spawn anchors", 0,
+            {{"map", mapId}, {"cells", cells}, {"seed", zone.seed},
+             {"generator_version", zone.generatorVersion},
+             {"descriptor_hash", descriptorHash},
+             {"parts_added", partsAdded}, {"spawns_added", spawnsAdded},
+             {"radius", {radiusX, radiusY, 0}},
+             {"triangles", world.triangles.size()}},
             __FILE__, __LINE__, __FUNCTION__);
         break;
     }

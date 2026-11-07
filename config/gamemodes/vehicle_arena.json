@@ -4,7 +4,7 @@
 {
   "id": "vehicle_arena",
   "name": "Vehicle Arena",
-  "description": "Two cars, one ball, two goals. Drive, boost, jump, and score.",
+  "description": "fart league Two cars, one ball, two goals. Drive, boost, jump, and score.",
   "team_names": [
     "BLUE",
     "ORANGE"
@@ -115,6 +115,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "gold_reward_popup": null,
     "damage_numbers": true,
     "hit_effects": false,
     "world_impact_effects": null,

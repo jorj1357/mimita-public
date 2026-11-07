@@ -22,6 +22,7 @@ struct BombSite
     float radius = 4.0f;
     bool visibleDebug = false;
     bool hasPosition = false;    // false = not yet authored/verified
+    std::string name;            // display name; id stays stable
 };
 
 struct AuthoredChunkConnector
@@ -35,6 +36,9 @@ struct AuthoredChunkConnector
     // "<chunkId>/<connectorId>" and are stored on both endpoints.
     std::vector<std::string> links;
     glm::vec3 position{0.0f};
+    // Contact tolerance used when matching a neighbor connector.
+    float radius = 0.5f;
+    std::string name;
 };
 
 struct ChunkPart
@@ -55,6 +59,18 @@ struct ChunkPart
                             {0.0f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f}};
     bool collision = true;
     bool visible = true;
+    std::string name;
+};
+
+struct ChunkSpawnPoint
+{
+    std::string id;
+    std::string name;
+    glm::vec3 position{0.0f};
+    float radius = 0.5f;
+    // "human", "npc", or "any".
+    std::string allowedActors = "any";
+    bool enabled = true;
 };
 
 struct AuthoredChunk
@@ -66,8 +82,10 @@ struct AuthoredChunk
     glm::vec3 boundsMax{0.0f};
     std::vector<ChunkPart> parts;
     std::vector<AuthoredChunkConnector> connectors;
+    std::vector<ChunkSpawnPoint> spawnPoints;
     std::vector<std::string> tags;
     bool enabled = true;
+    std::string name;
 };
 
 struct GenerationZone
@@ -173,6 +191,7 @@ struct MapEntity
     std::string interactionId;
     int rewardGold = 0;
     int rewardXp = 0;
+    std::string name;            // display name; id stays stable
     // Runtime-only activation state, never serialized.
     int runtimeSpawned = 0;
     bool runtimeCleared = false;
@@ -191,6 +210,7 @@ struct AuthoredBlock
     std::string material;
     bool enabled = true;
     std::vector<std::string> tags;
+    std::string name;
 };
 
 // One authored vehicle placement. The template owns chassis/wheel/tuning data;
@@ -202,6 +222,7 @@ struct MapVehicleSpawn
     glm::vec3 position{0.0f};
     float yaw = 0.0f;
     bool enabled = true;
+    std::string name;
 };
 
 struct PayloadRoutePoint
@@ -218,6 +239,7 @@ struct PayloadRoutePoint
     bool final = false;
     // Extra clock time awarded once when this checkpoint is reached.
     float timeBonusSeconds = 0.0f;
+    std::string name;
 };
 
 // One authored-data problem found by validatePayloadAuthoring. Warnings keep the
@@ -317,6 +339,20 @@ struct BoostPadConfig
     bool enabled = true;
 };
 
+struct MapAttachment
+{
+    std::string id;
+    std::string name;
+    std::string parentKind;
+    std::string parentId;
+    std::string childKind;
+    std::string childId;
+    bool anchored = true;
+    float mass = 1.0f;
+    float density = 700.0f;
+    float materialStrength = 100.0f;
+};
+
 struct MapObjectiveConfig
 {
     std::string mapId;
@@ -326,6 +362,7 @@ struct MapObjectiveConfig
     std::vector<MapVehicleSpawn> vehicles;
     std::vector<MapGLBObjectOverride> glbObjects;
     std::vector<AuthoredChunk> chunks;
+    std::vector<MapAttachment> attachments;
     std::vector<GenerationZone> generationZones;
     std::vector<NpcPreset> npcPresets;
     std::vector<WorldWeaponOverride> weaponOverrides;
@@ -422,6 +459,8 @@ public:
 
     std::vector<AuthoredChunk>& chunksMutable() { return mCurrent.chunks; }
     const std::vector<AuthoredChunk>& chunks() const { return mCurrent.chunks; }
+    std::vector<MapAttachment>& attachmentsMutable() { return mCurrent.attachments; }
+    const std::vector<MapAttachment>& attachments() const { return mCurrent.attachments; }
     std::vector<GenerationZone>& generationZonesMutable() { return mCurrent.generationZones; }
     const std::vector<GenerationZone>& generationZones() const { return mCurrent.generationZones; }
     std::vector<NpcPreset>& npcPresetsMutable() { return mCurrent.npcPresets; }

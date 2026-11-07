@@ -126,6 +126,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "gold_reward_popup": null,
     "damage_numbers": false,
     "hit_effects": false,
     "world_impact_effects": true,

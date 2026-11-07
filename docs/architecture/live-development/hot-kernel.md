@@ -10,6 +10,17 @@
 
 # Hot kernel and hot gameplay
 
+## Current source alignment (2026-11-07)
+
+This file describes the **target architecture**, not the current set of tracked
+hot modules. The current source has a narrow `build_game_dll.py` target for
+effect-part and quick-hit debug-visual code; NPC behavior and the other gameplay
+systems remain in the normal EXE source path. Older examples and round notes in
+this architecture file are not proof that those module sources still exist in
+the checkout. Use
+[`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md) for
+the source-checked current inventory and the desired migration contract.
+
 ## Model
 
 ```text

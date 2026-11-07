@@ -63,7 +63,7 @@
     "viewmodel_back_per_shot": 0.2,
     "viewmodel_pitch_per_shot": 1.0,
     "viewmodel_yaw_per_shot": 0.5,
-    "viewmodel_roll_per_shot": -5.5,
+    "viewmodel_roll_per_shot": -0.5,
     "viewmodel_recovery_rate": 80.0,
     "viewmodel_ads_scale": 0.8,
     "arm_pitch_per_shot": -0.5,

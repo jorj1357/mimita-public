@@ -396,7 +396,7 @@
     },
     "44": {
       "name": "juggernaut horde",
-      "server_args": ["--mode", "jugger_horde", "--gamemode", "jugger_horde", "--no-npcs"],
+      "server_args": ["--mode", "jugger_horde", "--gamemode", "jugger_horde"],
       "client_args": [],
       "map": "dust2cyberiav4",
       "require_client_connection": true,
@@ -488,10 +488,10 @@
       "require_mode_start": true
     },
     "52": {
-      "name": "Connected World - editor-authored streaming",
-      "server_args": ["--mode", "connected_world", "--gamemode", "connected_world", "--no-npcs"],
+      "name": "Infinite World - Cramped",
+      "server_args": ["--mode", "connected_world", "--gamemode", "connected_world"],
       "client_args": [],
-      "map": "connected_world",
+      "map": "infinite_cramped",
       "require_client_connection": true,
       "require_mode_start": true
     }

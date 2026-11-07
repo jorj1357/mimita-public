@@ -21,7 +21,7 @@ struct MapEditorConfigData
     float outlinerTop = 112.0f;
     float outlinerBottomPadding = 32.0f;
     float rowHeight = 26.0f;
-    float propertiesHeight = 156.0f;
+    float propertiesHeight = 260.0f;
     float scrollbarWidth = 14.0f;
     float scrollbarInset = 6.0f;
     float handleLength = 12.0f;
@@ -29,6 +29,14 @@ struct MapEditorConfigData
     float handleRadius = 0.80f;
     float handleThickness = 0.48f;
     float blockWireAlpha = 0.5f;
+    // Per-category editor overlay opacity (0..1). Presentation only.
+    float entityAlpha = 0.85f;
+    float blockAlpha = 0.55f;
+    float chunkPartAlpha = 0.80f;
+    float connectorAlpha = 0.85f;
+    float spawnAlpha = 0.90f;
+    float glbAlpha = 0.55f;
+    float bombSiteAlpha = 0.55f;
     float focusMinDistance = 1.5f;
     float focusPadding = 1.35f;
     float cameraSpeedMultiplier = 1.0f;

@@ -17,6 +17,11 @@ context and do not block the current workflow.
 
 ## Current capability and mode 3 direction
 
+The desired module and source-save contract is defined in
+[`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md).
+This architecture document records the live/cold boundary and must be read
+with that source-checked specification.
+
 The mode 1/2 build workflow and C++ live reload are different things. The
 dev-loop watches compiler inputs, debounces saved changes, incrementally
 compiles and links, then publishes a new executable artifact. It preserves an

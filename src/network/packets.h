@@ -1380,6 +1380,10 @@ struct MapChangePacket
     uint32_t duelId = 0;
     uint32_t mapVersion = 0;
     char mapId[MAX_MAP_ID_BYTES];
+    // Canonical Infinite World identity. Zero for non-procedural maps.
+    uint32_t worldSeed = 0;
+    char generatorVersion[16] = {};
+    uint64_t descriptorHash = 0;
 };
 
 struct JoinRequestPacket

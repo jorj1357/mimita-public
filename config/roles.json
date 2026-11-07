@@ -372,9 +372,7 @@
       "team_id": "red",
       "actor_preset": "duel_standard",
       "health": 100,
-      "movement_preset": "source",
-      "avatar": "monstertest1",
-      "avatar_forced": true
+      "movement_preset": "source"
     },
     {
       "id": "duel_monster_test_blue",
@@ -383,9 +381,7 @@
       "team_id": "blue",
       "actor_preset": "duel_standard",
       "health": 100,
-      "movement_preset": "source",
-      "avatar": "monstertest1",
-      "avatar_forced": true
+      "movement_preset": "source"
     },
     {
       "id": "duel_monster_test_red_npc",
@@ -395,9 +391,7 @@
       "actor_preset": "duel_standard",
       "health": 100,
       "movement_preset": "source",
-      "behavior_profile": "balanced",
-      "avatar": "monstertest1",
-      "avatar_forced": true
+      "behavior_profile": "balanced"
     },
     {
       "id": "duel_monster_test_blue_npc",
@@ -407,9 +401,7 @@
       "actor_preset": "duel_standard",
       "health": 100,
       "movement_preset": "source",
-      "behavior_profile": "balanced",
-      "avatar": "monstertest1",
-      "avatar_forced": true
+      "behavior_profile": "balanced"
     },
     {
       "id": "payload_attacker",

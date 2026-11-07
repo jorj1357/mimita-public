@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <GLFW/glfw3.h>
+#include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -27,6 +28,7 @@
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
 #include "game/game-state.h"
+#include "gui/gui-layout.h"
 #include "gui/hud/chat-window.h"
 #include "gui/menus/pause-menu.h"
 #include "gui/ui-system.h"
@@ -356,7 +358,8 @@ bool MapEditor::splitChunkRef(const std::string& id, std::string& chunkId,
 AuthoredChunk* MapEditor::chunkFor(const EditorObjectRef& ref) const
 {
     if (ref.kind != EditorObjectKind::ChunkPart &&
-        ref.kind != EditorObjectKind::ChunkConnector)
+        ref.kind != EditorObjectKind::ChunkConnector &&
+        ref.kind != EditorObjectKind::ChunkSpawn)
         return nullptr;
     std::string chunkId;
     std::string itemId;
@@ -390,6 +393,19 @@ AuthoredChunkConnector* MapEditor::chunkConnectorFor(
     if (!chunk) return nullptr;
     for (AuthoredChunkConnector& connector : chunk->connectors)
         if (connector.id == connectorId) return &connector;
+    return nullptr;
+}
+
+ChunkSpawnPoint* MapEditor::chunkSpawnFor(const EditorObjectRef& ref) const
+{
+    if (ref.kind != EditorObjectKind::ChunkSpawn) return nullptr;
+    std::string chunkId;
+    std::string spawnId;
+    if (!splitChunkRef(ref.id, chunkId, spawnId)) return nullptr;
+    AuthoredChunk* chunk = chunkFor(ref);
+    if (!chunk) return nullptr;
+    for (ChunkSpawnPoint& spawn : chunk->spawnPoints)
+        if (spawn.id == spawnId) return &spawn;
     return nullptr;
 }
 
@@ -448,6 +464,11 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
             return mChunkPreviewOrigin + connector->position;
         return glm::vec3(0.0f);
     }
+    if (ref.kind == EditorObjectKind::ChunkSpawn) {
+        if (const ChunkSpawnPoint* spawn = chunkSpawnFor(ref))
+            return mChunkPreviewOrigin + spawn->position;
+        return glm::vec3(0.0f);
+    }
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
         return MapConfigRegistry::instance().payload().cartOrigin;
     if (ref.kind == EditorObjectKind::BombSite) {
@@ -477,6 +498,14 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
     if (ref.kind == EditorObjectKind::ChunkConnector) {
         if (AuthoredChunkConnector* connector = chunkConnectorFor(ref)) {
             connector->position = position - mChunkPreviewOrigin;
+            reg.markChanged();
+            refreshPreviewChunk();
+        }
+        return;
+    }
+    if (ref.kind == EditorObjectKind::ChunkSpawn) {
+        if (ChunkSpawnPoint* spawn = chunkSpawnFor(ref)) {
+            spawn->position = position - mChunkPreviewOrigin;
             reg.markChanged();
             refreshPreviewChunk();
         }
@@ -520,7 +549,16 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
     }
     if (ref.kind == EditorObjectKind::Block) {
         if (auto* block = reg.findBlockMutable(ref.id)) {
+            const glm::vec3 delta = position - block->position;
             block->position = position;
+            for (const MapAttachment& attachment : reg.attachments()) {
+                if (!attachment.anchored ||
+                    attachment.parentId != ref.id ||
+                    attachment.childKind != "block")
+                    continue;
+                if (auto* child = reg.findBlockMutable(attachment.childId))
+                    child->position += delta;
+            }
             reg.markChanged();
         }
         return;
@@ -830,6 +868,19 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
                     best = distance;
                     bestRef = {EditorObjectKind::ChunkConnector,
                                chunk.id + "/" + connector.id};
+                    found = true;
+                }
+            }
+            for (const auto& spawn : chunk.spawnPoints) {
+                if (!spawn.enabled) continue;
+                float distance = 0.0f;
+                if (raySphere(origin, direction,
+                              mChunkPreviewOrigin + spawn.position,
+                              std::max(0.4f, spawn.radius), distance) &&
+                    distance < best) {
+                    best = distance;
+                    bestRef = {EditorObjectKind::ChunkSpawn,
+                               chunk.id + "/" + spawn.id};
                     found = true;
                 }
             }
@@ -1188,6 +1239,7 @@ std::string MapEditor::kindName(EditorObjectKind kind)
         case EditorObjectKind::MapGLBObject: return "glb";
         case EditorObjectKind::ChunkPart: return "chunk_part";
         case EditorObjectKind::ChunkConnector: return "chunk_connector";
+        case EditorObjectKind::ChunkSpawn: return "chunk_spawn";
     }
     return "object";
 }
@@ -1207,6 +1259,121 @@ std::string MapEditor::describeSelection() const
         out += describeRef(mSelection[i]);
     }
     return out;
+}
+
+std::string MapEditor::objectName(const EditorObjectRef& ref) const
+{
+    if (const auto* entity = entityFor(ref)) return entity->name;
+    if (const auto* block = blockFor(ref)) return block->name;
+    if (const auto* vehicle = vehicleFor(ref)) return vehicle->name;
+    if (const auto* route = routeFor(ref)) return route->name;
+    if (ref.kind == EditorObjectKind::BombSite) {
+        if (const BombSite* site = MapConfigRegistry::instance().findSite(ref.id))
+            return site->name;
+    }
+    if (const auto* part = chunkPartFor(ref)) return part->name;
+    if (const auto* connector = chunkConnectorFor(ref)) return connector->name;
+    if (const auto* spawn = chunkSpawnFor(ref)) return spawn->name;
+    if (const auto* object = mapObjectFor(ref)) return object->name;
+    return {};
+}
+
+bool MapEditor::setSelectedName(const std::string& name)
+{
+    if (mSelection.empty()) {
+        notify("rename: select an object first");
+        return false;
+    }
+    const EditorObjectRef ref = mSelection.front();
+    const std::string oldName = objectName(ref);
+    bool changed = false;
+    if (auto* entity = MapConfigRegistry::instance().findEntityMutable(ref.id);
+        entity && ref.kind == EditorObjectKind::Entity) {
+        entity->name = name;
+        changed = true;
+    }
+    if (AuthoredBlock* block = MapConfigRegistry::instance().findBlockMutable(ref.id);
+        block && ref.kind == EditorObjectKind::Block) {
+        block->name = name;
+        changed = true;
+    }
+    if (MapVehicleSpawn* vehicle =
+            MapConfigRegistry::instance().findVehicleMutable(ref.id);
+        vehicle && ref.kind == EditorObjectKind::Vehicle) {
+        vehicle->name = name;
+        changed = true;
+    }
+    if (PayloadRoutePoint* route =
+            MapConfigRegistry::instance().findPayloadRoutePointMutable(ref.id);
+        route && ref.kind == EditorObjectKind::PayloadRoutePoint) {
+        route->name = name;
+        changed = true;
+    }
+    if (ref.kind == EditorObjectKind::BombSite) {
+        for (BombSite& site : MapConfigRegistry::instance().bombSitesMutable()) {
+            if (site.id != ref.id) continue;
+            site.name = name;
+            changed = true;
+            break;
+        }
+    }
+    if (ChunkPart* part = chunkPartFor(ref)) {
+        part->name = name;
+        changed = true;
+    }
+    if (AuthoredChunkConnector* connector = chunkConnectorFor(ref)) {
+        connector->name = name;
+        changed = true;
+    }
+    if (ChunkSpawnPoint* spawn = chunkSpawnFor(ref)) {
+        spawn->name = name;
+        changed = true;
+    }
+    if (ref.kind == EditorObjectKind::MapGLBObject) {
+        if (MapGLBObject* object = mapObjectFor(ref)) {
+            object->name = name;
+            MapConfigRegistry::instance().setGLBObjectOverride(
+                object->id, name, glm::vec3(object->transform[3]));
+            changed = true;
+        }
+    }
+    if (!changed) {
+        notify("rename: this object type has no editable name");
+        return false;
+    }
+    MapConfigRegistry::instance().markChanged();
+    mPropertyName.value = name;
+    mPropertyName.cursorPos = (int)mPropertyName.value.size();
+    mPropertyName.selectionStart = -1;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.rename.apply", ref.id, "object display name changed", 0,
+        {{"kind", kindName(ref.kind)}, {"id", ref.id},
+         {"old_name", oldName}, {"new_name", name},
+         {"revision", MapConfigRegistry::instance().revision()}},
+        __FILE__, __LINE__, __func__);
+    notify("renamed " + ref.id + " to \"" + name + "\"");
+    return true;
+}
+
+void MapEditor::beginRenameSelection()
+{
+    if (mSelection.empty()) {
+        notify("rename: select an object first");
+        return;
+    }
+    const EditorObjectRef ref = mSelection.front();
+    mPropertyName.value = objectName(ref);
+    mPropertyName.cursorPos = (int)mPropertyName.value.size();
+    mPropertyName.selectionStart = 0;
+    mPropertyName.focused = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.rename.begin", ref.id, "F2 started object rename", 0,
+        {{"kind", kindName(ref.kind)}, {"id", ref.id},
+         {"name", mPropertyName.value}},
+        __FILE__, __LINE__, __func__);
+    notify("rename " + ref.id + " and press Enter");
 }
 
 void MapEditor::copySelection()
@@ -1265,14 +1432,23 @@ void MapEditor::deleteSelection()
             payload.hasCartOrigin = false;
             MapConfigRegistry::instance().markChanged();
         } else if (ref.kind == EditorObjectKind::ChunkPart ||
-                   ref.kind == EditorObjectKind::ChunkConnector) {
+                   ref.kind == EditorObjectKind::ChunkConnector ||
+                   ref.kind == EditorObjectKind::ChunkSpawn) {
             std::string chunkId;
             std::string itemId;
             if (!splitChunkRef(ref.id, chunkId, itemId)) continue;
             for (AuthoredChunk& chunk :
                  MapConfigRegistry::instance().chunksMutable()) {
                 if (chunk.id != chunkId) continue;
-                if (ref.kind == EditorObjectKind::ChunkPart) {
+                if (ref.kind == EditorObjectKind::ChunkSpawn) {
+                    chunk.spawnPoints.erase(
+                        std::remove_if(chunk.spawnPoints.begin(),
+                                       chunk.spawnPoints.end(),
+                                       [&](const ChunkSpawnPoint& spawn) {
+                                           return spawn.id == itemId;
+                                       }),
+                        chunk.spawnPoints.end());
+                } else if (ref.kind == EditorObjectKind::ChunkPart) {
                     chunk.parts.erase(
                         std::remove_if(chunk.parts.begin(), chunk.parts.end(),
                                        [&](const ChunkPart& part) {
@@ -1450,11 +1626,11 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
         matches("cart_origin cart"))
         out.push_back({EditorObjectKind::PayloadCartOrigin, "cart_origin"});
     for (const auto& site : config.bombSites) {
-        if (matches(site.id + " bombsite site"))
+        if (matches(site.id + " " + site.name + " bombsite site"))
             out.push_back({EditorObjectKind::BombSite, site.id});
     }
     for (const auto& route : config.payload.route) {
-        if (matches(route.id + " route"))
+        if (matches(route.id + " " + route.name + " route"))
             out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
     }
     if (gpWorld) {
@@ -1465,31 +1641,40 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
     }
     for (const auto& entity : config.entities) {
         if (entity.enabled &&
-            matches(entity.id + " " + entity.type + " " + entity.tag + " entity"))
+            matches(entity.id + " " + entity.name + " " + entity.type + " " +
+                    entity.tag + " entity"))
             out.push_back({EditorObjectKind::Entity, entity.id});
     }
     for (const auto& block : config.blocks) {
-        if (block.enabled && matches(block.id + " block"))
+        if (block.enabled && matches(block.id + " " + block.name + " block"))
             out.push_back({EditorObjectKind::Block, block.id});
     }
     for (const auto& vehicle : config.vehicles) {
         if (vehicle.enabled &&
-            matches(vehicle.id + " " + vehicle.templateId + " vehicle car"))
+            matches(vehicle.id + " " + vehicle.name + " " + vehicle.templateId +
+                    " vehicle car"))
             out.push_back({EditorObjectKind::Vehicle, vehicle.id});
     }
     for (const auto& chunk : config.chunks) {
         if (!chunk.enabled) continue;
         for (const auto& part : chunk.parts) {
             const std::string id = chunk.id + "/" + part.id;
-            if (matches(id + " " + part.kind + " " + part.material +
-                        " chunk part primitive"))
+            if (matches(id + " " + part.name + " " + part.kind + " " +
+                        part.material + " chunk part primitive"))
                 out.push_back({EditorObjectKind::ChunkPart, id});
         }
         for (const auto& connector : chunk.connectors) {
             const std::string id = chunk.id + "/" + connector.id;
-            if (matches(id + " " + connector.side + " " + connector.role +
-                        " " + connector.orientation + " chunk connector"))
+            if (matches(id + " " + connector.name + " " + connector.side + " " +
+                        connector.role + " " + connector.orientation +
+                        " chunk connector"))
                 out.push_back({EditorObjectKind::ChunkConnector, id});
+        }
+        for (const auto& spawn : chunk.spawnPoints) {
+            const std::string id = chunk.id + "/" + spawn.id;
+            if (matches(id + " " + spawn.name + " " + spawn.allowedActors +
+                        " chunk spawn spawnpoint"))
+                out.push_back({EditorObjectKind::ChunkSpawn, id});
         }
     }
 }
@@ -1519,9 +1704,14 @@ bool MapEditor::wantsTextInput() const
 {
     if (!mActive) return false;
     if (mOutlinerSearchFocused) return true;
+    if (mPropertyName.focused) return true;
     for (const UITextInputState& field : mPropertyPosition)
         if (field.focused) return true;
     for (const UITextInputState& field : mPropertySize)
+        if (field.focused) return true;
+    for (const UITextInputState& field : mPropertyRotation)
+        if (field.focused) return true;
+    for (const UITextInputState& field : mPropertyScale)
         if (field.focused) return true;
     if (mPropertyMaterial.focused) return true;
     for (const UITextInputState& field : mPropertyUvScale)
@@ -1698,7 +1888,119 @@ bool MapEditor::setSelectedSize(const glm::vec3& size)
         "map-editor.object-resized", ref.id, "editor dimensions changed", 0,
         {{"object", ref.id}, {"size", {size.x, size.y, size.z}}},
         __FILE__, __LINE__, __func__);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.transform.apply", ref.id,
+        "editor scale applied", 0,
+        {{"kind", kindName(ref.kind)}, {"id", ref.id},
+         {"field", "scale"}, {"after", {size.x, size.y, size.z}},
+         {"source", "field"}},
+        __FILE__, __LINE__, __func__);
     notify("resized " + ref.id);
+    return true;
+}
+
+bool MapEditor::setSelectedRotation(const glm::vec3& rotation)
+{
+    if (mSelection.empty()) {
+        notify("select an object first");
+        return false;
+    }
+    if (!setObjectRotation(mSelection.front(), rotation)) {
+        notify("rotation is not editable for this object");
+        return false;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.transform.apply", mSelection.front().id,
+        "editor rotation applied", 0,
+        {{"kind", kindName(mSelection.front().kind)},
+         {"id", mSelection.front().id}, {"field", "rotation"},
+         {"after", {rotation.x, rotation.y, rotation.z}},
+         {"source", "field"}},
+        __FILE__, __LINE__, __func__);
+    notify("rotation applied");
+    return true;
+}
+
+bool MapEditor::setSelectedScale(const glm::vec3& scale)
+{
+    if (mSelection.empty()) {
+        notify("select an object first");
+        return false;
+    }
+    if (!setObjectScale(mSelection.front(), scale)) {
+        notify("scale is not editable for this object");
+        return false;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.transform.apply", mSelection.front().id,
+        "editor scale applied", 0,
+        {{"kind", kindName(mSelection.front().kind)},
+         {"id", mSelection.front().id}, {"field", "scale"},
+         {"after", {scale.x, scale.y, scale.z}}, {"source", "field"}},
+        __FILE__, __LINE__, __func__);
+    notify("scale applied");
+    return true;
+}
+
+bool MapEditor::setObjectRotation(const EditorObjectRef& ref,
+                                  const glm::vec3& rotation)
+{
+    if (!std::isfinite(rotation.x) || !std::isfinite(rotation.y) ||
+        !std::isfinite(rotation.z))
+        return false;
+    auto& reg = MapConfigRegistry::instance();
+    if (AuthoredBlock* block = reg.findBlockMutable(ref.id);
+        block && ref.kind == EditorObjectKind::Block) {
+        block->rotationEuler = rotation;
+    } else if (ChunkPart* part = chunkPartFor(ref)) {
+        part->rotationEuler = rotation;
+        refreshPreviewChunk();
+    } else if (MapEntity* entity = reg.findEntityMutable(ref.id);
+               entity && ref.kind == EditorObjectKind::Entity) {
+        entity->yaw = rotation.z;
+    } else if (MapVehicleSpawn* vehicle = reg.findVehicleMutable(ref.id);
+               vehicle && ref.kind == EditorObjectKind::Vehicle) {
+        vehicle->yaw = rotation.z;
+    } else if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
+        reg.payloadMutable().cartYaw = rotation.z;
+    } else {
+        return false;
+    }
+    reg.markChanged();
+    return true;
+}
+
+bool MapEditor::setObjectScale(const EditorObjectRef& ref,
+                               const glm::vec3& scale)
+{
+    if (!std::isfinite(scale.x) || !std::isfinite(scale.y) ||
+        !std::isfinite(scale.z) ||
+        glm::any(glm::lessThanEqual(scale, glm::vec3(0.01f))))
+        return false;
+    auto& reg = MapConfigRegistry::instance();
+    if (AuthoredBlock* block = reg.findBlockMutable(ref.id);
+        block && ref.kind == EditorObjectKind::Block) {
+        block->size = scale;
+    } else if (ChunkPart* part = chunkPartFor(ref)) {
+        part->size = scale;
+        refreshPreviewChunk();
+    } else if (MapEntity* entity = reg.findEntityMutable(ref.id);
+               entity && ref.kind == EditorObjectKind::Entity) {
+        entity->size = scale;
+    } else if (AuthoredChunkConnector* connector = chunkConnectorFor(ref)) {
+        connector->radius = std::max(0.01f, scale.x);
+    } else if (ChunkSpawnPoint* spawn = chunkSpawnFor(ref)) {
+        spawn->radius = std::max(0.01f, scale.x);
+    } else if (ref.kind == EditorObjectKind::BombSite) {
+        reg.setSiteRadius(ref.id, std::max(0.01f, scale.x));
+        return true;
+    } else {
+        return false;
+    }
+    reg.markChanged();
     return true;
 }
 
@@ -1746,6 +2048,13 @@ bool MapEditor::handleChar(unsigned int codepoint)
         mOutlinerScroll.scrollY = 0.0f;
         return true;
     }
+    if (mPropertyName.focused) {
+        UITextInputOptions options;
+        options.maxLength = 64;
+        options.submitOnEnter = false;
+        uiTextInputHandleChar(mPropertyName, codepoint, options);
+        return true;
+    }
     for (UITextInputState& field : mPropertyPosition) {
         if (!field.focused) continue;
         UITextInputOptions options;
@@ -1756,6 +2065,24 @@ bool MapEditor::handleChar(unsigned int codepoint)
         return true;
     }
     for (UITextInputState& field : mPropertySize) {
+        if (!field.focused) continue;
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleChar(field, codepoint, options);
+        return true;
+    }
+    for (UITextInputState& field : mPropertyRotation) {
+        if (!field.focused) continue;
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleChar(field, codepoint, options);
+        return true;
+    }
+    for (UITextInputState& field : mPropertyScale) {
         if (!field.focused) continue;
         UITextInputOptions options;
         options.maxLength = 24;
@@ -1801,6 +2128,23 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         mOutlinerScroll.scrollY = 0.0f;
         return true;
     }
+    if (mPropertyName.focused) {
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            mPropertyName.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 64;
+        options.submitOnEnter = false;
+        uiTextInputHandleKey(glfwGetCurrentContext(), mPropertyName, key, action,
+                             mods, options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            mPropertyName.focused = false;
+            setSelectedName(mPropertyName.value);
+        }
+        return true;
+    }
     for (UITextInputState& field : mPropertyPosition) {
         if (!field.focused) continue;
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
@@ -1833,6 +2177,44 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && action == GLFW_PRESS) {
             for (UITextInputState& other : mPropertySize) other.focused = false;
             applyPropertySize();
+        }
+        return true;
+    }
+    for (UITextInputState& field : mPropertyRotation) {
+        if (!field.focused) continue;
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            field.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+                             options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            for (UITextInputState& other : mPropertyRotation) other.focused = false;
+            applyPropertyRotation();
+        }
+        return true;
+    }
+    for (UITextInputState& field : mPropertyScale) {
+        if (!field.focused) continue;
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            field.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+                             options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
+            action == GLFW_PRESS) {
+            for (UITextInputState& other : mPropertyScale) other.focused = false;
+            applyPropertyScale();
         }
         return true;
     }
@@ -1880,8 +2262,11 @@ void MapEditor::syncPropertyPositionFields()
     if (mSelection.empty()) {
         if (mPropertyOwnerValid) {
             mPropertyOwnerValid = false;
+            mPropertyName.focused = false;
             for (UITextInputState& field : mPropertyPosition) field.focused = false;
             for (UITextInputState& field : mPropertySize) field.focused = false;
+            for (UITextInputState& field : mPropertyRotation) field.focused = false;
+            for (UITextInputState& field : mPropertyScale) field.focused = false;
             mPropertyMaterial.focused = false;
             for (UITextInputState& field : mPropertyUvScale) field.focused = false;
         }
@@ -1892,8 +2277,11 @@ void MapEditor::syncPropertyPositionFields()
     if (ownerChanged) {
         mPropertyOwner = ref;
         mPropertyOwnerValid = true;
+        mPropertyName.focused = false;
         for (UITextInputState& field : mPropertyPosition) field.focused = false;
         for (UITextInputState& field : mPropertySize) field.focused = false;
+        for (UITextInputState& field : mPropertyRotation) field.focused = false;
+        for (UITextInputState& field : mPropertyScale) field.focused = false;
     }
     if (!ownerChanged) {
         bool anyFocused = false;
@@ -1913,22 +2301,128 @@ void MapEditor::syncPropertyPositionFields()
             field.selectionStart = -1;
         }
     }
-    const AuthoredBlock* block = blockFor(ref);
-    const ChunkPart* part = chunkPartFor(ref);
-    if (block || part) {
-        const glm::vec3 size = block ? block->size : part->size;
-        for (int i = 0; i < 3; ++i) {
-            UITextInputState& field = mPropertySize[i];
-            if (field.focused) continue;
-            char value[32];
-            std::snprintf(value, sizeof(value), "%.3f", size[i]);
-            if (field.value != value) {
-                field.value = value;
-                field.cursorPos = (int)field.value.size();
-                field.selectionStart = -1;
+    syncPropertyTransformFields();
+}
+
+void MapEditor::syncPropertyTransformFields()
+{
+    if (mSelection.empty()) return;
+    const EditorObjectRef& ref = mSelection.front();
+    glm::vec3 rotation(0.0f);
+    glm::vec3 scale(1.0f);
+    bool haveRotation = false;
+    bool haveScale = false;
+    if (const AuthoredBlock* block = blockFor(ref)) {
+        rotation = block->rotationEuler;
+        scale = block->size;
+        haveRotation = true;
+        haveScale = true;
+    } else if (const ChunkPart* part = chunkPartFor(ref)) {
+        rotation = part->rotationEuler;
+        scale = part->size;
+        haveRotation = true;
+        haveScale = true;
+    } else if (const MapEntity* entity = entityFor(ref)) {
+        rotation.z = entity->yaw;
+        scale = entity->size;
+        haveRotation = true;
+        haveScale = true;
+    } else if (const MapVehicleSpawn* vehicle = vehicleFor(ref)) {
+        rotation.z = vehicle->yaw;
+        haveRotation = true;
+    } else if (const PayloadRoutePoint* route = routeFor(ref)) {
+        scale = glm::vec3(std::max(0.01f, route->radius));
+        haveScale = true;
+    } else if (ref.kind == EditorObjectKind::BombSite) {
+        if (const BombSite* site = MapConfigRegistry::instance().findSite(ref.id)) {
+            scale = glm::vec3(std::max(0.01f, site->radius));
+            haveScale = true;
+        }
+    } else if (const AuthoredChunkConnector* connector = chunkConnectorFor(ref)) {
+        scale = glm::vec3(std::max(0.01f, connector->radius));
+        haveScale = true;
+    } else if (const ChunkSpawnPoint* spawn = chunkSpawnFor(ref)) {
+        scale = glm::vec3(std::max(0.01f, spawn->radius));
+        haveScale = true;
+    } else if (ref.kind == EditorObjectKind::PayloadCartOrigin) {
+        rotation.z = MapConfigRegistry::instance().payload().cartYaw;
+        haveRotation = true;
+    } else if (const MapGLBObject* object = mapObjectFor(ref)) {
+        const glm::mat3 basis(object->transform);
+        scale = glm::vec3(glm::length(basis[0]), glm::length(basis[1]),
+                          glm::length(basis[2]));
+        glm::mat3 rotationBasis = basis;
+        for (int i = 0; i < 3; ++i)
+            if (scale[i] > 1e-5f) rotationBasis[i] /= scale[i];
+        rotation = glm::degrees(glm::eulerAngles(glm::quat_cast(rotationBasis)));
+        haveRotation = true;
+        haveScale = true;
+    }
+    if (!mPropertyName.focused) {
+        const std::string name = objectName(ref);
+        if (mPropertyName.value != name) {
+            mPropertyName.value = name;
+            mPropertyName.cursorPos = (int)name.size();
+            mPropertyName.selectionStart = -1;
+        }
+    }
+    for (int i = 0; i < 3; ++i) {
+        char value[32];
+        if (!mPropertyRotation[i].focused) {
+            std::snprintf(value, sizeof(value), "%.2f", rotation[i]);
+            if (haveRotation && mPropertyRotation[i].value != value) {
+                mPropertyRotation[i].value = value;
+                mPropertyRotation[i].cursorPos = (int)mPropertyRotation[i].value.size();
+                mPropertyRotation[i].selectionStart = -1;
+            }
+        }
+        if (!mPropertyScale[i].focused) {
+            std::snprintf(value, sizeof(value), "%.3f", scale[i]);
+            if (haveScale && mPropertyScale[i].value != value) {
+                mPropertyScale[i].value = value;
+                mPropertyScale[i].cursorPos = (int)mPropertyScale[i].value.size();
+                mPropertyScale[i].selectionStart = -1;
             }
         }
     }
+}
+
+void MapEditor::applyPropertyRotation()
+{
+    if (mSelection.empty()) return;
+    glm::vec3 rotation(0.0f);
+    try {
+        for (int i = 0; i < 3; ++i)
+            if (!mPropertyRotation[i].value.empty())
+                rotation[i] = std::stof(mPropertyRotation[i].value);
+    } catch (const std::exception&) {
+        notify("invalid rotation value");
+        return;
+    }
+    if (setObjectRotation(mSelection.front(), rotation))
+        notify("rotation applied");
+    else
+        notify("rotation is not editable for this object");
+    syncPropertyPositionFields();
+}
+
+void MapEditor::applyPropertyScale()
+{
+    if (mSelection.empty()) return;
+    glm::vec3 scale(1.0f);
+    try {
+        for (int i = 0; i < 3; ++i)
+            if (!mPropertyScale[i].value.empty())
+                scale[i] = std::stof(mPropertyScale[i].value);
+    } catch (const std::exception&) {
+        notify("invalid scale value");
+        return;
+    }
+    if (setObjectScale(mSelection.front(), scale))
+        notify("scale applied");
+    else
+        notify("scale is not editable for this object");
+    syncPropertyPositionFields();
 }
 
 void MapEditor::applyPropertyPosition()
@@ -2058,6 +2552,18 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     glfwGetCursorPos(window, &mMouseX, &mMouseY);
     const bool right = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (right && !mRightPrev) {
+        const int row = outlinerRowAt(mMouseX, mMouseY);
+        if (row >= 0) {
+            std::vector<EditorObjectRef> objects;
+            collectEditorObjects(objects);
+            if (row < (int)objects.size()) {
+                selectOnly(objects[(size_t)row]);
+                openContextMenu(objects[(size_t)row]);
+                mRightPrev = right;
+                return;
+            }
+        }
+        mContextMenuOpen = false;
         mLooking = true;
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         THE_CAMERA.firstMouse = true;
@@ -2124,33 +2630,73 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             return;
         }
     }
+    const glm::vec2 cursorNow((float)mMouseX, (float)mMouseY);
+    const bool shiftNow = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                          glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    const bool ctrlNow = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
     if (left && !mLeftPrev && mDrag.mode == DragMode::None) {
         EditorObjectRef handleRef;
         int axis = -1;
-        if (handleAtCursor(handleRef, axis)) {
+        if (!mSelection.empty() && handleAtCursor(handleRef, axis)) {
             beginDrag(handleRef, axis == 0 ? DragMode::AxisX :
                               axis == 1 ? DragMode::AxisY :
                               axis == 2 ? DragMode::AxisZ :
                               axis == 3 ? DragMode::ScaleX :
                               axis == 4 ? DragMode::ScaleY : DragMode::ScaleZ,
                       selectionCenter());
+            mClick.active = false;
         } else {
             EditorObjectRef hit;
             float distance = 0.0f;
-            const bool shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                               glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
             if (pickAtCursor(hit, distance)) {
-                if (shift) toggleSelection(hit);
+                if (shiftNow) toggleSelection(hit);
                 else if (!isSelected(hit)) selectOnly(hit);
-                if (!mSelection.empty())
-                    beginDrag(mSelection.front(), DragMode::ObjectPlane,
-                              selectionCenter());
-            } else if (!shift) {
-                clearSelection();
+                mClick.active = true;
+                mClick.ref = hit;
+                mClick.pressScreen = cursorNow;
+                mClick.shift = shiftNow;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "map-editor.pick", hit.id, "viewport object picked", 0,
+                    {{"kind", kindName(hit.kind)}, {"id", hit.id},
+                     {"distance", distance},
+                     {"selection_count", mSelection.size()},
+                     {"cursor", {cursorNow.x, cursorNow.y}}},
+                    __FILE__, __LINE__, __func__);
+            } else {
+                if (!shiftNow && !ctrlNow) clearSelection();
+                mClick.active = false;
+                mBoxSelecting = true;
+                mBoxStartScreen = cursorNow;
+                mBoxEndScreen = cursorNow;
             }
         }
-    } else if (!left && mLeftPrev && mDrag.mode != DragMode::None) {
-        endDrag(true);
+    } else if (left && mClick.active && mDrag.mode == DragMode::None) {
+        if (glm::length(cursorNow - mClick.pressScreen) >= 4.0f &&
+            !mSelection.empty()) {
+            beginDrag(mSelection.front(), DragMode::ObjectPlane,
+                      selectionCenter());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map-editor.click.action", mClick.ref.id,
+                "click exceeded drag threshold; transform started", 0,
+                {{"kind", kindName(mClick.ref.kind)}, {"id", mClick.ref.id},
+                 {"delta_pixels", glm::length(cursorNow - mClick.pressScreen)}},
+                __FILE__, __LINE__, __func__);
+            mClick.active = false;
+        }
+    } else if (left && mBoxSelecting) {
+        mBoxEndScreen = cursorNow;
+        updateBoxSelection();
+    }
+    if (!left && mLeftPrev) {
+        if (mDrag.mode != DragMode::None) {
+            endDrag(true);
+        } else if (mBoxSelecting) {
+            finishBoxSelection();
+        }
+        mClick.active = false;
     }
 
     if (left && mDrag.mode != DragMode::None)
@@ -2166,6 +2712,40 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         mHoverAxis = handleAtCursor(handleRef, axis) ? axis : -1;
     }
     mLeftPrev = left;
+}
+
+void MapEditor::updateBoxSelection()
+{
+    const float minX = std::min(mBoxStartScreen.x, mBoxEndScreen.x);
+    const float maxX = std::max(mBoxStartScreen.x, mBoxEndScreen.x);
+    const float minY = std::min(mBoxStartScreen.y, mBoxEndScreen.y);
+    const float maxY = std::max(mBoxStartScreen.y, mBoxEndScreen.y);
+    std::vector<EditorObjectRef> objects;
+    collectEditorObjects(objects);
+    mSelection.clear();
+    for (const EditorObjectRef& ref : objects) {
+        float sx = 0.0f;
+        float sy = 0.0f;
+        if (!DebugVis::projectToScreen(THE_CAMERA, objectPosition(ref), sx, sy))
+            continue;
+        if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY)
+            mSelection.push_back(ref);
+    }
+}
+
+void MapEditor::finishBoxSelection()
+{
+    updateBoxSelection();
+    mBoxSelecting = false;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.box_select", mapId(), "viewport box selection completed", 0,
+        {{"start", {mBoxStartScreen.x, mBoxStartScreen.y}},
+         {"end", {mBoxEndScreen.x, mBoxEndScreen.y}},
+         {"selected_count", mSelection.size()},
+         {"selected_ids", nlohmann::json::array()}},
+        __FILE__, __LINE__, __func__);
+    notify("box selected " + std::to_string(mSelection.size()) + " object(s)");
 }
 
 void MapEditor::selectAllEdit()
@@ -2199,6 +2779,7 @@ bool MapEditor::handleKey(int key, int mods, int action)
     if (ctrl && key == GLFW_KEY_Z) { shift ? redo() : undo(); return true; }
     if (ctrl && key == GLFW_KEY_Y) { redo(); return true; }
     if (ctrl && key == GLFW_KEY_A) { selectAllEdit(); return true; }
+    if (key == GLFW_KEY_F2) { beginRenameSelection(); return true; }
     if (key == GLFW_KEY_DELETE || key == GLFW_KEY_X) { deleteSelection(); return true; }
     if (key == GLFW_KEY_V && !ctrl) {
         mVertexSnap = !mVertexSnap;
@@ -2260,6 +2841,10 @@ void MapEditor::focusSelection()
 
 void MapEditor::handleEscape()
 {
+    if (mContextMenuOpen) {
+        mContextMenuOpen = false;
+        return;
+    }
     if (mDrag.mode != DragMode::None) {
         endDrag(false);
         notify("drag cancelled");
@@ -2367,8 +2952,16 @@ std::string MapEditor::addBlock(const std::string& id)
 std::string MapEditor::addChunk(const std::string& id)
 {
     MapConfigRegistry& registry = MapConfigRegistry::instance();
-    const std::string created = id.empty()
-        ? "chunk" + std::to_string(registry.chunks().size() + 1) : id;
+    std::string created = id;
+    if (created.empty()) {
+        size_t next = registry.chunks().size() + 1;
+        do {
+            created = "chunk" + std::to_string(next++);
+        } while (std::any_of(registry.chunks().begin(), registry.chunks().end(),
+                             [&](const AuthoredChunk& chunk) {
+                                 return chunk.id == created;
+                             }));
+    }
     for (const AuthoredChunk& existing : registry.chunks())
         if (existing.id == created) {
             notify("chunk id already exists: " + created);
@@ -2401,6 +2994,11 @@ std::string MapEditor::addChunk(const std::string& id)
     registry.markChanged();
     previewChunk(created);
     selectOnly({EditorObjectKind::ChunkPart, created + "/floor"});
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk.added", created, "chunk added through map editor", 0,
+        {{"chunk", created}, {"parts", 1}, {"connectors", 4}, {"spawns", 0}},
+        __FILE__, __LINE__, __func__);
     notify("added chunk " + created);
     return created;
 }
@@ -2415,7 +3013,12 @@ std::string MapEditor::addChunkPart(const std::string& kind)
     for (AuthoredChunk& candidate : MapConfigRegistry::instance().chunksMutable())
         if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
     if (!chunk) return {};
-    const std::string id = kind + std::to_string(chunk->parts.size() + 1);
+    std::string id;
+    size_t next = chunk->parts.size() + 1;
+    do {
+        id = kind + std::to_string(next++);
+    } while (std::any_of(chunk->parts.begin(), chunk->parts.end(),
+                         [&](const ChunkPart& part) { return part.id == id; }));
     pushUndo("add chunk part");
     ChunkPart part;
     part.id = id;
@@ -2427,6 +3030,14 @@ std::string MapEditor::addChunkPart(const std::string& kind)
     MapConfigRegistry::instance().markChanged();
     selectOnly({EditorObjectKind::ChunkPart, chunk->id + "/" + id});
     refreshPreviewChunk();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-part.added", chunk->id,
+        "chunk part added through map editor", 0,
+        {{"chunk", chunk->id}, {"part", id}, {"kind", kind},
+         {"position", {part.position.x, part.position.y, part.position.z}},
+         {"size", {part.size.x, part.size.y, part.size.z}}},
+        __FILE__, __LINE__, __func__);
     notify("added " + id + " to " + chunk->id);
     return id;
 }
@@ -2447,7 +3058,13 @@ bool MapEditor::addConnector(const std::string& side)
     }
     pushUndo("add connector");
     AuthoredChunkConnector connector;
-    connector.id = side + std::to_string(chunk->connectors.size() + 1);
+    size_t next = chunk->connectors.size() + 1;
+    do {
+        connector.id = side + std::to_string(next++);
+    } while (std::any_of(chunk->connectors.begin(), chunk->connectors.end(),
+                         [&](const AuthoredChunkConnector& existing) {
+                             return existing.id == connector.id;
+                         }));
     connector.side = side;
     connector.role = "bidirectional";
     connector.orientation = "doorway";
@@ -2457,8 +3074,193 @@ bool MapEditor::addConnector(const std::string& side)
     chunk->connectors.push_back(connector);
     MapConfigRegistry::instance().markChanged();
     selectOnly({EditorObjectKind::ChunkConnector, chunk->id + "/" + connector.id});
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.connector.added", chunk->id,
+        "chunk connector added through map editor", 0,
+        {{"chunk", chunk->id}, {"connector", connector.id},
+         {"side", connector.side}, {"role", connector.role},
+         {"position", {connector.position.x, connector.position.y,
+                       connector.position.z}},
+         {"radius", connector.radius}},
+        __FILE__, __LINE__, __func__);
     notify("added connector " + connector.id);
     return true;
+}
+
+std::string MapEditor::addChunkSpawn(const std::string& allowedActors)
+{
+    if (!mChunkPreviewValid) {
+        notify("preview or select a chunk first");
+        return {};
+    }
+    AuthoredChunk* chunk = nullptr;
+    for (AuthoredChunk& candidate : MapConfigRegistry::instance().chunksMutable())
+        if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
+    if (!chunk) return {};
+    std::string id;
+    size_t next = chunk->spawnPoints.size() + 1;
+    do {
+        id = "spawn" + std::to_string(next++);
+    } while (std::any_of(chunk->spawnPoints.begin(), chunk->spawnPoints.end(),
+                         [&](const ChunkSpawnPoint& spawn) {
+                             return spawn.id == id;
+                         }));
+    pushUndo("add chunk spawn");
+    ChunkSpawnPoint spawn;
+    spawn.id = id;
+    spawn.position = glm::vec3(0.0f, 0.0f, 0.5f);
+    spawn.radius = 0.5f;
+    spawn.allowedActors =
+        (allowedActors == "human" || allowedActors == "npc") ? allowedActors
+                                                             : "any";
+    chunk->spawnPoints.push_back(spawn);
+    MapConfigRegistry::instance().markChanged();
+    selectOnly({EditorObjectKind::ChunkSpawn, chunk->id + "/" + id});
+    refreshPreviewChunk();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.chunk-spawn-added", chunk->id,
+        "chunk spawn anchor added", 0,
+        {{"chunk", chunk->id}, {"spawn", id},
+         {"allowed_actors", spawn.allowedActors},
+         {"position", {spawn.position.x, spawn.position.y, spawn.position.z}},
+         {"radius", spawn.radius}},
+        __FILE__, __LINE__, __func__);
+    notify("added spawn " + id + " to " + chunk->id);
+    return id;
+}
+
+void MapEditor::openContextMenu(const EditorObjectRef& target)
+{
+    mContextMenuTarget = target;
+    mContextMenuOpen = true;
+    mContextMenuPos = glm::vec2((float)mMouseX, (float)mMouseY);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.context_menu", target.id, "object context menu opened", 0,
+        {{"kind", kindName(target.kind)}, {"id", target.id},
+         {"cursor", {mContextMenuPos.x, mContextMenuPos.y}}},
+        __FILE__, __LINE__, __func__);
+}
+
+std::string MapEditor::createAttachment()
+{
+    if (mSelection.empty()) {
+        notify("attachment: select a parent object first");
+        return {};
+    }
+    const EditorObjectRef parent = mSelection.front();
+    const glm::vec3 parentPosition = objectPosition(parent);
+    const std::string childId = MapConfigRegistry::instance().createBlock(
+        parentPosition + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(1.0f));
+    if (childId.empty()) {
+        notify("attachment failed: could not create child block");
+        return {};
+    }
+    MapAttachment attachment;
+    attachment.id = "attachment" +
+        std::to_string(MapConfigRegistry::instance().attachments().size() + 1);
+    attachment.name = "Attachment";
+    attachment.parentKind = kindName(parent.kind);
+    attachment.parentId = parent.id;
+    attachment.childKind = "block";
+    attachment.childId = childId;
+    attachment.anchored = true;
+    MapConfigRegistry::instance().attachmentsMutable().push_back(attachment);
+    MapConfigRegistry::instance().markChanged();
+    selectOnly({EditorObjectKind::Block, childId});
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.attachment.added", attachment.id,
+        "anchored attachment added through context menu", 0,
+        {{"attachment", attachment.id},
+         {"parent_kind", attachment.parentKind},
+         {"parent_id", attachment.parentId},
+         {"child_kind", attachment.childKind},
+         {"child_id", attachment.childId},
+         {"anchored", attachment.anchored},
+         {"mass", attachment.mass},
+         {"density", attachment.density},
+         {"material_strength", attachment.materialStrength}},
+        __FILE__, __LINE__, __func__);
+    notify("added attachment " + childId + " under " + parent.id);
+    return childId;
+}
+
+bool MapEditor::setAttachmentAnchored(bool anchored)
+{
+    if (mSelection.empty()) return false;
+    const EditorObjectRef ref = mSelection.front();
+    bool changed = false;
+    for (MapAttachment& attachment :
+         MapConfigRegistry::instance().attachmentsMutable()) {
+        if (attachment.parentId != ref.id &&
+            attachment.childId != ref.id)
+            continue;
+        attachment.anchored = anchored;
+        changed = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.attachment.updated", attachment.id,
+            anchored ? "attachment anchored" : "attachment unanchored", 0,
+            {{"attachment", attachment.id},
+             {"parent_id", attachment.parentId},
+             {"child_id", attachment.childId},
+             {"anchored", anchored}},
+            __FILE__, __LINE__, __func__);
+    }
+    if (changed) MapConfigRegistry::instance().markChanged();
+    notify(changed ? (anchored ? "attached" : "detached")
+                   : "no attachment for this object");
+    return changed;
+}
+
+bool MapEditor::removeAttachmentForSelection()
+{
+    if (mSelection.empty()) return false;
+    const EditorObjectRef ref = mSelection.front();
+    auto& attachments = MapConfigRegistry::instance().attachmentsMutable();
+    const size_t before = attachments.size();
+    attachments.erase(
+        std::remove_if(attachments.begin(), attachments.end(),
+                       [&](const MapAttachment& attachment) {
+                           return attachment.parentId == ref.id ||
+                                  attachment.childId == ref.id;
+                       }),
+        attachments.end());
+    const bool changed = attachments.size() != before;
+    if (changed) {
+        MapConfigRegistry::instance().markChanged();
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.attachment.removed", ref.id,
+            "attachment removed through context menu", 0,
+            {{"object", ref.id}, {"removed", before - attachments.size()}},
+            __FILE__, __LINE__, __func__);
+        notify("removed attachment");
+    }
+    return changed;
+}
+
+bool MapEditor::setSelectedAttachmentProperties(float mass, float density,
+                                                float strength)
+{
+    if (mSelection.empty()) return false;
+    const EditorObjectRef ref = mSelection.front();
+    bool changed = false;
+    for (MapAttachment& attachment :
+         MapConfigRegistry::instance().attachmentsMutable()) {
+        if (attachment.childId != ref.id &&
+            attachment.parentId != ref.id)
+            continue;
+        attachment.mass = std::max(0.001f, mass);
+        attachment.density = std::max(0.001f, density);
+        attachment.materialStrength = std::max(0.001f, strength);
+        changed = true;
+    }
+    if (changed) MapConfigRegistry::instance().markChanged();
+    return changed;
 }
 
 void MapEditor::previewConnections()
@@ -2955,6 +3757,8 @@ bool MapEditor::selectKind(const std::string& kind)
         want = EditorObjectKind::ChunkPart;
     else if (normalized == "chunk_connector" || normalized == "connector")
         want = EditorObjectKind::ChunkConnector;
+    else if (normalized == "chunk_spawn" || normalized == "spawn")
+        want = EditorObjectKind::ChunkSpawn;
     else {
         notify("select_kind expects entity, block, vehicle, bombsite, route, cart, glb, part, connector, or all");
         return false;
@@ -2966,7 +3770,8 @@ bool MapEditor::selectKind(const std::string& kind)
         if (ref.kind == want) mSelection.push_back(ref);
     if (!mSelection.empty() &&
         (want == EditorObjectKind::ChunkPart ||
-         want == EditorObjectKind::ChunkConnector)) {
+         want == EditorObjectKind::ChunkConnector ||
+         want == EditorObjectKind::ChunkSpawn)) {
         std::string chunkId;
         std::string itemId;
         if (splitChunkRef(mSelection.front().id, chunkId, itemId))
@@ -3099,6 +3904,10 @@ void MapEditor::renderWorld(Camera& camera)
         if (cfg.labelMode == "hovered") return hovered;
         return isSelected(ref) || hovered;
     };
+    auto withAlpha = [](glm::vec4 color, float alpha) {
+        color.a *= alpha;
+        return color;
+    };
 
     for (const BombSite& site : config.bombSites) {
         if (!site.hasPosition) continue;
@@ -3109,7 +3918,8 @@ void MapEditor::renderWorld(Camera& camera)
         // disc plus an outline ring so its radius is readable from any angle.
         DebugVis::drawFilledCylinder(camera, site.position, glm::vec3(0, 0, 1),
             site.radius, 0.02f,
-            glm::vec4(color.r, color.g, color.b, selected ? 0.24f : 0.12f));
+            glm::vec4(color.r, color.g, color.b,
+                (selected ? 0.24f : 0.12f) * cfg.bombSiteAlpha));
         constexpr int kSegments = 48;
         glm::vec3 previous{0.0f};
         for (int i = 0; i <= kSegments; ++i) {
@@ -3172,8 +3982,9 @@ void MapEditor::renderWorld(Camera& camera)
             const bool hovered = mHoverValid && mHover.kind == EditorObjectKind::MapGLBObject &&
                                  mHover.id == object.id;
             const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
-                                             : hovered ? glm::vec4(0.4f, 1, 1, 1)
-                                                       : glm::vec4(0.45f, 0.8f, 0.45f, 1);
+                : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                          : withAlpha(glm::vec4(0.45f, 0.8f, 0.45f, 1),
+                                      cfg.glbAlpha);
             const glm::vec3 center = (object.boundsMin + object.boundsMax) * 0.5f;
             const glm::vec3 half = glm::max(
                 (object.boundsMax - object.boundsMin) * 0.5f, glm::vec3(0.05f));
@@ -3187,7 +3998,8 @@ void MapEditor::renderWorld(Camera& camera)
         if (!block.enabled) continue;
         const bool selected = isSelected({EditorObjectKind::Block, block.id});
         const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
-            : glm::vec4(0.3f, 0.85f, 1, cfg.blockWireAlpha);
+            : withAlpha(glm::vec4(0.3f, 0.85f, 1, cfg.blockWireAlpha),
+                        cfg.blockAlpha);
         drawOrientedBox(camera, block.position, block.size, block.rotationEuler, color);
         DebugVis::drawWorldLabel(block.position + glm::vec3(0, 0, block.size.z * 0.5f + 0.4f),
             block.id.c_str(), color);
@@ -3231,8 +4043,8 @@ void MapEditor::renderWorld(Camera& camera)
         const bool hovered = mHoverValid && mHover.kind == EditorObjectKind::Entity &&
                              mHover.id == entity.id;
         glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
-                                   : hovered ? glm::vec4(0.4f, 1, 1, 1)
-                                             : glm::vec4(0.2f, 0.8f, 1, 1);
+            : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                      : withAlpha(glm::vec4(0.2f, 0.8f, 1, 1), cfg.entityAlpha);
         const glm::vec3 half = glm::max(entity.size * 0.5f, glm::vec3(0.25f));
         DebugVis::drawWireBox(camera, entity.position, half, color);
         DebugVis::drawWorldLabel(entity.position + glm::vec3(0, 0, half.z + 0.4f),
@@ -3250,7 +4062,8 @@ void MapEditor::renderWorld(Camera& camera)
                                      mHover.id == ref.id;
                 const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
                     : hovered ? glm::vec4(0.4f, 1, 1, 1)
-                              : glm::vec4(0.55f, 0.85f, 1.0f, 0.8f);
+                              : withAlpha(glm::vec4(0.55f, 0.85f, 1.0f, 0.8f),
+                                          cfg.chunkPartAlpha);
                 drawOrientedBox(camera, mChunkPreviewOrigin + part.position,
                                 part.size, part.rotationEuler, color);
                 if (showLabel(ref, hovered))
@@ -3267,7 +4080,8 @@ void MapEditor::renderWorld(Camera& camera)
                                      mHover.id == ref.id;
                 const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
                     : hovered ? glm::vec4(0.4f, 1, 1, 1)
-                              : glm::vec4(1.0f, 0.55f, 0.2f, 1);
+                              : withAlpha(glm::vec4(1.0f, 0.55f, 0.2f, 1),
+                                          cfg.connectorAlpha);
                 const glm::vec3 center = mChunkPreviewOrigin + connector.position;
                 glm::vec3 direction(1, 0, 0);
                 if (connector.side == "west") direction = {-1, 0, 0};
@@ -3283,6 +4097,27 @@ void MapEditor::renderWorld(Camera& camera)
                         center + glm::vec3(0, 0, 0.5f),
                         ("CONNECTOR " + connector.id + " " + connector.side)
                             .c_str(),
+                        color);
+            }
+            for (const auto& spawn : chunk.spawnPoints) {
+                if (!spawn.enabled) continue;
+                const EditorObjectRef ref{EditorObjectKind::ChunkSpawn,
+                                          chunk.id + "/" + spawn.id};
+                const bool selected = isSelected(ref);
+                const bool hovered = mHoverValid && mHover.kind == ref.kind &&
+                                     mHover.id == ref.id;
+                const glm::vec4 color = selected ? glm::vec4(1, 0.9f, 0.2f, 1)
+                    : hovered ? glm::vec4(0.4f, 1, 1, 1)
+                              : withAlpha(glm::vec4(0.35f, 1.0f, 0.55f, 1),
+                                          cfg.spawnAlpha);
+                const glm::vec3 center = mChunkPreviewOrigin + spawn.position;
+                DebugVis::drawWireSphere(camera, center, spawn.radius, color);
+                DebugVis::drawLine(camera, center,
+                                   center + glm::vec3(0, 0, 1.2f), color);
+                if (showLabel(ref, hovered))
+                    DebugVis::drawWorldLabel(
+                        center + glm::vec3(0, 0, spawn.radius + 0.4f),
+                        ("SPAWN " + spawn.id + " " + spawn.allowedActors).c_str(),
                         color);
             }
         }
@@ -3343,22 +4178,49 @@ void MapEditor::renderUI(GLFWwindow* window)
 
     const glm::vec4 actionColor(0.16f, 0.25f, 0.34f, 0.94f);
     const char* actions[] = {"Add Block", "Add Chunk", "Add Connector",
-                             "Preview Connections", "Save", "Reload"};
-    const float widths[] = {100.0f, 100.0f, 115.0f, 155.0f, 70.0f, 70.0f};
-    float actionX = 16.0f;
-    for (int i = 0; i < 6; ++i) {
-        if (uiButton(window, actions[i], {actionX, 124.0f, widths[i], 36.0f},
-                     actionColor, actions[i]).clicked) {
+                             "Add Spawn", "Preview Connections", "Save",
+                             "Reload"};
+    const char* actionIds[] = {"map-editor.add-block", "map-editor.add-chunk",
+                               "map-editor.add-connector",
+                               "map-editor.add-spawn",
+                               "map-editor.preview-connections",
+                               "map-editor.save", "map-editor.reload"};
+    GuiLayout& layout =
+        GuiLayoutManager::instance().getLayout("config/gui/map-editor.json");
+    static bool layoutLogged = false;
+    if (!layoutLogged && !layout.elementIds().empty()) {
+        layoutLogged = true;
+        nlohmann::json rects = nlohmann::json::array();
+        for (const char* id : actionIds) {
+            const UIRect r = layout.getRect(id, {0, 0, 0, 0});
+            rects.push_back({{"id", id}, {"x", r.x}, {"y", r.y},
+                             {"w", r.w}, {"h", r.h}});
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Gui, StructuredLevel::Important,
+            "map-editor.gui.layout", "config/gui/map-editor.json",
+            "map editor toolbar layout loaded from JSON", 0,
+            {{"path", "config/gui/map-editor.json"},
+             {"elements", layout.elementIds().size()},
+             {"toolbar", rects}},
+            __FILE__, __LINE__, __func__);
+    }
+    for (int i = 0; i < 7; ++i) {
+        const UIRect fallback{16.0f + i * 96.0f, 124.0f, 90.0f, 36.0f};
+        const UIRect rect = layout.getRect(actionIds[i], fallback);
+        if (uiButton(window, actions[i],
+                     {rect.x, rect.y, rect.w, rect.h}, actionColor,
+                     actions[i]).clicked) {
             switch (i) {
             case 0: if (mChunkPreviewValid) addChunkPart(); else addBlock(); break;
             case 1: addChunk(); break;
             case 2: addConnector(); break;
-            case 3: previewConnections(); break;
-            case 4: save(); break;
-            case 5: reload(); break;
+            case 3: addChunkSpawn(); break;
+            case 4: previewConnections(); break;
+            case 5: save(); break;
+            case 6: reload(); break;
             }
         }
-        actionX += widths[i] + 3.0f;
     }
 
     std::vector<EditorObjectRef> objects;
@@ -3439,6 +4301,9 @@ void MapEditor::renderUI(GLFWwindow* window)
                 case EditorObjectKind::Block: color = {0.4f, 0.8f, 1, 1}; break;
                 case EditorObjectKind::Vehicle: color = {1, 0.65f, 0.25f, 1}; break;
                 case EditorObjectKind::Entity: color = {0.7f, 0.8f, 1, 1}; break;
+                case EditorObjectKind::ChunkPart: color = {0.55f, 0.85f, 1, 1}; break;
+                case EditorObjectKind::ChunkConnector: color = {1.0f, 0.65f, 0.2f, 1}; break;
+                case EditorObjectKind::ChunkSpawn: color = {0.35f, 1.0f, 0.55f, 1}; break;
             }
         }
         char rowText[256];
@@ -3447,8 +4312,14 @@ void MapEditor::renderUI(GLFWwindow* window)
             std::snprintf(rowText, sizeof(rowText), "%s  %s",
                 ref.id.c_str(), object ? object->name.c_str() : "");
         } else {
-            std::snprintf(rowText, sizeof(rowText), "%s  %s",
-                kindName(ref.kind).c_str(), ref.id.c_str());
+            const std::string name = objectName(ref);
+            if (name.empty() || name == ref.id) {
+                std::snprintf(rowText, sizeof(rowText), "%s  %s",
+                    kindName(ref.kind).c_str(), ref.id.c_str());
+            } else {
+                std::snprintf(rowText, sizeof(rowText), "%s  %s (%s)",
+                    kindName(ref.kind).c_str(), name.c_str(), ref.id.c_str());
+            }
         }
         uiDrawText(rowText, px + 12.0f, rowY + 5.0f, cfg.rowScale, color);
     }
@@ -3469,36 +4340,36 @@ void MapEditor::renderUI(GLFWwindow* window)
         std::snprintf(line, sizeof(line), "SELECTED  %s", describeRef(ref).c_str());
         uiDrawText(line, px + 10.0f, propY + 8.0f, cfg.rowScale, text);
 
-        const glm::vec3 position = objectPosition(ref);
-        uiDrawText("pos", px + 12.0f, propY + 33.0f, cfg.rowScale, dim);
         const float fieldW = std::max(54.0f, (pw - 88.0f) / 3.0f);
-        for (int i = 0; i < 3; ++i) {
-            char id[48];
-            std::snprintf(id, sizeof(id), "mapeditor_pos_%d", i);
-            UITextInputOptions options;
-            options.maxLength = 24;
-            options.submitOnEnter = false;
-            options.characterFilter = isNumberChar;
-            UIRect field{px + 46.0f + i * (fieldW + 4.0f), propY + 28.0f, fieldW, 26.0f};
-            mPropertyPosition[i].focused = uiTextInputRenderScreen(
-                window, id, field, mPropertyPosition[i], options);
-        }
-        if (ref.kind == EditorObjectKind::Block ||
-            ref.kind == EditorObjectKind::ChunkPart) {
-            uiDrawText("size", px + 12.0f, propY + 62.0f, cfg.rowScale, dim);
+        const auto renderVec3Fields = [&](const char* label, const char* idPrefix,
+                                          UITextInputState (&fields)[3],
+                                          float rowY) {
+            uiDrawText(label, px + 12.0f, rowY + 5.0f, cfg.rowScale, dim);
             for (int i = 0; i < 3; ++i) {
                 char id[48];
-                std::snprintf(id, sizeof(id), "mapeditor_size_%d", i);
+                std::snprintf(id, sizeof(id), "%s_%d", idPrefix, i);
                 UITextInputOptions options;
                 options.maxLength = 24;
                 options.submitOnEnter = false;
                 options.characterFilter = isNumberChar;
-                UIRect field{px + 46.0f + i * (fieldW + 4.0f),
-                             propY + 57.0f, fieldW, 26.0f};
-                mPropertySize[i].focused = uiTextInputRenderScreen(
-                    window, id, field, mPropertySize[i], options);
+                UIRect field{px + 46.0f + i * (fieldW + 4.0f), rowY,
+                             fieldW, 26.0f};
+                fields[i].focused = uiTextInputRenderScreen(
+                    window, id, field, fields[i], options);
             }
+        };
+        uiDrawText("name", px + 12.0f, propY + 33.0f, cfg.rowScale, dim);
+        {
+            UITextInputOptions options;
+            options.maxLength = 64;
+            options.submitOnEnter = false;
+            UIRect field{px + 56.0f, propY + 28.0f, pw - 70.0f, 24.0f};
+            mPropertyName.focused = uiTextInputRenderScreen(
+                window, "mapeditor_name", field, mPropertyName, options);
         }
+        renderVec3Fields("pos", "mapeditor_pos", mPropertyPosition, propY + 56.0f);
+        renderVec3Fields("rot", "mapeditor_rot", mPropertyRotation, propY + 84.0f);
+        renderVec3Fields("scale", "mapeditor_scale", mPropertyScale, propY + 112.0f);
 
         glm::vec3 rotation(0.0f);
         glm::vec3 scale(1.0f);
@@ -3567,26 +4438,27 @@ void MapEditor::renderUI(GLFWwindow* window)
             details = "side=" + connector->side +
                 " role=" + connector->role +
                 " orientation=" + connector->orientation +
+                " radius=" + std::to_string(connector->radius) +
                 " tags=[" + tags + " ] links=[" + links + " ]";
+        } else if (const ChunkSpawnPoint* spawn = chunkSpawnFor(ref)) {
+            details = "allowed=" + spawn->allowedActors +
+                " radius=" + std::to_string(spawn->radius) +
+                " enabled=" + (spawn->enabled ? "1" : "0") +
+                " chunk=" + mChunkPreviewChunkId;
         }
-        std::snprintf(line, sizeof(line), "rot %.1f %.1f %.1f   scale %.2f %.2f %.2f",
-            rotation.x, rotation.y, rotation.z, scale.x, scale.y, scale.z);
-        if (ref.kind != EditorObjectKind::Block &&
-            ref.kind != EditorObjectKind::ChunkPart)
-            uiDrawText(line, px + 10.0f, propY + 64.0f, cfg.rowScale, dim);
-        uiDrawText(details.c_str(), px + 10.0f, propY + 88.0f, cfg.rowScale, dim);
+        uiDrawText(details.c_str(), px + 10.0f, propY + 145.0f, cfg.rowScale, dim);
         if (ref.kind == EditorObjectKind::ChunkPart) {
-            uiDrawText("material", px + 12.0f, propY + 108.0f, cfg.rowScale, dim);
+            uiDrawText("material", px + 12.0f, propY + 169.0f, cfg.rowScale, dim);
             UITextInputOptions materialOptions;
             materialOptions.maxLength = 64;
             materialOptions.submitOnEnter = false;
             materialOptions.placeholder = "default";
-            UIRect materialField{px + 84.0f, propY + 104.0f,
+            UIRect materialField{px + 84.0f, propY + 165.0f,
                                  pw - 100.0f, 24.0f};
             mPropertyMaterial.focused = uiTextInputRenderScreen(
                 window, "mapeditor_part_material", materialField,
                 mPropertyMaterial, materialOptions);
-            uiDrawText("uv", px + 12.0f, propY + 136.0f, cfg.rowScale, dim);
+            uiDrawText("uv", px + 12.0f, propY + 197.0f, cfg.rowScale, dim);
             for (int i = 0; i < 2; ++i) {
                 char id[48];
                 std::snprintf(id, sizeof(id), "mapeditor_part_uv_%d", i);
@@ -3594,15 +4466,53 @@ void MapEditor::renderUI(GLFWwindow* window)
                 options.maxLength = 24;
                 options.submitOnEnter = false;
                 options.characterFilter = isNumberChar;
-                UIRect field{px + 84.0f + i * 78.0f, propY + 132.0f, 70.0f,
+                UIRect field{px + 84.0f + i * 78.0f, propY + 193.0f, 70.0f,
                              24.0f};
                 mPropertyUvScale[i].focused = uiTextInputRenderScreen(
                     window, id, field, mPropertyUvScale[i], options);
             }
         } else {
-            uiDrawText("Enter applies | Ctrl+Z undo", px + 10.0f,
-                propY + 112.0f, cfg.rowScale, dim);
+            uiDrawText("F2 rename | Enter applies | Ctrl+Z undo", px + 10.0f,
+                propY + 172.0f, cfg.rowScale, dim);
         }
+    }
+
+    if (mContextMenuOpen) {
+        const float menuW = 210.0f;
+        const float rowH = 28.0f;
+        const float menuH = rowH * 5.0f + 10.0f;
+        const float mx = std::min(mContextMenuPos.x, w - menuW - 8.0f);
+        const float my = std::min(mContextMenuPos.y, h - menuH - 8.0f);
+        uiDrawRect({mx, my, menuW, menuH}, {0.05f, 0.06f, 0.09f, 0.96f},
+                   "map-editor-context-menu");
+        uiDrawRectOutline({mx, my, menuW, menuH}, {0.5f, 0.7f, 0.9f, 1.0f},
+                          "map-editor-context-menu-outline");
+        const char* items[] = {"Add Attachment", "Anchor", "Unanchor",
+                               "Remove Attachment", "Close"};
+        for (int i = 0; i < 5; ++i) {
+            if (uiButton(window, items[i],
+                         {mx + 5.0f, my + 5.0f + i * rowH,
+                          menuW - 10.0f, rowH - 2.0f},
+                         {0.14f, 0.20f, 0.28f, 0.95f}, items[i]).clicked) {
+                if (i == 0) createAttachment();
+                else if (i == 1) setAttachmentAnchored(true);
+                else if (i == 2) setAttachmentAnchored(false);
+                else if (i == 3) removeAttachmentForSelection();
+                mContextMenuOpen = false;
+                return;
+            }
+        }
+    }
+
+    if (mBoxSelecting) {
+        const float minX = std::min(mBoxStartScreen.x, mBoxEndScreen.x);
+        const float maxX = std::max(mBoxStartScreen.x, mBoxEndScreen.x);
+        const float minY = std::min(mBoxStartScreen.y, mBoxEndScreen.y);
+        const float maxY = std::max(mBoxStartScreen.y, mBoxEndScreen.y);
+        uiDrawRect({minX, minY, maxX - minX, maxY - minY},
+                   {0.25f, 0.55f, 1.0f, 0.12f}, "map-editor-box-select-fill");
+        uiDrawRectOutline({minX, minY, maxX - minX, maxY - minY},
+                          {0.4f, 0.8f, 1.0f, 1.0f}, "map-editor-box-select");
     }
 
     {

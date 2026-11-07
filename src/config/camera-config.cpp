@@ -4,6 +4,7 @@
 #include <fstream>
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 #include <nlohmann/json.hpp>
 
@@ -64,6 +65,21 @@ bool CamConfig::load(const std::string& path)
         next.orientationMode = root.value("orientationMode", next.orientationMode);
         if (next.orientationMode != "mouse" && next.orientationMode != "head_world")
             next.orientationMode = "mouse";
+        if (root.contains("proximityFade")) {
+            const auto& fade = root.at("proximityFade");
+            if (!fade.is_object())
+                throw std::runtime_error("proximityFade must be an object");
+            next.proximityFadeEnabled = fade.value("enabled", next.proximityFadeEnabled);
+            next.proximityFadeStartDistanceMeters = fade.value(
+                "startDistanceMeters", next.proximityFadeStartDistanceMeters);
+            next.proximityFadeEndDistanceMeters = fade.value(
+                "endDistanceMeters", next.proximityFadeEndDistanceMeters);
+            if (!std::isfinite(next.proximityFadeStartDistanceMeters) ||
+                !std::isfinite(next.proximityFadeEndDistanceMeters) ||
+                next.proximityFadeStartDistanceMeters < 0.0f ||
+                next.proximityFadeEndDistanceMeters <= next.proximityFadeStartDistanceMeters)
+                throw std::runtime_error("proximityFade distances must be finite, nonnegative, and endDistanceMeters > startDistanceMeters");
+        }
         if (root.contains("thirdPerson")) {
             const auto& tp = root["thirdPerson"];
 

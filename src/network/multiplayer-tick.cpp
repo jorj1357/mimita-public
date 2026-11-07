@@ -12,6 +12,7 @@
 #include "network/packets.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
+#include "gamemode/gamemode.h"
 #include "network/snapshot-chunks.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
@@ -45,6 +46,7 @@
 #include <chrono>
 #include <cmath>
 #include <iterator>
+#include <optional>
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
@@ -72,6 +74,14 @@ std::string chatUtcNow()
 constexpr uint32_t POST_GAP_RESYNC_TICKS = 30;
 // How long the post-gap resync stays armed after the gap is detected.
 constexpr uint64_t POST_GAP_RESYNC_WINDOW_MS = 1000;
+std::optional<bool> activeModeGoldPopupOverride()
+{
+    const auto& match = CommunityMatchClient::instance();
+    if (match.mode().empty()) return std::nullopt;
+    const auto& presentation = GamemodeRegistry::instance().get(match.mode()).presentation;
+    if (!presentation.hasGoldRewardPopup) return std::nullopt;
+    return presentation.goldRewardPopup;
+}
 
 void rejectUnexpectedServer(MultiplayerContext& ctx)
 {
@@ -1798,6 +1808,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.mapLoadAttempts = 0;
             ctx.lastMapLoadAttemptMs = 0;
             StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "world-stream.identity", std::string(mc->mapId),
+                "client received canonical world descriptor", ctx.tick,
+                {{"side", "client"},
+                 {"map", std::string(mc->mapId)},
+                 {"seed", mc->worldSeed},
+                 {"generator_version", std::string(mc->generatorVersion)},
+                 {"descriptor_hash", mc->descriptorHash}},
+                __FILE__, __LINE__, __FUNCTION__);
+            StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "network.map-required", "",
                 "server-required map changed", ctx.tick,
@@ -1834,7 +1854,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 const uint8_t rewardKind =
                     kill->victimEntityType == ENTITY_NPC ? 1 : 0;
                 RewardPopupSystem::instance().pushProgression(
-                    rewardKind, victimName, "");
+                    rewardKind, victimName, "", activeModeGoldPopupOverride());
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::General, StructuredLevel::Important,
                     "kill.reward.local", std::to_string(kill->eventId),
@@ -1860,7 +1880,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             if (event->kind <= 4)
                 RewardPopupSystem::instance().pushProgression(event->kind,
                     std::string(event->name, strnlen(event->name, sizeof(event->name))),
-                    std::string(event->confirmedAt, strnlen(event->confirmedAt, sizeof(event->confirmedAt))));
+                    std::string(event->confirmedAt, strnlen(event->confirmedAt, sizeof(event->confirmedAt))),
+                    activeModeGoldPopupOverride());
         }
         else if (header->type == PACKET_SERVER_NOTIFICATION &&
                  bytes >= (int)sizeof(ServerNotificationPacket))

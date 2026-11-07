@@ -131,6 +131,46 @@ void registerMapEditorCommands()
                 }
                 return;
             }
+            if (command == "rename") {
+                if (args.size() < 2) {
+                    Terminal::instance().addLog("[MAPEDIT] rename <name>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.setSelectedName(args[1]);
+                return;
+            }
+            if (command == "set_rotation" || command == "set_rot") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] set_rotation <x> <y> <z>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                try {
+                    editor.setSelectedRotation(glm::vec3(
+                        std::stof(args[1]), std::stof(args[2]),
+                        std::stof(args[3])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid rotation");
+                }
+                return;
+            }
+            if (command == "set_scale") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog("[MAPEDIT] set_scale <x> <y> <z>");
+                    return;
+                }
+                if (!editor.active() && !editor.setActive(true)) return;
+                try {
+                    editor.setSelectedScale(glm::vec3(
+                        std::stof(args[1]), std::stof(args[2]),
+                        std::stof(args[3])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid scale");
+                }
+                return;
+            }
             if (command == "nudge") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 if (args.size() < 4) {
@@ -287,6 +327,8 @@ void registerMapEditorCommands()
                     editor.addChunkPart(args.size() > 2 ? args[2] : "box");
                 } else if (kind == "connector") {
                     editor.addConnector(args.size() > 2 ? args[2] : "east");
+                } else if (kind == "chunk_spawn" || kind == "spawn") {
+                    editor.addChunkSpawn(args.size() > 2 ? args[2] : "any");
                 } else if (kind == "zone") {
                     if (args.size() < 3) {
                         Terminal::instance().addLog(
@@ -329,6 +371,43 @@ void registerMapEditorCommands()
             }
             if (command == "preview_connections") {
                 editor.previewConnections();
+                return;
+            }
+            if (command == "attach") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.createAttachment();
+                return;
+            }
+            if (command == "attachment_anchor") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 2) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] attachment_anchor <0|1>");
+                    return;
+                }
+                editor.setAttachmentAnchored(args[1] != "0");
+                return;
+            }
+            if (command == "attachment_remove") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                editor.removeAttachmentForSelection();
+                return;
+            }
+            if (command == "attachment_set") {
+                if (!editor.active() && !editor.setActive(true)) return;
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] attachment_set <mass> <density> <strength>");
+                    return;
+                }
+                try {
+                    editor.setSelectedAttachmentProperties(
+                        std::stof(args[1]), std::stof(args[2]),
+                        std::stof(args[3]));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] invalid attachment property");
+                }
                 return;
             }
             if (command == "spawn_vehicle") {

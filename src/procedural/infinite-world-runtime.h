@@ -14,6 +14,7 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include "gamemode/map-config.h"
 
@@ -29,6 +30,7 @@ public:
     void tick(const Player& player, World& world);
     void reset();
     void shutdown();
+    nlohmann::json statusJson() const;
 
     // Cache invalidation after an authored chunk-library edit.
     void invalidateModeChunks();

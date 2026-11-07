@@ -8,6 +8,21 @@
 
 # Hot kernel migration: next steps
 
+## Current source reconciliation (2026-11-07)
+
+This long-running document is a dated migration log, not a reliable current
+source inventory. Round entries marked implemented record historical work and
+must be rechecked before being treated as present behavior. In the current
+tracked tree, the general `src/hot-reload/modules/` sources described by many
+entries are absent; the remaining `build_game_dll.py` target covers only
+effect-part and quick-hit debug-visual code. The NPC behavior described in old
+rounds is currently owned by the ordinary `src/npc/` and server source paths.
+
+The current source-backed status and desired migration contract are maintained
+in [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md).
+Do not infer that a historical round is live from its changelog or self-test
+description alone.
+
 Status as of 2026-09-14 (generic dynamic lifecycle pass).
 See `docs/architecture/live-development/hot-kernel.md` for the architecture.
 See `docs/architecture/live-development/hot-cold-audit.md` for the current map.

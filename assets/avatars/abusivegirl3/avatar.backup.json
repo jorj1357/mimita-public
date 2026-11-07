@@ -138,6 +138,7 @@
   },
   "advanced_mode": true,
   "avatar_id": "local_cb3b330533cf64d6",
+  "body_transform_source": "model",
   "bodyparts": {
     "head": {
       "offset": [
@@ -324,12 +325,12 @@
   "created_at": "2026-07-10T18:44:15Z",
   "format_version": 1,
   "name": "abusivegirl3",
-  "player_model": "assets/entity/player/girl/mimita-girl-v7.glb",
+  "player_model": "assets/entity/player/girl/mimita-girl-v5.glb",
   "simple": {
     "face": "",
     "pants": "",
     "shirt": "",
     "skin": ""
   },
-  "updated_at": "2026-08-28T23:52:13Z"
+  "updated_at": "2026-11-07T11:53:02Z"
 }

@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 22
+Entries: 23
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -172,3 +172,10 @@ correction in the detail file.
 - Status: OPEN — observability and workflow risk; final build succeeded
 - Summary: A two-agent session changed 68 paths, including six widely included headers. The dev-loop's one-build-at-a-time policy queued rebuilds, source generation advanced 28→92, and the `03:08:24Z` artifact became stale before launch. The final `03:56:32Z` build succeeded in 221.8 seconds and was launched. A later failure was caused by only ~113 MB free disk space; freeing generated build cache/artifacts allowed the canonical build to publish `04:33:32Z`. This was not a lost build. Terminal windows seen during the session were Git scans from OpenCode/ChatGPT, not MiMITA build activity.
 - Detail: [build-superseded-stale-REG-2026-11-06.md](build-superseded-stale-REG-2026-11-06.md)
+
+## Entry 23 — Git index became unreadable after an interrupted work session
+
+- Recorded: 2026-11-07
+- Status: OPEN — abrupt PC shutdown during AI work is suspected by the user; cause is unconfirmed.
+- Summary: Git reported `bad signature 0x00000000` for `.git/index`, blocking status, staging, and commit operations. The index was preserved and rebuilt from `HEAD`; the user's suspected shutdown was not independently verified.
+- Detail: [git-index-corrupt-interrupted-session-REG-2026-11-07.md](git-index-corrupt-interrupted-session-REG-2026-11-07.md)

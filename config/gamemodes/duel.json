@@ -113,6 +113,7 @@
     "fatal_window": true
   },
   "presentation": {
+    "gold_reward_popup": null,
     "damage_numbers": true,
     "hit_effects": true,
     "world_impact_effects": true,
@@ -266,17 +267,17 @@
     "per_interval": 1
   },
   "avatar": {
-    "enabled": false,
+    "enabled": true,
     "forced": false,
     "allow_live_change": true,
     "name": "",
     "allowed": [],
     "denied": [],
-    "group": ""
+    "group": "competitive_no_headless"
   },
   "npc_avatar": {
-    "enabled": false,
-    "group": "",
+    "enabled": true,
+    "group": "competitive_no_headless",
     "spawn_policy": "reroll_each_spawn"
   }
 }

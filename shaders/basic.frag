@@ -103,6 +103,9 @@ uniform int uFogEnabled;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform vec3 uCameraPos;
+uniform int uCameraProximityFadeEnabled;
+uniform float uCameraProximityFadeStart;
+uniform float uCameraProximityFadeEnd;
 
 in vec4 vShadowCoord;
 
@@ -298,6 +301,17 @@ void main()
     } else if (uDebugView == 5) {
         FragColor = vec4(N * 0.5 + 0.5, 1.0);
     } else {
-        FragColor = vec4(lit, texel.a);
+        float proximityAlpha = 1.0;
+        if (uCameraProximityFadeEnabled != 0) {
+            float cameraDistance = length(vWorldPos - uCameraPos);
+            proximityAlpha = clamp(
+                (cameraDistance - uCameraProximityFadeStart) /
+                    (uCameraProximityFadeEnd - uCameraProximityFadeStart),
+                0.0, 1.0);
+        }
+        float finalAlpha = texel.a * proximityAlpha;
+        if (finalAlpha <= 0.0)
+            discard;
+        FragColor = vec4(lit, finalAlpha);
     }
 }

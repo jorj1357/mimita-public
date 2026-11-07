@@ -153,6 +153,8 @@ struct GamemodeTrailSettings {
 // player_outlines is opt-in during community matches. Actor-preset
 // presentation refines other settings where both exist.
 struct GamemodePresentation {
+    bool hasGoldRewardPopup = false;
+    bool goldRewardPopup = true;
     bool hasDamageNumbers = false;       bool damageNumbers = true;
     bool hasHitEffects = false;          bool hitEffects = true;
     bool hasWorldImpactEffects = false;  bool worldImpactEffects = true;

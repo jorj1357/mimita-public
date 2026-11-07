@@ -23,8 +23,10 @@ setup, and the decisions that remain open after the initial implementation.
   active, no mode NPC remains.
 - Standard Duel is the first variant to author. Both competitors use the
   `duel_standard` actor preset, a third-person camera, the existing `source`
-  movement preset, and the forced `monstertest1` avatar. RED and BLUE player
-  roles and NPC roles each preserve their team's identity.
+  movement preset, and may choose from the `competitive_no_headless` avatar
+  group. The mode rejects avatars outside that group, including `monster*`
+  names. RED and BLUE player roles and NPC roles each preserve their team's
+  identity.
 - The active map supplies the Duel spawn location. Both competitors use the
   same selected per-map Duel spawnpoint; they must not be assigned separate
   RED and BLUE spawnpoints. Keep the existing five-unit random XY offset around
@@ -55,9 +57,9 @@ setup, and the decisions that remain open after the initial implementation.
   with 10% alpha and lifetime. World hit spheres remain enabled at their full
   configured size and lifetime so they can be evaluated in play; their toggle
   and scales are editable in the mode JSON.
-- Duel forces every player and NPC to use `monstertest1`. The preset allow list
-  permits that avatar and has no denied patterns; each team role marks the
-  avatar forced so personal avatar selection cannot replace it.
+- Duel uses the `competitive_no_headless` masterlist avatar group for players
+  and NPCs. Players may select an allowed avatar; NPCs are selected from that
+  group. The `monster*` deny pattern rejects monster-prefixed avatar IDs.
 
 ## Rocket Launcher Duel variant
 
@@ -110,11 +112,16 @@ path.
 The standard preset is `duel_standard`, shared by the RED and BLUE player roles
 and the RED and BLUE NPC roles. Those roles are `duel_monster_test_red`,
 `duel_monster_test_blue`, `duel_monster_test_red_npc`, and
-`duel_monster_test_blue_npc`; all force `monstertest1`. The preset forces
+`duel_monster_test_blue_npc`; they do not force an avatar. The preset forces
 third-person perspective and selects the existing `source` movement preset.
 The gamemode's `weapon_set_id: 1` supplies the Stable weapons set because the
 roles do not override it. Standard Duel must not depend on the proposed rocket-only tuning in
 `movement-source-rocket.json`.
+
+Both `duel` and `rocket_duel` use the `competitive_no_headless` group for player
+avatar validation and NPC selection. Rocket Duel sets `npc_avatar.spawn_policy`
+to `keep_per_npc`, so an NPC retains its selected permitted avatar after death
+and respawn. Standard Duel retains its configured per-spawn reroll behavior.
 
 ## Implementation owner map
 
@@ -162,8 +169,10 @@ runtime that:
    hit effects, scales blood amount/lifetime to 0.1, and scales world impact
    decal alpha/lifetime to 0.1. The independent world-hit sphere switch and
    scales can be changed in JSON and take effect through the client mode profile.
-8. Every human and NPC role forces `monstertest1`; the preset allows that avatar
-   and the server accepts its manifest for the active roles.
+8. Every human avatar is accepted only if it is in the mode's
+   `competitive_no_headless` group; monster-prefixed IDs are rejected. NPCs
+   select from the same group. Rocket Duel NPCs keep the selected avatar across
+   death and respawn.
 
 The 2026-10-21 dev-loop run `20261021_082355` used matching build 2731 server
 and client executables. Its journal confirms Duel mode, `weapon_set: 1`, a
