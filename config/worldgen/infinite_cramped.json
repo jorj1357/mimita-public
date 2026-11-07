@@ -1,0 +1,38 @@
+{
+  "allow_crossings": true,
+  "allow_cycles": true,
+  "chunk_files": [],
+  "format": 1,
+  "grid": {
+    "cell_size": [
+      10.0,
+      10.0,
+      10.0
+    ],
+    "chunk_size": [
+      10.0,
+      10.0,
+      4.0
+    ],
+    "connector_gap": 0.0,
+    "origin": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "plane": "xy",
+    "repeat_axes": [
+      1,
+      1,
+      0
+    ],
+    "spacing_mode": "connector",
+    "stream_radius": [
+      10,
+      10,
+      0
+    ]
+  },
+  "max_branch_depth": 8,
+  "mode": "connected_world"
+}

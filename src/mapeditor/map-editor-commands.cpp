@@ -118,6 +118,19 @@ void registerMapEditorCommands()
                 }
                 return;
             }
+            if (command == "set_size" || command == "resize") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog("[MAPEDIT] set_size <x> <y> <z>");
+                    return;
+                }
+                try {
+                    editor.setSelectedSize(glm::vec3(std::stof(args[1]),
+                        std::stof(args[2]), std::stof(args[3])));
+                } catch (const std::exception&) {
+                    Terminal::instance().addLog("[MAPEDIT] invalid size");
+                }
+                return;
+            }
             if (command == "nudge") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 if (args.size() < 4) {
@@ -269,31 +282,11 @@ void registerMapEditorCommands()
                 } else if (kind == "cart") {
                     editor.addCartOrigin();
                 } else if (kind == "chunk") {
-                    if (args.size() < 3) {
-                        Terminal::instance().addLog(
-                            "[MAPEDIT] add chunk <geometry> [id]");
-                        return;
-                    }
-                    MapConfigRegistry& registry = MapConfigRegistry::instance();
-                    AuthoredChunk chunk;
-                    chunk.id = args.size() > 3 ? args[3]
-                        : "chunk_" + std::to_string(registry.chunks().size() + 1);
-                    chunk.geometryPath = args[2];
-                    chunk.boundsMin = THE_PLAYER.pos + glm::vec3(-52.0f, -52.0f, -1.0f);
-                    chunk.boundsMax = THE_PLAYER.pos + glm::vec3(52.0f, 52.0f, 103.0f);
-                    registry.chunksMutable().push_back(std::move(chunk));
-                    registry.markChanged();
-                    StructuredLogger::instance().writeEvent(
-                        StructuredCategory::World, StructuredLevel::Important,
-                        "map-editor.chunk-added", args[2],
-                        "authored chunk added through map editor", 0,
-                        {{"geometry", args[2]},
-                         {"chunk", registry.chunks().back().id},
-                         {"position", {THE_PLAYER.pos.x, THE_PLAYER.pos.y,
-                                       THE_PLAYER.pos.z}}},
-                        __FILE__, __LINE__, __func__);
-                    Terminal::instance().addLog("[MAPEDIT] added chunk " +
-                                                registry.chunks().back().id);
+                    editor.addChunk(args.size() > 2 ? args[2] : "");
+                } else if (kind == "chunk_part") {
+                    editor.addChunkPart(args.size() > 2 ? args[2] : "box");
+                } else if (kind == "connector") {
+                    editor.addConnector(args.size() > 2 ? args[2] : "east");
                 } else if (kind == "zone") {
                     if (args.size() < 3) {
                         Terminal::instance().addLog(
@@ -332,6 +325,10 @@ void registerMapEditorCommands()
                 } else {
                     Terminal::instance().addLog("[MAPEDIT] unknown add kind " + kind);
                 }
+                return;
+            }
+            if (command == "preview_connections") {
+                editor.previewConnections();
                 return;
             }
             if (command == "spawn_vehicle") {
@@ -477,7 +474,8 @@ void registerMapEditorCommands()
                 Terminal::instance().addLog("[MAPEDIT] select route: route_checkpoint/final/enabled <0|1> | route_radius <m>");
                 Terminal::instance().addLog("[MAPEDIT] route_bonus <sec> | route_wait <ticks> | route_move <up|down> | route_validate");
                 Terminal::instance().addLog("[MAPEDIT] mapeditor selectall | select_kind route | select_route | copy | paste | cut | duplicate | delete | undo | redo");
-                Terminal::instance().addLog("[MAPEDIT] mapeditor set_position <x> <y> <z> | nudge <dx> <dy> <dz>");
+                Terminal::instance().addLog("[MAPEDIT] mapeditor set_position <x> <y> <z> | set_size <x> <y> <z> | nudge <dx> <dy> <dz>");
+                Terminal::instance().addLog("[MAPEDIT] add chunk [id] | add chunk_part [box|wall|floor] | add connector [side] | preview_connections");
                 Terminal::instance().addLog("[MAPEDIT] chunks: chunk_preview <chunk> | chunk_part_material <chunk/part> <material> | chunk_part_uv <chunk/part> <u> <v>");
                 Terminal::instance().addLog("[MAPEDIT] chunks: chunk_connector_field <chunk/connector> <side|role|orientation|tag> <value>");
                 Terminal::instance().addLog("[MAPEDIT] properties: click an outliner row; edit X/Y/Z fields, Enter applies");

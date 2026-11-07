@@ -11,6 +11,7 @@
 
 #include "network/server.h"
 #include "network/server-gamemode.h"
+#include "gamemode/gamemode.h"
 #include "config/networking-config.h"
 #include "persistence/persistence-emit.h"
 #include "combat/weapon-registry.h"
@@ -22,6 +23,13 @@
 #include <cstdio>
 
 namespace MimitaNet {
+
+static bool destructibleBodyPartsEnabled()
+{
+    const ServerGamemodeState& state = serverGamemodeState();
+    return GamemodeRegistry::instance().get(state.matchMode)
+        .features.destructibleBodyParts;
+}
 
 static const char* damageSourceName(ServerDamageSource source)
 {
@@ -186,8 +194,10 @@ static ServerDamageResult applyPlayerDamageLegacy(
     target.health = std::max(0, target.health - clampedDamage);
     if (bodyPart == ActorBodyPart::Unknown)
         bodyPart = ActorBodyPart::Torso;
-    const bool partDestroyed = target.body.applyDamage(bodyPart, clampedDamage);
-    if (partDestroyed && target.body.lethalPartDestroyed())
+    const bool bodyPartsEnabled = destructibleBodyPartsEnabled();
+    const bool partDestroyed = bodyPartsEnabled &&
+        target.body.applyDamage(bodyPart, clampedDamage);
+    if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
         target.health = 0;
     result.bodyPart = bodyPart;
     result.partHealthAfter = target.body.health(bodyPart);
@@ -447,8 +457,10 @@ ServerDamageResult applyActorDamage(
         ActorBodyPart part = bodyPart;
         if (part == ActorBodyPart::Unknown)
             part = ActorBodyPart::Torso;
-        const bool partDestroyed = target.body.applyDamage(part, appliedDamage);
-        if (partDestroyed && target.body.lethalPartDestroyed())
+        const bool bodyPartsEnabled = destructibleBodyPartsEnabled();
+        const bool partDestroyed = bodyPartsEnabled &&
+            target.body.applyDamage(part, appliedDamage);
+        if (bodyPartsEnabled && partDestroyed && target.body.lethalPartDestroyed())
             target.health = 0;
         result.bodyPart = part;
         result.partHealthAfter = target.body.health(part);

@@ -422,6 +422,7 @@
     "47": {
       "name": "[2 CLIENTS] Fun CS - A=Terrorist, B=Counter-Terrorist + NPC roster",
       "server_args": ["--mode", "funcounterstrike", "--gamemode", "funcounterstrike"],
+      "weapon_set": "auto",
       "client_args": [],
       "clients": [
         { "name": "Client B (Counter-Terrorist)", "badconn_preset": "", "team": 1 },

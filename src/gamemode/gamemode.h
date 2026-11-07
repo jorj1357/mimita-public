@@ -45,6 +45,7 @@ struct GamemodeFeatures {
     // When true, only the mode objective decides round wins. Team elimination
     // never ends the round; the timer/bomb still resolve it.
     bool objectiveOnlyRoundWins = false;
+    bool destructibleBodyParts = false; // Per-mode actor body-part damage/destruction policy.
     // -1 inherits the global config/destructible-world.json world.enabled
     // value, 0 disables world destruction, 1 enables it.
     int destructibleWorld = -1;

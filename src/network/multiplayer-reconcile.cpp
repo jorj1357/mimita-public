@@ -263,6 +263,8 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     }
 
     // ── Lifecycle-aware health reconciliation ─────────────────────────
+    const int localHealthBefore = player.currentHp;
+    const int localMaxHealthBefore = player.maxHp;
     if (authoritativeNewLife || serverRespawnedPlayer)
     {
         const bool wasDead = player.dead;
@@ -358,6 +360,25 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
         if (ctx.localServerHealth > player.maxHp)
             player.maxHp = ctx.localServerHealth;
     }
+    if (player.currentHp != localHealthBefore || player.maxHp != localMaxHealthBefore)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.local-player.health-state", std::to_string(ctx.localPlayerId),
+            "client reconciled local health from authoritative server state",
+            ctx.latestLocalSnapshotTick,
+            nlohmann::json{{"actor_id", ctx.localPlayerId},
+                           {"current_hp_before", localHealthBefore},
+                           {"current_hp", player.currentHp},
+                           {"max_health_before", localMaxHealthBefore},
+                           {"max_health", player.maxHp},
+                           {"server_health", ctx.localServerHealth},
+                           {"server_epoch", ctx.localServerEpoch},
+                           {"spawn_generation", player.spawnGeneration},
+                           {"dead", player.dead}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     ctx.lastSeenServerHealth = ctx.localServerHealth;
 
     // Melee meters are absolute values from the local actor's snapshot. They
@@ -445,6 +466,7 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
             ++it;
             continue;
         }
+        const int healthBefore = player.currentHp;
         if (it->killed)
             player.currentHp = 0;
         else
@@ -459,8 +481,10 @@ void mpDrainPendingVictimHealth(MultiplayerContext& ctx, Player& player)
             0u,
             nlohmann::json{
                 {"victim", "local_player"},
+                {"health_before", healthBefore},
                 {"victim_hp", player.currentHp},
                 {"health_after", it->healthAfter},
+                {"max_health", player.maxHp},
                 {"killed", it->killed},
                 {"knockback", {it->knockback.x, it->knockback.y, it->knockback.z}}},
             __FILE__, __LINE__, __FUNCTION__);

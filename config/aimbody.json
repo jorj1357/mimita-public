@@ -2,8 +2,8 @@
   "comment": "default preserves immediate aimbody behavior; smooth treats camera look as a wish direction and smoothly moves the body and configured limbs toward it; physical runs the body as an active ragdoll during normal play (torso tethered to the movement root, head+torso receive look torque, limbs inherit through joints); hybrid does that but also springs limbs toward the procedural animation pose so it follows animations/weapons while carrying momentum. All physical tuning is in ragdoll.json physical.*. World Z is vertical and body yaw rotates around world Z. smoothingFactor 1.0 is approximately a 250 ms response; larger values are slower and smaller values are faster. Smooth mode never snaps. For each limb, gains scale camera look pitch into local pitch/yaw/roll rotations (default/smooth only). Camera sway is configured separately in camconfig.json.",
   "enabled": true,
   // "enabled": false,
-  // "mode": "default",
-  "mode": "hybrid", 
+  "mode": "default",
+  // "mode": "hybrid", 
   // In hybrid body mode: "default" makes only the arms use the normal
   // aimbody pose; "hybrid" keeps the arms physically blended too.
   "arms_mode": "hybrid",

@@ -79,6 +79,9 @@ private:
     int mLastCellY = 0;
     int mLastCellZ = 0;
     bool mHasCell = false;
+    glm::ivec3 mLastRadius{-1};
+    std::unordered_set<uint64_t> mDesired;
+    std::vector<glm::ivec3> mPendingOffsets;
     std::unordered_set<uint64_t> mLoaded;
     std::unordered_set<uint64_t> mRejected;
     std::unordered_map<uint64_t, ResolvedCell> mResolved;

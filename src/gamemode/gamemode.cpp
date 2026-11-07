@@ -816,6 +816,8 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                 optBool(f, "freeze_during_go", next.features.freezeDuringGo);
             next.features.objectiveOnlyRoundWins =
                 optBool(f, "objective_only_round_wins", next.features.objectiveOnlyRoundWins);
+            next.features.destructibleBodyParts =
+                optBool(f, "destructible_body_parts", next.features.destructibleBodyParts);
             if (f.contains("destructible_world")) {
                 if (f["destructible_world"].is_null())
                     next.features.destructibleWorld = -1;

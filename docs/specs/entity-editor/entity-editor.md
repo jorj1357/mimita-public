@@ -168,6 +168,11 @@ editable rotation/scale overrides for GLB nodes are the next slice. GLB
 overrides currently persist position only. This follows the 2026-11-01 user
 direction to tune rotations in the editor without repeatedly editing JSON.
 
+Blocks and chunk parts also have editable `size [x] [y] [z]` fields. Press Enter
+to apply positive dimensions, or drag the negative axis endpoint handles to
+resize in the 3D viewport. The positive axis handles continue to move the
+selection. A resize participates in undo/redo.
+
 ### Chunk primitive authoring (2026-11-05)
 
 Map-authored primitive chunks appear in the outliner as
@@ -194,6 +199,15 @@ mapeditor chunk_connector_field <chunkId>/<connectorId> <side|role|orientation|t
 `worldchunk face|material|uv` and `worldconnector connect|disconnect|preview`
 use the same owners. Primitive face UVs default to one repeat per world unit;
 `uv_scale` and `face_uv_scale` provide per-part and per-face overrides.
+
+The editor toolbar exposes Add Block, Add Chunk, Add Connector, Preview
+Connections, Save, and Reload. Add Chunk creates a 10 × 10 m floor and four
+directional connectors. Add Block creates a primitive chunk part while a chunk
+preview is active, otherwise a map-level block. Preview Connections reports
+every connector in the active chunk, including missing matches. Terminal
+equivalents include `mapeditor add chunk <id>`, `mapeditor add chunk_part
+<box|floor|wall>`, `mapeditor add connector <east|west|north|south>`,
+`mapeditor preview_connections`, and `mapeditor set_size <x> <y> <z>`.
 
 ### Drag handles
 

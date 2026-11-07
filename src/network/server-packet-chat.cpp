@@ -1296,15 +1296,84 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         {
             // Retroactively heal every alive entity to the new max so
             // "healthall 999" immediately shows 999/999, not just future spawns.
-            const int effectiveMax = serverMaxHp();
+            const int overrideHp = ov.maxHpOverride;
+            size_t healedPlayers = 0;
+            size_t healedNpcs = 0;
             for (auto& kv : players)
-                if (!kv.second.dead) {
+                if (!kv.second.dead)
+                {
+                    const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
+                    const int effectiveMax = overrideHp > 0 ? overrideHp
+                        : (kv.second.healthOverrideEnabled ? kv.second.healthOverrideValue
+                        : (profile.health > 0 ? profile.health : 100));
                     kv.second.maxHealth = effectiveMax;
                     kv.second.health = effectiveMax;
+                    ++healedPlayers;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "server.healthall.actor.applied", std::to_string(kv.first),
+                        "healthall set live player current and maximum HP",
+                        tick,
+                        nlohmann::json{{"command", commandStr},
+                                       {"actor_id", kv.first},
+                                       {"actor_type", "player"},
+                                       {"current_hp", kv.second.health},
+                                       {"max_health", kv.second.maxHealth},
+                                       {"dead", kv.second.dead},
+                                       {"spawn_generation", kv.second.spawnGeneration}});
                 }
             for (auto& kv : npcs)
-                if (kv.second.health > 0)
-                    kv.second.health = effectiveMax;
+            {
+                if (kv.second.health <= 0) continue;
+                const ActorSpawnProfile profile = serverResolveActorSpawnProfile(kv.first);
+                int effectiveMax = overrideHp > 0 ? overrideHp
+                    : (profile.health > 0 ? profile.health : 100);
+                bool updatedBody = false;
+                if (npcSystem)
+                {
+                    for (Npc& npc : npcSystem->all())
+                    {
+                        if (npc.id != kv.first || npc.body.dead || npc.body.currentHp <= 0)
+                            continue;
+                        if (overrideHp <= 0 && profile.health <= 0 && npc.body.maxHp > 0)
+                            effectiveMax = npc.body.maxHp;
+                        // The real NPC body owns combat and AI health state. Keep
+                        // its maximum in sync with the server snapshot mirror.
+                        npc.body.maxHp = effectiveMax;
+                        npc.body.currentHp = effectiveMax;
+                        updatedBody = true;
+                        break;
+                    }
+                }
+                kv.second.health = effectiveMax;
+                if (updatedBody)
+                {
+                    ++healedNpcs;
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "server.healthall.actor.applied", std::to_string(kv.first),
+                        "healthall set live NPC body and snapshot current and maximum HP",
+                        tick,
+                        nlohmann::json{{"command", commandStr},
+                                       {"actor_id", kv.first},
+                                       {"actor_type", "npc"},
+                                       {"current_hp", effectiveMax},
+                                       {"max_health", effectiveMax},
+                                       {"mirror_health", kv.second.health},
+                                       {"dead", false}});
+                }
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "server.healthall.applied", std::to_string(it->second.id),
+                "healthall updated live authoritative player and NPC health",
+                tick,
+                nlohmann::json{{"command", commandStr},
+                               {"accepted", true},
+                               {"override_hp", overrideHp},
+                               {"players_healed", healedPlayers},
+                               {"npcs_healed", healedNpcs},
+                               {"npc_system_available", npcSystem != nullptr}});
         }
     }
     else if (commandStr == "setspawn_set")

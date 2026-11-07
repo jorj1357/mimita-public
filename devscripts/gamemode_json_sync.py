@@ -195,7 +195,10 @@ def main() -> int:
                 print(f"  SKIP write: fix the issues or use --force")
                 continue
             text = HEADER + json.dumps(canonical, indent=2, ensure_ascii=False) + "\n"
-            path.write_text(text, encoding="utf-8", newline="\n")
+            # Keep each mode file's existing newline convention while still
+            # writing the exact canonical key order and values.
+            newline = "\r\n" if b"\r\n" in path.read_bytes() else "\n"
+            path.write_bytes(text.replace("\n", newline).encode("utf-8"))
             print(f"{path.name}: wrote canonical file")
         else:
             summary.append(path.name)

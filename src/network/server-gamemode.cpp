@@ -1191,6 +1191,7 @@ void serverCommunityStartMatch(bool skipIntermission, const std::string& request
                        {"intermission_seconds", gm.intermissionSeconds},
                        {"results_seconds", gm.resultsSeconds},
                        {"npc_spawn_policy", gm.npcSpawnPolicy},
+                       {"destructible_body_parts", gm.features.destructibleBodyParts},
                        {"team_capacities", teamCapacities},
                        {"lives", gm.lives},
                        {"teams", gm.teams.size()},

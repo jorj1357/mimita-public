@@ -1105,6 +1105,12 @@
           "required": false,
           "default": false
         },
+        "destructible_body_parts": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "When true, actor hits reduce body-part health; destroyed head/torso parts kill and destroyed limbs are removed. When false, body-part health/destruction is disabled and actor health alone governs death."
+        },
         "destructible_world": {
           "type": "boolean",
           "required": false,

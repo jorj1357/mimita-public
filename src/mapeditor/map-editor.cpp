@@ -37,6 +37,7 @@
 #include "network/server-gamemode.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/physics-types.h"
+#include "procedural/infinite-world-runtime.h"
 #include "renderer/renderer.h"
 #include "terminal/terminal-state.h"
 #include "vehicles/vehicle-config.h"
@@ -732,6 +733,27 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
             found = true;
         }
     }
+    for (const BombSite& site : config.bombSites) {
+        if (!site.hasPosition) continue;
+        float distance = 0.0f;
+        bool hit = false;
+        if (std::abs(direction.z) > 1e-5f) {
+            distance = (site.position.z - origin.z) / direction.z;
+            if (distance >= 0.0f) {
+                const glm::vec3 point = origin + direction * distance;
+                const glm::vec2 offset(point.x - site.position.x,
+                                       point.y - site.position.y);
+                hit = glm::dot(offset, offset) <= site.radius * site.radius;
+            }
+        }
+        if (!hit)
+            hit = raySphere(origin, direction, site.position, 0.7f, distance);
+        if (hit && distance < best) {
+            best = distance;
+            bestRef = {EditorObjectKind::BombSite, site.id};
+            found = true;
+        }
+    }
     for (const auto& block : config.blocks) {
         if (!block.enabled) continue;
         float distance = 0.0f;
@@ -850,6 +872,18 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
             bestDistance = distance;
             bestAxis = i;
         }
+        if (mSelection.size() == 1 &&
+            (blockFor(mSelection.front()) || chunkPartFor(mSelection.front()))) {
+            float sx = 0.0f, sy = 0.0f;
+            if (DebugVis::projectToScreen(THE_CAMERA,
+                center - axes[i] * cfg.handleLength, sx, sy)) {
+                const float scaleDistance = glm::length(glm::vec2(px - sx, py - sy));
+                if (scaleDistance < bestDistance) {
+                    bestDistance = scaleDistance;
+                    bestAxis = i + 3;
+                }
+            }
+        }
     }
     if (bestAxis < 0) return false;
     out = mSelection.front();
@@ -921,6 +955,9 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
     if (mDrag.refs.empty()) mDrag.refs.push_back(primary);
     for (const auto& ref : mDrag.refs) {
         mDrag.originalPositions.push_back(objectPosition(ref));
+        if (const auto* block = blockFor(ref)) mDrag.originalSizes.push_back(block->size);
+        else if (const auto* part = chunkPartFor(ref)) mDrag.originalSizes.push_back(part->size);
+        else mDrag.originalSizes.push_back(glm::vec3(0.0f));
         if (const auto* block = blockFor(ref))
             mDrag.originalRotations.push_back(block->rotationEuler);
         else
@@ -949,14 +986,16 @@ void MapEditor::updateDrag()
         delta = THE_CAMERA.right * (mouseDelta.x * unitsPerPixel) +
                 THE_CAMERA.up * (-mouseDelta.y * unitsPerPixel);
     } else {
-        const glm::vec3 axis = mDrag.mode == DragMode::AxisX ? glm::vec3(1, 0, 0) :
-                               mDrag.mode == DragMode::AxisY ? glm::vec3(0, 1, 0) :
+        const glm::vec3 axis = mDrag.mode == DragMode::AxisX || mDrag.mode == DragMode::ScaleX ? glm::vec3(1, 0, 0) :
+                               mDrag.mode == DragMode::AxisY || mDrag.mode == DragMode::ScaleY ? glm::vec3(0, 1, 0) :
                                                                glm::vec3(0, 0, 1);
         float cx = 0.0f, cy = 0.0f, ex = 0.0f, ey = 0.0f;
         const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
         if (DebugVis::projectToScreen(THE_CAMERA, mDrag.startCenter, cx, cy) &&
             DebugVis::projectToScreen(THE_CAMERA,
-                mDrag.startCenter + axis * cfg.handleLength, ex, ey)) {
+                mDrag.startCenter + axis * cfg.handleLength *
+                    (mDrag.mode == DragMode::ScaleX || mDrag.mode == DragMode::ScaleY ||
+                     mDrag.mode == DragMode::ScaleZ ? -1.0f : 1.0f), ex, ey)) {
             const glm::vec2 axisScreen(ex - cx, ey - cy);
             const float axisScreenLength = glm::length(axisScreen);
             if (axisScreenLength > 1.0f) {
@@ -964,6 +1003,28 @@ void MapEditor::updateDrag()
                 delta = axis * (alongPixels * cfg.handleLength / axisScreenLength);
             }
         }
+    }
+
+    const bool scaling = mDrag.mode == DragMode::ScaleX ||
+        mDrag.mode == DragMode::ScaleY || mDrag.mode == DragMode::ScaleZ;
+    if (scaling) {
+        const int axis = mDrag.mode == DragMode::ScaleX ? 0 :
+            mDrag.mode == DragMode::ScaleY ? 1 : 2;
+        if (std::abs(delta[axis]) > 0.0005f) mDrag.moved = true;
+        for (size_t i = 0; i < mDrag.refs.size(); ++i) {
+            glm::vec3 size = mDrag.originalSizes[i];
+            size[axis] = std::max(0.05f, size[axis] + delta[axis] * 2.0f);
+            const EditorObjectRef& ref = mDrag.refs[i];
+            if (ref.kind == EditorObjectKind::Block) {
+                if (auto* block = MapConfigRegistry::instance().findBlockMutable(ref.id))
+                    block->size = size;
+            } else if (ChunkPart* part = chunkPartFor(ref)) {
+                part->size = size;
+                refreshPreviewChunk();
+            }
+        }
+        MapConfigRegistry::instance().markChanged();
+        return;
     }
 
     glm::vec3 targetCenter = mDrag.startCenter + delta;
@@ -984,9 +1045,22 @@ void MapEditor::endDrag(bool commit)
 {
     if (mDrag.mode == DragMode::None) return;
     const bool moved = mDrag.moved;
+    if (commit && moved && mDrag.primary.kind == EditorObjectKind::BombSite) {
+        const glm::vec3 finalPosition = objectPosition(mDrag.primary);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.bombsite-drag.committed", mDrag.primary.id,
+            "bomb site moved through viewport drag", 0,
+            {{"site", mDrag.primary.id},
+             {"from", {mDrag.originalPositions.front().x,
+                         mDrag.originalPositions.front().y,
+                         mDrag.originalPositions.front().z}},
+             {"to", {finalPosition.x, finalPosition.y, finalPosition.z}}},
+            __FILE__, __LINE__, __func__);
+    }
     if (commit && moved && mDrag.hasPendingUndo) {
         mUndo.push_back(std::move(mDrag.pendingUndo));
-        mUndoLabels.push_back("move " + describeSelection());
+        mUndoLabels.push_back("transform " + describeSelection());
         if (mUndo.size() > kMaxHistory) {
             mUndo.erase(mUndo.begin());
             mUndoLabels.erase(mUndoLabels.begin());
@@ -1001,6 +1075,7 @@ void MapEditor::endDrag(bool commit)
             rebuildAuthoredRenderGeometry();
             mCollisionDirty = true;
         }
+        refreshPreviewChunk();
     }
 
     AABB movedOldBounds;
@@ -1032,7 +1107,7 @@ void MapEditor::endDrag(bool commit)
             mCollisionDirty = true;
         }
         mLastEditTime = glfwGetTime();
-        notify("moved " + std::to_string(mSelection.size()) + " object(s)");
+        notify("transformed " + std::to_string(mSelection.size()) + " object(s)");
     }
 }
 
@@ -1446,6 +1521,8 @@ bool MapEditor::wantsTextInput() const
     if (mOutlinerSearchFocused) return true;
     for (const UITextInputState& field : mPropertyPosition)
         if (field.focused) return true;
+    for (const UITextInputState& field : mPropertySize)
+        if (field.focused) return true;
     if (mPropertyMaterial.focused) return true;
     for (const UITextInputState& field : mPropertyUvScale)
         if (field.focused) return true;
@@ -1591,6 +1668,40 @@ bool MapEditor::setSelectedChunkPartUvScale(float u, float v)
     return true;
 }
 
+bool MapEditor::setSelectedSize(const glm::vec3& size)
+{
+    if (mSelection.size() != 1 || !std::isfinite(size.x) ||
+        !std::isfinite(size.y) || !std::isfinite(size.z) ||
+        glm::any(glm::lessThanEqual(size, glm::vec3(0.01f)))) {
+        notify("select one block or chunk part and use positive dimensions");
+        return false;
+    }
+    const EditorObjectRef ref = mSelection.front();
+    if (ChunkPart* part = chunkPartFor(ref)) {
+        pushUndo("resize chunk part");
+        part->size = size;
+        MapConfigRegistry::instance().markChanged();
+        refreshPreviewChunk();
+    } else if (ref.kind == EditorObjectKind::Block) {
+        AuthoredBlock* block = MapConfigRegistry::instance().findBlockMutable(ref.id);
+        if (!block) return false;
+        pushUndo("resize block");
+        block->size = size;
+        MapConfigRegistry::instance().markChanged();
+        rebuildGeometry();
+    } else {
+        notify("select a block or chunk part to resize");
+        return false;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map-editor.object-resized", ref.id, "editor dimensions changed", 0,
+        {{"object", ref.id}, {"size", {size.x, size.y, size.z}}},
+        __FILE__, __LINE__, __func__);
+    notify("resized " + ref.id);
+    return true;
+}
+
 bool MapEditor::setSelectedChunkConnectorField(const std::string& field,
                                                const std::string& value)
 {
@@ -1636,6 +1747,15 @@ bool MapEditor::handleChar(unsigned int codepoint)
         return true;
     }
     for (UITextInputState& field : mPropertyPosition) {
+        if (!field.focused) continue;
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleChar(field, codepoint, options);
+        return true;
+    }
+    for (UITextInputState& field : mPropertySize) {
         if (!field.focused) continue;
         UITextInputOptions options;
         options.maxLength = 24;
@@ -1699,6 +1819,23 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         }
         return true;
     }
+    for (UITextInputState& field : mPropertySize) {
+        if (!field.focused) continue;
+        if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
+            field.focused = false;
+            return true;
+        }
+        UITextInputOptions options;
+        options.maxLength = 24;
+        options.submitOnEnter = false;
+        options.characterFilter = isNumberChar;
+        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods, options);
+        if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && action == GLFW_PRESS) {
+            for (UITextInputState& other : mPropertySize) other.focused = false;
+            applyPropertySize();
+        }
+        return true;
+    }
     if (mPropertyMaterial.focused) {
         if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !ctrl) {
             mPropertyMaterial.focused = false;
@@ -1744,6 +1881,7 @@ void MapEditor::syncPropertyPositionFields()
         if (mPropertyOwnerValid) {
             mPropertyOwnerValid = false;
             for (UITextInputState& field : mPropertyPosition) field.focused = false;
+            for (UITextInputState& field : mPropertySize) field.focused = false;
             mPropertyMaterial.focused = false;
             for (UITextInputState& field : mPropertyUvScale) field.focused = false;
         }
@@ -1755,6 +1893,7 @@ void MapEditor::syncPropertyPositionFields()
         mPropertyOwner = ref;
         mPropertyOwnerValid = true;
         for (UITextInputState& field : mPropertyPosition) field.focused = false;
+        for (UITextInputState& field : mPropertySize) field.focused = false;
     }
     if (!ownerChanged) {
         bool anyFocused = false;
@@ -1772,6 +1911,22 @@ void MapEditor::syncPropertyPositionFields()
             field.value = value;
             field.cursorPos = (int)field.value.size();
             field.selectionStart = -1;
+        }
+    }
+    const AuthoredBlock* block = blockFor(ref);
+    const ChunkPart* part = chunkPartFor(ref);
+    if (block || part) {
+        const glm::vec3 size = block ? block->size : part->size;
+        for (int i = 0; i < 3; ++i) {
+            UITextInputState& field = mPropertySize[i];
+            if (field.focused) continue;
+            char value[32];
+            std::snprintf(value, sizeof(value), "%.3f", size[i]);
+            if (field.value != value) {
+                field.value = value;
+                field.cursorPos = (int)field.value.size();
+                field.selectionStart = -1;
+            }
         }
     }
 }
@@ -1795,6 +1950,26 @@ void MapEditor::applyPropertyPosition()
         }
     }
     setSelectedPosition(position);
+    syncPropertyPositionFields();
+}
+
+void MapEditor::applyPropertySize()
+{
+    if (mSelection.size() != 1 || !mPropertyOwnerValid ||
+        !(mPropertyOwner == mSelection.front())) return;
+    const EditorObjectRef& ref = mSelection.front();
+    const AuthoredBlock* block = blockFor(ref);
+    const ChunkPart* part = chunkPartFor(ref);
+    if (!block && !part) return;
+    glm::vec3 size = block ? block->size : part->size;
+    try {
+        for (int i = 0; i < 3; ++i)
+            if (!mPropertySize[i].value.empty()) size[i] = std::stof(mPropertySize[i].value);
+    } catch (const std::exception&) {
+        notify("invalid size value");
+        return;
+    }
+    setSelectedSize(size);
     syncPropertyPositionFields();
 }
 
@@ -1940,7 +2115,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     if (left && !mLeftPrev) {
         const MapEditorConfigData& cfg = MapEditorConfig::instance().data();
         const bool overTopPanel = mMouseX >= 16.0 && mMouseX <= 716.0 &&
-                                  mMouseY >= 16.0 && mMouseY <= 120.0;
+                                  mMouseY >= 16.0 && mMouseY <= 164.0;
         const bool overOutliner = mMouseX >= uiScreenW() - cfg.outlinerWidth &&
                                   mMouseY >= cfg.outlinerTop;
         const bool overHelp = mMouseY >= uiScreenH() - 30.0;
@@ -1954,7 +2129,10 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         int axis = -1;
         if (handleAtCursor(handleRef, axis)) {
             beginDrag(handleRef, axis == 0 ? DragMode::AxisX :
-                              axis == 1 ? DragMode::AxisY : DragMode::AxisZ,
+                              axis == 1 ? DragMode::AxisY :
+                              axis == 2 ? DragMode::AxisZ :
+                              axis == 3 ? DragMode::ScaleX :
+                              axis == 4 ? DragMode::ScaleY : DragMode::ScaleZ,
                       selectionCenter());
         } else {
             EditorObjectRef hit;
@@ -2184,6 +2362,131 @@ std::string MapEditor::addBlock(const std::string& id)
     rebuildGeometry();
     notify("added block " + created);
     return created;
+}
+
+std::string MapEditor::addChunk(const std::string& id)
+{
+    MapConfigRegistry& registry = MapConfigRegistry::instance();
+    const std::string created = id.empty()
+        ? "chunk" + std::to_string(registry.chunks().size() + 1) : id;
+    for (const AuthoredChunk& existing : registry.chunks())
+        if (existing.id == created) {
+            notify("chunk id already exists: " + created);
+            return {};
+        }
+    pushUndo("add chunk");
+    AuthoredChunk chunk;
+    chunk.id = created;
+    chunk.boundsMin = {-5.0f, -5.0f, -0.5f};
+    chunk.boundsMax = {5.0f, 5.0f, 4.0f};
+    ChunkPart floor;
+    floor.id = "floor";
+    floor.kind = "floor";
+    floor.position = {0.0f, 0.0f, -0.25f};
+    floor.size = {10.0f, 10.0f, 0.5f};
+    chunk.parts.push_back(floor);
+    for (const char* side : {"east", "west", "north", "south"}) {
+        AuthoredChunkConnector connector;
+        connector.id = std::string(side) + "_" + created;
+        connector.side = side;
+        connector.role = "bidirectional";
+        connector.orientation = "doorway";
+        connector.position = side == std::string("east") ? glm::vec3(5, 0, 0) :
+            side == std::string("west") ? glm::vec3(-5, 0, 0) :
+            side == std::string("north") ? glm::vec3(0, 5, 0) :
+                                               glm::vec3(0, -5, 0);
+        chunk.connectors.push_back(connector);
+    }
+    registry.chunksMutable().push_back(std::move(chunk));
+    registry.markChanged();
+    previewChunk(created);
+    selectOnly({EditorObjectKind::ChunkPart, created + "/floor"});
+    notify("added chunk " + created);
+    return created;
+}
+
+std::string MapEditor::addChunkPart(const std::string& kind)
+{
+    if (!mChunkPreviewValid) {
+        notify("preview or select a chunk first");
+        return {};
+    }
+    AuthoredChunk* chunk = nullptr;
+    for (AuthoredChunk& candidate : MapConfigRegistry::instance().chunksMutable())
+        if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
+    if (!chunk) return {};
+    const std::string id = kind + std::to_string(chunk->parts.size() + 1);
+    pushUndo("add chunk part");
+    ChunkPart part;
+    part.id = id;
+    part.kind = kind;
+    part.position = {0.0f, 0.0f, kind == "wall" ? 1.0f : 0.5f};
+    part.size = kind == "wall" ? glm::vec3(2.0f, 0.25f, 2.0f)
+                                 : glm::vec3(1.0f);
+    chunk->parts.push_back(part);
+    MapConfigRegistry::instance().markChanged();
+    selectOnly({EditorObjectKind::ChunkPart, chunk->id + "/" + id});
+    refreshPreviewChunk();
+    notify("added " + id + " to " + chunk->id);
+    return id;
+}
+
+bool MapEditor::addConnector(const std::string& side)
+{
+    if (!mChunkPreviewValid) {
+        notify("preview or select a chunk first");
+        return false;
+    }
+    AuthoredChunk* chunk = nullptr;
+    for (AuthoredChunk& candidate : MapConfigRegistry::instance().chunksMutable())
+        if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
+    if (!chunk) return false;
+    if (side != "east" && side != "west" && side != "north" && side != "south") {
+        notify("connector side must be east, west, north, or south");
+        return false;
+    }
+    pushUndo("add connector");
+    AuthoredChunkConnector connector;
+    connector.id = side + std::to_string(chunk->connectors.size() + 1);
+    connector.side = side;
+    connector.role = "bidirectional";
+    connector.orientation = "doorway";
+    connector.position = side == "east" ? glm::vec3(5, 0, 0) :
+        side == "west" ? glm::vec3(-5, 0, 0) :
+        side == "north" ? glm::vec3(0, 5, 0) : glm::vec3(0, -5, 0);
+    chunk->connectors.push_back(connector);
+    MapConfigRegistry::instance().markChanged();
+    selectOnly({EditorObjectKind::ChunkConnector, chunk->id + "/" + connector.id});
+    notify("added connector " + connector.id);
+    return true;
+}
+
+void MapEditor::previewConnections()
+{
+    if (!mChunkPreviewValid) {
+        notify("preview a chunk first");
+        return;
+    }
+    const AuthoredChunk* chunk = nullptr;
+    for (const AuthoredChunk& candidate : MapConfigRegistry::instance().chunks())
+        if (candidate.id == mChunkPreviewChunkId) { chunk = &candidate; break; }
+    if (!chunk) return;
+    size_t missing = 0;
+    for (const auto& connector : chunk->connectors) {
+        std::string error;
+        const auto matches = previewCompatibleConnectors(chunk->id,
+            connector.id, &error);
+        if (matches.empty()) {
+            ++missing;
+            Terminal::instance().addLog("[MAPEDIT] missing connection " +
+                chunk->id + "/" + connector.id + " " + error);
+        } else {
+            Terminal::instance().addLog("[MAPEDIT] " + chunk->id + "/" +
+                connector.id + " matches=" + std::to_string(matches.size()));
+        }
+    }
+    notify("connections: " + std::to_string(chunk->connectors.size() - missing) +
+           " compatible, " + std::to_string(missing) + " missing");
 }
 
 std::string MapEditor::addVehicle(const std::string& templateId,
@@ -2998,6 +3301,13 @@ void MapEditor::renderWorld(Camera& camera)
             DebugVis::drawFilledCylinder(camera, center + axes[i] * (cfg.handleLength * 0.5f),
                 axes[i], cfg.handleThickness, cfg.handleLength, color);
             DebugVis::drawFilledSphere(camera, end, cfg.handleRadius, color);
+            if (mSelection.size() == 1 &&
+                (blockFor(mSelection.front()) || chunkPartFor(mSelection.front()))) {
+                const glm::vec3 scaleEnd = center - axes[i] * cfg.handleLength;
+                DebugVis::drawFilledSphere(camera, scaleEnd,
+                    cfg.handleRadius * 1.25f,
+                    mHoverAxis == i + 3 ? glm::vec4(1, 1, 1, 1) : colors[i]);
+            }
         }
     }
 
@@ -3030,6 +3340,26 @@ void MapEditor::renderUI(GLFWwindow* window)
     uiDrawText(line, 26.0f, 52.0f, cfg.bodyScale, dim);
     uiDrawText(mStatus.c_str(), 26.0f, 78.0f, cfg.bodyScale,
         glm::vec4(0.55f, 1.0f, 0.7f, 1.0f));
+
+    const glm::vec4 actionColor(0.16f, 0.25f, 0.34f, 0.94f);
+    const char* actions[] = {"Add Block", "Add Chunk", "Add Connector",
+                             "Preview Connections", "Save", "Reload"};
+    const float widths[] = {100.0f, 100.0f, 115.0f, 155.0f, 70.0f, 70.0f};
+    float actionX = 16.0f;
+    for (int i = 0; i < 6; ++i) {
+        if (uiButton(window, actions[i], {actionX, 124.0f, widths[i], 36.0f},
+                     actionColor, actions[i]).clicked) {
+            switch (i) {
+            case 0: if (mChunkPreviewValid) addChunkPart(); else addBlock(); break;
+            case 1: addChunk(); break;
+            case 2: addConnector(); break;
+            case 3: previewConnections(); break;
+            case 4: save(); break;
+            case 5: reload(); break;
+            }
+        }
+        actionX += widths[i] + 3.0f;
+    }
 
     std::vector<EditorObjectRef> objects;
     collectEditorObjects(objects);
@@ -3153,6 +3483,22 @@ void MapEditor::renderUI(GLFWwindow* window)
             mPropertyPosition[i].focused = uiTextInputRenderScreen(
                 window, id, field, mPropertyPosition[i], options);
         }
+        if (ref.kind == EditorObjectKind::Block ||
+            ref.kind == EditorObjectKind::ChunkPart) {
+            uiDrawText("size", px + 12.0f, propY + 62.0f, cfg.rowScale, dim);
+            for (int i = 0; i < 3; ++i) {
+                char id[48];
+                std::snprintf(id, sizeof(id), "mapeditor_size_%d", i);
+                UITextInputOptions options;
+                options.maxLength = 24;
+                options.submitOnEnter = false;
+                options.characterFilter = isNumberChar;
+                UIRect field{px + 46.0f + i * (fieldW + 4.0f),
+                             propY + 57.0f, fieldW, 26.0f};
+                mPropertySize[i].focused = uiTextInputRenderScreen(
+                    window, id, field, mPropertySize[i], options);
+            }
+        }
 
         glm::vec3 rotation(0.0f);
         glm::vec3 scale(1.0f);
@@ -3225,7 +3571,9 @@ void MapEditor::renderUI(GLFWwindow* window)
         }
         std::snprintf(line, sizeof(line), "rot %.1f %.1f %.1f   scale %.2f %.2f %.2f",
             rotation.x, rotation.y, rotation.z, scale.x, scale.y, scale.z);
-        uiDrawText(line, px + 10.0f, propY + 64.0f, cfg.rowScale, dim);
+        if (ref.kind != EditorObjectKind::Block &&
+            ref.kind != EditorObjectKind::ChunkPart)
+            uiDrawText(line, px + 10.0f, propY + 64.0f, cfg.rowScale, dim);
         uiDrawText(details.c_str(), px + 10.0f, propY + 88.0f, cfg.rowScale, dim);
         if (ref.kind == EditorObjectKind::ChunkPart) {
             uiDrawText("material", px + 12.0f, propY + 108.0f, cfg.rowScale, dim);

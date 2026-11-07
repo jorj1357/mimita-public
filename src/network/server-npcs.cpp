@@ -2210,7 +2210,6 @@ void simulateSharedNpcs(SOCKET sock,
         if (!allNpcs.empty()) {
             static size_t recoveryCursor = 0;
             static std::unordered_map<uint32_t, uint32_t> recoveryCooldownTick;
-            static std::unordered_map<uint32_t, uint32_t> rootInsideFailures;
             static std::unordered_map<uint32_t, uint32_t> belowMapSinceTick;
             const size_t start = recoveryCursor % allNpcs.size();
             for (size_t offset = 0; offset < allNpcs.size(); ++offset) {
@@ -2230,11 +2229,10 @@ void simulateSharedNpcs(SOCKET sock,
                         belowMapSinceTick.emplace(candidate.id, tick);
                         since = belowMapSinceTick.find(candidate.id);
                     }
-                    if (tick - since->second >= 60u)
+                    if (tick - since->second >= 1u)
                     {
                         const glm::vec3 before = candidate.body.pos;
                         belowMapSinceTick.erase(candidate.id);
-                        rootInsideFailures.erase(candidate.id);
                         respawnServerNpc(candidate, world);
                         recoveryCooldownTick[candidate.id] = tick + 60u;
                         recoveryCursor = index + 1;
@@ -2284,26 +2282,54 @@ void simulateSharedNpcs(SOCKET sock,
                     if (pushActorRootOutOfSolid(candidate.body, world, 0.02f,
                                                 &pushDelta, &pushSolidId))
                     {
-                        recoveryCooldownTick[candidate.id] = tick + 30u;
-                        StructuredLogger::instance().writeEvent(
-                            StructuredCategory::Collision,
-                            StructuredLevel::Important,
-                            "npc.root.pushout", std::to_string(candidate.id),
-                            "npc root was pushed out through the nearest enclosing solid face",
-                            tick,
-                            {{"npc_id", candidate.id},
-                             {"solid_id", pushSolidId},
-                             {"from", {before.x, before.y, before.z}},
-                             {"to", {candidate.body.pos.x,
-                                     candidate.body.pos.y,
-                                     candidate.body.pos.z}},
-                             {"correction", {pushDelta.x, pushDelta.y,
-                                              pushDelta.z}}},
-                            __FILE__, __LINE__, __FUNCTION__);
-                        if (!npcRootInsideWorld(world, candidate.body.pos))
+                        // The nearest exit can be the bottom face of a floor
+                        // slab. Accepting that correction clears the solid
+                        // parity test while leaving the NPC underneath the
+                        // walkable surface, where gravity carries it below map.
+                        // Restore the original pose and use the validated
+                        // standing-point fallback for any downward exit.
+                        const bool downwardPushout = pushDelta.z < -0.02f;
+                        if (downwardPushout)
                         {
-                            rootInsideFailures.erase(candidate.id);
-                            break;
+                            candidate.body.pos = before;
+                            candidate.body.updateModelWorldTransforms();
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Collision,
+                                StructuredLevel::Important,
+                                "npc.root.pushout.rejected",
+                                std::to_string(candidate.id),
+                                "downward nearest-face exit rejected; trying validated standing-point recovery",
+                                tick,
+                                {{"npc_id", candidate.id},
+                                 {"solid_id", pushSolidId},
+                                 {"position", {before.x, before.y, before.z}},
+                                 {"rejected_correction", {pushDelta.x,
+                                                          pushDelta.y,
+                                                          pushDelta.z}}},
+                                __FILE__, __LINE__, __FUNCTION__);
+                        }
+                        else
+                        {
+                            recoveryCooldownTick[candidate.id] = tick + 30u;
+                            StructuredLogger::instance().writeEvent(
+                                StructuredCategory::Collision,
+                                StructuredLevel::Important,
+                                "npc.root.pushout", std::to_string(candidate.id),
+                                "npc root was pushed out through the nearest enclosing solid face",
+                                tick,
+                                {{"npc_id", candidate.id},
+                                 {"solid_id", pushSolidId},
+                                 {"from", {before.x, before.y, before.z}},
+                                 {"to", {candidate.body.pos.x,
+                                         candidate.body.pos.y,
+                                         candidate.body.pos.z}},
+                                 {"correction", {pushDelta.x, pushDelta.y,
+                                                  pushDelta.z}}},
+                                __FILE__, __LINE__, __FUNCTION__);
+                            if (!npcRootInsideWorld(world, candidate.body.pos))
+                            {
+                                break;
+                            }
                         }
                     }
                     // Recovery runs inside the fixed tick. Bound the candidate
@@ -2321,7 +2347,6 @@ void simulateSharedNpcs(SOCKET sock,
                         candidate.body.ground.hasWorldContact = true;
                         candidate.body.ground.realWorldContactThisFrame = true;
                         candidate.body.updateModelWorldTransforms();
-                        rootInsideFailures.erase(candidate.id);
                         recoveryCooldownTick[candidate.id] = tick + 60u;
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::Collision,
@@ -2340,36 +2365,25 @@ void simulateSharedNpcs(SOCKET sock,
                                            candidate.body.vel.z}}},
                             __FILE__, __LINE__, __FUNCTION__);
                     } else {
-                        const uint32_t failures =
-                            ++rootInsideFailures[candidate.id];
-                        recoveryCooldownTick[candidate.id] = tick + 30u;
+                        const glm::vec3 beforeRespawn = candidate.body.pos;
+                        respawnServerNpc(candidate, world);
+                        recoveryCooldownTick[candidate.id] = tick + 60u;
                         StructuredLogger::instance().writeEvent(
                             StructuredCategory::Collision,
                             StructuredLevel::Important,
-                            "npc.root.inside",
+                            "npc.root.respawned",
                             std::to_string(candidate.id),
-                            "npc root is inside solid geometry and no nearby safe standing point was found",
+                            "no nearby validated standing point exists; respawned instead of continuing inside solid geometry",
                             tick,
                             {{"npc_id", candidate.id},
-                             {"position", {before.x, before.y, before.z}},
-                             {"failures", failures}},
+                             {"reason", "no_validated_safe_point"},
+                             {"from", {beforeRespawn.x, beforeRespawn.y,
+                                        beforeRespawn.z}},
+                             {"to", {candidate.body.pos.x,
+                                     candidate.body.pos.y,
+                                     candidate.body.pos.z}}},
                             __FILE__, __LINE__, __FUNCTION__);
-                        if (failures >= 3) {
-                            rootInsideFailures.erase(candidate.id);
-                            respawnServerNpc(candidate, world);
-                            StructuredLogger::instance().writeEvent(
-                                StructuredCategory::Collision,
-                                StructuredLevel::Important,
-                                "npc.root.respawned",
-                                std::to_string(candidate.id),
-                                "npc root stayed inside solid geometry; respawned at a validated spawn",
-                                tick,
-                                {{"npc_id", candidate.id}},
-                                __FILE__, __LINE__, __FUNCTION__);
-                        }
                     }
-                } else {
-                    rootInsideFailures.erase(candidate.id);
                 }
                 // At most one deep inside-solid check per server tick.
                 break;

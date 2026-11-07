@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 7
+Entries: 8
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -62,3 +62,11 @@ Entries: 7
 - Status: ATTEMPTED FIX (2) — source cadence restored; mode 6 visual review pending
 - Summary: Fullscreen mode 6 world flicker recurred after shadow-map updates were switched back to alternating frames for performance.
 - Detail: [fullscreen-shadow-cadence-REG-2026-11-04.md](fullscreen-shadow-cadence-REG-2026-11-04.md)
+
+## Entry 9 — Streamed world frame stalls
+
+- Recorded: 2026-11-06 (exact time unknown)
+- Status: UNRESOLVED — radius-10 repeat run pending
+- Summary: Earlier two-cell-radius run exceeded the 4.17 ms frame budget;
+  measured stall windows included menu, swap, and audio work.
+- Detail: [streamed-world-frame-stalls-REG-2026-11-06.md](streamed-world-frame-stalls-REG-2026-11-06.md)

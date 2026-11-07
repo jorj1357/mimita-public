@@ -828,6 +828,7 @@ void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
 
     interpolation.predictedHealthUpdatedMs = nowMs();
     ++interpolation.predictedHealthConfirmCount;
+    const int healthBefore = replica.currentHp;
     replica.currentHp = killed ? 0 : healthAfter;
 
     Debug::log(Debug::Category::Networking,
@@ -840,7 +841,9 @@ void mpConfirmPredictedDamage(MultiplayerContext& ctx, uint32_t entityId,
         "net.prediction.damage.confirmed", std::to_string(entityId),
         "server confirmed damage for a client prediction", ctx.latestServerTick,
         nlohmann::json{{"entity", entityId}, {"npc", npc},
+                       {"health_before", healthBefore},
                        {"health_after", healthAfter}, {"killed", killed},
+                       {"max_health", replica.maxHp},
                        {"predicted_cap", interpolation.predictedHealthCap},
                        {"confirm_count", interpolation.predictedHealthConfirmCount}});
 }

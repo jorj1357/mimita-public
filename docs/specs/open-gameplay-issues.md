@@ -1,4 +1,49 @@
-﻿2026 11 06 0828 jorj 
+﻿2026 11 07 1042 jojr 
+
+npcs behavior im watchingthe ai pla as teh npc
+and the np
+
+like
+the npc will just follow the temamates over adn over
+the issue here is 
+its like
+inefficient
+like
+idk hwo to explain like the npc will faill
+follow an npc that is like 
+
+it just follwos the one that is clsoest
+needs to follow 
+need to look for an enemy and hten fight with ur team
+but need to move much faster and be more efficent with the movement 
+
+NPCS STILL ARE FALLING THRU THE F GROUNDDDDDDD DWHATTTT WHATHERHWHAHTH
+
+2026 11 056 1837
+ jorj 
+
+well
+okbservartions
+funworld3 counte r strike fun mode
+tis fun
+fun world fun strike
+ok so waht do we need
+better npc beahvior
+that is not so grounded
+
+npcs need to rocket jump
+i need to author like specific moves like
+npcs need to be doing dash and down dash and like jumping around and consider the environemtn and all their abilities 
+
+also npcs kill me too fast with tehrevovler ALSO
+HEALTHALL CMD DOESNT WORKk
+
+2026 11 06 1826
+jorj
+ok the issue isss
+
+
+2026 11 06 0828 jorj 
 i want to amke world chunks repeating and like
 make a new gamemode
 
@@ -152,7 +197,7 @@ Priorities: **P0** is the current top project goal; **P1** is high-impact active
 | OGI-001 | P0 | Complete Zombie Tower as a playable mode | [Zombie Tower](gamemodes/zombie-tower/zombie-tower.md); track full-run acceptance there. Floor-count choice remains open in that spec. |
 | OGI-002 | P0 | NPC navigation still fails on multi-floor and complex routes | [NPC movement](../architecture/player-npc-systems/npc-movement.md); reproduce Hospital pursuit and validate traversal in Zombie Tower. |
 | OGI-004 | P1 | Physical impacts can snag instead of producing the desired bounce | [Movement](movement/movement.md), [collision architecture](../architecture/collision/collision.md); retain the reported Dust2 Cyberia snag and replay evidence. |
-| OGI-007 | P1 | Map Editor crash and unreliable bomb-site dragging | [Entity Editor](entity-editor/entity-editor.md); reproduce crash and drag failure separately. The user says the editor remains a separate issue. |
+| OGI-007 | P1 | Map Editor crash and unreliable bomb-site dragging | [Entity Editor](entity-editor/entity-editor.md); viewport picking omitted bomb sites and now has a source fix pending live drag confirmation. The separate crash still needs reproduction and a first-divergence trace. The user says the editor remains a separate issue. |
 | OGI-009 | P1 | Interaction range and prompt behavior are inconsistent; bomb defuse feels too hard to reach | [Counter-Strike](gamemodes/counterstrike.md), [Fun Counter Strike](gamemodes/funcounterstrike.md); consolidate interaction eligibility/range and one reusable popup, then validate plant, defuse, pickup, and interruption. Exact revised range is not decided. |
 | OGI-010 | P1 | Scenario recording and replay are not reliably usable | [Scenario recording](dev-loop/scenario-input-recording.md); investigate incomplete/broken recordings, missing metadata, replay checkpoints, and reported performance impact. |
 | OGI-011 | P1 | JSON field inventory and stale cross-file references remain incomplete | [JSON configuration](../architecture/json-configuration/json-configuration.md); align runtime loading and validation across configuration families. |

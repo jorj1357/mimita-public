@@ -51,9 +51,56 @@ The RPG editor and collaboration contracts are owned by
 [`../entity-editor/entity-editor.md`](../entity-editor/entity-editor.md) and
 [`../world-projects/world-projects.md`](../world-projects/world-projects.md).
 
-## Connected-world flat-grid trial (2026-11-06)
+## Infinite World: Cramped authoring trial (2026-11-06)
 
-Launch dev mode 52 with `python devscripts/dev-loop.py --launch-mode 52 --request launch`.
+The `connected_world` mode is displayed as **Infinite World**. Its first named
+map is `infinite_cramped`, selected as **Cramped**. Dev launch mode 52 joins this
+map. In the game terminal, use `infiniteworld list`, `infiniteworld status`, and
+`infiniteworld load cramped`. Loading requests the existing host-controlled map
+change; the request is not proof that the server accepted it. New named worlds
+must be added to the mode's `maps` list, with matching map asset, map config,
+and worldgen profile under the `infinite_<name>` ID.
+
+Cramped's map config contains five editor-authored chunks named `chunk1` through
+`chunk5`, and its worldgen profile sets 10 m cells, X/Y repetition, no Z
+repetition, and a radius of 10 cells in each horizontal direction. The
+neighborhood therefore has up to 441 loaded cells. Installs are limited to
+two chunks per render setup pass. All five current chunks have matching flat
+floors and four horizontal doorway connectors; wall collision and server
+authoritative per-cell identity are not yet implemented.
+
+In the native Map Editor, use the toolbar's **Add Chunk**, **Add Block**,
+**Add Connector**, **Preview Connections**, **Save**, and **Reload** buttons.
+With a chunk preview active, Add Block creates a chunk part. The outliner lists
+parts and connectors; selecting one previews the containing chunk. Positive
+axis handles move objects, and negative axis endpoint handles resize selected
+blocks or chunk parts. The properties panel has exact position and size fields;
+press Enter to apply a field. `Ctrl+Z` and `Ctrl+Y` undo and redo edits.
+Equivalent terminal commands are:
+
+```text
+mapeditor 1
+mapeditor add chunk chunk6
+mapeditor chunk_preview chunk6
+mapeditor add chunk_part box
+mapeditor set_size 2 0.25 2
+mapeditor add connector east
+mapeditor preview_connections
+mapeditor save
+mapeditor reload
+mapeditor 0
+```
+
+`mapeditor add block` creates a map-level block; the toolbar Add Block targets
+the active chunk preview. Use `worldconnector preview <chunk> <connector>` for
+one connector's compatibility report and `worldconnector connect` for explicit
+links. A missing-compatible-neighbor report must be resolved before treating
+the authored chunk as connected. The map editor's save/reload remains subject
+to live runtime verification.
+
+### Earlier connected-world trial evidence
+
+The earlier dev mode 52 trial launched with `python devscripts/dev-loop.py --launch-mode 52 --request launch`.
 Its `connected_world` map enables whole-world generation and names the
 `connected_world` generator profile. The profile uses 10 m X/Y cells, a
 10 × 10 m floor chunk, X/Y repetition with Z fixed, and a two-cell loaded

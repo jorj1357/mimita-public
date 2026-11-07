@@ -1,7 +1,10 @@
+// Mode values. Schema, defaults, ranges, and field order:
+// config/gamemodes/masterlist/gamemode-masterlist.json
+// null means inherit the shared config/playervisuals.json value.
 {
   "id": "connected_world",
-  "name": "Connected World",
-  "description": "Join a world with continuously streamed, editor-authored connected chunks.",
+  "name": "Infinite World",
+  "description": "Join named worlds built from editor-authored connected chunks.",
   "team_names": [
     "RED",
     "BLUE"
@@ -25,7 +28,7 @@
   "intermission_seconds": 0,
   "results_seconds": 0,
   "maps": [
-    "funworld3"
+    "infinite_cramped"
   ],
   "teams": [
     {
@@ -171,6 +174,7 @@
     "freeze_during_countdown": false,
     "freeze_during_go": true,
     "objective_only_round_wins": false,
+    "destructible_body_parts": false,
     "destructible_world": null,
     "destructible_world_reset": null
   },

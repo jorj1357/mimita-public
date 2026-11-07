@@ -1,5 +1,6 @@
 // Mode values. Schema, defaults, ranges, and field order:
 // config/gamemodes/masterlist/gamemode-masterlist.json
+// null means inherit the shared config/playervisuals.json value.
 {
   "id": "bloodtest",
   "name": "Bloodtest",
@@ -151,6 +152,7 @@
     "freeze_during_countdown": false,
     "freeze_during_go": true,
     "objective_only_round_wins": false,
+    "destructible_body_parts": true,
     "destructible_world": true,
     "destructible_world_reset": "never"
   },

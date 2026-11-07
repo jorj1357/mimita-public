@@ -110,7 +110,7 @@
       "tap_progress_seconds": 0.1,
       "visual": {
         "pulse": true,
-        "radius": 5.35,
+        "radius": 2.35,
         "pulse_amplitude": 0.15,
         "period_seconds": 1.5,
         "color": [
@@ -244,6 +244,7 @@
     "freeze_during_countdown": false,
     "freeze_during_go": true,
     "objective_only_round_wins": true,
+    "destructible_body_parts": false,
     "destructible_world": null,
     "destructible_world_reset": null
   },

@@ -92,6 +92,10 @@ public:
     // so they share selection, history, and geometry rebuild behavior.
     std::string addEntity(const std::string& type, const std::string& id = {});
     std::string addBlock(const std::string& id = {});
+    std::string addChunk(const std::string& id = {});
+    std::string addChunkPart(const std::string& kind = "box");
+    bool addConnector(const std::string& side = "east");
+    void previewConnections();
     std::string addVehicle(const std::string& templateId = "car_sedan",
                            const std::string& id = {});
     bool spawnSelectedVehicle();
@@ -106,6 +110,7 @@ public:
     bool previewChunk(const std::string& chunkId);
     bool setSelectedChunkPartMaterial(const std::string& material);
     bool setSelectedChunkPartUvScale(float u, float v);
+    bool setSelectedSize(const glm::vec3& size);
     bool setSelectedChunkConnectorField(const std::string& field,
                                         const std::string& value);
     bool setSelectedRouteCheckpoint(bool checkpoint);
@@ -146,7 +151,10 @@ private:
         ObjectPlane,
         AxisX,
         AxisY,
-        AxisZ
+        AxisZ,
+        ScaleX,
+        ScaleY,
+        ScaleZ
     };
 
     struct DragState {
@@ -158,6 +166,7 @@ private:
         float startDistance = 0.0f;
         std::vector<EditorObjectRef> refs;
         std::vector<glm::vec3> originalPositions;
+        std::vector<glm::vec3> originalSizes;
         std::vector<glm::vec3> originalRotations;
         MapObjectiveConfig pendingUndo;
         bool hasPendingUndo = false;
@@ -192,6 +201,7 @@ private:
     UITextInputState mOutlinerSearch;
     bool mOutlinerSearchFocused = false;
     UITextInputState mPropertyPosition[3];
+    UITextInputState mPropertySize[3];
     UITextInputState mPropertyMaterial;
     UITextInputState mPropertyUvScale[2];
     bool mPropertyOwnerValid = false;
@@ -220,6 +230,7 @@ private:
     int outlinerRowAt(double screenX, double screenY) const;
     void syncPropertyPositionFields();
     void applyPropertyPosition();
+    void applyPropertySize();
     void syncChunkPropertyFields();
     void applyChunkMaterial();
     void applyChunkUvScale();

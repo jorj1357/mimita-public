@@ -19,6 +19,8 @@ map reload.
   projectile, and match lifecycle systems.
 - Players can damage one another. The mode does not use teams, a score target,
   or a match timer.
+- `features.destructible_body_parts: true` enables shared player/NPC body-part
+  health and destruction for this testing mode. Head/torso destruction is lethal.
 - The mode selects the `bloodtest` movement preset and Bloodtest-specific
   projectile revolver and shotgun definitions, plus Swordsword.
 - NPCs use the shared `beginner` combat behavior profile. Their health and

@@ -203,6 +203,7 @@
     "freeze_during_countdown": true,
     "freeze_during_go": false,
     "objective_only_round_wins": false,
+    "destructible_body_parts": false,
     "destructible_world": null,
     "destructible_world_reset": "match"
   },

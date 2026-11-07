@@ -71,3 +71,41 @@ inspectable together in the same server `events.jsonl`.
   `client.actor.spawn_packet_applied`.
 - The live window showed the Fun Counter Strike HUD and Revolver. Visual
   inspection of every inventory item remains pending.
+
+
+## Regression Occurrence 2 — two-client FCS launch still inherited set 12
+
+### Observed
+
+In run `20261106_235347`, launch mode 47 ran Fun Counter Strike while the
+`npc-navigation` profile contributed `--weapon-set 12` before the FCS mode
+flags. Server `actor.loadout.spawned` records (for example, sequence 154605)
+showed FCS roles with ID 12 / `captain_falcon` and the inventory
+`nothing`, `captain_falcon_moveset`. The mode name was correct, but the combat
+loadout was not.
+
+### Why Occurrence 1's fix did not cover this launch
+
+Occurrence 1 added `weapon_set: auto` to launch mode 45 only. The separate
+mode-47 two-client preset omitted it, so the explicit profile set still
+preceded and overrode the mode default. This was the same precedence bug on a
+second launch path.
+
+### Correction and fresh runtime proof
+
+Mode 47 now declares `weapon_set: auto`; the FCS specification requires mode
+set 30 / `funcounterstrike` and rejects Captain Falcon IDs. In fresh run
+`20261107_154026_01`, server event `gamemode.match.configured` sequence 24
+records set 30 from `gamemode_default`. Server `actor.loadout.spawned` sequences
+139 and 144 record the Terrorist and Counter-Terrorist roles, ID 30, key
+`funcounterstrike`, the 13 configured weapon IDs, and `revolver` equipped.
+Both client journals' `client.actor.spawn_packet_applied` records show
+`community_weapon_set_id: 30`. The server also logged active NPC fire using
+`revolver`, `shotgun`, and `rocket_launcher` in `npc.shot`; FCS throwable
+IDs such as `frag`, `smoke`, and `fire` appear in NPC shot/projectile events.
+No Captain Falcon ID appears in the fresh run's loadout/fire evidence.
+
+- Build: `2026-11-07T15:40:16.360512Z:032addb5b338935afeda24da592c38af785dc5e33316a71888a53fb24b1adb77`.
+- Server journal: `logs/2026-11-07/20261107_154026_01/server-01/events.jsonl`.
+- Client journals: `logs/2026-11-07/20261107_154026_01/client-01/events.jsonl` and `client-02/events.jsonl`.
+- Changelog: [20261107_154430-healthall-fcs-runtime-investigation.md](../../changelog/2026-11-07/20261107_154430-healthall-fcs-runtime-investigation.md).

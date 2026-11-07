@@ -51,6 +51,20 @@ Authoritative gameplay time is integer fixed ticks at 60 Hz.
 - A respawn reapplies the mode loadout. The current Fun Counter Strike config
   uses the dedicated Fun Counter Strike set (`config/weaponsets.json` key `funcounterstrike`): the TDM loadout plus frag, smoke, fire, darkbang, and the bomb, through
   the `fun_counter_terrorist` / `fun_terrorist` roles.
+- Every FCS launch and respawn must resolve to the FCS role/mode loadout. A
+  launcher profile's unrelated explicit weapon set must not override it; in
+  particular, FCS must never start with weapon set 12 (`captain_falcon`) or
+  `captain_falcon_moveset`. The effective set must be ID 30 / key
+  `funcounterstrike`, and the inventory must contain its configured guns and
+  throwable items. Dev launch modes that inherit a profile set must select
+  `weapon_set: auto` unless they deliberately specify a mode-compatible set.
+- Runtime acceptance inspects the server's `actor.loadout.spawned` records and
+  the connected client's applied spawn loadout. It verifies the effective set
+  ID/key, equipped gun, and inventory IDs, and confirms Captain Falcon IDs are
+  absent. A configured mode name or HUD alone is insufficient proof.
+- `features.destructible_body_parts` is `false` in Fun Counter Strike. Actors
+  lose ordinary actor HP from hits; body-part health does not destroy parts or
+  independently kill the actor in this mode.
 - Do not add a Fun-Counter-Strike-only respawn, health, or inventory path.
 
 ## Team identity and avatars

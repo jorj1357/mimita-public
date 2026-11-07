@@ -244,3 +244,17 @@ Entries: 33
 - Status: FIXED IN SOURCE — runtime model load and movement verified; visual review pending
 - Summary: A bound avatar instance could leave `model_loaded=false` forever because `render-player.cpp` set `lazy_load_requested=true` without queueing a model load. The new procedural meat/bone layer generation also called a GL texture lookup from the async model-load worker, preventing model completion. Failed avatar loads were not retried. Runtime run `20261106_071418` now reports `model_loaded=true`, `body_mesh_count=6`, populated body parts, and successful `agent.move`.
 - Detail: [avatar-model-fallback-REG-2026-11-06.md](avatar-model-fallback-REG-2026-11-06.md)
+
+## Entry 34 — Healthall left active NPC maximum health stale
+
+- Recorded: 2026-11-06T23:37:00Z (2026-11-06 18:37 EST, America/New_York)
+- Status: FIXED IN SOURCE; LIVE COMMAND AND 500/500 HUD VERIFIED; DAMAGE-SOAK REVIEW PENDING
+- Summary: The host command raised the server NPC mirror's current health but left each live NPC body's `maxHp` at its prior value. The command now updates the authoritative body and mirror together and records healed player/NPC counts.
+- Detail: [healthall-live-npc-REG-2026-11-06.md](healthall-live-npc-REG-2026-11-06.md)
+
+## Entry 35 — healthall 500 did not raise lethal body-part health
+
+- Recorded: 2026-11-07T15:44:30Z
+- Status: MODE-SCOPED FIX IN SOURCE; BUILD/RUNTIME VALIDATION PENDING
+- Summary: `healthall 500` sets actor current/max HP to 500, but damage also drains each body part's independent 100 HP pool. Destroying the torso/head forces death while global HP remains above zero. The command does not restore body-part health.
+- Detail: [healthall-body-part-lethal-REG-2026-11-07.md](healthall-body-part-lethal-REG-2026-11-07.md)

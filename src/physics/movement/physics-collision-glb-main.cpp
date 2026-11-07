@@ -488,6 +488,44 @@ void doGLBTriangleCollisions(
     trace.finalPos = p.pos;
     gLastCollisionTrace = trace;
 
+    // Headless NPCs have no body-part triangles, so the requested actor-triangle
+    // backend falls back to this capsule owner. Capture the actual sweep inputs
+    // and result while an NPC is descending without world grounding; this is
+    // the evidence needed to tell a missed floor candidate from a missed sweep.
+    if (isCurrentEntityNpc() && !groundedThisFrame && p.vel.z < -5.0f)
+    {
+        static std::unordered_map<std::string, uint32_t> lastFallSampleTick;
+        const uint32_t tick = static_cast<uint32_t>(p.movementSimulationTick);
+        uint32_t& lastTick = lastFallSampleTick[p.username];
+        if (lastTick == 0 || tick - lastTick >= 30u)
+        {
+            lastTick = tick;
+            const Capsule capsule = p.getCapsule();
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Collision, StructuredLevel::Important,
+                "npc.collision.fall-sample", p.username,
+                "NPC capsule collision result while descending without a world-floor contact",
+                tick,
+                {{"actor", p.username},
+                 {"start_position", {trace.startPos.x, trace.startPos.y,
+                                      trace.startPos.z}},
+                 {"requested_move", {trace.inputMove.x, trace.inputMove.y,
+                                      trace.inputMove.z}},
+                 {"final_position", {trace.finalPos.x, trace.finalPos.y,
+                                      trace.finalPos.z}},
+                 {"velocity", {p.vel.x, p.vel.y, p.vel.z}},
+                 {"grounded_this_tick", groundedThisFrame},
+                 {"world_contact", p.ground.hasWorldContact},
+                 {"capsule_feet_z", capsule.a.z - capsule.r},
+                 {"candidate_count", trace.initialCandidates},
+                 {"sweep_iterations", trace.sweepIterations},
+                 {"sweep_hits", trace.sweepHits},
+                 {"recovery_contacts", trace.maxRecoveryContacts},
+                 {"max_penetration_m", trace.maxPenetration}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+
     auto tFrameEnd = std::chrono::steady_clock::now();
     diag.totalMs = std::chrono::duration<float, std::milli>(tFrameEnd - tFrameStart).count();
 

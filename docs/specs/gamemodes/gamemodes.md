@@ -18,6 +18,14 @@ world text. The shared UI and presentation owners render those elements from
 the declared state. The aspiration to support a very large community of
 distinct modes is a direction, not a literal capacity guarantee.
 
+The masterlist's `features.destructible_body_parts` Boolean controls actor-part
+durability for both players and NPCs. It defaults to `false`, so ordinary modes
+use actor HP alone for death; `true` enables per-part health, limb removal, and
+lethal head/torso destruction. Bloodtest opts in; Fun Counter Strike and all
+other modes remain off unless deliberately changed. The server applies this
+policy in the shared damage owner and reports the resolved value in
+`gamemode.match.configured`.
+
 ### Mode avatar policy
 
 The optional mode `avatar` policy owns whether avatar identity may change
