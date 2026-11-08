@@ -1813,6 +1813,12 @@ void simulateSharedNpcs(SOCKET sock,
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
     const auto npcAiStart = std::chrono::steady_clock::now();
+    uint64_t targetScans = 0;
+    uint64_t targetScanSkipped = 0;
+    uint64_t targetForcedRefreshes = 0;
+    uint64_t targetPlayerCandidates = 0;
+    uint64_t targetNpcCandidates = 0;
+    double targetSelectionMs = 0.0;
     for (Npc& n : npcSystem.all())
     {
         // Transform-follow proxies are driven by the recorded track. Intent
@@ -1886,10 +1892,21 @@ void simulateSharedNpcs(SOCKET sock,
         const bool thinkingDue = !staggerFcsThinking ||
             ((tick + n.id) % 3u == 0u) || !n.hasTargetScanSnapshot ||
             (n.hasCachedServerTarget && !cachedTargetValid);
+        const bool targetWasInvalidated =
+            n.hasCachedServerTarget && !cachedTargetValid;
+        const auto targetSelectionStart = std::chrono::steady_clock::now();
+        if (thinkingDue) {
+            ++targetScans;
+            if (targetWasInvalidated)
+                ++targetForcedRefreshes;
+        } else {
+            ++targetScanSkipped;
+        }
         auto chooseNearestPlayer = [&]() {
             float bestD2 = std::numeric_limits<float>::max();
             if (considerPlayers) for (auto& kv : players)
             {
+                ++targetPlayerCandidates;
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.downed || p.connectionStale) continue;
                 // Team gate: never target a same-team human. Applies in every
@@ -1917,6 +1934,7 @@ void simulateSharedNpcs(SOCKET sock,
             if (!nearestPlayer && allowNpcTargets) {
                 float bestD2 = std::numeric_limits<float>::max();
                 for (Npc& other : npcSystem.all()) {
+                    ++targetNpcCandidates;
                     if (&other == &n) continue;
                     if (other.body.dead || other.body.currentHp <= 0) continue;
                     if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
@@ -1948,6 +1966,7 @@ void simulateSharedNpcs(SOCKET sock,
             float currentScore = -1e30f;
             if (considerPlayers) for (auto& kv : players)
             {
+                ++targetPlayerCandidates;
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.downed || p.connectionStale) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
@@ -1959,6 +1978,7 @@ void simulateSharedNpcs(SOCKET sock,
             }
             if (allowNpcTargets) for (Npc& other : npcSystem.all())
             {
+                ++targetNpcCandidates;
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
@@ -1986,14 +2006,18 @@ void simulateSharedNpcs(SOCKET sock,
                     bool kept = false;
                     for (auto& kv : players)
                     {
+                        ++targetPlayerCandidates;
                         if (kv.second.id == n.serverTargetId && !kv.second.dead)
                         { nearestPlayer = &kv.second; nearestNpc = nullptr; kept = true; break; }
                     }
                     if (!kept)
                         for (Npc& other : npcSystem.all())
+                        {
+                            ++targetNpcCandidates;
                             if (other.id == n.serverTargetId && !other.body.dead &&
                                 other.body.currentHp > 0)
                             { nearestNpc = &other; nearestPlayer = nullptr; kept = true; break; }
+                        }
                 }
             }
         }
@@ -2003,6 +2027,7 @@ void simulateSharedNpcs(SOCKET sock,
             float bestD2 = std::numeric_limits<float>::max();
             if (considerPlayers) for (auto& kv : players)
             {
+                ++targetPlayerCandidates;
                 ServerPlayer& p = kv.second;
                 if (p.dead || p.downed || p.connectionStale) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p))) continue;
@@ -2012,6 +2037,7 @@ void simulateSharedNpcs(SOCKET sock,
             }
             if (allowNpcTargets) for (Npc& other : npcSystem.all())
             {
+                ++targetNpcCandidates;
                 if (&other == &n) continue;
                 if (other.body.dead || other.body.currentHp <= 0) continue;
                 if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other))) continue;
@@ -2019,6 +2045,10 @@ void simulateSharedNpcs(SOCKET sock,
                 const float d2 = glm::dot(d, d);
                 if (d2 < bestD2) { bestD2 = d2; nearestNpc = &other; nearestPlayer = nullptr; }
             }
+        }
+        if (thinkingDue) {
+            targetSelectionMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - targetSelectionStart).count();
         }
 
         if (thinkingDue || !n.hasTargetScanSnapshot) {
@@ -2283,6 +2313,10 @@ void simulateSharedNpcs(SOCKET sock,
                 Npc& candidate = allNpcs[index];
                 if (candidate.replayControlled || candidate.body.dead ||
                     candidate.body.currentHp <= 0)
+                    continue;
+                const auto activeCooldown = recoveryCooldownTick.find(candidate.id);
+                if (activeCooldown != recoveryCooldownTick.end() &&
+                    tick < activeCooldown->second)
                     continue;
                 const float mapFloorZ = world.collisionMesh.boundsMin.z;
                 const bool belowMap = !world.collisionMesh.triangles.empty() &&
@@ -2633,6 +2667,9 @@ void simulateSharedNpcs(SOCKET sock,
         double ai = 0, recovery = 0, pairs = 0, respawn = 0, rebuild = 0, total = 0;
         double worstActorMs = 0;
         uint32_t worstActor = 0;
+        uint64_t targetScans = 0, targetScanSkipped = 0, targetForcedRefreshes = 0;
+        uint64_t targetPlayerCandidates = 0, targetNpcCandidates = 0;
+        double targetSelectionMs = 0.0;
     };
     static NpcServerWindow phaseWindow;
     ++phaseWindow.ticks;
@@ -2642,6 +2679,12 @@ void simulateSharedNpcs(SOCKET sock,
     phaseWindow.respawn += respawnMs;
     phaseWindow.rebuild += rebuildMs;
     phaseWindow.total += totalMs;
+    phaseWindow.targetScans += targetScans;
+    phaseWindow.targetScanSkipped += targetScanSkipped;
+    phaseWindow.targetForcedRefreshes += targetForcedRefreshes;
+    phaseWindow.targetPlayerCandidates += targetPlayerCandidates;
+    phaseWindow.targetNpcCandidates += targetNpcCandidates;
+    phaseWindow.targetSelectionMs += targetSelectionMs;
     if (worstAiMs > phaseWindow.worstActorMs) {
         phaseWindow.worstActorMs = worstAiMs;
         phaseWindow.worstActor = worstAiActor;
@@ -2660,6 +2703,12 @@ void simulateSharedNpcs(SOCKET sock,
                            {"respawn_ms", phaseWindow.respawn},
                            {"rebuild_ms", phaseWindow.rebuild},
                            {"total_ms", phaseWindow.total},
+                           {"target_scans", phaseWindow.targetScans},
+                           {"target_scan_skipped", phaseWindow.targetScanSkipped},
+                           {"target_forced_refreshes", phaseWindow.targetForcedRefreshes},
+                           {"target_player_candidates", phaseWindow.targetPlayerCandidates},
+                           {"target_npc_candidates", phaseWindow.targetNpcCandidates},
+                           {"target_selection_ms", phaseWindow.targetSelectionMs},
                            {"worst_actor", phaseWindow.worstActor},
                            {"worst_actor_ms", phaseWindow.worstActorMs}},
             __FILE__, __LINE__, __FUNCTION__);

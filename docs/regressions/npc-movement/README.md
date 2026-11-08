@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 8
+Entries: 9
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -69,3 +69,9 @@ Entries: 8
 - Status: FIXED IN SOURCE; RUNTIME RECHECK PASSED
 - Summary: - Recorded: 2026-10-25T00:14:05Z - Status: FIXED IN SOURCE; RUNTIME RECHECK PASSED
 - Detail: [npc-waves-stale-REG-2026-10-25.md](npc-waves-stale-REG-2026-10-25.md)
+
+## Entry 9 — Payload NPC combat priority near the cart
+
+- Recorded: 2026-11-08 (human report; exact time not supplied)
+- Status: REPORTED / NOT YET REPRODUCED
+- Detail: [payload-combat-priority-REG-2026-11-08.md](payload-combat-priority-REG-2026-11-08.md)

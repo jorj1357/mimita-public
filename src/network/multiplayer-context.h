@@ -608,6 +608,38 @@ struct MultiplayerContext
     uint32_t mapLoadAttempts = 0;
     uint64_t lastMapLoadAttemptMs = 0;
 
+    // ── Authoritative authored-map config reassembly ──────────────────
+    // Chunks arrive as reliable events. The completed JSON is applied on the
+    // next safe frame boundary so collision/geometry rebuilds never run inside
+    // the packet receive budget.
+    struct PendingMapConfigSnapshot
+    {
+        std::string mapId;
+        uint64_t configRevision = 0;
+        uint32_t geometryRevision = 0;
+        uint64_t geometrySignature = 0;
+        uint64_t contentHash = 0;
+        std::string json;
+    };
+    struct MapConfigSnapshotAssembly
+    {
+        bool active = false;
+        std::string mapId;
+        uint64_t configRevision = 0;
+        uint32_t geometryRevision = 0;
+        uint64_t geometrySignature = 0;
+        uint64_t contentHash = 0;
+        uint32_t totalBytes = 0;
+        uint32_t receivedBytes = 0;
+        uint64_t startedMs = 0;
+        std::vector<uint8_t> bytes;
+    };
+    MapConfigSnapshotAssembly mapConfigSnapshotAssembly;
+    std::optional<PendingMapConfigSnapshot> pendingMapConfigSnapshot;
+    uint32_t appliedGeometryRevision = 0;
+    uint64_t appliedGeometrySignature = 0;
+    uint64_t geometryTransitionStartMs = 0;
+
     // ── Remote sword state for visual reconstruction ──────────────────
     std::unordered_map<uint32_t, SwordswordState> remoteSwordStates;
 
@@ -924,6 +956,11 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy);
 // preserving the connection, local player identity, and chat/session state.
 // Use when the authoritative map changes or a join loads a different map.
 void mpClearRemoteWorldState(MultiplayerContext& ctx, const char* reason);
+// Apply a completed authoritative map-config snapshot to the client world at
+// the next safe frame boundary. Deferred until the active world path matches
+// the snapshot's map id. Returns true when a config was actually applied.
+bool mpApplyPendingMapConfig(MultiplayerContext& ctx, ::World& world,
+                             const std::string& activeMapPath);
 bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::string& playerName);
 void mpShutdown(MultiplayerContext& ctx);
 void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, const MpInput* input, ::World& world);

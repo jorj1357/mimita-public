@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 19
+Entries: 20
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -151,3 +151,9 @@ applies to walkable slope impacts; runtime replay is still pending.
 - Status: ATTEMPTED FIX (1) — source changed; runtime review pending
 - Summary: Union output used the same sentinel as removed solids, so 6,654 of 51,879 atdm triangles were dropped from the NPC world; solid IDs were not copied, disabling closed-solid containment. NPCs fell through spheres and could not be detected inside blocks.
 - Detail: [tdmtest3-npc-world-REG-2026-11-03.md](tdmtest3-npc-world-REG-2026-11-03.md) occurrence 2
+
+## Entry 20 — NPCs embed in FunWorld3 cylinders
+
+- Recorded: 2026-11-08 (human report; exact time not supplied)
+- Status: REPORTED / NOT YET REPRODUCED
+- Detail: [funworld3-cylinder-embedding-REG-2026-11-08.md](funworld3-cylinder-embedding-REG-2026-11-08.md)

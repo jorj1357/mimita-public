@@ -23,6 +23,25 @@ struct DuelConfig;
 // Each gamemode JSON can declare which features it uses.
 // The GamemodeManager reads these to determine what to render.
 // Adding a new feature type = adding a field here + JSON key + renderer.
+struct GamemodeWorldStreaming {
+    bool enabled = false;
+    float visualRadiusM = 1000.0f;
+    float collisionRadiusM = 150.0f;
+    float lookaheadSeconds = 1.0f;
+    float nearFullM = 150.0f;
+    float midProxyM = 400.0f;
+    float farProxyM = 1000.0f;
+    int maxLoadedChunks = 512;
+    int maxPendingChunks = 1024;
+    int maxChunksPerFrame = 8;
+    float installBudgetMs = 2.0f;
+    bool coarseCollision = true;
+    bool farProxy = true;
+    float fogStartM = 300.0f;
+    float fogEndM = 1000.0f;
+    glm::vec3 fogColor{0.7f, 0.8f, 1.0f};
+};
+
 struct GamemodeFeatures {
     bool worldTimer = false;        // Render a countdown timer above a world entity
     bool bombHolderText = false;    // Render "X has the bomb!!!!" at top of screen
@@ -350,6 +369,7 @@ struct Gamemode {
     // ── Feature declarations ─────────────────────────────────────────
     // Declares what this gamemode renders/uses. Drives GamemodeManager.
     GamemodeFeatures features;
+    GamemodeWorldStreaming worldStreaming;
     // ── Visual/settings overrides (optional per-gamemode) ───────────
     // 0 / false + explicit=false means "no override, use user's current setting".
     float cameraFov = 0.0f;

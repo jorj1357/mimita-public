@@ -63,6 +63,8 @@ struct Player;
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+struct StaticUnionStats;
+
 namespace MimitaNet {
 
 struct ListenServerState;
@@ -207,6 +209,18 @@ struct HeadlessWorld
 
     // Second-level sub-grid inside each chunk (mirrors client collisionSubGrids)
     std::unordered_map<glm::ivec3, HeadlessSubGrid, HeadlessIVec3Hash> collisionSubGrids;
+
+    // Pristine GLB triangles and object ranges captured before decimation,
+    // static union, and face removal. Authored GLB overrides must be applied to
+    // these stable ranges first; the resulting world is then finalized.
+    bool rawBaseValid = false;
+    std::vector<CollisionTriangle> rawTriangles;
+    std::vector<uint32_t> rawSolidIds;
+    std::vector<HeadlessGLBObject> rawGlbObjects;
+    std::vector<ServerSpawnPoint> rawSpawnPoints;
+    glm::vec3 rawBoundsMin{0.0f};
+    glm::vec3 rawBoundsMax{0.0f};
+    uint32_t rawNextSolidId = 1;
 };
 
 struct ServerInput
@@ -986,6 +1000,11 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world);
 // Rebuilds the HeadlessWorld collision broadphase (chunks + sub-grids) from its
 // current triangle list. Shared by map load and procedural room appends.
 void buildHeadlessCollisionChunks(HeadlessWorld& world);
+// Run authored/LOD finalization on the current triangle list: decimation,
+// static solid union, face removal, bounds, and broadphase construction.
+void finalizeHeadlessWorldCollision(HeadlessWorld& world,
+                                    ::StaticUnionStats* unionStats = nullptr,
+                                    ::StaticUnionStats* removalStats = nullptr);
 void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
                              const std::string& mapId, uint32_t tick);
 void submitExplosionWorldImpacts(const HeadlessWorld& world,
@@ -994,6 +1013,7 @@ void submitExplosionWorldImpacts(const HeadlessWorld& world,
                                  float sourceRadiusM, float penetrationM,
                                  uint32_t sourceEntityId, uint32_t tick);
 void clearServerWorldDestruction(HeadlessWorld& world);
+void clearDeferredServerWorldImpacts(HeadlessWorld& world);
 void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
                                  uint32_t tick);
 

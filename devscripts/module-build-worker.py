@@ -7,6 +7,7 @@
 # Does NOT link mimita.exe and does NOT require the game process to stop.
 
 import argparse
+import ctypes
 import glob
 import hashlib
 import json
@@ -115,7 +116,12 @@ def parse_depfile(path, snapshot_dir):
     text = text.replace("\\\n", " ")
     if ":" not in text:
         return []
-    dependencies = text.split(":", 1)[1].split()
+    # A Windows drive letter also contains ':'. GCC separates the target from
+    # prerequisites with ': ', including when the target has a drive prefix.
+    separator = text.find(": ")
+    if separator < 0:
+        return []
+    dependencies = text[separator + 2:].split()
     result = []
     seen = set()
     for dependency in dependencies:
@@ -135,6 +141,21 @@ def parse_depfile(path, snapshot_dir):
     return sorted(result)
 
 
+def object_key(source, dependencies, command, generation):
+    digest = hashlib.sha256()
+    digest.update("\0".join(command).encode("utf-8"))
+    for path in sorted(set([source] + dependencies)):
+        digest.update(os.path.relpath(path, ROOT).encode("utf-8"))
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    # Only the entry translation unit includes the generated identity header.
+    with open(source, "rb") as handle:
+        if b"module-identity.h" in handle.read():
+            digest.update(str(generation).encode("ascii"))
+    return digest.hexdigest()
+
+
 def next_generation(output_dir, code_hash):
     current_path = os.path.join(output_dir, "current.json")
     if not os.path.isfile(current_path):
@@ -152,8 +173,23 @@ def acquire_lock(output_dir):
     os.makedirs(output_dir, exist_ok=True)
     lock_path = os.path.join(output_dir, ".build.lock")
     try:
-        if os.path.isfile(lock_path) and time.time() - os.path.getmtime(lock_path) > 120:
-            os.remove(lock_path)
+        if os.path.isfile(lock_path):
+            try:
+                with open(lock_path, "r", encoding="ascii") as handle:
+                    owner_pid = int(handle.read().strip())
+                process = ctypes.windll.kernel32.OpenProcess(0x00100000, False, owner_pid)
+                if process:
+                    running = ctypes.windll.kernel32.WaitForSingleObject(process, 0) == 258
+                    ctypes.windll.kernel32.CloseHandle(process)
+                else:
+                    # Access denied is not proof the owner exited.
+                    running = ctypes.windll.kernel32.GetLastError() != 87
+                if not running:
+                    os.remove(lock_path)
+            except (OSError, ValueError):
+                # An unreadable lock is retained; guessing that a live build
+                # is stale can allow two writers to publish one generation.
+                pass
         descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(descriptor, str(os.getpid()).encode("ascii"))
         return descriptor, lock_path
@@ -237,7 +273,6 @@ def build_module(module):
             "-std=c++17",
             "-O1",
             "-g",
-            "-shared",
             "-DMIMITA_MODULE_BUILD",
             f"-I{snapshot_dir}",
             f"-I{os.path.join(snapshot_dir, 'src')}",
@@ -256,28 +291,67 @@ def build_module(module):
             command.append(f"-I{glfw_include()}")
         except FileNotFoundError:
             pass
-        depfile = os.path.join(generation_dir, f"{name}-g{generation}.d")
-        command += ["-MMD", "-MF", depfile]
-        command += snapshot_sources
-        command += ["-o", staging]
-
         build_env = os.environ.copy()
         build_env["PATH"] = runtime_path(compiler()) + os.pathsep + build_env.get("PATH", "")
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
-                                env=build_env)
-        output = (result.stdout or "") + (result.stderr or "")
+        objects = []
+        dependency_files = set()
+        compiled = 0
+        for source, snapshot_source in zip(sources, snapshot_sources):
+            relative = os.path.relpath(source, ROOT).replace("\\", "/")
+            object_dir = os.path.join(output_dir, "objects", hashlib.sha256(
+                relative.encode("utf-8")).hexdigest()[:16])
+            os.makedirs(object_dir, exist_ok=True)
+            cached_object = os.path.join(object_dir, "module.o")
+            cache_path = os.path.join(object_dir, "cache.json")
+            cached = read_json(cache_path) if os.path.isfile(cache_path) else {}
+            cached_deps = cached.get("dependencies", [])
+            dep_paths = [os.path.join(ROOT, path) for path in cached_deps]
+            if any(not os.path.isfile(path) for path in dep_paths):
+                dep_paths = []
+                cached = {}
+            cache_command = [part.replace(snapshot_dir, "<snapshot>")
+                             for part in command]
+            key = object_key(source, dep_paths, cache_command, generation)
+            obj = os.path.join(generation_dir, os.path.basename(source) + ".o")
+            if cached.get("key") == key and os.path.isfile(cached_object):
+                shutil.copy2(cached_object, obj)
+                dependency_files.update(cached_deps)
+            else:
+                depfile = obj + ".d"
+                compile_command = command + ["-c", "-MMD", "-MF", depfile,
+                                             snapshot_source, "-o", obj]
+                result = subprocess.run(compile_command, cwd=ROOT,
+                                        capture_output=True, text=True, env=build_env)
+                if result.returncode != 0:
+                    return {"status": "failed", "module": name,
+                            "generation": generation, "code_hash": code_hash,
+                            "translation_unit": relative,
+                            "exit_code": result.returncode,
+                            "compiler_output": ((result.stdout or "") +
+                                                (result.stderr or ""))[-12000:]}
+                deps = parse_depfile(depfile, snapshot_dir)
+                dependency_files.update(deps)
+                shutil.copy2(obj, cached_object)
+                write_json_atomic(cache_path, {
+                    "key": object_key(source, [os.path.join(ROOT, path)
+                                               for path in deps], cache_command, generation),
+                    "dependencies": deps,
+                })
+                compiled += 1
+            objects.append(obj)
+
+        link_command = [compiler(), "-shared"] + objects + ["-o", staging]
+        result = subprocess.run(link_command, cwd=ROOT, capture_output=True,
+                                text=True, env=build_env)
         if result.returncode != 0:
-            return {
-                "status": "failed",
-                "module": name,
-                "generation": generation,
-                "code_hash": code_hash,
-                "exit_code": result.returncode,
-                "compiler_output": output[-12000:],
-            }
+            return {"status": "failed", "module": name,
+                    "generation": generation, "code_hash": code_hash,
+                    "phase": "link", "exit_code": result.returncode,
+                    "compiler_output": ((result.stdout or "") +
+                                        (result.stderr or ""))[-12000:]}
 
         os.replace(staging, final)
-        dependency_files = parse_depfile(depfile, snapshot_dir)
+        dependency_files = sorted(dependency_files)
         if dependency_files:
             write_json_atomic(os.path.join(output_dir, "deps.json"),
                               dependency_files)
@@ -298,6 +372,8 @@ def build_module(module):
             "code_hash": code_hash,
             "dll": final,
             "dependency_count": len(dependency_files),
+            "compiled_translation_units": compiled,
+            "reused_translation_units": len(objects) - compiled,
         }
     finally:
         release_lock(descriptor, lock_path)

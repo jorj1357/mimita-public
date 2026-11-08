@@ -1133,6 +1133,14 @@
         }
       }
     },
+    "world_streaming": {
+      "type": "object",
+      "required": false,
+      "additional": {
+        "type": "any"
+      },
+      "description": "Infinite-world streaming/LOD configuration for this mode."
+    },
     "camera_fov": {
       "type": "number",
       "required": false,

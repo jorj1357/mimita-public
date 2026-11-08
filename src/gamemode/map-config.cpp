@@ -25,6 +25,16 @@ using json = nlohmann::json;
 
 namespace {
 
+uint64_t diagnosticContentHash(const std::string& value)
+{
+    uint64_t hash = 14695981039346656037ULL;
+    for (unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
 std::filesystem::file_time_type getLastWrite(const std::string& path)
 {
     std::error_code ec;
@@ -408,6 +418,12 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
             mLastWrite = {};
         }
         mRemoteSnapshot = false;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map-entity.load-failed", mapId, "map config file could not be opened", 0,
+            nlohmann::json{{"map", mapId}, {"config_path", nextPath},
+                           {"result", "missing_or_unreadable"}},
+            __FILE__, __LINE__, __FUNCTION__);
         return false;
     }
     return loadFromStream(mapId, nextPath, file, true);
@@ -428,6 +444,7 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
 {
     try {
         const json root = parseJsonConfig(input);
+        const uint64_t contentHash = diagnosticContentHash(root.dump());
         MapObjectiveConfig next;
         next.mapId = mapId;
         next.loaded = true;
@@ -1055,7 +1072,12 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Important,
             "map-entity.loaded", mapId, "valid map config applied", 0,
-            nlohmann::json{{"map", mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"remote_snapshot", mRemoteSnapshot}, {"result", "success"}},
+            nlohmann::json{{"map", mapId}, {"entity_count", mCurrent.entities.size()},
+                           {"block_count", mCurrent.blocks.size()},
+                           {"route_count", mCurrent.payload.route.size()},
+                           {"revision", mRevision}, {"content_hash_fnv1a64", contentHash},
+                           {"config_path", mPath}, {"remote_snapshot", mRemoteSnapshot},
+                           {"result", "success"}},
             __FILE__, __LINE__, __FUNCTION__);
         return true;
     } catch (const std::exception& e) {
@@ -1602,10 +1624,24 @@ bool MapConfigRegistry::save(bool withBackup)
             }
         }
     }
+    const uint64_t beforeContentHash = diagnosticContentHash(base.dump());
     json root = buildAuthoredDocument(mCurrent, base);
+    const uint64_t afterContentHash = diagnosticContentHash(root.dump());
     const std::string contents = root.dump(2) + "\n";
     if (!existingContents.empty() && existingContents == contents) {
         mSavedRevision = mRevision;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-entity.saved", mCurrent.mapId, "map config already matched current revision", 0,
+            nlohmann::json{{"map", mCurrent.mapId},
+                           {"entity_count", mCurrent.entities.size()},
+                           {"block_count", mCurrent.blocks.size()},
+                           {"route_count", mCurrent.payload.route.size()},
+                           {"revision", mRevision},
+                           {"content_hash_before_fnv1a64", beforeContentHash},
+                           {"content_hash_after_fnv1a64", afterContentHash},
+                           {"config_path", mPath}, {"result", "unchanged"}},
+            __FILE__, __LINE__, __FUNCTION__);
         return true;
     }
 
@@ -1663,6 +1699,9 @@ bool MapConfigRegistry::save(bool withBackup)
                        {"entity_count", mCurrent.entities.size()},
                        {"block_count", mCurrent.blocks.size()},
                        {"route_count", mCurrent.payload.route.size()},
+                       {"revision", mRevision},
+                       {"content_hash_before_fnv1a64", beforeContentHash},
+                       {"content_hash_after_fnv1a64", afterContentHash},
                        {"config_path", mPath}, {"result", "success"}},
         __FILE__, __LINE__, __FUNCTION__);
     return true;

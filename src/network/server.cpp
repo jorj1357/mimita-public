@@ -105,6 +105,17 @@ struct ServerTransportStats
     uint64_t inputPackets = 0;
 };
 
+struct ServerTickSample
+{
+    uint32_t tick = 0;
+    uint64_t totalUs = 0;
+    uint64_t npcUs = 0;
+    uint64_t snapshotUs = 0;
+    uint64_t gamemodeUs = 0;
+    uint64_t projectileUs = 0;
+    uint64_t contactWeaponUs = 0;
+};
+
 struct ServerTickTiming
 {
     uint64_t tickCount = 0;
@@ -121,6 +132,7 @@ struct ServerTickTiming
     uint64_t contactWeaponUs = 0;
     uint64_t maxContactWeaponUs = 0;
     std::array<uint64_t, 600> totalSamplesUs{};
+    std::array<ServerTickSample, 600> recentSamples{};
     uint32_t sampleCount = 0;
     uint32_t sampleWrite = 0;
     uint64_t over100MsCount = 0;
@@ -133,7 +145,9 @@ uint64_t elapsedMicroseconds(const std::chrono::steady_clock::time_point& start)
 }
 
 void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
-                            size_t players, size_t npcs)
+                            size_t players, size_t npcs,
+                            const std::string& map, const std::string& mode,
+                            uint64_t packetsIn, uint64_t packetsOut)
 {
     if (timing.tickCount == 0)
         return;
@@ -152,6 +166,24 @@ void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
             percentile * static_cast<double>(sampleCount - 1)));
         return static_cast<double>(sorted[index]) / 1000.0;
     };
+    std::array<ServerTickSample, 600> slowestTicks = timing.recentSamples;
+    std::sort(slowestTicks.begin(), slowestTicks.begin() + sampleCount,
+        [](const ServerTickSample& a, const ServerTickSample& b) {
+            return a.totalUs > b.totalUs;
+        });
+    nlohmann::json slowTickRows = nlohmann::json::array();
+    const uint32_t slowTickCount = std::min<uint32_t>(12, sampleCount);
+    for (uint32_t i = 0; i < slowTickCount; ++i) {
+        const auto& sample = slowestTicks[i];
+        slowTickRows.push_back({
+            {"tick", sample.tick},
+            {"total_ms", static_cast<double>(sample.totalUs) / 1000.0},
+            {"npc_ms", static_cast<double>(sample.npcUs) / 1000.0},
+            {"snapshot_ms", static_cast<double>(sample.snapshotUs) / 1000.0},
+            {"gamemode_ms", static_cast<double>(sample.gamemodeUs) / 1000.0},
+            {"projectile_ms", static_cast<double>(sample.projectileUs) / 1000.0},
+            {"contact_weapon_ms", static_cast<double>(sample.contactWeaponUs) / 1000.0}});
+    }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Performance, StructuredLevel::Important,
         "performance.server-tick-window", "server", "fixed-tick-stage-timing",
@@ -161,6 +193,9 @@ void reportServerTickTiming(ServerTickTiming& timing, uint32_t tick,
             {"sample_count", sampleCount},
             {"players", players},
             {"npcs", npcs},
+            {"map", map}, {"mode", mode},
+            {"packets_in", packetsIn}, {"packets_out", packetsOut},
+            {"slowest_ticks", slowTickRows},
             {"total_avg_ms", avgMs(timing.totalUs, timing.tickCount)},
             {"total_max_ms", static_cast<double>(timing.maxTotalUs) / 1000.0},
             {"total_p50_ms", percentileMs(0.50)},
@@ -419,7 +454,28 @@ int runServer(const LaunchOptions& options)
     VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
+    auto logStartupStage = [&](const char* stage, const char* result,
+                               const char* reason, double elapsedMs = 0.0,
+                               nlohmann::json extra = nlohmann::json::object()) {
+        extra["stage"] = stage;
+        extra["result"] = result;
+        extra["elapsed_ms"] = elapsedMs;
+        extra["pid"] = static_cast<unsigned long long>(GetCurrentProcessId());
+        extra["map"] = options.mapName;
+        extra["mode"] = options.gameMode;
+        extra["events_jsonl"] = ::StructuredLogger::instance().eventsPath();
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "server.startup.stage", "server-startup", reason, 0, extra,
+            __FILE__, __LINE__, __func__);
+    };
+    logStartupStage("logger_init", "complete", "structured logger initialized");
+    auto startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("server_modules", "started", "loading server modules");
     ModuleHost::instance().startupServerModules();
+    logStartupStage("server_modules", "complete", "server modules loaded",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count());
     auto logServerExit = [&](int exitCode, const char* reason,
                              const std::string& roomCode, uint32_t serverTick) {
         ::StructuredLogger::instance().writeEvent(
@@ -462,6 +518,9 @@ int runServer(const LaunchOptions& options)
 
     // Load NPC difficulty config so server-authoritative NPC damage/fire rate
     // honors config/npc-difficulty.json (hot-reloaded in the server loop below).
+    startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("configuration_load", "started",
+                    "loading server mode and actor configuration");
     NpcDifficultyConfig::instance().load("config/npc-difficulty.json");
     CommunityServerConfig::instance().load();
     GamemodeRegistry::instance().loadDirectory("config/gamemodes");
@@ -481,6 +540,12 @@ int runServer(const LaunchOptions& options)
     MonsterPoolRegistry::instance().load("config/monster-pools.json");
     BehaviorProfileRegistry::instance().load("config/behavior-profiles.json");
     GamemodeMapPool::instance().load("config/gamemode-good-maps.json");
+    logStartupStage("configuration_load", "complete",
+        "server mode and actor configuration loaded",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count(),
+        nlohmann::json{{"requested_map", options.mapName},
+                       {"requested_mode", options.gameMode}});
 
     // Validate grenade launcher config at startup
     {
@@ -540,17 +605,38 @@ int runServer(const LaunchOptions& options)
     }
 
     HeadlessWorld world;
-    if (!loadHeadlessWorld(mapPath.c_str(), world))
+    startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("world_load", "started", "loading map collision world", 0.0,
+                    nlohmann::json{{"resolved_map_path", mapPath}});
+    const bool worldLoaded = loadHeadlessWorld(mapPath.c_str(), world);
+    logStartupStage("world_load", worldLoaded ? "complete" : "fallback",
+        worldLoaded ? "map collision world loaded" : "map load used floor fallback",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count(),
+        nlohmann::json{{"resolved_map_path", mapPath},
+                       {"triangle_count", world.triangles.size()},
+                       {"spawn_count", world.spawnPoints.size()}});
+    if (!worldLoaded)
         printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
-    else
+    else {
+        serverCaptureAuthoredBaseWorld(world, mapName);
         applyAuthoredMapGeometry(world, mapName);
+    }
 
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
     World npcWorld;
     // Build the shared NPC collision world before the socket accepts clients.
     // Its first construction can take seconds on authored maps, so it must not
     // run inside the first fixed gameplay tick when an NPC becomes active.
+    startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("npc_collision_build", "started",
+                    "building server NPC collision world");
     buildNpcWorldCollision(npcWorld, world);
+    logStartupStage("npc_collision_build", "complete",
+        "server NPC collision world built",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count(),
+        nlohmann::json{{"triangle_count", npcWorld.collisionMesh.triangles.size()}});
     NpcSystem npcSystem;
     Player mirrorPlayer;
     std::unordered_set<uint32_t> npcIdsAlive;
@@ -602,6 +688,9 @@ int runServer(const LaunchOptions& options)
         ::StructuredLogger::instance().shutdown();
         return 1;
     }
+    startupStageStart = std::chrono::steady_clock::now();
+    logStartupStage("network_bind", "started", "binding UDP socket",
+                    0.0, nlohmann::json{{"requested_bind", requestedBind}});
     if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
     {
         int err = WSAGetLastError();
@@ -618,6 +707,11 @@ int runServer(const LaunchOptions& options)
 
     sockaddr_in actualBindAddr = actualSocketAddress(sock, bindAddr);
     const uint16_t actualPort = ntohs(actualBindAddr.sin_port);
+    logStartupStage("network_bind", "complete", "UDP socket bound",
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - startupStageStart).count(),
+        nlohmann::json{{"actual_bind", addressToString(actualBindAddr)},
+                       {"port", actualPort}});
     printf("%s [SERVER TRANSPORT READY] protocol=%u role=dedicated-udp pid=%lu exe=\"%s\" cwd=\"%s\" "
            "requested=%s actual=%s family=AF_INET reuse=1 nonblocking=%d\n",
            serverTimestamp(), PROTOCOL_VERSION, (unsigned long)GetCurrentProcessId(),
@@ -691,10 +785,23 @@ int runServer(const LaunchOptions& options)
     }
     else
     {
+        startupStageStart = std::chrono::steady_clock::now();
+        logStartupStage("map_config_load", "started",
+                        "loading map objective and authored configuration");
         serverCommunityMapStart(communityMapPool(), mapName,
                                 options.autoMapRotation,
                                 options.mapRotationMinutes,
                                 options.weaponSetId);
+        logStartupStage("map_config_load", "complete",
+            "map configuration applied",
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - startupStageStart).count(),
+            nlohmann::json{{"config_path", MapConfigRegistry::instance().configPath()},
+                           {"revision", MapConfigRegistry::instance().revision()},
+                           {"entity_count", MapConfigRegistry::instance().current().entities.size()},
+                           {"route_count", MapConfigRegistry::instance().current().payload.route.size()}});
+        startupStageStart = std::chrono::steady_clock::now();
+        logStartupStage("mode_activation", "started", "activating community game mode");
         serverCommunitySetMode(options.gameMode);
         // Auto leaves the mode's weapon_set_id in control. A concrete GUI/CLI
         // choice overrides that default for every managed gamemode.
@@ -702,6 +809,13 @@ int runServer(const LaunchOptions& options)
             serverCommunitySetWeaponSet(options.weaponSetId);
         if (options.gameMode != "sandbox")
             serverCommunityStartMatch(false);
+        logStartupStage("mode_activation", "complete", "community game mode activated",
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - startupStageStart).count(),
+            nlohmann::json{{"active_mode", serverGamemodeState().communityMode},
+                           {"match_mode", serverGamemodeState().matchMode},
+                           {"match_seed", serverGamemodeState().matchSeed},
+                           {"match_start_tick", serverGamemodeState().matchStartTick}});
     }
 
     if (MapConfigRegistry::instance().current().arena.present)
@@ -772,6 +886,9 @@ int runServer(const LaunchOptions& options)
     bool registrationSucceeded = false;
     ListenServerState registrationResult;
     std::thread registrationThread;
+    const auto roomRegistrationStart = std::chrono::steady_clock::now();
+    logStartupStage("room_register", "started",
+                    "registering room with coordinator");
     {
         if (hostedRoomSession().active)
         {
@@ -860,6 +977,11 @@ int runServer(const LaunchOptions& options)
                 registrationResult.lastIceCoordinatorPollMs;
             serverCode = dedicatedIceState.serverCode;
             publishServerIceListener(dedicatedIceState);
+            logStartupStage("room_register", "complete",
+                "room registration completed",
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - roomRegistrationStart).count(),
+                nlohmann::json{{"room_code", serverCode}, {"port", actualPort}});
             printf("%s [SERVER ICE] registered: code=%s\n",
                    serverTimestamp(), serverCode.c_str());
             std::vector<uint32_t> startupNpcIds;
@@ -891,6 +1013,15 @@ int runServer(const LaunchOptions& options)
                            serverCode.c_str(), options.roomFilePath.c_str());
                 }
             }
+        }
+        else if (registrationReady)
+        {
+            registrationThread.join();
+            logStartupStage("room_register", "failed",
+                "coordinator room registration failed; local server remains available",
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - roomRegistrationStart).count(),
+                nlohmann::json{{"port", actualPort}});
         }
         // Auto-exit when --timeout is set (for CI/agent testing)
         if (options.timeoutSecs > 0 && nowMs() - serverStartMs > (uint64_t)options.timeoutSecs * 1000)
@@ -1175,6 +1306,9 @@ int runServer(const LaunchOptions& options)
             tickTiming.contactWeaponUs += contactWeaponUs;
             tickTiming.maxContactWeaponUs = std::max(tickTiming.maxContactWeaponUs, contactWeaponUs);
             tickTiming.totalSamplesUs[tickTiming.sampleWrite] = totalTickUs;
+            tickTiming.recentSamples[tickTiming.sampleWrite] = {
+                tick, totalTickUs, npcUs, snapshotUs, gamemodeUs,
+                projectileUs, contactWeaponUs};
             tickTiming.sampleWrite = static_cast<uint32_t>(
                 (tickTiming.sampleWrite + 1) %
                 tickTiming.totalSamplesUs.size());
@@ -1329,7 +1463,9 @@ int runServer(const LaunchOptions& options)
         }
         if (perfNowMs - lastTickTimingReportMs >= 1000)
         {
-            reportServerTickTiming(tickTiming, tick, players.size(), npcs.size());
+            reportServerTickTiming(tickTiming, tick, players.size(), npcs.size(),
+                                   mapName, options.gameMode,
+                                   totalPacketsIn, totalPacketsOut);
             lastTickTimingReportMs = perfNowMs;
         }
 
@@ -1443,8 +1579,10 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
-    else
+    else {
+        serverCaptureAuthoredBaseWorld(state.world, mapName);
         applyAuthoredMapGeometry(state.world, mapName);
+    }
 
     // Load the standard player body shape headlessly for hit validation.
     if (gServerBodyTemplate.empty())

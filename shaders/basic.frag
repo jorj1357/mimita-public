@@ -102,6 +102,8 @@ uniform float uDynamicLightIntensity[8];
 uniform int uFogEnabled;
 uniform vec3 uFogColor;
 uniform float uFogDensity;
+uniform float uFogStart;
+uniform float uFogEnd;
 uniform vec3 uCameraPos;
 uniform int uCameraProximityFadeEnabled;
 uniform float uCameraProximityFadeStart;
@@ -270,7 +272,9 @@ void main()
 
     if (uFogEnabled != 0) {
         float fogDistance = length(vWorldPos - uCameraPos);
-        float fogAmount = 1.0 - exp(-max(uFogDensity, 0.0) * fogDistance);
+        float fogAmount = uFogEnd > uFogStart
+            ? smoothstep(uFogStart, uFogEnd, fogDistance)
+            : 1.0 - exp(-max(uFogDensity, 0.0) * fogDistance);
         lit = mix(lit, uFogColor, clamp(fogAmount, 0.0, 1.0));
     }
 

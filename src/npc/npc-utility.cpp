@@ -251,6 +251,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
         setFlag(mimita_npc_behavior::HAZARD_ACTIVE, ctx.hazardActive);
         setFlag(mimita_npc_behavior::LOS_BLOCKED, ctx.loSBlocked);
         setFlag(mimita_npc_behavior::OBJECTIVE_KNOWN, ctx.objectiveKnown);
+        setFlag(mimita_npc_behavior::PAYLOAD_OBJECTIVE, ctx.payloadObjective);
         setFlag(mimita_npc_behavior::PLANTED, ctx.planted);
         setFlag(mimita_npc_behavior::IS_DEFUSER, ctx.isDefuserId);
         setFlag(mimita_npc_behavior::CAN_PLANT, ctx.canPlant);
@@ -275,6 +276,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
         request.teamAlive = ctx.teamAlive;
         request.team = ctx.team;
         request.targetDistance = ctx.targetDistance;
+        request.targetCartDistance = ctx.targetCartDistance;
         request.targetConfidence = ctx.targetConfidence;
         request.healthFraction = ctx.healthFraction;
         request.timeRemaining = ctx.timeRemaining;
@@ -320,6 +322,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
         request.currentScore.confidence = state.currentScore.confidence;
         request.currentScore.teamInformation = state.currentScore.teamInformation;
         request.currentScore.total = state.currentScore.total;
+        request.outDownDash = 0;
         if (moduleHost.npcBehaviorDecision(&request)) {
             state.currentGoal = static_cast<UtilityGoalKind>(request.outGoal);
             state.currentAction = static_cast<UtilityActionKind>(request.outAction);
@@ -337,8 +340,7 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
             state.currentScore.confidence = request.outCurrentScore.confidence;
             state.currentScore.teamInformation = request.outCurrentScore.teamInformation;
             state.currentScore.total = request.outCurrentScore.total;
-            state.currentScore.total = request.outCurrentScore.total;
-            const_cast<UtilityContext&>(ctx).shouldDownDash = request.outDownDash != 0;
+            state.shouldDownDash = request.outDownDash != 0;
             return state.currentGoal;
         }
     }

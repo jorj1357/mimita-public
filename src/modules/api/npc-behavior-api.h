@@ -12,7 +12,7 @@
 
 namespace mimita_npc_behavior {
 
-constexpr std::uint32_t ABI_VERSION = 1;
+constexpr std::uint32_t ABI_VERSION = 2;
 
 enum ContextFlag : std::uint32_t {
     HAS_VISIBLE_TARGET = 1u << 0,
@@ -39,6 +39,8 @@ enum ContextFlag : std::uint32_t {
     SQUAD_APPROACH_KNOWN = 1u << 21,
     SWARM = 1u << 22,
     DOWN_DASH_OPPORTUNITY = 1u << 23,
+    DASH_OPPORTUNITY = 1u << 24,
+    PAYLOAD_OBJECTIVE = 1u << 25,
 };
 
 struct ScoreV1 {
@@ -102,6 +104,31 @@ struct DecisionV1 {
     float outDecisionMilliseconds;
     float downDashChance;
     std::uint32_t outDownDash;
+    std::uint32_t outHoldPursuit;
+    float dashChance;
+    std::uint32_t outDash;
+    float targetCartDistance;
+};
+
+// The host owns the cart and actor list. The module assigns a destination from
+// bounded, immutable facts; the host validates the returned world position.
+struct PayloadRoleV1 {
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t actorId;
+    std::uint32_t tick;
+    std::int32_t team;
+    std::int32_t attackerTeam;
+    std::int32_t defenderTeam;
+    std::int32_t teamSlot;
+    std::int32_t humanPushers;
+    std::int32_t maxPushAttackers;
+    float interactionTransform[16];
+    float interactionSize[3];
+    float cartPosition[3];
+    float outPosition[3];
+    std::uint32_t outRole; // 1=push, 2=attack cover, 3=contest, 4=defend
+    std::uint32_t outGeneration;
 };
 
 } // namespace mimita_npc_behavior

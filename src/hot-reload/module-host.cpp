@@ -44,6 +44,7 @@ using mimita_module::ModuleEventV1;
 using mimita_module::ModuleV1;
 
 constexpr std::uint64_t kPollIntervalMs = 250;
+constexpr std::size_t kMaxConcurrentModuleBuilds = 2;
 
 std::uint64_t fileWriteTime(const std::filesystem::path& path)
 {
@@ -669,7 +670,8 @@ void ModuleHost::startup(bool serverProcess)
         entry.lastResultJsonTime = fileWriteTime(entry.resultPath);
         refreshDependencies(entry);
         if (!loadCurrent(entry)) {
-            requestBuild(entry);
+            if (!requestBuild(entry))
+                entry.lastObservedInputTime = 0;
         }
     }
     writeEvent("module.host.started", "module host startup complete", "module-host",
@@ -768,8 +770,8 @@ void ModuleHost::poll()
             for (const auto& path : entry.headers)
                 if (fileWriteTime(path) > threshold)
                     recordPath(path);
-            entry.lastObservedInputTime = newest;
-            requestBuild(entry);
+            if (requestBuild(entry))
+                entry.lastObservedInputTime = newest;
         }
     }
 }
@@ -1089,6 +1091,37 @@ bool ModuleHost::collisionSurfacePolicy(
                         sizeof(*policy));
 }
 
+bool ModuleHost::collisionSolveContacts(
+    mimita_collision_policy::ContactSolveV1* request)
+{
+    if (!request || request->version != mimita_collision_policy::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeModule("chunk-collision",
+                        mimita_module::EVENT_COLLISION_CONTACT_SOLVE,
+                        request, sizeof(*request));
+}
+
+bool ModuleHost::networkSnapshotPolicy(
+    mimita_network_policy::SnapshotPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeModule("network-snapshot-policy",
+                        mimita_module::EVENT_NETWORK_SNAPSHOT_POLICY,
+                        policy, sizeof(*policy), policy->tick);
+}
+
+bool ModuleHost::networkReconnectPolicy(
+    mimita_network_policy::ReconnectPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeModule("network-reconnect-policy",
+                        mimita_module::EVENT_NETWORK_RECONNECT_POLICY,
+                        policy, sizeof(*policy), 0);
+}
+
 bool ModuleHost::npcBehaviorDecision(
     mimita_npc_behavior::DecisionV1* decision)
 {
@@ -1097,6 +1130,39 @@ bool ModuleHost::npcBehaviorDecision(
     return invokeModule("npc-behavior",
                         mimita_module::EVENT_NPC_BEHAVIOR_DECISION,
                         decision, sizeof(*decision), decision->tick);
+}
+
+bool ModuleHost::npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role)
+{
+    if (!role || role->version != mimita_npc_behavior::ABI_VERSION ||
+        role->structSize != sizeof(*role))
+        return false;
+    return invokeModule("npc-behavior", mimita_module::EVENT_NPC_PAYLOAD_ROLE,
+                        role, sizeof(*role), role->tick);
+}
+
+bool ModuleHost::npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tick)
+{
+    mimita_npc_behavior::DecisionV1 decision{};
+    decision.version = mimita_npc_behavior::ABI_VERSION;
+    decision.structSize = sizeof(decision);
+    decision.actorId = actorId;
+    decision.tick = tick;
+    decision.contextFlags = static_cast<std::uint32_t>(mimita_npc_behavior::HAS_KNOWN_TARGET);
+    return npcBehaviorDecision(&decision) && decision.outHoldPursuit != 0;
+}
+
+bool ModuleHost::npcBehaviorDashChoice(std::uint32_t actorId, std::uint32_t tick,
+                                      float chance)
+{
+    mimita_npc_behavior::DecisionV1 decision{};
+    decision.version = mimita_npc_behavior::ABI_VERSION;
+    decision.structSize = sizeof(decision);
+    decision.actorId = actorId;
+    decision.tick = tick;
+    decision.contextFlags = static_cast<std::uint32_t>(mimita_npc_behavior::DASH_OPPORTUNITY);
+    decision.dashChance = chance;
+    return npcBehaviorDecision(&decision) && decision.outDash != 0;
 }
 
 bool ModuleHost::npcBehaviorLoaded() const
@@ -1123,7 +1189,14 @@ bool ModuleHost::loadCatalog(bool serverProcess)
     for (const auto& item : rootJson.value("modules", nlohmann::json::array())) {
         if (!item.is_object())
             continue;
-        if (item.value("server_process", false) != serverProcess)
+        const std::string processScope = item.value("process_scope", std::string{});
+        const bool scopeMatches =
+            processScope == "both" ||
+            (processScope == "server" && serverProcess) ||
+            (processScope == "client" && !serverProcess) ||
+            (processScope.empty() &&
+             item.value("server_process", false) == serverProcess);
+        if (!scopeMatches)
             continue;
         ModuleEntry entry;
         entry.name = item.value("name", std::string{});
@@ -1348,6 +1421,12 @@ bool ModuleHost::requestBuild(ModuleEntry& entry)
 {
     if (entry.buildInFlight || entry.workerProcess)
         return false;
+    const std::size_t activeBuilds = static_cast<std::size_t>(std::count_if(
+        mModules.begin(), mModules.end(), [](const ModuleEntry& module) {
+            return module.buildInFlight || module.workerProcess;
+        }));
+    if (activeBuilds >= kMaxConcurrentModuleBuilds)
+        return false;
 
     wchar_t pythonPath[MAX_PATH]{};
     DWORD length = GetEnvironmentVariableW(L"MIMITA_PYTHON", pythonPath, MAX_PATH);
@@ -1368,7 +1447,8 @@ bool ModuleHost::requestBuild(ModuleEntry& entry)
     startup.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION process{};
     if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE,
-                        CREATE_NO_WINDOW, nullptr, root.wstring().c_str(),
+                        CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS,
+                        nullptr, root.wstring().c_str(),
                         &startup, &process)) {
         rememberError("module build worker launch failed");
         writeEvent("module.build.failed", "worker launch failed", entry.name,

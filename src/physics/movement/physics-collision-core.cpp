@@ -9,6 +9,7 @@
 */
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -24,10 +25,13 @@
 #include "config.h"
 #include "debug/debug-log.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "config/player-settings.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
 #include "physics/movement/movement-step.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-contact-policy-api.h"
 
 #define PHYS_LOG(...) Debug::logThrottled(Debug::Category::Collision, "physics-collision", DebugConfig::PRINT_INTERVAL, __VA_ARGS__)
 #define LOG_COLLISION(K, ...) Debug::logThrottled(Debug::Category::Collision, K, 0.25f, __VA_ARGS__)
@@ -296,6 +300,78 @@ glm::vec3 solveBatchedCorrection(
 ) {
     auto t0 = std::chrono::steady_clock::now();
     const PlayerSettings& cfg = GetPlayerSettings();
+    if (contacts.size() <= mimita_collision_policy::MAX_SOLVE_CONTACTS) {
+        using SolverContact = mimita_collision_policy::SolverContactV1;
+        static thread_local std::array<SolverContact,
+            mimita_collision_policy::MAX_SOLVE_CONTACTS> input{};
+        static thread_local std::array<SolverContact,
+            mimita_collision_policy::MAX_SOLVE_CONTACTS> scratch{};
+        bool finiteInputs = std::isfinite(slop) &&
+            std::isfinite(cfg.collisionMovementBias);
+        for (std::size_t i = 0; i < contacts.size() && finiteInputs; ++i) {
+            const RecoveryContact& c = contacts[i];
+            finiteInputs = std::isfinite(c.penetration) &&
+                std::isfinite(c.normal.x) && std::isfinite(c.normal.y) &&
+                std::isfinite(c.normal.z) && std::isfinite(c.point.x) &&
+                std::isfinite(c.point.y) && std::isfinite(c.point.z);
+            input[i] = {{c.normal.x, c.normal.y, c.normal.z},
+                        {c.point.x, c.point.y, c.point.z}, c.penetration};
+        }
+        if (finiteInputs && std::isfinite(intendedMove.x) &&
+            std::isfinite(intendedMove.y) && std::isfinite(intendedMove.z)) {
+            mimita_collision_policy::ContactSolveV1 request{};
+            request.version = mimita_collision_policy::ABI_VERSION;
+            request.structSize = sizeof(request);
+            request.count = static_cast<std::uint32_t>(contacts.size());
+            request.capacity = mimita_collision_policy::MAX_SOLVE_CONTACTS;
+            request.contacts = input.data();
+            request.scratch = scratch.data();
+            request.slop = slop;
+            request.movementBias = cfg.collisionMovementBias;
+            request.intendedMove[0] = intendedMove.x;
+            request.intendedMove[1] = intendedMove.y;
+            request.intendedMove[2] = intendedMove.z;
+            if (ModuleHost::instance().collisionSolveContacts(&request)) {
+                const float limit = std::max(0.5f, glm::length(intendedMove) + slop);
+                bool valid = request.manifoldCount <= request.count &&
+                    std::isfinite(request.maxPenetration) &&
+                    request.maxPenetration >= 0.0f;
+                for (int axis = 0; axis < 3; ++axis)
+                    valid = valid && std::isfinite(request.correction[axis]) &&
+                        std::isfinite(request.weightedNormal[axis]) &&
+                        std::fabs(request.correction[axis]) <= limit + 0.001f;
+                if (valid) {
+                    static thread_local auto lastHotSample =
+                        std::chrono::steady_clock::time_point{};
+                    if (t0 - lastHotSample >= std::chrono::seconds(1)) {
+                        lastHotSample = t0;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "collision.hot-correction", "shared-solver",
+                            "module_result_applied", 0,
+                            nlohmann::json{{"generation", request.generation},
+                                           {"contact_count", request.count},
+                                           {"manifold_count", request.manifoldCount},
+                                           {"max_penetration", request.maxPenetration},
+                                           {"correction", {request.correction[0],
+                                                           request.correction[1],
+                                                           request.correction[2]}}});
+                    }
+                    if (outMaxPenetration)
+                        *outMaxPenetration = request.maxPenetration;
+                    if (outWeightedNormal)
+                        *outWeightedNormal = glm::vec3(
+                            request.weightedNormal[0], request.weightedNormal[1],
+                            request.weightedNormal[2]);
+                    return glm::vec3(request.correction[0], request.correction[1],
+                                     request.correction[2]);
+                }
+                LOG_COLLISION("solver_module_invalid",
+                    "[SOLVER] rejected invalid hot contact correction\n");
+            }
+        }
+    }
     std::vector<RecoveryContact> manifold;
     for (const RecoveryContact& contact : contacts) {
         RecoveryContact merged = contact;

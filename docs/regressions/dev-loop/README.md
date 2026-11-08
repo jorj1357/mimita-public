@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 23
+Entries: 24
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -179,3 +179,10 @@ correction in the detail file.
 - Status: OPEN — abrupt PC shutdown during AI work is suspected by the user; cause is unconfirmed.
 - Summary: Git reported `bad signature 0x00000000` for `.git/index`, blocking status, staging, and commit operations. The index was preserved and rebuilt from `HEAD`; the user's suspected shutdown was not independently verified.
 - Detail: [git-index-corrupt-interrupted-session-REG-2026-11-07.md](git-index-corrupt-interrupted-session-REG-2026-11-07.md)
+
+## Entry 24 — Visible dev-loop launch left the game behind other windows
+
+- Recorded: 2026-11-08
+- Status: PARTIALLY FIXED — launch visibility/restore behavior changed; foreground activation and taskbar presence remain unverified.
+- Summary: The dev loop showed the client window without activating it, then restored the previous foreground app. A server-reuse path also left `prelaunch_windows` unset and crashed during launch completion.
+- Detail: [visible-game-window-REG-2026-11-08.md](visible-game-window-REG-2026-11-08.md)

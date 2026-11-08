@@ -9,6 +9,7 @@
 #include "debug/debug-log.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-movement-policy.h"
+#include "hot-reload/module-host.h"
 #include "combat/weapon-registry.h"
 
 // Search and cover constants. Target-memory expiry is owned by
@@ -192,6 +193,12 @@ NpcState pickNextState(Npc& npc)
         npc.stateMachine.stuckTimer = std::min(npc.stateMachine.stuckTimer + 0.016f, 1.0f);
         if (npc.stateMachine.stuckTimer > 0.3f)
         {
+            const bool retainedHostile = sensors.hasTarget || npc.belief.hasTarget ||
+                npc.targetMemory.hasMemory;
+            if (retainedHostile &&
+                ModuleHost::instance().npcBehaviorHoldPursuit(
+                    npc.id, static_cast<std::uint32_t>(npc.sensors.time * 60.0f)))
+                return NpcState::Chase;
             if (forwardPolicy)
                 return NpcState::Advance;  // local turn/repath runs in npc.cpp
             const bool randomWalkAllowed = !policy ||

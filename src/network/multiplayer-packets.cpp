@@ -23,6 +23,8 @@
 #include "analytics/analytics-manager.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 #include "ragdoll/ragdoll-mode.h"
 #include "physics/runtime-objects.h"
 #include "notifications/notifications.h"
@@ -190,6 +192,7 @@ static void logReconnectResourceProbe(const MultiplayerContext& ctx,
                                       const char* phase,
                                       const char* policyName = "not-applicable")
 {
+    const uint64_t now = nowMs();
     uint64_t incomingAvatarDeclaredBytes = 0;
     uint64_t incomingAvatarChunkBytes = 0;
     for (const auto& item : ctx.incomingAvatarAssets) {
@@ -221,6 +224,18 @@ static void logReconnectResourceProbe(const MultiplayerContext& ctx,
         {{"phase", phase},
          {"disconnect_policy", policyName},
          {"connection_state", connectionStateName(ctx.connectionState)},
+         {"connection_attempt_id", ctx.connectionAttemptId},
+         {"join_request_sends", ctx.joinRequestSends},
+         {"active", ctx.active}, {"connected", ctx.connected},
+         {"required_map_id", ctx.requiredMapId},
+         {"room_code", ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode},
+         {"server_address", ctx.serverAddress},
+         {"last_heard_age_ms", ctx.lastHeardServerMs > 0
+              ? now - ctx.lastHeardServerMs : 0},
+         {"disconnect_elapsed_ms", ctx.disconnectStartedMs > 0
+              ? now - ctx.disconnectStartedMs : 0},
+         {"last_packet_sent_age_ms", ctx.lastPacketSentMs > 0
+              ? now - ctx.lastPacketSentMs : 0},
          {"reconnect_attempts", ctx.reconnectAttempts},
          {"remote_players", ctx.remotePlayers.size()},
          {"remote_npcs", ctx.remoteNpcs.size()},
@@ -531,6 +546,8 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     ctx.packetsReceived = 0;
     ctx.snapshotsReceived = 0;
     ctx.snapshotsMissed = 0;
+    ctx.lastSnapshotTick = 0;
+    ctx.snapshotChunkBuffers.clear();
     ctx.remotePlayers.clear();
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
@@ -1465,6 +1482,8 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.packetsReceived = 0;
     ctx.snapshotsReceived = 0;
     ctx.snapshotsMissed = 0;
+    ctx.lastSnapshotTick = 0;
+    ctx.snapshotChunkBuffers.clear();
     ctx.remotePlayers.clear();
     ctx.remoteNpcs.clear();
     ctx.remotePlayerInterpolation.clear();
@@ -1624,19 +1643,16 @@ static bool sendReconnectRequest(MultiplayerContext& ctx)
 
     // Send through the active transport when available (fixes silent ICE loss
     // where ctx.sock is INVALID_SOCKET); fall back to the raw UDP socket.
-    if (ctx.transport)
-    {
+    bool sent = ctx.transport &&
         ctx.transport->send(&packet, sizeof(packet));
-    }
-    else if (ctx.sock != INVALID_SOCKET)
+    if (!sent && ctx.sock != INVALID_SOCKET)
     {
-        sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
-               (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        sent = sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
+                      (sockaddr*)&ctx.serverAddr,
+                      sizeof(ctx.serverAddr)) != SOCKET_ERROR;
     }
-    else
-    {
+    if (!sent)
         return false;
-    }
     ++ctx.packetsSent;
     ctx.lastPacketSentMs = nowMs();
     return true;
@@ -1786,6 +1802,11 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
         ctx.tick,
         {{"from", connectionStateName(before)},
          {"to", connectionStateName(next)},
+         {"connection_attempt_id", ctx.connectionAttemptId},
+         {"join_request_sends", ctx.joinRequestSends},
+         {"reconnect_attempts", ctx.reconnectAttempts},
+         {"last_heard_age_ms", ctx.lastHeardServerMs > 0
+              ? nowMs() - ctx.lastHeardServerMs : 0},
          {"active", ctx.active},
          {"connected", ctx.connected},
          {"room_code", ctx.roomCode},
@@ -1813,6 +1834,7 @@ void mpStartReconnect(MultiplayerContext& ctx)
     ctx.connectionState = ConnectionState::Reconnecting;
     ctx.connected = false;
     ctx.reconnectAttempts = 0;
+    mpResetAvatarNetwork(ctx);
     if (ctx.reconnectGraceDeadlineMs == 0)
     {
         ctx.reconnectGraceDeadlineMs = now + (uint64_t)
@@ -1824,6 +1846,17 @@ void mpStartReconnect(MultiplayerContext& ctx)
     // Attempt #1 immediately; later attempts run on reconnect_interval_ms.
     ctx.reconnectBackoffMs = (uint64_t)
         NetworkingConfig::instance().data().retries.reconnectIntervalMs;
+    mimita_network_policy::ReconnectPolicyV1 reconnectPolicy{};
+    reconnectPolicy.version = mimita_network_policy::ABI_VERSION;
+    reconnectPolicy.structSize = sizeof(reconnectPolicy);
+    reconnectPolicy.lastHeardAgeMs = ctx.lastHeardServerMs > 0
+        ? now - ctx.lastHeardServerMs : 0;
+    reconnectPolicy.snapshotAgeMs = ctx.lastSnapshotReceivedMs > 0
+        ? now - ctx.lastSnapshotReceivedMs : 0;
+    reconnectPolicy.reconnectAttempts = ctx.reconnectAttempts;
+    if (ModuleHost::instance().networkReconnectPolicy(&reconnectPolicy) &&
+        reconnectPolicy.backoffMs > 0)
+        ctx.reconnectBackoffMs = (uint64_t)reconnectPolicy.backoffMs;
     ctx.lastReconnectAttemptMs = 0;
     if (sendReconnectRequest(ctx))
     {

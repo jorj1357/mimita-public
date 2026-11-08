@@ -257,7 +257,11 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
                                        ctx.localServerPosition.y,
                                        ctx.localServerPosition.z}},
                     {"server_tick", ctx.latestLocalSnapshotTick},
-                    {"transform_epoch", (uint32_t)ctx.localServerEpoch}},
+                    {"transform_epoch", (uint32_t)ctx.localServerEpoch},
+                    {"geometry_revision", ctx.appliedGeometryRevision},
+                    {"geometry_transition",
+                     ctx.geometryTransitionStartMs != 0 &&
+                         nowMs() - ctx.geometryTransitionStartMs < 5000}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }

@@ -780,6 +780,17 @@ void recordCrashBreadcrumb(const char* subsystem, const char* format, ...)
 
 void installCrashHandler()
 {
+    const char* runId = std::getenv("MIMITA_RUN_ID");
+    const char* instanceId = std::getenv("MIMITA_INSTANCE_ID");
+    const char* launchId = std::getenv("MIMITA_LAUNCH_ID");
+    const char* buildId = std::getenv("MIMITA_BUILD_ID");
+    const char* eventsPath = std::getenv("MIMITA_EVENTS_FILE");
+    recordCrashBreadcrumb("process-identity",
+        "pid=%lu run=%s instance=%s launch=%s build=%s events=%s",
+        (unsigned long)GetCurrentProcessId(), runId ? runId : "",
+        instanceId ? instanceId : "", launchId ? launchId : "",
+        buildId ? buildId : "", eventsPath ? eventsPath : "");
+
     // Create the crash directory during normal startup and verify it with a
     // probe file, so the crash handler never has to create nested paths at
     // crash time (CreateDirectoryA is not recursive -> ERROR_PATH_NOT_FOUND).

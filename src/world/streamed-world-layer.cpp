@@ -50,6 +50,55 @@ glm::mat4 partMatrix(const ChunkPart& part)
            glm::scale(glm::mat4(1.0f), part.size);
 }
 
+float distanceToBounds(const glm::vec3& point, const AABB& bounds)
+{
+    const glm::vec3 closest = glm::clamp(point, bounds.min, bounds.max);
+    return glm::length(closest - point);
+}
+
+void appendAabbTriangles(std::vector<CollisionTriangle>& out, const AABB& b)
+{
+    const glm::vec3 p[8] = {
+        {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z},
+        {b.max.x, b.max.y, b.min.z}, {b.min.x, b.max.y, b.min.z},
+        {b.min.x, b.min.y, b.max.z}, {b.max.x, b.min.y, b.max.z},
+        {b.max.x, b.max.y, b.max.z}, {b.min.x, b.max.y, b.max.z}};
+    static const int faces[6][4] = {
+        {0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4},
+        {1, 2, 6, 5}, {2, 3, 7, 6}, {3, 0, 4, 7}};
+    for (const auto& face : faces)
+        for (int tri : {0, 1, 2, 0, 2, 3}) {
+            CollisionTriangle triangle;
+            triangle.a = p[face[tri]];
+            triangle.b = p[face[(tri + 1) % 4]];
+            triangle.c = p[face[(tri + 2) % 4]];
+            const glm::vec3 normal = glm::cross(triangle.b - triangle.a,
+                                                triangle.c - triangle.a);
+            const float length = glm::length(normal);
+            if (length > 1e-8f)
+                triangle.normal = normal / length;
+            out.push_back(triangle);
+        }
+}
+
+AABB transformedChunkBounds(const AuthoredChunk& chunk,
+                            const glm::mat4& transform)
+{
+    AABB bounds;
+    bounds.min = glm::vec3(std::numeric_limits<float>::max());
+    bounds.max = glm::vec3(std::numeric_limits<float>::lowest());
+    for (int i = 0; i < 8; ++i) {
+        const glm::vec3 corner(
+            (i & 1) ? chunk.boundsMax.x : chunk.boundsMin.x,
+            (i & 2) ? chunk.boundsMax.y : chunk.boundsMin.y,
+            (i & 4) ? chunk.boundsMax.z : chunk.boundsMin.z);
+        const glm::vec3 world = glm::vec3(transform * glm::vec4(corner, 1.0f));
+        bounds.min = glm::min(bounds.min, world);
+        bounds.max = glm::max(bounds.max, world);
+    }
+    return bounds;
+}
+
 std::string aliasedMaterial(const std::string& material)
 {
     if (material == "stone_floor") return "floorv2";
@@ -263,6 +312,10 @@ void StreamedWorldLayer::clear()
     mLastLoadedChunkCount = 0;
     mBaseBroadphaseTriangles = 0;
     mLastCollisionRevisionMatched = true;
+    mHasStreamFocus = false;
+    mStreamFocus = glm::vec3(0.0f);
+    mCollisionRadiusM = 0.0f;
+    mCoarseColliders.clear();
     for (Template& templateData : mTemplates) {
         if (templateData.vao) glDeleteVertexArrays(1, &templateData.vao);
         if (templateData.vbo) glDeleteBuffers(1, &templateData.vbo);
@@ -408,6 +461,8 @@ bool StreamedWorldLayer::flushCollision(World& world)
     size_t rawTriangles = 0;
     for (size_t recordIndex = 0; recordIndex < mChunks.size(); ++recordIndex) {
         const ChunkRecord& record = mChunks[recordIndex];
+        if (!record.collisionActive)
+            continue;
         const uint32_t solidBase = static_cast<uint32_t>(
             recordIndex * (mimita_chunk_collision::MAX_PARTS + 1));
         rawTriangles += record.collisionTriangles.size();
@@ -454,6 +509,12 @@ bool StreamedWorldLayer::flushCollision(World& world)
                                               &removalStats);
         else
             removeExactDuplicateFaces(surface, surfaceSolidIds, &removalStats);
+    }
+    for (const AABB& collider : mCoarseColliders) {
+        const size_t first = surface.size();
+        appendAabbTriangles(surface, collider);
+        surfaceSolidIds.resize(surface.size(), 0u);
+        (void)first;
     }
 
     const size_t streamBase = mesh.triangles.size();
@@ -526,22 +587,54 @@ bool StreamedWorldLayer::flushCollision(World& world)
     return true;
 }
 
-StreamedWorldLayer::Template* StreamedWorldLayer::ensureTemplate(
-    const std::string& chunkId)
+std::string StreamedWorldLayer::templateKey(const std::string& chunkId,
+                                            bool proxy)
 {
-    if (Template* existing = findTemplate(chunkId)) return existing;
+    return proxy ? chunkId + "#proxy" : chunkId;
+}
+
+StreamedWorldLayer::Template* StreamedWorldLayer::ensureTemplate(
+    const std::string& chunkId, bool proxy)
+{
+    if (Template* existing = findTemplate(chunkId, proxy)) return existing;
     Template templateData;
     templateData.chunkId = chunkId;
+    templateData.proxy = proxy;
     mTemplates.push_back(std::move(templateData));
     return &mTemplates.back();
 }
 
 StreamedWorldLayer::Template* StreamedWorldLayer::findTemplate(
-    const std::string& chunkId)
+    const std::string& chunkId, bool proxy)
 {
     for (Template& templateData : mTemplates)
-        if (templateData.chunkId == chunkId) return &templateData;
+        if (templateData.chunkId == chunkId &&
+            templateData.proxy == proxy)
+            return &templateData;
     return nullptr;
+}
+
+StreamedWorldLayer::Template* StreamedWorldLayer::findRecordTemplate(
+    const ChunkRecord& record)
+{
+    return findTemplate(record.chunkId, record.proxy);
+}
+
+void StreamedWorldLayer::rebuildProxyTemplate(
+    Template& templateData, const AuthoredChunk& chunk)
+{
+    templateData.verts.clear();
+    templateData.batches.clear();
+    ChunkPart part;
+    part.id = "proxy";
+    part.kind = "block";
+    part.position = (chunk.boundsMin + chunk.boundsMax) * 0.5f;
+    part.size = glm::max(chunk.boundsMax - chunk.boundsMin,
+                         glm::vec3(0.05f));
+    part.material = "default";
+    appendBoxFaces(templateData.verts, part, templateData.batches,
+                   partMatrix(part));
+    templateData.vboDirty = true;
 }
 
 void StreamedWorldLayer::rebuildTemplate(Template& templateData,
@@ -551,7 +644,10 @@ void StreamedWorldLayer::rebuildTemplate(Template& templateData,
     for (const auto& candidate : MapConfigRegistry::instance().chunks())
         if (candidate.id == chunkId) { chunk = &candidate; break; }
     if (!chunk) return;
-    rebuildTemplateFromChunk(templateData, *chunk);
+    if (templateData.proxy)
+        rebuildProxyTemplate(templateData, *chunk);
+    else
+        rebuildTemplateFromChunk(templateData, *chunk);
 }
 
 void StreamedWorldLayer::rebuildTemplateFromChunk(
@@ -638,7 +734,7 @@ void StreamedWorldLayer::rebuildInstances()
     for (Template& templateData : mTemplates)
         templateData.instances.clear();
     for (const ChunkRecord& record : mChunks) {
-        Template* templateData = findTemplate(record.chunkId);
+        Template* templateData = findRecordTemplate(record);
         if (!templateData) continue;
         templateData->instances.push_back(record.transform);
     }
@@ -670,7 +766,7 @@ void StreamedWorldLayer::setInstancing(bool enabled)
             uploadInstanceBuffer(templateData);
         }
         for (ChunkRecord& record : mChunks) {
-            Template* templateData = findTemplate(record.chunkId);
+            Template* templateData = findRecordTemplate(record);
             if (!templateData) continue;
             if (templateData->vao == 0 || templateData->vboDirty)
                 uploadTemplate(*templateData);
@@ -711,7 +807,13 @@ GLuint StreamedWorldLayer::makeChunkVao(GLuint vbo, GLuint /*instanceVbo*/)
 void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
                                   const glm::mat4& transform)
 {
-    Template* templateData = ensureTemplate(chunk.id);
+    for (const ChunkRecord& existing : mChunks)
+        if (existing.key == key) {
+            removeChunk(key);
+            break;
+        }
+
+    Template* templateData = ensureTemplate(chunk.id, false);
     if (templateData->verts.empty())
         rebuildTemplate(*templateData, chunk.id);
     if (templateData->vboDirty)
@@ -725,6 +827,11 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
     record.key = key;
     record.chunkId = chunk.id;
     record.transform = transform;
+    record.proxy = false;
+    record.bounds = transformedChunkBounds(chunk, transform);
+    record.collisionActive =
+        !mHasStreamFocus || mCollisionRadiusM <= 0.0f ||
+        distanceToBounds(mStreamFocus, record.bounds) <= mCollisionRadiusM;
     buildChunkCollision(chunk, transform, record.collisionTriangles,
                         record.collisionSolidIds);
 
@@ -754,6 +861,105 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         __FILE__, __LINE__, __func__);
 }
 
+void StreamedWorldLayer::addProxy(uint64_t key, const AuthoredChunk& chunk,
+                                  const glm::mat4& transform,
+                                  const glm::vec3& boundsMin,
+                                  const glm::vec3& boundsMax)
+{
+    for (const ChunkRecord& existing : mChunks)
+        if (existing.key == key) {
+            removeChunk(key);
+            break;
+        }
+
+    Template* templateData = ensureTemplate(chunk.id, true);
+    if (templateData->verts.empty())
+        rebuildProxyTemplate(*templateData, chunk);
+    if (templateData->vboDirty)
+        uploadTemplate(*templateData);
+
+    ChunkRecord record;
+    record.key = key;
+    record.chunkId = chunk.id;
+    record.transform = transform;
+    record.proxy = true;
+    record.bounds = {boundsMin, boundsMax};
+    record.collisionActive = false;
+
+    if (mInstancing) {
+        templateData->instances.push_back(transform);
+        uploadInstanceBuffer(*templateData);
+    } else {
+        rebuildRecordVbo(record, *templateData);
+    }
+
+    mChunks.push_back(std::move(record));
+    ++mChunksInstalledTotal;
+    mCollisionDirty = true;
+}
+
+bool StreamedWorldLayer::isProxy(uint64_t key) const
+{
+    for (const ChunkRecord& record : mChunks)
+        if (record.key == key)
+            return record.proxy;
+    return false;
+}
+
+void StreamedWorldLayer::setStreamFocus(const glm::vec3& focus,
+                                        float collisionRadiusM)
+{
+    if (mHasStreamFocus && focus == mStreamFocus &&
+        collisionRadiusM == mCollisionRadiusM)
+        return;
+    mHasStreamFocus = true;
+    mStreamFocus = focus;
+    mCollisionRadiusM = collisionRadiusM;
+    for (ChunkRecord& record : mChunks) {
+        const bool active = !record.proxy &&
+            (collisionRadiusM <= 0.0f ||
+             distanceToBounds(focus, record.bounds) <= collisionRadiusM);
+        if (active != record.collisionActive) {
+            record.collisionActive = active;
+            mCollisionDirty = true;
+        }
+    }
+}
+
+void StreamedWorldLayer::setCoarseColliders(
+    const std::vector<AABB>& colliders)
+{
+    if (mCoarseColliders.size() == colliders.size()) {
+        bool same = true;
+        for (size_t i = 0; i < colliders.size(); ++i) {
+            if (glm::any(glm::notEqual(mCoarseColliders[i].min,
+                                       colliders[i].min)) ||
+                glm::any(glm::notEqual(mCoarseColliders[i].max,
+                                       colliders[i].max))) {
+                same = false;
+                break;
+            }
+        }
+        if (same)
+            return;
+    }
+    mCoarseColliders = colliders;
+    mCollisionDirty = true;
+}
+
+bool StreamedWorldLayer::hasFullCollisionNear(const glm::vec3& focus,
+                                              float radius) const
+{
+    for (const ChunkRecord& record : mChunks) {
+        if (record.proxy || record.collisionTriangles.empty())
+            continue;
+        if (radius <= 0.0f ||
+            distanceToBounds(focus, record.bounds) <= radius)
+            return true;
+    }
+    return false;
+}
+
 void StreamedWorldLayer::removeChunk(uint64_t key)
 {
     for (size_t i = 0; i < mChunks.size(); ++i) {
@@ -767,15 +973,14 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
             if (record.vao) glDeleteVertexArrays(1, &record.vao);
             if (record.vbo) glDeleteBuffers(1, &record.vbo);
         } else {
-            for (Template& templateData : mTemplates) {
-                if (templateData.chunkId != record.chunkId) continue;
-                auto found = std::find(templateData.instances.begin(),
-                                       templateData.instances.end(),
+            Template* templateData = findRecordTemplate(record);
+            if (templateData) {
+                auto found = std::find(templateData->instances.begin(),
+                                       templateData->instances.end(),
                                        record.transform);
-                if (found != templateData.instances.end())
-                    templateData.instances.erase(found);
-                uploadInstanceBuffer(templateData);
-                break;
+                if (found != templateData->instances.end())
+                    templateData->instances.erase(found);
+                uploadInstanceBuffer(*templateData);
             }
         }
         return;
@@ -785,7 +990,7 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
 void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk,
                                       bool rebuildCollision)
 {
-    Template* templateData = findTemplate(chunk.id);
+    Template* templateData = findTemplate(chunk.id, false);
     if (!templateData) return;
     rebuildTemplateFromChunk(*templateData, chunk);
     uploadTemplate(*templateData);

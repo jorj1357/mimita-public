@@ -3,7 +3,7 @@
 * define the versioned plain-data collision policy shared with the live
 * collision module: actor seam/contact response tuning and streamed-surface
 * merge mode
-* this file DOES NOT expose RecoveryContact, World, STL types, or solver math
+* this file DOES NOT expose RecoveryContact, World, or STL types
 */
 #pragma once
 
@@ -12,6 +12,31 @@
 #include "modules/api/module-abi.h"
 
 namespace mimita_collision_policy {
+
+// Bounded host-owned contact arrays for the shared depenetration solver.
+// This interface is independent of Player, World, glm, and STL storage.
+constexpr std::uint32_t MAX_SOLVE_CONTACTS = 1024;
+struct SolverContactV1 {
+    float normal[3];
+    float point[3];
+    float penetration;
+};
+struct ContactSolveV1 {
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t count;
+    std::uint32_t capacity;
+    const SolverContactV1* contacts;
+    SolverContactV1* scratch;
+    float slop;
+    float movementBias;
+    float intendedMove[3];
+    float correction[3];
+    float weightedNormal[3];
+    float maxPenetration;
+    std::uint32_t manifoldCount;
+    std::uint32_t generation;
+};
 
 constexpr std::uint32_t ABI_VERSION = 1;
 

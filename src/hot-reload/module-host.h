@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "modules/api/module-abi.h"
+#include "modules/api/network-policy-api.h"
 #include "modules/api/npc-behavior-api.h"
 
 namespace mimita_map_editor { struct DragMathV1; struct GizmoPickV1; struct EditorInputV1; struct EditorClickV1; }
@@ -24,6 +25,7 @@ namespace mimita_chunk_collision { struct BuildChunkV1; }
 namespace mimita_collision_policy {
 struct ContactPolicyV1;
 struct SurfacePolicyV1;
+struct ContactSolveV1;
 }
 
 class ModuleHost
@@ -82,7 +84,17 @@ public:
         mimita_collision_policy::ContactPolicyV1* policy);
     bool collisionSurfacePolicy(
         mimita_collision_policy::SurfacePolicyV1* policy);
+    bool collisionSolveContacts(
+        mimita_collision_policy::ContactSolveV1* request);
+    bool networkSnapshotPolicy(
+        mimita_network_policy::SnapshotPolicyV1* policy);
+    bool networkReconnectPolicy(
+        mimita_network_policy::ReconnectPolicyV1* policy);
     bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);
+    bool npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role);
+    bool npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tick);
+    bool npcBehaviorDashChoice(std::uint32_t actorId, std::uint32_t tick,
+                               float chance);
     bool npcBehaviorLoaded() const;
 
     const std::string& lastError() const { return mLastError; }

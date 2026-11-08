@@ -65,7 +65,11 @@
 #include <cstring>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <random>
+#include <string>
+#include <utility>
+#include <vector>
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
@@ -73,6 +77,41 @@
 GuiMenuState gGuiMenuState = GUI_MENU_AUTH;
 
 extern Renderer* gRenderer;
+
+class ScopedServerJournalEnvironment
+{
+public:
+    ScopedServerJournalEnvironment(const std::string& eventsPath,
+                                   const std::string& instanceId,
+                                   const std::string& launchId,
+                                   const std::string& runId,
+                                   const std::string& runMetadata)
+    {
+        set("MIMITA_EVENTS_FILE", eventsPath.c_str());
+        set("MIMITA_INSTANCE_ID", instanceId.c_str());
+        set("MIMITA_PROCESS_ROLE", "server");
+        set("MIMITA_LAUNCH_ID", launchId.c_str());
+        set("MIMITA_RUN_ID", runId.c_str());
+        set("MIMITA_RUN_METADATA", runMetadata.c_str());
+    }
+
+    ~ScopedServerJournalEnvironment()
+    {
+        for (auto it = previous.rbegin(); it != previous.rend(); ++it)
+            SetEnvironmentVariableA(it->first.c_str(),
+                                    it->second.first ? it->second.second.c_str() : nullptr);
+    }
+
+private:
+    void set(const char* name, const char* value)
+    {
+        const char* oldValue = std::getenv(name);
+        previous.push_back({name, {oldValue != nullptr, oldValue ? oldValue : ""}});
+        SetEnvironmentVariableA(name, value);
+    }
+
+    std::vector<std::pair<std::string, std::pair<bool, std::string>>> previous;
+};
 
 // Set up lighting uniforms for player preview rendering
 static void setupPlayerPreviewLighting()
@@ -136,6 +175,13 @@ static SandboxMapSelection gPendingSandboxMap{};
 static PROCESS_INFORMATION gServerProcessInfo{};
 static bool gServerProcessLaunched = false;
 static uint64_t gServerProcessLaunchMs = 0;
+static std::string gServerInstanceId;
+static std::string gServerEventsPath;
+static std::streamoff gServerEventsReadOffset = 0;
+static std::string gServerLastStartupEvent;
+static bool gServerLoggerReady = false;
+static DWORD gLastLoggedServerExitPid = 0;
+static bool gServerStartupStallReported = false;
 static std::string gPendingServerRoomFilePath;
 static uint64_t gPendingServerRoomFileStartMs = 0;
 static uint64_t gLastServerRoomFilePollMs = 0;
@@ -350,33 +396,72 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_SHOW;
 
-    // The client and its dedicated server are one diagnostic session. Create
-    // the canonical events path before spawning the child so the server cannot
-    // race ahead and create its own timestamped events.jsonl.
+    // Keep the hosted server in this run but give it a separate process journal.
     StructuredLogger::instance().init();
-    const std::string sharedEventsPath =
+    const std::string clientEventsPath =
         StructuredLogger::instance().eventsPath();
-    if (!sharedEventsPath.empty())
+    gServerInstanceId.clear();
+    gServerEventsPath.clear();
+    if (!clientEventsPath.empty())
     {
         std::error_code pathError;
-        const std::string absoluteEventsPath =
-            std::filesystem::absolute(sharedEventsPath, pathError).string();
-        if (!pathError && !SetEnvironmentVariableA(
-                "MIMITA_EVENTS_FILE", absoluteEventsPath.c_str()))
+        const std::filesystem::path clientPath(clientEventsPath);
+        std::filesystem::path runDirectory = clientPath.parent_path();
+        const std::string parentName = runDirectory.filename().string();
+        if (parentName.rfind("client-", 0) == 0 ||
+            parentName.rfind("server-", 0) == 0 ||
+            parentName.rfind("server-gui-", 0) == 0)
+            runDirectory = runDirectory.parent_path();
+        gServerInstanceId = "server-gui-" + std::to_string(MimitaNet::nowMs());
+        const std::string serverLaunchId = gServerInstanceId;
+        const std::filesystem::path serverJournal =
+            runDirectory / gServerInstanceId / "events.jsonl";
+        std::filesystem::create_directories(serverJournal.parent_path(), pathError);
+        if (!pathError)
+            gServerEventsPath = std::filesystem::absolute(serverJournal, pathError).string();
+        if (pathError)
         {
-            printf("[SERVER LAUNCH] failed to export shared events file error=%lu\n",
-                   (unsigned long)GetLastError());
+            printf("[SERVER LAUNCH] failed to prepare server journal error=%d\n",
+                   pathError.value());
+            DeleteFileA(tempFile);
+            return false;
         }
         else
         {
-            printf("[SERVER LAUNCH] shared events file: %s\n",
-                   pathError ? sharedEventsPath.c_str()
-                             : absoluteEventsPath.c_str());
+            printf("[SERVER LAUNCH] server events file: %s\n", gServerEventsPath.c_str());
+            nlohmann::json serverRunMetadata = nlohmann::json::object();
+            const char* inheritedMetadata = std::getenv("MIMITA_RUN_METADATA");
+            if (inheritedMetadata && *inheritedMetadata)
+            {
+                try { serverRunMetadata = nlohmann::json::parse(inheritedMetadata); }
+                catch (const std::exception&) { serverRunMetadata = nlohmann::json::object(); }
+            }
+            serverRunMetadata["instance_id"] = gServerInstanceId;
+            serverRunMetadata["role"] = "server";
+            serverRunMetadata["process"] = "server";
+            serverRunMetadata["process_role"] = "server";
+            serverRunMetadata["journal_path"] = gServerEventsPath;
+            serverRunMetadata["events_path"] = gServerEventsPath;
+            serverRunMetadata["run_id"] = StructuredLogger::instance().runId();
+            serverRunMetadata["map"] = settings.mapName;
+            serverRunMetadata["mode"] = settings.gameMode;
+            ScopedServerJournalEnvironment serverJournalEnvironment(
+                gServerEventsPath, gServerInstanceId, serverLaunchId,
+                StructuredLogger::instance().runId(), serverRunMetadata.dump());
+            if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
+                                CREATE_NEW_CONSOLE, nullptr, nullptr, &si,
+                                &gServerProcessInfo))
+            {
+                printf("[SERVER LAUNCH] CreateProcess failed error=%d\n",
+                       (int)GetLastError());
+                DeleteFileA(tempFile);
+                return false;
+            }
         }
     }
-
-    if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
-                        CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &gServerProcessInfo))
+    else if (!CreateProcessA(nullptr, &args[0], nullptr, nullptr, FALSE,
+                             CREATE_NEW_CONSOLE, nullptr, nullptr, &si,
+                             &gServerProcessInfo))
     {
         printf("[SERVER LAUNCH] CreateProcess failed error=%d\n", (int)GetLastError());
         DeleteFileA(tempFile);
@@ -390,20 +475,12 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
         "network.gui-server.launch", std::to_string(gServerProcessInfo.dwProcessId),
         "launched local authoritative server on an exclusive UDP port", 0,
         {{"server_pid", gServerProcessInfo.dwProcessId},
+         {"server_instance_id", gServerInstanceId},
+         {"client_events_jsonl", clientEventsPath},
+         {"server_events_jsonl", gServerEventsPath},
          {"requested_port", requestedPort}, {"selected_port", settings.port},
          {"map", settings.mapName}, {"mode", settings.gameMode}},
         __FILE__, __LINE__, __func__);
-
-    // The client created the shared events path and exported it; the child
-    // inherits the parent environment (CreateProcess lpEnvironment=nullptr) and
-    // must append to this exact file rather than making its own.
-    {
-        char eventsEnv[MAX_PATH] = {};
-        const DWORD envLen = GetEnvironmentVariableA(
-            "MIMITA_EVENTS_FILE", eventsEnv, MAX_PATH);
-        printf("[SERVER LAUNCH] shared events file: %s\n",
-               envLen > 0 ? eventsEnv : "(unset; server will create its own)");
-    }
 
     printf("[SERVER LAUNCH ARGS] npcFlag=%s\n",
            settings.startupNpcsEnabled
@@ -411,6 +488,11 @@ static bool launchServerProcess(MimitaNet::ServerLaunchSettings& settings)
                : "--no-npcs");
     gServerProcessLaunched = true;
     gServerProcessLaunchMs = MimitaNet::nowMs();
+    gServerEventsReadOffset = 0;
+    gServerLastStartupEvent.clear();
+    gServerLoggerReady = false;
+    gLastLoggedServerExitPid = 0;
+    gServerStartupStallReported = false;
 
     // Store the pending room file path for async polling
     gPendingServerRoomFilePath = roomFilePath;
@@ -709,6 +791,25 @@ ExternalServerProcessStatus getExternalServerProcessStatus()
     {
         static uint64_t lastExitLogMs = 0;
         uint64_t now = MimitaNet::nowMs();
+        if (gLastLoggedServerExitPid != gServerProcessInfo.dwProcessId)
+        {
+            gLastLoggedServerExitPid = gServerProcessInfo.dwProcessId;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Errors,
+                "network.gui-server.process-exited",
+                std::to_string(gServerProcessInfo.dwProcessId),
+                "hosted server process exited", 0,
+                {{"server_pid", gServerProcessInfo.dwProcessId},
+                 {"exit_code", exitCode},
+                 {"uptime_ms", status.uptimeMs},
+                 {"logger_ready", gServerLoggerReady},
+                 {"last_startup_stage", gServerLastStartupEvent},
+                 {"server_instance_id", gServerInstanceId},
+                 {"server_events_jsonl", gServerEventsPath},
+                 {"map", gServerLaunchSettings.mapName},
+                 {"mode", gServerLaunchSettings.gameMode}},
+                __FILE__, __LINE__, __func__);
+        }
         if (now - lastExitLogMs >= 5000)
         {
             printf("[SERVER PROCESS STATUS] exited pid=%lu exitCode=%lu\n",
@@ -731,6 +832,88 @@ static bool pollPendingServerRoomCode()
     if (!gWaitingForServerRoomCode)
         return false;
 
+    bool loggerReadyNow = false;
+    if (!gServerLoggerReady && !gServerEventsPath.empty())
+    {
+        std::ifstream journal(gServerEventsPath, std::ios::binary);
+        if (journal.is_open())
+        {
+            journal.seekg(gServerEventsReadOffset);
+            std::string line;
+            while (std::getline(journal, line))
+            {
+                const std::streampos next = journal.tellg();
+                if (next >= 0)
+                    gServerEventsReadOffset = static_cast<std::streamoff>(next);
+                try
+                {
+                    const auto event = nlohmann::json::parse(line);
+                    const std::string name = event.value("event", std::string{});
+                    const auto fields = event.value("fields", nlohmann::json::object());
+                    if (name == "server.startup.stage")
+                        gServerLastStartupEvent = fields.value("stage", std::string{}) +
+                            ":" + fields.value("result", std::string{});
+                    else if (name == "logger.started" &&
+                             event.value("pid", 0ULL) == gServerProcessInfo.dwProcessId)
+                    {
+                        gServerLoggerReady = true;
+                        loggerReadyNow = true;
+                    }
+                }
+                catch (const std::exception&)
+                {
+                    // A partially written final line is retried next poll.
+                }
+            }
+            if (journal.eof())
+            {
+                std::error_code sizeError;
+                const auto size = std::filesystem::file_size(gServerEventsPath, sizeError);
+                if (!sizeError)
+                    gServerEventsReadOffset = static_cast<std::streamoff>(size);
+            }
+        }
+    }
+    if (loggerReadyNow)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.gui-server.logger-readiness",
+            std::to_string(gServerProcessInfo.dwProcessId),
+            "dedicated server wrote logger.started to its own journal", 0,
+            {{"server_pid", gServerProcessInfo.dwProcessId},
+             {"server_instance_id", gServerInstanceId},
+             {"server_events_jsonl", gServerEventsPath},
+             {"startup_stage_before_ready", gServerLastStartupEvent},
+             {"elapsed_ms", MimitaNet::nowMs() - gServerProcessLaunchMs}},
+            __FILE__, __LINE__, __func__);
+    }
+    const uint64_t serverWaitElapsedMs =
+        MimitaNet::nowMs() - gServerProcessLaunchMs;
+    DWORD stallCheckExitCode = 0;
+    const bool serverAliveForStall = gServerProcessInfo.hProcess &&
+        GetExitCodeProcess(gServerProcessInfo.hProcess, &stallCheckExitCode) &&
+        stallCheckExitCode == STILL_ACTIVE;
+    if (!gServerLoggerReady && !gServerStartupStallReported &&
+        serverWaitElapsedMs >= 20000 && serverAliveForStall)
+    {
+        gServerStartupStallReported = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "network.gui-server.startup-stalled",
+            std::to_string(gServerProcessInfo.dwProcessId),
+            "server has not written logger.started within twenty seconds", 0,
+            {{"server_pid", gServerProcessInfo.dwProcessId},
+             {"elapsed_ms", serverWaitElapsedMs},
+             {"server_alive", serverAliveForStall},
+             {"last_startup_stage", gServerLastStartupEvent},
+             {"server_instance_id", gServerInstanceId},
+             {"server_events_jsonl", gServerEventsPath},
+             {"map", gServerLaunchSettings.mapName},
+             {"mode", gServerLaunchSettings.gameMode}},
+            __FILE__, __LINE__, __func__);
+    }
+
     if (!gServerProcessLaunched)
     {
         printf("[ROOM CODE WAIT CANCEL] reason=server-process-not-running path=%s\n",
@@ -748,6 +931,21 @@ static bool pollPendingServerRoomCode()
             GetExitCodeProcess(gServerProcessInfo.hProcess, &exitCode) &&
             exitCode != STILL_ACTIVE)
         {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Errors,
+                "network.gui-server.startup-failed",
+                std::to_string(gServerProcessInfo.dwProcessId),
+                "dedicated server exited before producing a room code", 0,
+                {{"server_pid", gServerProcessInfo.dwProcessId},
+                 {"exit_code", exitCode},
+                 {"logger_ready", gServerLoggerReady},
+                 {"last_startup_stage", gServerLastStartupEvent},
+                 {"server_instance_id", gServerInstanceId},
+                 {"server_events_jsonl", gServerEventsPath},
+                 {"elapsed_ms", MimitaNet::nowMs() - gServerProcessLaunchMs},
+                 {"map", gServerLaunchSettings.mapName},
+                 {"mode", gServerLaunchSettings.gameMode}},
+                __FILE__, __LINE__, __func__);
             printf("[ROOM CODE WAIT FAILED] reason=server-exited exitCode=%lu path=%s\n",
                    exitCode, gPendingServerRoomFilePath.c_str());
             onlineMenuSetServerCode("Server failed to create room");
@@ -818,6 +1016,10 @@ static bool pollPendingServerRoomCode()
                 nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
                                {"wait_elapsed_ms", waitElapsedMs},
                                {"timeout_ms", 60000},
+                               {"logger_ready", gServerLoggerReady},
+                               {"last_startup_stage", gServerLastStartupEvent},
+                               {"server_instance_id", gServerInstanceId},
+                               {"server_events_jsonl", gServerEventsPath},
                                {"map", gServerLaunchSettings.mapName},
                                {"mode", gServerLaunchSettings.gameMode}},
                 __FILE__, __LINE__, __func__);
@@ -841,6 +1043,10 @@ static bool pollPendingServerRoomCode()
             nlohmann::json{{"server_pid", gServerProcessInfo.dwProcessId},
                            {"wait_elapsed_ms", waitElapsedMs},
                            {"timeout_ms", ROOM_CODE_TIMEOUT_MS},
+                           {"logger_ready", gServerLoggerReady},
+                           {"last_startup_stage", gServerLastStartupEvent},
+                           {"server_instance_id", gServerInstanceId},
+                           {"server_events_jsonl", gServerEventsPath},
                            {"map", gServerLaunchSettings.mapName},
                            {"mode", gServerLaunchSettings.gameMode}},
             __FILE__, __LINE__, __func__);

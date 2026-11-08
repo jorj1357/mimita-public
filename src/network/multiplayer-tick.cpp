@@ -13,6 +13,7 @@
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
 #include "gamemode/gamemode.h"
+#include "gamemode/map-config.h"
 #include "network/snapshot-chunks.h"
 #include "network/remote-entity-lifecycle.h"
 #include "network/badconn/badconn.h"
@@ -45,6 +46,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
 #include <optional>
 #include <vector>
@@ -81,6 +83,97 @@ std::optional<bool> activeModeGoldPopupOverride()
     const auto& presentation = GamemodeRegistry::instance().get(match.mode()).presentation;
     if (!presentation.hasGoldRewardPopup) return std::nullopt;
     return presentation.goldRewardPopup;
+}
+
+void processMapConfigSnapshotPacket(
+    MultiplayerContext& ctx, const MapConfigSnapshotPacket& packet)
+{
+    const uint32_t chunkBytes = packet.chunkBytes;
+    const uint32_t totalBytes = packet.totalBytes;
+    const std::string mapId(
+        packet.mapId, strnlen(packet.mapId, sizeof(packet.mapId)));
+    if (mapId.empty() || chunkBytes > sizeof(packet.data) ||
+        totalBytes == 0 || totalBytes > MAP_CONFIG_SNAPSHOT_MAX_BYTES ||
+        packet.offset > totalBytes ||
+        chunkBytes > totalBytes - packet.offset)
+    {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.snapshot.rejected", mapId,
+            "invalid map config snapshot fragment", ctx.tick,
+            {{"map", mapId}, {"offset", packet.offset},
+             {"chunk_bytes", chunkBytes}, {"total_bytes", totalBytes}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return;
+    }
+
+    auto& assembly = ctx.mapConfigSnapshotAssembly;
+    const bool sameSnapshot =
+        assembly.active && assembly.mapId == mapId &&
+        assembly.configRevision == packet.configRevision &&
+        assembly.geometryRevision == packet.geometryRevision &&
+        assembly.geometrySignature == packet.geometrySignature &&
+        assembly.contentHash == packet.contentHash &&
+        assembly.totalBytes == totalBytes;
+    if (!sameSnapshot) {
+        if (assembly.active) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.geometry.snapshot.superseded", mapId,
+                "newer map config snapshot replaced an incomplete one", ctx.tick,
+                {{"map", mapId}, {"old_hash", assembly.contentHash},
+                 {"new_hash", packet.contentHash}});
+        }
+        assembly = MultiplayerContext::MapConfigSnapshotAssembly{};
+        assembly.active = true;
+        assembly.mapId = mapId;
+        assembly.configRevision = packet.configRevision;
+        assembly.geometryRevision = packet.geometryRevision;
+        assembly.geometrySignature = packet.geometrySignature;
+        assembly.contentHash = packet.contentHash;
+        assembly.totalBytes = totalBytes;
+        assembly.startedMs = nowMs();
+        assembly.bytes.assign(totalBytes, 0);
+    }
+
+    std::memcpy(assembly.bytes.data() + packet.offset, packet.data, chunkBytes);
+    assembly.receivedBytes += chunkBytes;
+    if (assembly.receivedBytes < assembly.totalBytes)
+        return;
+
+    const std::string json(assembly.bytes.begin(), assembly.bytes.end());
+    const uint64_t actualHash = mapConfigContentHash(json);
+    if (actualHash != assembly.contentHash) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.snapshot.rejected", mapId,
+            "map config snapshot content hash mismatch", ctx.tick,
+            {{"map", mapId}, {"expected_hash", assembly.contentHash},
+             {"actual_hash", actualHash}, {"bytes", totalBytes}},
+            __FILE__, __LINE__, __FUNCTION__);
+        assembly = MultiplayerContext::MapConfigSnapshotAssembly{};
+        return;
+    }
+
+    MultiplayerContext::PendingMapConfigSnapshot pending;
+    pending.mapId = assembly.mapId;
+    pending.configRevision = assembly.configRevision;
+    pending.geometryRevision = assembly.geometryRevision;
+    pending.geometrySignature = assembly.geometrySignature;
+    pending.contentHash = assembly.contentHash;
+    pending.json = std::move(json);
+    ctx.pendingMapConfigSnapshot = std::move(pending);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.snapshot.received", assembly.mapId,
+        "authoritative map config snapshot assembled; awaiting safe apply",
+        ctx.tick,
+        {{"map", assembly.mapId},
+         {"config_revision", assembly.configRevision},
+         {"geometry_revision", assembly.geometryRevision},
+         {"geometry_signature", assembly.geometrySignature},
+         {"bytes", assembly.totalBytes}});
+    assembly = MultiplayerContext::MapConfigSnapshotAssembly{};
 }
 
 void rejectUnexpectedServer(MultiplayerContext& ctx)
@@ -1334,6 +1427,17 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.lastMapLoadAttemptMs = 0;
             mpLogConnectStage(ctx, "join_accept", "ok",
                 nowMs() - ctx.connectStartMs, 0, "", "join accept received");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.join.stage", std::to_string(ctx.connectionAttemptId),
+                "client applied join accept and began required-map load", ctx.tick,
+                {{"stage", "join_accept_applied"}, {"result", "success"},
+                 {"player_id", ctx.localPlayerId}, {"map", ctx.requiredMapId},
+                 {"room_code", ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode},
+                 {"server_address", ctx.serverAddress}, {"connection_state", "Connected"},
+                 {"runtime_build_id", accept->runtimeBuildId},
+                 {"runtime_run_id", accept->runtimeRunId}},
+                __FILE__, __LINE__, __FUNCTION__);
             mpLogConnectStage(ctx, "map_required", "ok", 0, 0, "",
                 std::string(accept->mapId));
             StructuredLogger::instance().writeEvent(
@@ -1368,6 +1472,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         else if (header->type == PACKET_JOIN_REJECT && bytes >= (int)sizeof(JoinRejectPacket))
         {
             const JoinRejectPacket* reject = reinterpret_cast<const JoinRejectPacket*>(buffer);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Errors,
+                "network.join.stage", std::to_string(ctx.connectionAttemptId),
+                "server rejected the join request", ctx.tick,
+                {{"stage", "join_rejected"}, {"result", "rejected"},
+                 {"reject_reason_code", reject->reason},
+                 {"room_code", ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode},
+                 {"server_address", ctx.serverAddress},
+                 {"required_map_id", ctx.requiredMapId}},
+                __FILE__, __LINE__, __FUNCTION__);
             if (reject->reason == 5)
             {
                 ctx.wrongPassword = true;
@@ -1438,6 +1552,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             mpLogConnectStage(ctx, "reconnect_accept", "ok",
                 ctx.disconnectStartedMs ? nowMs() - ctx.disconnectStartedMs : 0,
                 0, "", "reconnect accept received");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.join.stage", std::to_string(ctx.connectionAttemptId),
+                "client applied reconnect accept and is waiting for fresh authoritative state",
+                ctx.tick,
+                {{"stage", "reconnect_accept_applied"},
+                 {"result", "waiting_for_snapshot"},
+                 {"player_id", ctx.localPlayerId},
+                 {"connection_state", connectionStateName(ctx.connectionState)},
+                 {"connected_transport", ctx.connected},
+                 {"server_address", ctx.serverAddress},
+                 {"room_code", ctx.roomCode.empty() ? ctx.currentRoomCode : ctx.roomCode},
+                 {"runtime_build_id", accept->runtimeBuildId},
+                 {"runtime_run_id", accept->runtimeRunId}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
         else if (header->type == PACKET_DISAGREEMENT && bytes >= (int)sizeof(DisagreementPacket))
         {
@@ -1514,6 +1643,21 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             auto& bufMap = ctx.snapshotChunkBuffers[chunk.header.tick];
             bufMap.chunks[chunk.chunkIndex] = chunk;
             bufMap.lastReceiveMs = nowMs();
+            // A live chunk is proof the server is still sending even while the
+            // rest of this tick is in flight. Do not let one missing chunk
+            // trigger the reconnect state machine.
+            ctx.lastSnapshotReceivedMs = nowMs();
+            while (ctx.snapshotChunkBuffers.size() > 8) {
+                auto oldest = ctx.snapshotChunkBuffers.begin();
+                for (auto it = ctx.snapshotChunkBuffers.begin();
+                     it != ctx.snapshotChunkBuffers.end(); ++it)
+                    if (it->first < oldest->first &&
+                        it->first != chunk.header.tick)
+                        oldest = it;
+                if (oldest->first == chunk.header.tick)
+                    break;
+                ctx.snapshotChunkBuffers.erase(oldest);
+            }
 
             // Do NOT increment snapshotsReceived per chunk — wait for full reassembly
             // Do NOT update lastSnapshotTick yet — wait until all chunks arrive
@@ -1827,6 +1971,16 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  {"map_version", mc->mapVersion}},
                 __FILE__, __LINE__, __FUNCTION__);
             DuelQueue::instance().onMapChange(mc->mapId, mc->duelId, mc->mapVersion);
+        }
+        else if (header->type == PACKET_MAP_CONFIG_SNAPSHOT &&
+                 bytes >= (int)offsetof(MapConfigSnapshotPacket, data))
+        {
+            const MapConfigSnapshotPacket* snapshot =
+                reinterpret_cast<const MapConfigSnapshotPacket*>(buffer);
+            if (!mpAcceptReliableEventOnce(ctx, snapshot->eventId,
+                                           snapshot->eventSessionId))
+                return;
+            processMapConfigSnapshotPacket(ctx, *snapshot);
         }
         else if (header->type == PACKET_KILL_EVENT &&
                  bytes >= (int)sizeof(KillEventPacket))
@@ -2397,8 +2551,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
     // frame; reliable events are still deduplicated/acked by the server.
     static thread_local std::vector<ReceivedPacket> pendingPackets;
     const auto pollStart = std::chrono::steady_clock::now();
-    constexpr size_t kMaxPacketsPerFrame = 128;
-    constexpr double kReceiveBudgetMs = 0.8;
+    constexpr size_t kMaxPacketsPerFrame = 256;
+    constexpr double kReceiveBudgetMs = 2.5;
     size_t processedPackets = 0;
     auto processReceived = [&](const ReceivedPacket& rp)
     {
@@ -2432,7 +2586,11 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 break;
             const double elapsed = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - pollStart).count();
-            if (elapsed >= kReceiveBudgetMs)
+            const bool snapshotChunk =
+                list[index].bytes.size() >= (int)sizeof(PacketHeader) &&
+                reinterpret_cast<const PacketHeader*>(
+                    list[index].bytes.data())->type == PACKET_SNAPSHOT;
+            if (elapsed >= kReceiveBudgetMs && !snapshotChunk)
                 break;
             processReceived(list[index]);
         }

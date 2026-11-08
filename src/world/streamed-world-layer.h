@@ -39,7 +39,14 @@ public:
 
     void addChunk(uint64_t key, const AuthoredChunk& chunk,
                   const glm::mat4& transform);
+    void addProxy(uint64_t key, const AuthoredChunk& chunk,
+                  const glm::mat4& transform, const glm::vec3& boundsMin,
+                  const glm::vec3& boundsMax);
+    bool isProxy(uint64_t key) const;
     void removeChunk(uint64_t key);
+    void setStreamFocus(const glm::vec3& focus, float collisionRadiusM);
+    void setCoarseColliders(const std::vector<AABB>& colliders);
+    bool hasFullCollisionNear(const glm::vec3& focus, float radius) const;
     // Rebuild visual data and loaded per-chunk VBOs. Collision proxies are
     // rebuilt when geometry changed; material/UV-only refresh can skip it.
     void refreshChunk(const AuthoredChunk& chunk,
@@ -75,6 +82,7 @@ private:
     struct Template
     {
         std::string chunkId;
+        bool proxy = false;
         std::vector<Vertex> verts;      // local space
         std::vector<Mesh::Batch> batches;
         GLuint vao = 0;
@@ -89,6 +97,9 @@ private:
         uint64_t key = 0;
         std::string chunkId;
         glm::mat4 transform{1.0f};
+        bool proxy = false;
+        bool collisionActive = true;
+        AABB bounds{};
         GLuint vao = 0;
         GLuint vbo = 0;
         std::vector<Mesh::Batch> batches;
@@ -96,8 +107,12 @@ private:
         std::vector<uint32_t> collisionSolidIds;
     };
 
-    Template* ensureTemplate(const std::string& chunkId);
-    Template* findTemplate(const std::string& chunkId);
+    static std::string templateKey(const std::string& chunkId, bool proxy);
+    Template* ensureTemplate(const std::string& chunkId, bool proxy);
+    Template* findTemplate(const std::string& chunkId, bool proxy);
+    Template* findRecordTemplate(const ChunkRecord& record);
+    void rebuildProxyTemplate(Template& templateData,
+                              const AuthoredChunk& chunk);
     void rebuildTemplate(Template& templateData, const std::string& chunkId);
     void rebuildTemplateFromChunk(Template& templateData,
                                   const AuthoredChunk& chunk);
@@ -110,6 +125,10 @@ private:
 
     bool mInstancing = true;
     bool mCollisionDirty = true;
+    glm::vec3 mStreamFocus{0.0f};
+    float mCollisionRadiusM = 0.0f;
+    bool mHasStreamFocus = false;
+    std::vector<AABB> mCoarseColliders;
     uint64_t mCollisionRevision = 0;
     uint32_t mCollidedChunkCount = 0;
     size_t mCollisionTriangleCount = 0;

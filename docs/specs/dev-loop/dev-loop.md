@@ -303,6 +303,12 @@ follow-up saves become one build. It must not wait for the current build to
 finish before accepting changes, status requests, launch requests, or control
 commands. It serializes compiler/linker work, then queues one follow-up build
 for the newest source generation if inputs changed during the active build.
+Module entry sources ending in `-module.cpp` are excluded from the EXE source
+list and from this cold-build watch. The running `ModuleHost` watches those
+sources, builds immutable DLL generations, and activates them at their safe
+boundary. Shared headers and host sources remain cold-build inputs. At most two
+independent module workers may compile at once; repeated edits to one module
+coalesce into its next generation. A module worker never replaces a loaded DLL.
 This serialization is per checkout/worktree; independent agent worktrees have
 separate watchers, locks, outputs, and may compile concurrently.
 

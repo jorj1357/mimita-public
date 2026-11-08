@@ -27,6 +27,8 @@
 #include "combat/weapon-types.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 #include "void-death/void-death.h"
 #include "website/api-client.h"
 #include "persistence/persistence-emit.h"
@@ -53,6 +55,26 @@ std::string boundedPacketString(const char* value, size_t capacity)
     while (len < capacity && value[len] != '\0')
         ++len;
     return std::string(value, len);
+}
+
+void logJoinStage(const char* stage, const char* result, const char* reason,
+                  const std::string& correlationId, uint32_t tick,
+                  size_t players,
+                  nlohmann::json extra = nlohmann::json::object())
+{
+    extra["stage"] = stage;
+    extra["result"] = result;
+    extra["players"] = players;
+    extra["room_code"] = getServerCoordinatorCode();
+    extra["map"] = getServerMapId();
+    extra["mode"] = serverGamemodeState().communityMode;
+    extra["server_pid"] = static_cast<unsigned long long>(GetCurrentProcessId());
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network,
+        std::strcmp(result, "failed") == 0 || std::strcmp(result, "rejected") == 0
+            ? StructuredLevel::Errors : StructuredLevel::Important,
+        "network.join.stage", correlationId, reason, tick, extra,
+        __FILE__, __LINE__, __func__);
 }
 
 // Host authority belongs to the first accepted player session, not a display
@@ -1657,9 +1679,22 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                        std::unique_ptr<IGameTransport>* claimedTransport)
 {
     if (bytes < (int)sizeof(JoinRequestPacket))
+    {
+        logJoinStage("join_request_received", "rejected", "packet_too_short",
+                     "", tick, players.size(),
+                     nlohmann::json{{"packet_bytes", bytes},
+                                    {"expected_bytes", sizeof(JoinRequestPacket)}});
         return;
+    }
     const JoinRequestPacket* join = reinterpret_cast<const JoinRequestPacket*>(buffer);
     const std::string joinTokenStr = boundedPacketString(join->joinToken, sizeof(join->joinToken));
+    const std::string joinCorrelation = joinTokenStr.substr(0, 12);
+    logJoinStage("join_request_received", "started", "join packet received",
+                 joinCorrelation, tick, players.size(),
+                 nlohmann::json{{"packet_bytes", bytes},
+                                {"transport", claimedTransport && claimedTransport->get()
+                                     ? "ice" : "udp"},
+                                {"remote_address", addressToString(from)}});
 
     // A client retries JoinRequest until it receives JoinAccept. The join token
     // identifies that join attempt, so a retry must reuse the same player and
@@ -1698,6 +1733,9 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             claimedTransport->reset();
         }
         printf("%s [SERVER JOIN REJECT] reason=server-full\n", serverTimestamp());
+        logJoinStage("capacity_check", "rejected", "server_full",
+                     joinCorrelation, tick, players.size(),
+                     nlohmann::json{{"player_limit", playerLimit}});
         return;
     }
 
@@ -1716,6 +1754,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             claimedTransport->reset();
         }
         printf("%s [SERVER JOIN REJECT] reason=empty-token\n", serverTimestamp());
+        logJoinStage("token_validation", "rejected", "empty_join_token",
+                     "", tick, players.size());
         return;
     }
 
@@ -1767,6 +1807,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
                 claimedTransport->reset();
             }
             printf("%s [SERVER JOIN REJECT] reason=coordinator-rejected-token\n", serverTimestamp());
+            logJoinStage("token_validation", "rejected", "coordinator_rejected_token",
+                         joinCorrelation, tick, players.size());
             return;
         }
         printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s valid\n",
@@ -1789,9 +1831,16 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             claimedTransport->reset();
         }
         printf("%s [SERVER JOIN REJECT] reason=no-coordinator-code\n", serverTimestamp());
+        logJoinStage("token_validation", "rejected", "no_coordinator_code",
+                     joinCorrelation, tick, players.size());
         return;
     }
     }
+    logJoinStage("token_validation", existingJoinId ? "duplicate" : "success",
+                 existingJoinId ? "existing join token reused" : "join token accepted",
+                 joinCorrelation, tick, players.size(),
+                 nlohmann::json{{"existing_player_id", existingJoinId},
+                                {"validation_elapsed_ms", nowMs() - joinValidationStartMs}});
     if (existingJoinId == 0)
     {
         StructuredLogger::instance().writeEvent(
@@ -1829,6 +1878,8 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             }
             printf("%s [SERVER JOIN REJECT] reason=wrong-password name=%s\n",
                    serverTimestamp(), join->name);
+            logJoinStage("password_validation", "rejected", "wrong_password",
+                         joinCorrelation, tick, players.size());
             return;
         }
     }
@@ -1898,6 +1949,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     uint32_t id = existingId ? existingId : nextPlayerId++;
     ServerPlayer& p = players[id];
+    logJoinStage("player_record", existingId ? "reused" : "created",
+                 existingId ? "existing player session restored" : "new player session created",
+                 joinCorrelation, tick, players.size(),
+                 nlohmann::json{{"player_id", id}, {"existing_player_id", existingId}});
     if (p.reconnectToken.empty())
         p.reconnectToken = generateReconnectToken();
     p.id = id;
@@ -1946,17 +2001,18 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         if (serverPickSafeSpawn(world, id, spawnPos, spawnYaw, &idx))
         {
             printf("%s [SERVER PLAYER SPAWN] reason=join_request id=%u name=\"%s\" "
-                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f token=%s\n",
+                   "spawnpoint=%zu position=(%.2f,%.2f,%.2f) yaw=%.1f tokenPrefix=%s\n",
                    serverTimestamp(), id, p.name.c_str(), idx,
                    spawnPos.x, spawnPos.y, spawnPos.z, glm::degrees(spawnYaw),
-                   p.reconnectToken.c_str());
+                   p.reconnectToken.substr(0, 12).c_str());
             beginAuthoritativeTransform(p, spawnPos, glm::vec3(0.0f), spawnYaw, "join_request");
         }
         else
         {
             printf("%s [SERVER PLAYER SPAWN REFUSED] reason=join_request id=%u "
-                   "name=\"%s\" cause=no-safe-spawn token=%s\n",
-                   serverTimestamp(), id, p.name.c_str(), p.reconnectToken.c_str());
+                   "name=\"%s\" cause=no-safe-spawn tokenPrefix=%s\n",
+                   serverTimestamp(), id, p.name.c_str(),
+                   p.reconnectToken.substr(0, 12).c_str());
         }
         // Player registered but not yet spawned — waits for ClientMapReady.
         // Server will simulate and include in snapshots only after spawned=true.
@@ -1989,8 +2045,16 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         std::strncpy(accept.runtimeRunId, joinRunId, sizeof(accept.runtimeRunId) - 1);
     if (joinBuildId)
         std::strncpy(accept.runtimeBuildId, joinBuildId, sizeof(accept.runtimeBuildId) - 1);
-    if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
+    const bool acceptSent = sendToSourceOrPlayer(sock, from, &p, nullptr,
+                                                  &accept, sizeof(accept));
+    if (acceptSent)
         ++totalPacketsOut;
+    logJoinStage("join_accept_send", acceptSent ? "success" : "failed",
+                 acceptSent ? "join accept sent" : "join accept send failed",
+                 joinCorrelation, tick, players.size(),
+                 nlohmann::json{{"player_id", id}, {"packet_bytes", sizeof(accept)},
+                                {"total_packets_out", totalPacketsOut},
+                                {"spawned", p.spawned}});
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     // Broadcast the joining player's full VIP style so every client renders
@@ -2020,10 +2084,22 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
                             std::unique_ptr<IGameTransport>* claimedTransport)
 {
     if (bytes < (int)sizeof(ReconnectRequestPacket))
+    {
+        logJoinStage("reconnect_request_received", "rejected", "packet_too_short",
+                     "", tick, players.size(),
+                     nlohmann::json{{"packet_bytes", bytes},
+                                    {"expected_bytes", sizeof(ReconnectRequestPacket)}});
         return;
+    }
     const ReconnectRequestPacket* req = reinterpret_cast<const ReconnectRequestPacket*>(buffer);
     const std::string requestedToken = req->reconnectToken;
+    const std::string reconnectCorrelation = requestedToken.substr(0, 12);
     const uint64_t currentMs = nowMs();
+    logJoinStage("reconnect_request_received", "started", "reconnect packet received",
+                 reconnectCorrelation, tick, players.size(),
+                 nlohmann::json{{"remote_address", addressToString(from)},
+                                {"transport", claimedTransport && claimedTransport->get()
+                                     ? "ice" : "udp"}});
 
     // Find player with matching reconnect token
     uint32_t foundId = 0;
@@ -2058,7 +2134,9 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
              {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
         printf("%s [SERVER RECONNECT] rejected token=%s not-found\n",
-               serverTimestamp(), requestedToken.c_str());
+               serverTimestamp(), requestedToken.substr(0, 12).c_str());
+        logJoinStage("reconnect_lookup", "rejected", "token_not_found",
+                     reconnectCorrelation, tick, players.size());
         if (claimedTransport && claimedTransport->get())
         {
             (*claimedTransport)->close();
@@ -2110,11 +2188,23 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     if (reconnectBuildId)
         std::strncpy(accept.runtimeBuildId, reconnectBuildId, sizeof(accept.runtimeBuildId) - 1);
     const int acceptCopies = resendExistingAccept ? 1 : 4;
+    int acceptSendsSucceeded = 0;
     for (int i = 0; i < acceptCopies; ++i)
     {
         if (sendToSourceOrPlayer(sock, from, &p, nullptr, &accept, sizeof(accept)))
+        {
             ++totalPacketsOut;
+            ++acceptSendsSucceeded;
+        }
     }
+    logJoinStage("reconnect_accept_send",
+                 acceptSendsSucceeded > 0 ? "success" : "failed",
+                 acceptSendsSucceeded > 0 ? "reconnect accept sent" : "reconnect accept send failed",
+                 reconnectCorrelation, tick, players.size(),
+                 nlohmann::json{{"player_id", foundId},
+                                {"copies_requested", acceptCopies},
+                                {"copies_sent", acceptSendsSucceeded},
+                                {"token_state", resendExistingAccept ? "previous" : "current"}});
     sendStoredAvatarManifestsToPlayer(sock, p, players, totalPacketsOut);
 
     StructuredLogger::instance().writeEvent(
@@ -2540,6 +2630,10 @@ ServerPacketProcessResult processServerPacket(
                            (unsigned)it->second.transformEpoch,
                            it->second.pos.x, it->second.pos.y, it->second.pos.z);
                 }
+                // Non-host clients receive the authoritative authored config
+                // on every map-ready so a late join sees the same live edit.
+                serverSendMapConfigSnapshotToPlayer(sock, it->second,
+                                                    totalPacketsOut);
             }
         }
         result.handled = true;
@@ -2820,75 +2914,69 @@ void buildAndSendSnapshot(SOCKET sock,
             __FILE__, __LINE__, __FUNCTION__);
     }
 
-    // ── Single-datagram snapshot redundancy ────────────────────────────
-    // Small lobbies send one chunk per tick; one lost datagram drops the whole
-    // tick. Re-send the previous tick's chunk so a single lost packet rarely
-    // becomes a lost snapshot tick on the receiving client. The client safely
-    // treats a re-sent older snapshot as interpolation-only (never membership).
-    static std::vector<uint8_t> gLastSingleChunk;
-    static uint32_t gLastSingleChunkTick = 0;
-    const bool redundancyEnabled =
-        NetworkingConfig::instance().data().snapshotRedundancy.enabled;
-    const bool isSingleChunk = chunks.size() == 1;
-    const std::vector<uint8_t>* redundantChunk = nullptr;
-    if (redundancyEnabled && isSingleChunk && gLastSingleChunkTick != 0 &&
-        !gLastSingleChunk.empty())
-    {
-        redundantChunk = &gLastSingleChunk;
-    }
-    if (isSingleChunk)
-    {
-        gLastSingleChunk = chunks[0];
-        gLastSingleChunkTick = tick;
-    }
-    else
-    {
-        gLastSingleChunk.clear();
-        gLastSingleChunkTick = 0;
-    }
+    // Previous complete snapshot redundancy. With several chunks, a single
+    // lost datagram otherwise leaves the whole tick incomplete.
+    static std::vector<std::vector<uint8_t>> gPreviousChunks;
+    static uint32_t gPreviousTick = 0;
+    mimita_network_policy::SnapshotPolicyV1 policy{};
+    policy.version = mimita_network_policy::ABI_VERSION;
+    policy.structSize = sizeof(policy);
+    policy.tick = tick;
+    policy.chunkCount = static_cast<uint32_t>(chunks.size());
+    policy.entityCount = entityCount;
+    policy.playerCount = static_cast<uint32_t>(players.size());
+    policy.redundancyCopies = chunks.size() > 1 ? 0 : 1;
+    policy.resendPrevious = 1;
+    policy.partialKeepalive = 1;
+    policy.maxBufferedTicks = 8;
+    policy.maxAvatarQueueChunks = 2048;
+    ModuleHost::instance().networkSnapshotPolicy(&policy);
+    const int redundancyCopies = std::clamp(policy.redundancyCopies, 0, 3);
+    const bool resendPrevious = policy.resendPrevious != 0;
+    const std::vector<std::vector<uint8_t>>* previous =
+        (resendPrevious && gPreviousTick != 0) ? &gPreviousChunks : nullptr;
 
     const auto sendPayload = [&](const std::vector<uint8_t>& payload,
                                  const ServerPlayer& sp) {
         bool sent = false;
         if (sp.transport)
-        {
             sent = sp.transport->send(payload.data(), payload.size());
-        }
-        else
+        if (!sent)
         {
-            int bytesSent = sendto(
+            const int bytesSent = sendto(
                 sock, (const char*)payload.data(), (int)payload.size(), 0,
                 (sockaddr*)&sp.addr, sizeof(sp.addr));
-            sent = (bytesSent != SOCKET_ERROR);
-            if (!sent)
-                printf("%s [NET TX ERROR] sendto failed id=%u error=%d\n",
-                       serverTimestamp(), sp.id, WSAGetLastError());
+            sent = bytesSent != SOCKET_ERROR;
         }
-        ++totalPacketsOut;
+        if (sent)
+            ++totalPacketsOut;
     };
 
     for (const auto& kv : players)
     {
-        if (redundantChunk)
-            sendPayload(*redundantChunk, kv.second);
-        for (const auto& chunk : chunks)
-            sendPayload(chunk, kv.second);
-        if (tick % 120 == 0)
-            printf("%s [SERVER SNAPSHOT SEND] toClientId=%u chunks=%zu%s\n",
-                   serverTimestamp(), kv.first, chunks.size(),
-                   redundantChunk ? " +redundant" : "");
-
+        if (previous)
+            for (const auto& chunk : *previous)
+                sendPayload(chunk, kv.second);
+        for (int copy = 0; copy <= redundancyCopies; ++copy)
+            for (const auto& chunk : chunks)
+                sendPayload(chunk, kv.second);
         if (tick % 120 == 0)
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Network, StructuredLevel::Important,
                 "server.npc-avatar.snapshot-send", std::to_string(kv.first),
-                "all snapshot chunks queued for client", tick,
+                "snapshot chunks queued for client", tick,
                 { {"client_id", kv.first},
                   {"snapshot_tick", tick},
                   {"chunk_count", chunks.size()},
-                  {"redundant_chunk_sent", redundantChunk != nullptr},
+                  {"redundant_chunk_sent", previous != nullptr},
+                  {"redundancy_copies", redundancyCopies},
                   {"entity_count", entityCount} },
                 __FILE__, __LINE__, __FUNCTION__);
+    }
+    if (!chunks.empty())
+    {
+        gPreviousChunks = chunks;
+        gPreviousTick = tick;
     }
 
     // Best-effort reliability for VIP styles: re-broadcast every few seconds so

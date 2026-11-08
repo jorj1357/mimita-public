@@ -38,7 +38,8 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config);
 bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
                               const AuthoredGeometryOptions& options = {});
 
-// Applies authored blocks to a headless server world (initial load only).
+// Applies authored blocks to a headless server world. The server passes a
+// pristine GLB-only base each time so live rebuilds never duplicate the tail.
 bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId);
 
 // A replicated map solid supplies its own rendered/collidable surface after

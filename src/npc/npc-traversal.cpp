@@ -17,6 +17,7 @@
 #include "npc/npc-internal.h"
 #include "config/movement-config.h"
 #include "debug/debug-log.h"
+#include "hot-reload/module-host.h"
 
 namespace {
 
@@ -84,9 +85,14 @@ TraversalType NpcTraversalExecutor::select(Npc& npc, const NpcNavResult& nav,
         // needed for gaps or large steps above remain traversal requirements.
         const float dashChance = npc.behavior.active && npc.behavior.dashChance >= 0.0f
             ? std::clamp(npc.behavior.dashChance, 0.0f, 1.0f) : 1.0f;
-        if (dashReady && dist > kDashMinDistance &&
-            random01(npc.rngState) < dashChance)
-            return TraversalType::Dash;
+        if (dashReady && dist > kDashMinDistance) {
+            const std::uint32_t tick = static_cast<std::uint32_t>(npc.sensors.time * 60.0f);
+            const bool useDash = ModuleHost::instance().npcBehaviorLoaded()
+                ? ModuleHost::instance().npcBehaviorDashChoice(npc.id, tick, dashChance)
+                : random01(npc.rngState) < dashChance;
+            if (useDash)
+                return TraversalType::Dash;
+        }
         return TraversalType::Walk;
     }
     if (dz > 0.0f) {

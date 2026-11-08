@@ -431,3 +431,24 @@ Candidate use cases include checkpoint and trick-hoop triggers, disaster and
 monster spawn regions, payload stop zones, editor picking, and map boundaries.
 This list is a reuse guide, not proof that one existing implementation already
 covers every shape or operation.
+
+## Hot solver migration boundary (2026-11-08 inventory)
+
+`chunk-collision` currently hot-builds generated box triangles, selects actor
+contact/surface policy, and solves the bounded shared depenetration correction
+from host-owned contact and scratch arrays. The host validates finite bounded
+results and retains the old correction fallback for missing/invalid modules.
+The remaining algorithms in
+`src/physics/movement/actor-triangle-solver.cpp` (actor versus static world),
+`src/physics/physical-entity.cpp` (dynamic object/world and entity pairs),
+actor-pair resolution, and weapon/projectile contact owners are still linked
+into the EXE. A policy callback is not a hot solver.
+
+Each remaining owner needs a bounded plain-data contact snapshot and result
+interface. The host must retain fixed-tick scheduling, geometry and broadphase
+lifetime, candidate/query buffers, and application of validated results. The
+module owns contact selection/correction/response math. Candidate bounds,
+triangle/solid provenance, cached broadphase use, rollback, and performance
+must be checked in the live scenario for that owner before deleting the host
+algorithm. The reported FunWorld3 cylinder embedding has no identified source
+triangle or object yet; do not tune contact math from the stuck count alone.

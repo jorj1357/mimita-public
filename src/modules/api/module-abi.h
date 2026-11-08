@@ -63,7 +63,15 @@ constexpr std::uint32_t EVENT_WORLDGEN_PREVIEW_PAIR = 301;
 constexpr std::uint32_t EVENT_COLLISION_BUILD_CHUNK = 400;
 constexpr std::uint32_t EVENT_COLLISION_CONTACT_POLICY = 401;
 constexpr std::uint32_t EVENT_COLLISION_SURFACE_POLICY = 402;
+constexpr std::uint32_t EVENT_COLLISION_CONTACT_SOLVE = 403;
 constexpr std::uint32_t EVENT_NPC_BEHAVIOR_DECISION = 500;
+constexpr std::uint32_t EVENT_NPC_PAYLOAD_ROLE = 501;
+constexpr std::uint32_t EVENT_ACTOR_RENDER_POSE = 600;
+constexpr std::uint32_t EVENT_ACTOR_RENDER_BOUNDS = 601;
+constexpr std::uint32_t EVENT_ACTOR_RENDER_OUTLINE = 602;
+constexpr std::uint32_t EVENT_NETWORK_SNAPSHOT_POLICY = 700;
+constexpr std::uint32_t EVENT_NETWORK_RECONNECT_POLICY = 701;
+constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,

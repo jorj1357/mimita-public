@@ -2,6 +2,17 @@
   "version": 2,
   "modules": [
     {
+      "name": "actor-rendering",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "main_thread_before_render",
+      "sources": ["src/render/actor-rendering-module.cpp"],
+      "headers": ["src/modules/api/module-abi.h", "src/modules/api/actor-rendering-api.h"],
+      "include_dirs": ["include/glm"],
+      "events": [600, 601, 602, 603],
+      "capabilities": []
+    },
+    {
       "name": "map-editor",
       "abi": 2,
       "state_schema": 1,
@@ -69,6 +80,7 @@
     },
     {
       "name": "chunk-collision",
+        "process_scope": "both",
       "abi": 2,
       "state_schema": 1,
       "activation": "before_chunk_install",
@@ -84,11 +96,48 @@
       "events": [
         400,
         401,
-        402
+          402,
+          403
       ],
       "capabilities": [
         4
       ]
+    },
+    {
+      "name": "network-snapshot-policy",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_snapshot_send",
+      "process_scope": "both",
+      "sources": [
+        "src/network/network-snapshot-policy-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h"
+      ],
+      "events": [
+        700
+      ],
+      "capabilities": []
+    },
+    {
+      "name": "network-reconnect-policy",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_network_health",
+      "process_scope": "both",
+      "sources": [
+        "src/network/network-reconnect-policy-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h"
+      ],
+      "events": [
+        701
+      ],
+      "capabilities": []
     },
     {
       "name": "npc-behavior",
@@ -112,7 +161,8 @@
         "src/npc/npc-utility.h"
       ],
       "events": [
-        500
+          500,
+          501
       ],
       "capabilities": []
     }

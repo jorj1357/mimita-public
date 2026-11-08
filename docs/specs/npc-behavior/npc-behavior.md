@@ -930,3 +930,21 @@ Example easy Fun Counter Strike profile:
 
 Edit the JSON and let the existing hot-reload path apply it. Do not add a
 parallel NPC tuning file or a mode-specific combat branch.
+
+## Payload hot behavior boundary (source attempt, 2026-11-08)
+
+The server keeps actor lists, perception, cart transforms, navigation, weapon
+legality, and damage authority. The `npc-behavior` module accepts plain-data
+utility facts and a Payload role request. It assigns up to
+`max_push_attackers - human_pushers_in_interaction_box` NPCs to push positions,
+then places the other attackers near the cart; defenders receive distinct
+positions with one contesting the box. The module also gives a visible enemy
+combat priority and releases a hidden target beyond 25 m from the cart. The
+host retains the selected utility goal on the NPC, while the role is
+deterministically recalculated from the actor slot and cart facts each tick.
+
+This is an initial source slice. Target selection, state-machine transitions,
+attack/weapon intent, pursuit execution, and navigation remain host code and
+still require hot-boundary migration. The reported missed-attack symptom remains
+unreproduced; see the Payload combat regression record for the required live
+target-correlated capture.

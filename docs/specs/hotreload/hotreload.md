@@ -11,6 +11,25 @@
 
 # MiMITA Live Modules and Hot Reload
 
+## Actor rendering migration (2026-11-08)
+
+The `actor-rendering` catalog entry activates on the main thread before a
+render frame. Its plain-data events select body-part pose transforms,
+calculate local vertex bounds, decide whether an outline with actor-relative
+bounds or a camera-inside case may draw, and plan body-part visibility and
+overlay layer order. The host passes borrowed position data only for the
+duration of a synchronous bounds call, keeps the resulting bounds
+in host-owned meshes, and owns GL state, shader programs, buffers, and draw
+submission. `shaders/basic.vert` remains an independently reloaded asset.
+
+This is an actor-rendering behavior boundary. The module plans part visibility,
+combined-mesh eligibility, outline rejection, and overlay ordering; the host
+executes the plan and retains material/GL state and actual part submission.
+The long-term target is to move further presentation policy behind the same
+stable draw-plan interface, leaving as little policy in the host as practical. A source
+save is hot only for behavior already behind this boundary; changes to the
+host adapter or public ABI still require an EXE build.
+
 ## 1. Goal and plain-language contract
 
 The goal is to let contributors change gameplay and tool behavior while the
@@ -157,6 +176,33 @@ artifact identity contract in
 [`docs/specs/dev-loop/dev-loop.md`](../dev-loop/dev-loop.md), including the
 desired section 5.3 snapshot-pinned build and run rules. A module build must not
 read a moving source tree or load a mutable `latest` DLL path.
+
+The running host limits module compilation to two background workers. A module
+with an active worker keeps newer saves pending until that worker exits, then
+builds the newest saved generation. The worker caches objects by source,
+compiler inputs, and discovered header dependencies, recompiles affected
+translation units, and links a new generation. An EXE build remains serialized
+per checkout and is needed when a host source or public ABI changes.
+
+For the current performance and authority repair, classify candidate sources
+before extraction: `src/npc/npc-*.cpp` and `src/npc/team-brain.cpp` contain
+behavior candidates; `src/network/server-npcs.cpp` applies authoritative actor
+actions. `src/physics/movement/actor-pair-collision.cpp`, the
+`physics-collision*.cpp` family, and `src/network/server-physical-contact*.cpp`
+are fixed-tick mechanisms; the existing `chunk-collision` module owns contact
+policy. `src/combat/weapon-fire*.cpp`, `melee-client.cpp`, and
+`projectile-simulation.cpp` contain weapon behavior candidates, while
+`src/network/server-attack.cpp`, `server-melee-actions.cpp`,
+`server-projectiles.cpp`, and `server-damage.cpp` own server validation and
+application. `src/combat/death-system.cpp` and
+`src/network/actor-lifecycle.cpp` own lifecycle mechanisms.
+`src/mapeditor/map-editor*.cpp` contains editor behavior candidates;
+`src/world/streamed-world-layer.cpp`, `src/procedural/infinite-world-runtime.cpp`,
+and `src/world/world-gltf-loader.cpp` own streaming/geometry mechanisms around
+the existing `infinite-worldgen` and `map-editor` policy modules.
+`src/network/multiplayer-reconcile.cpp`, `multiplayer-interpolation.cpp`, and
+`movement-validation.cpp` own correction and validation mechanisms. This is a
+trace inventory, not an instruction to move every listed file into a DLL.
 
 ## 4. Generations, multiplayer, and journal evidence
 
@@ -388,7 +434,8 @@ runtime proof per behavior. The initial inventory is:
 | Player movement and collision | Native movement and physics owners remain EXE code; collision settings have their own config reload owners. | Host Transform/Velocity/runtime state, fixed tick, cached broadphase, collision queries, and result application. | **3:** move a bounded movement policy after NPC decision ownership is migrated; replay a human-observed movement/collision case and inspect fixed-tick state and contact evidence. |
 | Weapons and projectiles | Native combat and server execution remain EXE code; weapon definitions are separate data. | Host action validation, ammo/cooldown state, physics contact, damage application, and replication. | **4:** migrate a bounded weapon or projectile policy; use a real fire/impact trial and inspect accepted action, contact, damage, and resulting state. |
 | Match and gamemode rules | Native server/match owners remain EXE code; mode data is separately loaded. | Host match state, authority, lifecycle mechanisms, and generic event dispatch. | **5:** migrate one round rule after actor/action state is stable; exercise a full real phase transition and score/result event. |
-| UI, animation, and presentation | Native update/draw code remains EXE code; selected layouts/configs/resources reload as data. | Host GPU/device/resource lifetimes, UI state, and render-boundary coordination. | **6:** migrate one presentation or interaction owner after host resource lifetime is documented; verify the live generation and visible result. |
+| Actor rendering | `actor-rendering` currently owns pose interpolation, local avatar mesh bounds, part visibility, combined draw eligibility, outline rejection, and overlay order. Actor/world bounds assembly, team/config selection, material policy, draw submission, and GPU resources remain in the EXE. | Host player/NPC state, avatar mesh data, camera, GL/device lifetime, and synchronous plain-data event calls. Shader source has its own reload path. | **6a:** verify module generation changes in one running client, then use actor ID, avatar, bounds, pose step, camera distance, and outline decision in that client's journal to investigate the giant silhouette. Move further actor policy only with a stable host input/result contract. |
+| Other UI, animation, and presentation | Native update/draw code remains EXE code; selected layouts/configs/resources reload as data. | Host GPU/device/resource lifetimes, UI state, and render-boundary coordination. | **6b:** migrate one presentation or interaction owner after host resource lifetime is documented; verify the live generation and visible result. |
 | Networking policy | Native prediction/reconciliation/relevance and transport code remain EXE code. | Host sockets, packet framing, connection lifecycle, server authority, and module-generation compatibility. | **7:** migrate policy only after two-process generation agreement is proven; verify server/client journals and a real connected session. |
 | World generation, effects, and audio policy | Native behavior remains EXE code except the narrow effect/debug DLL pilot; asset/config data may have separate reload paths. | Host world/asset IO, effect pools, audio device, and resource lifetimes. | **8:** migrate bounded policies independently; exercise a real generated-world or audio/effect path and inspect owning-process evidence. |
 | Process, platform, and runtime kernel | EXE-owned process, platform, scheduler, storage, loader, logger, renderer/device, transport, and physics mechanisms. | This is the stable service boundary used by modules. | **0 and continuous:** install and verify the module/state/diagnostic substrate first; keep mechanisms cold unless a separate design proves a safe replacement boundary. |
@@ -532,7 +579,7 @@ and must not be reported as complete.
 The module ABI is now the generic `mimita_module::ModuleV1` lifecycle/event
 interface. `ModuleHost` no longer switches on module names during validation or
 activation; catalog entries declare `events`, `capabilities`, and an activation
-boundary. The running source includes four modules:
+boundary. The source catalog includes these modules:
 
 - `map-editor` — selection, transform, command, add-chunk, chunk-part,
   connector, and connection-preview decisions through the editor capability;
@@ -541,7 +588,17 @@ boundary. The running source includes four modules:
 - `infinite-worldgen` — connector compatibility, quarter-turn placement,
   deterministic neighbor choice, chunk bounds, and grid-cell placement;
 - `chunk-collision` — collidable-part selection and world-space box triangles
-  after chunk and part transforms.
+  after chunk and part transforms, actor contact/surface policy, and bounded
+  shared depenetration correction;
+- `npc-behavior` — utility goal/action decisions, dash choices, and Payload
+  cart-role destinations on the authoritative server.
+
+This inventory describes source ownership, not proof that every module has
+activated in the running EXE. NPC perception, target selection, state-machine
+execution, attack legality and weapon firing remain host code. Actor/world,
+physical-object, actor-pair, and weapon/projectile collision solvers remain
+host code. Their planned hot migration requires bounded versioned input and
+output, host-side result validation, and real gameplay evidence for each owner.
 
 Host capabilities cover editor operations, world-generation tables, mesh face
 submission, and collision-proxy construction. The host keeps documents, unsaved

@@ -1,6 +1,6 @@
 // 2026-11-07
 /* purpose
-* live generated-chunk collision policy
+* live generated-chunk collision and bounded contact correction policy
 * selects collidable parts and produces world-space box triangles after chunk
 * and part transforms; the host owns static union and physical registration
 * this file DOES NOT include PhysicalEntitySystem, World, or STL types
@@ -16,6 +16,7 @@
 namespace mimita_collision_policy_module {
 void fillContactPolicy(mimita_collision_policy::ContactPolicyV1* policy);
 void fillSurfacePolicy(mimita_collision_policy::SurfacePolicyV1* policy);
+int solveContacts(mimita_collision_policy::ContactSolveV1* request);
 }
 
 namespace {
@@ -204,6 +205,10 @@ int onEvent(ModuleEventV1* event)
                 event->payload));
         return 1;
     }
+    if (event->typeId == mimita_module::EVENT_COLLISION_CONTACT_SOLVE &&
+        event->payloadSize == sizeof(mimita_collision_policy::ContactSolveV1))
+        return mimita_collision_policy_module::solveContacts(
+            static_cast<mimita_collision_policy::ContactSolveV1*>(event->payload));
     return 0;
 }
 

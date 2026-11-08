@@ -61,7 +61,6 @@ struct UtilityContext {
     bool hasKnownTarget = false;        // visible or remembered
     bool downDashOpportunity = false;
     float downDashChance = 0.0f;
-    bool shouldDownDash = false;
     float targetDistance = 0.0f;
     float targetConfidence = 0.0f;
     float healthFraction = 1.0f;
@@ -71,6 +70,9 @@ struct UtilityContext {
     bool weaponReady = true;            // loaded and not reloading
     bool loSBlocked = false;            // line of sight to target is blocked
     bool objectiveKnown = false;        // a mode objective exists
+    bool payloadObjective = false;
+    glm::vec3 payloadCartPos{0.0f};
+    float targetCartDistance = 0.0f;
     glm::vec3 objectivePos{0.0f};
     bool atObjective = false;
     bool canPlant = false;              // carrier, in a valid site
@@ -143,6 +145,7 @@ struct UtilityState {
     float goalTimer = 0.0f;             // time the current goal has been held
     float actionCooldown = 0.0f;        // block re-selecting the last action
     UtilityGoalScore currentScore;      // last chosen goal's score
+    bool shouldDownDash = false;
 };
 
 // Score one goal from the context. Pure; no NPC state mutated.

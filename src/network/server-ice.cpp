@@ -682,8 +682,8 @@ void tickServerIceTransports(SOCKET sock,
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
                          const void* data, size_t size)
 {
-    if (player.transport)
-        return player.transport->send(data, size);
+    if (player.transport && player.transport->send(data, size))
+        return true;
     if (sock == INVALID_SOCKET) return false;
     int sent = sendto(sock, (const char*)data, (int)size, 0,
                       (sockaddr*)&player.addr, sizeof(player.addr));

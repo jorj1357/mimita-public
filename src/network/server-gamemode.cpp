@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -47,6 +48,7 @@
 #include "network/actor-lifecycle.h"
 #include "network/network-weapons.h"
 #include "physics/physical-entity.h"
+#include "hot-reload/module-host.h"
 
 namespace MimitaNet {
 
@@ -157,6 +159,9 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
     d.authoredBaseMapId = mapId;
     d.authoredBaseWorldReady =
         !glbWorld.triangles.empty() || !glbWorld.spawnPoints.empty();
+    d.appliedGeometrySignature = 0;
+    d.geometryRebuildPending = false;
+    d.pendingGeometrySignature = 0;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map.geometry.base-captured", mapId,
@@ -2709,6 +2714,8 @@ void broadcastMapChange(SOCKET sock,
     }
 }
 
+} // namespace
+
 void serverSendMapConfigSnapshotToPlayer(SOCKET sock, ServerPlayer& player,
                                          uint64_t& totalPacketsOut)
 {
@@ -2789,11 +2796,14 @@ void serverBroadcastMapConfigSnapshot(
     uint64_t& totalPacketsOut)
 {
     for (auto& kv : players) {
-        if (kv.second.spawnState != ServerPlayer::Active)
-            continue;
+        // Dead, spectating, and spawn-handshake clients still need the
+        // authoritative geometry so their next life cannot predict through old
+        // collision. The send helper excludes the host/local editor.
         serverSendMapConfigSnapshotToPlayer(sock, kv.second, totalPacketsOut);
     }
 }
+
+namespace {
 
 void broadcastCommunityNotification(
     SOCKET sock,
@@ -2823,18 +2833,22 @@ void broadcastCommunityNotification(
 
 // Load a map into a fresh temp world; true only if it loads AND has real
 // spawn points, so players always anchor at spawn points, never under the map.
-bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out)
+bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out,
+                    HeadlessWorld* baseOut = nullptr)
 {
     const std::string path = "assets/maps/" + mapId + ".glb";
-    HeadlessWorld candidate;
-    if (!loadHeadlessWorld(path.c_str(), candidate))
+    HeadlessWorld base;
+    if (!loadHeadlessWorld(path.c_str(), base))
         return false;
+    HeadlessWorld candidate = base;
     // Authored spawnpoint entities are part of the map, so apply them before
     // deciding whether the map has any usable spawns.
     applyAuthoredMapGeometry(candidate, mapId);
     if (candidate.spawnPoints.empty())
         return false;
     out = std::move(candidate);
+    if (baseOut)
+        *baseOut = std::move(base);
     return true;
 }
 
@@ -2867,15 +2881,19 @@ bool reloadGamemodeMap(SOCKET sock,
                    uint64_t& totalPacketsOut)
 {
     HeadlessWorld tmp;
-    if (!tryLoadDuelMap(mapId, tmp))
+    HeadlessWorld base;
+    if (!tryLoadDuelMap(mapId, tmp, &base))
     {
         Debug::error(Debug::Category::Duel,
             "[DUEL SERVER] map swap failed or has no spawn points: %s\n", mapId.c_str());
         return false;
     }
     commitGamemodeMap(d, world, npcWorld, tmp, mapId);
+    serverCaptureAuthoredBaseWorld(base, mapId);
+    serverMarkAuthoredGeometryApplied();
     assignGamemodeSpawns(d, world);
     broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
+    serverBroadcastMapConfigSnapshot(sock, players, totalPacketsOut);
     teleportGamemodeParticipantsToSpawns(d, players);
     for (Npc& npc : npcSystem.all())
     {
@@ -2958,12 +2976,16 @@ bool rotateToNextGamemodeMap(SOCKET sock,
     for (const std::string& cand : candidates)
     {
         HeadlessWorld tmp;
-        if (tryLoadDuelMap(cand, tmp))
+        HeadlessWorld base;
+        if (tryLoadDuelMap(cand, tmp, &base))
         {
             d.usedMaps.insert(cand);
             commitGamemodeMap(d, world, npcWorld, tmp, cand);
+            serverCaptureAuthoredBaseWorld(base, cand);
+            serverMarkAuthoredGeometryApplied();
             assignGamemodeSpawns(d, world);
             broadcastMapChange(sock, d, cand, players, totalPacketsOut);
+            serverBroadcastMapConfigSnapshot(sock, players, totalPacketsOut);
             teleportGamemodeParticipantsToSpawns(d, players);
             for (Npc& npc : npcSystem.all())
             {
@@ -3662,7 +3684,7 @@ static void serverPayloadTick(ServerGamemodeState& d,
         view.height = height;
     };
     for (const auto& kv : players) {
-        addActor(kv.first, objectiveActorTeam(d, kv.first), !kv.second.dead,
+        addActor(kv.first, actorTeamOf(d, kv.first, players, npcs), !kv.second.dead,
                  kv.second.pos, PLAYER_RADIUS, PLAYER_HEIGHT);
     }
     for (const auto& kv : npcs) {
@@ -7515,12 +7537,56 @@ void serverTeamBrainTick(ServerGamemodeState& d,
 
     if (!d.objectiveRounds) return;
 
-    // Payload NPCs use the same utility objective slot as Bomb: attackers and
-    // defenders both receive the live cart position, so they contest the cart
-    // instead of wandering. Physical contact still comes from the shared actor
-    // and cart collision paths.
+    // Payload NPCs use the live cart as their objective anchor. The hot
+    // behavior module assigns distinct push, combat, contest, and defense
+    // destinations; physical contact remains with the shared actor/cart paths.
     const bool payloadObjective = d.payloadMode && d.payloadRuntime.active &&
         d.phase == DUEL_PHASE_ACTIVE;
+
+    int humanPushers = 0;
+    std::unordered_map<uint32_t, int> npcPayloadSlot;
+    if (payloadObjective) {
+        for (const auto& kv : players) {
+            if (kv.second.dead ||
+                actorTeamOf(d, kv.first, players, npcs) !=
+                    d.payloadRuntime.attackerTeam)
+                continue;
+            MimitaGamemode::PayloadActorView actor{};
+            actor.id = kv.first;
+            actor.team = d.payloadRuntime.attackerTeam;
+            actor.alive = true;
+            actor.position = kv.second.pos;
+            actor.radius = PLAYER_RADIUS;
+            actor.height = PLAYER_HEIGHT;
+            const bool inBox = MimitaGamemode::payloadActorIntersectsInteractionBox(
+                d.payloadRuntime, actor);
+            if (inBox) ++humanPushers;
+            if (tick % 60u == kv.first % 60u &&
+                glm::length(kv.second.pos - d.payloadRuntime.cartPosition) < 15.0f)
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::NpcMovement, StructuredLevel::Important,
+                    "npc.payload-human-push", std::to_string(kv.first),
+                    inBox ? "human_in_box" : "human_near_cart_outside_box", tick,
+                    nlohmann::json{{"actor", kv.first}, {"team", actor.team},
+                                   {"in_box", inBox},
+                                   {"position", {kv.second.pos.x, kv.second.pos.y,
+                                                 kv.second.pos.z}},
+                                   {"cart", {d.payloadRuntime.cartPosition.x,
+                                             d.payloadRuntime.cartPosition.y,
+                                             d.payloadRuntime.cartPosition.z}}});
+        }
+        std::vector<uint32_t> ids[2];
+        for (const Npc& npc : npcSystem.all()) {
+            if (npc.body.currentHp > 0 &&
+                (npc.body.matchTeam == 0 || npc.body.matchTeam == 1))
+                ids[npc.body.matchTeam].push_back(npc.id);
+        }
+        for (int team = 0; team < 2; ++team) {
+            std::sort(ids[team].begin(), ids[team].end());
+            for (int i = 0; i < (int)ids[team].size(); ++i)
+                npcPayloadSlot[ids[team][i]] = i;
+        }
+    }
 
     // Deterministic per-team formation index, used to spread travel/cover
     // slots instead of stacking every NPC on the same objective point.
@@ -7560,6 +7626,8 @@ void serverTeamBrainTick(ServerGamemodeState& d,
         }
 
         UtilityContext& ctx = npc.utilityContext;
+        ctx.payloadObjective = payloadObjective;
+        if (payloadObjective) ctx.payloadCartPos = d.payloadRuntime.cartPosition;
         ctx.team = team;
         ctx.objectiveKnown = hasObj;
         if (hasObj) ctx.objectivePos = objPos;
@@ -7578,7 +7646,55 @@ void serverTeamBrainTick(ServerGamemodeState& d,
             d.teamBrainA.state().reportedDefuserId == npc.id;
         ctx.bombDefendRadius = 15.0f;
         ctx.travelSlotKnown = false;
-        if (!payloadObjective && hasObj) {
+        if (payloadObjective && hasObj && npcPayloadSlot.count(npc.id)) {
+            mimita_npc_behavior::PayloadRoleV1 role{};
+            role.version = mimita_npc_behavior::ABI_VERSION;
+            role.structSize = sizeof(role);
+            role.actorId = npc.id;
+            role.tick = tick;
+            role.team = team;
+            role.attackerTeam = d.payloadRuntime.attackerTeam;
+            role.defenderTeam = d.payloadRuntime.defenderTeam;
+            role.teamSlot = npcPayloadSlot[npc.id];
+            role.humanPushers = humanPushers;
+            role.maxPushAttackers = d.payloadRuntime.maxPushAttackers;
+            for (int col = 0; col < 4; ++col)
+                for (int row = 0; row < 4; ++row)
+                    role.interactionTransform[col * 4 + row] =
+                        d.payloadRuntime.interactionTransform[col][row];
+            role.interactionSize[0] = d.payloadRuntime.interactionSize.x;
+            role.interactionSize[1] = d.payloadRuntime.interactionSize.y;
+            role.interactionSize[2] = d.payloadRuntime.interactionSize.z;
+            role.cartPosition[0] = d.payloadRuntime.cartPosition.x;
+            role.cartPosition[1] = d.payloadRuntime.cartPosition.y;
+            role.cartPosition[2] = d.payloadRuntime.cartPosition.z;
+            if (ModuleHost::instance().npcPayloadRole(&role)) {
+                const glm::vec3 slot(role.outPosition[0], role.outPosition[1],
+                                     role.outPosition[2]);
+                if (std::isfinite(slot.x) && std::isfinite(slot.y) &&
+                    std::isfinite(slot.z) &&
+                    glm::length(slot - d.payloadRuntime.cartPosition) <= 50.0f &&
+                    role.outRole >= 1 && role.outRole <= 4) {
+                    ctx.travelSlot = slot;
+                    ctx.travelSlotKnown = true;
+                    if (tick % 60u == npc.id % 60u) {
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::NpcMovement,
+                            StructuredLevel::Important,
+                            "npc.payload-role", std::to_string(npc.id),
+                            "hot_role_assigned", tick,
+                            nlohmann::json{{"actor", npc.id},
+                                           {"team", team},
+                                           {"role", role.outRole},
+                                           {"slot_index", role.teamSlot},
+                                           {"human_pushers", humanPushers},
+                                           {"push_cap", role.maxPushAttackers},
+                                           {"generation", role.outGeneration},
+                                           {"destination", {slot.x, slot.y, slot.z}}});
+                    }
+                }
+            }
+        } else if (hasObj) {
             const bool exactRole = ctx.isCarrier || ctx.isRecoverer || ctx.isDefuserId;
             const int slots = (npc.behavior.active && npc.behavior.formationSlots > 0)
                 ? npc.behavior.formationSlots : 5;
@@ -7684,6 +7800,183 @@ void serverTeamBrainTick(ServerGamemodeState& d,
     }
 }
 
+namespace {
+
+struct RemovedTriangleSnapshot
+{
+    size_t index = 0;
+    uint32_t baselineSolidId = 0;
+};
+
+struct ActiveDestructibleSnapshot
+{
+    std::string objectId;
+    int nodeIndex = -1;
+    uint32_t entityId = 0;
+    size_t triangleFirst = 0;
+    size_t triangleCount = 0;
+    std::vector<RemovedTriangleSnapshot> removed;
+};
+
+const HeadlessGLBObject* findGLBObjectByNode(const HeadlessWorld& world,
+                                             int nodeIndex)
+{
+    for (const HeadlessGLBObject& object : world.glbObjects)
+        if (object.nodeIndex == nodeIndex)
+            return &object;
+    return nullptr;
+}
+
+const HeadlessGLBObject* findGLBObjectById(const HeadlessWorld& world,
+                                           const std::string& id)
+{
+    for (const HeadlessGLBObject& object : world.glbObjects)
+        if (object.id == id)
+            return &object;
+    return nullptr;
+}
+
+bool rebuildServerAuthoredGeometry(SOCKET sock,
+                                   ServerGamemodeState& d,
+                                   std::unordered_map<uint32_t, ServerPlayer>& players,
+                                   HeadlessWorld& world,
+                                   World& npcWorld,
+                                   uint32_t tick,
+                                   uint64_t& totalPacketsOut)
+{
+    const auto start = std::chrono::steady_clock::now();
+    auto reject = [&](const char* reason) {
+        d.appliedGeometrySignature = d.pendingGeometrySignature;
+        d.geometryRebuildPending = false;
+        d.pendingGeometrySignature = 0;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.reload.rejected", d.mapId,
+            "live authored geometry rebuild rejected; old authoritative world kept",
+            tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"reason", reason},
+                           {"signature", d.appliedGeometrySignature},
+                           {"triangles", world.triangles.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return false;
+    };
+
+    if (!d.authoredBaseWorldReady || d.authoredBaseMapId != d.mapId)
+        return reject("base-world-unavailable");
+
+    std::vector<ActiveDestructibleSnapshot> activeSnapshots;
+    activeSnapshots.reserve(world.activeDestructibleNodes.size());
+    for (const auto& active : world.activeDestructibleNodes) {
+        const HeadlessGLBObject* object =
+            findGLBObjectByNode(world, active.first);
+        if (!object)
+            return reject("active-node-object-missing");
+        ActiveDestructibleSnapshot snapshot;
+        snapshot.objectId = object->id;
+        snapshot.nodeIndex = object->nodeIndex;
+        snapshot.entityId = active.second;
+        snapshot.triangleFirst = object->triangleFirst;
+        snapshot.triangleCount = object->triangleCount;
+        const size_t first =
+            std::min(object->triangleFirst, world.solidIds.size());
+        const size_t last = std::min(object->triangleFirst + object->triangleCount,
+                                     world.solidIds.size());
+        for (size_t i = first; i < last; ++i) {
+            if (world.solidIds[i] != kRemovedCollisionSolidId)
+                continue;
+            const uint32_t baseline =
+                i < world.destructionBaselineSolidIds.size()
+                    ? world.destructionBaselineSolidIds[i] : 0u;
+            if (baseline == 0 || baseline == kRemovedCollisionSolidId)
+                return reject("active-node-baseline-missing");
+            snapshot.removed.push_back({i, baseline});
+        }
+        activeSnapshots.push_back(std::move(snapshot));
+    }
+
+    std::vector<std::pair<std::string, int>> rejectedNodes;
+    for (int nodeIndex : world.rejectedDestructibleNodes) {
+        const HeadlessGLBObject* object = findGLBObjectByNode(world, nodeIndex);
+        if (object)
+            rejectedNodes.emplace_back(object->id, nodeIndex);
+    }
+
+    const auto applyStart = std::chrono::steady_clock::now();
+    HeadlessWorld candidate = d.authoredBaseWorld;
+    if (!applyAuthoredMapGeometry(candidate, d.mapId))
+        return reject("authored-apply-failed");
+    const double applyMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - applyStart).count();
+
+    candidate.destructionBaselineSolidIds = candidate.solidIds;
+    for (const ActiveDestructibleSnapshot& snapshot : activeSnapshots) {
+        const HeadlessGLBObject* object =
+            findGLBObjectById(candidate, snapshot.objectId);
+        if (!object)
+            return reject("destructible-stable-id-missing");
+        if (object->triangleFirst != snapshot.triangleFirst ||
+            object->triangleCount != snapshot.triangleCount)
+            return reject("destructible-range-mismatch");
+        for (const RemovedTriangleSnapshot& removed : snapshot.removed) {
+            if (removed.index >= candidate.solidIds.size() ||
+                candidate.solidIds[removed.index] != removed.baselineSolidId)
+                return reject("destructible-baseline-mismatch");
+        }
+        candidate.activeDestructibleNodes[object->nodeIndex] = snapshot.entityId;
+        for (const RemovedTriangleSnapshot& removed : snapshot.removed)
+            candidate.solidIds[removed.index] = kRemovedCollisionSolidId;
+    }
+    for (const auto& rejected : rejectedNodes) {
+        const HeadlessGLBObject* object =
+            findGLBObjectById(candidate, rejected.first);
+        if (object)
+            candidate.rejectedDestructibleNodes.insert(object->nodeIndex);
+    }
+    candidate.lastDestructionMatchId = world.lastDestructionMatchId;
+    candidate.lastNpcDestructionRevision = 0;
+
+    clearDeferredServerWorldImpacts(world);
+    world = std::move(candidate);
+    const auto npcBuildStart = std::chrono::steady_clock::now();
+    buildNpcWorldCollision(npcWorld, world);
+    const double npcBuildMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - npcBuildStart).count();
+
+    ++d.geometryRevision;
+    d.appliedGeometrySignature = d.pendingGeometrySignature;
+    d.geometryRebuildPending = false;
+    d.pendingGeometrySignature = 0;
+
+    const double durationMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.reload.applied", d.mapId,
+        "authoritative live authored geometry rebuilt from pristine GLB base",
+        tick,
+        nlohmann::json{{"map", d.mapId},
+                       {"geometry_revision", d.geometryRevision},
+                       {"signature", d.appliedGeometrySignature},
+                       {"config_revision", MapConfigRegistry::instance().revision()},
+                       {"triangles", world.triangles.size()},
+                       {"spawn_points", world.spawnPoints.size()},
+                       {"bounds_min", {world.boundsMin.x, world.boundsMin.y,
+                                       world.boundsMin.z}},
+                       {"bounds_max", {world.boundsMax.x, world.boundsMax.y,
+                                       world.boundsMax.z}},
+                       {"active_destructible_preserved", activeSnapshots.size()},
+                       {"authored_apply_ms", applyMs},
+                       {"npc_collision_build_ms", npcBuildMs},
+                       {"duration_ms", durationMs}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    serverBroadcastMapConfigSnapshot(sock, players, totalPacketsOut);
+    return true;
+}
+
+} // namespace
+
 void serverGamemodeTick(SOCKET sock,
                     std::unordered_map<uint32_t, ServerPlayer>& players,
                     HeadlessWorld& world,
@@ -7713,9 +8006,33 @@ void serverGamemodeTick(SOCKET sock,
         MapConfigRegistry::instance().load(d.mapId);
         loadedMapConfigId = d.mapId;
         lastMapConfigPollMs = mapPollNow;
+        serverMarkAuthoredGeometryApplied();
     } else if (mapPollNow - lastMapConfigPollMs >= 250) {
         MapConfigRegistry::instance().pollReload();
         lastMapConfigPollMs = mapPollNow;
+    }
+    {
+        const uint64_t signature =
+            authoredGeometrySignature(MapConfigRegistry::instance().current());
+        if (signature != d.appliedGeometrySignature &&
+            signature != d.pendingGeometrySignature) {
+            d.geometryRebuildPending = true;
+            d.pendingGeometrySignature = signature;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.geometry.signature", d.mapId,
+                "authored geometry signature changed; rebuild queued",
+                tick,
+                nlohmann::json{{"map", d.mapId},
+                               {"from", d.appliedGeometrySignature},
+                               {"to", signature},
+                               {"config_revision",
+                                MapConfigRegistry::instance().revision()}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (d.geometryRebuildPending)
+            rebuildServerAuthoredGeometry(sock, d, players, world, npcWorld,
+                                          tick, totalPacketsOut);
     }
     payloadSyncCartFromMap(d, tick);
     if (d.hasPendingObjectiveGive) {

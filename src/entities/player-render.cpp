@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
+#include <unordered_map>
+#include <chrono>
 
 #include "config.h"
 #include "config/camera-config.h"
@@ -17,15 +20,50 @@
 #include "world/texture-store.h"
 #include "avatar/avatar.h"
 #include "entities/player-avatar-animations.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-rendering-api.h"
 
 #include <glm/gtx/matrix_decompose.hpp>
 
 extern TextureStore gTextures;
 
-static glm::mat4 renderPartTransform(const PhysicalBodyPart& part)
+static glm::mat4 renderPartTransform(const Player& player, const PhysicalBodyPart& part)
 {
     const AnimationRuntimeSettings& settings = animationRuntimeSettings();
     const float alpha = animationRenderAlpha();
+    mimita_actor_rendering::PoseV1 request{};
+    std::memcpy(request.current, &part.worldTransform[0][0], sizeof(request.current));
+    std::memcpy(request.previous, &part.previousWorldTransform[0][0], sizeof(request.previous));
+    request.alpha = alpha;
+    request.interpolate = settings.renderPoseInterpolation ? 1u : 0u;
+    request.hasPrevious = part.hasPreviousWorldTransform ? 1u : 0u;
+    if (ModuleHost::instance().invokeEvent(mimita_module::EVENT_ACTOR_RENDER_POSE,
+                                           &request, sizeof(request))) {
+        if (request.hasPrevious && request.interpolate && alpha < 0.999f &&
+            request.stepMeters > 8.0f) {
+            static std::unordered_map<std::string, std::uint64_t> lastLogMs;
+            const auto nowMs = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+            auto& previousMs = lastLogMs[player.username];
+            if (nowMs - previousMs >= 1000) {
+                previousMs = nowMs;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "actor.pose.interpolation", player.username,
+                    "large previous-to-current part displacement rejected by actor module", 0,
+                    {{"actor", player.username}, {"avatar", player.avatarName()},
+                     {"part", part.name}, {"step_m", request.stepMeters},
+                     {"alpha", alpha}, {"used_previous", request.usedPrevious != 0},
+                     {"module_generation", ModuleHost::instance().activeGeneration("actor-rendering")},
+                     {"current", {part.worldTransform[3].x,part.worldTransform[3].y,part.worldTransform[3].z}},
+                     {"previous", {part.previousWorldTransform[3].x,part.previousWorldTransform[3].y,part.previousWorldTransform[3].z}}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+        glm::mat4 result(1.0f);
+        std::memcpy(&result[0][0], request.result, sizeof(request.result));
+        return result;
+    }
     if (!settings.renderPoseInterpolation || alpha >= 0.999f ||
         !part.hasPreviousWorldTransform)
         return part.worldTransform;
@@ -326,20 +364,48 @@ void Player::renderCurrentPose(unsigned int shader,
         }
 
         glActiveTexture(GL_TEXTURE0);
+        static thread_local std::vector<mimita_actor_rendering::PartV1> planParts;
+        static thread_local std::vector<std::uint8_t> planMask;
+        planParts.resize(physicalBody.parts.size());
+        planMask.resize(physicalBody.parts.size());
+        for (size_t i = 0; i < physicalBody.parts.size(); ++i) {
+            const auto& part = physicalBody.parts[i];
+            const ActorBodyPart kind = actorBodyPartFromName(part.name);
+            planParts[i] = {
+                (part.nodeIndex >= 0 && part.nodeIndex < (int)perfectPoseSkeleton.nodes.size()) ? 1u : 0u,
+                i < physicalBody.partMeshes.size() ? (std::uint32_t)physicalBody.partMeshes[i].verts.size() : 0u,
+                part.name == "head" ? 1u : 0u,
+                (std::uint32_t)(kind == ActorBodyPart::Unknown ? ActorBodyLayer::Skin : body.layer(kind))};
+        }
+        mimita_actor_rendering::DrawPlanV1 drawPlan{};
+        drawPlan.parts = planParts.data();
+        drawPlan.partDrawMask = planMask.data();
+        drawPlan.partCount = (std::uint32_t)planParts.size();
+        drawPlan.partCapacity = (std::uint32_t)planMask.size();
+        drawPlan.hideHead = hideHead;
+        drawPlan.outlinePass = outlinePass;
+        drawPlan.whiteOverride = whiteOverride;
+        drawPlan.debugCull = DebugConfig::DEBUG_CULL;
+        const bool moduleDrawPlan = ModuleHost::instance().invokeEvent(
+            mimita_module::EVENT_ACTOR_RENDER_DRAW_PLAN, &drawPlan, sizeof(drawPlan));
         bool combinedDrawn = false;
         bool allPartsSkin = true;
-        for (const PhysicalBodyPart& part : physicalBody.parts)
-        {
-            const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
-            if (actorPart == ActorBodyPart::Unknown)
-                continue;
-            if (body.layer(actorPart) != ActorBodyLayer::Skin)
+        if (!moduleDrawPlan) {
+            for (const PhysicalBodyPart& part : physicalBody.parts)
             {
-                allPartsSkin = false;
-                break;
+                const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
+                if (actorPart == ActorBodyPart::Unknown)
+                    continue;
+                if (body.layer(actorPart) != ActorBodyLayer::Skin)
+                {
+                    allPartsSkin = false;
+                    break;
+                }
             }
         }
-        if (allPartsSkin && !hideHead && !outlinePass && !whiteOverride && !DebugConfig::DEBUG_CULL) {
+        if (moduleDrawPlan && drawPlan.combineAllowed)
+            combinedDrawn = drawCombinedBodyParts(*this, shader, outlinePass);
+        if (!moduleDrawPlan && allPartsSkin && !hideHead && !outlinePass && !whiteOverride && !DebugConfig::DEBUG_CULL) {
             bool validPartSet = true;
             for (const PhysicalBodyPart& part : physicalBody.parts) {
                 if (part.nodeIndex >= 0 &&
@@ -354,16 +420,17 @@ void Player::renderCurrentPose(unsigned int shader,
         if (!combinedDrawn) {
         for (size_t i = 0; i < physicalBody.parts.size(); ++i)
         {
+            if (moduleDrawPlan && !planMask[i]) continue;
             const PhysicalBodyPart& part = physicalBody.parts[i];
             const Mesh& mesh = physicalBody.partMeshes[i];
             if (part.nodeIndex < 0 || part.nodeIndex >= (int)perfectPoseSkeleton.nodes.size() || mesh.verts.empty())
                 continue;
-            if (hideHead && part.name == "head")
+            if (!moduleDrawPlan && hideHead && part.name == "head")
                 continue;
             const ActorBodyPart actorPart = actorBodyPartFromName(part.name);
             const ActorBodyLayer layer = actorPart == ActorBodyPart::Unknown
                 ? ActorBodyLayer::Skin : body.layer(actorPart);
-            if (layer == ActorBodyLayer::Destroyed)
+            if (!moduleDrawPlan && layer == ActorBodyLayer::Destroyed)
                 continue;
             const Mesh* drawMesh = &mesh;
             glm::vec3 layerTint(1.0f);
@@ -385,7 +452,7 @@ void Player::renderCurrentPose(unsigned int shader,
                 renderUploadKey() + "|layer" + std::to_string((int)layer);
             uploadBodyPartMeshPart(*drawMesh, (int)i, uploadKey);
 
-            const glm::mat4 model = renderPartTransform(part);
+            const glm::mat4 model = renderPartTransform(*this, part);
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
 
             // Per-part color tint from outfit.json
@@ -475,7 +542,7 @@ void Player::renderCurrentPose(unsigned int shader,
 
             uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderUploadKey());
 
-            const glm::mat4 model = renderPartTransform(part);
+            const glm::mat4 model = renderPartTransform(*this, part);
             glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
             glUniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
                         outlinePass ? outlineColor.g : 1.0f,
@@ -683,7 +750,7 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
 
             uploadBodyPartMeshPart(mesh, (int)i, renderUploadKey());
 
-            const glm::mat4 model = renderPartTransform(part);
+            const glm::mat4 model = renderPartTransform(*this, part);
             glm::mat4 mvp = lightViewProj * model;
             if (loc >= 0)
                 glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);

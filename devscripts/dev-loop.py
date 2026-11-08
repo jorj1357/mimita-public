@@ -356,7 +356,9 @@ def _set_process_windows_visible(pid: int, visible: bool) -> list[dict]:
 
     user32 = ctypes.windll.user32
     windows: list[dict] = []
-    show_command = 8 if visible else 0  # SW_SHOWNA / SW_HIDE; never activate
+    # Restore a minimized game window as a normal taskbar window. SW_SHOWNA
+    # leaves AI/dev-launched clients minimized and behind the dashboard.
+    show_command = 9 if visible else 0  # SW_RESTORE / SW_HIDE
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def enum_window(hwnd, _lparam):
@@ -462,6 +464,10 @@ def snapshot_watch_directories() -> dict[str, tuple[int, int] | None]:
             continue
         for path in directory.rglob("*"):
             if path.is_file() and path.suffix.lower() in WATCH_EXTENSIONS:
+                # Module entry translation units are excluded from the EXE by
+                # build.py and are watched by the running ModuleHost instead.
+                if path.name.endswith("-module.cpp"):
+                    continue
                 result[str(path)] = file_signature(path)
     return result
 
@@ -2086,12 +2092,24 @@ class DevLoop:
         windows = _set_process_windows_visible(
             client_pid, self.launch_visibility == "visible"
         )
+        foreground = None
+        if self.launch_visibility == "visible" and os.name == "nt":
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            for window in windows:
+                hwnd = wintypes.HWND(window["hwnd"])
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+            foreground = _windows_launch_snapshot().get("foreground")
         self.record_runtime_event(
             "dev-loop.launch.visibility",
             {
                 "policy": self.launch_visibility,
                 "client_pid": client_pid,
                 "windows": windows,
+                "foreground_after": foreground,
             },
             f"dev-loop applied {self.launch_visibility} client-window policy",
         )
@@ -2868,6 +2886,47 @@ class DevLoop:
         """Confirm the exact child wrote its own logger.started event."""
         if not self.events_path:
             return False
+        wait_started = time.monotonic()
+        self.record_runtime_event(
+            "dev-loop.startup.wait",
+            {"stage": "logger_started", "result": "started", "role": role,
+             "pid": pid, "timeout_seconds": timeout,
+             "child_exit_code": None},
+            "waiting for the exact child process to initialize its logger",
+        )
+
+        def finish(result: str) -> bool:
+            last_event = None
+            for journal_path in self._journal_read_paths():
+                for record in self._tail_records(journal_path):
+                    if record.get("pid") != pid:
+                        continue
+                    event_role = record.get("process_role", record.get("process"))
+                    if event_role != role:
+                        continue
+                    if last_event is None or str(record.get("wall_time", "")) > str(
+                            last_event.get("wall_time", "")):
+                        last_event = record
+            last_event_summary = None
+            if last_event:
+                last_event_summary = {
+                    "event": last_event.get("event", ""),
+                    "source": last_event.get("source", ""),
+                    "line": last_event.get("line"),
+                    "tick": last_event.get("tick"),
+                    "wall_time": last_event.get("wall_time", ""),
+                }
+            self.record_runtime_event(
+                "dev-loop.startup.wait",
+                {"stage": "logger_started", "result": result, "role": role,
+                 "pid": pid, "timeout_seconds": timeout,
+                 "duration_ms": round((time.monotonic() - wait_started) * 1000.0, 3),
+                 "child_exit_code": process.returncode if process else None,
+                 "last_child_event": last_event_summary},
+                "logger readiness wait completed",
+            )
+            return result == "ready"
+
         deadline = time.time() + timeout
         while time.time() < deadline:
             if process is not None and process.poll() is not None:
@@ -2875,7 +2934,7 @@ class DevLoop:
                     f"{role} pid={pid} exited before logger.started "
                     f"(exit_code={process.returncode})"
                 )
-                return False
+                return finish("child_exited")
             for journal_path in self._journal_read_paths():
                 try:
                     with open(journal_path, "r", encoding="utf-8") as journal:
@@ -2889,11 +2948,11 @@ class DevLoop:
                             fields = event.get("fields", {})
                             if (fields.get("pid") == pid and
                                     fields.get("process_role", fields.get("process")) == role):
-                                return True
+                                return finish("ready")
                 except OSError:
                     pass
             time.sleep(0.1)
-        return False
+        return finish("timeout")
 
     def wait_for_server_local_gameplay(self, pid: int, timeout: float = 60.0) -> int:
         """Return the bound UDP port as soon as authoritative local play is ready."""
@@ -3165,7 +3224,8 @@ class DevLoop:
         self.client_ready = False
         self.builds_match = False
         running_map = self.server_map_name()
-        self.observe_launch_windows("before_server_launch")
+        # Capture for every launch path; the owned server may be reused below.
+        prelaunch_windows = self.observe_launch_windows("before_server_launch")
         if self.server_health() and not self.server_matches_launch_configuration(
                 launch_exe, map_name, build_id):
             print(f"[DEV SERVER] launch configuration changed; replacing old server "
@@ -3272,10 +3332,6 @@ class DevLoop:
             launch_journal_path = self.events_path
             launch_run_id = self.run_id
             self.command_queue_path = None
-            # The first prelaunch snapshot above may predate creation of the
-            # canonical journal. Record the same state again once the journal
-            # exists so every fresh launch has a durable before-launch record.
-            prelaunch_windows = self.observe_launch_windows("before_server_launch")
             self.run_started_utc = utc_now()
             self.current_map = map_name
             self.server_ready = False
@@ -3677,7 +3733,8 @@ class DevLoop:
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
         if self.client_ready:
             self.apply_launch_visibility()
-            self.restore_prelaunch_foreground(prelaunch_windows)
+            if self.launch_visibility != "visible":
+                self.restore_prelaunch_foreground(prelaunch_windows)
             self.monitor_launch_windows()
         launch_succeeded = bool(self.client_ready and self.builds_match and
                                 connection_ready and mode_ready and npcwaves_ready)

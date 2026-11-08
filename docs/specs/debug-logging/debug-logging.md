@@ -125,6 +125,30 @@ and more things like what else do we track
 
 2026 10 10 1800 jorj todo - need to make size limit bc we keephaving std alloc memory error 
 
+# Category controls and agent investigations
+
+`config/debuglogger.json` is the runtime authority for structured logging
+category levels. `events.jsonl` is the canonical in-process journal, and the
+configured level for each category filters which records from that category
+are accepted into the journal. `file_output` is a separate setting for
+category-specific file sinks where those are supported; it does not enable or
+disable records in the canonical `events.jsonl`. The logger supports `off`,
+`errors`, `important`, `verbose`, and `trace` levels; there is no `minimal`
+level, so use `errors` or `important` for lower-volume logging.
+
+Agents may change category levels and output settings in
+`config/debuglogger.json` at any time when an investigation needs more or less
+detail, including changing between minimal settings and `verbose` or `trace`.
+Prefer enabling only the relevant categories and restoring prior settings
+afterward when the extra volume is no longer useful. The configuration's
+`hot_reload` option controls whether a running process applies edits without a
+restart; confirm application through its own `events.jsonl` journal.
+
+An application-specific debug switch may still be required to ask a feature
+owner to emit its diagnostic records. Such a switch controls record production;
+`debuglogger.json` controls record filtering and output. Enabling a logging
+category alone does not imply that every feature emits detailed records.
+
 # Implementation plan: one canonical `events.jsonl` log path
 
 ## Match launch and command evidence contract

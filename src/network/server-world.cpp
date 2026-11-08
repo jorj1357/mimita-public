@@ -206,6 +206,34 @@ const char* serverTimestamp()
     return gTimestampBuf;
 }
 
+void finalizeHeadlessWorldCollision(HeadlessWorld& world,
+                                    StaticUnionStats* unionStats,
+                                    StaticUnionStats* removalStats)
+{
+    StaticUnionStats localUnion;
+    StaticUnionStats localRemoval;
+    StaticUnionStats& us = unionStats ? *unionStats : localUnion;
+    StaticUnionStats& rs = removalStats ? *removalStats : localRemoval;
+    world.destructionBaselineSolidIds.clear();
+    world.activeDestructibleNodes.clear();
+    world.rejectedDestructibleNodes.clear();
+    world.lastDestructionMatchId = 0;
+    world.lastNpcDestructionRevision = 0;
+
+    decimateCollisionTriangleList(world.triangles,
+                                  CollisionLodConfig::instance().cellSize(),
+                                  &world.solidIds);
+    if (CollisionLodConfig::instance().staticSolidUnion())
+        unionStaticSolidGroups(
+            world.triangles, world.solidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            &us,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
+    if (CollisionLodConfig::instance().staticFaceRemoval())
+        removeFullyCoveredStaticTriangles(world.triangles, world.solidIds, &rs);
+    buildHeadlessCollisionChunks(world);
+}
+
 bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
 {
     tinygltf::TinyGLTF loader;
@@ -260,6 +288,11 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
     world.nextSolidId = 1;
     world.boundsMin = glm::vec3(0.0f);
     world.boundsMax = glm::vec3(0.0f);
+    world.rawBaseValid = false;
+    world.rawTriangles.clear();
+    world.rawSolidIds.clear();
+    world.rawGlbObjects.clear();
+    world.rawSpawnPoints.clear();
 
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     if (sceneIndex >= 0 && sceneIndex < (int)model.scenes.size())
@@ -311,22 +344,33 @@ bool loadHeadlessWorld(const char* path, HeadlessWorld& world)
         }
     }
 
-    // Build uniform spatial grid for broadphase collision queries
-    decimateCollisionTriangleList(world.triangles,
-                                  CollisionLodConfig::instance().cellSize(),
-                                  &world.solidIds);
+    // Preserve the pristine GLB triangle/object ranges before collision LOD,
+    // static union, or face removal rewrite and compact the triangle list.
+    world.rawTriangles = world.triangles;
+    world.rawSolidIds = world.solidIds;
+    world.rawGlbObjects = world.glbObjects;
+    world.rawSpawnPoints = world.spawnPoints;
+    world.rawBoundsMin = world.boundsMin;
+    world.rawBoundsMax = world.boundsMax;
+    world.rawNextSolidId = world.nextSolidId;
+    world.rawBaseValid = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.raw-base-captured", "server-map-load",
+        "pristine GLB triangle ranges captured before collision finalization",
+        0,
+        nlohmann::json{{"triangles", world.rawTriangles.size()},
+                       {"glb_objects", world.rawGlbObjects.size()},
+                       {"spawn_points", world.rawSpawnPoints.size()},
+                       {"bounds_min", {world.rawBoundsMin.x, world.rawBoundsMin.y,
+                                       world.rawBoundsMin.z}},
+                       {"bounds_max", {world.rawBoundsMax.x, world.rawBoundsMax.y,
+                                       world.rawBoundsMax.z}}},
+        __FILE__, __LINE__, __FUNCTION__);
+
     StaticUnionStats unionStats;
-    if (CollisionLodConfig::instance().staticSolidUnion())
-        unionStaticSolidGroups(
-            world.triangles, world.solidIds,
-            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
-            &unionStats,
-            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     StaticUnionStats staticStats;
-    if (CollisionLodConfig::instance().staticFaceRemoval())
-        removeFullyCoveredStaticTriangles(
-            world.triangles, world.solidIds, &staticStats);
-    buildHeadlessCollisionChunks(world);
+    finalizeHeadlessWorldCollision(world, &unionStats, &staticStats);
 
     printf("%s [SERVER WORLD] loaded map collision triangles=%zu spawnpoints=%zu bounds=(%.1f,%.1f,%.1f)-(%.1f,%.1f,%.1f)\n",
            serverTimestamp(), world.triangles.size(), world.spawnPoints.size(),

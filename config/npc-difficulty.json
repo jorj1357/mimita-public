@@ -20,7 +20,7 @@
   "damageOtherNpcs": false,
   "dashChance": 1.0,
   "difficultyErrorScale": 0.5,
-  "downDashChance": 0.009999999776482582,
+  "downDashChance": 0.25,
   "exploreDistanceMeters": 100.0,
   "exploreHoldSeconds": 12.0,
   "exploreMinProgressMeters": 1.0,

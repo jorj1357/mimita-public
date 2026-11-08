@@ -96,6 +96,32 @@ The owning client applies the authoritative corrected position even when the
 ordinary hard-snap threshold is configured high. Duplicate transport delivery
 of the same correction must not create duplicate effects.
 
+## Live authored-map authority — 2026-11-07
+
+The host/local client owns authored map editing for the current session. Its
+save writes `config/maps/<mapId>.json`; the authoritative server polls that
+file, rebuilds its headless collision and NPC world at the next fixed-tick safe
+boundary, and applies the same authored blocks, chunk parts, and GLB object
+overrides. A successful rebuild increments the server geometry revision and
+publishes a chunked map-config snapshot to non-host clients. Clients apply the
+snapshot independently at their next safe frame boundary; no client waits for
+another client. A brief geometry-transition correction is allowed and must be
+labeled with the applied geometry revision rather than treated as an ordinary
+movement failure.
+
+Destructible state is preserved only when a stable GLB object id and its
+triangle range still match. If an active destructible node no longer matches,
+the server keeps the old authoritative world and reports the rejected rebuild
+rather than silently rebinding destruction state to different geometry.
+
+Non-host map authoring is a future extension, not current behavior. A non-host
+client must not treat a local map-file write as authoritative. When implemented,
+it will submit an authorized edit request containing the map id, base config
+revision, edit payload, and client identity; the server will validate
+permissions/revisions, apply the edit, rebuild, and broadcast the resulting
+snapshot. Stale base revisions and conflicts must be surfaced, never silently
+overwritten.
+
 2026 10 08 1311 jorj todo - like some kinda 
 milestone tracker? idk how?
 i have a goal of  being able to ahve 100,000+ human plauers in 1 single server

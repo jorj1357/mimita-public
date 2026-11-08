@@ -29,6 +29,8 @@
 #include "debug/debug-visuals.h"
 #include "debug/structured-log.h"
 #include "perf/perf-spike.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-rendering-api.h"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -70,6 +72,7 @@ struct ActorVisualBounds {
     bool valid = false;
     uint32_t parts = 0;
     uint32_t meshBoundsParts = 0;
+    uint32_t meshBoundsMissing = 0;
     glm::vec3 min{0.0f};
     glm::vec3 max{0.0f};
     glm::vec3 size{0.0f};
@@ -78,6 +81,33 @@ struct ActorVisualBounds {
     float maxWorldExtent = 0.0f;
     float maxPartScale = 0.0f;
 };
+
+void ensureActorMeshBounds(Player& player)
+{
+    if (!ModuleHost::instance().moduleLoaded("actor-rendering")) return;
+    auto populate = [](Mesh& mesh) {
+        if (mesh.verts.empty()) return;
+        for (Mesh::Batch& batch : mesh.batches) {
+            if (batch.hasBounds || batch.count == 0 || batch.first > UINT32_MAX ||
+                batch.count > UINT32_MAX || batch.first > mesh.verts.size() ||
+                batch.count > mesh.verts.size() - batch.first) continue;
+            mimita_actor_rendering::BoundsV1 request{};
+            request.vertices = reinterpret_cast<const std::uint8_t*>(&mesh.verts[0].pos);
+            request.first = static_cast<std::uint32_t>(batch.first);
+            request.count = static_cast<std::uint32_t>(batch.count);
+            request.stride = sizeof(Vertex);
+            if (ModuleHost::instance().invokeEvent(mimita_module::EVENT_ACTOR_RENDER_BOUNDS,
+                                                   &request, sizeof(request)) && request.valid) {
+                batch.boundsMin = {request.minimum[0], request.minimum[1], request.minimum[2]};
+                batch.boundsMax = {request.maximum[0], request.maximum[1], request.maximum[2]};
+                batch.hasBounds = true;
+            }
+        }
+    };
+    for (Mesh& mesh : player.physicalBody.partMeshes) populate(mesh);
+    for (Mesh& mesh : player.physicalBody.extraPartMeshes) populate(mesh);
+    populate(player.renderMesh);
+}
 
 ActorVisualBounds computeActorVisualBounds(const Player& player)
 {
@@ -113,15 +143,21 @@ ActorVisualBounds computeActorVisualBounds(const Player& player)
             if (std::isfinite(partScale))
                 bounds.maxPartScale = std::max(bounds.maxPartScale, partScale);
             if (i < meshes.size()) {
+                bool coveredMesh = false;
                 for (const Mesh::Batch& batch : meshes[i].batches) {
                     if (!batch.hasBounds || !std::isfinite(partScale)) continue;
+                    coveredMesh = true;
                     const glm::vec3 localRadius = glm::max(
                         glm::abs(batch.boundsMin), glm::abs(batch.boundsMax));
                     const float radius = glm::length(localRadius) * partScale;
+                    bounds.min = glm::min(bounds.min, position - glm::vec3(radius));
+                    bounds.max = glm::max(bounds.max, position + glm::vec3(radius));
                     bounds.maxWorldExtent = std::max(bounds.maxWorldExtent,
                         glm::length(position - player.pos) + radius);
                     ++bounds.meshBoundsParts;
                 }
+                if (!meshes[i].verts.empty() && !coveredMesh)
+                    ++bounds.meshBoundsMissing;
             }
             ++bounds.parts;
         }
@@ -159,6 +195,8 @@ ActorVisualBounds computeActorVisualBounds(const Player& player)
             ++bounds.meshBoundsParts;
             ++bounds.parts;
         }
+        if (bounds.meshBoundsParts == 0)
+            ++bounds.meshBoundsMissing;
     }
     if (bounds.parts == 0)
         return bounds;
@@ -381,6 +419,7 @@ void renderPlayerInternal(
         p.requestModelLoad(modelPath);
     }
     p.finalizeModelIfReady();
+    ensureActorMeshBounds(p);
     av.finalizeAtlasIfReady(p);
     const char* renderGate = !gRenderer ? "renderer_unavailable"
         : (player.dead && isLocal ? "local_player_dead"
@@ -637,7 +676,11 @@ void renderPlayerInternal(
                     {"bounds_valid", bounds.valid},
                     {"bounds_parts", bounds.parts},
                     {"bounds_mesh_parts", bounds.meshBoundsParts},
+                    {"bounds_mesh_missing", bounds.meshBoundsMissing},
                     {"bounds_size", {bounds.size.x, bounds.size.y, bounds.size.z}},
+                    {"bounds_world_min", {bounds.min.x, bounds.min.y, bounds.min.z}},
+                    {"bounds_world_max", {bounds.max.x, bounds.max.y, bounds.max.z}},
+                    {"bounds_method", "part_origin_plus_local_radius_conservative"},
                     {"bounds_max_offset", bounds.maxOffset},
                     {"bounds_max_previous_offset", bounds.maxPreviousOffset},
                     {"bounds_max_world_extent", bounds.maxWorldExtent},
@@ -655,6 +698,7 @@ void renderPlayerInternal(
                     {"wireframe_color", {wireRgb.r, wireRgb.g, wireRgb.b}},
                     {"layer_filter", gPlayerVisualLayerFilter},
                     {"debug_enabled", gPlayerVisualDebug},
+                    {"actor_rendering_generation", ModuleHost::instance().activeGeneration("actor-rendering")},
                     {"parts", partJson}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
@@ -762,6 +806,7 @@ void renderPlayerInternal(
 
     auto drawOutline = [&]() {
     if (gPlayerVisualLayerFilter == 2 || gPlayerVisualLayerFilter == 3) return;
+    const ActorVisualBounds bounds = computeActorVisualBounds(player);
     const bool drawable = outlineAllowed && outlineEnabled &&
         outline->thickness > 0.0f && outlineAlpha != 0.0f &&
         !(player.dead && outline->disappearOnDeath);
@@ -770,16 +815,35 @@ void renderPlayerInternal(
     // expanded shell identical to the body and effectively invisible. Use a
     // small world-space shell scaled from the authored thickness, and render
     // the expanded back faces instead of a driver-dependent 1 px line.
-    const float worldThickness = std::clamp(
+    float worldThickness = std::clamp(
         outline->thickness * 0.015f, 0.01f, 0.15f);
+    mimita_actor_rendering::OutlineV1 outlinePlan{};
+    outlinePlan.maxOffset = bounds.maxOffset;
+    outlinePlan.maxExtent = bounds.maxWorldExtent;
+    outlinePlan.cameraDistance = glm::distance(cam.pos, player.pos);
+    outlinePlan.sizeScale = player.sizeScale;
+    outlinePlan.thickness = outline->thickness;
+    outlinePlan.boundsValid = bounds.valid && bounds.meshBoundsMissing == 0 ? 1u : 0u;
+    outlinePlan.isLocal = isLocal ? 1u : 0u;
+    outlinePlan.draw = drawable ? 1u : 0u;
+    const bool modulePlanned = ModuleHost::instance().invokeEvent(
+        mimita_module::EVENT_ACTOR_RENDER_OUTLINE, &outlinePlan, sizeof(outlinePlan));
+    if (modulePlanned) worldThickness = outlinePlan.worldThickness;
+    const float saneRadius = std::max(64.0f, std::abs(player.sizeScale) * 64.0f);
+    const bool boundsRejected = modulePlanned ? outlinePlan.rejected != 0 :
+        (!bounds.valid || bounds.maxOffset > saneRadius ||
+         bounds.maxWorldExtent > saneRadius * 2.0f);
+    const bool submitted = drawable && !boundsRejected;
     {
         static std::unordered_map<uint32_t, std::string> sLastOutlineState;
         if (!isLocal && networkEntityId != 0 &&
             visualsConfig.hasPlayerOutlinesOverride()) {
-            const std::string state = drawable
+            const std::string state = submitted
                 ? (std::string("drawn:") + std::to_string(outline->thickness))
                 : (std::string("skipped:") +
-                   (!teamIdentityKnown ? "team_identity_unknown" :
+                   (boundsRejected && drawable ?
+                    (modulePlanned && outlinePlan.cameraInside ? "camera_inside_actor_bounds" : "invalid_bounds") :
+                    !teamIdentityKnown ? "team_identity_unknown" :
                     !outlineAllowed ? "layers_disabled" :
                     !outlineEnabled ? "mode_layer_off" :
                     outline->thickness <= 0.0f ? "zero_thickness" :
@@ -792,7 +856,7 @@ void renderPlayerInternal(
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::General, StructuredLevel::Important,
                     "player_visuals.outline", std::to_string(networkEntityId),
-                    drawable ? "mode_outline_drawn" : state.c_str(), 0,
+                    submitted ? "mode_outline_drawn" : state.c_str(), 0,
                     nlohmann::json{
                         {"actor_id", networkEntityId},
                         {"is_local", isLocal},
@@ -806,19 +870,19 @@ void renderPlayerInternal(
                         {"outline_allowed", outlineAllowed},
                         {"thickness", outline->thickness},
                         {"world_thickness", worldThickness},
+                        {"camera_distance", outlinePlan.cameraDistance},
+                        {"camera_inside_actor_bounds", modulePlanned && outlinePlan.cameraInside != 0},
                         {"alpha", outlineAlpha},
                         {"visible_through_walls", outline->visibleThroughWalls},
-                        {"drawn", drawable},
+                        {"drawn", submitted},
+                        {"actor_rendering_generation", ModuleHost::instance().activeGeneration("actor-rendering")},
                         {"reason", state}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
         }
     }
     if (drawable) {
-        const ActorVisualBounds bounds = computeActorVisualBounds(player);
-        const float saneRadius = std::max(64.0f, std::abs(player.sizeScale) * 64.0f);
-        if (!bounds.valid || bounds.maxOffset > saneRadius ||
-            bounds.maxWorldExtent > saneRadius * 2.0f) {
+        if (boundsRejected) {
             static std::unordered_map<uint32_t, uint64_t> sLastRejectMs;
             const uint64_t nowRejectMs = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -836,6 +900,8 @@ void renderPlayerInternal(
                                    {"bounds_valid", bounds.valid},
                                    {"parts", bounds.parts},
                                    {"mesh_parts", bounds.meshBoundsParts},
+                                   {"mesh_bounds_missing", bounds.meshBoundsMissing},
+                                   {"actor_rendering_generation", ModuleHost::instance().activeGeneration("actor-rendering")},
                                    {"bounds_size", {bounds.size.x, bounds.size.y, bounds.size.z}},
                                    {"max_offset", bounds.maxOffset},
                                    {"max_previous_offset", bounds.maxPreviousOffset},
@@ -978,14 +1044,29 @@ void renderPlayerInternal(
     };
 
     std::array<bool, 4> drawn{};
+    mimita_actor_rendering::DrawPlanV1 layerPlan{};
+    std::fill(std::begin(layerPlan.requestedLayers), std::end(layerPlan.requestedLayers), 255);
+    for (size_t i = 0; i < visuals.renderOrder.size() && i < 4; ++i) {
+        const std::string& name = visuals.renderOrder[i];
+        layerPlan.requestedLayers[i] = name == "trail" ? 0 : name == "capsule" ? 1 :
+            name == "outline" ? 2 : name == "wireframe" ? 3 : 255;
+    }
+    const bool moduleLayerPlan = ModuleHost::instance().invokeEvent(
+        mimita_module::EVENT_ACTOR_RENDER_DRAW_PLAN, &layerPlan, sizeof(layerPlan));
     const auto drawLayer = [&](const std::string& name) {
         if (name == "trail" && !drawn[0]) { drawn[0] = true; drawTrail(); }
         else if (name == "capsule" && !drawn[1]) { drawn[1] = true; drawCapsule(); }
         else if (name == "outline" && !drawn[2]) { drawn[2] = true; drawOutline(); }
         else if (name == "wireframe" && !drawn[3]) { drawn[3] = true; drawWireframe(); }
     };
-    for (const std::string& name : visuals.renderOrder) drawLayer(name);
-    for (const char* name : {"trail", "capsule", "outline", "wireframe"}) drawLayer(name);
+    if (moduleLayerPlan) {
+        static constexpr const char* names[] = {"trail", "capsule", "outline", "wireframe"};
+        for (std::uint8_t layer : layerPlan.orderedLayers)
+            if (layer < 4) drawLayer(names[layer]);
+    } else {
+        for (const std::string& name : visuals.renderOrder) drawLayer(name);
+        for (const char* name : {"trail", "capsule", "outline", "wireframe"}) drawLayer(name);
+    }
 
     // Render attached cosmetic meshes (hats etc.) on top of the body.
     { MIMITA_PERF_SCOPE("Rendering::Actors::Cosmetics");

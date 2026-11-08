@@ -22,6 +22,8 @@
 #include "config/camera-config.h"
 #include "render/dynamic-light.h"
 #include "effects/zombie-tower-effects.h"
+#include "gamemode/gamemode.h"
+#include "network/community-match-client.h"
 #include "shadow/shadow-config.h"
 #include "shadow/shadow-render.h"
 #include "debug/debug-diag.h"
@@ -190,12 +192,24 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
     setFloat(shader, "uTextureContrast", cfg.textureContrast());
     setFloat(shader, "uTextureBrightness", cfg.textureBrightness());
 
-    const bool fogEnabled = ZombieTowerEffects::instance().enabled() &&
+    const Gamemode& mode = GamemodeRegistry::instance().get(
+        MimitaNet::CommunityMatchClient::instance().mode());
+    const bool zombieFog = ZombieTowerEffects::instance().enabled() &&
         ZombieTowerEffects::instance().fogEnabled() && cfg.fogEnabled();
+    const bool worldFog = mode.features.fog;
+    const bool fogEnabled = zombieFog || worldFog;
     setInt(shader, "uFogEnabled", fogEnabled ? 1 : 0);
     if (fogEnabled) {
-        setVec3(shader, "uFogColor", cfg.fogColor());
+        const glm::vec3 fogColor = worldFog
+            ? mode.worldStreaming.fogColor : cfg.fogColor();
+        const float fogStart = worldFog
+            ? mode.worldStreaming.fogStartM : 0.0f;
+        const float fogEnd = worldFog
+            ? mode.worldStreaming.fogEndM : 0.0f;
+        setVec3(shader, "uFogColor", fogColor);
         setFloat(shader, "uFogDensity", cfg.fogDensity());
+        setFloat(shader, "uFogStart", fogStart);
+        setFloat(shader, "uFogEnd", fogEnd);
         setVec3(shader, "uCameraPos", cameraPos);
     }
 

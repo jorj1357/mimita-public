@@ -439,7 +439,16 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
     UtilityContext uctx = npc.utilityContext;
     uctx.hasVisibleTarget = npc.belief.hasVisibleTarget;
     uctx.hasKnownTarget = npc.belief.hasTarget;
+    const auto& npcConfig = NpcDifficultyConfig::instance().settings();
+    const float targetHeight = npc.body.pos.z - npc.sensors.targetPos.z;
+    uctx.downDashOpportunity = npc.sensors.hasTarget && !npc.sensors.touchFloor &&
+        npc.downDashCooldown <= 0.0f && targetHeight > 3.0f;
+    uctx.downDashChance = 0.8f * npcConfig.downDashChance;
     uctx.targetDistance = sensors.targetDistance;
+    if (uctx.payloadObjective)
+        uctx.targetCartDistance = glm::length(glm::vec2(
+            npc.sensors.targetPos.x - uctx.payloadCartPos.x,
+            npc.sensors.targetPos.y - uctx.payloadCartPos.y));
     uctx.targetConfidence = npc.belief.confidence;
     uctx.loSBlocked = !npc.perception.hasLineOfSight && npc.perception.candidateValid;
     uctx.healthFraction = npc.body.maxHp > 0
@@ -668,7 +677,9 @@ NpcGoal makeNavGoal(const Npc& npc)
                     travelTarget.y - npc.body.pos.y));
                 // Hold at the objective instead of running through it: return a
                 // zero-length goal so the actor stops within its tolerance.
-                if (distToObjective <= 4.0f) {
+                const float stopDistance = npc.utilityContext.payloadObjective
+                    ? 0.75f : 4.0f;
+                if (distToObjective <= stopDistance) {
                     goal.kind = NpcGoalKind::ReachPosition;
                     goal.targetPos = npc.body.pos;
                     goal.tolerance = 1.5f;
@@ -676,7 +687,8 @@ NpcGoal makeNavGoal(const Npc& npc)
                 }
                 goal.kind = NpcGoalKind::ReachPosition;
                 goal.targetPos = travelTarget;
-                goal.tolerance = (npc.utility.currentGoal == UtilityGoalKind::DefendSite)
+                goal.tolerance = npc.utilityContext.payloadObjective ? 0.5f :
+                    (npc.utility.currentGoal == UtilityGoalKind::DefendSite)
                     ? 2.5f : 1.2f;
                 return goal;
             }
@@ -1229,13 +1241,30 @@ static void emitAttackGate(const Npc& npc, bool attack, bool sameTeam)
     if (it != sLast.end() && now - it->second < 1.0f)
         return;
     sLast[npc.id] = now;
+    const char* reason = !npc.sensors.hasTarget ? "no_visible_target" :
+        npc.cachedLoSBlocked ? "line_of_sight_blocked" :
+        sameTeam ? "same_team" :
+        npc.attackCooldown > 0.0f ? "attack_cooldown" :
+        npc.reactionTimer > 0.0f ? "reaction_delay" :
+        !attack ? "behavior_did_not_request_attack" : "eligible";
     StructuredLogger::instance().writeEvent(
         StructuredCategory::NpcCombat, StructuredLevel::Important,
         "npc.attack-gate", std::to_string(npc.id),
-        attack ? "attack_true" : "attack_false",
+        reason,
         (uint32_t)(npc.sensors.time * 60.0f),
         nlohmann::json{
             {"actor", npc.id},
+            {"target_id", npc.serverTargetId},
+            {"suppression_reason", reason},
+            {"utility_goal", utilityGoalName(npc.utility.currentGoal)},
+            {"payload_objective", npc.utilityContext.payloadObjective},
+            {"objective", {npc.utilityContext.objectivePos.x,
+                           npc.utilityContext.objectivePos.y,
+                           npc.utilityContext.objectivePos.z}},
+            {"travel_slot_known", npc.utilityContext.travelSlotKnown},
+            {"travel_slot", {npc.utilityContext.travelSlot.x,
+                             npc.utilityContext.travelSlot.y,
+                             npc.utilityContext.travelSlot.z}},
             {"team", npc.body.matchTeam},
             {"profile", npc.behaviorProfileId},
             {"skill_tier", npc.behavior.skillTier},
@@ -1484,6 +1513,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     double npcPhysicsMs = 0.0;
     double npcPoseMs = 0.0;
     double npcCombatMs = 0.0;
+    uint64_t npcSenseRuns = 0;
+    uint64_t npcSenseSkipped = 0;
+    uint64_t npcNavigationRuns = 0;
+    uint64_t npcNavigationSkipped = 0;
 
     npc.pendingThinkingDt += safeDt;
     const float accumulatedThinkingDt =
@@ -1491,6 +1524,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     const bool senseDue = !context.staggerThinking || context.thinkingDue ||
                           !npc.hasSenseSnapshot;
     if (senseDue) {
+        ++npcSenseRuns;
         senseWorld(npc, world, player, accumulatedThinkingDt,
                    &mHazardEffects, &mProjectileHazards);
         npc.pendingThinkingDt = 0.0f;
@@ -1498,7 +1532,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npcSenseMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcSlowMark).count();
         npcSlowMark = std::chrono::steady_clock::now();
-    }
+    } else ++npcSenseSkipped;
 
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {
@@ -1858,14 +1892,11 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         }
     }
 
-    bool wantDownDash = false;
-    if (npc.sensors.hasTarget && !npc.sensors.touchFloor && npc.downDashCooldown <= 0.0f)
-    {
-        const auto& cfg = NpcDifficultyConfig::instance().settings();
-        float heightAbove = npc.body.pos.z - npc.sensors.targetPos.z;
-        if (heightAbove > 3.0f && random01(npc.rngState) < (0.8f * cfg.downDashChance))
-            wantDownDash = true;
-    }
+    bool wantDownDash = npc.utility.shouldDownDash;
+    if (!ModuleHost::instance().npcBehaviorLoaded() &&
+        npc.utilityContext.downDashOpportunity)
+        wantDownDash = random01(npc.rngState) <
+            npc.utilityContext.downDashChance;
 
     // Panic/freeze on hit: gated by hitReactionEnabled config
     if (npc.hitReactionTimer > 0.0f)
@@ -2230,12 +2261,13 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             context.thinkingDue ||
             !npc.hasStaggeredNavResult;
         if (replanThisTick) {
+            ++npcNavigationRuns;
             npc.staggeredNavResult = npc.navigator.update(
                 npc, navGoal, world, navMovement,
                 accumulatedThinkingDt, navSettings, policy,
                 &commitmentSettings);
             npc.hasStaggeredNavResult = true;
-        }
+        } else ++npcNavigationSkipped;
         const NpcNavResult& nav = npc.staggeredNavResult;
         npcNavigatorMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcNavStart).count();
@@ -2611,6 +2643,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 if (npc.stateMachine.stuckTimer - safeDt <= 0.3f)
                 {
                     ++npc.movementStuckRecoveryCount;
+                    nlohmann::json contactEvidence = nlohmann::json::array();
+                    for (const MovementContact& contact : npc.body.movementContacts) {
+                        if (contactEvidence.size() >= 4) break;
+                        contactEvidence.push_back({
+                            {"source", static_cast<int>(contact.source)},
+                            {"source_entity", contact.sourceEntityId},
+                            {"surface_id", contact.surfaceId},
+                            {"material_id", contact.materialId},
+                            {"point", {contact.point.x, contact.point.y, contact.point.z}},
+                            {"normal", {contact.normal.x, contact.normal.y, contact.normal.z}},
+                            {"penetration", contact.penetrationDepth}});
+                    }
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::NpcMovement, StructuredLevel::Important,
                         "npc.stuck-recovery", std::to_string(npc.id), "open_turn_repath",
@@ -2624,6 +2668,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                             {"move_input", {npc.lastMoveInput.x, npc.lastMoveInput.y}},
                             {"velocity", {npc.body.vel.x, npc.body.vel.y, npc.body.vel.z}},
                             {"support_actor_key", npc.body.collision.supportActorKey},
+                            {"contacts", std::move(contactEvidence)},
                             {"pos", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
                             {"stuck_seconds", npc.stateMachine.stuckTimer}},
                         __FILE__, __LINE__, __FUNCTION__);
@@ -3173,10 +3218,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
         attack = true;
 
-    if (npc.sensors.hasTarget &&
-        (!attack || sameTeamTarget || npc.attackCooldown > 0.0f ||
-         npc.reactionTimer > 0.0f))
-        emitAttackGate(npc, attack, sameTeamTarget);
+    emitAttackGate(npc, attack, sameTeamTarget);
 
     if (attack && !sameTeamTarget &&
         npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
@@ -3251,6 +3293,8 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     struct PhaseWindow {
         std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
         uint64_t updates = 0;
+        uint64_t senseRuns = 0, senseSkipped = 0;
+        uint64_t navigationRuns = 0, navigationSkipped = 0;
         uint64_t navCandidateGathers = 0;
         uint64_t navCandidates = 0;
         double sense = 0, decision = 0, navigator = 0, path = 0;
@@ -3259,6 +3303,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     };
     static thread_local PhaseWindow phaseWindow;
     ++phaseWindow.updates;
+    phaseWindow.senseRuns += npcSenseRuns;
+    phaseWindow.senseSkipped += npcSenseSkipped;
+    phaseWindow.navigationRuns += npcNavigationRuns;
+    phaseWindow.navigationSkipped += npcNavigationSkipped;
     ++phaseWindow.navCandidateGathers;
     phaseWindow.navCandidates += nearCandidates.size();
     phaseWindow.sense += npcSenseMs;
@@ -3279,6 +3327,10 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             "npc.phase-window", "server", "one-second NPC phase totals",
             static_cast<uint32_t>(npc.body.movementSimulationTick),
             nlohmann::json{{"updates", phaseWindow.updates},
+                           {"sense_runs", phaseWindow.senseRuns},
+                           {"sense_skipped", phaseWindow.senseSkipped},
+                           {"navigation_runs", phaseWindow.navigationRuns},
+                           {"navigation_skipped", phaseWindow.navigationSkipped},
                            {"sense_ms", phaseWindow.sense},
                            {"decision_ms", phaseWindow.decision},
                            {"navigator_ms", phaseWindow.navigator},

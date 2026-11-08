@@ -414,6 +414,128 @@ bool InfiniteWorldRuntime::withinStreamRadius(const glm::vec3& playerPos,
     return glm::dot(delta, delta) <= radius * radius;
 }
 
+void InfiniteWorldRuntime::applyStreamingConfig(
+    const GenerationZone& zone, const GamemodeWorldStreaming& config)
+{
+    if (!config.enabled)
+        return;
+    const int visual = std::max(1, static_cast<int>(std::ceil(
+        config.visualRadiusM)));
+    if (zone.spacingMode == "connector") {
+        mModeZone.streamRadius = glm::ivec3(visual, visual, 0);
+        return;
+    }
+    const float cellX = std::max(0.001f, zone.cellSize.x);
+    const float cellY = std::max(0.001f, zone.cellSize.y);
+    const float cellZ = std::max(0.001f, zone.cellSize.z);
+    mModeZone.streamRadius = glm::ivec3(
+        std::max(1, static_cast<int>(std::ceil(config.visualRadiusM / cellX))),
+        std::max(1, static_cast<int>(std::ceil(config.visualRadiusM / cellY))),
+        zone.repeatAxes.z
+            ? std::max(1, static_cast<int>(std::ceil(
+                  config.visualRadiusM / cellZ)))
+            : 0);
+}
+
+float InfiniteWorldRuntime::chunkDistance(
+    const glm::vec3& point, const glm::vec3& boundsMin,
+    const glm::vec3& boundsMax) const
+{
+    const glm::vec3 closest = glm::clamp(point, glm::min(boundsMin, boundsMax),
+                                         glm::max(boundsMin, boundsMax));
+    return glm::length(closest - point);
+}
+
+void InfiniteWorldRuntime::upgradeProxyChunks(
+    const Player& player, const std::vector<const AuthoredChunk*>& candidates)
+{
+    if (!mStreaming.enabled)
+        return;
+    for (auto& entry : mConnectorLoaded) {
+        ConnectorInstance& instance = entry.second;
+        if (instance.chunkIndex < 0 ||
+            static_cast<size_t>(instance.chunkIndex) >= candidates.size())
+            continue;
+        const AuthoredChunk* chunk = candidates[instance.chunkIndex];
+        if (!chunk || chunk->parts.empty())
+            continue;
+        const float distance = chunkDistance(player.pos, instance.boundsMin,
+                                             instance.boundsMax);
+        if (!instance.proxy && mStreaming.farProxy &&
+            distance > mStreaming.nearFullM * 1.5f) {
+            StreamedWorldLayer::instance().addProxy(
+                instance.key, *chunk, instance.transform, instance.boundsMin,
+                instance.boundsMax);
+            instance.proxy = true;
+            continue;
+        }
+        if (!instance.proxy || distance > mStreaming.nearFullM)
+            continue;
+        StreamedWorldLayer::instance().addChunk(instance.key, *chunk,
+                                                instance.transform);
+        instance.proxy = false;
+    }
+    if (mProxyKeys.empty())
+        return;
+    for (auto it = mProxyKeys.begin(); it != mProxyKeys.end();) {
+        const auto resolved = mResolved.find(*it);
+        if (resolved == mResolved.end() || !resolved->second.valid) {
+            it = mProxyKeys.erase(it);
+            continue;
+        }
+        const ResolvedCell& cell = resolved->second;
+        const float distance = chunkDistance(player.pos, cell.boundsMin,
+                                             cell.boundsMax);
+        if (distance > mStreaming.nearFullM) {
+            ++it;
+            continue;
+        }
+        const AuthoredChunk* chunk = nullptr;
+        for (const AuthoredChunk* candidate : candidates)
+            if (candidate && candidate->id == cell.chunkId) {
+                chunk = candidate;
+                break;
+            }
+        if (!chunk) {
+            ++it;
+            continue;
+        }
+        StreamedWorldLayer::instance().addChunk(*it, *chunk, cell.transform);
+        it = mProxyKeys.erase(it);
+    }
+}
+
+std::vector<AABB> InfiniteWorldRuntime::buildCoarseColliders(
+    const Player& player, const GenerationZone& zone,
+    const std::vector<const AuthoredChunk*>& candidates) const
+{
+    (void)zone;
+    (void)candidates;
+    std::vector<AABB> colliders;
+    if (!mStreaming.enabled || !mStreaming.coarseCollision)
+        return colliders;
+
+    const float radius = mStreaming.collisionRadiusM;
+    const float travel = glm::length(player.vel) *
+        std::max(0.0f, mStreaming.lookaheadSeconds);
+    const bool highSpeed = radius > 0.0f && travel > radius * 2.0f;
+    if (!highSpeed &&
+        StreamedWorldLayer::instance().hasFullCollisionNear(player.pos, radius))
+        return colliders;
+
+    const glm::vec3 end = player.pos +
+        player.vel * std::max(0.0f, mStreaming.lookaheadSeconds);
+    AABB corridor;
+    corridor.min = glm::min(player.pos, end) - glm::vec3(2.0f, 2.0f, 1.0f);
+    corridor.max = glm::max(player.pos, end) + glm::vec3(2.0f, 2.0f, 0.2f);
+    if (zone.repeatAxes.z == 0) {
+        corridor.min.z = player.pos.z - 1.0f;
+        corridor.max.z = player.pos.z + 0.2f;
+    }
+    colliders.push_back(corridor);
+    return colliders;
+}
+
 glm::vec3 InfiniteWorldRuntime::cellOrigin(int x, int y, int z,
                                            const GenerationZone& zone) const
 {
@@ -455,6 +577,7 @@ void InfiniteWorldRuntime::clearZone()
     mConnectorTried.clear();
     mConnectorPending.clear();
     mConnectorSeeded = false;
+    mProxyKeys.clear();
 }
 
 std::vector<const AuthoredChunk*> InfiniteWorldRuntime::resolveCandidates(
@@ -850,7 +973,20 @@ bool InfiniteWorldRuntime::placeChunk(
     }
 
     const auto applyStarted = std::chrono::steady_clock::now();
-    StreamedWorldLayer::instance().addChunk(key, *chunk, resolved.transform);
+    const float distance = chunkDistance(mFocusPos, resolved.boundsMin,
+                                         resolved.boundsMax);
+    const bool proxy = mStreaming.enabled && mStreaming.farProxy &&
+        distance > mStreaming.nearFullM;
+    if (proxy) {
+        StreamedWorldLayer::instance().addProxy(
+            key, *chunk, resolved.transform, resolved.boundsMin,
+            resolved.boundsMax);
+        mProxyKeys.insert(key);
+    } else {
+        StreamedWorldLayer::instance().addChunk(key, *chunk,
+                                                resolved.transform);
+        mProxyKeys.erase(key);
+    }
     mLoaded.insert(key);
     const double applyMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - applyStarted).count();
@@ -1071,9 +1207,24 @@ void InfiniteWorldRuntime::tickConnectorStream(
     }
 
     int added = 0;
+    const int maxChunksPerFrame = mStreaming.enabled
+        ? mStreaming.maxChunksPerFrame : kMaxChunksPerFrame;
+    const size_t maxLoadedChunks = mStreaming.enabled
+        ? static_cast<size_t>(mStreaming.maxLoadedChunks)
+        : kMaxConnectorLoaded;
+    const size_t maxPendingChunks = mStreaming.enabled
+        ? static_cast<size_t>(mStreaming.maxPendingChunks)
+        : kMaxConnectorPending;
+    const auto installStarted = std::chrono::steady_clock::now();
     for (size_t i = 0;
-         i < mConnectorPending.size() && added < kMaxChunksPerFrame &&
-         mConnectorLoaded.size() < kMaxConnectorLoaded;) {
+         i < mConnectorPending.size() && added < maxChunksPerFrame &&
+         mConnectorLoaded.size() < maxLoadedChunks;) {
+        if (mStreaming.enabled && mStreaming.installBudgetMs > 0.0f) {
+            const double elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - installStarted).count();
+            if (elapsed >= mStreaming.installBudgetMs)
+                break;
+        }
         const ConnectorInstance pending = mConnectorPending[i];
         mConnectorPending.erase(mConnectorPending.begin() + i);
         if (mConnectorLoaded.count(pending.key) || mLoaded.count(pending.key))
@@ -1084,10 +1235,22 @@ void InfiniteWorldRuntime::tickConnectorStream(
         const AuthoredChunk* chunk = candidates[pending.chunkIndex];
         if (!chunk || chunk->parts.empty())
             continue;
-        StreamedWorldLayer::instance().addChunk(pending.key, *chunk,
-                                                pending.transform);
+        const float distance = chunkDistance(player.pos, pending.boundsMin,
+                                             pending.boundsMax);
+        const bool proxy = mStreaming.enabled && mStreaming.farProxy &&
+            distance > mStreaming.nearFullM;
+        if (proxy) {
+            StreamedWorldLayer::instance().addProxy(
+                pending.key, *chunk, pending.transform, pending.boundsMin,
+                pending.boundsMax);
+        } else {
+            StreamedWorldLayer::instance().addChunk(pending.key, *chunk,
+                                                    pending.transform);
+        }
+        ConnectorInstance loaded = pending;
+        loaded.proxy = proxy;
         mLoaded.insert(pending.key);
-        mConnectorLoaded[pending.key] = pending;
+        mConnectorLoaded[pending.key] = loaded;
         mConnectorTried.insert(pending.key);
         logEvent("world-stream.connector.matched", zone.id,
                  {{"zone", zone.id},
@@ -1109,8 +1272,8 @@ void InfiniteWorldRuntime::tickConnectorStream(
 
     const size_t attempts = mConnectorPending.size();
     std::vector<ConnectorInstance> loadedSnapshot;
-    if (mConnectorLoaded.size() < kMaxConnectorLoaded &&
-        mConnectorPending.size() < kMaxConnectorPending) {
+    if (mConnectorLoaded.size() < maxLoadedChunks &&
+        mConnectorPending.size() < maxPendingChunks) {
         loadedSnapshot.reserve(mConnectorLoaded.size());
         for (const auto& pair : mConnectorLoaded)
             if (withinStreamRadius(player.pos, pair.second.boundsMin,
@@ -1119,7 +1282,7 @@ void InfiniteWorldRuntime::tickConnectorStream(
     }
 
     for (const ConnectorInstance& instance : loadedSnapshot) {
-        if (mConnectorPending.size() >= kMaxConnectorPending)
+        if (mConnectorPending.size() >= maxPendingChunks)
             break;
         if (instance.chunkIndex < 0 ||
             static_cast<size_t>(instance.chunkIndex) >= candidates.size())
@@ -1230,6 +1393,11 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
     const uint64_t revision = registry.revision();
     const std::string& gameModeId =
         MimitaNet::CommunityMatchClient::instance().mode();
+    mStreaming = GamemodeRegistry::instance().get(gameModeId).worldStreaming;
+    mFocusPos = player.pos;
+    mFocusVel = player.vel;
+    layer.setStreamFocus(
+        player.pos, mStreaming.enabled ? mStreaming.collisionRadiusM : 0.0f);
     const bool connectedWorldMode = gameModeId == "connected_world" ||
         std::any_of(config.generationZones.begin(), config.generationZones.end(),
                     [](const GenerationZone& zone) {
@@ -1356,6 +1524,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
                       {"spacing_mode", mModeZone.spacingMode}});
         }
         activeZone = &mModeZone;
+        applyStreamingConfig(*activeZone, mStreaming);
     }
 
     if (!mActive || mZoneId != activeZone->id) {
@@ -1412,6 +1581,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
             mLastRadius = glm::ivec3(-1);
             mDesired.clear();
             mPendingOffsets.clear();
+            mProxyKeys.clear();
             mGenerationSignature = signature;
             mHasGeneration = true;
             logEvent("world-stream.reset", activeZone->id,
@@ -1425,6 +1595,9 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
 
     if (activeZone->spacingMode == "connector") {
         tickConnectorStream(player, *activeZone, candidates, revision);
+        upgradeProxyChunks(player, candidates);
+        layer.setCoarseColliders(
+            buildCoarseColliders(player, *activeZone, candidates));
         layer.flushCollision(world);
         return;
     }
@@ -1495,8 +1668,17 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
 
     int added = 0;
     size_t attempted = 0;
+    const int maxChunksPerFrame = mStreaming.enabled
+        ? mStreaming.maxChunksPerFrame : kMaxChunksPerFrame;
+    const auto installStarted = std::chrono::steady_clock::now();
     for (const glm::ivec3& cell : mPendingOffsets) {
-        if (added >= kMaxChunksPerFrame) break;
+        if (added >= maxChunksPerFrame) break;
+        if (mStreaming.enabled && mStreaming.installBudgetMs > 0.0f) {
+            const double elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - installStarted).count();
+            if (elapsed >= mStreaming.installBudgetMs)
+                break;
+        }
         const uint64_t key = cellKey(cell.x, cell.y, cell.z);
         if (mLoaded.count(key) || mRejected.count(key)) continue;
         ++attempted;
@@ -1527,6 +1709,9 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
                   {"resolved", mResolved.size()},
                   {"desired", mDesired.size()},
                   {"radius", {radius.x, radius.y, radius.z}}});
+    upgradeProxyChunks(player, candidates);
+    layer.setCoarseColliders(
+        buildCoarseColliders(player, *activeZone, candidates));
     layer.flushCollision(world);
 }
 

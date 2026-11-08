@@ -2589,7 +2589,12 @@ bool MapEditor::autosave()
             {{"map", MapConfigRegistry::instance().mapId()},
              {"path", MapConfigRegistry::instance().configPath()},
              {"duration_ms", ms},
-             {"revision", MapConfigRegistry::instance().revision()}},
+             {"revision", MapConfigRegistry::instance().revision()},
+             {"saved_revision", MapConfigRegistry::instance().savedRevision()},
+             {"dirty_after_save", MapConfigRegistry::instance().dirty()},
+             {"entity_count", MapConfigRegistry::instance().current().entities.size()},
+             {"block_count", MapConfigRegistry::instance().current().blocks.size()},
+             {"route_count", MapConfigRegistry::instance().current().payload.route.size()}},
             __FILE__, __LINE__, __FUNCTION__);
     } else {
         notify("autosave failed: " + MapConfigRegistry::instance().configPath());

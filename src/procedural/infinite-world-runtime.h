@@ -16,7 +16,9 @@
 #include <glm/glm.hpp>
 #include <nlohmann/json.hpp>
 
+#include "gamemode/gamemode.h"
 #include "gamemode/map-config.h"
+#include "physics/physics-types.h"
 #include "worldgen/worldgen-types.h"
 
 struct World;
@@ -61,6 +63,7 @@ private:
         glm::vec3 boundsMax{0.0f};
         int quarterTurns = 0;
         int depth = 0;
+        bool proxy = false;
     };
 
     uint64_t cellKey(int x, int y, int z) const;
@@ -89,6 +92,16 @@ private:
         int x, int y, int z, const GenerationZone& zone,
         const std::vector<const AuthoredChunk*>& candidates,
         bool independent);
+    void applyStreamingConfig(const GenerationZone& zone,
+                              const GamemodeWorldStreaming& config);
+    void upgradeProxyChunks(const Player& player,
+                            const std::vector<const AuthoredChunk*>& candidates);
+    std::vector<AABB> buildCoarseColliders(
+        const Player& player, const GenerationZone& zone,
+        const std::vector<const AuthoredChunk*>& candidates) const;
+    float chunkDistance(const glm::vec3& point,
+                        const glm::vec3& boundsMin,
+                        const glm::vec3& boundsMax) const;
 
     bool mActive = false;
     std::string mZoneId;
@@ -124,6 +137,10 @@ private:
     std::vector<ConnectorInstance> mConnectorPending;
     glm::vec3 mConnectorAnchor{0.0f};
     bool mConnectorSeeded = false;
+    GamemodeWorldStreaming mStreaming;
+    std::unordered_set<uint64_t> mProxyKeys;
+    glm::vec3 mFocusPos{0.0f};
+    glm::vec3 mFocusVel{0.0f};
 };
 
 struct WorldConnectorMatch

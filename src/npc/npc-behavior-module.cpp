@@ -8,7 +8,9 @@
 #include "npc/npc-utility.h"
 
 #include <chrono>
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -39,6 +41,8 @@ UtilityContext makeContext(const mimita_npc_behavior::DecisionV1& r)
     ctx.weaponReady = has(r, mimita_npc_behavior::WEAPON_READY);
     ctx.loSBlocked = has(r, mimita_npc_behavior::LOS_BLOCKED);
     ctx.objectiveKnown = has(r, mimita_npc_behavior::OBJECTIVE_KNOWN);
+    ctx.payloadObjective = has(r, mimita_npc_behavior::PAYLOAD_OBJECTIVE);
+    ctx.targetCartDistance = r.targetCartDistance;
     ctx.atObjective = has(r, mimita_npc_behavior::AT_OBJECTIVE);
     ctx.canPlant = has(r, mimita_npc_behavior::CAN_PLANT);
     ctx.canDefuse = has(r, mimita_npc_behavior::CAN_DEFUSE);
@@ -126,7 +130,12 @@ int decide(mimita_npc_behavior::DecisionV1& request)
         request.structSize != sizeof(request))
         return 0;
     const auto started = std::chrono::steady_clock::now();
-    const UtilityContext context = makeContext(request);
+    UtilityContext context = makeContext(request);
+    // Hidden enemies can be searched near the cart; stale reports beyond the
+    // leash cannot pull a Payload NPC away from its assigned role.
+    if (context.payloadObjective && !context.hasVisibleTarget &&
+        context.targetCartDistance > 25.0f)
+        context.hasKnownTarget = false;
     UtilityState state;
     state.currentGoal = static_cast<UtilityGoalKind>(request.currentGoal);
     state.currentAction = static_cast<UtilityActionKind>(request.currentAction);
@@ -134,8 +143,25 @@ int decide(mimita_npc_behavior::DecisionV1& request)
     state.actionCooldown = request.actionCooldown;
     state.currentScore = makeScore(request.currentScore);
 
-    const UtilityGoalKind goal = selectUtilityGoal(
+    UtilityGoalKind goal = selectUtilityGoal(
         context, state, request.dt, request.minGoalSeconds, request.switchMargin);
+    if (context.payloadObjective &&
+        ((context.hasVisibleTarget && !context.loSBlocked) ||
+         (context.hasKnownTarget && context.targetCartDistance <= 25.0f))) {
+        goal = UtilityGoalKind::KillTarget;
+        if (state.currentGoal != goal) state.goalTimer = 0.0f;
+        state.currentGoal = goal;
+        state.currentScore = scoreUtilityGoal(goal, context);
+        state.currentAction = actionForGoal(goal, context);
+    } else if (context.payloadObjective && context.objectiveKnown &&
+               (!context.hasKnownTarget || context.targetCartDistance > 25.0f)) {
+        goal = context.onDefense ? UtilityGoalKind::DefendSite :
+                                   UtilityGoalKind::MoveToObjective;
+        if (state.currentGoal != goal) state.goalTimer = 0.0f;
+        state.currentGoal = goal;
+        state.currentScore = scoreUtilityGoal(goal, context);
+        state.currentAction = actionForGoal(goal, context);
+    }
     const auto finished = std::chrono::steady_clock::now();
     const double elapsedMs = std::chrono::duration<double, std::milli>(
         finished - started).count();
@@ -146,6 +172,23 @@ int decide(mimita_npc_behavior::DecisionV1& request)
     storeScore(state.currentScore, request.outCurrentScore);
     request.outGeneration = MIMITA_MODULE_GENERATION;
     request.outDecisionMilliseconds = static_cast<float>(elapsedMs);
+    // Stateless per-actor cadence: identical inputs at the same actor/tick
+    // produce the same movement choice across module generations.
+    std::uint32_t roll = request.actorId * 0x9e3779b9u ^ request.tick * 0x85ebca6bu;
+    roll ^= roll >> 16;
+    roll *= 0x7feb352du;
+    roll ^= roll >> 15;
+    const float unitRoll = static_cast<float>(roll & 0x00ffffffu) / 16777216.0f;
+    request.outDownDash = has(request, mimita_npc_behavior::DOWN_DASH_OPPORTUNITY) &&
+        unitRoll < std::clamp(request.downDashChance, 0.0f, 1.0f) ? 1u : 0u;
+    request.outHoldPursuit = has(request, mimita_npc_behavior::HAS_KNOWN_TARGET) ? 1u : 0u;
+    roll ^= 0xa511e9b3u;
+    roll ^= roll >> 16;
+    roll *= 0x7feb352du;
+    roll ^= roll >> 15;
+    const float dashRoll = static_cast<float>(roll & 0x00ffffffu) / 16777216.0f;
+    request.outDash = has(request, mimita_npc_behavior::DASH_OPPORTUNITY) &&
+        dashRoll < std::clamp(request.dashChance, 0.0f, 1.0f) ? 1u : 0u;
 
     // One record per actor per second, with the actual generation that made
     // the decision. The host owns writing the process's canonical events.jsonl.
@@ -171,6 +214,37 @@ int decide(mimita_npc_behavior::DecisionV1& request)
     return 1;
 }
 
+int assignPayloadRole(mimita_npc_behavior::PayloadRoleV1& role)
+{
+    if (role.version != mimita_npc_behavior::ABI_VERSION ||
+        role.structSize != sizeof(role) || role.teamSlot < 0 ||
+        role.maxPushAttackers < 0 || role.maxPushAttackers > 64 ||
+        role.humanPushers < 0 || role.humanPushers > 64)
+        return 0;
+    const bool attacking = role.team == role.attackerTeam;
+    if (!attacking && role.team != role.defenderTeam) return 0;
+    const int availablePushers = std::max(0, role.maxPushAttackers - role.humanPushers);
+    const bool push = attacking && role.teamSlot < availablePushers;
+    const bool contest = !attacking && role.teamSlot == 0;
+    role.outRole = push ? 1u : attacking ? 2u : contest ? 3u : 4u;
+    const int index = push ? role.teamSlot :
+        attacking ? role.teamSlot - availablePushers : role.teamSlot;
+    const float angle = 6.283185307f * static_cast<float>(index % 12) / 12.0f;
+    const float halfX = std::max(0.1f, role.interactionSize[0] * 0.5f);
+    const float halfY = std::max(0.1f, role.interactionSize[1] * 0.5f);
+    const float insideRadius = std::min(1.2f, std::min(halfX, halfY) * 0.6f);
+    const float radius = push ? insideRadius : contest ? insideRadius * 0.3f :
+        std::max(halfX, halfY) + 4.0f + 2.0f * (index / 12);
+    const float x = std::cos(angle) * radius;
+    const float y = std::sin(angle) * radius;
+    const float* m = role.interactionTransform;
+    for (int axis = 0; axis < 3; ++axis)
+        role.outPosition[axis] = m[12 + axis] + m[axis] * x + m[4 + axis] * y;
+    role.outPosition[2] = role.cartPosition[2];
+    role.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
 int MIMITA_MODULE_CALL initialize(const mimita_module::HostServicesV1* services)
 {
     if (!services || services->version != mimita_module::ABI_VERSION ||
@@ -184,11 +258,14 @@ void MIMITA_MODULE_CALL shutdown() { gServices = nullptr; }
 
 int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
 {
-    if (!event || event->typeId != mimita_module::EVENT_NPC_BEHAVIOR_DECISION ||
-        !event->payload ||
-        event->payloadSize != sizeof(mimita_npc_behavior::DecisionV1))
-        return 0;
-    return decide(*static_cast<mimita_npc_behavior::DecisionV1*>(event->payload));
+    if (!event || !event->payload) return 0;
+    if (event->typeId == mimita_module::EVENT_NPC_PAYLOAD_ROLE &&
+        event->payloadSize == sizeof(mimita_npc_behavior::PayloadRoleV1))
+        return assignPayloadRole(*static_cast<mimita_npc_behavior::PayloadRoleV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_BEHAVIOR_DECISION &&
+        event->payloadSize == sizeof(mimita_npc_behavior::DecisionV1))
+        return decide(*static_cast<mimita_npc_behavior::DecisionV1*>(event->payload));
+    return 0;
 }
 
 std::uint32_t MIMITA_MODULE_CALL exportState(std::uint8_t*, std::uint32_t)

@@ -41,6 +41,8 @@
 #include "npc/npc-behavior.h"
 #include "gamemode/gamemode-map-pool.h"
 #include "gamemode/map-config.h"
+#include "network/multiplayer-context.h"
+#include "map/map-authored-geometry.h"
 #include "interaction/world-interaction-runtime.h"
 #include "procedural/infinite-world-runtime.h"
 #include "hot-reload/hot-reload-system.h"
@@ -51,6 +53,7 @@
 #include "notifications/notifications.h"
 #include "gui/gui-layout.h"
 #include "debug/debug-visuals.h"
+#include "debug/structured-log.h"
 #include "gui/ui-system.h"
 #include "devtools/terminal.h"
 #include "terminal/weapon-commands.h"
@@ -197,12 +200,46 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         case 3: {
             MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game3");
             { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Map");
+              MimitaNet::MultiplayerContext* mp = gpMpContext;
+              if (mp && WORLD_LOADED && gpActiveMapPath &&
+                  !gpActiveMapPath->empty()) {
+                  MimitaNet::mpApplyPendingMapConfig(*mp, THE_WORLD,
+                                                     *gpActiveMapPath);
+              }
               if (gpActiveMapPath && !gpActiveMapPath->empty()) {
                   const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
+                  const uint64_t before =
+                      authoredGeometrySignature(MapConfigRegistry::instance().current());
                   if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
                       MapConfigRegistry::instance().load(mapId);
                   else
                       MapConfigRegistry::instance().pollReload();
+                  const uint64_t after =
+                      authoredGeometrySignature(MapConfigRegistry::instance().current());
+                  const bool alreadyApplied = mp &&
+                      mp->appliedGeometrySignature == after;
+                  if (after != before && !alreadyApplied && WORLD_LOADED &&
+                      !mapId.empty()) {
+                      const auto start = std::chrono::steady_clock::now();
+                      if (applyAuthoredMapGeometry(THE_WORLD, mapId)) {
+                          if (mp)
+                              mp->appliedGeometrySignature = after;
+                          const double durationMs =
+                              std::chrono::duration<double, std::milli>(
+                                  std::chrono::steady_clock::now() - start).count();
+                          StructuredLogger::instance().writeEvent(
+                              StructuredCategory::World, StructuredLevel::Important,
+                              "map.geometry.client-applied", mapId,
+                              "client rebuilt authored geometry after live map change",
+                              0,
+                              {{"map", mapId},
+                               {"geometry_signature", after},
+                               {"config_revision",
+                                MapConfigRegistry::instance().revision()},
+                               {"render_revision", THE_WORLD.renderRevision},
+                               {"duration_ms", durationMs}});
+                      }
+                  }
               }
               WorldInteractionRuntime::instance().syncIfChanged(
                   MapConfigRegistry::instance().current(),

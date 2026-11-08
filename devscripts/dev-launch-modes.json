@@ -518,6 +518,18 @@
       "map": "infinite_cramped",
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "56": {
+      "name": "Payload - funworld3 respawn performance",
+      "server_args": ["--mode", "payload", "--gamemode", "payload", "--npcs", "0"],
+      "weapon_set": "auto",
+      "client_args": ["--startup-command", "start payload"],
+      "map": "funworld3",
+      "expect_map": "funworld3",
+      "expect_mode": "payload",
+      "expect_gamemode": "payload",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

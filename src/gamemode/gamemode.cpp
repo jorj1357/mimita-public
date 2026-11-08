@@ -833,6 +833,54 @@ bool GamemodeRegistry::loadFile(const std::string& path, LoadedMode& slot)
                     f["destructible_world_reset"].get<std::string>();
         }
 
+        if (root.contains("world_streaming") &&
+            root["world_streaming"].is_object()) {
+            const auto& ws = root["world_streaming"];
+            auto& out = next.worldStreaming;
+            out.enabled = optBool(ws, "enabled", out.enabled);
+            out.visualRadiusM = std::max(1.0f, optFloat(
+                ws, "visual_radius_m", out.visualRadiusM));
+            out.collisionRadiusM = std::max(0.0f, optFloat(
+                ws, "collision_radius_m", out.collisionRadiusM));
+            out.lookaheadSeconds = std::max(0.0f, optFloat(
+                ws, "lookahead_seconds", out.lookaheadSeconds));
+            out.nearFullM = std::max(0.0f, optFloat(
+                ws, "near_full_m", out.nearFullM));
+            out.midProxyM = std::max(out.nearFullM, optFloat(
+                ws, "mid_proxy_m", out.midProxyM));
+            out.farProxyM = std::max(out.midProxyM, optFloat(
+                ws, "far_proxy_m", out.farProxyM));
+            out.maxLoadedChunks = std::max(1, optInt(
+                ws, "max_loaded_chunks", out.maxLoadedChunks));
+            out.maxPendingChunks = std::max(1, optInt(
+                ws, "max_pending_chunks", out.maxPendingChunks));
+            out.maxChunksPerFrame = std::max(1, optInt(
+                ws, "max_chunks_per_frame", out.maxChunksPerFrame));
+            out.installBudgetMs = std::max(0.0f, optFloat(
+                ws, "install_budget_ms", out.installBudgetMs));
+            out.coarseCollision = optBool(
+                ws, "coarse_collision", out.coarseCollision);
+            out.farProxy = optBool(ws, "far_proxy", out.farProxy);
+            out.fogStartM = std::max(0.0f, optFloat(
+                ws, "fog_start_m", out.fogStartM));
+            out.fogEndM = std::max(out.fogStartM, optFloat(
+                ws, "fog_end_m", out.fogEndM));
+            if (ws.contains("fog_color") && ws["fog_color"].is_array() &&
+                ws["fog_color"].size() >= 3) {
+                out.fogColor = glm::vec3(
+                    ws["fog_color"][0].get<float>(),
+                    ws["fog_color"][1].get<float>(),
+                    ws["fog_color"][2].get<float>());
+            }
+            const float maxRadius = std::max(out.visualRadiusM,
+                                             out.farProxyM);
+            out.visualRadiusM = maxRadius;
+            out.farProxyM = maxRadius;
+            out.nearFullM = std::min(out.nearFullM, maxRadius);
+            out.midProxyM = std::min(out.midProxyM, maxRadius);
+            out.collisionRadiusM = std::min(out.collisionRadiusM, maxRadius);
+        }
+
         // ── Visual/settings overrides ───────────────────────────────
         next.cameraFov = std::max(0.0f, optFloat(root, "camera_fov", next.cameraFov));
         next.forceFirstPerson = optBool(root, "force_first_person", next.forceFirstPerson);

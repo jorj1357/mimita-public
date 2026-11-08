@@ -1,4 +1,22 @@
-﻿2026 11 07 2138 
+﻿2026 11 08 1027 jojr 
+still reconenct issue
+and then i just e
+evnetuallt disconenct entirely
+whatever bro 
+
+whaaaatvre 
+
+2026 11 07 2246 jorj 
+ummmm
+idk waht te prbolem even is 
+DAMAGE
+NOT  AUTHROTIVVVEEEE
+DONT PREdisct the damage
+if its not atctual dmage
+and dotn reject damge tevents from my client bro
+that is an actual hit make it more allowable
+
+2026 11 07 2138 
 map editor hot reload
 goood
 

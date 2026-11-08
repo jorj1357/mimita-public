@@ -454,6 +454,11 @@ void flushServerWorldImpacts(HeadlessWorld& world, World& npcWorld,
     }
 }
 
+void clearDeferredServerWorldImpacts(HeadlessWorld& world)
+{
+    gDeferredWorldImpacts.erase(&world);
+}
+
 void clearServerWorldDestruction(HeadlessWorld& world)
 {
     gDeferredWorldImpacts.erase(&world);

@@ -372,8 +372,10 @@ void applyGLBObjectOverrides(World& world,
 {
     for (MapGLBObject& object : world.mesh.objects) {
         glm::vec3 target = object.basePosition;
+        const MapGLBObjectOverride* matched = nullptr;
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
+                matched = &override;
                 target = override.position;
                 if (!override.material.empty())
                     object.materialName = override.material;
@@ -382,15 +384,39 @@ void applyGLBObjectOverrides(World& world,
         }
         const glm::vec3 current(object.transform[3]);
         const glm::vec3 delta = target - current;
-        if (glm::dot(delta, delta) <= 1e-10f) continue;
         const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
         const size_t last = std::min(object.vertexFirst + object.vertexCount,
                                      world.mesh.verts.size());
+        const bool rangeValid =
+            object.vertexFirst < world.mesh.verts.size() &&
+            object.vertexFirst + object.vertexCount <= world.mesh.verts.size();
         for (size_t i = first; i < last; ++i)
             world.mesh.verts[i].pos += delta;
         object.transform[3] += glm::vec4(delta, 0.0f);
         object.boundsMin += delta;
         object.boundsMax += delta;
+        if (matched) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.glb-object.applied", object.id,
+                rangeValid ? "client GLB override applied" :
+                             "client GLB override range invalid",
+                0,
+                nlohmann::json{{"side", "client"},
+                               {"object", object.id},
+                               {"name", object.name},
+                               {"base_position", {object.basePosition.x,
+                                                  object.basePosition.y,
+                                                  object.basePosition.z}},
+                               {"target_position", {target.x, target.y, target.z}},
+                               {"delta", {delta.x, delta.y, delta.z}},
+                               {"vertex_first", object.vertexFirst},
+                               {"vertex_count", object.vertexCount},
+                               {"range_valid", rangeValid},
+                               {"vertices_moved", rangeValid ? last - first : 0},
+                               {"material", object.materialName}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
 }
 
@@ -399,8 +425,10 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
 {
     for (MimitaNet::HeadlessGLBObject& object : world.glbObjects) {
         glm::vec3 target = object.basePosition;
+        const MapGLBObjectOverride* matched = nullptr;
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
+                matched = &override;
                 target = override.position;
                 if (!override.material.empty())
                     object.materialName = override.material;
@@ -408,10 +436,12 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
             }
         }
         const glm::vec3 delta = target - object.position;
-        if (glm::dot(delta, delta) <= 1e-10f) continue;
         const size_t first = std::min(object.triangleFirst, world.triangles.size());
         const size_t last = std::min(object.triangleFirst + object.triangleCount,
                                      world.triangles.size());
+        const bool rangeValid =
+            object.triangleFirst < world.triangles.size() &&
+            object.triangleFirst + object.triangleCount <= world.triangles.size();
         for (size_t i = first; i < last; ++i) {
             CollisionTriangle& triangle = world.triangles[i];
             triangle.a += delta;
@@ -419,6 +449,50 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
             triangle.c += delta;
         }
         object.position = target;
+        if (matched) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.glb-object.applied", object.id,
+                rangeValid ? "server GLB override applied" :
+                             "server GLB override range invalid",
+                0,
+                nlohmann::json{{"side", "server"},
+                               {"object", object.id},
+                               {"name", object.name},
+                               {"base_position", {object.basePosition.x,
+                                                  object.basePosition.y,
+                                                  object.basePosition.z}},
+                               {"target_position", {target.x, target.y, target.z}},
+                               {"delta", {delta.x, delta.y, delta.z}},
+                               {"triangle_first", object.triangleFirst},
+                               {"triangle_count", object.triangleCount},
+                               {"range_valid", rangeValid},
+                               {"triangles_moved", rangeValid ? last - first : 0},
+                               {"material", object.materialName},
+                               {"solid_id", object.solidId}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+    for (const MapGLBObjectOverride& override : overrides) {
+        const bool found = std::any_of(
+            world.glbObjects.begin(), world.glbObjects.end(),
+            [&override](const MimitaNet::HeadlessGLBObject& object) {
+                return object.id == override.id;
+            });
+        if (!found) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Errors,
+                "map.glb-object.override-unmatched", override.id,
+                "server GLB override does not match any raw GLB node",
+                0,
+                nlohmann::json{{"side", "server"},
+                               {"object", override.id},
+                               {"name", override.name},
+                               {"target_position", {override.position.x,
+                                                    override.position.y,
+                                                    override.position.z}}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     if (!world.triangles.empty()) {
         world.boundsMin = glm::vec3(std::numeric_limits<float>::max());
@@ -498,6 +572,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
                        {"applied_count", added},
                        {"render_vertices", world.mesh.verts.size()},
                        {"collision_triangles", world.collisionMesh.triangles.size()},
+                       {"glb_override_count", config.glbObjects.size()},
                        {"static_union_solids", unionStats.unionSolids},
                        {"static_union_output_triangles", unionStats.unionOutputTriangles},
                        {"static_union_ms", unionStats.unionMs},
@@ -518,6 +593,15 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    if (world.rawBaseValid) {
+        world.triangles = world.rawTriangles;
+        world.solidIds = world.rawSolidIds;
+        world.glbObjects = world.rawGlbObjects;
+        world.spawnPoints = world.rawSpawnPoints;
+        world.boundsMin = world.rawBoundsMin;
+        world.boundsMax = world.rawBoundsMax;
+        world.nextSolidId = world.rawNextSolidId;
+    }
     world.connectedFlatGround = false;
     for (const GenerationZone& zone : config.generationZones) {
         if (!config.generateWholeWorld || !zone.enabled ||
@@ -882,17 +966,9 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
     }
 
     StaticUnionStats unionStats;
-    if (CollisionLodConfig::instance().staticSolidUnion())
-        unionStaticSolidGroups(
-            world.triangles, world.solidIds,
-            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
-            &unionStats,
-            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
     StaticUnionStats removalStats;
-    if (CollisionLodConfig::instance().staticFaceRemoval())
-        removeFullyCoveredStaticTriangles(
-            world.triangles, world.solidIds, &removalStats);
-    MimitaNet::buildHeadlessCollisionChunks(world);
+    MimitaNet::finalizeHeadlessWorldCollision(world, &unionStats,
+                                              &removalStats);
 
     // Authored spawnpoint entities extend the GLB spawn list. The base count
     // keeps repeated map rebuilds from duplicating them.
@@ -924,6 +1000,9 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                        {"authored_spawn_count", spawnsAdded},
                        {"spawn_points", world.spawnPoints.size()},
                        {"collision_triangles", world.triangles.size()},
+                       {"raw_triangles", world.rawTriangles.size()},
+                       {"raw_base", world.rawBaseValid},
+                       {"glb_override_count", config.glbObjects.size()},
                        {"static_removed_triangles", unionStats.removedTriangles},
                        {"static_removal_fallback", removalStats.fallback},
                        {"headless", true}},

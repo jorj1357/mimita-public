@@ -10,7 +10,16 @@
 
 # Hot kernel and hot gameplay
 
-## Current source alignment (2026-11-07)
+## Current source alignment (2026-11-08)
+
+The actor-rendering migration now uses the generic module catalog for pose
+interpolation, local mesh bounds, outline rejection, and draw-plan decisions.
+The host still owns actor state, world-bounds assembly, team/config selection,
+GPU resources, and GL submission. The long-term direction is to
+move actor traversal and other presentation decisions behind module draw-plan
+interfaces, keeping only stable process/device mechanisms in the host. Each
+new host-to-module dispatch or public ABI change needs an EXE installation
+build before later module-only edits can reload in the same process.
 
 This file describes the **target architecture**, not the current set of tracked
 hot modules. The current source has a narrow `build_game_dll.py` target for
