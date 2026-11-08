@@ -303,12 +303,49 @@ follow-up saves become one build. It must not wait for the current build to
 finish before accepting changes, status requests, launch requests, or control
 commands. It serializes compiler/linker work, then queues one follow-up build
 for the newest source generation if inputs changed during the active build.
-Module entry sources ending in `-module.cpp` are excluded from the EXE source
-list and from this cold-build watch. The running `ModuleHost` watches those
+Every source owned by a catalog module is excluded from the EXE source list and
+from this cold-build watch. The authoritative ownership set comes from
+`config/modules/modules.json`, not a filename suffix: `build.py`,
+`devscripts/dev-loop.py`, and `devscripts/module-build-worker.py` all consume
+`devscripts/module_ownership.py`. The running `ModuleHost` watches those
 sources, builds immutable DLL generations, and activates them at their safe
-boundary. Shared headers and host sources remain cold-build inputs. At most two
-independent module workers may compile at once; repeated edits to one module
-coalesce into its next generation. A module worker never replaces a loaded DLL.
+boundary. Shared headers and host sources remain cold-build inputs. A source
+listed in a module's `shared_with_host` migration list stays in the EXE only
+until its host bridge replaces it, and the audit reports it as a pending
+extraction. Module builds use the module's `optimize` flag (default `-O2`) so
+hot collision and movement code is not silently compiled slower than the host.
+At most two independent module workers may compile at once; repeated edits to
+one module coalesce into its next generation. A module worker never replaces a
+loaded DLL.
+
+Modules marked `shared: true` in the catalog publish their active and target
+module-set hash to
+`build/modules/agreement/<run_id>/<instance_id>.json`. A shared candidate waits
+until every fresh peer target hash matches; stale peer files (older than 10s)
+do not block a lone process. Activation happens only outside an executing fixed
+tick. This is the same-checkout dev-loop agreement path; remote clients still
+need the reserved network generation handshake before shared rules can switch
+across machines.
+
+### Build authority and agent lanes
+
+The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
+only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
+a build request, or a compiler directly; they ensure the lane dev-loop is
+running and read status/journals. The authoritative workflow is
+[`agent-lanes-build-authority.md`](agent-lanes-build-authority.md).
+
+Mode 2 isolated lanes are mandatory for agents. Each lane has its own worktree,
+`.dev`, artifacts, module builds, run IDs, ports, and journals. The lane
+dev-loop auto-detects edits; there is no agent build command.
+
+A machine-wide scheduler outside the checkout permits exactly one EXE build and
+two module builds at once across all lanes and checkouts. Builds wait for a
+free slot, coalesce newer saves into the next generation, run below normal
+priority, cap compiler jobs at four on this machine, and wait if free physical
+memory is below the configured threshold. A build failure leaves the previous
+artifact or module generation active. Only a human may use
+`MIMITA_BUILD_OVERRIDE=1` for an explicit emergency build.
 This serialization is per checkout/worktree; independent agent worktrees have
 separate watchers, locks, outputs, and may compile concurrently.
 
@@ -420,8 +457,10 @@ reload path.
 
 Record timestamps for save/change observed, build start, first useful compiler
 output, build end, publication complete, and any follow-up generation queued.
-Use these measurements to find the slow stage and improve it. Compare a no-op
-save, a small source edit, and a broad/header edit. Keep one compiler/linker
+The detailed phase, per-file, cache, persistence, and diagnosis contract is in
+[`build-time-observability.md`](build-time-observability.md). Use these
+measurements to find the slow stage and improve it. Compare a no-op save, a
+small source edit, and a broad/header edit. Keep one compiler/linker
 job active per checkout because overlapping jobs there can corrupt or
 invalidate shared outputs. Separate worktrees may build concurrently because
 their outputs and locks are isolated. Changes during a checkout's job must be

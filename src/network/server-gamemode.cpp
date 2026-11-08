@@ -156,6 +156,12 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
 {
     ServerGamemodeState& d = serverGamemodeState();
     d.authoredBaseWorld = glbWorld;
+    d.authoredCacheWorld = HeadlessWorld{};
+    d.authoredCacheWorldPrevious = HeadlessWorld{};
+    d.authoredCacheSignature = 0;
+    d.authoredCacheSignaturePrevious = 0;
+    d.authoredCacheReady = false;
+    d.authoredCachePreviousReady = false;
     d.authoredBaseMapId = mapId;
     d.authoredBaseWorldReady =
         !glbWorld.triangles.empty() || !glbWorld.spawnPoints.empty();
@@ -181,6 +187,18 @@ void serverMarkAuthoredGeometryApplied()
         authoredGeometrySignature(MapConfigRegistry::instance().current());
     d.geometryRebuildPending = false;
     d.pendingGeometrySignature = 0;
+}
+
+void serverSeedAuthoredCache(const HeadlessWorld& authoredWorld)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.authoredCacheWorld = authoredWorld;
+    d.authoredCacheSignature =
+        authoredGeometrySignature(MapConfigRegistry::instance().current());
+    d.authoredCacheWorldPrevious = HeadlessWorld{};
+    d.authoredCacheSignaturePrevious = 0;
+    d.authoredCacheReady = true;
+    d.authoredCachePreviousReady = false;
 }
 
 bool serverMatchRespawnsEnabled()
@@ -2891,6 +2909,7 @@ bool reloadGamemodeMap(SOCKET sock,
     commitGamemodeMap(d, world, npcWorld, tmp, mapId);
     serverCaptureAuthoredBaseWorld(base, mapId);
     serverMarkAuthoredGeometryApplied();
+    serverSeedAuthoredCache(world);
     assignGamemodeSpawns(d, world);
     broadcastMapChange(sock, d, mapId, players, totalPacketsOut);
     serverBroadcastMapConfigSnapshot(sock, players, totalPacketsOut);
@@ -7841,6 +7860,7 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
                                    std::unordered_map<uint32_t, ServerPlayer>& players,
                                    HeadlessWorld& world,
                                    World& npcWorld,
+                                   bool recastPrewarm,
                                    uint32_t tick,
                                    uint64_t& totalPacketsOut)
 {
@@ -7903,11 +7923,46 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
     }
 
     const auto applyStart = std::chrono::steady_clock::now();
-    HeadlessWorld candidate = d.authoredBaseWorld;
-    if (!applyAuthoredMapGeometry(candidate, d.mapId))
-        return reject("authored-apply-failed");
+    const bool latestHit = d.authoredCacheReady &&
+        d.authoredCacheSignature == d.pendingGeometrySignature;
+    const bool previousHit = !latestHit && d.authoredCachePreviousReady &&
+        d.authoredCacheSignaturePrevious == d.pendingGeometrySignature;
+    const bool cacheHit = latestHit || previousHit;
+    HeadlessWorld candidate;
+    if (latestHit) {
+        candidate = d.authoredCacheWorld;
+    } else if (previousHit) {
+        candidate = d.authoredCacheWorldPrevious;
+        d.authoredCacheWorldPrevious = std::move(d.authoredCacheWorld);
+        d.authoredCacheSignaturePrevious = d.authoredCacheSignature;
+        d.authoredCachePreviousReady = d.authoredCacheReady;
+        d.authoredCacheWorld = candidate;
+        d.authoredCacheSignature = d.pendingGeometrySignature;
+        d.authoredCacheReady = true;
+    } else {
+        candidate = d.authoredBaseWorld;
+        if (!applyAuthoredMapGeometry(candidate, d.mapId))
+            return reject("authored-apply-failed");
+        d.authoredCacheWorldPrevious = std::move(d.authoredCacheWorld);
+        d.authoredCacheSignaturePrevious = d.authoredCacheSignature;
+        d.authoredCachePreviousReady = d.authoredCacheReady;
+        d.authoredCacheWorld = candidate;
+        d.authoredCacheSignature = d.pendingGeometrySignature;
+        d.authoredCacheReady = true;
+    }
     const double applyMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - applyStart).count();
+    if (cacheHit) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map.geometry.cache.hit", d.mapId,
+            "reused finalized authored world for unchanged signature",
+            tick,
+            nlohmann::json{{"map", d.mapId},
+                           {"signature", d.pendingGeometrySignature},
+                           {"triangles", candidate.triangles.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 
     candidate.destructionBaselineSolidIds = candidate.solidIds;
     for (const ActiveDestructibleSnapshot& snapshot : activeSnapshots) {
@@ -7939,7 +7994,7 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
     clearDeferredServerWorldImpacts(world);
     world = std::move(candidate);
     const auto npcBuildStart = std::chrono::steady_clock::now();
-    buildNpcWorldCollision(npcWorld, world);
+    buildNpcWorldCollision(npcWorld, world, recastPrewarm);
     const double npcBuildMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - npcBuildStart).count();
 
@@ -8032,7 +8087,7 @@ void serverGamemodeTick(SOCKET sock,
         }
         if (d.geometryRebuildPending)
             rebuildServerAuthoredGeometry(sock, d, players, world, npcWorld,
-                                          tick, totalPacketsOut);
+                                          !npcs.empty(), tick, totalPacketsOut);
     }
     payloadSyncCartFromMap(d, tick);
     if (d.hasPendingObjectiveGive) {

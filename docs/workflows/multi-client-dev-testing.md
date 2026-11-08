@@ -6,6 +6,12 @@ processes in the dashboard, and verify that clients interact on the same server.
 Use `docs/specs/dev-loop/multi-instance.md` for the state model and
 `docs/specs/networking/bad-connection-simulation.md` for impairment presets.
 
+Agents run this workflow inside their own mode 2 lane. Each lane has its own
+server/client instances, ports, run IDs, and journals. Do not share one lane or
+one server across agents. Agents never build; the lane dev-loop auto-builds the
+lane artifact. See
+[`../specs/dev-loop/agent-lanes-build-authority.md`](../specs/dev-loop/agent-lanes-build-authority.md).
+
 ## Start one server and two clients
 
 ```text

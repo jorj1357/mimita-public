@@ -621,6 +621,7 @@ int runServer(const LaunchOptions& options)
     else {
         serverCaptureAuthoredBaseWorld(world, mapName);
         applyAuthoredMapGeometry(world, mapName);
+        serverSeedAuthoredCache(world);
     }
 
     // Real client World + NpcSystem so online NPCs run the exact local NPC AI.
@@ -1148,6 +1149,7 @@ int runServer(const LaunchOptions& options)
 
         // Accumulator-based timing: run simulation ticks for accumulated debt
         int steps = 0;
+        ModuleHost::instance().beginFixedTick();
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
             const auto tickStart = std::chrono::steady_clock::now();
@@ -1343,6 +1345,7 @@ int runServer(const LaunchOptions& options)
             ++tick;
             ++steps;
         }
+        ModuleHost::instance().endFixedTick();
         const bool cappedCatchup = steps >= MAX_STEPS && accumulator >= (double)SERVER_DT;
 
         // Poll coordinator for incoming ICE requests every outer loop
@@ -1582,6 +1585,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     else {
         serverCaptureAuthoredBaseWorld(state.world, mapName);
         applyAuthoredMapGeometry(state.world, mapName);
+        serverSeedAuthoredCache(state.world);
     }
 
     // Load the standard player body shape headlessly for hit validation.
@@ -2012,12 +2016,14 @@ static void listenServerThreadFunc(ListenServerState& state)
         accumulator += elapsed;
 
         int steps = 0;
+        ModuleHost::instance().beginFixedTick();
         while (accumulator >= kFixedDt && steps < kMaxCatchup)
         {
             simulateOneServerTick(state);
             accumulator -= kFixedDt;
             ++steps;
         }
+        ModuleHost::instance().endFixedTick();
         const bool cappedCatchup = steps >= kMaxCatchup && accumulator >= kFixedDt;
 
         // Log Hz every ~10 seconds

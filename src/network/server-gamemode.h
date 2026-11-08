@@ -134,6 +134,15 @@ struct ServerGamemodeState
     // Pristine GLB-only headless world. Live authored edits rebuild from this
     // snapshot so repeated saves cannot append duplicate authored geometry.
     HeadlessWorld authoredBaseWorld;
+    // Last finalized authored world before destructible state is re-applied.
+    // Keyed by the exact authored signature so undo/restore and repeated saves
+    // avoid the expensive decimation/union/finalize pass.
+    HeadlessWorld authoredCacheWorld;
+    HeadlessWorld authoredCacheWorldPrevious;
+    uint64_t authoredCacheSignature = 0;
+    uint64_t authoredCacheSignaturePrevious = 0;
+    bool authoredCacheReady = false;
+    bool authoredCachePreviousReady = false;
     std::string authoredBaseMapId;
     bool authoredBaseWorldReady = false;
     uint64_t appliedGeometrySignature = 0;
@@ -521,6 +530,7 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
 // Publish the current config/geometry identity after an authoritative load or
 // rebuild. Lives on the server tick so remote clients can apply the same view.
 void serverMarkAuthoredGeometryApplied();
+void serverSeedAuthoredCache(const HeadlessWorld& authoredWorld);
 
 // Reliable chunked server→client map config snapshot. The host client keeps
 // local file authority and is deliberately excluded from broadcasts.

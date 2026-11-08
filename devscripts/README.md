@@ -22,6 +22,12 @@ deployment.
   artifact identity and fallback checks live in `dev_loop/test_artifacts.py`.
   `MIMITA_DEV_LOOP_GUI_TEST_ACTION=launch_latest` invokes the same Launch
   button callback for a dashboard control-path smoke check.
+- Build authority and machine scheduling: `build_authority.py` guards the EXE
+  and module builders so only the dev-loop/game may compile; `build_scheduler.py`
+  enforces one EXE build and two module builds machine-wide; `module_ownership.py`
+  is the single module/EXE source-ownership map. Agents use isolated lanes via
+  `agent-lane.py` and never invoke a builder. See
+  [agent lanes and build authority](../docs/specs/dev-loop/agent-lanes-build-authority.md).
 - Scenario data and examples: `scenarios/`, including `matrix/` and
   `user/`; scenario execution and reports: `scenario-analyze.py` and
   `scenario_replay_report.py`.

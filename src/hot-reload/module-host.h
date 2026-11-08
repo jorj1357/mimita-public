@@ -6,8 +6,10 @@
 */
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -24,8 +26,10 @@ namespace mimita_worldgen { struct ResolveV1; }
 namespace mimita_chunk_collision { struct BuildChunkV1; }
 namespace mimita_collision_policy {
 struct ContactPolicyV1;
-struct SurfacePolicyV1;
 struct ContactSolveV1;
+struct SurfacePolicyV1;
+struct ActorPairPolicyV1;
+struct FinalPosePolicyV1;
 }
 
 class ModuleHost
@@ -37,11 +41,26 @@ public:
     void startupServerModules();
     void shutdown();
     void poll();
+    // Authoritative gameplay modules may activate only outside an executing
+    // fixed tick. The host calls these around the 60 Hz simulation loop.
+    void beginFixedTick();
+    void endFixedTick();
+    bool insideFixedTick() const { return mFixedTickActive.load(); }
+
+    // Stable identity of the currently active module set. Client and server
+    // compare this before activating shared authoritative rules.
+    std::uint64_t moduleSetHash() const;
+    std::string moduleSetJson() const;
+    bool sharedRuleAgreement() const;
+    void recordPeerModuleSetHash(std::uint64_t hash);
 
     bool moduleLoaded(const char* moduleName) const;
     bool invokeModule(const char* moduleName, std::uint32_t eventType,
                       void* payload, std::uint32_t payloadSize,
                       std::uint64_t tick = 0);
+    bool invokeModuleLocked(const char* moduleName, std::uint32_t eventType,
+                            void* payload, std::uint32_t payloadSize,
+                            std::uint64_t tick);
     // Dispatch an event to the catalog-declared owner. Returns false when no
     // module declared the event or no active module handled it.
     bool invokeEvent(std::uint32_t eventType, void* payload,
@@ -84,13 +103,32 @@ public:
         mimita_collision_policy::ContactPolicyV1* policy);
     bool collisionSurfacePolicy(
         mimita_collision_policy::SurfacePolicyV1* policy);
+    bool collisionActorPairPolicy(
+        mimita_collision_policy::ActorPairPolicyV1* policy);
+    bool collisionFinalPosePolicy(
+        mimita_collision_policy::FinalPosePolicyV1* policy);
     bool collisionSolveContacts(
         mimita_collision_policy::ContactSolveV1* request);
     bool networkSnapshotPolicy(
         mimita_network_policy::SnapshotPolicyV1* policy);
     bool networkReconnectPolicy(
         mimita_network_policy::ReconnectPolicyV1* policy);
+    bool networkMovementCorrection(
+        mimita_network_policy::MovementCorrectionPolicyV1* policy);
+    bool networkHitClaimPolicy(
+        mimita_network_policy::HitClaimPolicyV1* policy);
+    bool networkReconcilePolicy(
+        mimita_network_policy::ReconcilePolicyV1* policy);
+    bool networkInterpolationPolicy(
+        mimita_network_policy::InterpolationPolicyV1* policy);
     bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);
+    bool npcBehaviorAction(mimita_npc_behavior::ActionV1* action);
+    bool npcGrenadeDecision(mimita_npc_behavior::GrenadeDecisionV1* decision);
+    bool npcBehaviorSelfTest(mimita_npc_behavior::SelfTestV1* test);
+    bool npcGoalScore(mimita_npc_behavior::GoalScoreV1* score);
+    bool npcTargetSelect(mimita_npc_behavior::TargetSelectV1* request);
+    bool npcAttackIntent(mimita_npc_behavior::AttackIntentV1* request);
+    bool npcDashDecision(mimita_npc_behavior::DashDecisionV1* request);
     bool npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role);
     bool npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tick);
     bool npcBehaviorDashChoice(std::uint32_t actorId, std::uint32_t tick,
@@ -111,11 +149,16 @@ private:
         std::string name;
         std::uint32_t abi = 0;
         std::uint32_t stateSchema = 0;
+        std::vector<std::string> sourcePatterns;
+        std::vector<std::string> headerPatterns;
         std::vector<std::filesystem::path> sources;
         std::vector<std::filesystem::path> headers;
+        std::vector<std::filesystem::path> dependencyHeaders;
         std::vector<std::uint32_t> events;
         std::vector<std::uint32_t> capabilities;
         std::string activation;
+        bool shared = false;
+        bool lastActivationDeferred = false;
         std::filesystem::path outputDir;
         std::filesystem::path currentPath;
         std::filesystem::path resultPath;
@@ -136,6 +179,11 @@ private:
     };
 
     bool loadCatalog(bool serverProcess = false);
+    bool parseCatalogEntries(bool serverProcess, std::vector<ModuleEntry>& out);
+    void initializeEntry(ModuleEntry& entry);
+    void refreshEntryInputs(ModuleEntry& entry,
+                            bool* sourceSetChanged = nullptr);
+    void reloadCatalogIfChanged();
     bool loadCurrent(ModuleEntry& entry);
     bool loadCandidate(ModuleEntry& entry, const std::filesystem::path& dll,
                        std::uint32_t generation, const std::string& expectedHash);
@@ -162,6 +210,16 @@ private:
                     const std::string& fieldsJson);
     void rememberError(const std::string& error);
     std::string joinedPaths(const ModuleEntry& entry) const;
+    bool entryIsShared(const ModuleEntry& entry) const;
+    std::uint64_t moduleSetHashLocked() const;
+    std::uint64_t moduleSetHashWithCandidateLocked(
+        const std::string& name, std::uint32_t generation,
+        const std::string& codeHash) const;
+    bool agreementPeersAgreeLocked(std::uint64_t candidateHash) const;
+    void writeAgreementLocked(std::uint64_t activeHash,
+                              std::uint64_t targetHash);
+    void publishAgreementLocked();
+    void refreshPeerAgreementLocked();
     void notifyActivation(const ModuleEntry& entry, std::uint32_t generation,
                           std::uint32_t previousGeneration);
     void notifyBuildFailure(const ModuleEntry& entry,
@@ -169,9 +227,18 @@ private:
 
     bool mStarted = false;
     bool mInStartup = true;
+    bool mServerProcess = false;
+    std::filesystem::path mCatalogPath;
+    std::uint64_t mCatalogWriteTime = 0;
     std::string mLastError;
     std::uint64_t mLastPollTime = 0;
     std::uint32_t mTempGeneration = 0;
     std::vector<ModuleEntry> mModules;
     std::vector<std::filesystem::path> mRetiredPaths;
+    mutable std::shared_mutex mModuleMutex;
+    std::atomic<bool> mFixedTickActive{false};
+    std::atomic<std::uint64_t> mPeerModuleSetHash{0};
+    std::filesystem::path mAgreementDir;
+    std::string mInstanceId;
+    std::uint64_t mPublishedModuleSetHash = 0;
 };

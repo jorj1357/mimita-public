@@ -1,4 +1,114 @@
-﻿2026 11 08 1027 jojr 
+﻿2026 11 08 1759 jorj todo
+we 
+need to amek it 
+stop
+take
+so much time 
+to buidl
+now aiting
+
+
+2026 11 08 1641 jorj 
+make all things move like
+outof headers
+make  alot of difrent headers
+to make compialtion
+quicker?
+idk
+i think the best thing to  do is 
+dont even care about the compiatlion speed
+but
+make it so u dotn need to bild at all realtl ever 
+u can just  like
+make edits and it happesn 
+
+2026 11 08 1457 jorj
+
+we eidted the 
+no mor build
+agents no more calling build
+
+new issue
+devloop
+the gui
+the gui needs to like be separate 
+like 
+when u run dev loop itmeans u run the script or whatever
+not mkae 2 guis or 0 guis
+just 1 gui showing at once
+
+we can even make it a .exe and make ti hot reload boundary etc
+or
+idk
+pthon
+pthon just watches and gets info and shows the info in the dashboard 
+
+or whatver
+thank goodness
+the dahsboard isnt that big of a deal not like needing to wokr its just like a thing taht i like
+
+also w enede to mak it so
+opencode does not need to ask me if it has access to whatevr its doing like
+
+do everthing u can in like
+the repo
+and then dont put it in git 
+gitignore the folder
+but make it so  u dont have to go out of the mitia repo to  do things 
+
+2026 11 08 1212 jorj
+
+chocoaltey cmd window keeps shwoing up
+git exe cmd window keeps showing up
+things jsut keep showign up  over adn v
+for no reason
+ adn the are in the foreground
+ and then i cant
+
+i cant write in here i have to alt tab like every 500 ms
+back and foth
+idk n not good 
+
+2026 11 08 1210 jorj 
+loading: snchroniznig map
+reconnecting: attempt #0 .... 2 sec
+
+it goes back and forth
+ebtween these
+over and over
+and over
+adn over
+adn over adn over and over
+
+i hope tat the network m odularization makes it so 
+this 
+like we can invesitaget what ishappneing live 
+and then fix it live
+no .exe rebuild
+bc 
+
+last time we did hot reload i did it  all at once and i didnt even check if each  edit even worked or the .exe build or 
+etc
+
+but its ju
+ughhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
+
+its jsut  so ther is so much bugs all the time for no reason 
+i m
+there is a reason 
+but i dont like it i dont want the bugs 
+i want to  have 
+no bugs
+
+so we do coding 
+with ai
+becaues i could look at it and figure it out 
+im much slower than ai so 
+
+and choco
+
+
+2026 11 08 1027 jojr 
 still reconenct issue
 and then i just e
 evnetuallt disconenct entirely

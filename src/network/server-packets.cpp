@@ -2925,6 +2925,11 @@ void buildAndSendSnapshot(SOCKET sock,
     policy.chunkCount = static_cast<uint32_t>(chunks.size());
     policy.entityCount = entityCount;
     policy.playerCount = static_cast<uint32_t>(players.size());
+    std::uint64_t queueBytes = 0;
+    for (const std::vector<uint8_t>& chunk : chunks)
+        queueBytes += chunk.size();
+    policy.queueBytes = queueBytes;
+    policy.queueChunks = static_cast<std::uint32_t>(chunks.size());
     policy.redundancyCopies = chunks.size() > 1 ? 0 : 1;
     policy.resendPrevious = 1;
     policy.partialKeepalive = 1;

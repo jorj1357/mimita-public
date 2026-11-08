@@ -17,23 +17,30 @@ For every behavior change or investigation:
 3. Add bounded diagnostics at the existing owner using `StructuredLogger`.
    Records should include the scenario/action, tick, expected state, actual
    state, difference, and reason. Do not add a second file logger.
-4. Build the newest timestamped executable.
-5. Run:
+4. Work in your own mode 2 lane. Do not build. Ensure the lane dev-loop is
+   running and wait for it to auto-detect and publish the edit:
 
    ```text
-   mimita-<timestamp>.exe --versioninfo
+   python devscripts/agent-lane.py ensure <lane-id>
+   python devscripts/agent-lane.py status <lane-id>
    ```
 
-   Save the printed `EVENTS_JSONL_PATH`. It is the authoritative journal for
-   that process and must be named in the evidence report.
+   For a module-only edit, launch the lane once and let its `ModuleHost` build
+   the generation. Do not run `build.py` or a build request. Only a human may
+   use `MIMITA_BUILD_OVERRIDE=1`.
+
+5. Launch the lane's own client/server pair. The printed `EVENTS_JSONL_PATH`
+   must be the lane-local journal for that run. Record the lane ID, build ID,
+   PID, and module generations.
 6. Run the actual game or a bounded runtime scenario using the same command,
    input, simulation, network, and presentation owners as normal play.
-7. Inspect the journal live and after completion. Confirm that the changed
-   path was reached and locate the first expected/actual mismatch.
-8. Adjust only the responsible owner, rebuild, rerun, and compare the same
-   scenario and evidence. For collision replay, preserve divergence evidence
-   through the next human bookmark, then restore the full checkpoint and
-   continue; divergence alone is not a stop condition.
+7. Inspect the lane journal live and after completion. Confirm that the changed
+   path was reached and locate the first expected/actual mismatch. Correlate
+   server and client journals only within that lane/run.
+8. Adjust only the responsible owner; the dev-loop rebuilds automatically.
+   Rerun the same scenario and evidence. For collision replay, preserve
+   divergence evidence through the next human bookmark, then restore the full
+   checkpoint and continue; divergence alone is not a stop condition.
 
 ## Scenario shape
 

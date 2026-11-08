@@ -19,8 +19,13 @@
 5. Compare code with the specification and record disagreements.
 6. Make the smallest correct change.
 7. Run the focused skills required by the route.
-8. Run relevant tests, focused Markdown skills, checks, and the canonical build when code changed.
-9. Confirm expected outputs exist.
+8. For code changes, ensure the lane dev-loop is running and let it auto-build;
+   never run `build.py`, a build request, `module-build-worker.py`, or a
+   compiler directly. Read the lane's build status and journals. Only a human
+   may use `MIMITA_BUILD_OVERRIDE=1`. See
+   `docs/specs/dev-loop/agent-lanes-build-authority.md`.
+9. Confirm expected outputs exist and report the lane ID, build ID, PID,
+   module generation, and exact journal path.
 10. Write exactly one changelog file immediately before completion.
 11. Report what was proven and what still needs human review.
 

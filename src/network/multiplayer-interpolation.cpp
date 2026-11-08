@@ -33,6 +33,8 @@
 #include "world/world.h"
 #include "physics/movement/physics-collision.h"
 #include "physics/movement/physics-collision-shared.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -296,9 +298,24 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     // linear_never_skip disables this emergency snap entirely.
     const uint32_t gapTicks = linearSnapGapTicks > 0
         ? linearSnapGapTicks : interpCfg.teleportGapTicks;
-    if (!linearNeverSkip &&
-        (uint32_t)(newer->serverTick - older->serverTick) > gapTicks &&
-        interpCfg.teleportGapSnap)
+    const uint32_t actualGapTicks = newer->serverTick - older->serverTick;
+    const float gapDist = glm::length(newer->position - older->position);
+    bool snapTicks = actualGapTicks > gapTicks;
+    bool snapDistance = gapDist > interpCfg.teleportDistance;
+    mimita_network_policy::InterpolationPolicyV1 interpPolicy{};
+    interpPolicy.version = mimita_network_policy::ABI_VERSION;
+    interpPolicy.structSize = sizeof(interpPolicy);
+    interpPolicy.gapTicks = actualGapTicks;
+    interpPolicy.teleportGapTicks = gapTicks;
+    interpPolicy.gapDistance = gapDist;
+    interpPolicy.teleportDistance = interpCfg.teleportDistance;
+    interpPolicy.maximumExtrapolationSeconds =
+        interpCfg.maximumExtrapolationSeconds;
+    if (ModuleHost::instance().networkInterpolationPolicy(&interpPolicy)) {
+        snapTicks = interpPolicy.outSnapTicks != 0;
+        snapDistance = interpPolicy.outSnapDistance != 0;
+    }
+    if (!linearNeverSkip && snapTicks && interpCfg.teleportGapSnap)
     {
         interpolation.snappedOrCorrected = true;
         ++interpolation.hardSnapCount;
@@ -310,8 +327,7 @@ void buildReceiveTimeRender(EntityInterpolationState& interpolation,
     // Corruption protection: an absurd per-segment distance without a
     // lifecycle change is treated as a teleport. Not a speed limit.
     // linear_never_skip disables this emergency snap entirely.
-    const float gapDist = glm::length(newer->position - older->position);
-    if (!linearNeverSkip && gapDist > interpCfg.teleportDistance)
+    if (!linearNeverSkip && snapDistance)
     {
         interpolation.snappedOrCorrected = true;
         ++interpolation.hardSnapCount;

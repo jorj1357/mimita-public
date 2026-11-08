@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include <module-identity.h>
 
@@ -22,6 +23,12 @@ const mimita_module::HostServicesV1* gServices = nullptr;
 std::atomic<std::uint32_t> gLastLoggedTick{0};
 
 bool has(const mimita_npc_behavior::DecisionV1& request,
+         mimita_npc_behavior::ContextFlag flag)
+{
+    return (request.contextFlags & static_cast<std::uint32_t>(flag)) != 0;
+}
+
+bool has(const mimita_npc_behavior::ActionV1& request,
          mimita_npc_behavior::ContextFlag flag)
 {
     return (request.contextFlags & static_cast<std::uint32_t>(flag)) != 0;
@@ -245,6 +252,199 @@ int assignPayloadRole(mimita_npc_behavior::PayloadRoleV1& role)
     return 1;
 }
 
+int actionForGoalEvent(mimita_npc_behavior::ActionV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    UtilityContext ctx;
+    ctx.weaponReady = has(request, mimita_npc_behavior::WEAPON_READY);
+    ctx.loSBlocked = has(request, mimita_npc_behavior::LOS_BLOCKED);
+    ctx.atObjective = has(request, mimita_npc_behavior::AT_OBJECTIVE);
+    ctx.atSquadSlot = has(request, mimita_npc_behavior::AT_SQUAD_SLOT);
+    ctx.targetDistance = request.targetDistance;
+    request.outAction = static_cast<std::uint32_t>(
+        actionForGoal(static_cast<UtilityGoalKind>(request.goal), ctx));
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int decideGrenade(mimita_npc_behavior::GrenadeDecisionV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    GrenadeThrowContext ctx;
+    auto flag = [&](mimita_npc_behavior::GrenadeFlag value) {
+        return (request.flags & static_cast<std::uint32_t>(value)) != 0;
+    };
+    ctx.hasTarget = flag(mimita_npc_behavior::GRENADE_HAS_TARGET);
+    ctx.targetBehindCover = flag(mimita_npc_behavior::GRENADE_TARGET_BEHIND_COVER);
+    ctx.selfInBlast = flag(mimita_npc_behavior::GRENADE_SELF_IN_BLAST);
+    ctx.trajectoryBlocked = flag(mimita_npc_behavior::GRENADE_TRAJECTORY_BLOCKED);
+    ctx.duplicateThrow = flag(mimita_npc_behavior::GRENADE_DUPLICATE_THROW);
+    ctx.haveGrenade = flag(mimita_npc_behavior::GRENADE_HAVE_GRENADE);
+    ctx.siteDefense = flag(mimita_npc_behavior::GRENADE_SITE_DEFENSE);
+    ctx.siteRetake = flag(mimita_npc_behavior::GRENADE_SITE_RETAKE);
+    ctx.enemyGroupDensity = request.enemyGroupDensity;
+    ctx.friendlyNearImpact = request.friendlyNearImpact;
+    request.outScore = scoreGrenadeThrow(ctx);
+    request.outAllowed = grenadeThrowAllowed(ctx, request.threshold) ? 1u : 0u;
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int runSelfTest(mimita_npc_behavior::SelfTestV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    std::string report;
+    const bool ok = request.which == 1
+        ? npcGrenadeReasoningSelfTest(report)
+        : npcUtilitySelfTest(report);
+    std::snprintf(request.outReport, sizeof(request.outReport), "%s",
+                  report.c_str());
+    request.outOk = ok ? 1u : 0u;
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int scoreGoal(mimita_npc_behavior::GoalScoreV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    UtilityContext context = makeContext(request.context);
+    const UtilityGoalScore score = scoreUtilityGoal(
+        static_cast<UtilityGoalKind>(request.goal), context);
+    storeScore(score, request.outScore);
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int selectTarget(mimita_npc_behavior::TargetSelectV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request) ||
+        request.candidateCount > mimita_npc_behavior::MAX_TARGET_CANDIDATES)
+        return 0;
+    float bestScore = -1e30f;
+    float currentScore = -1e30f;
+    std::uint32_t best = 0;
+    for (std::uint32_t i = 0; i < request.candidateCount; ++i) {
+        const auto& candidate = request.candidates[i];
+        if (candidate.id == 0)
+            continue;
+        const bool finite =
+            std::isfinite(candidate.position[0]) &&
+            std::isfinite(candidate.position[1]) &&
+            std::isfinite(candidate.position[2]) &&
+            std::isfinite(candidate.threat);
+        if (!finite)
+            continue;
+        const float distance = std::sqrt(
+            candidate.position[0] * candidate.position[0] +
+            candidate.position[1] * candidate.position[1] +
+            candidate.position[2] * candidate.position[2]);
+        const float distanceScore = 1.0f / (1.0f + distance);
+        const float healthFraction = candidate.maxHealth > 0
+            ? std::clamp(static_cast<float>(candidate.health) /
+                         static_cast<float>(candidate.maxHealth), 0.0f, 1.0f)
+            : 1.0f;
+        const float vulnerability = 1.0f - healthFraction;
+        float score = distanceScore * request.distanceBias +
+            vulnerability * request.lowHealthBias +
+            candidate.threat * request.threatBias;
+        const bool isCurrent = candidate.id == request.currentTargetId;
+        if (isCurrent) {
+            score += request.stickiness;
+            currentScore = score;
+        }
+        if (score > bestScore) {
+            bestScore = score;
+            best = candidate.id;
+        }
+    }
+    request.outReason = mimita_npc_behavior::TARGET_NONE;
+    if (best == 0) {
+        request.outTargetId = 0;
+    } else if (request.currentTargetId != 0 &&
+               best != request.currentTargetId &&
+               currentScore > -1e29f &&
+               bestScore <= currentScore + request.switchThreshold) {
+        request.outTargetId = request.currentTargetId;
+        request.outReason = mimita_npc_behavior::TARGET_STICKY;
+    } else {
+        request.outTargetId = best;
+        request.outReason = best == request.currentTargetId
+            ? mimita_npc_behavior::TARGET_STICKY
+            : mimita_npc_behavior::TARGET_SCORED;
+    }
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int decideAttack(mimita_npc_behavior::AttackIntentV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    auto has = [&](mimita_npc_behavior::AttackFlag flag) {
+        return (request.flags & static_cast<std::uint32_t>(flag)) != 0;
+    };
+    request.outAttack = 0;
+    if (!has(mimita_npc_behavior::ATTACK_HAS_TARGET)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_NO_TARGET;
+    } else if (!has(mimita_npc_behavior::ATTACK_TARGET_VISIBLE) ||
+               !has(mimita_npc_behavior::ATTACK_LOS_CLEAR)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_LOS_BLOCKED;
+    } else if (has(mimita_npc_behavior::ATTACK_SAME_TEAM)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_SAME_TEAM;
+    } else if (!has(mimita_npc_behavior::ATTACK_WEAPON_READY)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_WEAPON_NOT_READY;
+    } else if (!has(mimita_npc_behavior::ATTACK_REACTION_READY)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_REACTION;
+    } else if (!has(mimita_npc_behavior::ATTACK_COOLDOWN_READY)) {
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_COOLDOWN;
+    } else {
+        request.outAttack = 1;
+        request.outReason = mimita_npc_behavior::ATTACK_REASON_ELIGIBLE;
+    }
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int decideDash(mimita_npc_behavior::DashDecisionV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    auto has = [&](mimita_npc_behavior::DashFlag flag) {
+        return (request.flags & static_cast<std::uint32_t>(flag)) != 0;
+    };
+    const float chance = std::clamp(request.chanceScale, 0.0f, 1.0f);
+    const float roll = std::clamp(request.roll, 0.0f, 1.0f);
+    bool dash = false;
+    if (has(mimita_npc_behavior::DASH_OBJECTIVE_RUSH) &&
+        has(mimita_npc_behavior::DASH_OBJECTIVE_KNOWN) &&
+        !has(mimita_npc_behavior::DASH_HAS_TARGET)) {
+        dash = roll < chance;
+    } else if (request.distance > 10.0f && request.difficulty01 > 0.3f) {
+        dash = roll < 0.6f * chance;
+    } else if (request.healthFraction < 0.35f && request.distance < 8.0f) {
+        dash = roll < 0.7f * chance;
+    } else if (has(mimita_npc_behavior::DASH_TARGET_SEES_ME) &&
+               request.difficulty01 > 0.2f) {
+        dash = roll < (0.15f + request.difficulty01 * 0.25f) * chance;
+    } else {
+        dash = roll < (0.05f + request.difficulty01 * 0.15f) * chance;
+    }
+    request.outDash = dash ? 1u : 0u;
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
 int MIMITA_MODULE_CALL initialize(const mimita_module::HostServicesV1* services)
 {
     if (!services || services->version != mimita_module::ABI_VERSION ||
@@ -265,6 +465,35 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
     if (event->typeId == mimita_module::EVENT_NPC_BEHAVIOR_DECISION &&
         event->payloadSize == sizeof(mimita_npc_behavior::DecisionV1))
         return decide(*static_cast<mimita_npc_behavior::DecisionV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_BEHAVIOR_ACTION &&
+        event->payloadSize == sizeof(mimita_npc_behavior::ActionV1))
+        return actionForGoalEvent(*static_cast<mimita_npc_behavior::ActionV1*>(
+            event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_GRENADE_DECISION &&
+        event->payloadSize == sizeof(mimita_npc_behavior::GrenadeDecisionV1))
+        return decideGrenade(
+            *static_cast<mimita_npc_behavior::GrenadeDecisionV1*>(
+                event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_BEHAVIOR_SELFTEST &&
+        event->payloadSize == sizeof(mimita_npc_behavior::SelfTestV1))
+        return runSelfTest(
+            *static_cast<mimita_npc_behavior::SelfTestV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_GOAL_SCORE &&
+        event->payloadSize == sizeof(mimita_npc_behavior::GoalScoreV1))
+        return scoreGoal(
+            *static_cast<mimita_npc_behavior::GoalScoreV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_TARGET_SELECT &&
+        event->payloadSize == sizeof(mimita_npc_behavior::TargetSelectV1))
+        return selectTarget(
+            *static_cast<mimita_npc_behavior::TargetSelectV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_ATTACK_INTENT &&
+        event->payloadSize == sizeof(mimita_npc_behavior::AttackIntentV1))
+        return decideAttack(
+            *static_cast<mimita_npc_behavior::AttackIntentV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_DASH_DECISION &&
+        event->payloadSize == sizeof(mimita_npc_behavior::DashDecisionV1))
+        return decideDash(
+            *static_cast<mimita_npc_behavior::DashDecisionV1*>(event->payload));
     return 0;
 }
 

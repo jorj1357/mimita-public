@@ -109,6 +109,62 @@ The full hot-module implementation plan in the preceding decision set is not yet
 
 Those remain follow-up work. This step fixes the server/client GLB authority mismatch and adds the journal evidence needed to prove it.
 
+## Hot module catalog and live rebuild cache — 2026-11-08T17:35Z
+
+Implemented the module-substrate slice and low-risk rebuild reductions.
+
+### Module catalog
+
+- `process_scope: "all"` is now accepted as an alias for `"both"`.
+- The catalog path and write time are retained by `ModuleHost`.
+- `config/modules/modules.json` is watched during `ModuleHost::poll()`.
+- Catalog edits are merged by module name:
+  - new modules are scheduled
+  - removed/out-of-scope modules are unloaded
+  - metadata-only changes update in place
+  - ABI/state-schema changes request a rebuild
+- Raw source/header glob patterns are retained and re-expanded each poll. Source-set additions/removals trigger a build even when no tracked file changed.
+- Dependency headers are tracked separately from catalog glob headers so dependency refresh cannot cause a permanent "source set changed" loop.
+- `map-editor` catalog events now include the input/click events `108` and `109` already handled by its module.
+- `build.py` and the dev-loop already had catalog-driven module ownership via `devscripts/module_ownership.py`; no filename-suffix-only ownership was added.
+- `network-policy` was changed to `"process_scope": "all"` to exercise the new scope.
+
+Runtime evidence (`run 20261108_173047`):
+
+- `module.catalog.reloaded` appeared in both dedicated server and client after editing `modules.json` with no restart.
+- `network-policy` remained active in both processes with `process_scope: "all"`.
+- Server journal: `module.catalog.reloaded` modules=3.
+- Client journal: `module.catalog.reloaded` modules=6.
+
+### Rebuild performance
+
+- Recast now keys its cache on a collision-content hash plus navigation profile instead of the always-incremented `world.renderRevision`.
+- Cache hits emit `npc.navmesh.cache-hit`.
+- `buildNpcWorldCollision()` accepts `allowRecastPrewarm`; live rebuild passes `!npcs.empty()`.
+- Prewarm skip/allowed emits `npc.navmesh.prewarm` / `npc.navmesh.prewarm-skipped`.
+- The server retains a two-slot finalized authored-world cache keyed by authored geometry signature.
+- `map.geometry.cache.hit` is emitted on a cache hit.
+- The initial authored world is seeded into the cache at load so restoring the startup signature hits.
+- A cache hit bypassed `applyAuthoredMapGeometry()`: authored apply dropped from about 4012 ms to about 899 ms (the remainder is copy plus destructible revalidation).
+
+Runtime evidence (`run 20261108_173047`, index 0 moved +5 then restored):
+
+- First edit: `map.geometry.reload.applied` authored_apply_ms=4011.99, npc_collision_build_ms=7036.53, duration_ms=11200.75.
+- Restore: `map.geometry.cache.hit` for signature `6968283886113374888`; authored_apply_ms=898.98, npc_collision_build_ms=7355.54, duration_ms=8421.72.
+- The cache works, but the total still stalls because the NPC collision/navmesh rebuild remains synchronous and dominates at about 7.3 s.
+
+### Build infrastructure issue found
+
+`build.py` only links when the current invocation compiled at least one object. If a previous build compiled objects and then failed or was killed before linking, a later invocation prints "Nothing changed" and never links the newer objects. `MIMITA_FORCE_LINK=1` is required in that state. Orphaned root `mimita.exe` test processes from another session also locked the link target and had to be stopped before publishing.
+
+### Still not implemented
+
+- Async candidate rebuild + atomic swap (the only zero-stall solution for collision-changing edits with active NPCs).
+- Detached/instance-based Recast builder.
+- `map-geometry` hot module and host adapters.
+- Full `map-editor.cpp` extraction and module-owned undo/redo/clipboard.
+- GLB schema v2: rotation/scale/tombstones/clones/arbitrary imports.
+
 ## Repository notes
 
 - No commit was created by this AI session. An external commit `b1207711` appeared during the session; this session does not claim it.

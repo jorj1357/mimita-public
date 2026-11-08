@@ -79,6 +79,10 @@ host interface or an explicit shared target, not duplicated between modules.
 When a shared interface changes, rebuild only the modules whose declared or
 compiler-discovered dependencies use it. An ambiguous or unowned source change
 must be reported clearly rather than silently omitted from a build.
+`devscripts/module_ownership.py` is the executable ownership check: it expands
+the catalog for the EXE source inventory, fails on overlap or a missing catalog
+entry, and keeps the dev-loop cold watcher from treating a module source as a
+host input.
 
 ### 2.2 Stable host and state ownership
 
@@ -183,6 +187,42 @@ builds the newest saved generation. The worker caches objects by source,
 compiler inputs, and discovered header dependencies, recompiles affected
 translation units, and links a new generation. An EXE build remains serialized
 per checkout and is needed when a host source or public ABI changes.
+
+Source ownership is exact and catalog-driven. `config/modules/modules.json` is
+the single ownership map; `devscripts/module_ownership.py` expands it for
+`build.py`, the dev-loop watcher, and the module worker. Every module source is
+excluded from the EXE inventory, the audit fails on dual or missing ownership,
+and only an explicit `shared_with_host` migration entry may temporarily keep a
+module source in the EXE. Module compilation uses a per-module `optimize`
+value (default `-O2`) so hot policy is not compiled slower than the host.
+
+Agents never invoke a builder. The lane dev-loop is the only EXE builder and
+the lane game's `ModuleHost` is the only module builder. Agents use isolated
+mode 2 lanes and read status/journals while the dev-loop auto-detects saved
+edits. A machine-wide scheduler allows one EXE build and two module builds
+across all lanes. See
+[`../dev-loop/agent-lanes-build-authority.md`](../dev-loop/agent-lanes-build-authority.md).
+
+The live repair slice adds bounded collision and networking decisions without
+moving host data ownership:
+
+- `chunk-collision` events 404/405 decide actor-pair push/support response and
+  the bounded final-pose containment limits. The host keeps the broadphase,
+  capsule sweep, world triangles, `Player` mutation, and safety application.
+- `network-policy` events 702-705 decide movement-correction class, hit-claim
+  tolerances, local reconciliation logging, interpolation gap snapping, and
+  snapshot queue pressure. The host keeps packets, rewind poses, prediction
+  buffers, contexts, and authoritative state.
+- Module activation now occurs outside an executing fixed tick, and module
+  invocation shares a lock with activation/unload so a listen-server tick
+  cannot race a live swap.
+- State export/import is bounded, validated before activation, and journalled;
+  a rejected migration keeps the previous generation active.
+- `shared: true` catalog entries publish a module-set hash to
+  `build/modules/agreement/<run_id>/<instance>.json`. A shared candidate waits
+  until every fresh peer reports the same target hash, then activates at the
+  next safe boundary. This is a same-checkout/dev-loop agreement mechanism; a
+  remote wire protocol remains a separate later slice.
 
 For the current performance and authority repair, classify candidate sources
 before extraction: `src/npc/npc-*.cpp` and `src/npc/team-brain.cpp` contain
@@ -590,8 +630,12 @@ boundary. The source catalog includes these modules:
 - `chunk-collision` — collidable-part selection and world-space box triangles
   after chunk and part transforms, actor contact/surface policy, and bounded
   shared depenetration correction;
-- `npc-behavior` — utility goal/action decisions, dash choices, and Payload
-  cart-role destinations on the authoritative server.
+- `network-policy` — consolidated snapshot-budget, keepalive, and reconnect
+  decisions for both client and server;
+- `npc-behavior` — utility goal/action decisions, goal-score diagnostics,
+  grenade throw policy, dash choices, and Payload cart-role destinations on the
+  authoritative server. `npc-utility.cpp` is module-owned; the host adapter is
+  `src/npc/npc-utility-bridge.cpp` and retains no scoring policy.
 
 This inventory describes source ownership, not proof that every module has
 activated in the running EXE. NPC perception, target selection, state-machine

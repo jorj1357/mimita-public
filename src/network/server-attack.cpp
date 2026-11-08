@@ -23,6 +23,8 @@
 #include "config/networking-config.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 #include "impact/impact-system.h"
 #include "persistence/persistence-emit.h"
 
@@ -658,7 +660,14 @@ void handleAttackRequest(
         // high-latency connections (e.g. badconn 8) because the client fires
         // from a position the server has not accepted yet.
         const float pingAllowance = (float)shooter.pingMs / 1000.0f * 200.0f;
-        const float originTolerance = 12.0f + pingAllowance;
+        mimita_network_policy::HitClaimPolicyV1 claimPolicy{};
+        claimPolicy.version = mimita_network_policy::ABI_VERSION;
+        claimPolicy.structSize = sizeof(claimPolicy);
+        claimPolicy.baseOriginTolerance = 12.0f;
+        claimPolicy.pingAllowance = pingAllowance;
+        float originTolerance = 12.0f + pingAllowance;
+        if (ModuleHost::instance().networkHitClaimPolicy(&claimPolicy))
+            originTolerance = claimPolicy.outOriginTolerance;
         if (!finiteVec3(origin) || glm::length(direction) <= 0.0001f ||
             glm::length(origin - shooter.pos) > originTolerance)
         {
@@ -881,9 +890,18 @@ void handleAttackRequest(
 
                 const NetworkingConfigData& netCfg =
                     NetworkingConfig::instance().data();
-                const float tolerance =
+                float tolerance =
                     std::max(0.0f, netCfg.remotePlayers.rewindHitTolerance) +
                     std::max(0.0f, netCfg.remotePlayers.claimLagAllowance);
+                mimita_network_policy::HitClaimPolicyV1 hitClaim{};
+                hitClaim.version = mimita_network_policy::ABI_VERSION;
+                hitClaim.structSize = sizeof(hitClaim);
+                hitClaim.rewindHitTolerance =
+                    netCfg.remotePlayers.rewindHitTolerance;
+                hitClaim.claimLagAllowance =
+                    netCfg.remotePlayers.claimLagAllowance;
+                if (ModuleHost::instance().networkHitClaimPolicy(&hitClaim))
+                    tolerance = hitClaim.outHitTolerance;
                 auto npcClaimIt = npcs.find(claim.targetId);
                 if (npcClaimIt != npcs.end())
                 {

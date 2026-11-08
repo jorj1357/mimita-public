@@ -13,6 +13,18 @@ The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
 now. The invariant and cold/live restrictions below are retained as historical
 context and do not block the current workflow.
 
+## Agent build authority (2026-11-08)
+
+Agents edit and observe; they never build. Every agent uses an isolated mode 2
+lane (`devscripts/agent-lane.py create/ensure/status/run`) with its own
+worktree, artifacts, module builds, run IDs, and journals. The lane dev-loop
+auto-detects saved edits; the running game's `ModuleHost` builds module
+generations. A machine-wide scheduler allows one EXE build and two module
+builds across all lanes. Agents must not run `build.py`,
+`module-build-worker.py`, a build request, or a compiler directly. Only a human
+may use `MIMITA_BUILD_OVERRIDE=1`. See
+[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
+
 # Live development invariant
 
 ## Current capability and mode 3 direction

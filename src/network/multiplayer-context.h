@@ -540,6 +540,14 @@ struct MultiplayerContext
     int reconnectAttempts = 0;
     uint64_t lastReconnectAttemptMs = 0;
     uint64_t reconnectBackoffMs = 1000;
+    // A reconnect can lose the ICE transport entirely. While the replacement
+    // ICE transport is being negotiated, preserve the old player slot identity
+    // here so the new transport can continue with ReconnectRequest instead of
+    // starting a fresh join.
+    bool reconnectTransportPending = false;
+    uint32_t reconnectTransportPlayerId = 0;
+    std::string reconnectTransportToken;
+    std::string reconnectTransportRoomCode;
 
     // ── Honest connection-health state (packet-freshness driven) ──────
     // Wall-clock deadline (nowMs()) after which the 60s reconnect grace ends
@@ -1062,6 +1070,9 @@ struct IceConnectStatus
 };
 bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
                        const std::string& playerName);
+// Rebuild a lost ICE transport for an established session, then resume with
+// the existing reconnect token so the server restores the same player slot.
+bool mpIceReconnectStart(MultiplayerContext& ctx, const std::string& playerName);
 IceConnectStatus mpIceConnectPoll();
 bool mpIceConnectActive();
 void mpIceConnectCancel();

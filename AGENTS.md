@@ -6,6 +6,15 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 Read these gates before doing anything else:
 
+0. AGENT BUILD AUTHORITY: An agent edits and observes; it never builds. Agents
+   must not run `build.py`, `build_agent.py`, `buildv2.py`,
+   `module-build-worker.py`, `devloop --request build`, or any direct
+   compiler/`ccache` command. Every agent uses an isolated mode 2 lane
+   (`devscripts/agent-lane.py create/ensure/status/run`); the lane dev-loop
+   auto-detects edits and builds. Only a human may use
+   `MIMITA_BUILD_OVERRIDE=1`. Read
+   `docs/specs/dev-loop/agent-lanes-build-authority.md` before any edit.
+
 1. ROUTER CHAIN: This file is not the complete instruction set. Read
    `docs/ROUTER.md` immediately and follow its routes to the relevant
    specification, architecture, workflow, operation, regression, and focused

@@ -24,6 +24,7 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
 #include "network/multiplayer-context.h"
 #include "devtools/terminal.h"
 #include "devtools/dev-overlay.h"
@@ -238,6 +239,7 @@ void engineTickReplay(Engine& engine, float dt)
 
     { Perf::ScopedTimer _t("Simulation");
     int simTicksRun = 0;
+    ModuleHost::instance().beginFixedTick();
     while (simAccumulator >= SIM_DT && simTicksRun < gSimMaxCatchupTicks) {
         InputFrame tickFrame;
         const bool scenarioPlaybackActive = ScenarioPlayer::instance().active();
@@ -1026,6 +1028,7 @@ void engineTickReplay(Engine& engine, float dt)
         simAccumulator -= SIM_DT;
         simTicksRun++;
     }
+    ModuleHost::instance().endFixedTick();
     } // Perf::ScopedTimer Simulation
 
     // Presentation-only interpolation between the last two fixed animation

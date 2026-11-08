@@ -445,6 +445,10 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.reconnectGraceDeadlineMs = 0;
     ctx.disconnectStartedMs = 0;
     ctx.lastPacketSentMs = 0;
+    ctx.reconnectTransportPending = false;
+    ctx.reconnectTransportPlayerId = 0;
+    ctx.reconnectTransportToken.clear();
+    ctx.reconnectTransportRoomCode.clear();
     ctx.remoteConnectionStates.clear();
     ctx.lastNotifiedConnectionState = ConnectionState::Disconnected;
 
@@ -1384,21 +1388,61 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
 } // anonymous namespace
 
-bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
-                       const std::string& playerName)
+static bool startIceConnectInternal(MultiplayerContext& ctx,
+                                    const std::string& roomCode,
+                                    const std::string& playerName,
+                                    bool reconnect)
 {
     // Never allow two concurrent connect jobs — cancel and wait for any old one.
     if (gIceConnectJob)
         mpIceConnectCancel();
 
-    if (ctx.active)
-        mpShutdown(ctx);
+    if (reconnect)
+    {
+        // Keep the reserved player slot/token across the transport teardown.
+        // The replacement ICE transport will send ReconnectRequest instead of
+        // beginning a fresh join.
+        const uint32_t playerId = ctx.localPlayerId;
+        const std::string token = ctx.reconnectToken;
+        const uint64_t graceDeadlineMs = ctx.reconnectGraceDeadlineMs;
+        const uint64_t disconnectStartedMs = ctx.disconnectStartedMs;
+        const uint64_t reconnectBackoffMs = ctx.reconnectBackoffMs;
+
+        ctx.reconnectTransportPending = true;
+        ctx.reconnectTransportPlayerId = playerId;
+        ctx.reconnectTransportToken = token;
+        ctx.reconnectTransportRoomCode = roomCode;
+
+        teardownPreviousSession(ctx, DisconnectPolicy::Timeout);
+
+        ctx.reconnectToken = token;
+        ctx.reconnectTransportPending = true;
+        ctx.reconnectTransportPlayerId = playerId;
+        ctx.reconnectTransportToken = token;
+        ctx.reconnectTransportRoomCode = roomCode;
+        ctx.reconnectGraceDeadlineMs = graceDeadlineMs;
+        ctx.disconnectStartedMs = disconnectStartedMs;
+        ctx.reconnectBackoffMs = reconnectBackoffMs;
+        ctx.currentRoomCode = roomCode;
+        ctx.roomCode = roomCode;
+    }
+    else
+    {
+        ctx.reconnectTransportPending = false;
+        ctx.reconnectTransportPlayerId = 0;
+        ctx.reconnectTransportToken.clear();
+        ctx.reconnectTransportRoomCode.clear();
+        if (ctx.active)
+            mpShutdown(ctx);
+    }
 
     ctx.currentRoomCode = roomCode;
     ++ctx.connectionAttemptId;
     ctx.joinRequestSends = 0;
     ctx.connectFailed = false;
-    ctx.connectionStatus = "Connecting...";
+    ctx.connectionStatus = reconnect
+        ? "Reconnecting via ICE..."
+        : "Connecting...";
 
     // Mark the context active immediately so mpTick runs during the async
     // ICE connect and can consume the finished transport. Without this,
@@ -1406,7 +1450,9 @@ bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
     // installed (mpInstallIceConnectSuccess), leaving the client stuck
     // pre-join on the fallback map.
     ctx.active = true;
-    ctx.connectionState = ConnectionState::NatNegotiating;
+    ctx.connectionState = reconnect
+        ? ConnectionState::Reconnecting
+        : ConnectionState::NatNegotiating;
     ctx.connectStartMs = nowMs();
     ctx.sock = INVALID_SOCKET;
 
@@ -1416,6 +1462,32 @@ bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
     gIceConnectJob->status.message = "Starting connection...";
     gIceConnectJob->thread = std::thread(iceConnectWorker, roomCode, playerName);
     return true;
+}
+
+bool mpIceConnectStart(MultiplayerContext& ctx, const std::string& roomCode,
+                       const std::string& playerName)
+{
+    return startIceConnectInternal(ctx, roomCode, playerName, false);
+}
+
+bool mpIceReconnectStart(MultiplayerContext& ctx, const std::string& playerName)
+{
+    const std::string roomCode = !ctx.currentRoomCode.empty()
+        ? ctx.currentRoomCode : ctx.roomCode;
+    if (roomCode.empty() || ctx.localPlayerId == 0 || ctx.reconnectToken.empty())
+        return false;
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.ice-reconnect.start", std::to_string(ctx.localPlayerId),
+        "rebuilding lost ICE transport for an existing session", ctx.tick,
+        {{"room_code", roomCode},
+         {"player_id", ctx.localPlayerId},
+         {"previous_server_address", ctx.serverAddress},
+         {"reconnect_token_retained", true}},
+        __FILE__, __LINE__, __FUNCTION__);
+
+    return startIceConnectInternal(ctx, roomCode, playerName, true);
 }
 
 IceConnectStatus mpIceConnectPoll()
@@ -1468,6 +1540,13 @@ void mpIceConnectCancel()
 
 void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& status)
 {
+    // Snapshot reconnect identity before the normal new-session reset below.
+    const bool resumeReconnect = ctx.reconnectTransportPending &&
+        ctx.reconnectTransportPlayerId != 0 &&
+        !ctx.reconnectTransportToken.empty();
+    const uint32_t reconnectPlayerId = ctx.reconnectTransportPlayerId;
+    const std::string reconnectToken = ctx.reconnectTransportToken;
+
     ctx.transport = std::move(status.transport);
     ctx.active = true;
     ctx.localPlayerId = 0;
@@ -1532,6 +1611,39 @@ void mpInstallIceConnectSuccess(MultiplayerContext& ctx, IceConnectStatus& statu
     ctx.hasPendingServerPositionCorrection = false;
     if (!status.roomCode.empty())
         ctx.currentRoomCode = status.roomCode;
+
+    ctx.reconnectTransportPending = false;
+    ctx.reconnectTransportPlayerId = 0;
+    ctx.reconnectTransportToken.clear();
+    ctx.reconnectTransportRoomCode.clear();
+
+    if (resumeReconnect)
+    {
+        // Resume the established session over the replacement ICE transport.
+        // The server will bind this transport to the same player slot when it
+        // accepts the retained reconnect token.
+        ctx.localPlayerId = reconnectPlayerId;
+        ctx.reconnectToken = reconnectToken;
+        ctx.joinToken.clear();
+        ctx.connectionState = ConnectionState::Reconnecting;
+        ctx.connectionStatus = "Reconnecting via ICE...";
+        ctx.connected = false;
+        ctx.connectFailed = false;
+        ctx.lastSnapshotReceivedMs = nowMs();
+        ctx.lastHeardServerMs = nowMs();
+        mpStartReconnect(ctx);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "network.ice-reconnect.transport-installed",
+            std::to_string(reconnectPlayerId),
+            "replacement ICE transport installed; reconnect request will resume slot",
+            ctx.tick,
+            {{"player_id", reconnectPlayerId},
+             {"server_address", ctx.serverAddress},
+             {"room_code", ctx.currentRoomCode},
+             {"reconnect_token_retained", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
 }
 
 // ── Migration: disagreement processing ────────────────────────────────
@@ -1880,6 +1992,10 @@ void mpTickReconnect(MultiplayerContext& ctx)
 {
     if (ctx.connectionState != ConnectionState::Reconnecting)
         return;
+    // The replacement ICE transport does not exist yet. Sending through the
+    // torn-down transport would only produce silent failures.
+    if (mpIceConnectActive())
+        return;
 
     const auto& retryCfg = NetworkingConfig::instance().data().retries;
     const uint64_t now = nowMs();
@@ -2051,6 +2167,9 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         return;
 
     ctx.connectionState = next;
+    const bool iceSession =
+        ctx.transport != nullptr ||
+        ctx.serverAddress.rfind("ice:", 0) == 0;
     switch (next)
     {
     case ConnectionState::Reconnecting:
@@ -2065,6 +2184,16 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
             mpNotifyConnectionStateChange(ctx, before,
                                           ConnectionState::ReconnectFailed);
             return;
+        }
+        // An ICE path can die completely while the coordinator and server are
+        // still healthy. Reusing that transport can only repeat the failure, so
+        // rebuild ICE first and resume with the retained reconnect token.
+        if (iceSession && mpIceReconnectStart(ctx, ctx.approvedLocalName))
+        {
+            // Reconnecting state is already set; the async job owns progress.
+            mpNotifyConnectionStateChange(ctx, before,
+                                          ConnectionState::Reconnecting);
+            break;
         }
         mpStartReconnect(ctx);
         mpNotifyConnectionStateChange(ctx, before, ConnectionState::Reconnecting);

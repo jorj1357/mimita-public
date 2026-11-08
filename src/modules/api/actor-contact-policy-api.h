@@ -90,4 +90,65 @@ struct SurfacePolicyV1
     int result;
 };
 
+enum ActorPairPolicyFlags : std::uint32_t
+{
+    ACTOR_PAIR_CONTINUING_SUPPORT = 1u << 0,
+    ACTOR_PAIR_UPPER_ON_GROUND = 1u << 1,
+    ACTOR_PAIR_STATIC = 1u << 2,
+    ACTOR_PAIR_DEAD = 1u << 3,
+};
+
+// Bounded actor-pair response policy. The host owns the broadphase, capsule
+// sweep, and state mutation; the module decides push speed and support
+// eligibility from profile tuning and the measured pair facts.
+struct ActorPairPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t flags;
+
+    float weakHitDistanceM;
+    float weakHitMotionSeconds;
+    float minImpactSpeedMps;
+    float maxImpactSpeedMps;
+    float impactSpeedCurveExponent;
+    float impactAngleMinScale;
+    float impactAngleCurveExponent;
+    float maxKnockbackSpeedMps;
+
+    float impactSpeed;
+    float directness;
+
+    float upperBottom;
+    float lowerTop;
+    float relativeVertical;
+    float approachSpeed;
+    float supportTopToleranceM;
+    float supportSnapMaxM;
+    float supportMaxImpactSpeedMps;
+
+    float outPushSpeed;
+    float outSupportDeltaZ;
+    std::uint32_t outPush;
+    std::uint32_t outSupport;
+    std::uint32_t outGeneration;
+};
+
+// Stable containment limits for the final-pose safety pass. These are
+// authoritative safety bounds, not gameplay tuning; the module may adjust them
+// live, and the host applies the returned values.
+struct FinalPosePolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    float maxSolidPushOut;
+    float pushSkin;
+    float contactEpsilon;
+    float clearanceEpsilon;
+    std::int32_t maxContainmentIterations;
+    float maxCorrectionPerIteration;
+    float maxTotalCorrection;
+    std::uint32_t outGeneration;
+};
+
 } // namespace mimita_collision_policy

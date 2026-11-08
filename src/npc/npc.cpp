@@ -132,27 +132,45 @@ bool shouldDash(Npc& npc, float d01, float distance, const WeaponDefinition* def
     if (npc.dashCooldown > 0.0f)
         return false;
 
-    float healthFraction = (float)npc.body.currentHp / (float)npc.body.maxHp;
+    float healthFraction = npc.body.maxHp > 0
+        ? (float)npc.body.currentHp / (float)npc.body.maxHp : 1.0f;
     float chanceScale = (npc.behavior.active && npc.behavior.dashChance >= 0.0f)
         ? npc.behavior.dashChance : cfg.dashChance;
+    const float roll = random01(npc.rngState);
 
-    // An objective rush makes a known route dash-eligible, but the selected
-    // behavior profile still controls how often the ready shared ability is
-    // requested. This keeps easy-mode tuning local to that profile.
+    mimita_npc_behavior::DashDecisionV1 request{};
+    request.version = mimita_npc_behavior::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.actorId = npc.id;
+    request.tick = static_cast<std::uint32_t>(npc.sensors.time * 60.0f);
+    request.difficulty01 = d01;
+    request.distance = distance;
+    request.healthFraction = healthFraction;
+    request.chanceScale = chanceScale;
+    request.roll = roll;
+    if (npc.sensors.hasTarget)
+        request.flags |= mimita_npc_behavior::DASH_HAS_TARGET;
+    if (targetCanSeeMe)
+        request.flags |= mimita_npc_behavior::DASH_TARGET_SEES_ME;
+    if (npc.behavior.active && npc.behavior.objectiveRush)
+        request.flags |= mimita_npc_behavior::DASH_OBJECTIVE_RUSH;
+    if (npc.utilityContext.objectiveKnown)
+        request.flags |= mimita_npc_behavior::DASH_OBJECTIVE_KNOWN;
+    if (ModuleHost::instance().npcDashDecision(&request))
+        return request.outDash != 0;
+
+    // Module unavailable: retain the original threshold policy with the same
+    // single deterministic roll so the ability is never blocked by reload.
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget)
-        return random01(npc.rngState) < glm::clamp(chanceScale, 0.0f, 1.0f);
-
+        return roll < std::clamp(chanceScale, 0.0f, 1.0f);
     if (distance > 10.0f && d01 > 0.3f)
-        return random01(npc.rngState) < (0.6f * chanceScale);
-
+        return roll < (0.6f * chanceScale);
     if (healthFraction < 0.35f && distance < 8.0f)
-        return random01(npc.rngState) < (0.7f * chanceScale);
-
+        return roll < (0.7f * chanceScale);
     if (targetCanSeeMe && d01 > 0.2f)
-        return random01(npc.rngState) < ((0.15f + d01 * 0.25f) * chanceScale);
-
-    return random01(npc.rngState) < ((0.05f + d01 * 0.15f) * chanceScale);
+        return roll < ((0.15f + d01 * 0.25f) * chanceScale);
+    return roll < ((0.05f + d01 * 0.15f) * chanceScale);
 }
 
 namespace {
@@ -1233,7 +1251,23 @@ static const char* jumpReasonName(NpcJumpReason reason)
 // Emit the once-per-second movement-decision snapshot after all overrides and
 // physics have run. This is the one complete record that explains what the
 // actor wanted, what it finally did, and how far it actually moved.
-static void emitAttackGate(const Npc& npc, bool attack, bool sameTeam)
+static const char* attackReasonName(std::uint32_t reason)
+{
+    using namespace mimita_npc_behavior;
+    switch (reason) {
+        case ATTACK_REASON_NO_TARGET:       return "no_visible_target";
+        case ATTACK_REASON_LOS_BLOCKED:     return "line_of_sight_blocked";
+        case ATTACK_REASON_WEAPON_NOT_READY:return "weapon_not_ready";
+        case ATTACK_REASON_SAME_TEAM:       return "same_team";
+        case ATTACK_REASON_REACTION:        return "reaction_delay";
+        case ATTACK_REASON_COOLDOWN:        return "attack_cooldown";
+        case ATTACK_REASON_ELIGIBLE:
+        default:                            return "eligible";
+    }
+}
+
+static void emitAttackGate(const Npc& npc, bool attack, bool sameTeam,
+                           const char* moduleReason = nullptr)
 {
     static std::unordered_map<uint32_t, float> sLast;
     const float now = npc.sensors.time;
@@ -1241,7 +1275,8 @@ static void emitAttackGate(const Npc& npc, bool attack, bool sameTeam)
     if (it != sLast.end() && now - it->second < 1.0f)
         return;
     sLast[npc.id] = now;
-    const char* reason = !npc.sensors.hasTarget ? "no_visible_target" :
+    const char* reason = moduleReason ? moduleReason :
+        !npc.sensors.hasTarget ? "no_visible_target" :
         npc.cachedLoSBlocked ? "line_of_sight_blocked" :
         sameTeam ? "same_team" :
         npc.attackCooldown > 0.0f ? "attack_cooldown" :
@@ -3213,12 +3248,45 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
 
     // Aggression guarantee: a visible, legal target is enough to shoot. The
     // state machine normally requests attack, but an elite squad must not stand
-    // idle because the current movement state forgot to set the flag.
-    if (!attack && npc.sensors.hasTarget && !npc.cachedLoSBlocked &&
-        npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)
+    // idle because the current movement state forgot to set the flag. The
+    // module owns the intent policy; the host still applies weapon legality.
+    mimita_npc_behavior::AttackIntentV1 attackIntent{};
+    attackIntent.version = mimita_npc_behavior::ABI_VERSION;
+    attackIntent.structSize = sizeof(attackIntent);
+    attackIntent.actorId = npc.id;
+    attackIntent.tick = static_cast<std::uint32_t>(npc.sensors.time * 60.0f);
+    attackIntent.targetDistance = npc.sensors.targetDistance;
+    attackIntent.healthFraction = npc.body.maxHp > 0
+        ? static_cast<float>(npc.body.currentHp) /
+          static_cast<float>(npc.body.maxHp) : 1.0f;
+    auto setAttackFlag = [&](mimita_npc_behavior::AttackFlag flag, bool enabled) {
+        if (enabled)
+            attackIntent.flags |= static_cast<std::uint32_t>(flag);
+    };
+    setAttackFlag(mimita_npc_behavior::ATTACK_HAS_TARGET, npc.sensors.hasTarget);
+    setAttackFlag(mimita_npc_behavior::ATTACK_TARGET_VISIBLE, npc.sensors.hasTarget);
+    setAttackFlag(mimita_npc_behavior::ATTACK_LOS_CLEAR, !npc.cachedLoSBlocked);
+    setAttackFlag(mimita_npc_behavior::ATTACK_WEAPON_READY,
+                  npc.utilityContext.weaponReady);
+    setAttackFlag(mimita_npc_behavior::ATTACK_SAME_TEAM, sameTeamTarget);
+    setAttackFlag(mimita_npc_behavior::ATTACK_REACTION_READY,
+                  npc.reactionTimer <= 0.0f);
+    setAttackFlag(mimita_npc_behavior::ATTACK_COOLDOWN_READY,
+                  npc.attackCooldown <= 0.0f);
+    const bool moduleAttackIntent =
+        ModuleHost::instance().npcAttackIntent(&attackIntent);
+    if (moduleAttackIntent) {
+        if (!attack && attackIntent.outAttack)
+            attack = true;
+    } else if (!attack && npc.sensors.hasTarget && !npc.cachedLoSBlocked &&
+               npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f) {
         attack = true;
+    }
 
-    emitAttackGate(npc, attack, sameTeamTarget);
+    emitAttackGate(npc, attack, sameTeamTarget,
+        moduleAttackIntent
+            ? attackReasonName(attackIntent.outReason)
+            : nullptr);
 
     if (attack && !sameTeamTarget &&
         npc.attackCooldown <= 0.0f && npc.reactionTimer <= 0.0f)

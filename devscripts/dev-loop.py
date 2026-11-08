@@ -45,6 +45,7 @@ sys.path.insert(0, str(ROOT))
 from build_toolchain import compiler as resolve_compiler
 from build_toolchain import glfw_lib as resolve_glfw_lib
 from jsonc import load as load_jsonc
+from devscripts.module_ownership import module_source_paths, read_catalog
 
 DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
@@ -446,6 +447,29 @@ def file_signature(path: Path):
         return None
 
 
+_MODULE_WATCH_CACHE: dict[str, object] = {"signature": None, "paths": frozenset()}
+
+
+def watched_module_source_paths() -> frozenset[Path]:
+    """Module-owned translation units that the running ModuleHost builds.
+
+    The catalog, not a filename suffix, decides what the cold EXE watcher
+    ignores. A shared-with-host migration source stays in this set too: its
+    edits must still start a module generation, not an EXE build.
+    """
+    catalog_path = ROOT / "config" / "modules" / "modules.json"
+    signature = file_signature(catalog_path)
+    if _MODULE_WATCH_CACHE["signature"] != signature:
+        try:
+            catalog = read_catalog(ROOT)
+            paths = module_source_paths(ROOT, catalog, watch_excluded=True)
+        except (OSError, ValueError):
+            paths = set()
+        _MODULE_WATCH_CACHE["signature"] = signature
+        _MODULE_WATCH_CACHE["paths"] = frozenset(path.resolve() for path in paths)
+    return _MODULE_WATCH_CACHE["paths"]  # type: ignore[return-value]
+
+
 def snapshot_inputs() -> dict[str, tuple[int, int] | None]:
     result = {}
     result.update(snapshot_watch_files())
@@ -459,13 +483,18 @@ def snapshot_watch_files() -> dict[str, tuple[int, int] | None]:
 
 def snapshot_watch_directories() -> dict[str, tuple[int, int] | None]:
     result = {}
+    module_sources = watched_module_source_paths()
     for directory in WATCH_DIRECTORIES:
         if not directory.is_dir():
             continue
         for path in directory.rglob("*"):
             if path.is_file() and path.suffix.lower() in WATCH_EXTENSIONS:
-                # Module entry translation units are excluded from the EXE by
-                # build.py and are watched by the running ModuleHost instead.
+                # Module-owned translation units are excluded from the EXE by
+                # the module catalog and are watched by the running ModuleHost
+                # instead. The suffix check remains a safety net for entry
+                # files that are not yet cataloged.
+                if path.resolve() in module_sources:
+                    continue
                 if path.name.endswith("-module.cpp"):
                     continue
                 result[str(path)] = file_signature(path)
@@ -1695,6 +1724,9 @@ class DevLoop:
             effective_launch["map"] = self.current_map or ""
         return {
             "profile": self.profile.get("name", "unnamed"),
+            "lane_id": os.environ.get("MIMITA_LANE_ID", ""),
+            "build_authority": "dev-loop",
+            "build_policy": "one_exe_two_modules_machine_wide",
             "effective_map": effective_launch["map"],
             "effective_mode": effective_launch["mode"],
             "effective_gamemode": effective_launch["gamemode"],
@@ -3552,6 +3584,7 @@ class DevLoop:
             self.run_started_utc = self.run_started_utc or utc_now()
             self.run_metadata = {
                 "run_id": self.run_id,
+                "lane_id": os.environ.get("MIMITA_LANE_ID", ""),
                 "build_number": int(selected_build) if selected_build.isdigit() else None,
                 "artifact_id": artifact_id,
                 "artifact_folder": selected_build,

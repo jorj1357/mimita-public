@@ -456,6 +456,7 @@ struct RecastNavigationBackend::State
     dtNavMeshQuery* query = nullptr;
     const World* world = nullptr;
     std::uint64_t geometryRevision = 0;
+    std::uint64_t collisionHash = 0;
     std::size_t triangleCount = 0;
     std::uint64_t version = 0;
     int sourceTriangleCount = 0;
@@ -500,6 +501,38 @@ void RecastNavigationBackend::invalidate()
     mState->triangleCount = 0;
 }
 
+namespace {
+
+void hashBytes(std::uint64_t& hash, const void* data, std::size_t size)
+{
+    const unsigned char* bytes = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= 1099511628211ull;
+    }
+}
+
+std::uint64_t collisionContentHash(const World& world,
+                                   const NavigationAgentProfile& profile)
+{
+    std::uint64_t hash = 1469598103934665603ull;
+    hashBytes(hash, &profile.radius, sizeof(profile.radius));
+    hashBytes(hash, &profile.height, sizeof(profile.height));
+    hashBytes(hash, &profile.stepHeight, sizeof(profile.stepHeight));
+    hashBytes(hash, &profile.maxSlopeDegrees, sizeof(profile.maxSlopeDegrees));
+    for (const CollisionTriangle& triangle : world.collisionMesh.triangles) {
+        hashBytes(hash, &triangle, sizeof(triangle));
+    }
+    if (!world.collisionMesh.solidIds.empty()) {
+        hashBytes(hash, world.collisionMesh.solidIds.data(),
+                  world.collisionMesh.solidIds.size() *
+                      sizeof(world.collisionMesh.solidIds[0]));
+    }
+    return hash;
+}
+
+} // namespace
+
 RecastNavigationResult RecastNavigationBackend::prepare(
     const World& world, const NavigationAgentProfile& profile)
 {
@@ -508,8 +541,9 @@ RecastNavigationResult RecastNavigationBackend::prepare(
     const auto begin = std::chrono::steady_clock::now();
     if (!mState) mState = new State();
 
+    const std::uint64_t contentHash = collisionContentHash(world, profile);
     const bool needsBuild = !mState->mesh || mState->world != &world ||
-        mState->geometryRevision != world.renderRevision ||
+        mState->collisionHash != contentHash ||
         mState->triangleCount != world.collisionMesh.triangles.size();
     if (needsBuild) {
         invalidate();
@@ -572,6 +606,7 @@ RecastNavigationResult RecastNavigationBackend::prepare(
         }
         mState->world = &world;
         mState->geometryRevision = world.renderRevision;
+        mState->collisionHash = contentHash;
         mState->triangleCount = world.collisionMesh.triangles.size();
         mState->sourceTriangleCount = result.sourceTriangleCount;
         mState->walkableTriangleCount = result.walkableTriangleCount;
@@ -588,6 +623,18 @@ RecastNavigationResult RecastNavigationBackend::prepare(
             result.queryMilliseconds = result.buildMilliseconds;
             return result;
         }
+    }
+
+    if (!needsBuild) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+            "npc.navmesh.cache-hit", "recast",
+            "collision content unchanged; reused published navmesh",
+            0,
+            nlohmann::json{{"collision_hash", contentHash},
+                           {"triangle_count", world.collisionMesh.triangles.size()},
+                           {"navmesh_version", mState->version}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     // Publish build diagnostics even on a cache hit. A successful bake is a
@@ -616,8 +663,9 @@ RecastNavigationResult RecastNavigationBackend::query(
     if (!mState) mState = new State();
 
     const auto begin = std::chrono::steady_clock::now();
+    const std::uint64_t contentHash = collisionContentHash(world, profile);
     const bool needsBuild = !mState->mesh || mState->world != &world ||
-        mState->geometryRevision != world.renderRevision ||
+        mState->collisionHash != contentHash ||
         mState->triangleCount != world.collisionMesh.triangles.size();
     if (needsBuild) {
         invalidate();
@@ -635,6 +683,7 @@ RecastNavigationResult RecastNavigationBackend::query(
             std::chrono::steady_clock::now() - buildBegin).count();
         mState->world = &world;
         mState->geometryRevision = world.renderRevision;
+        mState->collisionHash = contentHash;
         mState->triangleCount = world.collisionMesh.triangles.size();
         mState->sourceTriangleCount = result.sourceTriangleCount;
         mState->walkableTriangleCount = result.walkableTriangleCount;

@@ -25,7 +25,10 @@ import time
 import atexit
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path, run_tool
+from devscripts.build_authority import require_authority
+from devscripts.build_scheduler import acquire as acquire_build_slot
 
 # ============================================================
 # CONFIG
@@ -89,10 +92,14 @@ BUILD_DIR = os.path.join(ROOT, "build")
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
+# Machine-wide policy: one EXE build at a time, and never default to every
+# logical processor. Half of this machine's cores is 6; 4 leaves headroom for
+# the running game and editor while staying under 16 GB.
+_DEFAULT_BUILD_JOBS = max(1, min(4, (os.cpu_count() or 2) // 2))
 try:
-    BUILD_JOBS = max(1, int(os.environ.get("MIMITA_BUILD_JOBS", os.cpu_count() or 1)))
+    BUILD_JOBS = max(1, int(os.environ.get("MIMITA_BUILD_JOBS", _DEFAULT_BUILD_JOBS)))
 except ValueError:
-    BUILD_JOBS = os.cpu_count() or 1
+    BUILD_JOBS = _DEFAULT_BUILD_JOBS
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
 
@@ -337,14 +344,13 @@ def source_changed(src):
     return False
 
 def find_cpp_files():
-    out = []
+    # The module catalog is the single source of truth: sources owned by a
+    # reloadable module are excluded from the EXE, so build.py and the dev-loop
+    # watcher cannot drift from the actual module inventory.
+    from devscripts.module_ownership import exe_source_relpaths
 
-    for root, dirs, files in os.walk(SRC_DIR):
-        for f in files:
-            if f.endswith(".cpp") and not f.endswith("-module.cpp"):
-                out.append(os.path.join(root, f))
-
-    return out
+    return [os.path.join(ROOT, relative)
+            for relative in exe_source_relpaths(ROOT)]
 
 
 RECAST_SOURCE_DIRS = [
@@ -377,6 +383,7 @@ def recast_source_changed(src):
 # ============================================================
 
 if MODE == "clean":
+    require_authority(Path(ROOT), "exe", "build.py clean")
     if os.path.exists(BUILD_DIR):
         print("Deleting build folder...")
         shutil.rmtree(BUILD_DIR)
@@ -397,6 +404,17 @@ if MODE == "clean":
 
 ensure_dirs()
 
+# Builds are owned by the dev-loop. Agents must never reach this path directly.
+require_authority(Path(ROOT), "exe", "build.py")
+build_slot = acquire_build_slot(
+    "exe", f"build.py:{os.getpid()}",
+    metadata={"lane": os.environ.get("MIMITA_LANE_ID", ""), "mode": MODE},
+    timeout=1800)
+if build_slot is None:
+    print("[BUILD SCHEDULER] no EXE slot became available", file=sys.stderr)
+    sys.exit(3)
+atexit.register(build_slot.release)
+
 os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
@@ -411,14 +429,9 @@ if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")
     sys.exit(game_dll_build.returncode)
 
-module_build = subprocess.run(
-    [sys.executable, os.path.join(ROOT, "devscripts", "module-build-worker.py"), "--all"],
-    cwd=ROOT,
-)
-if module_build.returncode != 0:
-    # A module failure keeps the last validated generation and must not block
-    # publishing the EXE. The runtime journal reports the failed candidate.
-    print("[MODULE WORKER] module build failed; publishing EXE with last active module")
+# Module DLLs are built on demand by the running game's ModuleHost. The EXE
+# build must not compile every module: that serializes the whole machine and
+# makes a one-file host edit wait on unrelated module work.
 
 print("==================================================")
 print(" MiMITA Build System")

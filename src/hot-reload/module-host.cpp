@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <set>
 #include <system_error>
 #include <vector>
@@ -649,51 +650,254 @@ void ModuleHost::startupServerModules()
     startup(true);
 }
 
+void ModuleHost::beginFixedTick()
+{
+    mFixedTickActive.store(true, std::memory_order_release);
+}
+
+void ModuleHost::endFixedTick()
+{
+    mFixedTickActive.store(false, std::memory_order_release);
+}
+
+std::uint64_t ModuleHost::moduleSetHashLocked() const
+{
+    std::uint64_t hash = 1469598103934665603ull;
+    for (const ModuleEntry& entry : mModules) {
+        if (!entry.api)
+            continue;
+        for (unsigned char c : entry.name) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+        hash ^= entry.activeGeneration;
+        hash *= 1099511628211ull;
+        for (unsigned char c : entry.activeCodeHash) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
+std::uint64_t ModuleHost::moduleSetHashWithCandidateLocked(
+    const std::string& name, std::uint32_t generation,
+    const std::string& codeHash) const
+{
+    std::uint64_t hash = 1469598103934665603ull;
+    for (const ModuleEntry& entry : mModules) {
+        if (!entry.api && entry.name != name)
+            continue;
+        const bool candidate = entry.name == name;
+        const std::uint32_t useGeneration =
+            candidate ? generation : entry.activeGeneration;
+        const std::string useHash = candidate ? codeHash : entry.activeCodeHash;
+        for (unsigned char c : entry.name) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+        hash ^= useGeneration;
+        hash *= 1099511628211ull;
+        for (unsigned char c : useHash) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+
+std::uint64_t ModuleHost::moduleSetHash() const
+{
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
+    return moduleSetHashLocked();
+}
+
+std::string ModuleHost::moduleSetJson() const
+{
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
+    nlohmann::json modules = nlohmann::json::array();
+    for (const ModuleEntry& entry : mModules) {
+        if (!entry.api)
+            continue;
+        modules.push_back({{"module", entry.name},
+                           {"generation", entry.activeGeneration},
+                           {"code_hash", entry.activeCodeHash}});
+    }
+    return nlohmann::json{{"hash", moduleSetHashLocked()},
+                          {"modules", modules}}.dump();
+}
+
+bool ModuleHost::sharedRuleAgreement() const
+{
+    const std::uint64_t peer = mPeerModuleSetHash.load();
+    if (peer == 0)
+        return true;
+    return peer == moduleSetHash();
+}
+
+void ModuleHost::recordPeerModuleSetHash(std::uint64_t hash)
+{
+    mPeerModuleSetHash.store(hash);
+    writeEvent("module.agreement.peer", "peer module set hash recorded",
+               "module-host",
+               nlohmann::json{{"peer_hash", hash}}.dump());
+}
+
+void ModuleHost::writeAgreementLocked(std::uint64_t activeHash,
+                                      std::uint64_t targetHash)
+{
+    if (mAgreementDir.empty())
+        return;
+    std::error_code error;
+    std::filesystem::create_directories(mAgreementDir, error);
+    if (error)
+        return;
+    const std::filesystem::path path = mAgreementDir / (mInstanceId + ".json");
+    const std::filesystem::path temporary =
+        mAgreementDir / (mInstanceId + ".json.tmp");
+    nlohmann::json payload{
+        {"pid", GetCurrentProcessId()},
+        {"instance_id", mInstanceId},
+        {"written_ms", std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count()},
+        {"active_hash", activeHash},
+        {"target_hash", targetHash}};
+    {
+        std::ofstream handle(temporary, std::ios::binary | std::ios::trunc);
+        if (!handle)
+            return;
+        handle << payload.dump();
+    }
+    MoveFileExW(temporary.wstring().c_str(), path.wstring().c_str(),
+                MOVEFILE_REPLACE_EXISTING);
+    mPublishedModuleSetHash = activeHash;
+}
+
+void ModuleHost::publishAgreementLocked()
+{
+    const std::uint64_t hash = moduleSetHashLocked();
+    writeAgreementLocked(hash, hash);
+}
+
+bool ModuleHost::agreementPeersAgreeLocked(std::uint64_t candidateHash) const
+{
+    if (mAgreementDir.empty())
+        return true;
+    std::error_code error;
+    if (!std::filesystem::is_directory(mAgreementDir, error))
+        return true;
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    bool sawPeer = false;
+    for (const auto& item : std::filesystem::directory_iterator(
+             mAgreementDir, error)) {
+        if (error || !item.is_regular_file())
+            continue;
+        if (item.path().extension() != ".json")
+            continue;
+        if (item.path().stem().string() == mInstanceId)
+            continue;
+        const std::string text = readTextFile(item.path());
+        nlohmann::json peer = nlohmann::json::parse(text, nullptr, false);
+        if (peer.is_discarded() || !peer.is_object())
+            continue;
+        const auto written = peer.value("written_ms", 0ll);
+        if (now - written > 10000)
+            continue; // stale peer: do not block a lone dev process
+        sawPeer = true;
+        const auto target = peer.value("target_hash", 0ull);
+        if (target != candidateHash)
+            return false;
+    }
+    (void)sawPeer;
+    return true;
+}
+
+void ModuleHost::refreshPeerAgreementLocked()
+{
+    if (mAgreementDir.empty())
+        return;
+    std::error_code error;
+    if (!std::filesystem::is_directory(mAgreementDir, error))
+        return;
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::uint64_t peer = 0;
+    for (const auto& item : std::filesystem::directory_iterator(
+             mAgreementDir, error)) {
+        if (error || !item.is_regular_file())
+            continue;
+        if (item.path().extension() != ".json")
+            continue;
+        if (item.path().stem().string() == mInstanceId)
+            continue;
+        nlohmann::json data =
+            nlohmann::json::parse(readTextFile(item.path()), nullptr, false);
+        if (data.is_discarded() || !data.is_object())
+            continue;
+        if (now - data.value("written_ms", 0ll) > 10000)
+            continue;
+        peer = data.value("active_hash", 0ull);
+    }
+    mPeerModuleSetHash.store(peer);
+}
+
+bool ModuleHost::entryIsShared(const ModuleEntry& entry) const
+{
+    return entry.shared;
+}
+
 void ModuleHost::startup(bool serverProcess)
 {
     if (mStarted)
         return;
     mStarted = true;
+    mServerProcess = serverProcess;
+    {
+        const char* runId = std::getenv("MIMITA_RUN_ID");
+        const char* instance = std::getenv("MIMITA_INSTANCE_ID");
+        mInstanceId = (instance && *instance)
+            ? instance
+            : ("pid-" + std::to_string(GetCurrentProcessId()));
+        mAgreementDir = std::filesystem::current_path() / "build" / "modules" /
+            "agreement" / ((runId && *runId) ? runId : "local");
+    }
     if (!loadCatalog(serverProcess)) {
         rememberError("module catalog could not be loaded");
         return;
     }
 
-    for (ModuleEntry& entry : mModules) {
-        std::error_code error;
-        std::filesystem::create_directories(entry.outputDir, error);
-        entry.newestInputTime = newestInputTime(entry);
-        entry.lastObservedInputTime = entry.newestInputTime;
-        entry.currentPath = entry.outputDir / "current.json";
-        entry.resultPath = entry.outputDir / "result.json";
-        entry.depsPath = entry.outputDir / "deps.json";
-        entry.lastResultJsonTime = fileWriteTime(entry.resultPath);
-        refreshDependencies(entry);
-        if (!loadCurrent(entry)) {
-            if (!requestBuild(entry))
-                entry.lastObservedInputTime = 0;
-        }
+    for (ModuleEntry& entry : mModules)
+        initializeEntry(entry);
+    {
+        std::unique_lock<std::shared_mutex> lock(mModuleMutex);
+        publishAgreementLocked();
+        refreshPeerAgreementLocked();
     }
     writeEvent("module.host.started", "module host startup complete", "module-host",
-               "{\"modules\":" + std::to_string(mModules.size()) + "}");
+               nlohmann::json{{"modules", mModules.size()},
+                              {"module_set_hash", moduleSetHashLocked()}}.dump());
     mInStartup = false;
 }
 
 void ModuleHost::shutdown()
 {
-    for (ModuleEntry& entry : mModules) {
-        if (entry.workerProcess) {
-            CloseHandle(static_cast<HANDLE>(entry.workerProcess));
-            entry.workerProcess = nullptr;
+    {
+        std::unique_lock<std::shared_mutex> lock(mModuleMutex);
+        for (ModuleEntry& entry : mModules) {
+            if (entry.workerProcess) {
+                CloseHandle(static_cast<HANDLE>(entry.workerProcess));
+                entry.workerProcess = nullptr;
+            }
+            unloadEntry(entry);
         }
-        unloadEntry(entry);
+        for (const auto& path : mRetiredPaths) {
+            std::error_code error;
+            std::filesystem::remove(path, error);
+        }
+        mRetiredPaths.clear();
+        mModules.clear();
     }
-    for (const auto& path : mRetiredPaths) {
-        std::error_code error;
-        std::filesystem::remove(path, error);
-    }
-    mRetiredPaths.clear();
-    mModules.clear();
     mStarted = false;
 }
 
@@ -707,8 +911,23 @@ void ModuleHost::poll()
         static_cast<long long>(kPollIntervalMs))
         return;
     mLastPollTime = static_cast<std::uint64_t>(now);
+    reloadCatalogIfChanged();
 
     for (ModuleEntry& entry : mModules) {
+        bool sourceSetChanged = false;
+        refreshEntryInputs(entry, &sourceSetChanged);
+        if (sourceSetChanged && !entry.buildInFlight) {
+            entry.lastChangedPaths.clear();
+            for (const auto& path : entry.sources) {
+                std::error_code error;
+                const auto absolute = std::filesystem::absolute(path, error);
+                entry.lastChangedPaths.push_back(
+                    (error ? path : absolute).lexically_normal().string());
+            }
+            if (requestBuild(entry))
+                entry.lastObservedInputTime = entry.newestInputTime;
+        }
+
         if (entry.workerProcess) {
             HANDLE process = static_cast<HANDLE>(entry.workerProcess);
             if (WaitForSingleObject(process, 0) == WAIT_OBJECT_0) {
@@ -722,7 +941,8 @@ void ModuleHost::poll()
         const std::uint64_t resultTime = fileWriteTime(entry.currentPath);
         if (resultTime != 0 && resultTime != entry.lastResultTime) {
             entry.lastResultTime = resultTime;
-            loadCurrent(entry);
+            if (!loadCurrent(entry) && entry.lastActivationDeferred)
+                entry.lastResultTime = 0; // retry at the next safe boundary
         }
 
         const std::uint64_t resultJsonTime = fileWriteTime(entry.resultPath);
@@ -774,6 +994,7 @@ void ModuleHost::poll()
                 entry.lastObservedInputTime = newest;
         }
     }
+    refreshPeerAgreementLocked();
 }
 
 ModuleHost::ModuleEntry* ModuleHost::findModule(const char* name)
@@ -808,6 +1029,7 @@ const ModuleHost::ModuleEntry* ModuleHost::findEventOwner(
 
 bool ModuleHost::moduleLoaded(const char* moduleName) const
 {
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
     const ModuleEntry* entry = findModule(moduleName);
     return entry && entry->api != nullptr;
 }
@@ -815,6 +1037,15 @@ bool ModuleHost::moduleLoaded(const char* moduleName) const
 bool ModuleHost::invokeModule(const char* moduleName, std::uint32_t eventType,
                               void* payload, std::uint32_t payloadSize,
                               std::uint64_t tick)
+{
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
+    return invokeModuleLocked(moduleName, eventType, payload, payloadSize, tick);
+}
+
+bool ModuleHost::invokeModuleLocked(const char* moduleName,
+                                    std::uint32_t eventType,
+                                    void* payload, std::uint32_t payloadSize,
+                                    std::uint64_t tick)
 {
     ModuleEntry* entry = findModule(moduleName);
     if (!entry || !entry->api || !entry->api->onEvent)
@@ -837,10 +1068,12 @@ bool ModuleHost::invokeModule(const char* moduleName, std::uint32_t eventType,
 bool ModuleHost::invokeEvent(std::uint32_t eventType, void* payload,
                              std::uint32_t payloadSize, std::uint64_t tick)
 {
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
     const ModuleEntry* owner = findEventOwner(eventType);
     if (!owner)
         return false;
-    return invokeModule(owner->name.c_str(), eventType, payload, payloadSize, tick);
+    return invokeModuleLocked(owner->name.c_str(), eventType, payload,
+                              payloadSize, tick);
 }
 
 const void* ModuleHost::capability(std::uint32_t capabilityId,
@@ -1016,6 +1249,7 @@ bool ModuleHost::worldRenderingLoaded() const
 
 std::uint32_t ModuleHost::activeGeneration(const char* moduleName) const
 {
+    std::shared_lock<std::shared_mutex> lock(mModuleMutex);
     const ModuleEntry* entry = findModule(moduleName);
     return entry ? entry->activeGeneration : 0;
 }
@@ -1076,9 +1310,8 @@ bool ModuleHost::collisionContactPolicy(
 {
     if (!policy)
         return false;
-    return invokeModule("chunk-collision",
-                        mimita_module::EVENT_COLLISION_CONTACT_POLICY, policy,
-                        sizeof(*policy));
+    return invokeEvent(mimita_module::EVENT_COLLISION_CONTACT_POLICY,
+                       policy, sizeof(*policy));
 }
 
 bool ModuleHost::collisionSurfacePolicy(
@@ -1086,9 +1319,26 @@ bool ModuleHost::collisionSurfacePolicy(
 {
     if (!policy)
         return false;
-    return invokeModule("chunk-collision",
-                        mimita_module::EVENT_COLLISION_SURFACE_POLICY, policy,
-                        sizeof(*policy));
+    return invokeEvent(mimita_module::EVENT_COLLISION_SURFACE_POLICY,
+                       policy, sizeof(*policy));
+}
+
+bool ModuleHost::collisionActorPairPolicy(
+    mimita_collision_policy::ActorPairPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_COLLISION_ACTOR_PAIR_POLICY,
+                       policy, sizeof(*policy));
+}
+
+bool ModuleHost::collisionFinalPosePolicy(
+    mimita_collision_policy::FinalPosePolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_COLLISION_FINAL_POSE_POLICY,
+                       policy, sizeof(*policy));
 }
 
 bool ModuleHost::collisionSolveContacts(
@@ -1107,9 +1357,8 @@ bool ModuleHost::networkSnapshotPolicy(
 {
     if (!policy)
         return false;
-    return invokeModule("network-snapshot-policy",
-                        mimita_module::EVENT_NETWORK_SNAPSHOT_POLICY,
-                        policy, sizeof(*policy), policy->tick);
+    return invokeEvent(mimita_module::EVENT_NETWORK_SNAPSHOT_POLICY,
+                       policy, sizeof(*policy), policy->tick);
 }
 
 bool ModuleHost::networkReconnectPolicy(
@@ -1117,9 +1366,44 @@ bool ModuleHost::networkReconnectPolicy(
 {
     if (!policy)
         return false;
-    return invokeModule("network-reconnect-policy",
-                        mimita_module::EVENT_NETWORK_RECONNECT_POLICY,
-                        policy, sizeof(*policy), 0);
+    return invokeEvent(mimita_module::EVENT_NETWORK_RECONNECT_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkMovementCorrection(
+    mimita_network_policy::MovementCorrectionPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_MOVEMENT_CORRECTION,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkHitClaimPolicy(
+    mimita_network_policy::HitClaimPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_HIT_CLAIM_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkReconcilePolicy(
+    mimita_network_policy::ReconcilePolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_RECONCILE_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkInterpolationPolicy(
+    mimita_network_policy::InterpolationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_INTERPOLATION_POLICY,
+                       policy, sizeof(*policy), 0);
 }
 
 bool ModuleHost::npcBehaviorDecision(
@@ -1127,9 +1411,70 @@ bool ModuleHost::npcBehaviorDecision(
 {
     if (!decision)
         return false;
-    return invokeModule("npc-behavior",
-                        mimita_module::EVENT_NPC_BEHAVIOR_DECISION,
-                        decision, sizeof(*decision), decision->tick);
+    return invokeEvent(mimita_module::EVENT_NPC_BEHAVIOR_DECISION,
+                       decision, sizeof(*decision), decision->tick);
+}
+
+bool ModuleHost::npcBehaviorAction(mimita_npc_behavior::ActionV1* action)
+{
+    if (!action)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_BEHAVIOR_ACTION,
+                       action, sizeof(*action), action->tick);
+}
+
+bool ModuleHost::npcGrenadeDecision(
+    mimita_npc_behavior::GrenadeDecisionV1* decision)
+{
+    if (!decision)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_GRENADE_DECISION,
+                       decision, sizeof(*decision), decision->tick);
+}
+
+bool ModuleHost::npcBehaviorSelfTest(mimita_npc_behavior::SelfTestV1* test)
+{
+    if (!test)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_BEHAVIOR_SELFTEST,
+                       test, sizeof(*test), 0);
+}
+
+bool ModuleHost::npcGoalScore(mimita_npc_behavior::GoalScoreV1* score)
+{
+    if (!score || score->version != mimita_npc_behavior::ABI_VERSION ||
+        score->structSize != sizeof(*score))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_GOAL_SCORE,
+                       score, sizeof(*score), score->tick);
+}
+
+bool ModuleHost::npcTargetSelect(mimita_npc_behavior::TargetSelectV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request) ||
+        request->candidateCount > mimita_npc_behavior::MAX_TARGET_CANDIDATES)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_TARGET_SELECT,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcAttackIntent(mimita_npc_behavior::AttackIntentV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_ATTACK_INTENT,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcDashDecision(mimita_npc_behavior::DashDecisionV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_DASH_DECISION,
+                       request, sizeof(*request), request->tick);
 }
 
 bool ModuleHost::npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role)
@@ -1137,8 +1482,8 @@ bool ModuleHost::npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role)
     if (!role || role->version != mimita_npc_behavior::ABI_VERSION ||
         role->structSize != sizeof(*role))
         return false;
-    return invokeModule("npc-behavior", mimita_module::EVENT_NPC_PAYLOAD_ROLE,
-                        role, sizeof(*role), role->tick);
+    return invokeEvent(mimita_module::EVENT_NPC_PAYLOAD_ROLE,
+                       role, sizeof(*role), role->tick);
 }
 
 bool ModuleHost::npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tick)
@@ -1170,9 +1515,9 @@ bool ModuleHost::npcBehaviorLoaded() const
     return moduleLoaded("npc-behavior");
 }
 
-bool ModuleHost::loadCatalog(bool serverProcess)
+bool ModuleHost::parseCatalogEntries(bool serverProcess,
+                                     std::vector<ModuleEntry>& out)
 {
-    mModules.clear();
     const std::filesystem::path root = std::filesystem::current_path();
     const std::filesystem::path catalogPath =
         root / "config" / "modules" / "modules.json";
@@ -1186,12 +1531,13 @@ bool ModuleHost::loadCatalog(bool serverProcess)
     if (rootJson.is_discarded() || !rootJson.is_object())
         return false;
 
+    out.clear();
     for (const auto& item : rootJson.value("modules", nlohmann::json::array())) {
         if (!item.is_object())
             continue;
         const std::string processScope = item.value("process_scope", std::string{});
         const bool scopeMatches =
-            processScope == "both" ||
+            processScope == "both" || processScope == "all" ||
             (processScope == "server" && serverProcess) ||
             (processScope == "client" && !serverProcess) ||
             (processScope.empty() &&
@@ -1205,16 +1551,17 @@ bool ModuleHost::loadCatalog(bool serverProcess)
         entry.abi = item.value("abi", mimita_module::ABI_VERSION);
         entry.stateSchema = item.value("state_schema", 1u);
         entry.activation = item.value("activation", std::string{});
+        entry.shared = item.value("shared", false);
         entry.outputDir = root / "build" / "modules" / entry.name;
         entry.currentPath = entry.outputDir / "current.json";
         entry.resultPath = entry.outputDir / "result.json";
         entry.depsPath = entry.outputDir / "deps.json";
         for (const auto& source : item.value("sources", nlohmann::json::array()))
             if (source.is_string())
-                expandPatterns(root, source.get<std::string>(), entry.sources);
+                entry.sourcePatterns.push_back(source.get<std::string>());
         for (const auto& header : item.value("headers", nlohmann::json::array()))
             if (header.is_string())
-                expandPatterns(root, header.get<std::string>(), entry.headers);
+                entry.headerPatterns.push_back(header.get<std::string>());
         for (const auto& event : item.value("events", nlohmann::json::array()))
             if (event.is_number_unsigned())
                 entry.events.push_back(event.get<std::uint32_t>());
@@ -1222,9 +1569,154 @@ bool ModuleHost::loadCatalog(bool serverProcess)
              item.value("capabilities", nlohmann::json::array()))
             if (capability.is_number_unsigned())
                 entry.capabilities.push_back(capability.get<std::uint32_t>());
-        mModules.push_back(std::move(entry));
+        out.push_back(std::move(entry));
     }
+    return !out.empty();
+}
+
+void ModuleHost::refreshEntryInputs(ModuleEntry& entry, bool* sourceSetChanged)
+{
+    const std::filesystem::path root = std::filesystem::current_path();
+    std::vector<std::filesystem::path> sources;
+    std::vector<std::filesystem::path> patternHeaders;
+    std::vector<std::filesystem::path> headers;
+    for (const std::string& pattern : entry.sourcePatterns)
+        expandPatterns(root, pattern, sources);
+    for (const std::string& pattern : entry.headerPatterns)
+        expandPatterns(root, pattern, patternHeaders);
+    headers = patternHeaders;
+    for (const auto& dependency : entry.dependencyHeaders) {
+        if (std::find(headers.begin(), headers.end(), dependency) == headers.end())
+            headers.push_back(dependency);
+    }
+    auto normalizeAll = [](const std::vector<std::filesystem::path>& paths) {
+        std::vector<std::string> values;
+        values.reserve(paths.size());
+        for (const auto& path : paths) {
+            std::error_code error;
+            const auto absolute = std::filesystem::absolute(path, error);
+            values.push_back(
+                (error ? path : absolute).lexically_normal().string());
+        }
+        std::sort(values.begin(), values.end());
+        values.erase(std::unique(values.begin(), values.end()), values.end());
+        return values;
+    };
+    const bool changed =
+        normalizeAll(sources) != normalizeAll(entry.sources) ||
+        normalizeAll(headers) != normalizeAll(entry.headers);
+    entry.sources = std::move(sources);
+    entry.headers = std::move(headers);
+    entry.newestInputTime = newestInputTime(entry);
+    if (sourceSetChanged)
+        *sourceSetChanged = changed;
+}
+
+void ModuleHost::initializeEntry(ModuleEntry& entry)
+{
+    std::error_code error;
+    std::filesystem::create_directories(entry.outputDir, error);
+    refreshEntryInputs(entry);
+    entry.lastObservedInputTime = entry.newestInputTime;
+    entry.lastResultJsonTime = fileWriteTime(entry.resultPath);
+    refreshDependencies(entry);
+    if (!loadCurrent(entry)) {
+        if (!requestBuild(entry))
+            entry.lastObservedInputTime = 0;
+    }
+}
+
+bool ModuleHost::loadCatalog(bool serverProcess)
+{
+    mCatalogPath = std::filesystem::current_path() /
+        "config" / "modules" / "modules.json";
+    mCatalogWriteTime = fileWriteTime(mCatalogPath);
+    if (!parseCatalogEntries(serverProcess, mModules))
+        return false;
     return !mModules.empty();
+}
+
+void ModuleHost::reloadCatalogIfChanged()
+{
+    if (mCatalogPath.empty())
+        return;
+    const std::uint64_t writeTime = fileWriteTime(mCatalogPath);
+    if (writeTime == 0 || writeTime == mCatalogWriteTime)
+        return;
+    std::unique_lock<std::shared_mutex> lock(mModuleMutex);
+    mCatalogWriteTime = writeTime;
+
+    std::vector<ModuleEntry> parsed;
+    if (!parseCatalogEntries(mServerProcess, parsed)) {
+        writeEvent("module.catalog.reload-failed", "catalog parse failed; old catalog kept",
+                   "module-host", "{}");
+        return;
+    }
+
+    std::set<std::string> newNames;
+    for (const ModuleEntry& entry : parsed)
+        newNames.insert(entry.name);
+
+    for (ModuleEntry& entry : mModules) {
+        if (newNames.count(entry.name))
+            continue;
+        if (entry.workerProcess) {
+            CloseHandle(static_cast<HANDLE>(entry.workerProcess));
+            entry.workerProcess = nullptr;
+        }
+        unloadEntry(entry);
+        writeEvent("module.catalog.removed", "module unloaded",
+                   entry.name,
+                   nlohmann::json{{"module", entry.name}}.dump());
+    }
+
+    std::vector<ModuleEntry> next;
+    next.reserve(parsed.size());
+    for (ModuleEntry& fresh : parsed) {
+        ModuleEntry* existing = findModule(fresh.name.c_str());
+        if (!existing) {
+            const std::string name = fresh.name;
+            initializeEntry(fresh);
+            next.push_back(std::move(fresh));
+            writeEvent("module.catalog.added", "new module scheduled",
+                       name, nlohmann::json{{"module", name}}.dump());
+            continue;
+        }
+
+        bool rebuild = existing->abi != fresh.abi ||
+                       existing->stateSchema != fresh.stateSchema;
+        existing->abi = fresh.abi;
+        existing->stateSchema = fresh.stateSchema;
+        existing->activation = fresh.activation;
+        existing->events = std::move(fresh.events);
+        existing->capabilities = std::move(fresh.capabilities);
+        existing->sourcePatterns = std::move(fresh.sourcePatterns);
+        existing->headerPatterns = std::move(fresh.headerPatterns);
+        bool sourceSetChanged = false;
+        refreshEntryInputs(*existing, &sourceSetChanged);
+        if (sourceSetChanged && !existing->buildInFlight) {
+            existing->lastChangedPaths.clear();
+            for (const auto& path : existing->sources) {
+                std::error_code error;
+                const auto absolute = std::filesystem::absolute(path, error);
+                existing->lastChangedPaths.push_back(
+                    (error ? path : absolute).lexically_normal().string());
+            }
+            requestBuild(*existing);
+            rebuild = true;
+        }
+        writeEvent("module.catalog.updated", "module metadata refreshed",
+                   existing->name,
+                   nlohmann::json{{"module", existing->name},
+                                  {"source_set_changed", sourceSetChanged},
+                                  {"rebuild", rebuild}}.dump());
+        next.push_back(std::move(*existing));
+    }
+
+    mModules = std::move(next);
+    writeEvent("module.catalog.reloaded", "module catalog hot-reloaded",
+               "module-host",
+               nlohmann::json{{"modules", mModules.size()}}.dump());
 }
 
 bool ModuleHost::loadCurrent(ModuleEntry& entry)
@@ -1337,9 +1829,65 @@ bool ModuleHost::activateEntry(ModuleEntry& entry, void* candidateModule,
                                std::uint32_t generation,
                                const std::string& codeHash)
 {
+    std::unique_lock<std::shared_mutex> lock(mModuleMutex);
+    entry.lastActivationDeferred = false;
+    const bool fixedTickEntry =
+        entry.activation.find("fixed") != std::string::npos ||
+        entry.activation.find("tick") != std::string::npos;
+    if (fixedTickEntry && mFixedTickActive.load()) {
+        writeEvent("module.activation.deferred",
+                   "fixed tick in progress; activation waits for the boundary",
+                   entry.name,
+                   nlohmann::json{{"module", entry.name},
+                                  {"generation", generation}}.dump());
+        entry.lastActivationDeferred = true;
+        if (candidateApi->shutdown)
+            candidateApi->shutdown();
+        FreeLibrary(static_cast<HMODULE>(candidateModule));
+        std::error_code error;
+        std::filesystem::remove(tempDll, error);
+        return false;
+    }
+
+    if (entryIsShared(entry)) {
+        const std::uint64_t candidateHash = moduleSetHashWithCandidateLocked(
+            entry.name, generation, codeHash);
+        writeAgreementLocked(moduleSetHashLocked(), candidateHash);
+        if (!agreementPeersAgreeLocked(candidateHash)) {
+            writeEvent("module.agreement.deferred",
+                       "peer module set has not reached the same candidate",
+                       entry.name,
+                       nlohmann::json{{"module", entry.name},
+                                      {"generation", generation},
+                                      {"candidate_hash", candidateHash}}.dump());
+            entry.lastActivationDeferred = true;
+            if (candidateApi->shutdown)
+                candidateApi->shutdown();
+            FreeLibrary(static_cast<HMODULE>(candidateModule));
+            std::error_code error;
+            std::filesystem::remove(tempDll, error);
+            return false;
+        }
+    }
+
     std::vector<std::uint8_t> state;
     if (entry.api && entry.api->exportState) {
         const std::uint32_t size = entry.api->exportState(nullptr, 0);
+        constexpr std::uint32_t kMaxModuleStateBytes = 1u << 20;
+        if (size > kMaxModuleStateBytes) {
+            rememberError("module state export exceeded the bounded capacity");
+            if (candidateApi->shutdown)
+                candidateApi->shutdown();
+            FreeLibrary(static_cast<HMODULE>(candidateModule));
+            std::error_code error;
+            std::filesystem::remove(tempDll, error);
+            writeEvent("module.rollback",
+                       "state export exceeded bounded capacity; old module retained",
+                       entry.name,
+                       nlohmann::json{{"module", entry.name},
+                                      {"bytes", size}}.dump());
+            return false;
+        }
         state.resize(size);
         if (size > 0)
             entry.api->exportState(state.data(), size);
@@ -1361,6 +1909,14 @@ bool ModuleHost::activateEntry(ModuleEntry& entry, void* candidateModule,
                        std::to_string(generation) + "}");
         return false;
     }
+
+    writeEvent("module.state.migrated", "module state imported before activation",
+               entry.name,
+               nlohmann::json{
+                   {"module", entry.name},
+                   {"bytes", state.size()},
+                   {"state_schema", entry.stateSchema},
+                   {"generation", generation}}.dump());
 
     void* oldModule = entry.moduleHandle;
     const std::uint32_t oldGeneration = entry.activeGeneration;
@@ -1392,6 +1948,7 @@ bool ModuleHost::activateEntry(ModuleEntry& entry, void* candidateModule,
                    {"changed_paths", entry.lastChangedPaths}}.dump());
     if (!mInStartup)
         notifyActivation(entry, generation, oldGeneration);
+    publishAgreementLocked();
     entry.lastChangedPaths.clear();
     return true;
 }
@@ -1484,6 +2041,10 @@ void ModuleHost::refreshDependencies(ModuleEntry& entry)
         if (!item.is_string())
             continue;
         const std::filesystem::path path = item.get<std::string>();
+        if (std::find(entry.dependencyHeaders.begin(),
+                      entry.dependencyHeaders.end(), path) ==
+            entry.dependencyHeaders.end())
+            entry.dependencyHeaders.push_back(path);
         if (std::find(entry.headers.begin(), entry.headers.end(), path) ==
             entry.headers.end())
             entry.headers.push_back(path);

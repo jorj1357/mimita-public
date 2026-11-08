@@ -16,6 +16,40 @@
 #include "physics/movement/physics-collision.h"
 #include "physics/ray-utils.h"
 #include "world/world.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-contact-policy-api.h"
+
+namespace {
+
+mimita_collision_policy::FinalPosePolicyV1 finalPosePolicy()
+{
+    static thread_local std::uint32_t cachedGeneration = 0;
+    static thread_local mimita_collision_policy::FinalPosePolicyV1 cached{};
+    const std::uint32_t generation =
+        ModuleHost::instance().activeGeneration("chunk-collision");
+    if (generation != 0 && generation == cachedGeneration && cached.outGeneration != 0)
+        return cached;
+
+    mimita_collision_policy::FinalPosePolicyV1 request{};
+    request.version = mimita_collision_policy::ABI_VERSION;
+    request.structSize = sizeof(request);
+    if (!ModuleHost::instance().collisionFinalPosePolicy(&request) ||
+        request.outGeneration == 0) {
+        request.maxSolidPushOut = 2.0f;
+        request.pushSkin = 0.02f;
+        request.contactEpsilon = 0.001f;
+        request.clearanceEpsilon = 0.0005f;
+        request.maxContainmentIterations = 6;
+        request.maxCorrectionPerIteration = 1.0f;
+        request.maxTotalCorrection = 3.0f;
+        request.outGeneration = 0;
+    }
+    cached = request;
+    cachedGeneration = generation;
+    return cached;
+}
+
+} // namespace
 
 bool pointInsideSolidId(const World& world, const glm::vec3& point,
                         std::uint32_t solidId)
@@ -133,9 +167,8 @@ bool findSolidPushOut(const World& world, const glm::vec3& point,
     static thread_local std::vector<std::uint32_t> candidates;
     collectContainingSolidCandidates(world, point, candidates);
 
-    constexpr float kMaxSolidPushOut = 2.0f;
-    constexpr float kPushSkin = 0.02f;
-    float bestPush = kMaxSolidPushOut;
+    const mimita_collision_policy::FinalPosePolicyV1 limits = finalPosePolicy();
+    float bestPush = limits.maxSolidPushOut;
     glm::vec3 bestDelta(0.0f);
     std::uint32_t bestSolid = 0;
     for (std::uint32_t id : candidates) {
@@ -160,7 +193,7 @@ bool findSolidPushOut(const World& world, const glm::vec3& point,
             const float signedDistance = glm::dot(point - tri.a, normal);
             if (signedDistance >= 0.0f)
                 continue;
-            const float push = -signedDistance + std::max(standoff, kPushSkin);
+            const float push = -signedDistance + std::max(standoff, limits.pushSkin);
             if (push < bestPush) {
                 bestPush = push;
                 bestDelta = normal * push;
@@ -176,12 +209,6 @@ bool findSolidPushOut(const World& world, const glm::vec3& point,
 }
 
 namespace {
-
-constexpr float kContactEpsilon = 0.001f;
-constexpr float kClearanceEpsilon = 0.0005f;
-constexpr int kMaxContainmentIterations = 6;
-constexpr float kMaxCorrectionPerIteration = 1.0f;
-constexpr float kMaxTotalCorrection = 3.0f;
 
 struct PoseSample
 {
@@ -316,7 +343,7 @@ bool validateAt(Player& actor, const World& world, const glm::vec3& position,
     const bool clear = !actorRootInsideClosedSolid(world, position) &&
         !sample.budgetExceeded &&
         sample.maxPenetration <=
-            std::max(standoff, kClearanceEpsilon) + 0.01f;
+            std::max(standoff, finalPosePolicy().clearanceEpsilon) + 0.01f;
     if (!clear)
         translateRoot(actor, before - actor.pos);
     return clear;
@@ -428,6 +455,7 @@ bool containActorFinalPose(Player& actor,
     result.partCount = static_cast<int>(actor.physicalBody.parts.size());
     result.extraPartCount =
         static_cast<int>(actor.physicalBody.extraParts.size());
+    const mimita_collision_policy::FinalPosePolicyV1 limits = finalPosePolicy();
     standoff = std::max(standoff, 0.0f);
     if (world.collisionMesh.triangles.empty())
     {
@@ -448,7 +476,7 @@ bool containActorFinalPose(Player& actor,
         actorRootInsideClosedSolid(world, actor.pos);
     result.rootInsideClosedSolid = rootInsideClosedSolid;
     const float clearTolerance =
-        std::max(standoff, kClearanceEpsilon) + 0.01f;
+        std::max(standoff, limits.clearanceEpsilon) + 0.01f;
     result.initialPenetration = sample.maxPenetration;
     result.finalPenetration = sample.maxPenetration;
     result.budgetExceeded = sample.budgetExceeded;
@@ -492,7 +520,7 @@ bool containActorFinalPose(Player& actor,
 
     glm::vec3 totalCorrection(0.0f);
     float previousPenetration = sample.maxPenetration;
-    for (int iteration = 0; iteration < kMaxContainmentIterations; ++iteration)
+    for (int iteration = 0; iteration < limits.maxContainmentIterations; ++iteration)
     {
         const glm::vec3 normal = deepestNormal(sample);
         if (glm::dot(normal, normal) < 0.5f)
@@ -502,11 +530,11 @@ bool containActorFinalPose(Player& actor,
         // standoff every tick makes a grounded actor drift upward forever
         // because ordinary floor skin contact is re-detected each tick.
         glm::vec3 correction =
-            normal * (sample.maxPenetration - clearTolerance + kClearanceEpsilon);
+            normal * (sample.maxPenetration - clearTolerance + limits.clearanceEpsilon);
         const float correctionLength = glm::length(correction);
-        if (correctionLength > kMaxCorrectionPerIteration)
-            correction *= kMaxCorrectionPerIteration / correctionLength;
-        if (correctionLength < kContactEpsilon)
+        if (correctionLength > limits.maxCorrectionPerIteration)
+            correction *= limits.maxCorrectionPerIteration / correctionLength;
+        if (correctionLength < limits.contactEpsilon)
             break;
 
         result.iterations = iteration + 1;
@@ -528,11 +556,11 @@ bool containActorFinalPose(Player& actor,
             acceptClearPose(actor, state);
             return true;
         }
-        if (sample.maxPenetration >= previousPenetration - kContactEpsilon)
+        if (sample.maxPenetration >= previousPenetration - limits.contactEpsilon)
             break;
         if (sample.budgetExceeded)
             break;
-        if (glm::length(totalCorrection) >= kMaxTotalCorrection)
+        if (glm::length(totalCorrection) >= limits.maxTotalCorrection)
             break;
         previousPenetration = sample.maxPenetration;
     }

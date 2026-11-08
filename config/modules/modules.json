@@ -32,7 +32,9 @@
         104,
         105,
         106,
-        107
+        107,
+        108,
+        109
       ],
       "capabilities": [
         1
@@ -80,7 +82,7 @@
     },
     {
       "name": "chunk-collision",
-        "process_scope": "both",
+      "process_scope": "both",
       "abi": 2,
       "state_schema": 1,
       "activation": "before_chunk_install",
@@ -96,46 +98,36 @@
       "events": [
         400,
         401,
-          402,
-          403
+        402,
+        403,
+        404,
+        405
       ],
       "capabilities": [
         4
       ]
     },
     {
-      "name": "network-snapshot-policy",
+      "name": "network-policy",
       "abi": 2,
       "state_schema": 1,
       "activation": "before_snapshot_send",
       "process_scope": "both",
+      "shared": true,
       "sources": [
-        "src/network/network-snapshot-policy-module.cpp"
+        "src/network/network-policy-module.cpp"
       ],
       "headers": [
         "src/modules/api/module-abi.h",
         "src/modules/api/network-policy-api.h"
       ],
       "events": [
-        700
-      ],
-      "capabilities": []
-    },
-    {
-      "name": "network-reconnect-policy",
-      "abi": 2,
-      "state_schema": 1,
-      "activation": "before_network_health",
-      "process_scope": "both",
-      "sources": [
-        "src/network/network-reconnect-policy-module.cpp"
-      ],
-      "headers": [
-        "src/modules/api/module-abi.h",
-        "src/modules/api/network-policy-api.h"
-      ],
-      "events": [
-        701
+        700,
+        701,
+        702,
+        703,
+        704,
+        705
       ],
       "capabilities": []
     },
@@ -145,6 +137,7 @@
       "state_schema": 1,
       "activation": "before_fixed_server_tick",
       "server_process": true,
+      "shared": true,
       "compile_defines": [
         "MIMITA_NPC_BEHAVIOR_MODULE"
       ],
@@ -161,8 +154,15 @@
         "src/npc/npc-utility.h"
       ],
       "events": [
-          500,
-          501
+        500,
+        501,
+        502,
+        503,
+        504,
+        505,
+        506,
+        507,
+        508
       ],
       "capabilities": []
     }

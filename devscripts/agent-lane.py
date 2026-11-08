@@ -134,8 +134,12 @@ def run(command: list[str], cwd: Path, *, timeout: float | None = None,
 def devloop(path: Path, *args: str, capture: bool = False,
             timeout: float | None = None,
             env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    merged = os.environ.copy()
+    merged["MIMITA_LANE_ID"] = path.name
+    if env:
+        merged.update(env)
     return run([sys.executable, "devscripts/dev-loop.py", *args], path,
-               capture=capture, timeout=timeout, env=env)
+               capture=capture, timeout=timeout, env=merged)
 
 
 def print_identity(lane_id: str, path: Path, identity: dict[str, Any]) -> None:
@@ -192,6 +196,11 @@ def create_lane(args: argparse.Namespace) -> int:
                 status="ready", submodules_initialized=True,
                 manifold_prebuilt_copied=lane_manifold.is_dir())
     write_metadata(data)
+    lane_config = path / ".dev" / "agent-lane-build.json"
+    if not lane_config.is_file():
+        lane_config.parent.mkdir(parents=True, exist_ok=True)
+        lane_config.write_text(json.dumps({"jobs": 4}, indent=2) + "\n",
+                               encoding="utf-8")
     print_identity(lane_id, path, identity)
     print(f"worktree={path}")
     print("dependencies=required source submodules isolated; local Manifold prebuilt copied when available")
@@ -234,32 +243,30 @@ def status_lane(args: argparse.Namespace) -> int:
 
 
 def build_lane(args: argparse.Namespace) -> int:
+    print("[AGENT LANE] agents must not build. The lane dev-loop auto-detects "
+          "edits. Use `ensure` to start/verify it and `status` to read progress.",
+          file=sys.stderr)
+    return 2
+
+
+def ensure_lane(args: argparse.Namespace) -> int:
     data = read_metadata(args.lane_id)
     path = lane_path(args.lane_id)
-    required = [path / "external" / name for name in
-                ("libjuice", "manifold", "recastnavigation")]
-    missing = [str(item) for item in required if not item.is_dir() or not any(item.iterdir())]
-    manifold_lib = path / "external" / "manifold-prebuilt" / "lib" / "libmanifold.a"
-    if missing or not manifold_lib.is_file():
-        details = ", ".join(missing + ([] if manifold_lib.is_file() else [str(manifold_lib)]))
-        raise RuntimeError(f"lane build dependencies are missing: {details}; initialize the required submodules and run tools/build_manifold.py")
-    if args.jobs < 1 or args.jobs > 256:
-        raise ValueError("--jobs must be between 1 and 256")
-    lane_config = path / ".dev" / "agent-lane-build.json"
-    lane_config.parent.mkdir(parents=True, exist_ok=True)
-    lane_config.write_text(json.dumps({"jobs": args.jobs}, indent=2) + "\n",
-                           encoding="utf-8")
+    if not path.is_dir():
+        raise RuntimeError(f"lane worktree is missing: {path}")
     identity = source_identity(path)
     print_identity(args.lane_id, path, identity)
-    data.update(source_revision=identity["revision"], source_dirty=identity["dirty"],
-                source_worktree_sha256=identity["worktree_sha256"])
+    data.update(source_revision=identity["revision"], status="ready")
     write_metadata(data)
-    command = ["--request", "build", "--wait-for-build", "--build-mode", args.mode, "--json"]
-    print(f"build_jobs={args.jobs}")
-    result = devloop(path, *command, timeout=args.timeout)
+    result = devloop(path, "--ensure-running", capture=True, timeout=args.timeout)
     if result.returncode:
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.stderr:
+            print(result.stderr.strip(), file=sys.stderr)
         return result.returncode
     status_lane(argparse.Namespace(lane_id=args.lane_id))
+    print("build_policy=dev-loop-only; no agent build was requested")
     return 0
 
 
@@ -342,6 +349,39 @@ def check_lane(args: argparse.Namespace) -> int:
     print(f"checks_result={'FAIL' if failures else 'PASS'}")
     status_lane(argparse.Namespace(lane_id=args.lane_id))
     return 1 if failures else 0
+
+
+def list_lanes(_args: argparse.Namespace) -> int:
+    if not REGISTRY.is_dir():
+        print("lanes=none")
+        return 0
+    count = 0
+    for path in sorted(REGISTRY.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        lane_id = str(data.get("lane_id", ""))
+        worktree = Path(str(data.get("worktree", "")))
+        lock = worktree / ".dev" / "dev-loop.lock"
+        try:
+            daemon_pid = int(lock.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            daemon_pid = 0
+        alive = False
+        if worktree.is_dir():
+            try:
+                status = devloop(worktree, "--status", "--json",
+                                 capture=True, timeout=10)
+                alive = status.returncode == 0
+            except (OSError, subprocess.SubprocessError):
+                alive = False
+        print(f"lane={lane_id} status={data.get('status', '')} "
+              f"daemon_pid={daemon_pid or '-'} alive={str(alive).lower()} "
+              f"worktree={worktree}")
+        count += 1
+    print(f"lanes={count}")
+    return 0
 
 
 def cleanup_lane(args: argparse.Namespace) -> int:
@@ -476,11 +516,15 @@ def parser() -> argparse.ArgumentParser:
     create.add_argument("--branch", default=""); create.set_defaults(func=create_lane)
     status = sub.add_parser("status", help="show source, build, run, and journal identities")
     status.add_argument("lane_id"); status.set_defaults(func=status_lane)
-    build = sub.add_parser("build", help="build through this lane's persistent dev-loop")
-    build.add_argument("lane_id"); build.add_argument("--mode", choices=("debug", "release"), default="debug")
-    build.add_argument("--jobs", type=int, default=1,
-                       help="compiler jobs for this lane (default: 1; adjust to machine capacity)")
-    build.add_argument("--timeout", type=float, default=36000); build.set_defaults(func=build_lane)
+    build = sub.add_parser("build", help="deprecated: agents must not build")
+    build.add_argument("lane_id"); build.add_argument("--mode", default="debug")
+    build.add_argument("--jobs", type=int, default=4); build.add_argument("--timeout", type=float, default=60)
+    build.set_defaults(func=build_lane)
+    ensure = sub.add_parser("ensure", help="ensure this lane's dev-loop auto-builder is running")
+    ensure.add_argument("lane_id"); ensure.add_argument("--timeout", type=float, default=120)
+    ensure.set_defaults(func=ensure_lane)
+    listing = sub.add_parser("list", help="list known agent lanes and dev-loop liveness")
+    listing.set_defaults(func=list_lanes)
     runp = sub.add_parser("run", help="launch a build through this lane's dev-loop")
     runp.add_argument("lane_id"); runp.add_argument("--launch-mode", required=True)
     runp.add_argument("--profile", default="npc-navigation"); runp.set_defaults(func=run_lane)

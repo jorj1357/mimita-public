@@ -18,6 +18,8 @@
 #include "config/networking-config.h"
 #include "debug/structured-log.h"
 #include "debug/debug-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -98,6 +100,16 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     const MovementCorrectionClass correctionClass =
         classifyMovementCorrection(error, correctionConfig);
     constexpr float CORRECTION_LOG_DISTANCE = 0.5f;
+    mimita_network_policy::ReconcilePolicyV1 reconcilePolicy{};
+    reconcilePolicy.version = mimita_network_policy::ABI_VERSION;
+    reconcilePolicy.structSize = sizeof(reconcilePolicy);
+    reconcilePolicy.positionError = error;
+    reconcilePolicy.hardSnapDistance =
+        correctionConfig.majorCorrectionDistance;
+    reconcilePolicy.correctionLogDistance = CORRECTION_LOG_DISTANCE;
+    bool moduleLogCorrection = error >= CORRECTION_LOG_DISTANCE;
+    if (ModuleHost::instance().networkReconcilePolicy(&reconcilePolicy))
+        moduleLogCorrection = reconcilePolicy.outLogCorrection != 0;
     constexpr uint64_t TELEPORT_ACK_TIMEOUT_MS = 1500;
     const uint64_t currentMs = nowMs();
     if (ctx.awaitingTeleportAck &&
@@ -397,7 +409,7 @@ void mpReconcileLocalPlayer(MultiplayerContext& ctx, Player& player, float dt)
     // applies the authoritative result selected by the server collision flag.
 
     const bool logCorrection =
-        initialSpawn || applyPosition || error >= CORRECTION_LOG_DISTANCE;
+        initialSpawn || applyPosition || moduleLogCorrection;
     if (logCorrection &&
         (applyPosition || currentMs - ctx.lastLocalCorrectionLogMs >= 500))
     {

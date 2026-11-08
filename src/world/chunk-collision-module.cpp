@@ -10,6 +10,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <atomic>
+#include <cstdio>
 
 #include <module-identity.h>
 
@@ -17,6 +19,8 @@ namespace mimita_collision_policy_module {
 void fillContactPolicy(mimita_collision_policy::ContactPolicyV1* policy);
 void fillSurfacePolicy(mimita_collision_policy::SurfacePolicyV1* policy);
 int solveContacts(mimita_collision_policy::ContactSolveV1* request);
+void decideActorPair(mimita_collision_policy::ActorPairPolicyV1* policy);
+void fillFinalPosePolicy(mimita_collision_policy::FinalPosePolicyV1* policy);
 }
 
 namespace {
@@ -209,6 +213,44 @@ int onEvent(ModuleEventV1* event)
         event->payloadSize == sizeof(mimita_collision_policy::ContactSolveV1))
         return mimita_collision_policy_module::solveContacts(
             static_cast<mimita_collision_policy::ContactSolveV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_COLLISION_ACTOR_PAIR_POLICY &&
+        event->payloadSize == sizeof(mimita_collision_policy::ActorPairPolicyV1)) {
+        mimita_collision_policy_module::decideActorPair(
+            static_cast<mimita_collision_policy::ActorPairPolicyV1*>(
+                event->payload));
+        static std::atomic<bool> logged{false};
+        if (gHost && gHost->log && !logged.exchange(true)) {
+            char fields[160];
+            std::snprintf(fields, sizeof(fields),
+                          "{\"generation\":%u,\"policy\":\"actor-pair\"}",
+                          static_cast<unsigned>(MIMITA_MODULE_GENERATION));
+            gHost->log(mimita_module::LOG_CATEGORY_GENERAL,
+                       mimita_module::LOG_LEVEL_IMPORTANT,
+                       "collision.actor-pair-policy", "chunk-collision",
+                       "live actor-pair response policy handled a pair",
+                       0, fields, __FILE__, __LINE__, __FUNCTION__);
+        }
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_COLLISION_FINAL_POSE_POLICY &&
+        event->payloadSize == sizeof(mimita_collision_policy::FinalPosePolicyV1)) {
+        mimita_collision_policy_module::fillFinalPosePolicy(
+            static_cast<mimita_collision_policy::FinalPosePolicyV1*>(
+                event->payload));
+        static std::atomic<bool> logged{false};
+        if (gHost && gHost->log && !logged.exchange(true)) {
+            char fields[160];
+            std::snprintf(fields, sizeof(fields),
+                          "{\"generation\":%u,\"policy\":\"final-pose\"}",
+                          static_cast<unsigned>(MIMITA_MODULE_GENERATION));
+            gHost->log(mimita_module::LOG_CATEGORY_GENERAL,
+                       mimita_module::LOG_LEVEL_IMPORTANT,
+                       "collision.final-pose-policy", "chunk-collision",
+                       "live final-pose containment policy fetched",
+                       0, fields, __FILE__, __LINE__, __FUNCTION__);
+        }
+        return 1;
+    }
     return 0;
 }
 

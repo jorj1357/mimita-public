@@ -12,6 +12,8 @@
 
 #include "network/server.h"
 #include "entities/player-avatar-animations.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -372,6 +374,25 @@ MovementCorrectionClass classifyMovementCorrection(
 {
     if (!std::isfinite(errorDistance) || errorDistance <= 0.0f)
         return MovementCorrectionClass::None;
+
+    mimita_network_policy::MovementCorrectionPolicyV1 request{};
+    request.version = mimita_network_policy::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.errorDistance = errorDistance;
+    request.smallCorrectionDistance = config.smallCorrectionDistance;
+    request.mediumCorrectionDistance = config.mediumCorrectionDistance;
+    request.majorCorrectionDistance = config.majorCorrectionDistance;
+    if (ModuleHost::instance().networkMovementCorrection(&request)) {
+        switch (request.outClass) {
+            case 1: return MovementCorrectionClass::Small;
+            case 2: return MovementCorrectionClass::Medium;
+            case 3: return MovementCorrectionClass::Major;
+            default: return MovementCorrectionClass::None;
+        }
+    }
+
+    // No active network-policy generation: keep the last validated thresholds
+    // host-side rather than changing correction behavior during a failed load.
     if (errorDistance <= config.smallCorrectionDistance)
         return MovementCorrectionClass::Small;
     if (errorDistance < config.majorCorrectionDistance)

@@ -1105,7 +1105,8 @@ const std::vector<ServerPlayerBodyPartTemplate>* standardPlayerBodyTemplate();
 
 // Build a CPU-only client World (collision only — no GPU upload) for the real
 // NpcSystem to simulate against, derived from the headless collision world.
-void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw);
+void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
+                            bool allowRecastPrewarm = true);
 
 // Server-side NPC simulation that reuses the real client NpcSystem so online
 // NPCs behave exactly like the local ones (movement, aim, firing). The

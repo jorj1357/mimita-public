@@ -151,4 +151,77 @@ void fillSurfacePolicy(SurfacePolicyV1* policy)
     policy->result = 1;
 }
 
+void decideActorPair(mimita_collision_policy::ActorPairPolicyV1* policy)
+{
+    if (!policy)
+        return;
+    const auto flags = policy->flags;
+    const bool staticCollider =
+        (flags & mimita_collision_policy::ACTOR_PAIR_STATIC) != 0;
+    const bool dead = (flags & mimita_collision_policy::ACTOR_PAIR_DEAD) != 0;
+    const bool onGround =
+        (flags & mimita_collision_policy::ACTOR_PAIR_UPPER_ON_GROUND) != 0;
+    const bool continuing =
+        (flags & mimita_collision_policy::ACTOR_PAIR_CONTINUING_SUPPORT) != 0;
+
+    policy->outPush = 0;
+    policy->outPushSpeed = 0.0f;
+    if (!staticCollider && !dead) {
+        const float weakSpeed = policy->weakHitDistanceM /
+            std::max(0.01f, policy->weakHitMotionSeconds);
+        const float denominator = std::max(
+            1e-6f, policy->maxImpactSpeedMps - policy->minImpactSpeedMps);
+        const float u = std::clamp(
+            (policy->impactSpeed - policy->minImpactSpeedMps) / denominator,
+            0.0f, 1.0f);
+        const float speedCurve = std::pow(
+            u, std::max(0.01f, policy->impactSpeedCurveExponent));
+        const float angleScale = policy->impactAngleMinScale +
+            (1.0f - policy->impactAngleMinScale) *
+                std::pow(std::clamp(policy->directness, 0.0f, 1.0f),
+                         std::max(0.01f, policy->impactAngleCurveExponent));
+        const float knockback =
+            std::max(weakSpeed, policy->maxKnockbackSpeedMps * speedCurve) *
+            angleScale;
+        const float speed = std::min(knockback, policy->maxKnockbackSpeedMps);
+        if (speed > 1e-5f) {
+            policy->outPush = 1;
+            policy->outPushSpeed = speed;
+        }
+    }
+
+    policy->outSupport = 0;
+    policy->outSupportDeltaZ = 0.0f;
+    if (!staticCollider && !dead && (!onGround || continuing)) {
+        const float delta = policy->lowerTop - policy->upperBottom;
+        const bool withinTopBand =
+            policy->upperBottom >= policy->lowerTop - policy->supportTopToleranceM &&
+            policy->upperBottom <= policy->lowerTop + policy->supportSnapMaxM;
+        const bool notRising =
+            policy->relativeVertical <= 0.5f &&
+            policy->approachSpeed <= policy->supportMaxImpactSpeedMps;
+        if (withinTopBand && notRising) {
+            policy->outSupport = 1;
+            policy->outSupportDeltaZ = delta;
+        }
+    }
+    policy->outGeneration = MIMITA_MODULE_GENERATION;
+}
+
+void fillFinalPosePolicy(mimita_collision_policy::FinalPosePolicyV1* policy)
+{
+    if (!policy)
+        return;
+    policy->version = mimita_collision_policy::ABI_VERSION;
+    policy->structSize = sizeof(*policy);
+    policy->maxSolidPushOut = 2.0f;
+    policy->pushSkin = 0.02f;
+    policy->contactEpsilon = 0.001f;
+    policy->clearanceEpsilon = 0.0005f;
+    policy->maxContainmentIterations = 6;
+    policy->maxCorrectionPerIteration = 1.0f;
+    policy->maxTotalCorrection = 3.0f;
+    policy->outGeneration = MIMITA_MODULE_GENERATION;
+}
+
 } // namespace mimita_collision_policy_module

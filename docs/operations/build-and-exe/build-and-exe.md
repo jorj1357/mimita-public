@@ -4,15 +4,38 @@
 
 This is a C++17 OpenGL game engine.
 
+For merging reviewed agent lanes into one EXE, or for the pending
+world-streaming/navmesh/reconnect compile and runtime checklist, start at
+[`agent-lane-integration-and-pending-validation.md`](agent-lane-integration-and-pending-validation.md).
+
 ## Current build authority
 
-Submit builds through `python devscripts/dev-loop.py --request build
---wait-for-build`. The persistent dev-loop owns request ordering, build status,
-artifact publication, and `[1]` launch selection. It runs the compiler pipeline
-on one worker while continuing to accept launch and status requests. Pressing
-`1` launches the latest successfully published artifact immediately, even if
-it is older than the source currently building; build completion publishes a
-new artifact but does not launch it automatically.
+The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
+only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
+a build request, or a compiler directly. Agents use an isolated mode 2 lane,
+ensure its dev-loop is running, and read status/journals while the dev-loop
+auto-detects saved edits. See
+[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
+
+A human may submit an explicit build or use the emergency override:
+
+```text
+python devscripts/dev-loop.py --request build --wait-for-build
+MIMITA_BUILD_OVERRIDE=1 python build.py build-only
+```
+
+The persistent dev-loop owns request ordering, build status, artifact
+publication, and `[1]` launch selection. It runs the compiler pipeline on one
+worker while continuing to accept launch and status requests. Pressing `1`
+launches the latest successfully published artifact immediately, even if it is
+older than the source currently building; build completion publishes a new
+artifact but does not launch it automatically.
+
+A machine-wide scheduler outside the checkout allows exactly one EXE build and
+two module builds across all lanes and checkouts. It queues rather than failing,
+coalesces newer saves, runs below normal priority, caps compiler jobs at four on
+this machine, and waits when free physical memory is below the configured
+threshold. The per-checkout OS lock remains a second guard.
 
 On Windows, `[1]` launches the selected build through the fixed
 `.dev/current/mimita.exe` path. Each new published artifact uses its UTC
@@ -27,12 +50,12 @@ artifact folders remain readable and launchable.
 
 `build_agent.py`, `buildv2.py`, and setup entry points are compatibility
 wrappers that submit to this same dev-loop. `build.py build-only` and
-`build_game_dll.py` are internal compiler steps. A per-checkout OS lock makes
-an accidental direct/overlapping compiler invocation fail clearly. Separate
-Git worktrees have independent locks and build outputs, so their builds can run
-concurrently. Use the lane workflow below for parallel agent work; do not share
-one mutable source checkout between agents. Do not use `buildv3.py` or direct
-compiler scripts as a separate live build path.
+`build_game_dll.py` are internal compiler steps. Agents must not use them.
+Separate Git worktrees have independent locks and build outputs; the
+machine-wide scheduler prevents them from compiling at the same time. Use the
+lane workflow below for parallel agent work; do not share one mutable source
+checkout between agents. Do not use direct compiler scripts as a separate live
+build path.
 
 The build never terminates a running game to publish an artifact. Build
 identity and process lifetime are separate: selecting a new artifact requires
@@ -142,27 +165,26 @@ build is how you get your own executable to test.
 
 ## Agent workflow mode 1 and mode 2
 
-Mode 1 preserves the existing shared-checkout dev-loop workflow and is the
-fallback. Build requests in that checkout use its one build owner. Mode 2 gives
-each agent an isolated worktree and independent build/run evidence. New mode 2
-lanes start from a recorded snapshot of current coordinator edits, including
-non-ignored untracked files; they do not disturb the coordinator's index.
+Mode 2 is mandatory for agents. Each agent gets one isolated lane with its own
+worktree, `.dev`, artifact folder, module builds, run IDs, ports, and journals.
+Mode 1 remains a coordinator/human fallback and is not an agent workflow.
+
+Agents never build. They ensure the lane dev-loop is running and read its
+status. The dev-loop auto-detects saved edits.
 
 ```text
-python devscripts/agent-workflow.py --mode 1 build
-python devscripts/agent-workflow.py --mode 1 run 1
-python devscripts/agent-workflow.py --mode 1 status
 python devscripts/agent-workflow.py --mode 2 create <lane-id>
-python devscripts/agent-workflow.py --mode 2 build <lane-id> [--jobs 1]
+python devscripts/agent-workflow.py --mode 2 ensure <lane-id>
 python devscripts/agent-workflow.py --mode 2 run <lane-id> --launch-mode <id>
 python devscripts/agent-workflow.py --mode 2 check <lane-id>
 python devscripts/agent-workflow.py --mode 2 status <lane-id>
 ```
 
+Do not use `--mode 2 build` or `--mode 1 build`; those actions are refused.
 Mode 2 shares compiler cache storage, not build outputs: each lane still has
-its own object files, executable, dev-loop, and `events.jsonl`. First builds
-may compile every source file; matching compiler inputs can then be reused
-through ccache. Changed headers can require rebuilding dependent source files.
+its own object files, executable, dev-loop, module DLLs, and `events.jsonl`.
+The machine-wide scheduler allows one EXE build and two module builds across
+all lanes.
 One compiler job per lane is the default. Independent builds can still slow a
 computer when many agents compile unique changes at once.
 

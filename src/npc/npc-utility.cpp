@@ -1,10 +1,8 @@
 // 10 02 2026
 // Utility goal/action scoring with hysteresis. Pure; no movement or firing.
+// Owned by the npc-behavior module. The host bridge lives in
+// npc-utility-bridge.cpp and forwards through the module ABI.
 #include "npc/npc-utility.h"
-#ifndef MIMITA_NPC_BEHAVIOR_MODULE
-#include "hot-reload/module-host.h"
-#include "modules/api/npc-behavior-api.h"
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -235,116 +233,6 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
                                   std::uint32_t actorId,
                                   std::uint32_t tick)
 {
-#ifndef MIMITA_NPC_BEHAVIOR_MODULE
-    auto& moduleHost = ModuleHost::instance();
-    if (actorId != 0 && moduleHost.npcBehaviorLoaded()) {
-        mimita_npc_behavior::DecisionV1 request{};
-        request.version = mimita_npc_behavior::ABI_VERSION;
-        request.structSize = sizeof(request);
-        request.actorId = actorId;
-        request.tick = tick;
-        auto setFlag = [&](mimita_npc_behavior::ContextFlag flag, bool enabled) {
-            if (enabled) request.contextFlags |= static_cast<std::uint32_t>(flag);
-        };
-        setFlag(mimita_npc_behavior::HAS_VISIBLE_TARGET, ctx.hasVisibleTarget);
-        setFlag(mimita_npc_behavior::HAS_KNOWN_TARGET, ctx.hasKnownTarget);
-        setFlag(mimita_npc_behavior::HAZARD_ACTIVE, ctx.hazardActive);
-        setFlag(mimita_npc_behavior::LOS_BLOCKED, ctx.loSBlocked);
-        setFlag(mimita_npc_behavior::OBJECTIVE_KNOWN, ctx.objectiveKnown);
-        setFlag(mimita_npc_behavior::PAYLOAD_OBJECTIVE, ctx.payloadObjective);
-        setFlag(mimita_npc_behavior::PLANTED, ctx.planted);
-        setFlag(mimita_npc_behavior::IS_DEFUSER, ctx.isDefuserId);
-        setFlag(mimita_npc_behavior::CAN_PLANT, ctx.canPlant);
-        setFlag(mimita_npc_behavior::CAN_DEFUSE, ctx.canDefuse);
-        setFlag(mimita_npc_behavior::AT_OBJECTIVE, ctx.atObjective);
-        setFlag(mimita_npc_behavior::ON_DEFENSE, ctx.onDefense);
-        setFlag(mimita_npc_behavior::ENEMY_AREA_KNOWN, ctx.enemyAreaKnown);
-        setFlag(mimita_npc_behavior::FOCUS_KNOWN, ctx.focusKnown);
-        setFlag(mimita_npc_behavior::SQUAD_SLOT_KNOWN, ctx.squadSlotKnown);
-        setFlag(mimita_npc_behavior::AT_SQUAD_SLOT, ctx.atSquadSlot);
-        setFlag(mimita_npc_behavior::WEAPON_READY, ctx.weaponReady);
-        setFlag(mimita_npc_behavior::BOMB_DROPPED, ctx.bombDropped);
-        setFlag(mimita_npc_behavior::IS_RECOVERER, ctx.isRecoverer);
-        setFlag(mimita_npc_behavior::IS_CARRIER, ctx.isCarrier);
-        setFlag(mimita_npc_behavior::IS_TRAVEL_SLOT_KNOWN, ctx.travelSlotKnown);
-        setFlag(mimita_npc_behavior::HAZARD_LOOK_AWAY_KNOWN, ctx.lookAwayKnown);
-        setFlag(mimita_npc_behavior::SQUAD_APPROACH_KNOWN, ctx.squadApproachKnown);
-        setFlag(mimita_npc_behavior::SWARM, ctx.swarm);
-        setFlag(mimita_npc_behavior::DOWN_DASH_OPPORTUNITY, ctx.downDashOpportunity);
-        request.downDashChance = ctx.downDashChance;
-        request.enemyCount = ctx.enemyCount;
-        request.teamAlive = ctx.teamAlive;
-        request.team = ctx.team;
-        request.targetDistance = ctx.targetDistance;
-        request.targetCartDistance = ctx.targetCartDistance;
-        request.targetConfidence = ctx.targetConfidence;
-        request.healthFraction = ctx.healthFraction;
-        request.timeRemaining = ctx.timeRemaining;
-        request.bombDefendRadius = ctx.bombDefendRadius;
-        request.travelObjectiveBias = ctx.travelObjectiveBias;
-        request.travelHuntBias = ctx.travelHuntBias;
-        request.enemyAreaPosition[0] = ctx.enemyAreaPos.x;
-        request.enemyAreaPosition[1] = ctx.enemyAreaPos.y;
-        request.enemyAreaPosition[2] = ctx.enemyAreaPos.z;
-        request.plantedBombPosition[0] = ctx.plantedBombPos.x;
-        request.plantedBombPosition[1] = ctx.plantedBombPos.y;
-        request.plantedBombPosition[2] = ctx.plantedBombPos.z;
-        auto copyVec3 = [](const glm::vec3& from, float to[3]) {
-            to[0] = from.x; to[1] = from.y; to[2] = from.z;
-        };
-        copyVec3(ctx.objectivePos, request.objectivePosition);
-        copyVec3(ctx.travelSlot, request.travelSlot);
-        copyVec3(ctx.hazardPos, request.hazardPosition);
-        request.hazardRadius = ctx.hazardRadius;
-        request.hazardKind = ctx.hazardKind;
-        copyVec3(ctx.lookAwayFrom, request.lookAwayFrom);
-        copyVec3(ctx.focusPos, request.focusPosition);
-        copyVec3(ctx.squadSlot, request.squadSlot);
-        copyVec3(ctx.squadAnchor, request.squadAnchor);
-        copyVec3(ctx.squadApproachDir, request.squadApproachDirection);
-        request.squadApproachSector = ctx.squadApproachSector;
-        request.dt = dt;
-        request.minGoalSeconds = minGoalSeconds;
-        request.switchMargin = switchMargin;
-        request.currentGoal = static_cast<std::uint32_t>(state.currentGoal);
-        request.currentAction = static_cast<std::uint32_t>(state.currentAction);
-        request.goalTimer = state.goalTimer;
-        request.actionCooldown = state.actionCooldown;
-        request.currentScore.kind = static_cast<std::uint32_t>(state.currentScore.kind);
-        request.currentScore.relevance = state.currentScore.relevance;
-        request.currentScore.distance = state.currentScore.distance;
-        request.currentScore.lineOfSight = state.currentScore.lineOfSight;
-        request.currentScore.health = state.currentScore.health;
-        request.currentScore.enemyCount = state.currentScore.enemyCount;
-        request.currentScore.timeRemaining = state.currentScore.timeRemaining;
-        request.currentScore.objectiveState = state.currentScore.objectiveState;
-        request.currentScore.weaponReadiness = state.currentScore.weaponReadiness;
-        request.currentScore.confidence = state.currentScore.confidence;
-        request.currentScore.teamInformation = state.currentScore.teamInformation;
-        request.currentScore.total = state.currentScore.total;
-        request.outDownDash = 0;
-        if (moduleHost.npcBehaviorDecision(&request)) {
-            state.currentGoal = static_cast<UtilityGoalKind>(request.outGoal);
-            state.currentAction = static_cast<UtilityActionKind>(request.outAction);
-            state.goalTimer = request.outGoalTimer;
-            state.actionCooldown = request.outActionCooldown;
-            state.currentScore.kind = static_cast<UtilityGoalKind>(request.outCurrentScore.kind);
-            state.currentScore.relevance = request.outCurrentScore.relevance;
-            state.currentScore.distance = request.outCurrentScore.distance;
-            state.currentScore.lineOfSight = request.outCurrentScore.lineOfSight;
-            state.currentScore.health = request.outCurrentScore.health;
-            state.currentScore.enemyCount = request.outCurrentScore.enemyCount;
-            state.currentScore.timeRemaining = request.outCurrentScore.timeRemaining;
-            state.currentScore.objectiveState = request.outCurrentScore.objectiveState;
-            state.currentScore.weaponReadiness = request.outCurrentScore.weaponReadiness;
-            state.currentScore.confidence = request.outCurrentScore.confidence;
-            state.currentScore.teamInformation = request.outCurrentScore.teamInformation;
-            state.currentScore.total = request.outCurrentScore.total;
-            state.shouldDownDash = request.outDownDash != 0;
-            return state.currentGoal;
-        }
-    }
-#endif
     // Advance timers.
     state.goalTimer += dt;
     state.actionCooldown = std::max(0.0f, state.actionCooldown - dt);

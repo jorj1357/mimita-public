@@ -21,6 +21,8 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-contact-policy-api.h"
 
 // Shared so visibility/debug rendering shows the same shape the solver uses.
 // A zero dead_capsule_length_m means "derive from the standing capsule height".
@@ -334,6 +336,22 @@ glm::vec3 fallbackNormal(const Capsule& a, const Capsule& b,
 float pushSpeedFor(const ActorCollisionPushTuning& p, float impactSpeed,
                    float directness)
 {
+    mimita_collision_policy::ActorPairPolicyV1 request{};
+    request.version = mimita_collision_policy::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.weakHitDistanceM = p.weakHitDistanceM;
+    request.weakHitMotionSeconds = p.weakHitMotionSeconds;
+    request.minImpactSpeedMps = p.minImpactSpeedMps;
+    request.maxImpactSpeedMps = p.maxImpactSpeedMps;
+    request.impactSpeedCurveExponent = p.impactSpeedCurveExponent;
+    request.impactAngleMinScale = p.impactAngleMinScale;
+    request.impactAngleCurveExponent = p.impactAngleCurveExponent;
+    request.maxKnockbackSpeedMps = p.maxKnockbackSpeedMps;
+    request.impactSpeed = impactSpeed;
+    request.directness = directness;
+    if (ModuleHost::instance().collisionActorPairPolicy(&request))
+        return request.outPushSpeed;
+
     const float weakSpeed = p.weakHitDistanceM /
         std::max(0.01f, p.weakHitMotionSeconds);
     const float denominator = std::max(1e-6f, p.maxImpactSpeedMps - p.minImpactSpeedMps);
@@ -380,10 +398,6 @@ bool trySetSupport(std::uint32_t upperRank, std::uint32_t lowerRank,
 
     const float upperBottom = capsuleBottom(upper);
     const float lowerTop = capsuleTop(lower);
-    const float tolerance = upperActor.profile->push.supportTopToleranceM;
-    const float snapMax = upperActor.profile->push.supportSnapMaxM;
-    if (upperBottom < lowerTop - tolerance || upperBottom > lowerTop + snapMax)
-        return false;
     if (upperBottom <= capsuleBottom(lower))
         return false;
 
@@ -392,13 +406,41 @@ bool trySetSupport(std::uint32_t upperRank, std::uint32_t lowerRank,
         return false;
 
     const float relativeVertical = upperOutput.vel.z - lowerOutput.vel.z;
-    if (relativeVertical > kSupportUpwardTolerance)
-        return false;
     const float approachSpeed = std::max(0.0f, -relativeVertical);
-    if (approachSpeed > upperActor.profile->push.supportMaxImpactSpeedMps)
+
+    mimita_collision_policy::ActorPairPolicyV1 request{};
+    request.version = mimita_collision_policy::ABI_VERSION;
+    request.structSize = sizeof(request);
+    if (continuingSupport)
+        request.flags |= mimita_collision_policy::ACTOR_PAIR_CONTINUING_SUPPORT;
+    if (upperOutput.onGround)
+        request.flags |= mimita_collision_policy::ACTOR_PAIR_UPPER_ON_GROUND;
+    const ActorCollisionPushTuning& push = upperActor.profile->push;
+    request.supportTopToleranceM = push.supportTopToleranceM;
+    request.supportSnapMaxM = push.supportSnapMaxM;
+    request.supportMaxImpactSpeedMps = push.supportMaxImpactSpeedMps;
+    request.upperBottom = upperBottom;
+    request.lowerTop = lowerTop;
+    request.relativeVertical = relativeVertical;
+    request.approachSpeed = approachSpeed;
+
+    float supportDelta = lowerTop - upperBottom;
+    bool supported = false;
+    if (ModuleHost::instance().collisionActorPairPolicy(&request)) {
+        supported = request.outSupport != 0;
+        supportDelta = request.outSupportDeltaZ;
+    } else {
+        const bool withinTopBand =
+            upperBottom >= lowerTop - push.supportTopToleranceM &&
+            upperBottom <= lowerTop + push.supportSnapMaxM;
+        supported = withinTopBand &&
+            relativeVertical <= kSupportUpwardTolerance &&
+            approachSpeed <= push.supportMaxImpactSpeedMps;
+    }
+    if (!supported)
         return false;
 
-    upperOutput.pos.z += (lowerTop - upperBottom);
+    upperOutput.pos.z += supportDelta;
     upperOutput.vel.z = std::max(upperOutput.vel.z, 0.0f) +
                         std::max(lowerOutput.vel.z, 0.0f);
     upperOutput.onGround = true;

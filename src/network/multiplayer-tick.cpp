@@ -1128,20 +1128,33 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
             else if (!connect.cancelled)
             {
+                const bool reconnectFailed = ctx.reconnectTransportPending;
                 printf("[ICE CONNECT] failed: %s\n", connect.message.c_str());
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Network, StructuredLevel::Errors,
                     "network.ice-join-failed", connect.roomCode,
-                    "client ICE join finished without a transport", ctx.tick,
+                    reconnectFailed
+                        ? "reconnect ICE negotiation finished without a transport"
+                        : "client ICE join finished without a transport",
+                    ctx.tick,
                     {{"room_code", connect.roomCode},
-                     {"reason", connect.message}},
+                     {"reason", connect.message},
+                     {"reconnect", reconnectFailed}},
                     __FILE__, __LINE__, __FUNCTION__);
+                ctx.reconnectTransportPending = false;
+                ctx.reconnectTransportPlayerId = 0;
+                ctx.reconnectTransportToken.clear();
+                ctx.reconnectTransportRoomCode.clear();
                 ctx.connectionStatus = connect.message;
-                ctx.connectionState = ConnectionState::Disconnected;
+                ctx.connectionState = reconnectFailed
+                    ? ConnectionState::ReconnectFailed
+                    : ConnectionState::Disconnected;
                 ctx.connectFailed = true;
                 NotificationSystem::instance().pushCritical(
-                    "Connection failed",
-                    "Server status: Connection failed — " + connect.message, 0);
+                    reconnectFailed ? "Reconnect failed" : "Connection failed",
+                    std::string("Server status: ") +
+                        (reconnectFailed ? "Reconnect failed — " : "Connection failed — ") +
+                        connect.message, 0);
             }
         }
     }

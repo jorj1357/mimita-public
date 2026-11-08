@@ -3123,3 +3123,76 @@ collision would remain host-owned.
 Have the user run the published build and assess responsiveness and reconnects
 in the established FCS workload. Do not treat compilation as proof of a
 performance fix.
+
+## Cold-build occurrence 58
+
+UTC time:
+`2026-11-08T16:45:00Z`
+
+Related changelog:
+`docs/changelog/2026-11-08/20261108_164500-ownership-manifest-npc-module-split.md`
+
+### Why the cold build was required
+
+The module catalog became the single source for EXE versus module ownership.
+The host gained a new `npc-utility-bridge.cpp` adapter and new NPC module events
+(goal score, action mapping, grenade decision, self-test), and the two network
+policy modules were consolidated into one `network-policy` entry. These are host
+call sites and public ABI/protocol changes, so a relink was required.
+
+### Exact cold source / boundary
+
+- `build.py`
+- `devscripts/dev-loop.py`
+- `devscripts/module-build-worker.py`
+- `devscripts/module_ownership.py`
+- `config/modules/modules.json`
+- `src/hot-reload/module-host.cpp`
+- `src/hot-reload/module-host.h`
+- `src/modules/api/module-abi.h`
+- `src/modules/api/npc-behavior-api.h`
+- `src/npc/npc-utility.cpp`
+- `src/npc/npc-utility-bridge.cpp`
+- `src/npc/npc-behavior-module.cpp`
+- `src/network/network-policy-module.cpp`
+
+### Build result
+
+`python build.py build-only` succeeded; 22 translation units compiled and 599
+were skipped. The dev-loop build immediately before this change failed at link
+with `undefined reference to scoreUtilityGoal`; the new bridge and goal-score
+event resolved it. The dev loop then published artifact
+`2026-11-08T17:13:30.614560Z` with build ID
+`2026-11-08T17:13:30.614560Z:9e37a6dd8e52cb12e9ea05b478467c032ba5e4fb2a707d25f156ea1ff79c6ff8`.
+`nm` on that artifact resolves `ModuleHost::npcBehaviorAction`,
+`npcGrenadeDecision`, and `networkMovementCorrection`, proving the new host
+call sites are in the published executable. No gameplay behavior was
+exercised.
+
+The `network-policy` and `npc-behavior` workers separately produced generations
+7 and 25 after these source changes, so the new module ABI compiles and links.
+
+### What the cold build was needed to prove
+
+That the catalog-driven EXE inventory, the module-owned NPC policy, the host
+bridge, the consolidated network policy, and the movement-correction policy
+call site link together without the former dual compilation of
+`npc-utility.cpp`.
+
+### Why live activation was impossible
+
+The EXE source inventory, the module-host call sites, and the event ABI are host
+executable code. A running process cannot gain new call sites or ABI structs.
+
+### Smallest change that would make this hot
+
+None for this slice. Future edits wholly inside the `npc-behavior` or
+`network-policy` sources should build module generations only; new host call
+sites or ABI fields remain cold.
+
+### Next migration/falsification step
+
+Launch the published executable in the Payload/FunWorld3 dev loop, confirm the
+`npc-behavior` and `network-policy` generations activate in the same PID, then
+change one NPC policy value and one network policy value and confirm they take
+effect without another EXE build. Do not treat this build as gameplay proof.

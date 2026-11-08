@@ -26,6 +26,8 @@
 #include "npc/npc-navigation.h"
 #include "npc/recast-navigation.h"
 #include "npc/npc-targeting.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/npc-behavior-api.h"
 
 #include "debug/structured-log.h"
 #include "perf/perf.h"
@@ -242,7 +244,8 @@ static void runRecastIsolatedSelfTest(const World& npcWorld,
                        hw.boundsMax + glm::vec3(5000.0f), profile));
 }
 
-void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
+void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
+                            bool allowRecastPrewarm)
 {
     serverInfiniteCollisionReset();
     // The headless world is already decimated, unioned, and face-cleaned by the
@@ -337,7 +340,8 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
             break;
         }
     }
-    if (compareEnabled || recastBackendEnabled || profileWantsRecast) {
+    if (allowRecastPrewarm &&
+        (compareEnabled || recastBackendEnabled || profileWantsRecast)) {
         NavigationAgentProfile profile;
         const RecastNavigationResult nav =
             RecastNavigationBackend::instance().prepare(npcWorld, profile);
@@ -369,6 +373,14 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
     }
 
     runRecastIsolatedSelfTest(npcWorld, hw);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+        allowRecastPrewarm ? "npc.navmesh.prewarm" : "npc.navmesh.prewarm-skipped",
+        "server",
+        allowRecastPrewarm ? "navmesh prewarm allowed" :
+                             "no active NPC user; prewarm deferred",
+        0, nlohmann::json{{"allow_recast_prewarm", allowRecastPrewarm}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
@@ -1866,6 +1878,8 @@ void simulateSharedNpcs(SOCKET sock,
         }
 
         const uint32_t prevTarget = n.serverTargetId;
+        const char* targetReason = "host_fallback";
+        std::uint32_t targetGeneration = 0;
         const int myTeam = npcTeamOf(n);
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
@@ -1949,6 +1963,86 @@ void simulateSharedNpcs(SOCKET sock,
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.
             const NpcBehaviorTuning& b = n.behavior;
+            bool moduleHandled = false;
+            {
+                mimita_npc_behavior::TargetSelectV1 request{};
+                request.version = mimita_npc_behavior::ABI_VERSION;
+                request.structSize = sizeof(request);
+                request.actorId = n.id;
+                request.tick = tick;
+                request.currentTargetId = n.serverTargetId;
+                request.distanceBias = b.distanceTargetBias;
+                request.lowHealthBias = b.lowHealthTargetBias;
+                request.threatBias = b.threatBias;
+                request.stickiness = b.targetStickiness;
+                request.switchThreshold = b.targetSwitchThreshold;
+                auto addCandidate = [&](uint32_t id, const glm::vec3& pos,
+                                        int hp, int maxHp, float threat) {
+                    if (request.candidateCount >=
+                        mimita_npc_behavior::MAX_TARGET_CANDIDATES)
+                        return;
+                    auto& candidate =
+                        request.candidates[request.candidateCount++];
+                    candidate.id = id;
+                    const glm::vec3 relative = pos - n.body.pos;
+                    candidate.position[0] = relative.x;
+                    candidate.position[1] = relative.y;
+                    candidate.position[2] = relative.z;
+                    candidate.health = hp;
+                    candidate.maxHealth = maxHp;
+                    candidate.threat = threat;
+                };
+                if (considerPlayers) for (auto& kv : players)
+                {
+                    ++targetPlayerCandidates;
+                    ServerPlayer& p = kv.second;
+                    if (p.dead || p.downed || p.connectionStale) continue;
+                    if (!npcTargetingIsHostile(targeting, myTeam, playerTeamOf(p)))
+                        continue;
+                    addCandidate(p.id, p.pos, p.health,
+                                 std::max(1, p.maxHealth), 0.5f);
+                }
+                if (allowNpcTargets) for (Npc& other : npcSystem.all())
+                {
+                    ++targetNpcCandidates;
+                    if (&other == &n) continue;
+                    if (other.body.dead || other.body.currentHp <= 0) continue;
+                    if (!npcTargetingIsHostile(targeting, myTeam, npcTeamOf(other)))
+                        continue;
+                    float threat01 = 0.0f;
+                    if (const WeaponDefinition* wd =
+                            WeaponRegistry::instance().get(other.body.equippedWeaponId))
+                        threat01 = glm::clamp(wd->damage / 50.0f, 0.0f, 1.0f);
+                    addCandidate(other.id, other.body.pos, other.body.currentHp,
+                                 other.body.maxHp, threat01);
+                }
+                if (ModuleHost::instance().npcTargetSelect(&request)) {
+                    moduleHandled = true;
+                    targetGeneration = request.outGeneration;
+                    targetReason = request.outReason ==
+                            mimita_npc_behavior::TARGET_STICKY
+                        ? "module_sticky" : request.outReason ==
+                            mimita_npc_behavior::TARGET_SCORED
+                        ? "module_scored" : "module_none";
+                    if (request.outTargetId != 0) {
+                        auto playerIt = players.find(request.outTargetId);
+                        if (playerIt != players.end() && !playerIt->second.dead) {
+                            nearestPlayer = &playerIt->second;
+                            nearestNpc = nullptr;
+                        } else {
+                            for (Npc& other : npcSystem.all()) {
+                                if (other.id != request.outTargetId) continue;
+                                if (other.body.dead || other.body.currentHp <= 0)
+                                    continue;
+                                nearestNpc = &other;
+                                nearestPlayer = nullptr;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!moduleHandled) {
             auto scoreCandidate = [&](const glm::vec3& pos, int hp, int maxHp,
                                       float threat01) {
                 const glm::vec3 d = pos - n.body.pos;
@@ -2020,6 +2114,7 @@ void simulateSharedNpcs(SOCKET sock,
                         }
                 }
             }
+            }
         }
         else if (thinkingDue)
         {
@@ -2090,6 +2185,8 @@ void simulateSharedNpcs(SOCKET sock,
                     {"preset", n.actorPresetId},
                     {"previous_target", prevTarget},
                     {"target_actor", n.serverTargetId},
+                    {"target_reason", targetReason},
+                    {"generation", targetGeneration},
                     {"target_distance", targetDist},
                     {"pos", {n.body.pos.x, n.body.pos.y, n.body.pos.z}}},
                 __FILE__, __LINE__, __FUNCTION__);

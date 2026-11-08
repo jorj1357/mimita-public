@@ -21,6 +21,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from build_toolchain import compiler, ccache, glfw_include, runtime_path  # noqa: E402
+from devscripts.build_authority import require_authority  # noqa: E402
+from devscripts.build_scheduler import acquire as acquire_build_slot  # noqa: E402
+from devscripts.module_ownership import audit as audit_ownership  # noqa: E402
+from devscripts.module_ownership import format_report, read_catalog  # noqa: E402
 
 # GCC invokes cc1plus from lib/gcc/...; on Windows that helper needs the
 # toolchain bin directory on PATH for its own runtime DLLs.
@@ -231,9 +235,18 @@ def build_module(module):
         return {"status": "skipped", "module": name, "generation": 0,
                 "code_hash": code_hash, "reason": "source hash unchanged"}
 
+    require_authority(ROOT, "module", f"module-build-worker:{name}")
     descriptor, lock_path = acquire_lock(output_dir)
     if descriptor is None:
         return {"status": "skipped", "module": name, "reason": "build already running"}
+    slot = acquire_build_slot(
+        "module", f"module:{name}",
+        metadata={"module": name, "lane": os.environ.get("MIMITA_LANE_ID", "")},
+        timeout=600)
+    if slot is None:
+        release_lock(descriptor, lock_path)
+        return {"status": "skipped", "module": name,
+                "reason": "machine-wide module build slot unavailable"}
     try:
         snapshot_dir = os.path.join(output_dir, "snapshots", code_hash[:16])
         if os.path.isdir(snapshot_dir):
@@ -268,15 +281,23 @@ def build_module(module):
         ccache_path = ccache(compiler())
         if os.path.isfile(ccache_path):
             command.append(ccache_path)
+        optimize = module.get("optimize", "-O2")
+        if not isinstance(optimize, str) or not optimize.startswith("-O"):
+            optimize = "-O2"
         command += [
             compiler(),
             "-std=c++17",
-            "-O1",
+            optimize,
             "-g",
             "-DMIMITA_MODULE_BUILD",
             f"-I{snapshot_dir}",
             f"-I{os.path.join(snapshot_dir, 'src')}",
         ]
+        compile_flags = module.get("compile_flags", [])
+        if isinstance(compile_flags, list):
+            for flag in compile_flags:
+                if isinstance(flag, str) and flag.startswith("-"):
+                    command.append(flag)
         if isinstance(include_dirs, list):
             for directory in include_dirs:
                 if isinstance(directory, str) and directory:
@@ -376,44 +397,14 @@ def build_module(module):
             "reused_translation_units": len(objects) - compiled,
         }
     finally:
+        slot.release()
         release_lock(descriptor, lock_path)
 
 
 def audit_modules(modules):
-    owners = {}
-    event_owners = {}
-    capability_owners = {}
-    ok = True
-    for module in modules:
-        name = module.get("name", "")
-        sources = expand_patterns(module.get("sources", []))
-        headers = expand_patterns(module.get("headers", []))
-        print(f"[MODULE AUDIT] {name}: sources={len(sources)} headers={len(headers)} "
-              f"events={module.get('events', [])} "
-              f"capabilities={module.get('capabilities', [])}")
-        for path in sources:
-            relative = os.path.relpath(path, ROOT).replace("\\", "/")
-            previous = owners.get(relative)
-            if previous and previous != name:
-                print(f"[MODULE AUDIT] SOURCE OVERLAP {relative}: {previous} and {name}")
-                ok = False
-            owners[relative] = name
-        for path in headers:
-            relative = os.path.relpath(path, ROOT).replace("\\", "/")
-            owners.setdefault(relative, name)
-        for event in module.get("events", []):
-            previous = event_owners.get(event)
-            if previous and previous != name:
-                print(f"[MODULE AUDIT] EVENT OVERLAP {event}: {previous} and {name}")
-                ok = False
-            event_owners[event] = name
-        for capability in module.get("capabilities", []):
-            capability_owners.setdefault(capability, []).append(name)
-    if not ok:
-        print("[MODULE AUDIT] FAIL")
-        return 1
-    print(f"[MODULE AUDIT] PASS files={len(owners)} events={len(event_owners)}")
-    return 0
+    result = audit_ownership(ROOT)
+    print(format_report(result))
+    return 0 if result["ok"] else 1
 
 
 def main():
