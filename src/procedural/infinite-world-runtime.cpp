@@ -403,12 +403,13 @@ uint64_t InfiniteWorldRuntime::placementKey(const glm::mat4& transform,
 
 bool InfiniteWorldRuntime::withinStreamRadius(const glm::vec3& playerPos,
                                               const glm::vec3& boundsMin,
-                                              const glm::vec3& boundsMax) const
+                                              const glm::vec3& boundsMax,
+                                              float margin) const
 {
     const glm::vec3 closest = glm::clamp(playerPos, boundsMin, boundsMax);
     const float radius = static_cast<float>(std::max(
         {mModeZone.streamRadius.x, mModeZone.streamRadius.y,
-         mModeZone.streamRadius.z, 1}));
+         mModeZone.streamRadius.z, 1})) * margin;
     const glm::vec3 delta = closest - playerPos;
     return glm::dot(delta, delta) <= radius * radius;
 }
@@ -1059,7 +1060,7 @@ void InfiniteWorldRuntime::tickConnectorStream(
 
     for (auto it = mConnectorLoaded.begin(); it != mConnectorLoaded.end();) {
         if (withinStreamRadius(player.pos, it->second.boundsMin,
-                               it->second.boundsMax)) {
+                               it->second.boundsMax, 1.25f)) {
             ++it;
             continue;
         }
@@ -1214,8 +1215,9 @@ void InfiniteWorldRuntime::tickConnectorStream(
     }
 }
 
-void InfiniteWorldRuntime::tick(const Player& player, World&)
+void InfiniteWorldRuntime::tick(const Player& player, World& world)
 {
+    StreamedWorldLayer& layer = StreamedWorldLayer::instance();
     static bool defaultsReady = false;
     if (!defaultsReady) {
         std::string error;
@@ -1245,6 +1247,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
     }
     if (!mapZone) {
         if (mActive) reset();
+        layer.flushCollision(world);
         return;
     }
 
@@ -1266,6 +1269,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                              {{"mode", profileId}, {"error", error},
                               {"map", mapId}});
                     if (mActive) reset();
+                    layer.flushCollision(world);
                     return;
                 }
             }
@@ -1277,6 +1281,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                          {{"mode", profileId}, {"error", error},
                           {"map", mapId}});
                 if (mActive) reset();
+                layer.flushCollision(world);
                 return;
             }
             mModeChunks = std::move(chunks);
@@ -1285,18 +1290,24 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
             mSignatureDirty = true;
             profileApplied = true;
         } else {
-            bool changed = false;
-            if (MimitaWorldGen::WorldGenLibrary::instance().pollReload(
-                    profileId, mModeProfile, mModeChunks, &changed, &error) &&
-                changed) {
-                mModeProfile.id = profileId;
-                mModeCacheId = profileId;
-                ++mModeProfileRevision;
-                mSignatureDirty = true;
-                profileApplied = true;
-                logEvent("world-stream.profile.reloaded", profileId,
-                         {{"profile", profileId},
-                          {"revision", mModeProfileRevision}});
+            const uint64_t nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            if (nowMs - mLastProfilePollMs >= 250) {
+                mLastProfilePollMs = nowMs;
+                bool changed = false;
+                if (MimitaWorldGen::WorldGenLibrary::instance().pollReload(
+                        profileId, mModeProfile, mModeChunks, &changed,
+                        &error) && changed) {
+                    mModeProfile.id = profileId;
+                    mModeCacheId = profileId;
+                    ++mModeProfileRevision;
+                    mSignatureDirty = true;
+                    profileApplied = true;
+                    logEvent("world-stream.profile.reloaded", profileId,
+                             {{"profile", profileId},
+                              {"revision", mModeProfileRevision}});
+                }
             }
         }
 
@@ -1377,7 +1388,10 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
 
     std::vector<const AuthoredChunk*> candidates =
         resolveCandidates(*activeZone);
-    if (candidates.empty()) return;
+    if (candidates.empty()) {
+        layer.flushCollision(world);
+        return;
+    }
     const bool independent = independentGrid(*activeZone, candidates);
 
     const bool needSignature = !mHasGeneration || mSignatureDirty ||
@@ -1411,6 +1425,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
 
     if (activeZone->spacingMode == "connector") {
         tickConnectorStream(player, *activeZone, candidates, revision);
+        layer.flushCollision(world);
         return;
     }
 
@@ -1512,6 +1527,7 @@ void InfiniteWorldRuntime::tick(const Player& player, World&)
                   {"resolved", mResolved.size()},
                   {"desired", mDesired.size()},
                   {"radius", {radius.x, radius.y, radius.z}}});
+    layer.flushCollision(world);
 }
 
 void registerInfiniteWorldCommands()
@@ -1593,7 +1609,14 @@ void registerInfiniteWorldCommands()
             if (args.empty() || args[0] == "status") {
                 terminal.addLog(std::string("[WORLDSTREAM] backend=") +
                                 (layer.instancing() ? "instancing" : "vbo") +
-                                " chunks=" + std::to_string(layer.chunkCount()));
+                                " chunks=" + std::to_string(layer.chunkCount()) +
+                                " collided=" +
+                                std::to_string(layer.collidedChunkCount()) +
+                                " collision_triangles=" +
+                                std::to_string(layer.collisionTriangleCount()) +
+                                " collision_revision=" +
+                                std::to_string(layer.collisionRevision()) +
+                                " dirty=" + (layer.collisionDirty() ? "1" : "0"));
                 return;
             }
             if (args[0] == "render" && args.size() >= 2) {

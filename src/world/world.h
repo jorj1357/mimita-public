@@ -169,6 +169,7 @@ struct World {
     // the primary path of appendChunkTrianglesForAABB. The chunk/sub-grid
     // structures remain a fallback for worlds whose tree is not ready.
     AabbTree collisionTree;
+    AabbTree streamedCollisionTree;
 
     std::vector<SpawnPoint> spawnPoints;
     int selectedSpawnIndex = -1;

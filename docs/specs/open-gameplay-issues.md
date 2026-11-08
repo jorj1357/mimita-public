@@ -1,4 +1,16 @@
-﻿2026 11 07 1716 jorj
+﻿2026 11 07 2138 
+map editor hot reload
+goood
+
+draggable handles working actually
+supergood
+
+underestiamaetd
+the smooth awesomensss aspect
+so
+go hard on that 
+
+2026 11 07 1716 jorj
 
 big red outlines of enemies nto good
 

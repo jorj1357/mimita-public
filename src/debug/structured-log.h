@@ -267,6 +267,7 @@ public:
         uint64_t flushCount = 0;
         uint64_t flushMicroseconds = 0;
         uint64_t mutexWaitMicroseconds = 0;
+        uint64_t mutexHoldMicroseconds = 0;
     };
 
     // Returns and optionally clears write-path counters so performance windows
@@ -325,6 +326,7 @@ private:
     std::atomic<uint64_t> mFlushCount{0};
     std::atomic<uint64_t> mFlushMicroseconds{0};
     std::atomic<uint64_t> mMutexWaitMicroseconds{0};
+    std::atomic<uint64_t> mMutexHoldMicroseconds{0};
     std::atomic<uint64_t> mQuotaDroppedRecords{0};
     std::atomic<bool> mScenarioCaptureActive{false};
 };

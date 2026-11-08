@@ -37,6 +37,24 @@ void appendUniqueTriangleIndices(std::vector<int>& dst, const std::vector<int>& 
     }
 }
 
+static bool worldCollisionTreesCoverAll(const World& world)
+{
+    const size_t total = world.collisionMesh.triangles.size();
+    const size_t base = world.collisionTree.ids.size();
+    const size_t streamed = world.streamedCollisionTree.ids.size();
+    return base + streamed == total &&
+        world.collisionMesh.streamedTailTriangles == streamed;
+}
+
+static void queryWorldCollisionTrees(const World& world, const AABB& bounds,
+                                     std::vector<int>& out)
+{
+    if (!world.collisionTree.empty())
+        world.collisionTree.query(bounds, out);
+    if (!world.streamedCollisionTree.empty())
+        world.streamedCollisionTree.query(bounds, out);
+}
+
 static inline AABB makeBlockAABB(const Block& b)
 {
     glm::vec3 half = b.size * 0.5f;
@@ -84,13 +102,12 @@ void appendChunkTrianglesForAABB(
     // whose own AABB overlaps the (expansion-grown) query box. This matches the
     // chunk path's overlap filter but is O(log n + k) and never scans an
     // always-large list.
-    if (preferWorldTree && !world.collisionTree.empty() &&
-        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    if (preferWorldTree && worldCollisionTreesCoverAll(world))
     {
         AABB treeQuery = clamped;
         treeQuery.min -= glm::vec3(expansion);
         treeQuery.max += glm::vec3(expansion);
-        world.collisionTree.query(treeQuery, out);
+        queryWorldCollisionTrees(world, treeQuery, out);
         if (world.collisionMesh.hidden.size() ==
             world.collisionMesh.triangles.size())
         {
@@ -640,8 +657,7 @@ bool rayTraverseGridCells(
                 visitLarge(triIndex);
         }
     }
-    else if (world.collisionTree.empty() ||
-             world.collisionTree.ids.size() != world.collisionMesh.triangles.size())
+    else if (!worldCollisionTreesCoverAll(world))
     {
         for (int triIndex : world.collisionLargeTriangles)
             visitLarge(triIndex);
@@ -649,11 +665,10 @@ bool rayTraverseGridCells(
 
     // Triangles beyond the coarse grid (the old always-large set) are covered by
     // the persistent world tree. s_triGen dedups anything already tested above.
-    if (!world.collisionTree.empty() &&
-        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    if (worldCollisionTreesCoverAll(world))
     {
         std::vector<int> treeCandidates;
-        world.collisionTree.query(rayAABB, treeCandidates);
+        queryWorldCollisionTrees(world, rayAABB, treeCandidates);
         for (int triIndex : treeCandidates)
             visitLarge(triIndex);
     }
@@ -914,8 +929,7 @@ bool sweptSphereTraverseGridCells(
                 visitLarge(triIndex);
         }
     }
-    else if (world.collisionTree.empty() ||
-             world.collisionTree.ids.size() != world.collisionMesh.triangles.size())
+    else if (!worldCollisionTreesCoverAll(world))
     {
         for (int triIndex : world.collisionLargeTriangles)
             visitLarge(triIndex);
@@ -923,11 +937,10 @@ bool sweptSphereTraverseGridCells(
 
     // Triangles beyond the coarse grid (the old always-large set) are covered by
     // the persistent world tree. s_triGen dedups anything already tested above.
-    if (!world.collisionTree.empty() &&
-        world.collisionTree.ids.size() == world.collisionMesh.triangles.size())
+    if (worldCollisionTreesCoverAll(world))
     {
         std::vector<int> treeCandidates;
-        world.collisionTree.query(sweptAABB, treeCandidates);
+        queryWorldCollisionTrees(world, sweptAABB, treeCandidates);
         for (int triIndex : treeCandidates)
             visitLarge(triIndex);
     }

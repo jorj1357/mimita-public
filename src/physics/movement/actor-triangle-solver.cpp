@@ -27,6 +27,8 @@
 #include "physics/config.h"
 #include "config/collision-config.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/actor-contact-policy-api.h"
 #include "physics/movement/actor-collision-mesh.h"
 #include "physics/movement/collision-aabb-tree.h"
 #include "physics/movement/physics-collision-shared.h"
@@ -49,6 +51,62 @@ constexpr float kLastValidLimbRollbackPenetration = 0.7f;
 constexpr float kMaxCorrection = 2.0f;
 constexpr int kMaxIterations = 4;
 constexpr float kNearGroundVerticalSpeed = 0.05f;
+
+float clampedPolicyFloat(float value, float fallback, float low, float high)
+{
+    if (!std::isfinite(value))
+        return fallback;
+    return std::clamp(value, low, high);
+}
+
+mimita_collision_policy::ContactPolicyV1 defaultContactPolicy()
+{
+    mimita_collision_policy::ContactPolicyV1 policy{};
+    policy.version = mimita_collision_policy::ABI_VERSION;
+    policy.structSize = sizeof(policy);
+    policy.enabled = 1;
+    policy.removeTouchingFaceSeams = 1;
+    policy.collapseFeatureContacts = 1;
+    policy.suppressLowFlushSeams = 1;
+    policy.collapseSamePartFeatures = 1;
+    policy.opposingFaceSeamDistance = MOVEMENT_FEATURE_SMOOTHNESS * 4.0f;
+    policy.opposingFaceNormalDot = -0.98f;
+    policy.featureCollapseDistance = MOVEMENT_FEATURE_SMOOTHNESS;
+    policy.flushSeamHorizontalDistance = MOVEMENT_FEATURE_SMOOTHNESS * 2.0f;
+    policy.flushWallTopHeight = 0.2f;
+    policy.flushSupportZTolerance = 0.2f;
+    policy.flushSupportHorizontalDistance =
+        MOVEMENT_FEATURE_SMOOTHNESS * 12.0f;
+    policy.result = 1;
+    return policy;
+}
+
+mimita_collision_policy::ContactPolicyV1 loadContactPolicy()
+{
+    mimita_collision_policy::ContactPolicyV1 policy = defaultContactPolicy();
+    if (!ModuleHost::instance().collisionContactPolicy(&policy) ||
+        !policy.result || !policy.enabled)
+        return defaultContactPolicy();
+    policy.opposingFaceSeamDistance = clampedPolicyFloat(
+        policy.opposingFaceSeamDistance, MOVEMENT_FEATURE_SMOOTHNESS * 4.0f,
+        0.001f, 1.0f);
+    policy.opposingFaceNormalDot = clampedPolicyFloat(
+        policy.opposingFaceNormalDot, -0.98f, -0.9999f, -0.5f);
+    policy.featureCollapseDistance = clampedPolicyFloat(
+        policy.featureCollapseDistance, MOVEMENT_FEATURE_SMOOTHNESS,
+        0.001f, 1.0f);
+    policy.flushSeamHorizontalDistance = clampedPolicyFloat(
+        policy.flushSeamHorizontalDistance, MOVEMENT_FEATURE_SMOOTHNESS * 2.0f,
+        0.001f, 2.0f);
+    policy.flushWallTopHeight = clampedPolicyFloat(
+        policy.flushWallTopHeight, 0.2f, 0.0f, 1.0f);
+    policy.flushSupportZTolerance = clampedPolicyFloat(
+        policy.flushSupportZTolerance, 0.2f, 0.0f, 1.0f);
+    policy.flushSupportHorizontalDistance = clampedPolicyFloat(
+        policy.flushSupportHorizontalDistance,
+        MOVEMENT_FEATURE_SMOOTHNESS * 12.0f, 0.001f, 5.0f);
+    return policy;
+}
 
 bool finiteAabb(const AABB& a)
 {
@@ -231,9 +289,13 @@ glm::vec3 manifoldResponseNormal(const RecoveryContact& contact)
 // Opposing contacts on one world face are two actor features straddling one
 // surface, not two physical walls. Remove the non-blocking side (or the
 // shallower side when both block) before recovery and velocity response.
-int removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
-                            const glm::vec3& intendedMove)
+int removeTouchingFaceSeams(
+    std::vector<RecoveryContact>& contacts,
+    const glm::vec3& intendedMove,
+    const mimita_collision_policy::ContactPolicyV1& policy)
 {
+    if (!policy.enabled || !policy.removeTouchingFaceSeams)
+        return 0;
     const size_t before = contacts.size();
     static thread_local std::vector<bool> removed;
     removed.assign(contacts.size(), false);
@@ -250,11 +312,10 @@ int removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
             // not two walls; keep the side that blocks the intended movement.
             // The separation is measured between the actor's two contact
             // features, so it is wider than the old same-triangle epsilon.
-            constexpr float kOpposingFaceSeamDistance =
-                MOVEMENT_FEATURE_SMOOTHNESS * 4.0f;
-            if (glm::dot(contacts[i].normal, contacts[j].normal) > -0.98f ||
+            if (glm::dot(contacts[i].normal, contacts[j].normal) >
+                    policy.opposingFaceNormalDot ||
                 glm::length(contacts[i].point - contacts[j].point) >
-                    kOpposingFaceSeamDistance)
+                    policy.opposingFaceSeamDistance)
                 continue;
 
             const float moveI = glm::dot(intendedMove,
@@ -280,13 +341,17 @@ int removeTouchingFaceSeams(std::vector<RecoveryContact>& contacts,
 // triangle feature queries. When they are really the same local edge on one
 // actor part, retain the surface that blocks the current movement direction;
 // otherwise the two normals form an artificial wedge and snag the actor.
-int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
-                                 const glm::vec3& intendedMove,
-                                 const World& world,
-                                 float lowestActorZ)
+int collapseCloseFeatureContacts(
+    std::vector<RecoveryContact>& contacts,
+    const glm::vec3& intendedMove,
+    const World& world,
+    float lowestActorZ,
+    const mimita_collision_policy::ContactPolicyV1& policy)
 {
+    if (!policy.enabled || !policy.collapseFeatureContacts)
+        return 0;
     const size_t before = contacts.size();
-    const float maxDistance = MOVEMENT_FEATURE_SMOOTHNESS;
+    const float maxDistance = policy.featureCollapseDistance;
     static thread_local std::vector<bool> removed;
     removed.assign(contacts.size(), false);
 
@@ -294,6 +359,7 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
     // solid surface, not a wall. A vertical face within the seam tolerance of
     // a walkable support, and no higher than one step, must not block player
     // movement. This is the same intent as the legacy step-up/seam path.
+    if (policy.suppressLowFlushSeams)
     for (size_t i = 0; i < contacts.size(); ++i)
     {
         if (contacts[i].entityId != 0)
@@ -314,15 +380,15 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
                 contacts[j].surfaceNormal.z > MAX_WALKABLE_SLOPE_DOT;
             const glm::vec2 horizontal =
                 glm::vec2(contacts[i].point - contacts[j].point);
-            if (glm::length(horizontal) > MOVEMENT_FEATURE_SMOOTHNESS * 2.0f)
+            if (glm::length(horizontal) > policy.flushSeamHorizontalDistance)
                 continue;
             if (verticalI && walkableJ &&
                 contacts[i].point.z <=
-                    contacts[j].point.z + MOVEMENT_FEATURE_SMOOTHNESS)
+                    contacts[j].point.z + maxDistance)
                 removed[i] = true;
             if (walkableI && verticalJ &&
                 contacts[j].point.z <=
-                    contacts[i].point.z + MOVEMENT_FEATURE_SMOOTHNESS)
+                    contacts[i].point.z + maxDistance)
                 removed[j] = true;
         }
     }
@@ -332,13 +398,14 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
     // a wall the actor must climb or stop against. Only suppress it when the
     // triangle itself is no taller than one step above the support; a real
     // wall keeps its full height and remains blocking.
+    if (policy.suppressLowFlushSeams)
     for (size_t i = 0; i < contacts.size(); ++i)
     {
         if (removed[i] || contacts[i].entityId != 0)
             continue;
         RecoveryContact& wall = contacts[i];
         if (std::fabs(wall.surfaceNormal.z) >= 0.3f ||
-            wall.point.z > lowestActorZ + 0.2f ||
+            wall.point.z > lowestActorZ + policy.flushWallTopHeight ||
             wall.triangleIndex < 0 ||
             wall.triangleIndex >=
                 static_cast<int>(world.collisionMesh.triangles.size()))
@@ -355,10 +422,11 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
             const RecoveryContact& support = contacts[j];
             if (support.surfaceNormal.z <= MAX_WALKABLE_SLOPE_DOT)
                 continue;
-            if (std::fabs(support.point.z - wall.point.z) > 0.2f)
+            if (std::fabs(support.point.z - wall.point.z) >
+                policy.flushSupportZTolerance)
                 continue;
             if (glm::length(glm::vec2(wall.point - support.point)) >
-                MOVEMENT_FEATURE_SMOOTHNESS * 12.0f)
+                policy.flushSupportHorizontalDistance)
                 continue;
             hasSupport = true;
             supportZ = std::max(supportZ, support.point.z);
@@ -373,6 +441,7 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
             removed[i] = true;
     }
 
+    if (policy.collapseSamePartFeatures)
     for (size_t i = 0; i < contacts.size(); ++i)
     {
         if (removed[i])
@@ -389,12 +458,12 @@ int collapseCloseFeatureContacts(std::vector<RecoveryContact>& contacts,
             const float pointDistance =
                 glm::length(contacts[i].point - contacts[j].point);
             const bool opposingConnectedEdge = normalAlignment <= -0.5f &&
-                pointDistance <= MOVEMENT_FEATURE_SMOOTHNESS * 4.0f;
+                pointDistance <= maxDistance * 4.0f;
             float pairDistanceLimit = maxDistance;
             if (normalAlignment >= 0.98f)
-                pairDistanceLimit = MOVEMENT_FEATURE_SMOOTHNESS * 2.0f;
+                pairDistanceLimit = maxDistance * 2.0f;
             if (opposingConnectedEdge)
-                pairDistanceLimit = MOVEMENT_FEATURE_SMOOTHNESS * 4.0f;
+                pairDistanceLimit = maxDistance * 4.0f;
             if ((normalAlignment <= -0.5f && !opposingConnectedEdge) ||
                 pointDistance > pairDistanceLimit)
                 continue;
@@ -575,6 +644,8 @@ bool solveActorTriangleCollision(
     result.startPos = player.pos;
     result.correctedPos = player.pos;
     result.remainingMovement = desiredMovement;
+    const mimita_collision_policy::ContactPolicyV1 contactPolicy =
+        loadContactPolicy();
     const glm::vec3 velocityBeforeSolve = player.vel;
     const auto solveStart = std::chrono::steady_clock::now();
     gActorNarrowphase = ActorNarrowphaseStats{};
@@ -863,10 +934,11 @@ bool solveActorTriangleCollision(
         // before position recovery; the final response manifold applies the
         // same filter again after accumulated contacts are merged.
         result.seamContactsRemoved +=
-            removeTouchingFaceSeams(s_contacts, desiredMovement);
+            removeTouchingFaceSeams(s_contacts, desiredMovement,
+                                    contactPolicy);
         result.featureContactsCollapsed +=
             collapseCloseFeatureContacts(s_contacts, desiredMovement, world,
-                                         recoveryFeetZ);
+                                         recoveryFeetZ, contactPolicy);
 
         if (s_contacts.empty())
         {
@@ -932,13 +1004,13 @@ bool solveActorTriangleCollision(
     s_manifold.clear();
     mergeContactsByNormal(s_allContacts, s_manifold);
     result.seamContactsRemoved +=
-        removeTouchingFaceSeams(s_manifold, desiredMovement);
+        removeTouchingFaceSeams(s_manifold, desiredMovement, contactPolicy);
     const std::vector<ActorCollisionMesh> finalMeshes =
         collectActorCollisionMeshes(player);
     const float lowestZ = desiredLowestZ(finalMeshes);
     result.featureContactsCollapsed +=
         collapseCloseFeatureContacts(s_manifold, desiredMovement, world,
-                                     lowestZ);
+                                     lowestZ, contactPolicy);
     std::vector<RecoveryContact>& manifold = s_manifold;
 
     // Strongest impact first, so the dominant surface owns the response and any
@@ -1250,7 +1322,10 @@ bool runActorTriangleCollisionStep(
 {
     const bool hasEntities = includeEntities &&
         !PhysicalEntitySystem::instance().entities().empty();
-    if (world.collisionMesh.triangles.empty())
+    // An empty base mesh is valid when moving/static entities or a streamed
+    // collision surface provide the contacts. Only refuse when there is no
+    // collision source at all.
+    if (world.collisionMesh.triangles.empty() && !hasEntities)
         return false;
     // Without body triangles the solver has no geometry; let the legacy path
     // handle this actor instead of freezing it. A rig-only avatar (e.g. the

@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <chrono>
 #include <cstring>
+#include <string>
+#include <vector>
 
 // Forward declarations
 struct PerfBudgetConfig;
@@ -318,8 +320,18 @@ struct PerfState {
     bool benchmarkRunning = false;
     double benchmarkStartWall = 0.0;
     double benchmarkDuration = 60.0;
-    double benchmarkFrameTimes[3600] = {};
-    int benchmarkFrameCount = 0;
+    std::string benchmarkLabel = "benchmark";
+    std::vector<double> benchmarkFrameTimes;
+    std::vector<uint32_t> benchmarkFrameNumbers;
+    std::vector<double> benchmarkViolationTimes;
+    std::vector<uint32_t> benchmarkViolationFrames;
+    uint32_t benchmarkStartFrame = 0;
+    uint64_t benchmarkChunksInstalledStart = 0;
+    uint64_t benchmarkChunksRemovedStart = 0;
+    uint32_t benchmarkLoadedChunksStart = 0;
+    uint32_t benchmarkMaxLoadedChunks = 0;
+    uint32_t benchmarkCollisionMismatchFrames = 0;
+    double benchmarkMaxRebuildStart = 0.0;
 
     bool stressRunning = false;
     bool combatTestRunning = false;
@@ -459,7 +471,7 @@ void printTopExclusive(int n);
 void printCollQuerySummary();
 void printEntityCounts();
 void setPreset(int p);
-void startBenchmark(double seconds);
+void startBenchmark(double seconds, const char* label = "benchmark");
 void startStress(int npcTarget);
 void startCombatTest();
 void exportReport(const char* path);

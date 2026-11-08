@@ -418,7 +418,25 @@ candidate replaces the active profile/chunks, and an invalid candidate is
 rejected with the previous generation retained.
 
 Chunk collision is built by the live `chunk-collision` module from every
-collidable part after chunk and part transforms. The host runs the existing
-static-solid-union and face-removal path with a raw-triangle fallback, then
-registers the streamed collision proxy. Editing chunk geometry refreshes the
-proxy; material/UV-only edits refresh rendering only.
+collidable part after chunk and part transforms. The host composes the loaded
+chunk set into the `World.collisionMesh` tail before the broadphase rebuild, so
+players, NPCs, navigation, and every existing query see streamed chunks as
+normal static world triangles (`entityId == 0`). The host runs face removal
+across the combined loaded set, with bounded union as an opt-in merge policy.
+Internal faces between touching chunks are removed before the broadphase.
+Editing chunk geometry refreshes collision; material/UV-only edits refresh
+rendering only.
+
+Collision runs on the fixed pre-simulation boundary. `world-stream.collision.sync`
+reports loaded/collided chunk counts, streamed triangle count, removed internal
+faces, merge mode, and revision match. `worldstream status` reports the same
+counts. The collision module also owns the hot actor seam/contact policy
+(opposing-face distance, feature collapse, low flush-seam suppression). Editing
+that policy activates a new module generation in the same process without an
+EXE relink.
+
+The dedicated and listen server maintain a separate server NPC collision tail.
+Regular grid worlds (including connector worlds whose authored chunks match the
+profile footprint) are generated around active player and NPC anchors. Mixed-
+size connector graphs are still client-owned; the server keeps the authored
+map footprint until that frontier is extracted.

@@ -19,6 +19,7 @@
 #endif
 
 #include "video/frame-pacer.h"
+#include "world/streamed-world-layer.h"
 #include "gui/ui-system.h"
 #include "debug/debug-log.h"
 
@@ -32,6 +33,119 @@ static uint64_t nowUs()
     return (uint64_t)duration_cast<microseconds>(
         steady_clock::now().time_since_epoch()).count();
 }
+
+namespace {
+
+void emitBenchmarkSummary()
+{
+    if (gState.benchmarkFrameTimes.empty())
+        return;
+
+    const double budget240Ms = 1000.0 / 240.0;
+    const double budget999Ms = 1000.0 / 999.0;
+    const double configuredTargetMs = gPerfBudget.targetFps > 0
+        ? 1000.0 / static_cast<double>(gPerfBudget.targetFps) : 0.0;
+    const double durationS = std::max(
+        1.0e-6, (static_cast<double>(nowUs()) - gState.benchmarkStartWall) /
+                    1.0e6);
+    std::vector<double> sorted = gState.benchmarkFrameTimes;
+    std::sort(sorted.begin(), sorted.end());
+
+    auto percentile = [&](double p) -> double {
+        if (sorted.empty())
+            return 0.0;
+        const size_t index = std::min(
+            sorted.size() - 1,
+            static_cast<size_t>(p * static_cast<double>(sorted.size() - 1)));
+        return sorted[index];
+    };
+
+    uint64_t framesOver240 = 0;
+    uint64_t framesOver999 = 0;
+    uint64_t framesOverConfigured = 0;
+    uint64_t framesAtOrAbove240 = 0;
+    double sumMs = 0.0;
+    for (double ms : gState.benchmarkFrameTimes) {
+        sumMs += ms;
+        if (ms > budget240Ms) ++framesOver240;
+        else ++framesAtOrAbove240;
+        if (ms > budget999Ms) ++framesOver999;
+        if (configuredTargetMs > 0.0 && ms > configuredTargetMs)
+            ++framesOverConfigured;
+    }
+    const uint64_t frames = static_cast<uint64_t>(
+        gState.benchmarkFrameTimes.size());
+    const double maxMs = sorted.back();
+    const double minFps = maxMs > 0.0 ? 1000.0 / maxMs : 0.0;
+    const double percentAtOrAbove240 =
+        100.0 * static_cast<double>(framesAtOrAbove240) /
+        static_cast<double>(std::max<uint64_t>(1, frames));
+
+    StreamedWorldLayer& layer = StreamedWorldLayer::instance();
+    const uint64_t installedNow = layer.chunksInstalledTotal();
+    const uint64_t removedNow = layer.chunksRemovedTotal();
+    const uint64_t installed = installedNow >= gState.benchmarkChunksInstalledStart
+        ? installedNow - gState.benchmarkChunksInstalledStart : installedNow;
+    const uint64_t removed = removedNow >= gState.benchmarkChunksRemovedStart
+        ? removedNow - gState.benchmarkChunksRemovedStart : removedNow;
+
+    nlohmann::json fields = {
+        {"label", gState.benchmarkLabel},
+        {"frames", frames},
+        {"duration_s", durationS},
+        {"target_fps", gPerfBudget.targetFps},
+        {"frame_cap", gFramePacer.maxFrames()},
+        {"budget_ms", budget240Ms},
+        {"configured_budget_ms", configuredTargetMs},
+        {"frame_min_ms", sorted.front()},
+        {"frame_avg_ms", sumMs / static_cast<double>(std::max<uint64_t>(1, frames))},
+        {"frame_max_ms", maxMs},
+        {"frame_p50_ms", percentile(0.50)},
+        {"frame_p95_ms", percentile(0.95)},
+        {"frame_p99_ms", percentile(0.99)},
+        {"min_fps", minFps},
+        {"avg_fps", 1000.0 * static_cast<double>(frames) / (durationS * 1000.0)},
+        {"frames_over_240_budget", framesOver240},
+        {"frames_at_or_above_240", framesAtOrAbove240},
+        {"percent_at_or_above_240", percentAtOrAbove240},
+        {"frames_over_999_budget", framesOver999},
+        {"frames_over_configured_budget", framesOverConfigured},
+        {"start_frame", gState.benchmarkStartFrame},
+        {"end_frame", static_cast<uint32_t>(gState.frameNumber)},
+        {"loaded_chunks_start", gState.benchmarkLoadedChunksStart},
+        {"loaded_chunks_end", layer.lastLoadedChunkCount()},
+        {"max_loaded_chunks", gState.benchmarkMaxLoadedChunks},
+        {"collided_chunks_end", layer.collidedChunkCount()},
+        {"collision_revision", layer.collisionRevision()},
+        {"collision_triangles", layer.collisionTriangleCount()},
+        {"chunks_added", installed},
+        {"chunks_removed", removed},
+        {"collision_rebuild_last_ms", layer.lastCollisionRebuildMs()},
+        {"collision_rebuild_max_ms", layer.maxCollisionRebuildMs()},
+        {"loaded_collision_match_all",
+         gState.benchmarkCollisionMismatchFrames == 0},
+        {"collision_mismatch_frames", gState.benchmarkCollisionMismatchFrames},
+        {"violation_count", gState.benchmarkViolationTimes.size()},
+        {"first_violation_frame",
+         gState.benchmarkViolationFrames.empty()
+             ? 0u : gState.benchmarkViolationFrames.front()},
+        {"first_violation_ms",
+         gState.benchmarkViolationTimes.empty()
+             ? 0.0 : gState.benchmarkViolationTimes.front()}};
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.benchmark.summary", gState.benchmarkLabel,
+        "labeled all-frame performance benchmark summary", 0, fields,
+        __FILE__, __LINE__, __FUNCTION__);
+
+    gState.benchmarkFrameTimes.clear();
+    gState.benchmarkFrameNumbers.clear();
+    gState.benchmarkViolationTimes.clear();
+    gState.benchmarkViolationFrames.clear();
+}
+
+} // namespace
 
 PerfState& Perf::state() { return gState; }
 
@@ -1006,18 +1120,40 @@ void Perf::endFrame(float currentFrameMs)
     if (s.perfFileLogging)
         writeProfileToFile();
 
-    if (s.benchmarkRunning && s.benchmarkFrameCount < 3600)
+    if (s.benchmarkRunning &&
+        s.benchmarkFrameTimes.size() < 200000)
     {
-        s.benchmarkFrameTimes[s.benchmarkFrameCount++] = gFramePacer.frameTimeMs();
-        double elapsed = (double)(nowUs() - (uint64_t)s.benchmarkStartWall) / 1000000.0;
+        const double frameMs = static_cast<double>(currentMs);
+        s.benchmarkFrameTimes.push_back(frameMs);
+        s.benchmarkFrameNumbers.push_back(
+            static_cast<uint32_t>(s.frameNumber));
+
+        const StreamedWorldLayer& layer = StreamedWorldLayer::instance();
+        s.benchmarkMaxLoadedChunks = std::max(
+            s.benchmarkMaxLoadedChunks, layer.lastLoadedChunkCount());
+        if (layer.lastLoadedChunkCount() != layer.collidedChunkCount() ||
+            !layer.lastCollisionRevisionMatched())
+            ++s.benchmarkCollisionMismatchFrames;
+
+        if (frameMs > 1000.0 / 240.0 &&
+            s.benchmarkViolationTimes.size() < 8) {
+            s.benchmarkViolationTimes.push_back(frameMs);
+            s.benchmarkViolationFrames.push_back(
+                static_cast<uint32_t>(s.frameNumber));
+        }
+
+        const double elapsed =
+            (double)(nowUs() - (uint64_t)s.benchmarkStartWall) / 1000000.0;
         if (elapsed >= s.benchmarkDuration)
         {
             s.benchmarkRunning = false;
+            emitBenchmarkSummary();
             char path[256];
             snprintf(path, sizeof(path), "benchmark_report.txt");
             exportReport(path);
-            Debug::log(Debug::Category::General, "[PERF] Benchmark completed after %.1f seconds, report: %s",
-                       elapsed, path);
+            Debug::log(Debug::Category::General,
+                       "[PERF] Benchmark '%s' completed after %.1f seconds, report: %s",
+                       s.benchmarkLabel.c_str(), elapsed, path);
         }
     }
 
@@ -1479,13 +1615,43 @@ void Perf::setPreset(int p)
 
 void Perf::applyPreset(int p) { (void)p; }
 
-void Perf::startBenchmark(double seconds)
+void Perf::startBenchmark(double seconds, const char* label)
 {
+    StreamedWorldLayer& layer = StreamedWorldLayer::instance();
     gState.benchmarkRunning = true;
     gState.benchmarkDuration = seconds;
-    gState.benchmarkFrameCount = 0;
+    gState.benchmarkLabel = label && *label ? label : "benchmark";
     gState.benchmarkStartWall = (double)nowUs();
-    Debug::log(Debug::Category::General, "[PERF] Benchmark started for %.1f seconds", seconds);
+    gState.benchmarkStartFrame = static_cast<uint32_t>(gState.frameNumber);
+    gState.benchmarkFrameTimes.clear();
+    gState.benchmarkFrameNumbers.clear();
+    gState.benchmarkViolationTimes.clear();
+    gState.benchmarkViolationFrames.clear();
+    const size_t estimatedFrames = static_cast<size_t>(
+        std::max(1.0, seconds * 999.0));
+    gState.benchmarkFrameTimes.reserve(estimatedFrames);
+    gState.benchmarkFrameNumbers.reserve(estimatedFrames);
+    gState.benchmarkChunksInstalledStart = layer.chunksInstalledTotal();
+    gState.benchmarkChunksRemovedStart = layer.chunksRemovedTotal();
+    gState.benchmarkLoadedChunksStart = layer.lastLoadedChunkCount();
+    gState.benchmarkMaxLoadedChunks = layer.lastLoadedChunkCount();
+    gState.benchmarkCollisionMismatchFrames = 0;
+    gState.benchmarkMaxRebuildStart = layer.maxCollisionRebuildMs();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Performance, StructuredLevel::Important,
+        "performance.benchmark.started", gState.benchmarkLabel,
+        "labeled all-frame performance benchmark started", 0,
+        {{"label", gState.benchmarkLabel},
+         {"seconds", seconds},
+         {"target_fps", gPerfBudget.targetFps},
+         {"frame_cap", gFramePacer.maxFrames()},
+         {"loaded_chunks", layer.lastLoadedChunkCount()},
+         {"collided_chunks", layer.collidedChunkCount()},
+         {"collision_revision", layer.collisionRevision()}},
+        __FILE__, __LINE__, __FUNCTION__);
+    Debug::log(Debug::Category::General,
+               "[PERF] Benchmark '%s' started for %.1f seconds",
+               gState.benchmarkLabel.c_str(), seconds);
 }
 
 void Perf::startStress(int npcTarget)

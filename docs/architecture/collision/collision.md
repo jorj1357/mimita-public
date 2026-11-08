@@ -228,6 +228,19 @@ Rules:
 - The passes run for the client GLB load, authored block rebuilds, collision LOD
   re-decimation, and the dedicated server headless world. Client and server use
   the same validation, union, and coverage rules.
+- Streamed chunks are not separate collision proxies. The loaded streamed set
+  is appended to the `World.collisionMesh` tail before the broadphase rebuild,
+  then the same face-removal pass runs across the combined streamed surface.
+  Streamed chunks therefore carry `entityId == 0` and receive the normal
+  low-flush-seam and walkable response rules. The tail is rebuilt on the fixed
+  pre-simulation boundary, not in the render loop, and only when the loaded set
+  changes.
+- The live `chunk-collision` module owns collidable-part selection, chunk
+  transforms, the streamed merge mode, and the actor contact/seam policy
+  (opposing-face distance, feature collapse, low flush-seam suppression). The
+  host owns the static-union/face-removal execution, broadphase rebuild, and
+  final contact correction. Editing the policy activates through the same
+  module generation boundary; there is no second collision solver.
 - The passes do not change the render mesh, weapon collision, dynamic entities,
   or actor meshes.
 

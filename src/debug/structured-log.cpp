@@ -70,12 +70,6 @@ const char* processRole() {
     return "client";
 }
 
-HANDLE eventsFileMutex() {
-    static HANDLE handle = CreateMutexA(nullptr, FALSE,
-                                        "Local\\MiMITA_v9_events_jsonl_v1");
-    return handle;
-}
-
 constexpr uint64_t kDefaultMaxLogFileBytes = 100000000ULL;
 constexpr uint64_t kDefaultMaxLogTreeBytes = 1000000000ULL;
 constexpr uint64_t kMinimumLogLimitBytes = 32768ULL;
@@ -109,6 +103,81 @@ uint64_t logPathHash(const std::string& path) {
     return hash;
 }
 
+HANDLE logQuotaMutex(const std::filesystem::path& root) {
+    static std::mutex handlesMutex;
+    static std::unordered_map<std::string, HANDLE> handles;
+    std::error_code ec;
+    auto normalized = std::filesystem::absolute(root, ec).lexically_normal().string();
+    if (ec) normalized = root.lexically_normal().string();
+    const uint64_t hash = logPathHash(normalized);
+    std::lock_guard<std::mutex> lock(handlesMutex);
+    auto found = handles.find(normalized);
+    if (found != handles.end()) return found->second;
+    char name[96]{};
+    std::snprintf(name, sizeof(name), "Local\\MiMITA_v9_events_quota_v3_%016llx",
+                  static_cast<unsigned long long>(hash));
+    HANDLE handle = CreateMutexA(nullptr, FALSE, name);
+    handles.emplace(std::move(normalized), handle);
+    return handle;
+}
+
+HANDLE eventsFileMutex(const std::string& eventsPath) {
+    static std::mutex handlesMutex;
+    static std::unordered_map<std::string, HANDLE> handles;
+    std::error_code ec;
+    auto normalized = std::filesystem::absolute(eventsPath, ec).lexically_normal().string();
+    if (ec) normalized = std::filesystem::path(eventsPath).lexically_normal().string();
+    const uint64_t hash = logPathHash(normalized);
+    std::lock_guard<std::mutex> lock(handlesMutex);
+    auto found = handles.find(normalized);
+    if (found != handles.end()) return found->second;
+    char name[96]{};
+    std::snprintf(name, sizeof(name), "Local\\MiMITA_v9_events_run_%016llx",
+                  static_cast<unsigned long long>(hash));
+    HANDLE handle = CreateMutexA(nullptr, FALSE, name);
+    handles.emplace(std::move(normalized), handle);
+    return handle;
+}
+
+class TimedNamedMutexLock {
+public:
+    TimedNamedMutexLock(HANDLE handle, std::atomic<uint64_t>& waitMicros,
+                        std::atomic<uint64_t>& holdMicros)
+        : mHandle(handle), mWaitMicros(waitMicros), mHoldMicros(holdMicros) {}
+    ~TimedNamedMutexLock() { unlock(); }
+
+    bool lock(DWORD timeoutMs) {
+        if (!mHandle) return false;
+        const auto waitStart = std::chrono::steady_clock::now();
+        const DWORD result = WaitForSingleObject(mHandle, timeoutMs);
+        const auto acquiredAt = std::chrono::steady_clock::now();
+        mWaitMicros.fetch_add(static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(acquiredAt - waitStart).count()),
+            std::memory_order_relaxed);
+        if (result != WAIT_OBJECT_0 && result != WAIT_ABANDONED) return false;
+        mAcquiredAt = acquiredAt;
+        mAcquired = true;
+        return true;
+    }
+
+    void unlock() {
+        if (!mAcquired) return;
+        const auto releasedAt = std::chrono::steady_clock::now();
+        mHoldMicros.fetch_add(static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(releasedAt - mAcquiredAt).count()),
+            std::memory_order_relaxed);
+        ReleaseMutex(mHandle);
+        mAcquired = false;
+    }
+
+private:
+    HANDLE mHandle = nullptr;
+    std::atomic<uint64_t>& mWaitMicros;
+    std::atomic<uint64_t>& mHoldMicros;
+    std::chrono::steady_clock::time_point mAcquiredAt{};
+    bool mAcquired = false;
+};
+
 SharedLogQuota& sharedLogQuota(const std::filesystem::path& root) {
     static SharedLogQuota quota;
     if (quota.state) return quota;
@@ -117,7 +186,7 @@ SharedLogQuota& sharedLogQuota(const std::filesystem::path& root) {
     std::string normalized = std::filesystem::absolute(root, ec).lexically_normal().string();
     if (ec) normalized = root.lexically_normal().string();
     char name[96]{};
-    std::snprintf(name, sizeof(name), "Local\\MiMITA_v9_log_quota_%016llx",
+    std::snprintf(name, sizeof(name), "Local\\MiMITA_v9_log_quota_v3_%016llx",
                   static_cast<unsigned long long>(logPathHash(normalized)));
     quota.mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
                                        0, sizeof(SharedLogQuotaState), name);
@@ -361,9 +430,9 @@ bool runHasJournalSegment(const std::filesystem::path& runDir) {
 }
 
 // Seal the current events.jsonl as events-NNNN.jsonl and truncate the active
-// file in place. All writers hold the shared named mutex and the active file is
-// unbuffered, so no writer can leave buffered records in the sealed segment.
-bool rotateActiveSegment(FILE* file, const std::string& eventsPath,
+// file in place. Writers for this journal hold its named mutex and the active
+// file is unbuffered, so records cannot leak into the sealed segment.
+bool rotateActiveSegment(FILE*& file, const std::string& eventsPath,
                          SharedLogQuotaState& state,
                          SharedLogQuotaState::FileEntry*& entry) {
     if (!file || eventsPath.empty()) return false;
@@ -385,20 +454,104 @@ bool rotateActiveSegment(FILE* file, const std::string& eventsPath,
     }
     if (index >= 1000000u) return false;
 
-    std::filesystem::copy_file(active, sealed,
-                               std::filesystem::copy_options::none, ec);
-    if (ec) return false;
     std::fflush(file);
-    if (_chsize_s(_fileno(file), 0) != 0) {
-        // Keep the sealed copy; never corrupt the active file on failure.
-        std::error_code removeError;
-        std::filesystem::remove(sealed, removeError);
+    if (std::fclose(file) != 0) {
+        file = std::fopen(active.string().c_str(), "ab");
+        if (file) std::setvbuf(file, nullptr, _IONBF, 0);
         return false;
     }
+    file = nullptr;
+    std::filesystem::rename(active, sealed, ec);
+    if (ec) {
+        file = std::fopen(active.string().c_str(), "ab");
+        if (file) std::setvbuf(file, nullptr, _IONBF, 0);
+        return false;
+    }
+    file = std::fopen(active.string().c_str(), "ab");
+    if (!file) {
+        // Restore the active path if reopening the new segment failed.
+        std::error_code restoreError;
+        std::filesystem::rename(sealed, active, restoreError);
+        file = std::fopen(active.string().c_str(), "ab");
+        if (file) std::setvbuf(file, nullptr, _IONBF, 0);
+        return false;
+    }
+    std::setvbuf(file, nullptr, _IONBF, 0);
     state.nextSegmentIndex = index + 1u;
     ++state.segmentGeneration;
     if (entry) entry->bytes = 0;
     return true;
+}
+
+bool reserveEventLine(FILE*& file, const std::string& eventsPath,
+                      const std::string& logDir, uint64_t& segmentGeneration,
+                      uint64_t lineBytes, uint64_t perSegmentLimit,
+                      uint64_t totalTreeLimit, uint64_t& oldFileBytes,
+                      bool allowPrune, DWORD lockTimeout,
+                      std::atomic<uint64_t>& waitMicros,
+                      std::atomic<uint64_t>& holdMicros) {
+    const auto root = logRootForEventsPath(eventsPath);
+    TimedNamedMutexLock quotaLock(logQuotaMutex(root), waitMicros, holdMicros);
+    if (!quotaLock.lock(lockTimeout)) return false;
+
+    SharedLogQuota& quota = sharedLogQuota(root);
+    if (!quota.state || lineBytes > perSegmentLimit || lineBytes > totalTreeLimit)
+        return false;
+    initializeQuotaState(*quota.state, root);
+
+    auto* entry = quotaFileEntry(*quota.state, eventsPath);
+    if (segmentGeneration != quota.state->segmentGeneration) {
+        segmentGeneration = quota.state->segmentGeneration;
+        entry = quotaFileEntry(*quota.state, eventsPath);
+        std::error_code sizeError;
+        if (entry) {
+            entry->bytes = std::filesystem::exists(eventsPath, sizeError) &&
+                !sizeError ? std::filesystem::file_size(eventsPath, sizeError) : 0;
+        }
+    }
+    if (entry && entry->bytes > 0 && entry->bytes <= perSegmentLimit &&
+        lineBytes > perSegmentLimit - entry->bytes) {
+        if (rotateActiveSegment(file, eventsPath, *quota.state, entry))
+            segmentGeneration = quota.state->segmentGeneration;
+    }
+
+    const auto fits = [&]() {
+        return entry && entry->bytes <= perSegmentLimit &&
+            lineBytes <= perSegmentLimit - entry->bytes &&
+            quota.state->totalBytes <= totalTreeLimit &&
+            lineBytes <= totalTreeLimit - quota.state->totalBytes;
+    };
+    if (!fits() && allowPrune && quotaPruneAllowed()) {
+        reconcileQuotaState(*quota.state, root);
+        const uint64_t target = totalTreeLimit - lineBytes;
+        const uint64_t reclaimed = pruneCompletedRuns(
+            root, std::filesystem::path(logDir), target, quota.state->totalBytes);
+        quota.state->totalBytes = reclaimed > quota.state->totalBytes
+            ? 0 : quota.state->totalBytes - reclaimed;
+        entry = quotaFileEntry(*quota.state, eventsPath);
+    }
+    if (!fits()) return false;
+
+    // Reserve both limits under the quota lock. The per-journal mutex remains
+    // held by the caller through append, preserving cross-process record order.
+    oldFileBytes = entry->bytes;
+    entry->bytes += lineBytes;
+    quota.state->totalBytes += lineBytes;
+    return true;
+}
+
+void rollbackEventReservation(const std::string& eventsPath, uint64_t lineBytes,
+                              std::atomic<uint64_t>& waitMicros,
+                              std::atomic<uint64_t>& holdMicros) {
+    const auto root = logRootForEventsPath(eventsPath);
+    TimedNamedMutexLock quotaLock(logQuotaMutex(root), waitMicros, holdMicros);
+    if (!quotaLock.lock(INFINITE)) return;
+    SharedLogQuota& quota = sharedLogQuota(root);
+    if (!quota.state) return;
+    auto* entry = quotaFileEntry(*quota.state, eventsPath);
+    if (entry) entry->bytes = lineBytes > entry->bytes ? 0 : entry->bytes - lineBytes;
+    quota.state->totalBytes = lineBytes > quota.state->totalBytes
+        ? 0 : quota.state->totalBytes - lineBytes;
 }
 }
 
@@ -797,12 +950,14 @@ StructuredLogger::IoStats StructuredLogger::ioStats(bool reset)
         out.flushCount = mFlushCount.exchange(0, std::memory_order_relaxed);
         out.flushMicroseconds = mFlushMicroseconds.exchange(0, std::memory_order_relaxed);
         out.mutexWaitMicroseconds = mMutexWaitMicroseconds.exchange(0, std::memory_order_relaxed);
+        out.mutexHoldMicroseconds = mMutexHoldMicroseconds.exchange(0, std::memory_order_relaxed);
     } else {
         out.eventsWritten = mEventsWritten.load(std::memory_order_relaxed);
         out.bytesWritten = mBytesWritten.load(std::memory_order_relaxed);
         out.flushCount = mFlushCount.load(std::memory_order_relaxed);
         out.flushMicroseconds = mFlushMicroseconds.load(std::memory_order_relaxed);
         out.mutexWaitMicroseconds = mMutexWaitMicroseconds.load(std::memory_order_relaxed);
+        out.mutexHoldMicroseconds = mMutexHoldMicroseconds.load(std::memory_order_relaxed);
     }
     return out;
 }
@@ -1040,9 +1195,9 @@ void StructuredLogger::init() {
     const auto logRoot = logRootForEventsPath(mEventsPath);
     mRunLease = CreateEventA(nullptr, TRUE, FALSE,
         runLeaseName(logRoot, mRunId).c_str());
-    HANDLE quotaMutex = eventsFileMutex();
-    if (quotaMutex) {
-        WaitForSingleObject(quotaMutex, INFINITE);
+    TimedNamedMutexLock quotaMutex(logQuotaMutex(logRoot), mMutexWaitMicroseconds,
+                                   mMutexHoldMicroseconds);
+    if (quotaMutex.lock(INFINITE)) {
         SharedLogQuota& quota = sharedLogQuota(logRoot);
         if (quota.state) {
             initializeQuotaState(*quota.state, logRoot);
@@ -1061,7 +1216,6 @@ void StructuredLogger::init() {
             quota.state->totalBytes = reclaimed > quota.state->totalBytes
                 ? 0 : quota.state->totalBytes - reclaimed;
         }
-        ReleaseMutex(quotaMutex);
     }
 
     mEventsFile = fopen(mEventsPath.c_str(), "ab");
@@ -1528,105 +1682,54 @@ void StructuredLogger::flushEvents()
 bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return false;
-    std::lock_guard<std::mutex> lock(gEventsWriteMutex);
-    HANDLE named = eventsFileMutex();
-    if (!named) {
-        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-    const auto waitStart = std::chrono::steady_clock::now();
-    WaitForSingleObject(named, INFINITE);
-    const auto waitEnd = std::chrono::steady_clock::now();
-    mMutexWaitMicroseconds.fetch_add(static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::microseconds>(waitEnd - waitStart).count()),
-        std::memory_order_relaxed);
-
-    const auto root = logRootForEventsPath(mEventsPath);
-    SharedLogQuota& quota = sharedLogQuota(root);
-    if (!quota.state) {
-        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
-        return false;
-    }
-    initializeQuotaState(*quota.state, root);
-
+    // Serialization stays out of the shared writer lock; sequence numbers are
+    // assigned under that lock so their order matches the appended rows.
     nlohmann::json outputRecord = record;
+    outputRecord.erase("seq");
     const uint64_t previouslyDropped =
         mQuotaDroppedRecords.load(std::memory_order_relaxed);
     if (previouslyDropped)
         outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
-    const std::string line = outputRecord.dump() + "\n";
-    if (line.size() > mConfig.storageLimits.perSegmentBytes) {
+    const std::string serialized = outputRecord.dump();
+    if (serialized.size() + 32 > mConfig.storageLimits.perSegmentBytes ||
+        serialized.size() + 32 > mConfig.storageLimits.totalLogTreeBytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
         return false;
     }
+    std::lock_guard<std::mutex> lock(gEventsWriteMutex);
+    const uint64_t sequence = mSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    const std::string line = serialized.substr(0, serialized.size() - 1) +
+        ",\"seq\":" + std::to_string(sequence) + "}\n";
 
-    auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-    if (mSegmentGeneration != quota.state->segmentGeneration) {
-        mSegmentGeneration = quota.state->segmentGeneration;
-        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        std::error_code sizeError;
-        if (fileEntry) {
-            fileEntry->bytes = std::filesystem::exists(mEventsPath, sizeError) &&
-                !sizeError ? std::filesystem::file_size(mEventsPath, sizeError) : 0;
-        }
-    }
-    if (fileEntry && fileEntry->bytes > 0 &&
-        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
-        if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
-            mSegmentGeneration = quota.state->segmentGeneration;
-            fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        }
-    }
-    if (!fileEntry || fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
-        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
+    TimedNamedMutexLock journalLock(eventsFileMutex(mEventsPath),
+                                   mMutexWaitMicroseconds, mMutexHoldMicroseconds);
+    if (!journalLock.lock(INFINITE)) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
         return false;
     }
-
-    if (line.size() > mConfig.storageLimits.totalLogTreeBytes -
-            std::min<uint64_t>(quota.state->totalBytes, mConfig.storageLimits.totalLogTreeBytes)) {
-        if (!quotaPruneAllowed()) {
-            mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-            ReleaseMutex(named);
-            return false;
-        }
-        // Reconcile non-logger files and remove eligible completed runs only
-        // when an incoming record would cross the folder ceiling.
-        reconcileQuotaState(*quota.state, root);
-        const uint64_t reclaimed = pruneCompletedRuns(
-            root, std::filesystem::path(mLogDir), mConfig.storageLimits.totalLogTreeBytes - line.size(),
-            quota.state->totalBytes);
-        quota.state->totalBytes = reclaimed > quota.state->totalBytes
-            ? 0 : quota.state->totalBytes - reclaimed;
-        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        if (!fileEntry || quota.state->totalBytes > mConfig.storageLimits.totalLogTreeBytes ||
-            line.size() > mConfig.storageLimits.totalLogTreeBytes - quota.state->totalBytes ||
-            fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
-            line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
-            mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-            ReleaseMutex(named);
-            return false;
-        }
+    uint64_t oldFileBytes = 0;
+    if (!reserveEventLine(mEventsFile, mEventsPath, mLogDir, mSegmentGeneration,
+                          line.size(), mConfig.storageLimits.perSegmentBytes,
+                          mConfig.storageLimits.totalLogTreeBytes, oldFileBytes,
+                          true, INFINITE, mMutexWaitMicroseconds,
+                          mMutexHoldMicroseconds)) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return false;
     }
-
-    const unsigned long long oldFileBytes = fileEntry->bytes;
     const size_t written = std::fwrite(line.data(), 1, line.size(), mEventsFile);
     if (written != line.size()) {
         std::fflush(mEventsFile);
         _chsize_s(_fileno(mEventsFile), oldFileBytes);
+        rollbackEventReservation(mEventsPath, line.size(), mMutexWaitMicroseconds,
+                                 mMutexHoldMicroseconds);
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
         return false;
     }
-    fileEntry->bytes += line.size();
-    quota.state->totalBytes += line.size();
     if (previouslyDropped)
         mQuotaDroppedRecords.fetch_sub(previouslyDropped, std::memory_order_relaxed);
     mEventsWritten.fetch_add(1, std::memory_order_relaxed);
     mBytesWritten.fetch_add(static_cast<uint64_t>(line.size()), std::memory_order_relaxed);
+    journalLock.unlock();
     if (flush) {
         const auto flushStart = std::chrono::steady_clock::now();
         std::fflush(mEventsFile);
@@ -1636,78 +1739,52 @@ bool StructuredLogger::writeJsonLine(const nlohmann::json& record, bool flush)
             std::chrono::duration_cast<std::chrono::microseconds>(flushEnd - flushStart).count()),
             std::memory_order_relaxed);
     }
-    ReleaseMutex(named);
     return true;
 }
 
 bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush)
 {
     if (!mEventsFile) return false;
-    std::unique_lock<std::mutex> lock(gEventsWriteMutex, std::try_to_lock);
-    if (!lock.owns_lock()) return false;
-    HANDLE named = eventsFileMutex();
-    if (!named) {
-        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-    const DWORD wait = WaitForSingleObject(named, 0);
-    if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) {
-        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-
-    const auto root = logRootForEventsPath(mEventsPath);
-    SharedLogQuota& quota = sharedLogQuota(root);
-    if (!quota.state) {
-        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
-        return false;
-    }
-    initializeQuotaState(*quota.state, root);
     nlohmann::json outputRecord = record;
+    outputRecord.erase("seq");
     const uint64_t previouslyDropped =
         mQuotaDroppedRecords.load(std::memory_order_relaxed);
     if (previouslyDropped)
         outputRecord["quota_dropped_records_before_this"] = previouslyDropped;
-    const std::string line = outputRecord.dump() + "\n";
-    auto* fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-    if (mSegmentGeneration != quota.state->segmentGeneration) {
-        mSegmentGeneration = quota.state->segmentGeneration;
-        fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        std::error_code sizeError;
-        if (fileEntry) {
-            fileEntry->bytes = std::filesystem::exists(mEventsPath, sizeError) &&
-                !sizeError ? std::filesystem::file_size(mEventsPath, sizeError) : 0;
-        }
-    }
-    if (fileEntry && fileEntry->bytes > 0 &&
-        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes) {
-        if (rotateActiveSegment(mEventsFile, mEventsPath, *quota.state, fileEntry)) {
-            mSegmentGeneration = quota.state->segmentGeneration;
-            fileEntry = quotaFileEntry(*quota.state, mEventsPath);
-        }
-    }
-    if (line.size() > mConfig.storageLimits.perSegmentBytes || !fileEntry ||
-        fileEntry->bytes > mConfig.storageLimits.perSegmentBytes ||
-        line.size() > mConfig.storageLimits.perSegmentBytes - fileEntry->bytes ||
-        quota.state->totalBytes > mConfig.storageLimits.totalLogTreeBytes ||
-        line.size() > mConfig.storageLimits.totalLogTreeBytes - quota.state->totalBytes) {
+    const std::string serialized = outputRecord.dump();
+    if (serialized.size() + 32 > mConfig.storageLimits.perSegmentBytes ||
+        serialized.size() + 32 > mConfig.storageLimits.totalLogTreeBytes) {
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
         return false;
     }
-
-    const unsigned long long oldFileBytes = fileEntry->bytes;
+    std::unique_lock<std::mutex> lock(gEventsWriteMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    const uint64_t sequence = mSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    const std::string line = serialized.substr(0, serialized.size() - 1) +
+        ",\"seq\":" + std::to_string(sequence) + "}\n";
+    TimedNamedMutexLock journalLock(eventsFileMutex(mEventsPath),
+                                   mMutexWaitMicroseconds, mMutexHoldMicroseconds);
+    if (!journalLock.lock(0)) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    uint64_t oldFileBytes = 0;
+    if (!reserveEventLine(mEventsFile, mEventsPath, mLogDir, mSegmentGeneration,
+                          line.size(), mConfig.storageLimits.perSegmentBytes,
+                          mConfig.storageLimits.totalLogTreeBytes, oldFileBytes,
+                          false, 0, mMutexWaitMicroseconds, mMutexHoldMicroseconds)) {
+        mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
     const size_t written = std::fwrite(line.data(), 1, line.size(), mEventsFile);
     if (written != line.size()) {
         std::fflush(mEventsFile);
         _chsize_s(_fileno(mEventsFile), oldFileBytes);
+        rollbackEventReservation(mEventsPath, line.size(), mMutexWaitMicroseconds,
+                                 mMutexHoldMicroseconds);
         mQuotaDroppedRecords.fetch_add(1, std::memory_order_relaxed);
-        ReleaseMutex(named);
         return false;
     }
-    fileEntry->bytes += line.size();
-    quota.state->totalBytes += line.size();
     if (previouslyDropped)
         mQuotaDroppedRecords.fetch_sub(previouslyDropped, std::memory_order_relaxed);
     mEventsWritten.fetch_add(1, std::memory_order_relaxed);
@@ -1716,7 +1793,6 @@ bool StructuredLogger::tryWriteJsonLine(const nlohmann::json& record, bool flush
         std::fflush(mEventsFile);
         mFlushCount.fetch_add(1, std::memory_order_relaxed);
     }
-    ReleaseMutex(named);
     return true;
 }
 

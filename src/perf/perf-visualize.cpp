@@ -35,14 +35,15 @@ void Perf::exportReport(const char* path)
     double avgFrame = gFramePacer.avgFrameTimeMs();
     double p99Frame = gFramePacer.p99FrameTimeMs();
 
-    if (s.benchmarkFrameCount > 0)
+    if (!s.benchmarkFrameTimes.empty())
     {
-        std::vector<double> times(s.benchmarkFrameTimes, s.benchmarkFrameTimes + s.benchmarkFrameCount);
+        std::vector<double> times = s.benchmarkFrameTimes;
         std::sort(times.begin(), times.end());
         int idx1 = (int)(times.size() * 0.01);
         int idx01 = (int)(times.size() * 0.001);
         if (idx1 < (int)times.size()) onePctLow = 1000.0 / times[idx1];
         if (idx01 < (int)times.size()) zeroOnePctLow = 1000.0 / times[idx01];
+        worstFrame = times.back();
     }
 
     fprintf(f, "========================================\n");

@@ -1,3 +1,7 @@
+2026 11 07 1957 jorj
+
+"Subtracting RTT from an arrival timestamp is not enough to establish when an event actually occurred. RTT includes both directions, which need not have equal delay. A stronger system uses bounded, validated event times, historical state and server-side authority." from https://chatgpt.com/share/6aefc908-0dd8-83ea-82ab-a3d9c69d0d17
+
 2026 10 20 1932
 
 countdown

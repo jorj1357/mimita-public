@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "infinite_streaming_240_continuous_v1",
+  "description": "Single-client Infinite World streaming acceptance: idle baseline and 60 s continuous movement across streamed chunks, requiring >=99.99% of frames at 240 FPS and min FPS >=235.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "52",
+    "map": "infinite_cramped",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "target_240", "command": "perf_target", "args": ["240"], "delay_ms_after": 200},
+    {"id": "frame_cap", "command": "maxframes", "args": ["999"], "delay_ms_after": 200},
+    {"id": "perf_overlay_off", "command": "perf", "args": ["0"], "delay_ms_after": 100},
+    {"id": "perf_spikes_off", "command": "perf_spikes", "args": ["0"], "delay_ms_after": 100},
+    {"id": "perf_file_off", "command": "perf_file_logging", "args": ["0"], "delay_ms_after": 100},
+    {"id": "equip_nothing", "command": "equipweapon", "args": ["nothing"], "delay_ms_after": 200},
+    {"id": "spawn_origin", "command": "teleport", "args": ["0,0,2"], "delay_ms_after": 500},
+    {"id": "stream_warmup", "wait_seconds": 8}
+  ],
+  "steps": [
+    {"id": "baseline_benchmark", "command": "perf_benchmark", "args": ["5", "baseline"], "delay_ms_after": 100},
+    {"id": "wait_baseline", "wait_for_event": "performance.benchmark.summary", "where": {"label": "baseline"}, "timeout_seconds": 20},
+
+    {"id": "aim_east", "command": "agent.aim", "args": ["3000", "0", "2"], "delay_ms_after": 300},
+    {"id": "continuous_benchmark", "command": "perf_benchmark", "args": ["60", "continuous"], "delay_ms_after": 100},
+    {"id": "move_forward", "command": "agent.move", "args": ["1", "0", "3600"], "delay_ms_after": 1000},
+    {"id": "wait_continuous", "wait_for_event": "performance.benchmark.summary", "where": {"label": "continuous"}, "timeout_seconds": 90}
+  ],
+  "assertions": [
+    {"type": "event_field_equals", "event": "performance.benchmark.summary", "where": {"label": "baseline"}, "field": "target_fps", "equals": 240},
+    {"type": "event_field_equals", "event": "performance.benchmark.summary", "where": {"label": "baseline"}, "field": "frame_cap", "equals": 999},
+    {"type": "event_field_at_most", "event": "performance.benchmark.summary", "where": {"label": "baseline"}, "field": "frames_over_240_budget", "value": 0},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "baseline"}, "field": "percent_at_or_above_240", "value": 99.99},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "baseline"}, "field": "min_fps", "value": 235},
+
+    {"type": "event_field_equals", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "target_fps", "equals": 240},
+    {"type": "event_field_equals", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "frame_cap", "equals": 999},
+    {"type": "event_field_at_most", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "frames_over_240_budget", "value": 1},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "percent_at_or_above_240", "value": 99.99},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "min_fps", "value": 235},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "chunks_added", "value": 100},
+    {"type": "event_field_at_least", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "chunks_removed", "value": 50},
+    {"type": "event_field_equals", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "loaded_collision_match_all", "equals": true},
+    {"type": "event_field_at_most", "event": "performance.benchmark.summary", "where": {"label": "continuous"}, "field": "collision_rebuild_max_ms", "value": 4.167}
+  ],
+  "timeout_seconds": 180
+}

@@ -188,6 +188,13 @@ struct CollisionMeshCache
     glm::vec3 boundsMin{0.0f};
     glm::vec3 boundsMax{0.0f};
 
+    // Counts of the streamed-chunk tail appended after the base/authored map.
+    // Base rebuilds clear the mesh, which resets these to zero.
+    size_t streamedTailTriangles = 0;
+    size_t streamedTailSolidIds = 0;
+    uint32_t streamedChunkCount = 0;
+    uint64_t streamedRevision = 0;
+
     bool empty() const { return triangles.empty(); }
     bool isHidden(size_t index) const
     {
@@ -208,5 +215,9 @@ struct CollisionMeshCache
         smoothVertices.clear();
         boundsMin = glm::vec3(0.0f);
         boundsMax = glm::vec3(0.0f);
+        streamedTailTriangles = 0;
+        streamedTailSolidIds = 0;
+        streamedChunkCount = 0;
+        streamedRevision = 0;
     }
 };

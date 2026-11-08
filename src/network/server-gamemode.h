@@ -131,6 +131,15 @@ struct ServerGamemodeState
     std::unordered_set<std::string> usedMaps;
     // Server's current loaded map (name only, for HUD/logging).
     std::string mapId;
+    // Pristine GLB-only headless world. Live authored edits rebuild from this
+    // snapshot so repeated saves cannot append duplicate authored geometry.
+    HeadlessWorld authoredBaseWorld;
+    std::string authoredBaseMapId;
+    bool authoredBaseWorldReady = false;
+    uint64_t appliedGeometrySignature = 0;
+    uint32_t geometryRevision = 0;
+    bool geometryRebuildPending = false;
+    uint64_t pendingGeometrySignature = 0;
     uint32_t duelId = 0;
     uint32_t mapVersion = 0;
     uint32_t spawnAnchorVersion = 0;
@@ -503,6 +512,24 @@ void serverStartMode(const ServerGamemodeState& rules);
 
 // Compatibility entry point for existing duel callers.
 void serverGamemodeStart(const ServerGamemodeState& rules);
+
+// Capture the pristine GLB-only world before authored geometry is applied.
+// Called from both dedicated and listen-server startup, and on every map swap.
+void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
+                                    const std::string& mapId);
+
+// Publish the current config/geometry identity after an authoritative load or
+// rebuild. Lives on the server tick so remote clients can apply the same view.
+void serverMarkAuthoredGeometryApplied();
+
+// Reliable chunked server→client map config snapshot. The host client keeps
+// local file authority and is deliberately excluded from broadcasts.
+void serverBroadcastMapConfigSnapshot(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut);
+void serverSendMapConfigSnapshotToPlayer(SOCKET sock, ServerPlayer& player,
+                                         uint64_t& totalPacketsOut);
 
 // Called every server tick while the server runs a managed gamemode.
 // `npcs`/`npcSystem`/`npcIdsAlive` let the engine drop the practice NPC(s)

@@ -502,6 +502,22 @@
       "map": "hot_render_proof",
       "require_client_connection": true,
       "require_mode_start": false
+    },
+    "54": {
+      "name": "Infinite World - Streaming Perf Mixed",
+      "server_args": ["--mode", "connected_world", "--gamemode", "connected_world", "--no-npcs"],
+      "client_args": [],
+      "map": "infinite_mixed",
+      "require_client_connection": true,
+      "require_mode_start": true
+    },
+    "55": {
+      "name": "Infinite World - Streaming Perf Cramped",
+      "server_args": ["--mode", "connected_world", "--gamemode", "connected_world", "--no-npcs"],
+      "client_args": [],
+      "map": "infinite_cramped",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

@@ -213,7 +213,12 @@ enum PacketType : uint8_t
     PACKET_VEHICLE_SPAWN_EVENT = 77,
     PACKET_VEHICLE_DESPAWN_EVENT = 78,
     PACKET_VEHICLE_STATE = 79,
-    PACKET_VEHICLE_SEAT_EVENT = 80
+    PACKET_VEHICLE_SEAT_EVENT = 80,
+    // ── Authoritative live map-config snapshot ────────────────────────
+    // The host edits the map file; the server applies it and sends this
+    // chunked JSON snapshot so remote clients rebuild the same collision and
+    // render geometry without writing their own map file.
+    PACKET_MAP_CONFIG_SNAPSHOT = 81
 };
 
 enum DamageConfirmedSource : uint8_t
@@ -1385,6 +1390,31 @@ struct MapChangePacket
     char generatorVersion[16] = {};
     uint64_t descriptorHash = 0;
 };
+
+// One reliable fragment of the authoritative map config JSON. The payload is
+// sized so the complete packet remains below MAX_GAME_DATAGRAM_BYTES.
+constexpr uint32_t MAP_CONFIG_SNAPSHOT_CHUNK_BYTES = 1024;
+constexpr uint32_t MAP_CONFIG_SNAPSHOT_MAX_BYTES = 128 * 1024;
+
+struct MapConfigSnapshotPacket
+{
+    PacketHeader header;
+    uint32_t eventId = 0;
+    uint32_t eventSessionId = 0;
+    char mapId[MAX_MAP_ID_BYTES];
+    uint64_t configRevision = 0;
+    uint32_t geometryRevision = 0;
+    uint64_t geometrySignature = 0;
+    uint64_t contentHash = 0;
+    uint32_t totalBytes = 0;
+    uint32_t offset = 0;
+    uint16_t chunkBytes = 0;
+    uint16_t reserved = 0;
+    uint8_t data[MAP_CONFIG_SNAPSHOT_CHUNK_BYTES] = {};
+};
+
+static_assert(sizeof(MapConfigSnapshotPacket) <= MAX_GAME_DATAGRAM_BYTES,
+              "MapConfigSnapshotPacket exceeds the game datagram budget");
 
 struct JoinRequestPacket
 {

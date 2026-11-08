@@ -7,6 +7,7 @@
 */
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,11 @@ void applyGLBObjectOverrides(World& world,
                              const std::vector<MapGLBObjectOverride>& overrides);
 void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                              const std::vector<MapGLBObjectOverride>& overrides);
+
+// Content hash of every authored field that changes collision, spawn, GLB
+// placement, or generated chunk geometry. Presentation-only and entity-only
+// changes are deliberately excluded so a live reload does not rebuild them.
+uint64_t authoredGeometrySignature(const MapObjectiveConfig& config);
 
 // Applies the authored block list for `mapId` on top of an already loaded GLB
 // world. Repeated calls rebuild only the authored tail.

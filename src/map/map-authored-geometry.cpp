@@ -225,7 +225,141 @@ bool ensureMapLoaded(const std::string& mapId)
     return true;
 }
 
+void hashBytes(uint64_t& hash, const void* data, size_t size)
+{
+    const unsigned char* bytes = static_cast<const unsigned char*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= (uint64_t)bytes[i];
+        hash *= 1099511628211ull;
+    }
+}
+
+template <typename T>
+void hashPod(uint64_t& hash, const T& value)
+{
+    hashBytes(hash, &value, sizeof(T));
+}
+
+void hashString(uint64_t& hash, const std::string& value)
+{
+    const uint64_t size = (uint64_t)value.size();
+    hashPod(hash, size);
+    hashBytes(hash, value.data(), value.size());
+}
+
+void hashVec3(uint64_t& hash, const glm::vec3& value)
+{
+    hashPod(hash, value.x);
+    hashPod(hash, value.y);
+    hashPod(hash, value.z);
+}
+
 } // namespace
+
+uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
+{
+    uint64_t hash = 1469598103934665603ull;
+    hashPod(hash, config.generateWholeWorld);
+
+    for (const AuthoredBlock& block : config.blocks) {
+        hashString(hash, block.id);
+        hashString(hash, block.shape);
+        hashVec3(hash, block.position);
+        hashVec3(hash, block.size);
+        hashVec3(hash, block.rotationEuler);
+        hashString(hash, block.material);
+        for (const std::string& face : block.faceMaterials)
+            hashString(hash, face);
+        hashPod(hash, block.enabled);
+    }
+
+    for (const AuthoredChunk& chunk : config.chunks) {
+        hashString(hash, chunk.id);
+        hashString(hash, chunk.geometryPath);
+        hashString(hash, chunk.blobSha256);
+        hashVec3(hash, chunk.boundsMin);
+        hashVec3(hash, chunk.boundsMax);
+        hashPod(hash, chunk.enabled);
+        for (const ChunkPart& part : chunk.parts) {
+            hashString(hash, part.id);
+            hashString(hash, part.kind);
+            hashVec3(hash, part.position);
+            hashVec3(hash, part.size);
+            hashVec3(hash, part.rotationEuler);
+            hashString(hash, part.material);
+            for (const std::string& face : part.faceMaterials)
+                hashString(hash, face);
+            hashPod(hash, part.uvScale.x);
+            hashPod(hash, part.uvScale.y);
+            for (const glm::vec2& faceScale : part.faceUvScale) {
+                hashPod(hash, faceScale.x);
+                hashPod(hash, faceScale.y);
+            }
+            hashPod(hash, part.collision);
+            hashPod(hash, part.visible);
+        }
+        for (const AuthoredChunkConnector& connector : chunk.connectors) {
+            hashString(hash, connector.id);
+            hashString(hash, connector.side);
+            hashString(hash, connector.orientation);
+            hashString(hash, connector.role);
+            hashVec3(hash, connector.position);
+            hashPod(hash, connector.radius);
+            for (const std::string& link : connector.links)
+                hashString(hash, link);
+        }
+        for (const ChunkSpawnPoint& spawn : chunk.spawnPoints) {
+            hashString(hash, spawn.id);
+            hashVec3(hash, spawn.position);
+            hashPod(hash, spawn.radius);
+            hashString(hash, spawn.allowedActors);
+            hashPod(hash, spawn.enabled);
+        }
+    }
+
+    for (const GenerationZone& zone : config.generationZones) {
+        hashString(hash, zone.id);
+        hashVec3(hash, zone.boundsMin);
+        hashVec3(hash, zone.boundsMax);
+        hashPod(hash, zone.seed);
+        hashString(hash, zone.generatorVersion);
+        hashString(hash, zone.ruleSet);
+        for (const std::string& dependency : zone.chunkDependencies)
+            hashString(hash, dependency);
+        hashString(hash, zone.modeId);
+        hashString(hash, zone.plane);
+        hashPod(hash, zone.repeatAxes);
+        hashVec3(hash, zone.origin);
+        hashVec3(hash, zone.cellSize);
+        hashVec3(hash, zone.chunkSizeVec);
+        hashPod(hash, zone.streamRadius);
+        hashString(hash, zone.spacingMode);
+        hashPod(hash, zone.connectorGap);
+        hashPod(hash, zone.maxBranchDepth);
+        hashPod(hash, zone.allowCycles);
+        hashPod(hash, zone.allowCrossings);
+        hashPod(hash, zone.chunkSize);
+        hashPod(hash, zone.streamRadiusChunks);
+        hashPod(hash, zone.enabled);
+    }
+
+    for (const MapGLBObjectOverride& object : config.glbObjects) {
+        hashString(hash, object.id);
+        hashVec3(hash, object.position);
+        hashString(hash, object.material);
+    }
+
+    for (const MapEntity& entity : config.entities) {
+        if (entity.type != "spawnpoint") continue;
+        hashString(hash, entity.id);
+        hashVec3(hash, entity.position);
+        hashPod(hash, entity.yaw);
+        hashString(hash, entity.tag);
+        hashPod(hash, entity.enabled);
+    }
+
+    return hash ? hash : 1ull;
+}
 
 std::string mapIdFromAssetPath(const std::string& path)
 {
@@ -452,8 +586,15 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
         }
         if (candidates.empty())
             continue;
-        const int radiusX = std::clamp(zone.streamRadius.x, 0, 64);
-        const int radiusY = std::clamp(zone.streamRadius.y, 0, 64);
+        // Keep the headless server's initial authored footprint bounded. Live
+        // server collision streaming extends it around active actors after the
+        // server is ready; building the full configured radius here delays
+        // logger readiness and first join.
+        constexpr int kServerInitialFootprintRadius = 4;
+        const int radiusX = std::clamp(zone.streamRadius.x, 0,
+                                       kServerInitialFootprintRadius);
+        const int radiusY = std::clamp(zone.streamRadius.y, 0,
+                                       kServerInitialFootprintRadius);
         size_t cells = 0;
         size_t partsAdded = 0;
         size_t spawnsAdded = 0;
@@ -480,7 +621,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                 const glm::mat4 transform = chunkTransform *
                     glm::translate(glm::mat4(1.0f), part.position) * rotation;
                 MimitaNet::appendHeadlessWorldInstance(world, partWorld,
-                                                       transform);
+                                                       transform, false);
                 ++partsAdded;
             }
             for (const ChunkSpawnPoint& spawn : chunk.spawnPoints) {
@@ -639,7 +780,8 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
                 seen.insert(placementKey(placed.transform));
                 queue.push_back(placed);
             }
-            while (!queue.empty() && cells < 256) {
+            constexpr size_t kServerInitialChunkCap = 64;
+            while (!queue.empty() && cells < kServerInitialChunkCap) {
                 const Placed placed = queue.front();
                 queue.pop_front();
                 const AuthoredChunk* chunk = candidates[placed.chunkIndex];
@@ -734,7 +876,8 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
             continue;
         MimitaNet::HeadlessWorld cube;
         buildBoxCollisionTriangles(cube.triangles, glm::vec3(0.0f), block.size * 0.5f);
-        MimitaNet::appendHeadlessWorldInstance(world, cube, blockTransform(block));
+        MimitaNet::appendHeadlessWorldInstance(world, cube, blockTransform(block),
+                                               false);
         ++added;
     }
 

@@ -4351,12 +4351,21 @@ def _field_path(record: dict, dotted: str):
     return value
 
 
+def _record_matches_where(record: dict, where: dict) -> bool:
+    for field, expected in (where or {}).items():
+        if _field_path(record, field) != expected:
+            return False
+    return True
+
+
 def _evaluate_assertions(assertions: list[dict], records: list[dict],
                          scenario_id: str) -> tuple[bool, list[dict]]:
     results = []
     passed_all = True
     for index, assertion in enumerate(assertions or []):
         a_type = str(assertion.get("type", ""))
+        where = assertion.get("where") if isinstance(
+            assertion.get("where"), dict) else {}
         ok = False
         expected = assertion
         actual = None
@@ -4375,7 +4384,8 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
             field = str(assertion.get("field", ""))
             want = assertion.get("equals")
             for record in records:
-                if record.get("event") == name:
+                if record.get("event") == name and _record_matches_where(
+                        record, where):
                     value = _field_path(record, field)
                     if value == want:
                         ok = True
@@ -4441,7 +4451,9 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
             want = assertion.get("equals")
             minimum = int(assertion.get("minimum", 1))
             count = sum(1 for r in records
-                        if r.get("event") == name and _field_path(r, field) == want)
+                        if r.get("event") == name and
+                        _record_matches_where(r, where) and
+                        _field_path(r, field) == want)
             ok = count >= minimum
             actual = {"count": count, "minimum": minimum, "field": field, "equals": want}
         elif a_type in ("event_field_at_least", "event_field_at_most"):
@@ -4450,7 +4462,8 @@ def _evaluate_assertions(assertions: list[dict], records: list[dict],
             want = float(assertion.get("value", 0.0))
             seen = []
             for record in records:
-                if record.get("event") != name:
+                if record.get("event") != name or not _record_matches_where(
+                        record, where):
                     continue
                 value = _field_path(record, field)
                 if isinstance(value, (int, float)):

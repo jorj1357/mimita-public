@@ -24,6 +24,7 @@
 #include "combat/weapon-hit.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
 #include "perf/perf.h"
 #include "physics/config.h"
 #include "physics/physics-mini.h"
@@ -487,7 +488,8 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
                            {"action", "flee"}});
     }
     npc.utilityContext = uctx;
-    selectUtilityGoal(npc.utilityContext, npc.utility, dt);
+    selectUtilityGoal(npc.utilityContext, npc.utility, dt, 0.6f, 0.08f,
+                      npc.id, static_cast<std::uint32_t>(npc.sensors.time * 60.0f));
     const UtilityActionKind utilityAction = actionForGoal(
         npc.utility.currentGoal, npc.utilityContext);
     const int utilityGoal = static_cast<int>(npc.utility.currentGoal);
@@ -1028,7 +1030,9 @@ void NpcSystem::update(const World& world, Player& player, float dt, const Input
     Perf::flushNpcProfiles();
 }
 
-void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt)
+void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& player,
+                                    float dt, bool staggerThinking,
+                                    bool thinkingDue)
 {
     for (Npc& nc : npcs)
     {
@@ -1043,6 +1047,8 @@ void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& 
         context.target = &player;
         context.hasTarget = !player.dead && player.currentHp > 0;
         context.targetActorId = nc.serverTargetId;
+        context.staggerThinking = staggerThinking;
+        context.thinkingDue = thinkingDue;
         updateOneNpc(nc, world, context, dt);
         break;
     }
@@ -1476,12 +1482,23 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     double npcNavigatorMs = 0.0;
     double npcPathMs = 0.0;
     double npcPhysicsMs = 0.0;
+    double npcPoseMs = 0.0;
     double npcCombatMs = 0.0;
 
-    senseWorld(npc, world, player, safeDt, &mHazardEffects, &mProjectileHazards);
-    npcSenseMs = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - npcSlowMark).count();
-    npcSlowMark = std::chrono::steady_clock::now();
+    npc.pendingThinkingDt += safeDt;
+    const float accumulatedThinkingDt =
+        std::max(npc.pendingThinkingDt, safeDt);
+    const bool senseDue = !context.staggerThinking || context.thinkingDue ||
+                          !npc.hasSenseSnapshot;
+    if (senseDue) {
+        senseWorld(npc, world, player, accumulatedThinkingDt,
+                   &mHazardEffects, &mProjectileHazards);
+        npc.pendingThinkingDt = 0.0f;
+        npc.hasSenseSnapshot = true;
+        npcSenseMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - npcSlowMark).count();
+        npcSlowMark = std::chrono::steady_clock::now();
+    }
 
     if (npc.behavior.active && npc.behavior.objectiveRush &&
         npc.utilityContext.objectiveKnown && !npc.sensors.hasTarget) {
@@ -2209,9 +2226,17 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                                                         : makeNavGoal(npc);
         emitGoalChangedEvent(npc, navGoal);
         const auto npcNavStart = std::chrono::steady_clock::now();
-        const NpcNavResult nav =
-            npc.navigator.update(npc, navGoal, world, navMovement, safeDt,
-                                 navSettings, policy, &commitmentSettings);
+        const bool replanThisTick = !context.staggerThinking ||
+            context.thinkingDue ||
+            !npc.hasStaggeredNavResult;
+        if (replanThisTick) {
+            npc.staggeredNavResult = npc.navigator.update(
+                npc, navGoal, world, navMovement,
+                accumulatedThinkingDt, navSettings, policy,
+                &commitmentSettings);
+            npc.hasStaggeredNavResult = true;
+        }
+        const NpcNavResult& nav = npc.staggeredNavResult;
         npcNavigatorMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - npcNavStart).count();
         emitNavPlanEvents(npc, nav, navSettings);
@@ -2811,9 +2836,12 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             static_cast<uint32_t>(npc.body.movementSimulationTick);
         const bool hadClearPose = npc.finalPose.hasClearPose;
         ActorFinalPoseResult poseResult;
+        const auto poseStart = std::chrono::steady_clock::now();
         const bool poseClear =
             containActorFinalPose(npc.body, world, npc.finalPose,
                                   poseResult, 0.02f, "post_animation");
+        npcPoseMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - poseStart).count();
         npc.lastRootInsideClosedSolid = poseResult.rootInsideClosedSolid;
         npc.lastContainmentKnown = true;
         npc.lastFinalPenetration = poseResult.finalPenetration;
@@ -3202,6 +3230,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                                {"navigator_ms", npcNavigatorMs},
                                {"path_ms", npcPathMs},
                                {"physics_ms", npcPhysicsMs},
+                               {"pose_ms", npcPoseMs},
                                {"combat_ms", npcCombatMs},
                                {"state", npcStateName(npc.stateMachine.currentState)},
                                {"equipped", npc.body.equippedWeaponId},
@@ -3216,6 +3245,56 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     // complete record per NPC per second (never per tick). This is the record
     // that explains wanted vs final direction and actual distance moved.
     emitMovementDecision(npc, replanReasonThisTick, jumpReason, safeDt);
+
+    // Aggregate all actor updates, including the fast ones. The slow-update
+    // event alone samples only outliers and cannot explain total tick cost.
+    struct PhaseWindow {
+        std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+        uint64_t updates = 0;
+        uint64_t navCandidateGathers = 0;
+        uint64_t navCandidates = 0;
+        double sense = 0, decision = 0, navigator = 0, path = 0;
+        double physics = 0, pose = 0, total = 0, worst = 0;
+        uint32_t worstActor = 0;
+    };
+    static thread_local PhaseWindow phaseWindow;
+    ++phaseWindow.updates;
+    ++phaseWindow.navCandidateGathers;
+    phaseWindow.navCandidates += nearCandidates.size();
+    phaseWindow.sense += npcSenseMs;
+    phaseWindow.decision += npcDecisionMs;
+    phaseWindow.navigator += npcNavigatorMs;
+    phaseWindow.path += npcPathMs;
+    phaseWindow.physics += npcPhysicsMs;
+    phaseWindow.pose += npcPoseMs;
+    phaseWindow.total += npcSlowTotalMs;
+    if (npcSlowTotalMs > phaseWindow.worst) {
+        phaseWindow.worst = npcSlowTotalMs;
+        phaseWindow.worstActor = npc.id;
+    }
+    const auto phaseNow = std::chrono::steady_clock::now();
+    if (phaseNow - phaseWindow.started >= std::chrono::seconds(1)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.phase-window", "server", "one-second NPC phase totals",
+            static_cast<uint32_t>(npc.body.movementSimulationTick),
+            nlohmann::json{{"updates", phaseWindow.updates},
+                           {"sense_ms", phaseWindow.sense},
+                           {"decision_ms", phaseWindow.decision},
+                           {"navigator_ms", phaseWindow.navigator},
+                           {"path_ms", phaseWindow.path},
+                           {"physics_ms", phaseWindow.physics},
+                           {"pose_containment_ms", phaseWindow.pose},
+                           {"total_ms", phaseWindow.total},
+                           {"worst_actor", phaseWindow.worstActor},
+                           {"worst_actor_ms", phaseWindow.worst},
+                           {"nav_candidate_gathers", phaseWindow.navCandidateGathers},
+                           {"nav_candidates", phaseWindow.navCandidates},
+                           {"module_generation", ModuleHost::instance().activeGeneration(
+                               "npc-behavior")}},
+            __FILE__, __LINE__, __FUNCTION__);
+        phaseWindow = PhaseWindow{};
+    }
 }
 
 void NpcSystem::render(const Camera& camera, int localTeam) const

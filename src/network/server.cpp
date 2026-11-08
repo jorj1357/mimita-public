@@ -13,6 +13,7 @@
 #include "vehicles/vehicle-system.h"
 #include "network/net_mode.h"
 #include "network/server-gamemode.h"
+#include "network/server-infinite-collision.h"
 #include "procedural/procedural-world.h"
 #include "gamemode/arena-ball.h"
 #include "gamemode/gamemode.h"
@@ -73,6 +74,11 @@ MimitaNet::ListenServerState* getListenServerState();
 namespace MimitaNet {
 
 namespace {
+
+// Reused by the authoritative tick loops; the NPC system keeps its own copy
+// with retained capacity, so rebuilding the projectile hazard view allocates
+// only when the live projectile peak grows.
+thread_local std::vector<AreaEffect> projectileHazardScratch;
 
 struct ServerLoopPerf
 {
@@ -413,7 +419,7 @@ int runServer(const LaunchOptions& options)
     VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
-    ModuleHost::instance().startup();
+    ModuleHost::instance().startupServerModules();
     auto logServerExit = [&](int exitCode, const char* reason,
                              const std::string& roomCode, uint32_t serverTick) {
         ::StructuredLogger::instance().writeEvent(
@@ -1043,6 +1049,17 @@ int runServer(const LaunchOptions& options)
             // NPC once per NPC and make them move N× faster.
             const auto npcStart = std::chrono::steady_clock::now();
             ScenarioServerPlayback::instance().tick(tick, players, npcSystem);
+            {
+                std::vector<glm::vec3> anchors;
+                anchors.reserve(players.size());
+                for (const auto& kv : players)
+                    if (!kv.second.connectionStale && !kv.second.dead)
+                        anchors.push_back(kv.second.pos);
+                for (const Npc& npc : npcSystem.all())
+                    if (!npc.body.dead)
+                        anchors.push_back(npc.body.pos);
+                serverInfiniteCollisionTick(anchors, npcWorld);
+            }
             simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
                                nextProjectileId, tick, totalPacketsOut);
@@ -1691,6 +1708,17 @@ static void simulateOneServerTick(ListenServerState& state)
         checkVoidDeath(state.players, state.npcs);
         ScenarioServerPlayback::instance().tick(
             state.tick, state.players, *state.npcSystem);
+        {
+            std::vector<glm::vec3> anchors;
+            anchors.reserve(state.players.size());
+            for (const auto& kv : state.players)
+                if (!kv.second.connectionStale && !kv.second.dead)
+                    anchors.push_back(kv.second.pos);
+            for (const Npc& npc : state.npcSystem->all())
+                if (!npc.body.dead)
+                    anchors.push_back(npc.body.pos);
+            serverInfiniteCollisionTick(anchors, *state.npcWorld);
+        }
         simulateSharedNpcs(state.sock, state.players, state.npcs,
                            *state.npcSystem, state.world, *state.npcWorld,
                            *state.mirrorPlayer, state.npcIdsAlive,
@@ -1708,7 +1736,7 @@ static void simulateOneServerTick(ListenServerState& state)
         if (state.npcSystem) {
             // Live frag projectiles are hazards before they detonate. Rebuild
             // one small snapshot per tick; do not rescan projectiles per NPC.
-            std::vector<AreaEffect> projectileHazards;
+            projectileHazardScratch.clear();
             for (const auto& kv : state.projectiles) {
                 const ServerProjectile& projectile = kv.second;
                 if (projectile.exploded) continue;
@@ -1722,9 +1750,9 @@ static void simulateOneServerTick(ListenServerState& state)
                 hazard.height = 0.0f;
                 hazard.durationTicks = 30;
                 hazard.alive = true;
-                projectileHazards.push_back(hazard);
+                projectileHazardScratch.push_back(hazard);
             }
-            state.npcSystem->setProjectileHazards(projectileHazards);
+            state.npcSystem->setProjectileHazards(projectileHazardScratch);
         }
 
         tickServerMeleeActions(state.sock, state.players, state.npcs,

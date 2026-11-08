@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 8
+Entries: 9
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -70,3 +70,13 @@ Entries: 8
 - Summary: Earlier two-cell-radius run exceeded the 4.17 ms frame budget;
   measured stall windows included menu, swap, and audio work.
 - Detail: [streamed-world-frame-stalls-REG-2026-11-06.md](streamed-world-frame-stalls-REG-2026-11-06.md)
+
+## Entry 10 — FCS journal rotation stalls and NPC tick overload
+
+- Recorded: 2026-11-08T02:22:00Z
+- Status: PARTIAL FIX — synchronous journal copy removed; NPC tick overload and
+  reconnect remain unresolved
+- Summary: A 100 MB JSONL segment copy held the server journal writer for
+  870.635 ms. Separate FCS runs show 19 NPC updates taking about 50–100 ms per
+  server tick, with repeated client reconnect failures.
+- Detail: [fcs-journal-rotation-and-npc-tick-REG-2026-11-08.md](fcs-journal-rotation-and-npc-tick-REG-2026-11-08.md)

@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -130,6 +131,7 @@ struct Scratch
     std::vector<std::uint64_t> keys;
     std::vector<CellEntry> cells;
     std::vector<PairEntry> pairs;
+    std::unordered_set<std::uint64_t> pairKeys;
 };
 
 Scratch& scratch()
@@ -742,6 +744,11 @@ void resolveActorPairCollisions(
         });
 
     s.pairs.clear();
+    s.pairKeys.clear();
+    if (s.pairKeys.bucket_count() <
+        static_cast<std::size_t>(std::max(0, data.maxCandidatePairs)))
+        s.pairKeys.reserve(static_cast<std::size_t>(
+            std::max(0, data.maxCandidatePairs)));
     for (std::size_t begin = 0; begin < s.cells.size(); )
     {
         std::size_t end = begin + 1;
@@ -756,13 +763,20 @@ void resolveActorPairCollisions(
                 const std::uint32_t rankB = s.cells[j].rank;
                 if (rankA == rankB)
                     continue;
-                if (s.pairs.size() >= static_cast<std::size_t>(data.maxCandidatePairs))
+                const std::uint32_t pairA = std::min(rankA, rankB);
+                const std::uint32_t pairB = std::max(rankA, rankB);
+                const std::uint64_t pairKey =
+                    (static_cast<std::uint64_t>(pairA) << 32) | pairB;
+                if (s.pairKeys.find(pairKey) != s.pairKeys.end())
+                    continue;
+                if (s.pairs.size() >= static_cast<std::size_t>(
+                        std::max(0, data.maxCandidatePairs)))
                 {
                     stats.truncated = true;
                     break;
                 }
-                s.pairs.push_back({std::min(rankA, rankB),
-                                   std::max(rankA, rankB)});
+                s.pairKeys.insert(pairKey);
+                s.pairs.push_back({pairA, pairB});
             }
             if (stats.truncated)
                 break;

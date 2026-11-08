@@ -13,6 +13,7 @@
 #include "network/server.h"
 #include "network/actor-lifecycle.h"
 #include "network/server-gamemode.h"
+#include "network/server-infinite-collision.h"
 #include "gamemode/gamemode.h"
 #include "gamemode/match-roles.h"
 #include "void-death/void-death.h"
@@ -243,6 +244,7 @@ static void runRecastIsolatedSelfTest(const World& npcWorld,
 
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw)
 {
+    serverInfiniteCollisionReset();
     // The headless world is already decimated, unioned, and face-cleaned by the
     // map loader. Re-decimating that output collapses union vertices and can
     // create open seams/T-junctions that the client never sees. Reuse it as-is.
@@ -678,6 +680,11 @@ static void respawnServerNpc(Npc& npc, const World& world)
     npc.actorPresetId = profile.actorPresetId;
     serverMarkActorPresetApplied(npc.id, profile.actorPresetId);
     npc.navigator.reset();
+    npc.hasStaggeredNavResult = false;
+    npc.hasTargetScanSnapshot = false;
+    npc.hasCachedServerTarget = false;
+    npc.hasSenseSnapshot = false;
+    npc.pendingThinkingDt = 0.0f;
     npc.traversal.reset();
     npc.prevHadTarget = false;
     npc.reactionTimer = 0.0f;
@@ -1664,6 +1671,7 @@ void simulateSharedNpcs(SOCKET sock,
                         uint64_t& totalPacketsOut)
 {
     const auto simStart = std::chrono::steady_clock::now();
+    const auto loggerIoBefore = StructuredLogger::instance().ioStats(false);
     double recoveryMs = 0.0;
     double traceMs = 0.0;
     double traceContainmentMs = 0.0;
@@ -1856,6 +1864,28 @@ void simulateSharedNpcs(SOCKET sock,
         ServerPlayer* nearestPlayer = nullptr;
         Npc* nearestNpc = nullptr;
 
+        const bool staggerFcsThinking =
+            serverGamemodeState().matchMode == "funcounterstrike";
+        bool cachedTargetValid = false;
+        if (n.hasCachedServerTarget && n.serverTargetId != 0) {
+            if (n.cachedServerTargetIsNpc) {
+                auto cachedNpc = npcs.find(n.serverTargetId);
+                cachedTargetValid = cachedNpc != npcs.end() &&
+                    cachedNpc->second.health > 0 &&
+                    npcTargetingIsHostile(targeting, myTeam,
+                                          cachedNpc->second.matchTeam);
+            } else {
+                auto cachedPlayer = players.find(n.serverTargetId);
+                cachedTargetValid = cachedPlayer != players.end() &&
+                    !cachedPlayer->second.dead && !cachedPlayer->second.downed &&
+                    !cachedPlayer->second.connectionStale &&
+                    npcTargetingIsHostile(targeting, myTeam,
+                                          playerTeamOf(cachedPlayer->second));
+            }
+        }
+        const bool thinkingDue = !staggerFcsThinking ||
+            ((tick + n.id) % 3u == 0u) || !n.hasTargetScanSnapshot ||
+            (n.hasCachedServerTarget && !cachedTargetValid);
         auto chooseNearestPlayer = [&]() {
             float bestD2 = std::numeric_limits<float>::max();
             if (considerPlayers) for (auto& kv : players)
@@ -1876,7 +1906,9 @@ void simulateSharedNpcs(SOCKET sock,
             }
         };
 
-        if (playersOnly)
+        // Off-phase ticks reuse the resolved snapshot below. Target validity
+        // is checked above, so death/disconnect still causes immediate search.
+        if (thinkingDue && playersOnly)
         {
             // Player-priority mode: prefer the nearest live hostile human, but
             // still respect teams and fall back to hostile NPCs when no enemy
@@ -1894,7 +1926,7 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
-        else if (n.behavior.active)
+        else if (thinkingDue && n.behavior.active)
         {
             // Scored target selection. Weights come only from the behavior
             // profile; the legacy nearest-hostile path is used without one.
@@ -1965,7 +1997,7 @@ void simulateSharedNpcs(SOCKET sock,
                 }
             }
         }
-        else
+        else if (thinkingDue)
         {
             // Legacy nearest-hostile (unchanged when no behavior profile applies).
             float bestD2 = std::numeric_limits<float>::max();
@@ -1989,8 +2021,30 @@ void simulateSharedNpcs(SOCKET sock,
             }
         }
 
-        n.serverTargetId = nearestPlayer ? nearestPlayer->id
-                        : (nearestNpc ? nearestNpc->id : 0);
+        if (thinkingDue || !n.hasTargetScanSnapshot) {
+            n.serverTargetId = nearestPlayer ? nearestPlayer->id
+                            : (nearestNpc ? nearestNpc->id : 0);
+            n.hasTargetScanSnapshot = true;
+            n.hasCachedServerTarget = nearestPlayer || nearestNpc;
+            n.cachedServerTargetIsNpc = nearestNpc != nullptr;
+            if (nearestPlayer) {
+                n.cachedServerTargetPos = nearestPlayer->pos;
+                n.cachedServerTargetVel = nearestPlayer->vel;
+                n.cachedServerTargetYaw = nearestPlayer->yaw;
+                n.cachedServerTargetHp = nearestPlayer->health;
+                n.cachedServerTargetTeam = playerTeamOf(*nearestPlayer);
+                n.cachedServerTargetName = nearestPlayer->name;
+            } else if (nearestNpc) {
+                n.cachedServerTargetPos = nearestNpc->body.pos;
+                n.cachedServerTargetVel = nearestNpc->body.vel;
+                n.cachedServerTargetYaw = nearestNpc->body.yaw;
+                auto targetState = npcs.find(nearestNpc->id);
+                n.cachedServerTargetHp = targetState != npcs.end()
+                    ? targetState->second.health : nearestNpc->body.currentHp;
+                n.cachedServerTargetTeam = npcTeamOf(*nearestNpc);
+                n.cachedServerTargetName = nearestNpc->body.username;
+            }
+        }
         if (n.serverTargetId != prevTarget)
         {
             float targetDist = 0.0f;
@@ -2011,7 +2065,18 @@ void simulateSharedNpcs(SOCKET sock,
                 __FILE__, __LINE__, __FUNCTION__);
         }
 
-        if (nearestPlayer)
+        if (!thinkingDue && cachedTargetValid &&
+            !nearestPlayer && !nearestNpc)
+        {
+            mirrorPlayer.pos = n.cachedServerTargetPos;
+            mirrorPlayer.vel = n.cachedServerTargetVel;
+            mirrorPlayer.yaw = n.cachedServerTargetYaw;
+            mirrorPlayer.currentHp = n.cachedServerTargetHp;
+            mirrorPlayer.dead = false;
+            mirrorPlayer.username = n.cachedServerTargetName;
+            mirrorPlayer.matchTeam = n.cachedServerTargetTeam;
+        }
+        else if (nearestPlayer)
         {
             mirrorPlayer.pos = nearestPlayer->pos;
             mirrorPlayer.vel = nearestPlayer->vel;
@@ -2052,7 +2117,8 @@ void simulateSharedNpcs(SOCKET sock,
         const int hpBefore = mirrorPlayer.currentHp;
 
         const auto aiUpdateStart = std::chrono::steady_clock::now();
-        npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT);
+        npcSystem.updateOneWithTarget(n.id, world, mirrorPlayer, SERVER_DT,
+                                      staggerFcsThinking, thinkingDue);
         const double oneAiMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - aiUpdateStart).count();
         aiUpdateMs += oneAiMs;
@@ -2561,7 +2627,49 @@ void simulateSharedNpcs(SOCKET sock,
 
     const double totalMs = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - simStart).count();
+    struct NpcServerWindow {
+        std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+        uint64_t ticks = 0;
+        double ai = 0, recovery = 0, pairs = 0, respawn = 0, rebuild = 0, total = 0;
+        double worstActorMs = 0;
+        uint32_t worstActor = 0;
+    };
+    static NpcServerWindow phaseWindow;
+    ++phaseWindow.ticks;
+    phaseWindow.ai += npcAiMs;
+    phaseWindow.recovery += recoveryMs;
+    phaseWindow.pairs += pairMs;
+    phaseWindow.respawn += respawnMs;
+    phaseWindow.rebuild += rebuildMs;
+    phaseWindow.total += totalMs;
+    if (worstAiMs > phaseWindow.worstActorMs) {
+        phaseWindow.worstActorMs = worstAiMs;
+        phaseWindow.worstActor = worstAiActor;
+    }
+    if (std::chrono::steady_clock::now() - phaseWindow.started >=
+        std::chrono::seconds(1)) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.server-phase-window", "server", "one-second server NPC phase totals",
+            tick,
+            nlohmann::json{{"ticks", phaseWindow.ticks},
+                           {"npc_count", npcSystem.all().size()},
+                           {"ai_ms", phaseWindow.ai},
+                           {"recovery_ms", phaseWindow.recovery},
+                           {"pair_ms", phaseWindow.pairs},
+                           {"respawn_ms", phaseWindow.respawn},
+                           {"rebuild_ms", phaseWindow.rebuild},
+                           {"total_ms", phaseWindow.total},
+                           {"worst_actor", phaseWindow.worstActor},
+                           {"worst_actor_ms", phaseWindow.worstActorMs}},
+            __FILE__, __LINE__, __FUNCTION__);
+        phaseWindow = NpcServerWindow{};
+    }
     if (totalMs > 50.0) {
+        const auto loggerIoAfter = StructuredLogger::instance().ioStats(false);
+        const auto loggerCounterDelta = [](uint64_t after, uint64_t before) {
+            return after >= before ? after - before : after;
+        };
         size_t living = 0;
         for (const auto& kv : npcs)
             if (kv.second.health > 0) ++living;
@@ -2582,6 +2690,12 @@ void simulateSharedNpcs(SOCKET sock,
                            {"rebuild_ms", rebuildMs},
                            {"trace_ms", traceMs},
                            {"trace_containment_ms", traceContainmentMs},
+                           {"logger_mutex_wait_ms", static_cast<double>(
+                                loggerCounterDelta(loggerIoAfter.mutexWaitMicroseconds,
+                                                    loggerIoBefore.mutexWaitMicroseconds)) / 1000.0},
+                           {"logger_mutex_hold_ms", static_cast<double>(
+                                loggerCounterDelta(loggerIoAfter.mutexHoldMicroseconds,
+                                                    loggerIoBefore.mutexHoldMicroseconds)) / 1000.0},
                            {"recovery_actor", recoveryActor},
                            {"npc_count", npcs.size()},
                            {"living_npcs", living},

@@ -91,6 +91,17 @@ public:
     bool prevHadTarget = false;
     // Server-selected current target id (persisted for stickiness/scoring).
     uint32_t serverTargetId = 0;
+    bool hasTargetScanSnapshot = false;
+    bool hasCachedServerTarget = false;
+    bool cachedServerTargetIsNpc = false;
+    glm::vec3 cachedServerTargetPos{0.0f};
+    glm::vec3 cachedServerTargetVel{0.0f};
+    float cachedServerTargetYaw = 0.0f;
+    int cachedServerTargetHp = 0;
+    int cachedServerTargetTeam = -1;
+    std::string cachedServerTargetName;
+    float pendingThinkingDt = 0.0f;
+    bool hasSenseSnapshot = false;
     // Diagnostics: last emitted navigation goal, so npc.goal-changed fires on
     // real transitions only (never per tick).
     int lastNavGoalKind = -1;
@@ -208,6 +219,8 @@ public:
     // InputState the shared movement kernel consumed this fixed tick.
     bool hasLastAcceptedInput = false;
     InputState lastAcceptedInput;
+    NpcNavResult staggeredNavResult;
+    bool hasStaggeredNavResult = false;
     bool replayUseRecordedIntent = false;
     bool hasReplayInput = false;
     InputState replayInput;
@@ -333,7 +346,9 @@ public:
     // Server hook: simulate a single NPC against a specific player target so
     // each online NPC can target its own nearest live player (instead of a
     // single shared mirror). Advances that NPC's AI, movement, and firing.
-    void updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt);
+    void updateOneWithTarget(uint32_t npcId, const World& world, Player& player, float dt,
+                             bool staggerThinking = false,
+                             bool thinkingDue = true);
 
     // Server-owned grenade hazard snapshot consumed by perception/utility.
     // One copy per fixed tick; never rebuilt per NPC.

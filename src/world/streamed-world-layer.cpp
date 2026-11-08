@@ -2,11 +2,15 @@
 #include "world/streamed-world-layer.h"
 
 #include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -18,12 +22,15 @@
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
 #include "hot-reload/module-host.h"
+#include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
+#include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
 #include "physics/physical-entity.h"
 #include "render/world-box-mesh.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
+#include "world/world.h"
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
@@ -132,8 +139,7 @@ void appendBoxFaces(std::vector<Vertex>& out, const ChunkPart& part,
 
 void buildChunkCollision(const AuthoredChunk& chunk, const glm::mat4& transform,
                          std::vector<CollisionTriangle>& out,
-                         std::vector<uint32_t>& solidIds,
-                         StaticUnionStats* unionStats)
+                         std::vector<uint32_t>& solidIds)
 {
     out.clear();
     solidIds.clear();
@@ -216,18 +222,17 @@ void buildChunkCollision(const AuthoredChunk& chunk, const glm::mat4& transform,
         }
     }
 
-    if (!out.empty() && CollisionLodConfig::instance().staticSolidUnion()) {
-        unionStaticSolidGroups(
-            out, solidIds,
-            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
-            unionStats,
-            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
-        if (CollisionLodConfig::instance().staticFaceRemoval())
-            removeFullyCoveredStaticTriangles(out, solidIds);
-    }
 }
 
 } // namespace
+
+bool buildStreamedChunkCollision(
+    const AuthoredChunk& chunk, const glm::mat4& transform,
+    std::vector<CollisionTriangle>& out, std::vector<uint32_t>& solidIds)
+{
+    buildChunkCollision(chunk, transform, out, solidIds);
+    return !out.empty();
+}
 
 StreamedWorldLayer& StreamedWorldLayer::instance()
 {
@@ -243,18 +248,282 @@ StreamedWorldLayer::~StreamedWorldLayer()
 void StreamedWorldLayer::clear()
 {
     for (const ChunkRecord& record : mChunks) {
-        if (record.collisionEntity)
-            PhysicalEntitySystem::instance().remove(record.collisionEntity);
         if (record.vao) glDeleteVertexArrays(1, &record.vao);
         if (record.vbo) glDeleteBuffers(1, &record.vbo);
     }
     mChunks.clear();
+    mCollisionDirty = true;
+    mCollidedChunkCount = 0;
+    mCollisionTriangleCount = 0;
+    mCollisionRemovedFaces = 0;
+    mChunksInstalledTotal = 0;
+    mChunksRemovedTotal = 0;
+    mLastCollisionRebuildMs = 0.0;
+    mMaxCollisionRebuildMs = 0.0;
+    mLastLoadedChunkCount = 0;
+    mBaseBroadphaseTriangles = 0;
+    mLastCollisionRevisionMatched = true;
     for (Template& templateData : mTemplates) {
         if (templateData.vao) glDeleteVertexArrays(1, &templateData.vao);
         if (templateData.vbo) glDeleteBuffers(1, &templateData.vbo);
         if (templateData.instanceVbo) glDeleteBuffers(1, &templateData.instanceVbo);
     }
     mTemplates.clear();
+}
+
+namespace {
+
+struct FaceKey {
+    std::array<int64_t, 9> coords{};
+    bool operator==(const FaceKey& other) const { return coords == other.coords; }
+};
+
+struct FaceKeyHash {
+    size_t operator()(const FaceKey& key) const {
+        size_t h = 1469598103934665603ull;
+        for (int64_t value : key.coords) {
+            h ^= static_cast<size_t>(value);
+            h *= 1099511628211ull;
+        }
+        return h;
+    }
+};
+
+int64_t faceCoord(float value)
+{
+    return static_cast<int64_t>(std::llround(value * 1000.0f));
+}
+
+void removeExactDuplicateFaces(std::vector<CollisionTriangle>& triangles,
+                               std::vector<uint32_t>& solidIds,
+                               StaticUnionStats* outStats)
+{
+    StaticUnionStats stats;
+    stats.inputTriangles = static_cast<uint32_t>(triangles.size());
+    if (triangles.size() != solidIds.size()) {
+        stats.fallback = true;
+        stats.fallbackReason = "solid_ids_size_mismatch";
+        stats.outputTriangles = stats.inputTriangles;
+        if (outStats) *outStats = stats;
+        return;
+    }
+
+    std::unordered_map<FaceKey, size_t, FaceKeyHash> seen;
+    std::vector<uint8_t> removed(triangles.size(), 0);
+    seen.reserve(triangles.size());
+    for (size_t i = 0; i < triangles.size(); ++i) {
+        std::array<std::array<int64_t, 3>, 3> points{{
+            {{faceCoord(triangles[i].a.x), faceCoord(triangles[i].a.y),
+              faceCoord(triangles[i].a.z)}},
+            {{faceCoord(triangles[i].b.x), faceCoord(triangles[i].b.y),
+              faceCoord(triangles[i].b.z)}},
+            {{faceCoord(triangles[i].c.x), faceCoord(triangles[i].c.y),
+              faceCoord(triangles[i].c.z)}}}};
+        std::sort(points.begin(), points.end());
+        FaceKey key;
+        for (int p = 0; p < 3; ++p)
+            for (int axis = 0; axis < 3; ++axis)
+                key.coords[p * 3 + axis] = points[p][axis];
+
+        auto [it, inserted] = seen.emplace(key, i);
+        if (inserted)
+            continue;
+        const size_t other = it->second;
+        if (removed[other]) {
+            it->second = i;
+            continue;
+        }
+        if (solidIds[i] == 0 || solidIds[other] == 0 ||
+            solidIds[i] == solidIds[other])
+            continue;
+        if (glm::dot(triangles[i].normal, triangles[other].normal) > -0.9f)
+            continue;
+        removed[i] = 1;
+        ++stats.removedTriangles;
+    }
+
+    if (stats.removedTriangles == 0) {
+        stats.outputTriangles = stats.inputTriangles;
+        if (outStats) *outStats = stats;
+        return;
+    }
+
+    size_t write = 0;
+    for (size_t read = 0; read < triangles.size(); ++read) {
+        if (removed[read])
+            continue;
+        if (write != read) {
+            triangles[write] = triangles[read];
+            solidIds[write] = solidIds[read];
+        }
+        ++write;
+    }
+    triangles.resize(write);
+    solidIds.resize(write);
+    stats.outputTriangles = static_cast<uint32_t>(write);
+    if (outStats) *outStats = stats;
+}
+
+} // namespace
+
+bool StreamedWorldLayer::flushCollision(World& world)
+{
+    if (!mCollisionDirty)
+        return false;
+
+    const auto started = std::chrono::steady_clock::now();
+    CollisionMeshCache& mesh = world.collisionMesh;
+
+    // Remove the previous streamed tail. A base rebuild clears the mesh (and
+    // therefore these counts), so only a still-intact tail is trimmed here.
+    size_t baseTriangles = mesh.triangles.size();
+    size_t baseSolidIds = mesh.solidIds.size();
+    if (mesh.streamedTailTriangles > 0 &&
+        mesh.streamedTailTriangles <= baseTriangles) {
+        baseTriangles -= mesh.streamedTailTriangles;
+        mesh.triangles.resize(baseTriangles);
+    }
+    if (mesh.streamedTailSolidIds > 0 &&
+        mesh.streamedTailSolidIds <= baseSolidIds) {
+        baseSolidIds -= mesh.streamedTailSolidIds;
+        mesh.solidIds.resize(baseSolidIds);
+    }
+    if (!mesh.hidden.empty() && mesh.hidden.size() > baseTriangles)
+        mesh.hidden.resize(baseTriangles);
+    if (mesh.triangleAABBs.size() > baseTriangles)
+        mesh.triangleAABBs.resize(baseTriangles);
+    if (mesh.triangleOBBs.size() > baseTriangles)
+        mesh.triangleOBBs.resize(baseTriangles);
+
+    const bool baseBroadphaseChanged =
+        mBaseBroadphaseTriangles != baseTriangles ||
+        world.collisionTree.ids.size() != baseTriangles;
+    if (baseBroadphaseChanged) {
+        buildCollisionChunks(world, nullptr);
+        mBaseBroadphaseTriangles = baseTriangles;
+    }
+
+    std::vector<CollisionTriangle> surface;
+    std::vector<uint32_t> surfaceSolidIds;
+    size_t rawTriangles = 0;
+    for (size_t recordIndex = 0; recordIndex < mChunks.size(); ++recordIndex) {
+        const ChunkRecord& record = mChunks[recordIndex];
+        const uint32_t solidBase = static_cast<uint32_t>(
+            recordIndex * (mimita_chunk_collision::MAX_PARTS + 1));
+        rawTriangles += record.collisionTriangles.size();
+        for (size_t i = 0; i < record.collisionTriangles.size(); ++i) {
+            surface.push_back(record.collisionTriangles[i]);
+            const uint32_t local =
+                i < record.collisionSolidIds.size()
+                    ? record.collisionSolidIds[i] : 0u;
+            surfaceSolidIds.push_back(local == 0 ? 0u : solidBase + local);
+        }
+    }
+
+    mimita_collision_policy::SurfacePolicyV1 surfacePolicy{};
+    surfacePolicy.version = mimita_collision_policy::ABI_VERSION;
+    surfacePolicy.structSize = sizeof(surfacePolicy);
+    surfacePolicy.mergeMode = mimita_collision_policy::SURFACE_FACE_REMOVAL;
+    surfacePolicy.contactTolerance = 0.02f;
+    if (!ModuleHost::instance().collisionSurfacePolicy(&surfacePolicy) ||
+        !surfacePolicy.result)
+        surfacePolicy.mergeMode = mimita_collision_policy::SURFACE_FACE_REMOVAL;
+
+    StaticUnionStats unionStats;
+    StaticUnionStats removalStats;
+    const bool wantUnion =
+        surfacePolicy.mergeMode == mimita_collision_policy::SURFACE_BOUNDED_UNION;
+    const bool wantFaceRemoval =
+        surfacePolicy.mergeMode != mimita_collision_policy::SURFACE_RAW;
+    if (!surface.empty() && wantUnion &&
+        CollisionLodConfig::instance().staticSolidUnion() &&
+        surface.size() <=
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles() &&
+        mChunks.size() <=
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids()) {
+        unionStaticSolidGroups(
+            surface, surfaceSolidIds,
+            CollisionLodConfig::instance().staticSolidUnionMaxTriangles(),
+            &unionStats,
+            CollisionLodConfig::instance().staticSolidUnionMaxSolids());
+    }
+    if (!surface.empty() && wantFaceRemoval &&
+        CollisionLodConfig::instance().staticFaceRemoval()) {
+        if (mChunks.size() <= 32)
+            removeFullyCoveredStaticTriangles(surface, surfaceSolidIds,
+                                              &removalStats);
+        else
+            removeExactDuplicateFaces(surface, surfaceSolidIds, &removalStats);
+    }
+
+    const size_t streamBase = mesh.triangles.size();
+    mesh.triangles.insert(mesh.triangles.end(), surface.begin(), surface.end());
+    mesh.solidIds.insert(mesh.solidIds.end(), surfaceSolidIds.begin(),
+                         surfaceSolidIds.end());
+    mesh.triangleAABBs.resize(mesh.triangles.size());
+    mesh.triangleOBBs.resize(mesh.triangles.size());
+    for (size_t i = 0; i < surface.size(); ++i) {
+        AABB bounds;
+        CollisionTriangleOBB obb;
+        buildCollisionTrianglePrimitive(surface[i], bounds, obb);
+        mesh.triangleAABBs[streamBase + i] = bounds;
+        mesh.triangleOBBs[streamBase + i] = obb;
+        mesh.boundsMin = glm::min(mesh.boundsMin, bounds.min);
+        mesh.boundsMax = glm::max(mesh.boundsMax, bounds.max);
+    }
+    if (!mesh.hidden.empty()) {
+        if (mesh.hidden.size() == baseTriangles)
+            mesh.hidden.resize(mesh.triangles.size(), 0);
+        else
+            mesh.hidden.clear();
+    }
+    mesh.streamedTailTriangles = surface.size();
+    mesh.streamedTailSolidIds = surfaceSolidIds.size();
+    mesh.streamedChunkCount = static_cast<uint32_t>(mChunks.size());
+    mesh.streamedRevision = ++mCollisionRevision;
+
+    world.streamedCollisionTree.clear();
+    if (!surface.empty()) {
+        std::vector<int> streamIds(surface.size());
+        for (size_t i = 0; i < streamIds.size(); ++i)
+            streamIds[i] = static_cast<int>(streamBase + i);
+        world.streamedCollisionTree.build(streamIds, mesh.triangleAABBs);
+    }
+    mCollisionDirty = false;
+    mCollidedChunkCount = static_cast<uint32_t>(mChunks.size());
+    mCollisionTriangleCount = surface.size();
+    mCollisionRemovedFaces = removalStats.removedTriangles;
+
+    const double elapsedMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    mLastCollisionRebuildMs = elapsedMs;
+    mMaxCollisionRebuildMs = std::max(mMaxCollisionRebuildMs, elapsedMs);
+    mLastLoadedChunkCount = static_cast<uint32_t>(mChunks.size());
+    mLastCollisionRevisionMatched =
+        mLastLoadedChunkCount == mCollidedChunkCount;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "world-stream.collision.sync", "streamed-world-layer",
+        "streamed chunk collision composed into the world static surface", 0,
+        {{"loaded_chunks", mChunks.size()},
+         {"collided_chunks", mCollidedChunkCount},
+         {"base_triangles", baseTriangles},
+         {"raw_stream_triangles", rawTriangles},
+         {"stream_triangles", surface.size()},
+         {"world_triangles", mesh.triangles.size()},
+         {"base_broadphase_rebuilt", baseBroadphaseChanged},
+         {"stream_tree_triangles", world.streamedCollisionTree.ids.size()},
+         {"base_tree_triangles", world.collisionTree.ids.size()},
+         {"merge_mode", surfacePolicy.mergeMode},
+         {"removed_internal_faces", removalStats.removedTriangles},
+         {"union_solids", unionStats.unionSolids},
+         {"union_fallback", unionStats.unionFallback},
+         {"union_fallback_reason", unionStats.unionFallbackReason},
+         {"revision", mCollisionRevision},
+         {"revision_match", mChunks.size() == mCollidedChunkCount},
+         {"rebuild_ms", elapsedMs}},
+        __FILE__, __LINE__, __func__);
+    return true;
 }
 
 StreamedWorldLayer::Template* StreamedWorldLayer::ensureTemplate(
@@ -448,19 +717,16 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
     if (templateData->vboDirty)
         uploadTemplate(*templateData);
 
-    // Collision proxy: world-space triangles registered as a static entity.
-    // The live chunk-collision module selects collidable parts and applies the
-    // chunk/part transforms; the host owns the static-union and registration.
-    std::vector<CollisionTriangle> worldTriangles;
-    std::vector<uint32_t> solidIds;
-    StaticUnionStats unionStats;
-    buildChunkCollision(chunk, transform, worldTriangles, solidIds,
-                        &unionStats);
-
+    // Collision is kept with the chunk record and composed into the World
+    // collision mesh tail by flushCollision. The live chunk-collision module
+    // selects collidable parts and applies the chunk/part transforms; the host
+    // owns cross-chunk face removal, bounded union, and the broadphase rebuild.
     ChunkRecord record;
     record.key = key;
     record.chunkId = chunk.id;
     record.transform = transform;
+    buildChunkCollision(chunk, transform, record.collisionTriangles,
+                        record.collisionSolidIds);
 
     if (mInstancing) {
         templateData->instances.push_back(transform);
@@ -470,31 +736,20 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         rebuildRecordVbo(record, *templateData);
     }
 
-    if (!worldTriangles.empty()) {
-        record.collisionEntity = PhysicalEntitySystem::instance().add(
-            worldTriangles, glm::mat4(1.0f), PhysicalEntityMotion::Static, 0);
-        if (PhysicalEntity* entity =
-                PhysicalEntitySystem::instance().find(record.collisionEntity)) {
-            entity->renderEnabled = false;
-            entity->collidesWithActors = true;
-        }
-    }
-
+    const size_t collisionTriangles = record.collisionTriangles.size();
     mChunks.push_back(std::move(record));
+    ++mChunksInstalledTotal;
+    mCollisionDirty = true;
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "world-stream.chunk.applied", chunk.id,
         "streamed chunk installed", 0,
         {{"chunk", chunk.id}, {"key", key}, {"chunks", mChunks.size()},
-         {"triangles", worldTriangles.size()},
+         {"triangles", collisionTriangles},
          {"solid_groups", static_cast<uint32_t>(std::count_if(
               chunk.parts.begin(), chunk.parts.end(),
               [](const ChunkPart& part) { return part.collision; }))},
-         {"union_solids", unionStats.unionSolids},
-         {"union_input_triangles", unionStats.unionInputTriangles},
-         {"union_output_triangles", unionStats.unionOutputTriangles},
-         {"union_fallback", unionStats.unionFallback},
-         {"union_fallback_reason", unionStats.unionFallbackReason},
+         {"collision_pending_flush", true},
          {"backend", mInstancing ? "instancing" : "vbo"}},
         __FILE__, __LINE__, __func__);
 }
@@ -505,9 +760,9 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
         if (mChunks[i].key != key) continue;
         ChunkRecord record = std::move(mChunks[i]);
         mChunks.erase(mChunks.begin() + i);
+        ++mChunksRemovedTotal;
+        mCollisionDirty = true;
 
-        if (record.collisionEntity)
-            PhysicalEntitySystem::instance().remove(record.collisionEntity);
         if (!mInstancing) {
             if (record.vao) glDeleteVertexArrays(1, &record.vao);
             if (record.vbo) glDeleteBuffers(1, &record.vbo);
@@ -537,7 +792,6 @@ void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk,
 
     size_t records = 0;
     size_t collisionTriangles = 0;
-    StaticUnionStats unionStats;
     for (ChunkRecord& record : mChunks) {
         if (record.chunkId != chunk.id) continue;
         if (!mInstancing)
@@ -545,24 +799,10 @@ void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk,
         ++records;
         if (!rebuildCollision)
             continue;
-        if (record.collisionEntity) {
-            PhysicalEntitySystem::instance().remove(record.collisionEntity);
-            record.collisionEntity = 0;
-        }
-        std::vector<CollisionTriangle> triangles;
-        std::vector<uint32_t> solidIds;
-        buildChunkCollision(chunk, record.transform, triangles, solidIds,
-                            &unionStats);
-        collisionTriangles += triangles.size();
-        if (!triangles.empty()) {
-            record.collisionEntity = PhysicalEntitySystem::instance().add(
-                triangles, glm::mat4(1.0f), PhysicalEntityMotion::Static, 0);
-            if (PhysicalEntity* entity = PhysicalEntitySystem::instance().find(
-                    record.collisionEntity)) {
-                entity->renderEnabled = false;
-                entity->collidesWithActors = true;
-            }
-        }
+        buildChunkCollision(chunk, record.transform, record.collisionTriangles,
+                            record.collisionSolidIds);
+        collisionTriangles += record.collisionTriangles.size();
+        mCollisionDirty = true;
     }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
@@ -577,9 +817,7 @@ void StreamedWorldLayer::refreshChunk(const AuthoredChunk& chunk,
          {"backend", mInstancing ? "instancing" : "vbo"},
          {"collision_rebuilt", rebuildCollision},
          {"collision_triangles", collisionTriangles},
-         {"union_solids", unionStats.unionSolids},
-         {"union_fallback", unionStats.unionFallback},
-         {"union_fallback_reason", unionStats.unionFallbackReason}},
+         {"collision_pending_flush", mCollisionDirty}},
         __FILE__, __LINE__, __func__);
 }
 

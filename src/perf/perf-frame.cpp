@@ -614,6 +614,7 @@ void emitResourceWindowSummary()
         {"logger_flush_count", io.flushCount},
         {"logger_flush_ms", static_cast<double>(io.flushMicroseconds) / 1000.0},
         {"logger_mutex_wait_ms", static_cast<double>(io.mutexWaitMicroseconds) / 1000.0},
+        {"logger_mutex_hold_ms", static_cast<double>(io.mutexHoldMicroseconds) / 1000.0},
         {"memory_available", memoryOk},
         {"working_set_bytes", memoryOk ? memory.WorkingSetSize : 0},
         {"private_bytes", memoryOk ? memory.PrivateUsage : 0},

@@ -432,7 +432,8 @@ void buildHeadlessCollisionChunks(HeadlessWorld& world)
 
 void appendHeadlessWorldInstance(HeadlessWorld& target,
                                  const HeadlessWorld& templateWorld,
-                                 const glm::mat4& transform)
+                                 const glm::mat4& transform,
+                                 bool rebuildCollision)
 {
     const glm::mat3 normalMatrix =
         glm::transpose(glm::inverse(glm::mat3(transform)));
@@ -467,7 +468,8 @@ void appendHeadlessWorldInstance(HeadlessWorld& target,
             target.solidIds[i] = instanceSolidId;
     }
 
-    buildHeadlessCollisionChunks(target);
+    if (rebuildCollision)
+        buildHeadlessCollisionChunks(target);
 }
 
 void truncateHeadlessWorld(HeadlessWorld& target, size_t baseTriangleCount)

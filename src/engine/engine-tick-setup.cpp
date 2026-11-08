@@ -207,8 +207,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
               WorldInteractionRuntime::instance().syncIfChanged(
                   MapConfigRegistry::instance().current(),
                   MapConfigRegistry::instance().revision());
-              if (gpPlayer && gpWorld)
-                  InfiniteWorldRuntime::instance().tick(THE_PLAYER, THE_WORLD);
             }
             WeaponHitFxConfig::instance().pollReload();
             ImpactDecalsConfig::instance().pollReload();

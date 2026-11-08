@@ -56,6 +56,11 @@ struct NpcMovementContext
     bool hasGoalOverride = false;
     NpcGoal goalOverride;
 
+    // FCS may spread sensing, target thinking, and replanning over three ticks.
+    // Movement execution and traversal progression remain fixed-tick.
+    bool staggerThinking = false;
+    bool thinkingDue = true;
+
     bool valid() const { return target != nullptr; }
 };
 

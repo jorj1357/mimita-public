@@ -59,6 +59,9 @@ const char* utilityActionName(UtilityActionKind kind);
 struct UtilityContext {
     bool hasVisibleTarget = false;
     bool hasKnownTarget = false;        // visible or remembered
+    bool downDashOpportunity = false;
+    float downDashChance = 0.0f;
+    bool shouldDownDash = false;
     float targetDistance = 0.0f;
     float targetConfidence = 0.0f;
     float healthFraction = 1.0f;
@@ -152,7 +155,9 @@ UtilityGoalKind selectUtilityGoal(const UtilityContext& ctx,
                                   UtilityState& state,
                                   float dt,
                                   float minGoalSeconds = 0.6f,
-                                  float switchMargin = 0.08f);
+                                  float switchMargin = 0.08f,
+                                  std::uint32_t actorId = 0,
+                                  std::uint32_t tick = 0);
 
 // Map a goal to the action the executor should run.
 UtilityActionKind actionForGoal(UtilityGoalKind goal, const UtilityContext& ctx);

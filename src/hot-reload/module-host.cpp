@@ -25,6 +25,7 @@
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
 #include "mapeditor/map-editor.h"
+#include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
 #include "modules/api/map-editor-api.h"
 #include "modules/api/world-rendering-api.h"
@@ -639,10 +640,20 @@ ModuleHost::~ModuleHost()
 
 void ModuleHost::startup()
 {
+    startup(false);
+}
+
+void ModuleHost::startupServerModules()
+{
+    startup(true);
+}
+
+void ModuleHost::startup(bool serverProcess)
+{
     if (mStarted)
         return;
     mStarted = true;
-    if (!loadCatalog()) {
+    if (!loadCatalog(serverProcess)) {
         rememberError("module catalog could not be loaded");
         return;
     }
@@ -1058,7 +1069,42 @@ bool ModuleHost::chunkCollisionBuild(
                         sizeof(*request));
 }
 
-bool ModuleHost::loadCatalog()
+bool ModuleHost::collisionContactPolicy(
+    mimita_collision_policy::ContactPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeModule("chunk-collision",
+                        mimita_module::EVENT_COLLISION_CONTACT_POLICY, policy,
+                        sizeof(*policy));
+}
+
+bool ModuleHost::collisionSurfacePolicy(
+    mimita_collision_policy::SurfacePolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeModule("chunk-collision",
+                        mimita_module::EVENT_COLLISION_SURFACE_POLICY, policy,
+                        sizeof(*policy));
+}
+
+bool ModuleHost::npcBehaviorDecision(
+    mimita_npc_behavior::DecisionV1* decision)
+{
+    if (!decision)
+        return false;
+    return invokeModule("npc-behavior",
+                        mimita_module::EVENT_NPC_BEHAVIOR_DECISION,
+                        decision, sizeof(*decision), decision->tick);
+}
+
+bool ModuleHost::npcBehaviorLoaded() const
+{
+    return moduleLoaded("npc-behavior");
+}
+
+bool ModuleHost::loadCatalog(bool serverProcess)
 {
     mModules.clear();
     const std::filesystem::path root = std::filesystem::current_path();
@@ -1076,6 +1122,8 @@ bool ModuleHost::loadCatalog()
 
     for (const auto& item : rootJson.value("modules", nlohmann::json::array())) {
         if (!item.is_object())
+            continue;
+        if (item.value("server_process", false) != serverProcess)
             continue;
         ModuleEntry entry;
         entry.name = item.value("name", std::string{});

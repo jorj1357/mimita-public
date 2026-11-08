@@ -28,7 +28,7 @@
           "name": "",
           "orientation": "doorway",
           "position": [
-            5.0,
+            49.92848205566406,
             0.0,
             0.0
           ],
@@ -43,7 +43,7 @@
           "name": "",
           "orientation": "doorway",
           "position": [
-            -5.0,
+            -50.00575256347656,
             0.0,
             0.0
           ],
@@ -59,7 +59,7 @@
           "orientation": "doorway",
           "position": [
             0.0,
-            5.0,
+            50.26310729980469,
             0.0
           ],
           "radius": 0.5,
@@ -74,7 +74,7 @@
           "orientation": "doorway",
           "position": [
             0.0,
-            -5.0,
+            -50.08048629760742,
             0.0
           ],
           "radius": 0.5,
@@ -139,120 +139,16 @@
             0.0
           ],
           "size": [
-            10.0,
-            10.0,
+            100.0,
+            100.0,
             0.5
           ],
           "uv_scale": [
-            2.0,
-            2.0
+            0.10000000149011612,
+            0.10000000149011612
           ],
           "visible": true
-        }
-      ],
-      "spawn_points": [
-        {
-          "allowed_actors": "human",
-          "enabled": true,
-          "id": "human_spawn",
-          "name": "Human Spawn",
-          "position": [
-            0.0,
-            0.0,
-            1.0
-          ],
-          "radius": 0.5
-        }
-      ],
-      "tags": []
-    },
-    {
-      "blob_sha256": "",
-      "bounds_max": [
-        5.0,
-        5.0,
-        4.0
-      ],
-      "bounds_min": [
-        -5.0,
-        -5.0,
-        0.0
-      ],
-      "connectors": [
-        {
-          "id": "east_b",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "east",
-          "tags": [
-            "flat"
-          ]
         },
-        {
-          "id": "west_b",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "west",
-          "tags": [
-            "flat"
-          ]
-        },
-        {
-          "id": "north_b",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "north",
-          "tags": [
-            "flat"
-          ]
-        },
-        {
-          "id": "south_b",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            -5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "south",
-          "tags": [
-            "flat"
-          ]
-        }
-      ],
-      "enabled": true,
-      "geometry": "",
-      "id": "chunk2",
-      "name": "",
-      "parts": [
         {
           "collision": true,
           "face_uv_scale": [
@@ -289,14 +185,14 @@
             "",
             ""
           ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "floorv2",
+          "id": "box2",
+          "kind": "box",
+          "material": "",
           "name": "",
           "position": [
             0.0,
             0.0,
-            -0.25
+            13.448135375976563
           ],
           "rotation": [
             0.0,
@@ -304,323 +200,9 @@
             0.0
           ],
           "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            1.0,
-            1.0
-          ],
-          "visible": true
-        }
-      ],
-      "spawn_points": [
-        {
-          "allowed_actors": "npc",
-          "enabled": true,
-          "id": "npc_spawn",
-          "name": "NPC Spawn",
-          "position": [
-            0.0,
-            0.0,
-            1.0
-          ],
-          "radius": 0.5
-        }
-      ],
-      "tags": []
-    },
-    {
-      "blob_sha256": "",
-      "bounds_max": [
-        5.0,
-        5.0,
-        4.0
-      ],
-      "bounds_min": [
-        -5.0,
-        -5.0,
-        0.0
-      ],
-      "connectors": [
-        {
-          "id": "east_c",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "east",
-          "tags": []
-        },
-        {
-          "id": "west_c",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "west",
-          "tags": []
-        },
-        {
-          "id": "north_c",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "north",
-          "tags": []
-        },
-        {
-          "id": "south_c",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            -5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "south",
-          "tags": []
-        }
-      ],
-      "enabled": true,
-      "geometry": "",
-      "id": "chunk3",
-      "name": "",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "stonev2",
-          "name": "",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            1.0,
-            1.0
-          ],
-          "visible": true
-        }
-      ],
-      "spawn_points": [
-        {
-          "allowed_actors": "any",
-          "enabled": true,
-          "id": "any_spawn",
-          "name": "Shared Spawn",
-          "position": [
-            0.0,
-            0.0,
-            1.0
-          ],
-          "radius": 0.5
-        }
-      ],
-      "tags": []
-    },
-    {
-      "blob_sha256": "",
-      "bounds_max": [
-        5.0,
-        5.0,
-        4.0
-      ],
-      "bounds_min": [
-        -5.0,
-        -5.0,
-        0.0
-      ],
-      "connectors": [
-        {
-          "id": "east_chunk4",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "east",
-          "tags": []
-        },
-        {
-          "id": "west_chunk4",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "west",
-          "tags": []
-        },
-        {
-          "id": "north_chunk4",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "north",
-          "tags": []
-        },
-        {
-          "id": "south_chunk4",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            0.0,
-            -5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "south",
-          "tags": []
-        }
-      ],
-      "enabled": true,
-      "geometry": "",
-      "id": "chunk4",
-      "name": "",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "floorv2",
-          "name": "",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
+            25.0,
+            25.0,
+            25.0
           ],
           "uv_scale": [
             1.0,
@@ -644,135 +226,88 @@
         -5.0,
         0.0
       ],
-      "connectors": [
+      "connectors": [],
+      "enabled": true,
+      "geometry": "",
+      "id": "chunk2",
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
+      "tags": []
+    },
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        5.0,
+        5.0,
+        4.0
+      ],
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        0.0
+      ],
+      "connectors": [],
+      "enabled": true,
+      "geometry": "",
+      "id": "chunk3",
+      "name": "",
+      "parts": [],
+      "spawn_points": [
         {
-          "id": "east_chunk5",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "east",
-          "tags": []
-        },
-        {
-          "id": "west_chunk5",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
-            -5.0,
-            0.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "west",
-          "tags": []
-        },
-        {
-          "id": "north_chunk5",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
+          "allowed_actors": "any",
+          "enabled": true,
+          "id": "any_spawn",
+          "name": "Shared Spawn",
           "position": [
             0.0,
-            5.0,
-            0.0
-          ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "north",
-          "tags": []
-        },
-        {
-          "id": "south_chunk5",
-          "links": [],
-          "name": "",
-          "orientation": "doorway",
-          "position": [
             0.0,
-            -5.0,
-            0.0
+            33.10788345336914
           ],
-          "radius": 0.5,
-          "role": "bidirectional",
-          "side": "south",
-          "tags": []
+          "radius": 0.5
         }
       ],
+      "tags": []
+    },
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        5.0,
+        5.0,
+        4.0
+      ],
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        0.0
+      ],
+      "connectors": [],
+      "enabled": true,
+      "geometry": "",
+      "id": "chunk4",
+      "name": "",
+      "parts": [],
+      "spawn_points": [],
+      "tags": []
+    },
+    {
+      "blob_sha256": "",
+      "bounds_max": [
+        5.0,
+        5.0,
+        4.0
+      ],
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        0.0
+      ],
+      "connectors": [],
       "enabled": true,
       "geometry": "",
       "id": "chunk5",
       "name": "",
-      "parts": [
-        {
-          "collision": true,
-          "face_uv_scale": [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          "faces": [
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ],
-          "id": "floor",
-          "kind": "floor",
-          "material": "stonev2",
-          "name": "",
-          "position": [
-            0.0,
-            0.0,
-            -0.25
-          ],
-          "rotation": [
-            0.0,
-            0.0,
-            0.0
-          ],
-          "size": [
-            10.0,
-            10.0,
-            0.5
-          ],
-          "uv_scale": [
-            1.0,
-            1.0
-          ],
-          "visible": true
-        }
-      ],
+      "parts": [],
       "spawn_points": [],
       "tags": []
     }

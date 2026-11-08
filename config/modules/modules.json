@@ -73,18 +73,48 @@
       "state_schema": 1,
       "activation": "before_chunk_install",
       "sources": [
-        "src/world/chunk-collision-module.cpp"
+        "src/world/chunk-collision-module.cpp",
+        "src/physics/movement/actor-contact-policy-module.cpp"
       ],
       "headers": [
         "src/modules/api/module-abi.h",
-        "src/modules/api/chunk-collision-api.h"
+        "src/modules/api/chunk-collision-api.h",
+        "src/modules/api/actor-contact-policy-api.h"
       ],
       "events": [
-        400
+        400,
+        401,
+        402
       ],
       "capabilities": [
         4
       ]
+    },
+    {
+      "name": "npc-behavior",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_fixed_server_tick",
+      "server_process": true,
+      "compile_defines": [
+        "MIMITA_NPC_BEHAVIOR_MODULE"
+      ],
+      "sources": [
+        "src/npc/npc-behavior-module.cpp",
+        "src/npc/npc-utility.cpp"
+      ],
+      "include_dirs": [
+        "include/glm"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/npc-behavior-api.h",
+        "src/npc/npc-utility.h"
+      ],
+      "events": [
+        500
+      ],
+      "capabilities": []
     }
   ]
 }

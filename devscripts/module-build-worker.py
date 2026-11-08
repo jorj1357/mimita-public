@@ -54,6 +54,20 @@ def expand_patterns(patterns):
     return files
 
 
+def expand_include_dirs(directories):
+    files = []
+    for directory in directories:
+        absolute = os.path.abspath(os.path.join(ROOT, directory))
+        if os.path.commonpath([ROOT, absolute]) != ROOT or not os.path.isdir(absolute):
+            continue
+        for current, _, names in os.walk(absolute):
+            for name in names:
+                path = os.path.join(current, name)
+                if os.path.isfile(path):
+                    files.append(path)
+    return sorted(files)
+
+
 def previous_dependencies(output_dir):
     path = os.path.join(output_dir, "deps.json")
     if not os.path.isfile(path):
@@ -164,8 +178,10 @@ def build_module(module):
     output_dir = os.path.join(BUILD_ROOT, name)
     sources = expand_patterns(module.get("sources", []))
     headers = expand_patterns(module.get("headers", []))
+    include_dirs = module.get("include_dirs", [])
+    include_files = expand_include_dirs(include_dirs) if isinstance(include_dirs, list) else []
     dependencies = previous_dependencies(output_dir)
-    inputs = list(dict.fromkeys(sources + headers + dependencies))
+    inputs = list(dict.fromkeys(sources + headers + include_files + dependencies))
     missing = [path for path in inputs if not os.path.isfile(path)]
     if missing:
         return {"status": "failed", "module": name,
@@ -226,6 +242,16 @@ def build_module(module):
             f"-I{snapshot_dir}",
             f"-I{os.path.join(snapshot_dir, 'src')}",
         ]
+        if isinstance(include_dirs, list):
+            for directory in include_dirs:
+                if isinstance(directory, str) and directory:
+                    include_root = os.path.dirname(directory.rstrip("/\\"))
+                    command.append(f"-I{os.path.join(snapshot_dir, include_root)}")
+        compile_defines = module.get("compile_defines", [])
+        if isinstance(compile_defines, list):
+            for define in compile_defines:
+                if isinstance(define, str) and define and define.replace("_", "").isalnum():
+                    command.append(f"-D{define}")
         try:
             command.append(f"-I{glfw_include()}")
         except FileNotFoundError:

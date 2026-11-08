@@ -9,7 +9,7 @@
 
   "storage_limits": {
     "per_segment_bytes": 100000000,
-    "total_log_tree_bytes": 1500000000
+    "total_log_tree_bytes": 7000000000
   },
 
   "categories": {
@@ -97,7 +97,7 @@
   },
 
   "performance": {
-    "target_fps": 240,
+    "target_fps": 999,
     "spike_threshold_ms": 20.0,
     "severe_spike_threshold_ms": 100.0,
     "catastrophic_spike_threshold_ms": 1000.0,

@@ -10,6 +10,7 @@
 
 #include <filesystem>
 #include <cstdint>
+#include <istream>
 #include <string>
 #include <vector>
 
@@ -403,6 +404,11 @@ public:
     // Load a project/version document from an explicit path without moving it
     // into config/maps. Used by the project browser and live edit session.
     bool loadFromFile(const std::string& mapId, const std::string& path);
+    // Apply an authoritative server snapshot from memory. The local map file is
+    // not written or polled while this remote snapshot is active; a normal
+    // load()/loadFromFile() returns ownership to the local file.
+    bool loadFromJsonString(const std::string& mapId, const std::string& json,
+                            const std::string& sourceLabel);
     // Serialize the current authored document. The base preserves unknown
     // top-level keys during a normal file save.
     std::string toJsonString(bool pretty = true) const;
@@ -504,13 +510,19 @@ private:
     std::string uniqueId(const std::string& prefix) const;
     bool writeBackup();
     void pruneBackups();
+    bool loadFromStream(const std::string& mapId, const std::string& nextPath,
+                        std::istream& input, bool trackFile);
 
     MapObjectiveConfig mCurrent;
     std::filesystem::file_time_type mLastWrite{};
     std::string mPath;
     uint64_t mRevision = 0;
     uint64_t mSavedRevision = 0;
+    bool mRemoteSnapshot = false;
 };
+
+// Stable content identity used to assemble a chunked server map snapshot.
+uint64_t mapConfigContentHash(const std::string& json);
 
 // World-independent selftest for map objective config parsing + site lookup.
 bool mapConfigSelfTest(std::string& report);

@@ -576,12 +576,49 @@ void rebuildCollisionSolidBounds(CollisionMeshCache& mesh)
         mesh.solidInteriorSolid[entry.first] = entry.second > 0.0f;
 }
 
+void buildCollisionTrianglePrimitive(const CollisionTriangle& triangle,
+                                     AABB& outBounds,
+                                     CollisionTriangleOBB& outObb)
+{
+    outBounds.min = glm::min(glm::min(triangle.a, triangle.b), triangle.c);
+    outBounds.max = glm::max(glm::max(triangle.a, triangle.b), triangle.c);
+    outObb = CollisionTriangleOBB{};
+    outObb.origin = triangle.a;
+    const glm::vec3 uRaw = triangle.b - triangle.a;
+    const glm::vec3 nRaw = glm::cross(triangle.b - triangle.a,
+                                      triangle.c - triangle.a);
+    const float uLen = glm::length(uRaw);
+    const float nLen = glm::length(nRaw);
+    if (uLen <= 1e-6f || nLen <= 1e-6f)
+        return;
+    outObb.axisU = uRaw / uLen;
+    outObb.axisN = nRaw / nLen;
+    outObb.axisV = glm::normalize(glm::cross(outObb.axisN, outObb.axisU));
+    outObb.localMin = glm::vec3(std::numeric_limits<float>::max());
+    outObb.localMax = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const glm::vec3& point : {triangle.a, triangle.b, triangle.c})
+    {
+        const glm::vec3 delta = point - outObb.origin;
+        const glm::vec3 local(glm::dot(delta, outObb.axisU),
+                              glm::dot(delta, outObb.axisV),
+                              glm::dot(delta, outObb.axisN));
+        outObb.localMin = glm::min(outObb.localMin, local);
+        outObb.localMax = glm::max(outObb.localMax, local);
+    }
+    outObb.valid = true;
+}
+
 void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
 {
     buildSmoothSeamTopology(world);
     rebuildCollisionSolidBounds(world.collisionMesh);
     world.collisionChunks.clear();
     world.collisionLargeTriangles.clear();
+    world.streamedCollisionTree.clear();
+    world.collisionMesh.streamedTailTriangles = 0;
+    world.collisionMesh.streamedTailSolidIds = 0;
+    world.collisionMesh.streamedChunkCount = 0;
+    world.collisionMesh.streamedRevision = 0;
 
     // Cache per-triangle bounds once. The actor narrowphase and broadphase
     // overlap filters read these instead of recomputing makeTriangleAABB for
@@ -597,34 +634,13 @@ void buildCollisionChunks(World& world, MapLoadMetrics* metrics)
     for (int i = 0; i < (int)world.collisionMesh.triangles.size(); ++i)
     {
         const CollisionTriangle& tri = world.collisionMesh.triangles[i];
-        glm::vec3 mn = glm::min(glm::min(tri.a, tri.b), tri.c);
-        glm::vec3 mx = glm::max(glm::max(tri.a, tri.b), tri.c);
-        world.collisionMesh.triangleAABBs[i] = AABB{mn, mx};
+        AABB triBounds;
         CollisionTriangleOBB obb;
-        obb.origin = tri.a;
-        const glm::vec3 uRaw = tri.b - tri.a;
-        const glm::vec3 nRaw = glm::cross(tri.b - tri.a, tri.c - tri.a);
-        const float uLen = glm::length(uRaw);
-        const float nLen = glm::length(nRaw);
-        if (uLen > 1e-6f && nLen > 1e-6f)
-        {
-            obb.axisU = uRaw / uLen;
-            obb.axisN = nRaw / nLen;
-            obb.axisV = glm::normalize(glm::cross(obb.axisN, obb.axisU));
-            obb.localMin = glm::vec3(std::numeric_limits<float>::max());
-            obb.localMax = glm::vec3(std::numeric_limits<float>::lowest());
-            for (const glm::vec3& p : {tri.a, tri.b, tri.c})
-            {
-                const glm::vec3 d = p - obb.origin;
-                const glm::vec3 q(glm::dot(d, obb.axisU),
-                                  glm::dot(d, obb.axisV),
-                                  glm::dot(d, obb.axisN));
-                obb.localMin = glm::min(obb.localMin, q);
-                obb.localMax = glm::max(obb.localMax, q);
-            }
-            obb.valid = true;
-        }
+        buildCollisionTrianglePrimitive(tri, triBounds, obb);
+        world.collisionMesh.triangleAABBs[i] = triBounds;
         world.collisionMesh.triangleOBBs[i] = obb;
+        const glm::vec3 mn = triBounds.min;
+        const glm::vec3 mx = triBounds.max;
         glm::ivec3 c0 = collisionChunkCoord(mn, world.collisionChunkSize);
         glm::ivec3 c1 = collisionChunkCoord(mx, world.collisionChunkSize);
 

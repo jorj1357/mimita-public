@@ -67,7 +67,8 @@ private:
     uint64_t placementKey(const glm::mat4& transform, int chunkIndex) const;
     bool withinStreamRadius(const glm::vec3& playerPos,
                             const glm::vec3& boundsMin,
-                            const glm::vec3& boundsMax) const;
+                            const glm::vec3& boundsMax,
+                            float margin = 1.0f) const;
     void tickConnectorStream(const Player& player, const GenerationZone& zone,
                              const std::vector<const AuthoredChunk*>& candidates,
                              uint64_t revision);
@@ -114,6 +115,7 @@ private:
     GenerationZone mModeZone;
     MimitaWorldGen::WorldGenMode mModeProfile;
     std::uint64_t mModeProfileRevision = 0;
+    std::uint64_t mLastProfilePollMs = 0;
 
     // Connector-mode distance streaming. Keys are quantized placement hashes,
     // not grid cells, so mixed-size chunks stream by world-space distance.

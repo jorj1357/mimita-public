@@ -14,6 +14,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <random>
 
@@ -146,6 +147,35 @@ ServerGamemodeState& serverGamemodeState()
 {
     static ServerGamemodeState state;
     return state;
+}
+
+void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
+                                    const std::string& mapId)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.authoredBaseWorld = glbWorld;
+    d.authoredBaseMapId = mapId;
+    d.authoredBaseWorldReady =
+        !glbWorld.triangles.empty() || !glbWorld.spawnPoints.empty();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.base-captured", mapId,
+        "pristine GLB headless world captured for live authored rebuilds", 0,
+        nlohmann::json{{"map", mapId},
+                       {"ready", d.authoredBaseWorldReady},
+                       {"triangles", glbWorld.triangles.size()},
+                       {"spawn_points", glbWorld.spawnPoints.size()},
+                       {"glb_objects", glbWorld.glbObjects.size()}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void serverMarkAuthoredGeometryApplied()
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    d.appliedGeometrySignature =
+        authoredGeometrySignature(MapConfigRegistry::instance().current());
+    d.geometryRebuildPending = false;
+    d.pendingGeometrySignature = 0;
 }
 
 bool serverMatchRespawnsEnabled()
@@ -2676,6 +2706,92 @@ void broadcastMapChange(SOCKET sock,
             kv.second.id, (int)sent, mapId.c_str());
         if (sent)
             ++totalPacketsOut;
+    }
+}
+
+void serverSendMapConfigSnapshotToPlayer(SOCKET sock, ServerPlayer& player,
+                                         uint64_t& totalPacketsOut)
+{
+    ServerGamemodeState& d = serverGamemodeState();
+    if (!d.enabled || d.mapId.empty() || player.isHost)
+        return;
+
+    const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    if (config.mapId != d.mapId)
+        return;
+    const std::string json = MapConfigRegistry::instance().toJsonString(false);
+    if (json.empty() || json.size() > MAP_CONFIG_SNAPSHOT_MAX_BYTES) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map.geometry.snapshot.rejected", d.mapId,
+            "map config snapshot exceeds the reliable snapshot budget", 0,
+            nlohmann::json{{"map", d.mapId}, {"bytes", json.size()},
+                           {"max_bytes", MAP_CONFIG_SNAPSHOT_MAX_BYTES},
+                           {"player", player.id}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return;
+    }
+
+    const uint64_t contentHash = mapConfigContentHash(json);
+    uint32_t chunks = 0;
+    uint32_t queued = 0;
+    for (uint32_t offset = 0; offset < (uint32_t)json.size();
+         offset += MAP_CONFIG_SNAPSHOT_CHUNK_BYTES) {
+        const uint32_t chunkBytes = std::min<uint32_t>(
+            MAP_CONFIG_SNAPSHOT_CHUNK_BYTES, (uint32_t)json.size() - offset);
+        MapConfigSnapshotPacket packet{};
+        packet.header.type = PACKET_MAP_CONFIG_SNAPSHOT;
+        packet.header.tick = d.currentServerTick;
+        packet.header.playerId = player.id;
+        packet.header.transformEpoch = player.transformEpoch;
+        packet.eventId = nextReliableGameplayEventId();
+        std::strncpy(packet.mapId, d.mapId.c_str(), sizeof(packet.mapId) - 1);
+        packet.configRevision = MapConfigRegistry::instance().revision();
+        packet.geometryRevision = d.geometryRevision;
+        packet.geometrySignature =
+            authoredGeometrySignature(config);
+        packet.contentHash = contentHash;
+        packet.totalBytes = (uint32_t)json.size();
+        packet.offset = offset;
+        packet.chunkBytes = (uint16_t)chunkBytes;
+        std::memcpy(packet.data, json.data() + offset, chunkBytes);
+        const size_t packetBytes =
+            offsetof(MapConfigSnapshotPacket, data) + chunkBytes;
+        const auto result = queueReliableGameplayEventToPlayer(
+            sock, player, &packet, packetBytes, packet.eventId,
+            reliableGameplayEventSessionForPlayer(player), totalPacketsOut);
+        ++chunks;
+        if (result == ReliableGameplayEventQueueResult::Queued)
+            ++queued;
+        else
+            break;
+    }
+
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::World, StructuredLevel::Important,
+        "map.geometry.snapshot.sent", d.mapId,
+        "authoritative map config snapshot queued", d.currentServerTick,
+        nlohmann::json{{"map", d.mapId},
+                       {"player", player.id},
+                       {"config_revision", MapConfigRegistry::instance().revision()},
+                       {"geometry_revision", d.geometryRevision},
+                       {"geometry_signature", authoredGeometrySignature(config)},
+                       {"content_hash", contentHash},
+                       {"bytes", json.size()},
+                       {"chunks", chunks},
+                       {"queued", queued}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void serverBroadcastMapConfigSnapshot(
+    SOCKET sock,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint64_t& totalPacketsOut)
+{
+    for (auto& kv : players) {
+        if (kv.second.spawnState != ServerPlayer::Active)
+            continue;
+        serverSendMapConfigSnapshotToPlayer(sock, kv.second, totalPacketsOut);
     }
 }
 

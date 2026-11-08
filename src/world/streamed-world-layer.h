@@ -1,9 +1,10 @@
 // 2026-11-05
 /* purpose
 * Own streamed infinite-world chunk instances separately from the base World.
-* Chunk geometry is generated from primitive parts; collision is registered as
-* per-chunk static physical entities so add/remove never rebuilds the base
-* world broadphase. Rendering supports instancing and per-chunk VBO backends.
+* Chunk geometry is generated from primitive parts; collision is composed into
+* the World collision mesh tail before the broadphase rebuild so every actor
+* and navigation query sees streamed chunks through the same static surface.
+* Rendering supports instancing and per-chunk VBO backends.
 */
 #pragma once
 
@@ -14,9 +15,18 @@
 #include <glm/glm.hpp>
 
 #include "map/map_common.h"
+#include "physics/physics-types.h"
 
 struct AuthoredChunk;
 struct Camera;
+struct World;
+
+// Shared host-side chunk collision builder used by the client stream layer and
+// the server NPC collision stream. The live chunk-collision module selects the
+// collidable parts and composes world-space triangles.
+bool buildStreamedChunkCollision(
+    const AuthoredChunk& chunk, const glm::mat4& transform,
+    std::vector<CollisionTriangle>& out, std::vector<uint32_t>& solidIds);
 
 class StreamedWorldLayer
 {
@@ -38,6 +48,24 @@ public:
                         int face, const std::string& material);
     void clear();
     size_t chunkCount() const { return mChunks.size(); }
+
+    // Rebuild the streamed collision surface and append it to the World
+    // collision mesh tail. Runs the same static face-removal/union owner as
+    // authored maps, then rebuilds the broadphase. Call before actor simulation.
+    bool flushCollision(World& world);
+    bool collisionDirty() const { return mCollisionDirty; }
+    uint64_t collisionRevision() const { return mCollisionRevision; }
+    uint32_t collidedChunkCount() const { return mCollidedChunkCount; }
+    size_t collisionTriangleCount() const { return mCollisionTriangleCount; }
+    size_t collisionRemovedFaces() const { return mCollisionRemovedFaces; }
+    uint64_t chunksInstalledTotal() const { return mChunksInstalledTotal; }
+    uint64_t chunksRemovedTotal() const { return mChunksRemovedTotal; }
+    double lastCollisionRebuildMs() const { return mLastCollisionRebuildMs; }
+    double maxCollisionRebuildMs() const { return mMaxCollisionRebuildMs; }
+    uint32_t lastLoadedChunkCount() const { return mLastLoadedChunkCount; }
+    bool lastCollisionRevisionMatched() const {
+        return mLastCollisionRevisionMatched;
+    }
 
     void render(const Camera& camera);
 
@@ -64,7 +92,8 @@ private:
         GLuint vao = 0;
         GLuint vbo = 0;
         std::vector<Mesh::Batch> batches;
-        uint32_t collisionEntity = 0;
+        std::vector<CollisionTriangle> collisionTriangles;
+        std::vector<uint32_t> collisionSolidIds;
     };
 
     Template* ensureTemplate(const std::string& chunkId);
@@ -80,6 +109,18 @@ private:
     void freeChunk(const ChunkRecord& record);
 
     bool mInstancing = true;
+    bool mCollisionDirty = true;
+    uint64_t mCollisionRevision = 0;
+    uint32_t mCollidedChunkCount = 0;
+    size_t mCollisionTriangleCount = 0;
+    size_t mCollisionRemovedFaces = 0;
+    uint64_t mChunksInstalledTotal = 0;
+    uint64_t mChunksRemovedTotal = 0;
+    double mLastCollisionRebuildMs = 0.0;
+    double mMaxCollisionRebuildMs = 0.0;
+    uint32_t mLastLoadedChunkCount = 0;
+    size_t mBaseBroadphaseTriangles = 0;
+    bool mLastCollisionRevisionMatched = true;
     std::vector<Template> mTemplates;
     std::vector<ChunkRecord> mChunks;
 };

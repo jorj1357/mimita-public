@@ -373,6 +373,16 @@ std::string MapConfigRegistry::pathForMap(const std::string& mapId)
     return "config/maps/" + mapId + ".json";
 }
 
+uint64_t mapConfigContentHash(const std::string& json)
+{
+    uint64_t hash = 1469598103934665603ull;
+    for (unsigned char c : json) {
+        hash ^= (uint64_t)c;
+        hash *= 1099511628211ull;
+    }
+    return hash ? hash : 1ull;
+}
+
 std::string MapConfigRegistry::resolveConfigPath() const
 {
     return resolveUnderConfig(pathForMap(mCurrent.mapId));
@@ -397,11 +407,27 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
             mPath = nextPath;
             mLastWrite = {};
         }
+        mRemoteSnapshot = false;
         return false;
     }
+    return loadFromStream(mapId, nextPath, file, true);
+}
 
+bool MapConfigRegistry::loadFromJsonString(const std::string& mapId,
+                                           const std::string& jsonText,
+                                           const std::string& sourceLabel)
+{
+    std::istringstream input(jsonText);
+    return loadFromStream(mapId, sourceLabel, input, false);
+}
+
+bool MapConfigRegistry::loadFromStream(const std::string& mapId,
+                                       const std::string& nextPath,
+                                       std::istream& input,
+                                       bool trackFile)
+{
     try {
-        const json root = parseJsonConfig(file);
+        const json root = parseJsonConfig(input);
         MapObjectiveConfig next;
         next.mapId = mapId;
         next.loaded = true;
@@ -1022,13 +1048,14 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
 
         mCurrent = std::move(next);
         mPath = nextPath;
-        mLastWrite = getLastWrite(mPath);
+        mLastWrite = trackFile ? getLastWrite(mPath) : std::filesystem::file_time_type{};
+        mRemoteSnapshot = !trackFile;
         ++mRevision;
         mSavedRevision = mRevision;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Important,
             "map-entity.loaded", mapId, "valid map config applied", 0,
-            nlohmann::json{{"map", mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"result", "success"}},
+            nlohmann::json{{"map", mapId}, {"entity_count", mCurrent.entities.size()}, {"config_path", mPath}, {"remote_snapshot", mRemoteSnapshot}, {"result", "success"}},
             __FILE__, __LINE__, __FUNCTION__);
         return true;
     } catch (const std::exception& e) {
@@ -1038,9 +1065,9 @@ bool MapConfigRegistry::loadFromFile(const std::string& mapId,
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Errors,
             "map-entity.reload-failed", mapId, "invalid JSON; last valid state retained", 0,
-            nlohmann::json{{"map", mapId}, {"config_path", nextPath}, {"result", "retained"}, {"reason", e.what()}},
+            nlohmann::json{{"map", mapId}, {"config_path", nextPath}, {"remote_snapshot", !trackFile}, {"result", "retained"}, {"reason", e.what()}},
             __FILE__, __LINE__, __FUNCTION__);
-        if (mCurrent.mapId == mapId)
+        if (trackFile && mCurrent.mapId == mapId)
             mLastWrite = getLastWrite(nextPath);
         return false;
     }
@@ -1054,6 +1081,7 @@ std::string MapConfigRegistry::toJsonString(bool pretty) const
 
 bool MapConfigRegistry::pollReload()
 {
+    if (mRemoteSnapshot) return false;
     if (mPath.empty() || mCurrent.mapId.empty()) return false;
     const auto write = getLastWrite(mPath);
     if (write == std::filesystem::file_time_type{} || write == mLastWrite)
@@ -1544,6 +1572,16 @@ void MapConfigRegistry::pruneBackups()
 
 bool MapConfigRegistry::save(bool withBackup)
 {
+    if (mRemoteSnapshot) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "map-entity.save-rejected", mCurrent.mapId,
+            "remote-authoritative map config cannot overwrite the local file", 0,
+            nlohmann::json{{"map", mCurrent.mapId}, {"config_path", mPath},
+                           {"reason", "remote_snapshot"}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return false;
+    }
     if (mPath.empty()) return false;
     // Start from the existing authored file so top-level keys this owner does
     // not understand survive a save. Only authored map sections are rewritten.

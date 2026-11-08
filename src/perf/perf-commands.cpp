@@ -1,5 +1,9 @@
 #include "perf/perf.h"
+#include "perf/perf-spike.h"
 
+#include <algorithm>
+
+#include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "video/frame-pacer.h"
 #include "replay/replay.h"
@@ -156,15 +160,38 @@ void registerPerfCommands()
     // Part 7: Benchmark
     t.registerCommand({
         "perf_benchmark",
-        "Run automatic benchmark for 60 seconds, output report to benchmark_report.txt",
-        "perf_benchmark [seconds]",
+        "Run an all-frame benchmark and emit a journal summary",
+        "perf_benchmark <seconds> [label]",
         [](const std::vector<std::string>& args) {
             double secs = 60.0;
             if (!args.empty()) secs = std::atof(args[0].c_str());
             if (secs < 1.0) secs = 60.0;
-            Perf::startBenchmark(secs);
-            Terminal::instance().addLog(std::string("[PERF] Benchmark started for ") +
-                std::to_string((int)secs) + " seconds");
+            const char* label = args.size() > 1 ? args[1].c_str() : "benchmark";
+            Perf::startBenchmark(secs, label);
+            Terminal::instance().addLog(std::string("[PERF] Benchmark '") +
+                label + "' started for " + std::to_string((int)secs) + " seconds");
+        }
+    });
+
+    t.registerCommand({
+        "perf_target",
+        "Set the live performance budget target FPS",
+        "perf_target <fps>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog(
+                    "[PERF] target_fps=" + std::to_string(gPerfBudget.targetFps));
+                return;
+            }
+            const int fps = std::clamp(std::atoi(args[0].c_str()), 30, 999);
+            gPerfBudget.targetFps = fps;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.target.changed", "performance",
+                "live performance budget target changed", 0,
+                {{"target_fps", fps}}, __FILE__, __LINE__, __FUNCTION__);
+            Terminal::instance().addLog(
+                "[PERF] target_fps=" + std::to_string(fps));
         }
     });
 

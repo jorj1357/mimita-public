@@ -32,6 +32,7 @@ constexpr std::uint32_t MAX_TAG_TEXT = 256;
 constexpr std::uint32_t LOG_CATEGORY_GENERAL = 0;
 constexpr std::uint32_t LOG_CATEGORY_WORLD = 16;
 constexpr std::uint32_t LOG_CATEGORY_RENDERING = 21;
+constexpr std::uint32_t LOG_CATEGORY_NPC_MOVEMENT = 9;
 constexpr std::uint32_t LOG_LEVEL_ERRORS = 1;
 constexpr std::uint32_t LOG_LEVEL_IMPORTANT = 2;
 constexpr std::uint32_t LOG_LEVEL_VERBOSE = 3;
@@ -60,6 +61,9 @@ constexpr std::uint32_t EVENT_RENDER_BUILD_BOX = 201;
 constexpr std::uint32_t EVENT_WORLDGEN_RESOLVE = 300;
 constexpr std::uint32_t EVENT_WORLDGEN_PREVIEW_PAIR = 301;
 constexpr std::uint32_t EVENT_COLLISION_BUILD_CHUNK = 400;
+constexpr std::uint32_t EVENT_COLLISION_CONTACT_POLICY = 401;
+constexpr std::uint32_t EVENT_COLLISION_SURFACE_POLICY = 402;
+constexpr std::uint32_t EVENT_NPC_BEHAVIOR_DECISION = 500;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,

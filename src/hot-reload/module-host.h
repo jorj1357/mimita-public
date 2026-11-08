@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "modules/api/module-abi.h"
+#include "modules/api/npc-behavior-api.h"
 
 namespace mimita_map_editor { struct DragMathV1; struct GizmoPickV1; struct EditorInputV1; struct EditorClickV1; }
 namespace mimita_world_rendering {
@@ -20,6 +21,10 @@ struct BoxMeshV1;
 }
 namespace mimita_worldgen { struct ResolveV1; }
 namespace mimita_chunk_collision { struct BuildChunkV1; }
+namespace mimita_collision_policy {
+struct ContactPolicyV1;
+struct SurfacePolicyV1;
+}
 
 class ModuleHost
 {
@@ -27,6 +32,7 @@ public:
     static ModuleHost& instance();
 
     void startup();
+    void startupServerModules();
     void shutdown();
     void poll();
 
@@ -72,10 +78,17 @@ public:
     bool worldgenResolve(mimita_worldgen::ResolveV1* request);
     bool chunkCollisionBuild(
         mimita_chunk_collision::BuildChunkV1* request);
+    bool collisionContactPolicy(
+        mimita_collision_policy::ContactPolicyV1* policy);
+    bool collisionSurfacePolicy(
+        mimita_collision_policy::SurfacePolicyV1* policy);
+    bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);
+    bool npcBehaviorLoaded() const;
 
     const std::string& lastError() const { return mLastError; }
 
 private:
+    void startup(bool serverProcess);
     ModuleHost() = default;
     ~ModuleHost();
     ModuleHost(const ModuleHost&) = delete;
@@ -110,7 +123,7 @@ private:
         void* workerProcess = nullptr;
     };
 
-    bool loadCatalog();
+    bool loadCatalog(bool serverProcess = false);
     bool loadCurrent(ModuleEntry& entry);
     bool loadCandidate(ModuleEntry& entry, const std::filesystem::path& dll,
                        std::uint32_t generation, const std::string& expectedHash);

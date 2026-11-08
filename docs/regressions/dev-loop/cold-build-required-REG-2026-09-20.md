@@ -2963,3 +2963,163 @@ ordinary editor fixes are module-only.
 Move the live selection container and remaining input/outliner/property behavior
 into module state, then repeat mode-6/mode-0 real mouse trials without an EXE
 rebuild.
+
+## Cold-build occurrence 55
+
+UTC time:
+`2026-11-08T00:15:44Z`
+
+Related changelog:
+`docs/changelog/2026-11-08/20261108_002000-infinite-world-combined-collision.md`
+
+### Why the cold build was required
+
+Streamed chunk collision moved from per-chunk physical entities into the
+`World.collisionMesh` tail. The host needed a new collision-surface module
+policy, new actor contact-policy events, and a new server NPC collision stream
+owner linked into the executable.
+
+### Exact cold source / boundary
+
+- `src/modules/api/module-abi.h`
+- `src/modules/api/actor-contact-policy-api.h`
+- `src/world/chunk-collision-module.cpp`
+- `src/physics/movement/actor-contact-policy-module.cpp`
+- `src/hot-reload/module-host.{h,cpp}`
+- `src/world/streamed-world-layer.{h,cpp}`
+- `src/network/server-infinite-collision.{h,cpp}`
+- `src/network/server.cpp`, `src/network/server-npcs.cpp`
+- `config/modules/modules.json`
+
+### Build result
+
+Dev-loop build `2026-11-08T00:15:44.940248Z` succeeded. Module audit passed with
+`chunk-collision` owning sources=2, headers=3, events=[400, 401, 402]. The client
+activated `chunk-collision` generation 9 and later hot-reloaded the actor policy
+from generation 7 to 8 in the same PID during the earlier validation run.
+
+### What the cold build was needed to prove
+
+That streamed chunks can be composed into the world static collision tail and
+that the server NPC world can consume the same streamed collision surface.
+
+### Why live activation was impossible
+
+The module event identifiers, host capability methods, server stream owner, and
+executable link graph are kernel/module boundaries. Only the policy source and
+merge policy are live-replaceable.
+
+### Smallest change that would make this hot
+
+Move the remaining server stream owner behind a module capability so only its
+policy source changes; the executable link graph still needs to know the host
+call sites.
+
+### Next migration/falsification step
+
+Extract a shared streamed-collision frontier for mixed-size connector worlds so
+the dedicated server does not need the grid-approximation fallback, then repeat
+the mixed-world NPC trial without an EXE rebuild.
+
+## Cold-build occurrence 56
+
+UTC time:
+`2026-11-08T02:57:54.844986Z`
+
+Related changelog:
+`docs/changelog/2026-11-08/20261108_030000-fcs-staggered-npc-navigation.md`
+
+### Why the cold build was required
+
+The FCS navigation cadence is selected by the server and its retained route
+result is stored in host-owned NPC state. These host call-site and state-layout
+changes require relinking the executable.
+
+### Exact cold source / boundary
+
+- `src/network/server-npcs.cpp`
+- `src/npc/npc.cpp`
+- `src/npc/npc.h`
+- `src/npc/npc-movement-context.h`
+
+### Build result
+
+Dev-loop published build `2026-11-08T02:57:54.844986Z` with SHA-256
+`e1e7c11d14b7f593706466480de9291a0002987af684b9bd1ee89612a64f6c08`.
+Build identity reports source generation 20 and
+`source_changed_during_build=true`; the workspace had source changes during
+compilation. No runtime evidence was collected.
+
+### What the cold build was needed to prove
+
+That the server FCS scheduling call, NPC cache state, and shared update path
+compile and link together.
+
+### Why live activation was impossible
+
+The FCS server call site and cached result layout are host executable code.
+
+### Smallest change that would make this hot
+
+Move the route scheduling policy and plain-data cached route decision behind
+the existing NPC behavior module interface while keeping route queries,
+traversal, and physics host-owned.
+
+### Next migration/falsification step
+
+Compare live route query counts and server tick timings on the same FCS roster,
+and confirm route behavior after respawn. Do not infer a fix from this build
+alone.
+
+## Cold-build occurrence 57
+
+UTC time:
+`2026-11-08T03:15:36.150786Z`
+
+Related changelog:
+`docs/changelog/2026-11-08/20261108_030000-fcs-staggered-npc-navigation.md`
+
+### Why the cold build was required
+
+The server NPC target/sensing cadence and cached per-life state changed in host
+code. The server hazard buffer and actor-pair broadphase implementation also
+changed, so the host executable needed relinking.
+
+### Exact cold source / boundary
+
+- `src/network/server.cpp`
+- `src/network/server-npcs.cpp`
+- `src/npc/npc.cpp`
+- `src/npc/npc.h`
+- `src/npc/npc-movement-context.h`
+- `src/physics/movement/actor-pair-collision.cpp`
+
+### Build result
+
+Dev-loop build `2026-11-08T03:15:36.150786Z` succeeded with SHA-256
+`d9b31a254c2a0093ee61626b3ee6c99c65078daf422b97c16bed5013423ee303`.
+Its source generation 41 snapshot was stable during compilation. No runtime
+evidence was collected.
+
+### What the cold build was needed to prove
+
+That the FCS thinking schedule, retained target state, reusable hazard buffer,
+and bounded deterministic actor-pair candidate generation compile and link
+together.
+
+### Why live activation was impossible
+
+These edits change server tick scheduling, host NPC state, and the host
+collision implementation.
+
+### Smallest change that would make this hot
+
+Move the FCS NPC decision cadence and plain-data cached intent behind the
+existing NPC behavior module boundary. Server queries and authoritative
+collision would remain host-owned.
+
+### Next migration/falsification step
+
+Have the user run the published build and assess responsiveness and reconnects
+in the established FCS workload. Do not treat compilation as proof of a
+performance fix.

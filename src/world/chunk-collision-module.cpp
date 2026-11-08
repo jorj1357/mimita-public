@@ -5,12 +5,18 @@
 * and part transforms; the host owns static union and physical registration
 * this file DOES NOT include PhysicalEntitySystem, World, or STL types
 */
+#include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
 
 #include <cmath>
 #include <cstring>
 
 #include <module-identity.h>
+
+namespace mimita_collision_policy_module {
+void fillContactPolicy(mimita_collision_policy::ContactPolicyV1* policy);
+void fillSurfacePolicy(mimita_collision_policy::SurfacePolicyV1* policy);
+}
 
 namespace {
 
@@ -184,9 +190,21 @@ int onEvent(ModuleEventV1* event)
 {
     if (!event || !event->payload)
         return 0;
-    if (event->typeId != mimita_module::EVENT_COLLISION_BUILD_CHUNK)
-        return 0;
-    return buildChunk(static_cast<BuildChunkV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_COLLISION_BUILD_CHUNK)
+        return buildChunk(static_cast<BuildChunkV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_COLLISION_CONTACT_POLICY) {
+        mimita_collision_policy_module::fillContactPolicy(
+            static_cast<mimita_collision_policy::ContactPolicyV1*>(
+                event->payload));
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_COLLISION_SURFACE_POLICY) {
+        mimita_collision_policy_module::fillSurfacePolicy(
+            static_cast<mimita_collision_policy::SurfacePolicyV1*>(
+                event->payload));
+        return 1;
+    }
+    return 0;
 }
 
 std::uint32_t exportState(std::uint8_t*, std::uint32_t)

@@ -48,6 +48,7 @@
 #include "game/gamemode-manager.h"
 #include "config/player-settings.h"
 #include "npc/npc-state-machine.h"
+#include "procedural/infinite-world-runtime.h"
 #include "config.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
@@ -381,6 +382,9 @@ void engineTickReplay(Engine& engine, float dt)
                 ScenarioRecorder::instance().captureTick(
                     tickFrame, player, camera, npcSystem, mpContext, weapons,
                     world);
+            // Stream and compose chunk collision before actor movement so a
+            // loaded/render chunk always has collision in the same fixed tick.
+            InfiniteWorldRuntime::instance().tick(player, world);
             simulateTick(simContext, tickFrame);
             if (scheduledMoveTick && (moveStarted || moveEnded)) {
                 const std::string& requestId = scheduledTerminalMoveRequestId();

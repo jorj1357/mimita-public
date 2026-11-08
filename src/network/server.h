@@ -1003,7 +1003,8 @@ void resetServerWorldDestruction(HeadlessWorld& world, World& npcWorld,
 // client's appended World geometry.
 void appendHeadlessWorldInstance(HeadlessWorld& target,
                                  const HeadlessWorld& templateWorld,
-                                 const glm::mat4& transform);
+                                 const glm::mat4& transform,
+                                 bool rebuildCollision = true);
 
 // Removes appended triangles by truncating to baseTriangleCount and rebuilding
 // the broadphase and bounds.
