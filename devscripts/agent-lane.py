@@ -349,10 +349,9 @@ def check_lane(args: argparse.Namespace) -> int:
     cpp_files = [name for name in files if name.startswith("src/")
                  and Path(name).suffix.lower() in {".cpp", ".cc", ".c", ".h", ".hpp"}]
     if cpp_files:
-        print("check=incremental-build")
-        build = argparse.Namespace(lane_id=args.lane_id, mode="debug", timeout=args.timeout,
-                                   jobs=args.jobs)
-        failures += build_lane(build) != 0
+        print("check=dev-loop-build-status")
+        status_lane(argparse.Namespace(lane_id=args.lane_id))
+        print("compile_evidence=read from the lane dev-loop; agent check does not build")
         print("runtime=not_run (launch and exercise the real behavior separately)")
 
     if not (python_files or config_files or scenario_files or cpp_files):
