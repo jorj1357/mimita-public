@@ -386,6 +386,45 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
+bool buildNpcWorldCollisionDetached(
+    World& npcWorld, const HeadlessWorld& hw,
+    const std::vector<CollisionTriangle>& destructibleSurfaceTriangles,
+    bool buildRecast, const NavigationAgentProfile& recastProfile,
+    RecastNavMeshCandidate* navOut)
+{
+    npcWorld.collisionMesh.triangles.clear();
+    npcWorld.collisionMesh.solidIds.clear();
+    npcWorld.collisionMesh.triangles.reserve(hw.triangles.size() +
+                                             destructibleSurfaceTriangles.size());
+    npcWorld.collisionMesh.solidIds.reserve(hw.triangles.size() +
+                                            destructibleSurfaceTriangles.size());
+    for (size_t i = 0; i < hw.triangles.size(); ++i) {
+        const uint32_t solidId =
+            i < hw.solidIds.size() ? hw.solidIds[i] : 0u;
+        if (solidId == kRemovedCollisionSolidId)
+            continue;
+        npcWorld.collisionMesh.triangles.push_back(hw.triangles[i]);
+        npcWorld.collisionMesh.solidIds.push_back(solidId);
+    }
+    npcWorld.collisionMesh.triangles.insert(
+        npcWorld.collisionMesh.triangles.end(),
+        destructibleSurfaceTriangles.begin(), destructibleSurfaceTriangles.end());
+    npcWorld.collisionMesh.solidIds.insert(
+        npcWorld.collisionMesh.solidIds.end(),
+        destructibleSurfaceTriangles.size(), 0u);
+    npcWorld.collisionChunkSize = hw.collisionChunkSize;
+    ++npcWorld.renderRevision;
+    buildCollisionChunks(npcWorld, nullptr);
+    if (buildRecast) {
+        if (!navOut)
+            return false;
+        *navOut = RecastNavMeshCandidate::build(npcWorld, recastProfile);
+        if (!navOut->valid())
+            return false;
+    }
+    return true;
+}
+
 // Adopt newly spawned ServerNpc entries (from npc_spawn requests or startup)
 // into the real NpcSystem so they get full AI simulation.
 static void applyRoleStartingAmmo(Npc& npc, const ActorSpawnProfile& profile);

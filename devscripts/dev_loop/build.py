@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
 import subprocess
 import sys
 import time
@@ -16,6 +17,39 @@ from devscripts.path_containment import (
     resolve_coordinator_root,
     resolve_within,
 )
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def latest_artifact_matches(root: Path, loop) -> tuple[str, str, Path] | None:
+    folder = getattr(loop, "latest_build_folder", "") or ""
+    if not folder:
+        return None
+    artifact = root / ".dev" / "builds" / folder
+    identity_path = artifact / "build-identity.json"
+    executable = artifact / "mimita.exe"
+    current = root / "mimita.exe"
+    try:
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not executable.is_file() or not current.is_file():
+        return None
+    try:
+        if _sha256(current) != _sha256(executable):
+            return None
+    except OSError:
+        return None
+    artifact_id = str(identity.get("artifact_id") or "")
+    if not artifact_id:
+        return None
+    return artifact_id, folder, artifact
 
 
 def run_build(loop, requested_generation: int, request_ids: list[str], mode: str,
@@ -31,6 +65,11 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
     if mode == "release":
         command.append("release")
     environment = os.environ.copy()
+    repo_tmp = root / ".dev" / "tmp"
+    repo_tmp.mkdir(parents=True, exist_ok=True)
+    environment["TMP"] = str(repo_tmp)
+    environment["TEMP"] = str(repo_tmp)
+    environment["TMPDIR"] = str(repo_tmp)
     environment["MIMITA_DEV_LOOP_BUILD"] = "1"
     environment["MIMITA_BUILD_AUTHORITY"] = write_authority(
         root, "exe", "dev-loop",
@@ -115,14 +154,27 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
             except (OSError, subprocess.SubprocessError):
                 source_at_publish = {"revision": "unknown", "dirty": True,
                                      "worktree_sha256": "unknown"}
-            artifact_id, folder_name = make_artifact_id()
-            destination = publish_build(artifact_id, folder_name,
-                                       requested_generation, mode,
-                                       source_at_start, source_at_publish)
+            build_text = "".join(output)
+            reused = latest_artifact_matches(root, loop)
+            if reused and ("Nothing changed." in build_text or
+                           source_at_start == source_at_publish):
+                artifact_id, folder_name, destination = reused
+                print(f"[DEV] reusing artifact {folder_name} (EXE unchanged)")
+            else:
+                artifact_id, folder_name = make_artifact_id()
+                destination = publish_build(artifact_id, folder_name,
+                                           requested_generation, mode,
+                                           source_at_start, source_at_publish)
         except Exception as error:
             successful = False
             error_message = f"publish failed: {error}"
             loop._record_build_output(error_message)
+
+    try:
+        (root / ".dev" / "build-output.log").write_text(
+            "".join(output), encoding="utf-8", errors="replace")
+    except OSError:
+        pass
 
     loop.build_completions.put({
         "generation": requested_generation,

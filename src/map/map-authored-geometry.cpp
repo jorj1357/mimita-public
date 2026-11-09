@@ -1,5 +1,6 @@
 // 2026-10-23
 #include "map/map-authored-geometry.h"
+#include "map/map-glb-authored.h"
 
 #include <algorithm>
 #include <array>
@@ -345,8 +346,17 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
 
     for (const MapGLBObjectOverride& object : config.glbObjects) {
         hashString(hash, object.id);
+        hashString(hash, object.name);
+        hashString(hash, object.instanceId);
+        hashString(hash, object.source);
         hashVec3(hash, object.position);
+        hashVec3(hash, object.rotation);
+        hashVec3(hash, object.scale);
         hashString(hash, object.material);
+        hashPod(hash, object.visible);
+        hashPod(hash, object.collision);
+        hashPod(hash, object.deleted);
+        hashPod(hash, object.clone);
     }
 
     for (const MapEntity& entity : config.entities) {
@@ -361,6 +371,35 @@ uint64_t authoredGeometrySignature(const MapObjectiveConfig& config)
     return hash ? hash : 1ull;
 }
 
+uint64_t authoredGeometrySignatureLive(const MapObjectiveConfig& config)
+{
+    const MapObjectiveConfig& current =
+        MapConfigRegistry::instance().current();
+    if (&config == &current) {
+        static thread_local std::uint64_t cachedRevision = ~0ull;
+        static thread_local std::uint32_t cachedGeneration = ~0u;
+        static thread_local std::uint64_t cachedSignature = 0;
+        const std::uint64_t revision = MapConfigRegistry::instance().revision();
+        const std::uint32_t generation =
+            ModuleHost::instance().activeGeneration("map-geometry");
+        if (revision == cachedRevision && generation == cachedGeneration &&
+            cachedSignature != 0)
+            return cachedSignature;
+        const std::string bytes =
+            MapConfigRegistry::instance().toJsonString(false);
+        std::uint64_t signature = 0;
+        if (ModuleHost::instance().mapGeometrySignature(
+                bytes.data(), static_cast<std::uint32_t>(bytes.size()),
+                &signature)) {
+            cachedRevision = revision;
+            cachedGeneration = generation;
+            cachedSignature = signature;
+            return signature;
+        }
+    }
+    return authoredGeometrySignature(config);
+}
+
 std::string mapIdFromAssetPath(const std::string& path)
 {
     if (path.empty()) return {};
@@ -372,29 +411,91 @@ void applyGLBObjectOverrides(World& world,
 {
     for (MapGLBObject& object : world.mesh.objects) {
         glm::vec3 target = object.basePosition;
+        glm::vec3 rotation(0.0f);
+        glm::vec3 scale(1.0f);
+        GLBObjectAuthoredV2& state = MapGLBAuthoredState::instance().ensure(
+            &world.mesh, object.id, object.transform, object.basePosition);
+        if (state.basePositions.size() != object.vertexCount) {
+            state.basePositions.clear();
+            state.baseNormals.clear();
+            state.basePositions.reserve(object.vertexCount);
+            state.baseNormals.reserve(object.vertexCount);
+            const size_t firstBase = std::min(object.vertexFirst,
+                                              world.mesh.verts.size());
+            const size_t lastBase = std::min(
+                object.vertexFirst + object.vertexCount,
+                world.mesh.verts.size());
+            for (size_t i = firstBase; i < lastBase; ++i) {
+                state.basePositions.push_back(world.mesh.verts[i].pos);
+                state.baseNormals.push_back(world.mesh.verts[i].normal);
+            }
+        }
         const MapGLBObjectOverride* matched = nullptr;
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
                 matched = &override;
                 target = override.position;
+                rotation = override.rotation;
+                scale = glm::max(override.scale, glm::vec3(0.0001f));
                 if (!override.material.empty())
                     object.materialName = override.material;
                 break;
             }
         }
-        const glm::vec3 current(object.transform[3]);
-        const glm::vec3 delta = target - current;
+        state.position = target;
+        state.rotation = rotation;
+        state.scale = scale;
+        state.material = matched ? matched->material : std::string{};
+        state.visible = matched ? matched->visible : true;
+        state.collision = matched ? matched->collision : true;
+        state.deleted = matched ? matched->deleted : false;
+        state.clone = matched ? matched->clone : false;
+        state.authoredHidden = state.deleted || !state.visible;
+        state.authoredCollisionHidden = state.deleted || !state.collision;
         const size_t first = std::min(object.vertexFirst, world.mesh.verts.size());
         const size_t last = std::min(object.vertexFirst + object.vertexCount,
                                      world.mesh.verts.size());
         const bool rangeValid =
             object.vertexFirst < world.mesh.verts.size() &&
             object.vertexFirst + object.vertexCount <= world.mesh.verts.size();
-        for (size_t i = first; i < last; ++i)
-            world.mesh.verts[i].pos += delta;
-        object.transform[3] += glm::vec4(delta, 0.0f);
-        object.boundsMin += delta;
-        object.boundsMax += delta;
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), target);
+        transform = glm::rotate(transform, glm::radians(rotation.z),
+                                glm::vec3(0, 0, 1));
+        transform = glm::rotate(transform, glm::radians(rotation.y),
+                                glm::vec3(0, 1, 0));
+        transform = glm::rotate(transform, glm::radians(rotation.x),
+                                glm::vec3(1, 0, 0));
+        transform = glm::scale(transform, scale);
+        transform = transform * glm::translate(glm::mat4(1.0f),
+                                               -object.basePosition);
+        object.transform = transform * state.baseTransform;
+        object.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        object.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t i = first; i < last; ++i) {
+            const size_t local = i - object.vertexFirst;
+            const glm::vec3 base =
+                local < state.basePositions.size()
+                    ? state.basePositions[local]
+                    : world.mesh.verts[i].pos;
+            const glm::vec3 normal =
+                local < state.baseNormals.size()
+                    ? state.baseNormals[local]
+                    : world.mesh.verts[i].normal;
+            world.mesh.verts[i].pos =
+                glm::vec3(transform * glm::vec4(base, 1.0f));
+            const glm::mat3 normalMatrix(transform);
+            const glm::vec3 transformed = normalMatrix * normal;
+            if (glm::dot(transformed, transformed) > 0.000001f)
+                world.mesh.verts[i].normal = glm::normalize(transformed);
+            object.boundsMin = glm::min(object.boundsMin,
+                                        world.mesh.verts[i].pos);
+            object.boundsMax = glm::max(object.boundsMax,
+                                        world.mesh.verts[i].pos);
+        }
+        if (!rangeValid) {
+            object.boundsMin = object.basePosition;
+            object.boundsMax = object.basePosition;
+        }
         if (matched) {
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::World, StructuredLevel::Important,
@@ -409,7 +510,10 @@ void applyGLBObjectOverrides(World& world,
                                                   object.basePosition.y,
                                                   object.basePosition.z}},
                                {"target_position", {target.x, target.y, target.z}},
-                               {"delta", {delta.x, delta.y, delta.z}},
+                               {"rotation", {rotation.x, rotation.y, rotation.z}},
+                               {"scale", {scale.x, scale.y, scale.z}},
+                               {"deleted", matched->deleted},
+                               {"visible", matched->visible},
                                {"vertex_first", object.vertexFirst},
                                {"vertex_count", object.vertexCount},
                                {"range_valid", rangeValid},
@@ -420,33 +524,226 @@ void applyGLBObjectOverrides(World& world,
     }
 }
 
+void applyGLBObjectClones(World& world,
+                          const std::vector<MapGLBObjectOverride>& overrides)
+{
+    for (const MapGLBObjectOverride& override : overrides) {
+        if (!override.clone || override.deleted)
+            continue;
+        const std::string sourceId =
+            !override.source.empty() ? override.source : override.id;
+        MapGLBObject* source = nullptr;
+        for (MapGLBObject& object : world.mesh.objects)
+            if (object.id == sourceId) { source = &object; break; }
+        if (!source)
+            for (MapGLBObject& object : world.authoredObjects)
+                if (object.id == sourceId) { source = &object; break; }
+        if (!source || source->vertexCount == 0)
+            continue;
+        const GLBObjectAuthoredV2* sourceState =
+            MapGLBAuthoredState::instance().find(&world.mesh, source->id);
+        const std::vector<glm::vec3>* basePositions =
+            sourceState && !sourceState->basePositions.empty()
+                ? &sourceState->basePositions : nullptr;
+        const std::vector<glm::vec3>* baseNormals =
+            sourceState && !sourceState->baseNormals.empty()
+                ? &sourceState->baseNormals : nullptr;
+        const size_t first = world.mesh.verts.size();
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), override.position);
+        transform = glm::rotate(transform, glm::radians(override.rotation.z),
+                                glm::vec3(0, 0, 1));
+        transform = glm::rotate(transform, glm::radians(override.rotation.y),
+                                glm::vec3(0, 1, 0));
+        transform = glm::rotate(transform, glm::radians(override.rotation.x),
+                                glm::vec3(1, 0, 0));
+        transform = glm::scale(transform,
+                               glm::max(override.scale, glm::vec3(0.0001f)));
+        transform = transform * glm::translate(glm::mat4(1.0f),
+                                               -source->basePosition);
+        MapGLBObject clone;
+        clone.id = override.instanceId.empty() ? override.id : override.instanceId;
+        clone.name = override.name.empty() ? source->name + "_clone" : override.name;
+        clone.nodeIndex = -1;
+        clone.basePosition = override.position;
+        clone.transform = transform;
+        clone.materialName = !override.material.empty()
+            ? override.material : source->materialName;
+        clone.vertexFirst = first;
+        clone.vertexCount = source->vertexCount;
+        clone.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        clone.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t i = 0; i < source->vertexCount; ++i) {
+            const glm::vec3 base = basePositions && i < basePositions->size()
+                ? (*basePositions)[i]
+                : world.mesh.verts[source->vertexFirst + i].pos;
+            const glm::vec3 normal = baseNormals && i < baseNormals->size()
+                ? (*baseNormals)[i]
+                : world.mesh.verts[source->vertexFirst + i].normal;
+            Vertex vertex = world.mesh.verts[source->vertexFirst + i];
+            vertex.pos = glm::vec3(transform * glm::vec4(base, 1.0f));
+            const glm::vec3 transformed = glm::mat3(transform) * normal;
+            if (glm::dot(transformed, transformed) > 0.000001f)
+                vertex.normal = glm::normalize(transformed);
+            world.mesh.verts.push_back(vertex);
+            clone.boundsMin = glm::min(clone.boundsMin, vertex.pos);
+            clone.boundsMax = glm::max(clone.boundsMax, vertex.pos);
+        }
+        Mesh::Batch batch;
+        batch.materialName = clone.materialName.empty()
+            ? "default" : clone.materialName;
+        batch.first = first;
+        batch.count = clone.vertexCount;
+        for (const Mesh::Batch& sourceBatch : world.mesh.batches)
+            if (sourceBatch.first <= source->vertexFirst &&
+                sourceBatch.first + sourceBatch.count > source->vertexFirst) {
+                batch.texture = sourceBatch.texture;
+                if (clone.materialName.empty())
+                    batch.materialName = sourceBatch.materialName;
+                break;
+            }
+        world.mesh.batches.push_back(batch);
+        GLBObjectAuthoredV2& state = MapGLBAuthoredState::instance().ensure(
+            &world.mesh, clone.id, clone.transform, clone.basePosition);
+        state.position = override.position;
+        state.rotation = override.rotation;
+        state.scale = override.scale;
+        state.material = clone.materialName;
+        state.visible = override.visible;
+        state.collision = override.collision;
+        state.deleted = override.deleted;
+        state.clone = true;
+        state.authoredHidden = state.deleted || !state.visible;
+        state.authoredCollisionHidden = state.deleted || !state.collision;
+        const std::string cloneId = clone.id;
+        world.authoredObjects.push_back(std::move(clone));
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map.glb-object.clone.created", sourceId,
+            "client GLB source node cloned into authored geometry", 0,
+            nlohmann::json{{"source", sourceId},
+                           {"clone", cloneId},
+                           {"vertex_first", first},
+                           {"vertex_count", world.authoredObjects.back().vertexCount}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
+void applyGLBObjectClones(MimitaNet::HeadlessWorld& world,
+                          const std::vector<MapGLBObjectOverride>& overrides)
+{
+    for (const MapGLBObjectOverride& override : overrides) {
+        if (!override.clone || override.deleted)
+            continue;
+        const std::string sourceId =
+            !override.source.empty() ? override.source : override.id;
+        const MimitaNet::HeadlessGLBObject* source = nullptr;
+        for (const auto& object : world.rawGlbObjects)
+            if (object.id == sourceId) { source = &object; break; }
+        if (!source)
+            for (const auto& object : world.glbObjects)
+                if (object.id == sourceId) { source = &object; break; }
+        if (!source || source->triangleCount == 0)
+            continue;
+        const size_t first = std::min(source->triangleFirst,
+                                      world.rawTriangles.size());
+        const size_t last = std::min(source->triangleFirst + source->triangleCount,
+                                     world.rawTriangles.size());
+        if (first >= last)
+            continue;
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), override.position);
+        transform = glm::rotate(transform, glm::radians(override.rotation.z),
+                                glm::vec3(0, 0, 1));
+        transform = glm::rotate(transform, glm::radians(override.rotation.y),
+                                glm::vec3(0, 1, 0));
+        transform = glm::rotate(transform, glm::radians(override.rotation.x),
+                                glm::vec3(1, 0, 0));
+        transform = glm::scale(transform,
+                               glm::max(override.scale, glm::vec3(0.0001f)));
+        transform = transform * glm::translate(glm::mat4(1.0f),
+                                               -source->basePosition);
+        MimitaNet::HeadlessGLBObject clone;
+        clone.id = override.instanceId.empty() ? override.id : override.instanceId;
+        clone.name = override.name.empty() ? source->name + "_clone" : override.name;
+        clone.nodeIndex = -1;
+        clone.basePosition = override.position;
+        clone.position = override.position;
+        clone.materialName = override.material;
+        clone.triangleFirst = world.triangles.size();
+        clone.triangleCount = static_cast<size_t>(last - first);
+        clone.solidId = world.nextSolidId++;
+        clone.boundsMin = glm::vec3(std::numeric_limits<float>::max());
+        clone.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
+        for (size_t i = first; i < last; ++i) {
+            CollisionTriangle triangle = world.rawTriangles[i];
+            triangle.a = glm::vec3(transform * glm::vec4(triangle.a, 1.0f));
+            triangle.b = glm::vec3(transform * glm::vec4(triangle.b, 1.0f));
+            triangle.c = glm::vec3(transform * glm::vec4(triangle.c, 1.0f));
+            world.triangles.push_back(triangle);
+            world.solidIds.push_back(
+                (override.deleted || !override.collision)
+                    ? kRemovedCollisionSolidId : clone.solidId);
+            clone.boundsMin = glm::min(clone.boundsMin,
+                glm::min(triangle.a, glm::min(triangle.b, triangle.c)));
+            clone.boundsMax = glm::max(clone.boundsMax,
+                glm::max(triangle.a, glm::max(triangle.b, triangle.c)));
+        }
+        world.glbObjects.push_back(clone);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map.glb-object.clone.created", sourceId,
+            "server GLB source node cloned into headless collision", 0,
+            nlohmann::json{{"source", sourceId},
+                           {"clone", clone.id},
+                           {"triangle_first", clone.triangleFirst},
+                           {"triangle_count", clone.triangleCount},
+                           {"solid_id", clone.solidId}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+
 void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                              const std::vector<MapGLBObjectOverride>& overrides)
 {
     for (MimitaNet::HeadlessGLBObject& object : world.glbObjects) {
         glm::vec3 target = object.basePosition;
+        glm::vec3 rotation(0.0f);
+        glm::vec3 scale(1.0f);
         const MapGLBObjectOverride* matched = nullptr;
         for (const MapGLBObjectOverride& override : overrides) {
             if (override.id == object.id) {
                 matched = &override;
                 target = override.position;
+                rotation = override.rotation;
+                scale = glm::max(override.scale, glm::vec3(0.0001f));
                 if (!override.material.empty())
                     object.materialName = override.material;
                 break;
             }
         }
-        const glm::vec3 delta = target - object.position;
         const size_t first = std::min(object.triangleFirst, world.triangles.size());
         const size_t last = std::min(object.triangleFirst + object.triangleCount,
                                      world.triangles.size());
         const bool rangeValid =
             object.triangleFirst < world.triangles.size() &&
             object.triangleFirst + object.triangleCount <= world.triangles.size();
+        glm::mat4 transform = glm::translate(glm::mat4(1.0f), target);
+        transform = glm::rotate(transform, glm::radians(rotation.z),
+                                glm::vec3(0, 0, 1));
+        transform = glm::rotate(transform, glm::radians(rotation.y),
+                                glm::vec3(0, 1, 0));
+        transform = glm::rotate(transform, glm::radians(rotation.x),
+                                glm::vec3(1, 0, 0));
+        transform = glm::scale(transform, scale);
+        transform = transform * glm::translate(glm::mat4(1.0f),
+                                               -object.basePosition);
         for (size_t i = first; i < last; ++i) {
             CollisionTriangle& triangle = world.triangles[i];
-            triangle.a += delta;
-            triangle.b += delta;
-            triangle.c += delta;
+            triangle.a = glm::vec3(transform * glm::vec4(triangle.a, 1.0f));
+            triangle.b = glm::vec3(transform * glm::vec4(triangle.b, 1.0f));
+            triangle.c = glm::vec3(transform * glm::vec4(triangle.c, 1.0f));
+            if (matched && (matched->deleted || !matched->collision) &&
+                i < world.solidIds.size())
+                world.solidIds[i] = kRemovedCollisionSolidId;
         }
         object.position = target;
         if (matched) {
@@ -463,7 +760,10 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                                                   object.basePosition.y,
                                                   object.basePosition.z}},
                                {"target_position", {target.x, target.y, target.z}},
-                               {"delta", {delta.x, delta.y, delta.z}},
+                               {"rotation", {rotation.x, rotation.y, rotation.z}},
+                               {"scale", {scale.x, scale.y, scale.z}},
+                               {"deleted", matched->deleted},
+                               {"collision", matched->collision},
                                {"triangle_first", object.triangleFirst},
                                {"triangle_count", object.triangleCount},
                                {"range_valid", rangeValid},
@@ -535,6 +835,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
     }
 
     applyGLBObjectOverrides(world, config.glbObjects);
+    applyGLBObjectClones(world, config.glbObjects);
 
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
@@ -955,6 +1256,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
         break;
     }
     applyGLBObjectOverrides(world, config.glbObjects);
+    applyGLBObjectClones(world, config.glbObjects);
     size_t added = 0;
     for (const AuthoredBlock& block : config.blocks) {
         if (!block.enabled || !finiteVec(block.position) || !finiteVec(block.size))

@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("1", "2"), default="1",
-                        help="1 keeps the existing shared-checkout workflow; 2 uses an isolated lane")
+    parser.add_argument("--mode", choices=("1", "2"), default="2",
+                        help="2 uses an isolated agent lane (default); 1 is a coordinator fallback")
     parser.add_argument("action", choices=("ensure", "build", "run", "status", "check",
                                              "create", "cleanup", "promote", "list"))
     parser.add_argument("args", nargs=argparse.REMAINDER)

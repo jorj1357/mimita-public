@@ -32,18 +32,20 @@ launches the latest successfully published artifact immediately, even if it is
 older than the source currently building; build completion publishes a new
 artifact but does not launch it automatically.
 
-The target machine-wide scheduler uses named Windows synchronization objects
-for exactly one EXE slot and two module slots; it creates no coordination files
+The repository-local scheduler uses named Windows synchronization objects for
+exactly one EXE slot and two module slots; it creates no coordination files
 outside the project. Scheduler diagnostics and attempt records live under the
-coordinator checkout's ignored `.dev/` directory. It queues rather than
-failing, coalesces newer saves, runs below normal priority, caps compiler jobs
-at four on this machine, and waits when free physical memory is below the
-configured threshold.
+coordinator checkout's ignored `.dev/build-scheduler/` directory. It queues
+rather than failing, coalesces newer saves, runs below normal priority, caps
+compiler jobs at four on this machine, and waits when free physical memory is
+below the configured threshold. The per-checkout OS lock remains a second
+guard.
 
-The scheduler defaults to the coordinator checkout's `.dev/build-scheduler/`.
 The lane manager creates worktrees only under `.dev/agent-lanes/`, and `build.py`
 uses the shared coordinator `.dev/ccache/` cache. A configured scheduler or
-cache path outside the repository fails clearly instead of falling back.
+cache path outside the repository fails clearly instead of falling back. See
+`docs/architecture/live-development/self-contained-workspace.md` and
+`docs/architecture/live-development/module-migration-plan.md`.
 
 On Windows, `[1]` launches the selected build through the fixed
 `.dev/current/mimita.exe` path. Each new published artifact uses its UTC
@@ -59,11 +61,11 @@ artifact folders remain readable and launchable.
 `build_agent.py`, `buildv2.py`, and setup entry points are compatibility
 wrappers that submit to this same dev-loop. `build.py build-only` and
 `build_game_dll.py` are internal compiler steps. Agents must not use them.
-Separate Git worktrees have independent locks and build outputs; named OS build
-slots prevent excessive concurrent compilation. Use repository-local lane
-worktrees under `.dev/agent-lanes/`; do not share one mutable source checkout
-between agents. Do not use direct compiler scripts as a separate live build
-path.
+Separate Git worktrees have independent locks and build outputs; the
+repository-local scheduler and named OS build slots prevent excessive
+concurrent compilation. Use repository-local lane worktrees under
+`.dev/agent-lanes/`; do not share one mutable source checkout between agents.
+Do not use direct compiler scripts as a separate live build path.
 
 The build never terminates a running game to publish an artifact. Build
 identity and process lifetime are separate: selecting a new artifact requires
@@ -193,9 +195,8 @@ python devscripts/agent-lane.py status <lane-id>
 ```
 
 Do not use `--mode 2 build` or `--mode 1 build`; those actions are refused.
-Under the target design, Mode 2 shares only the content-addressed compiler
-cache under the coordinator checkout's `.dev/ccache`; each lane has its own
-object files, executable,
+Mode 2 shares only the content-addressed compiler cache under the coordinator
+checkout's `.dev/ccache`; each lane still has its own object files, executable,
 dev-loop, module DLLs, and `events.jsonl`. Named OS build slots allow one EXE
 build and two module builds across lanes without an external scheduler folder.
 One compiler job per lane is the default. Independent builds can still slow a
@@ -225,10 +226,15 @@ agent task under `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`:
 
 ```text
 python devscripts/agent-lane.py create <lane-id> [--base <ref>]
+python devscripts/agent-lane.py ensure <lane-id>
 python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
 python devscripts/agent-lane.py check <lane-id> [--base <ref>]
 python devscripts/agent-lane.py status <lane-id>
 ```
+
+Do not run `agent-lane.py build`. The lane dev-loop builds automatically after
+saved source changes; `check` reports lane build status without invoking a
+build.
 
 Assign the agent the repository-contained worktree path printed by `create`.
 Each lane has an independent dev-loop daemon and per-process journals. `check`
@@ -251,7 +257,7 @@ atomically points `.dev/stable-build.json` at it. That manifest contains the
 source revision, build ID, and executable path. Promotion never overwrites a
 running executable; previous stable artifacts remain available.
 
-After any build, check the status printed in the output and in
-`build/changelog.txt`. If the status is `NOTHING_CHANGED` but you expected a
-relink, delete the stale object for the file you changed (or the relevant
-`build/obj-*/` object) and rebuild.
+After any build, check the status printed in the output and the lane status.
+The build link ledger detects objects newer than the executable, missing or
+zero objects, stale pending links, and flag changes, so a stale relink repairs
+itself on the next lane dev-loop build. Do not delete objects manually.

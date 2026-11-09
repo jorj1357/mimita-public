@@ -28,6 +28,7 @@
 #include "mapeditor/map-editor.h"
 #include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
+#include "modules/api/map-geometry-api.h"
 #include "modules/api/map-editor-api.h"
 #include "modules/api/world-rendering-api.h"
 #include "modules/api/worldgen-api.h"
@@ -1284,6 +1285,28 @@ bool ModuleHost::worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1* reque
         return false;
     return invokeModule("world-rendering", mimita_module::EVENT_RENDER_BUILD_BOX,
                         request, sizeof(*request));
+}
+
+bool ModuleHost::mapGeometrySignature(const char* bytes,
+                                      std::uint32_t byteCount,
+                                      std::uint64_t* outSignature)
+{
+    if (!outSignature)
+        return false;
+    mimita_map_geometry::SignatureV1 request{};
+    request.version = mimita_map_geometry::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.bytes = bytes;
+    request.byteCount = byteCount;
+    request.signatureVersion = mimita_map_geometry::SIGNATURE_VERSION;
+    if (!invokeModule("map-geometry",
+                      mimita_module::EVENT_MAP_GEOMETRY_SIGNATURE,
+                      &request, sizeof(request)))
+        return false;
+    if (!request.result || request.outSignature == 0)
+        return false;
+    *outSignature = request.outSignature;
+    return true;
 }
 
 bool ModuleHost::worldgenResolve(mimita_worldgen::ResolveV1* request)

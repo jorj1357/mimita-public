@@ -343,22 +343,23 @@ Mode 2 isolated lanes are the required agent workflow. Each lane lives under
 journal state. The lane dev-loop auto-detects edits; agents have no build
 command.
 
-The target scheduler uses named Windows synchronization objects, not files
-outside the repository, to permit one EXE build and two module builds across
-lanes. Attempt records, wait details, caches, and temporary files stay under
-the coordinator repository's ignored `.dev/` tree. Builds wait for a free slot,
-coalesce newer saves into the next generation, run below normal priority, cap
-compiler jobs at four on this machine, and wait if free physical memory is
-below the configured threshold. A build failure leaves the previous artifact
-or module generation active. Only a human may use `MIMITA_BUILD_OVERRIDE=1`
-for an explicit emergency build.
+The scheduler uses named Windows synchronization objects, not files outside the
+repository, to permit one EXE build and two module builds across lanes. Attempt
+records, wait details, caches, and temporary files stay under the coordinator
+repository's ignored `.dev/` tree. Builds wait for a free slot, coalesce newer
+saves into the next generation, run below normal priority, cap compiler jobs at
+four on this machine, and wait if free physical memory is below the configured
+threshold. A build failure leaves the previous artifact or module generation
+active. Only a human may use `MIMITA_BUILD_OVERRIDE=1` for an explicit emergency
+build.
 
 **Implementation status:** the lane manager creates worktrees only under
 `.dev/agent-lanes/`, the scheduler defaults to `.dev/build-scheduler/`, the
 room-code handoff uses `.dev/tmp/<lane-id>/`, and the shared cache is
 `<coordinator>/.dev/ccache/`. `devscripts/path_containment.py` rejects paths,
 metadata, symlinks, junctions, and configured scheduler/cache roots that escape
-the repository.
+the repository. All lane, scheduler, cache, temp, runtime, world-project,
+artifact, and journal state stays inside the repository.
 
 The canonical build-input inventory is owned by `build.py`,
 `build_game_dll.py`, and `build_toolchain.py`. The dev loop must watch every
@@ -2738,15 +2739,17 @@ checkout, so agents using it share that build owner and can wait on one another.
 The published executable becomes the launch choice; a running game is not
 automatically replaced by the executable build.
 
-### Mode 2: repository-local agent lanes
+### Mode 2: repository-local agent lanes (mandatory for agents)
 
-**Policy:** use separate mode 2 worktrees under the coordinator checkout's
-ignored `.dev/agent-lanes/<lane-id>/` directory. Do not create lane folders
-beside the project or in a user-profile/temp directory. `devscripts/agent-lane.py`
-enforces this root and rejects escaping paths, metadata, symlinks, and
-junctions. Use one coordinator-owned source tree for any authorized work that
-does not require agent isolation; do not have multiple agents edit that same
-tree concurrently.
+Mode 2 isolated lanes are the required agent workflow. The authoritative rules
+are in [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md). Use
+separate worktrees under the coordinator checkout's ignored
+`.dev/agent-lanes/<lane-id>/` directory. Do not create lane folders beside the
+project or in a user-profile/temp directory. `devscripts/agent-lane.py` enforces
+this root and rejects escaping paths, metadata, symlinks, and junctions. An
+agent creates one lane, ensures its dev-loop is running, edits, and reads
+status/journals. The lane dev-loop auto-builds host changes; the running lane
+game's `ModuleHost` builds module changes. Agents never invoke a build command.
 
 Each agent gets a worktree with its own source, incremental object files and
 PCH, executable artifact, dev-loop, run state, command queue, and

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -134,6 +135,9 @@ struct ServerGamemodeState
     // Pristine GLB-only headless world. Live authored edits rebuild from this
     // snapshot so repeated saves cannot append duplicate authored geometry.
     HeadlessWorld authoredBaseWorld;
+    std::shared_ptr<const HeadlessWorld> authoredBaseWorldShared;
+    std::shared_ptr<const HeadlessWorld> authoredCacheWorldShared;
+    std::shared_ptr<const HeadlessWorld> authoredCacheWorldPreviousShared;
     // Last finalized authored world before destructible state is re-applied.
     // Keyed by the exact authored signature so undo/restore and repeated saves
     // avoid the expensive decimation/union/finalize pass.
@@ -149,6 +153,11 @@ struct ServerGamemodeState
     uint32_t geometryRevision = 0;
     bool geometryRebuildPending = false;
     uint64_t pendingGeometrySignature = 0;
+    bool authoredRebuildInFlight = false;
+    uint64_t authoredRebuildInFlightSignature = 0;
+    uint32_t authoredRebuildInFlightMapVersion = 0;
+    uint64_t authoredRebuildGeneration = 0;
+    uint64_t authoredRebuildResultGeneration = 0;
     uint32_t duelId = 0;
     uint32_t mapVersion = 0;
     uint32_t spawnAnchorVersion = 0;
@@ -531,6 +540,16 @@ void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,
 // rebuild. Lives on the server tick so remote clients can apply the same view.
 void serverMarkAuthoredGeometryApplied();
 void serverSeedAuthoredCache(const HeadlessWorld& authoredWorld);
+
+bool serverQueueAuthoredGeometryRebuild(
+    ServerGamemodeState& d, const HeadlessWorld& world,
+    const std::string& mapId, uint64_t signature, uint32_t tick);
+bool serverDrainAuthoredGeometryRebuild(
+    SOCKET sock, ServerGamemodeState& d,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    HeadlessWorld& world, World& npcWorld, uint32_t tick,
+    uint64_t& totalPacketsOut);
+void serverCancelAuthoredGeometryRebuild();
 
 // Reliable chunked server→client map config snapshot. The host client keeps
 // local file authority and is deliberately excluded from broadcasts.

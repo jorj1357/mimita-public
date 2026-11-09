@@ -1,4 +1,12 @@
-﻿### top issue as of 2026 11 09 1041 jorj 
+﻿### top issue as of 2026 11 09 1041 jorj
+
+2026 11 08 2100
+repo-local workspace + module migration continuation recorded
+- canonical workspace rule: docs/architecture/live-development/self-contained-workspace.md
+- canonical continuation plan: docs/architecture/live-development/module-migration-plan.md
+- goal: behavior lives in modules; cold builds only for kernel/device/transport/packet-schema/loader/public-ABI changes; effectively never for behavior work.
+
+2026 11 08 1212 jorj
 
 2026 11 09 1027 jorj 
 

@@ -7,11 +7,18 @@
 * this file DOES NOT permit killing, closing, or relinking a running game
 */
 
-## Current policy (2026-10-01)
+## Current policy (2026-11-08)
 
-The no-cold-build rule is disabled as of 2026-10-01. Cold builds are fine for
-now. The invariant and cold/live restrictions below are retained as historical
-context and do not block the current workflow.
+Gameplay and tool behavior belongs in reloadable modules. Cold EXE builds are
+reserved for process, device, transport, packet-schema, document-storage,
+loader, and public-ABI changes. The working goal is "effectively never" for
+behavior work; literal zero is not promised for clean machine builds.
+
+All normal work is repository-local and lane-owned. See
+[self-contained-workspace.md](self-contained-workspace.md) and
+[module-migration-plan.md](module-migration-plan.md). The historical cold/live
+discussion below explains the invariant and remains background, not a workflow
+that agents may invoke.
 
 ## Agent build authority (2026-11-08)
 
@@ -25,8 +32,12 @@ lane manager and scheduler enforce the repository-local path policy and reject
 escaping paths, metadata, symlinks, junctions, and configured scheduler/cache
 roots. Agents must not run `build.py`,
 `module-build-worker.py`, a build request, or a compiler directly. Only a human
-may use `MIMITA_BUILD_OVERRIDE=1`. See
-[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
+may use `MIMITA_BUILD_OVERRIDE=1`. All lanes, scheduler slots, caches, temp
+files, runtime files, world projects, artifacts, and journals live inside the
+repository under gitignored roots. See
+[`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md),
+[`self-contained-workspace.md`](self-contained-workspace.md), and
+[`module-migration-plan.md`](module-migration-plan.md).
 
 # Live development invariant
 

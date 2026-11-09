@@ -249,10 +249,6 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         const float scale = std::ceil((requiredCell / cellSize) * 4.0f) / 4.0f;
         cellSize = 0.25f * scale;
         cellHeight = 0.20f * scale;
-        Debug::warn(Debug::Category::NpcMovement,
-            "[RECAST] world extent %.1f m exceeds the 8192-cell grid at 0.25 m; "
-            "using cellSize=%.2f cellHeight=%.2f\n",
-            maxAxisExtent, cellSize, cellHeight);
     }
 
     std::vector<float> verts;
@@ -872,6 +868,120 @@ std::uint64_t collisionContentHash(const World& world,
 }
 
 } // namespace
+
+std::uint64_t navMeshContentHash(const World& world,
+                                 const NavigationAgentProfile& profile)
+{
+    return collisionContentHash(world, profile);
+}
+
+struct RecastNavMeshCandidate::Impl
+{
+    dtNavMesh* mesh = nullptr;
+    dtNavMeshQuery* query = nullptr;
+    RecastNavigationResult diagnostics;
+    NavigationAgentProfile profile;
+    std::uint64_t contentHash = 0;
+    std::size_t triangleCount = 0;
+
+    ~Impl()
+    {
+        if (query) dtFreeNavMeshQuery(query);
+        if (mesh) dtFreeNavMesh(mesh);
+    }
+};
+
+RecastNavMeshCandidate::RecastNavMeshCandidate()
+    : mImpl(std::make_unique<Impl>())
+{
+}
+
+RecastNavMeshCandidate::~RecastNavMeshCandidate() = default;
+
+RecastNavMeshCandidate::RecastNavMeshCandidate(
+    RecastNavMeshCandidate&& other) noexcept = default;
+
+RecastNavMeshCandidate& RecastNavMeshCandidate::operator=(
+    RecastNavMeshCandidate&& other) noexcept = default;
+
+RecastNavMeshCandidate RecastNavMeshCandidate::build(
+    const World& world, const NavigationAgentProfile& profile)
+{
+    RecastNavMeshCandidate candidate;
+    candidate.mImpl->profile = profile;
+    candidate.mImpl->contentHash = collisionContentHash(world, profile);
+    candidate.mImpl->triangleCount = world.collisionMesh.triangles.size();
+    std::string error;
+    if (!buildNavMesh(world, profile, candidate.mImpl->mesh,
+                      candidate.mImpl->diagnostics, error)) {
+        candidate.mImpl->diagnostics.failure = error;
+        return candidate;
+    }
+    candidate.mImpl->diagnostics.available = true;
+    candidate.mImpl->diagnostics.coordinateSystem = kCoordinateSystem;
+    candidate.mImpl->query = dtAllocNavMeshQuery();
+    if (!candidate.mImpl->query ||
+        dtStatusFailed(candidate.mImpl->query->init(candidate.mImpl->mesh, 4096))) {
+        candidate.mImpl->diagnostics.available = false;
+        candidate.mImpl->diagnostics.failure = "detour_query_init_failed";
+        return candidate;
+    }
+    return candidate;
+}
+
+bool RecastNavMeshCandidate::valid() const
+{
+    return mImpl && mImpl->mesh && mImpl->query &&
+           mImpl->diagnostics.available;
+}
+
+const RecastNavigationResult& RecastNavMeshCandidate::diagnostics() const
+{
+    static const RecastNavigationResult empty;
+    return mImpl ? mImpl->diagnostics : empty;
+}
+
+std::uint64_t RecastNavMeshCandidate::contentHash() const
+{
+    return mImpl ? mImpl->contentHash : 0;
+}
+
+std::size_t RecastNavMeshCandidate::triangleCount() const
+{
+    return mImpl ? mImpl->triangleCount : 0;
+}
+
+bool RecastNavigationBackend::adopt(const World& world,
+                                    RecastNavMeshCandidate&& candidate,
+                                    RecastNavMeshCandidate*)
+{
+    if (!mState) mState = new State();
+    if (!candidate.valid())
+        return false;
+    const std::uint64_t expected =
+        collisionContentHash(world, candidate.mImpl->profile);
+    if (expected != candidate.contentHash())
+        return false;
+
+    if (mState->query) dtFreeNavMeshQuery(mState->query);
+    if (mState->mesh) dtFreeNavMesh(mState->mesh);
+    mState->query = candidate.mImpl->query;
+    mState->mesh = candidate.mImpl->mesh;
+    candidate.mImpl->query = nullptr;
+    candidate.mImpl->mesh = nullptr;
+    mState->world = &world;
+    mState->geometryRevision = world.renderRevision;
+    mState->collisionHash = candidate.contentHash();
+    mState->triangleCount = candidate.triangleCount();
+    mState->sourceTriangleCount = candidate.mImpl->diagnostics.sourceTriangleCount;
+    mState->walkableTriangleCount = candidate.mImpl->diagnostics.walkableTriangleCount;
+    mState->navMeshPolyCount = candidate.mImpl->diagnostics.navMeshPolyCount;
+    mState->navMeshVertCount = candidate.mImpl->diagnostics.navMeshVertCount;
+    mState->recastBoundsMin = candidate.mImpl->diagnostics.recastBoundsMin;
+    mState->recastBoundsMax = candidate.mImpl->diagnostics.recastBoundsMax;
+    ++mState->version;
+    return true;
+}
 
 RecastNavigationResult RecastNavigationBackend::prepare(
     const World& world, const NavigationAgentProfile& profile)

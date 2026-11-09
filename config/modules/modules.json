@@ -41,6 +41,17 @@
       ]
     },
     {
+      "name": "map-geometry",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_authored_geometry_apply",
+      "process_scope": "all",
+      "sources": ["src/map/map-geometry-module.cpp"],
+      "headers": ["src/modules/api/module-abi.h", "src/modules/api/map-geometry-api.h"],
+      "events": [810],
+      "capabilities": []
+    },
+    {
       "name": "world-rendering",
       "abi": 2,
       "state_schema": 1,

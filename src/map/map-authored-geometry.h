@@ -32,6 +32,7 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
 // placement, or generated chunk geometry. Presentation-only and entity-only
 // changes are deliberately excluded so a live reload does not rebuild them.
 uint64_t authoredGeometrySignature(const MapObjectiveConfig& config);
+uint64_t authoredGeometrySignatureLive(const MapObjectiveConfig& config);
 
 // Applies the authored block list for `mapId` on top of an already loaded GLB
 // world. Repeated calls rebuild only the authored tail.

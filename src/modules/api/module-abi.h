@@ -43,6 +43,7 @@ constexpr std::uint32_t CAPABILITY_EDITOR = 1;
 constexpr std::uint32_t CAPABILITY_WORLDGEN = 2;
 constexpr std::uint32_t CAPABILITY_MESH = 3;
 constexpr std::uint32_t CAPABILITY_COLLISION = 4;
+constexpr std::uint32_t CAPABILITY_MAP_GEOMETRY = 5;
 
 // Generic event ids. A module only receives events that its catalog entry
 // declares; the host never dispatches by hard-coded module name.
@@ -90,6 +91,7 @@ constexpr std::uint32_t EVENT_NETWORK_MAP_SYNC_POLICY = 707;
 constexpr std::uint32_t EVENT_NETWORK_COMBAT_VALIDATION_POLICY = 708;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
 constexpr std::uint32_t EVENT_NAVIGATION_POLICY = 800;
+constexpr std::uint32_t EVENT_MAP_GEOMETRY_SIGNATURE = 810;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,

@@ -1,6 +1,7 @@
 #include "map-loader-collision.h"
 #include "map/map-static-union.h"
 #include "world/world.h"
+#include "map/map-glb-authored.h"
 #include "world/world-gltf-loader.h"
 #include "physics/physics-types.h"
 #include "config/collision-lod-config.h"
@@ -206,7 +207,10 @@ void buildCollisionMeshFromRenderMesh(World& world)
     world.collisionMesh.hidden.assign(world.collisionMesh.triangles.size(), 0);
     for (const MapGLBObject& object : world.mesh.objects)
     {
-        if (!object.hidden || object.collisionSolidId == 0)
+        const GLBObjectAuthoredV2* authored =
+            MapGLBAuthoredState::instance().find(&world.mesh, object.id);
+        if ((!object.hidden && (!authored || !authored->authoredCollisionHidden)) ||
+            object.collisionSolidId == 0)
             continue;
         for (size_t i = 0; i < world.collisionMesh.solidIds.size(); ++i)
             if (world.collisionMesh.solidIds[i] == object.collisionSolidId)

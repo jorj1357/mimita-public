@@ -56,6 +56,17 @@ COORDINATOR_ROOT = resolve_coordinator_root(ROOT)
 os.environ["MIMITA_COORDINATOR_ROOT"] = str(COORDINATOR_ROOT)
 
 DEV_ROOT = ROOT / ".dev"
+RUNTIME_ROOT = DEV_ROOT / "runtime"
+if ("--daemon" in sys.argv and
+        os.environ.get("MIMITA_BUILD_SCHEDULER_DIR", "").strip()):
+    try:
+        from devscripts.build_scheduler import scheduler_root as _scheduler_root
+        DEV_ROOT.mkdir(parents=True, exist_ok=True)
+        (DEV_ROOT / "build-scheduler-root.txt").write_text(
+            str(_scheduler_root()) + "\n", encoding="utf-8")
+    except (OSError, ImportError):
+        pass
+ROOM_ROOT = RUNTIME_ROOT / "rooms"
 BUILD_ROOT = DEV_ROOT / "builds"
 STABLE_LAUNCH_DIR = DEV_ROOT / "current"
 STABLE_LAUNCH_EXE = STABLE_LAUNCH_DIR / "mimita.exe"

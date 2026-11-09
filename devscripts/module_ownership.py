@@ -64,6 +64,10 @@ def module_headers(root: Path, module: dict) -> list[Path]:
     return expand_patterns(root, module.get("headers", []))
 
 
+def module_private_headers(root: Path, module: dict) -> list[Path]:
+    return expand_patterns(root, module.get("private_headers", []))
+
+
 def module_source_owners(root: Path, catalog: dict) -> tuple[dict[str, str], list[str]]:
     owners: dict[str, str] = {}
     overlaps: list[str] = []
@@ -88,9 +92,12 @@ def shared_with_host(root: Path, catalog: dict) -> set[str]:
 
 def module_source_paths(root: Path, catalog: dict, *, watch_excluded: bool = False) -> set[Path]:
     paths: set[Path] = set()
+    private_headers: set[Path] = set()
     for module in module_entries(catalog):
         for path in module_sources(root, module):
             paths.add(path.resolve())
+        for path in module_private_headers(root, module):
+            private_headers.add(path.resolve())
     if watch_excluded:
         keep: set[Path] = set()
         shared = {normalize(root, path) for path in paths}
@@ -98,8 +105,9 @@ def module_source_paths(root: Path, catalog: dict, *, watch_excluded: bool = Fal
         for path in paths:
             if normalize(root, path) in shared:
                 keep.add(path)
+        keep.update(private_headers)
         return keep
-    return paths
+    return paths | private_headers
 
 
 def exe_source_relpaths(root: Path, catalog: dict | None = None) -> list[str]:

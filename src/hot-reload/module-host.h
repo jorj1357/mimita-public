@@ -25,6 +25,7 @@ struct BoxMeshV1;
 }
 namespace mimita_worldgen { struct ResolveV1; }
 namespace mimita_chunk_collision { struct BuildChunkV1; }
+namespace mimita_map_geometry { struct SignatureV1; }
 namespace mimita_collision_policy {
 struct ContactPolicyV1;
 struct ContactSolveV1;
@@ -98,6 +99,8 @@ public:
         std::uint32_t faceCapacity);
     bool worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1* request);
 
+    bool mapGeometrySignature(const char* bytes, std::uint32_t byteCount,
+                              std::uint64_t* outSignature);
     bool worldgenResolve(mimita_worldgen::ResolveV1* request);
     bool chunkCollisionBuild(
         mimita_chunk_collision::BuildChunkV1* request);
