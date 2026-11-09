@@ -2874,7 +2874,7 @@ bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out,
     // deciding whether the map has any usable spawns.
     applyAuthoredMapGeometry(
         candidate, mapId,
-        GamemodeRegistry::instance().get(d.matchMode)
+        GamemodeRegistry::instance().get(serverGamemodeState().matchMode)
             .worldStreaming.enabled);
     if (candidate.spawnPoints.empty())
         return false;
