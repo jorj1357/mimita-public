@@ -113,10 +113,10 @@ Rules:
 - A build waits for a free slot; it does not fail just because another lane is
   building.
 - Repeated saves in one lane coalesce to the newest source generation.
-- The EXE builder defaults to `min(4, logical_processors / 2)` compiler jobs.
-- On this machine (8 cores, 12 logical processors, 16 GB RAM), the EXE builder
-  uses at most 4 jobs.
-- Builds run below normal priority.
+- Only one EXE build may actively compile at a time across all checkouts and
+  agent lanes; additional lane requests wait for that slot.
+- The active EXE builder uses one compiler job per logical processor.
+- On Windows, the EXE build worker runs with `HIGH_PRIORITY_CLASS`.
 - If free physical memory is below `MIMITA_BUILD_MIN_FREE_MB` (default 1024),
   the build waits and reports `waiting for memory`.
 - An abandoned OS synchronization object is reclaimed by the operating system;

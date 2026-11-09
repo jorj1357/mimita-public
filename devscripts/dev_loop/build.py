@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import json
 import subprocess
 import sys
 import time
@@ -40,16 +39,10 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         environment["MIMITA_LANE_ID"] = root.name
     except AttributeError:
         pass
-    # Machine-wide policy is one EXE build and two module builds. Keep this
-    # builder at half the logical processors or less; 16 GB RAM must also host
-    # the game and the editor.
-    try:
-        jobs = int(environment.get("MIMITA_BUILD_JOBS", "4"))
-    except ValueError:
-        jobs = 4
-    environment["MIMITA_BUILD_JOBS"] = str(max(1, min(4, jobs)))
+    # Machine-wide policy allows one active EXE build, which uses all logical
+    # processors.
     if os.name == "nt":
-        creationflags |= 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
+        creationflags |= 0x00000080  # HIGH_PRIORITY_CLASS
     # Mode 2 lanes share only ccache's content-addressed results. Their object
     # files, PCH, executable, dev-loop state, and journals remain checkout-local.
     coordinator = resolve_coordinator_root(root)
@@ -61,13 +54,6 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
     environment["CCACHE_BASEDIR"] = str(coordinator)
     apply_temp_environment(
         coordinator, environment.get("MIMITA_LANE_ID", root.name), environment)
-    lane_job_config = root / ".dev" / "agent-lane-build.json"
-    try:
-        lane_jobs = json.loads(lane_job_config.read_text(encoding="utf-8")).get("jobs")
-        if isinstance(lane_jobs, int) and 1 <= lane_jobs <= 256:
-            environment["MIMITA_BUILD_JOBS"] = str(max(1, min(4, lane_jobs)))
-    except (OSError, ValueError, AttributeError, json.JSONDecodeError):
-        pass
     ccache = find_ccache()
     if ccache:
         environment["MIMITA_CCACHE"] = ccache

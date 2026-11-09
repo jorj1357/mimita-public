@@ -33,12 +33,14 @@ older than the source currently building; build completion publishes a new
 artifact but does not launch it automatically.
 
 The target machine-wide scheduler uses named Windows synchronization objects
-for exactly one EXE slot and two module slots; it creates no coordination files
-outside the project. Scheduler diagnostics and attempt records live under the
-coordinator checkout's ignored `.dev/` directory. It queues rather than
-failing, coalesces newer saves, runs below normal priority, caps compiler jobs
-at four on this machine, and waits when free physical memory is below the
-configured threshold.
+for exactly one active EXE build and two module slots; it creates no
+coordination files outside the project. Scheduler diagnostics and attempt
+records live under the coordinator checkout's ignored `.dev/` directory.
+Additional lane builds wait for the EXE slot, so agents do not compile
+simultaneously. The active EXE build uses one compiler job per logical
+processor by default and runs with high process priority on Windows. It waits
+when free physical memory is below the configured threshold. Compiler tools
+and the helper DLL build run without opening terminal windows.
 
 The scheduler defaults to the coordinator checkout's `.dev/build-scheduler/`.
 The lane manager creates worktrees only under `.dev/agent-lanes/`, and `build.py`
@@ -107,8 +109,8 @@ SHA-256 are stored in `build-identity.json`.
 Each agent build is intended to come from a separate worktree under
 `.dev/agent-lanes/<lane-id>/`, so lanes do not share source, object files, PCH,
 executable output, or dev-loop state. Shared OS build slots limit simultaneous
-compilation across lanes. Set `--jobs` per lane to keep compiler load within
-machine capacity. Each build also records its lane's
+compilation across lanes. The single active EXE build uses all logical
+processors. Each build also records its lane's
 source revision, submodule revisions, dirty-tree fingerprint, and whether the
 source changed while it was building.
 

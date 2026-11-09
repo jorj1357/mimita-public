@@ -97,14 +97,10 @@ BUILD_DIR = os.path.join(ROOT, "build")
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
-# Machine-wide policy: one EXE build at a time, and never default to every
-# logical processor. Half of this machine's cores is 6; 4 leaves headroom for
-# the running game and editor while staying under 16 GB.
-_DEFAULT_BUILD_JOBS = max(1, min(4, (os.cpu_count() or 2) // 2))
-try:
-    BUILD_JOBS = max(1, int(os.environ.get("MIMITA_BUILD_JOBS", _DEFAULT_BUILD_JOBS)))
-except ValueError:
-    BUILD_JOBS = _DEFAULT_BUILD_JOBS
+# Machine-wide policy serializes EXE builds. Each active build uses all
+# logical processors.
+_MAX_BUILD_JOBS = max(1, os.cpu_count() or 1)
+BUILD_JOBS = _MAX_BUILD_JOBS
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
 
@@ -432,9 +428,12 @@ os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 
 dll_environment = os.environ.copy()
 dll_environment["MIMITA_BUILD_LOCK_PARENT_PID"] = str(os.getpid())
+dll_creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                     if os.name == "nt" else 0)
 game_dll_build = subprocess.run(
     [sys.executable, os.path.join(ROOT, "build_game_dll.py")],
     env=dll_environment,
+    creationflags=dll_creationflags,
 )
 if game_dll_build.returncode != 0:
     print("[HOT RELOAD] reload failed")

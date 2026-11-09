@@ -206,12 +206,6 @@ def create_lane(args: argparse.Namespace) -> int:
                 status="ready", submodules_initialized=True,
                 manifold_prebuilt_copied=lane_manifold.is_dir())
     write_metadata(data)
-    lane_config = resolve_within(
-        path, path / ".dev" / "agent-lane-build.json", label="lane build config")
-    if not lane_config.is_file():
-        lane_config.parent.mkdir(parents=True, exist_ok=True)
-        lane_config.write_text(json.dumps({"jobs": 4}, indent=2) + "\n",
-                               encoding="utf-8")
     print_identity(lane_id, path, identity)
     print(f"worktree={path}")
     print("dependencies=required source submodules isolated; local Manifold prebuilt copied when available")

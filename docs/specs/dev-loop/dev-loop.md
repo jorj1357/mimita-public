@@ -344,13 +344,14 @@ journal state. The lane dev-loop auto-detects edits; agents have no build
 command.
 
 The target scheduler uses named Windows synchronization objects, not files
-outside the repository, to permit one EXE build and two module builds across
-lanes. Attempt records, wait details, caches, and temporary files stay under
-the coordinator repository's ignored `.dev/` tree. Builds wait for a free slot,
-coalesce newer saves into the next generation, run below normal priority, cap
-compiler jobs at four on this machine, and wait if free physical memory is
-below the configured threshold. A build failure leaves the previous artifact
-or module generation active. Only a human may use `MIMITA_BUILD_OVERRIDE=1`
+outside the repository, to permit one active EXE build and two module builds
+across lanes. Additional EXE build requests wait for the single EXE slot rather
+than compiling concurrently. Attempt records, wait details, caches, and
+temporary files stay under the coordinator repository's ignored `.dev/` tree.
+Builds coalesce newer saves into the next generation, use one compiler job per
+logical processor by default, run with high process priority on Windows, and
+wait if free physical memory is below the configured threshold. A build failure
+leaves the previous artifact or module generation active. Only a human may use `MIMITA_BUILD_OVERRIDE=1`
 for an explicit emergency build.
 
 **Implementation status:** the lane manager creates worktrees only under
@@ -2828,8 +2829,8 @@ Manifold prebuilt library when available. Its `build/`, `src/pch.h.gch`, `.dev/`
 artifacts and locks, dev-loop daemon, process cap, run IDs, command queues, and
 `logs/` remain within the project directory. Temporary files must specify a
 lane-local `.dev/tmp/` directory. Builds serialize within one worktree and
-acquire shared OS build slots across lanes. The lane build defaults to one
-compiler job; tune `--jobs` only when machine capacity allows. Installed
+acquire shared OS build slots across lanes. The single active EXE build uses
+one compiler job per logical processor. Installed
 toolchains may be invoked by the dev-loop, but agents must not inspect or
 write to their installation paths.
 
