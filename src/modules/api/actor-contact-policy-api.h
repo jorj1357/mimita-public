@@ -38,6 +38,34 @@ struct ContactSolveV1 {
     std::uint32_t generation;
 };
 
+constexpr std::uint32_t MAX_ACTOR_WORLD_CONTACTS = 256;
+
+// Actor-versus-static-world contact solve. The host owns candidate gathering,
+// cached broadphase storage, actor state, and the final applied correction.
+// The module owns the bounded contact merge/correction math and reports the
+// source triangle IDs it was given so the host can log provenance.
+struct ActorWorldSolveV1 {
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t actorId;
+    std::uint64_t tick;
+    std::uint32_t count;
+    std::uint32_t capacity;
+    const SolverContactV1* contacts;
+    const std::uint32_t* sourceTriangles;
+    SolverContactV1* scratch;
+    float slop;
+    float movementBias;
+    float intendedMove[3];
+    float correction[3];
+    float weightedNormal[3];
+    float maxPenetration;
+    std::uint32_t manifoldCount;
+    std::uint32_t grounded;
+    std::uint32_t blocked;
+    std::uint32_t generation;
+};
+
 constexpr std::uint32_t ABI_VERSION = 1;
 
 struct HostServicesV1

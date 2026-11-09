@@ -638,11 +638,17 @@ boundary. The source catalog includes these modules:
   `src/npc/npc-utility-bridge.cpp` and retains no scoring policy.
 
 This inventory describes source ownership, not proof that every module has
-activated in the running EXE. NPC perception, target selection, state-machine
-execution, attack legality and weapon firing remain host code. Actor/world,
-physical-object, actor-pair, and weapon/projectile collision solvers remain
-host code. Their planned hot migration requires bounded versioned input and
-output, host-side result validation, and real gameplay evidence for each owner.
+activated in the running EXE. NPC perception, candidate gathering,
+state-machine execution, weapon legality, and weapon firing remain host code.
+Target priority/retention scoring, attack intent, and dash/down-dash threshold
+policy are module-owned source slices; state-machine transition extraction is
+deferred.
+
+Actor-versus-static-world correction now has a bounded hot snapshot/result path
+with host fallback. Dynamic-object, actor-pair, and weapon/projectile solvers
+remain host code. Their planned hot migration requires bounded versioned input
+and output, host-side result validation, and real gameplay evidence for each
+owner.
 
 Host capabilities cover editor operations, world-generation tables, mesh face
 submission, and collision-proxy construction. The host keeps documents, unsaved

@@ -188,7 +188,11 @@ static int runBodyWeaponPass(
     solverContacts.insert(solverContacts.end(), bodyPushContacts.begin(), bodyPushContacts.end());
 
     if (!solverContacts.empty()) {
-        glm::vec3 correction = solveBatchedCorrection(solverContacts, 0.01f, nullptr, nullptr, p.vel);
+        glm::vec3 correction = solveActorWorldCorrection(
+            solverContacts, 0.01f,
+            static_cast<std::uint32_t>(p.spawnGeneration),
+            p.movementSimulationTick,
+            nullptr, nullptr, p.vel);
         // NaN/infinity guard
         if (!std::isfinite(correction.x) || !std::isfinite(correction.y) || !std::isfinite(correction.z)) {
             BODY_LOG("[BODY WEAPON SAFETY] NaN correction in pass %d — zeroing", pass);

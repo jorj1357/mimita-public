@@ -147,3 +147,21 @@ bytes, clients used 553.3/847.9 MB and 534.3/574.5 MB respectively, and Windows
 reported 4531 MB free of 16025 MB. Those measurements do not support memory
 pressure in this run and do not rule out pressure in the historical incident or
 during a build.
+
+## Occurrence 2026-11-08 — 19-NPC Payload/FunWorld3 navigator stall
+
+Status: CONFIRMED RUNTIME STALL, cause narrowed to the NPC navigator update.
+
+- Scene: Payload on FunWorld3, 19 NPCs, direct `mimita-check` server process.
+- `npc.slow-update` for actor 1008: `navigator_ms=7,559.7`, `path_ms=12.1`,
+  total update 7,560.9 ms.
+- `npc.phase-window`: 62 updates took 7,587.9 ms.
+- `npc.server-phase-window`: `ai_ms=7,590.2`, `target_selection_ms=0.096`.
+- `performance.server-tick-stall`: `npc_ms=7,690`, total tick 7,700 ms.
+
+This is a new occurrence of the unresolved later-stall group, not the earlier
+map-build stall. The cause is inside `NpcNavigator`; the exact sub-stage is not
+yet identified. The new NPC target/attack/dash policy is not the measured cost.
+
+Ideal fix: instrument navigator sub-stages, cache/reuse the expensive operation,
+bound per-tick work to the 60 Hz budget, and re-run the same 19-NPC scene.

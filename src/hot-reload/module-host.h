@@ -30,6 +30,7 @@ struct ContactSolveV1;
 struct SurfacePolicyV1;
 struct ActorPairPolicyV1;
 struct FinalPosePolicyV1;
+struct ActorWorldSolveV1;
 }
 
 class ModuleHost
@@ -109,6 +110,8 @@ public:
         mimita_collision_policy::FinalPosePolicyV1* policy);
     bool collisionSolveContacts(
         mimita_collision_policy::ContactSolveV1* request);
+    bool collisionSolveActorWorld(
+        mimita_collision_policy::ActorWorldSolveV1* request);
     bool networkSnapshotPolicy(
         mimita_network_policy::SnapshotPolicyV1* policy);
     bool networkReconnectPolicy(

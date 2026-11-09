@@ -237,3 +237,10 @@ must never use it. An outside-project file path is a separate emergency
 exception: only a human may explicitly authorize it, and the exact path,
 reason, and cleanup must be recorded. There is no automatic external-path
 fallback.
+
+## 7. `check` observes, it does not build
+
+`agent-lane.py check` reports the lane's current dev-loop build state for C++
+changes and the exact journal/build identity. It never invokes `build_lane`, a
+compiler, or a build request. Use `status` and the lane journal for compile
+evidence; a `check` result is not a build.

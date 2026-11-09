@@ -444,6 +444,15 @@ The remaining algorithms in
 actor-pair resolution, and weapon/projectile contact owners are still linked
 into the EXE. A policy callback is not a hot solver.
 
+2026-11-08 lane source slice: actor-versus-static-world now has a bounded hot
+snapshot/result path (`EVENT_COLLISION_ACTOR_WORLD_SOLVE`). The host gathers the
+contacts and source triangle IDs; the module returns correction, weighted
+normal, max penetration, grounded/blocked flags, and generation. The host keeps
+candidate gathering, validation, cached broadphase storage, and a fallback to
+the shared solver. This is source-only; the reported FunWorld3 cylinder still
+needs live provenance and human review. Dynamic-object, actor-pair, and
+weapon/projectile solvers remain host code for later passes.
+
 Each remaining owner needs a bounded plain-data contact snapshot and result
 interface. The host must retain fixed-tick scheduling, geometry and broadphase
 lifetime, candidate/query buffers, and application of validated results. The

@@ -963,9 +963,11 @@ bool solveActorTriangleCollision(
         if (iterMaxPen <= kSlop || iter == kMaxIterations)
             break;
 
-        glm::vec3 correction = solveBatchedCorrection(
-            s_contacts, kSlop, nullptr, nullptr, desiredMovement,
-            player.pos + accumulated);
+        glm::vec3 correction = solveActorWorldCorrection(
+            s_contacts, kSlop,
+            static_cast<std::uint32_t>(player.spawnGeneration),
+            player.movementSimulationTick,
+            nullptr, nullptr, desiredMovement);
         if (!isFiniteVec3(correction))
             break;
 

@@ -1352,6 +1352,18 @@ bool ModuleHost::collisionSolveContacts(
                         request, sizeof(*request));
 }
 
+bool ModuleHost::collisionSolveActorWorld(
+    mimita_collision_policy::ActorWorldSolveV1* request)
+{
+    if (!request || request->version != mimita_collision_policy::ABI_VERSION ||
+        request->structSize != sizeof(*request) ||
+        request->count > mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS ||
+        request->capacity > mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS)
+        return false;
+    return invokeEvent(mimita_module::EVENT_COLLISION_ACTOR_WORLD_SOLVE,
+                       request, sizeof(*request), request->tick);
+}
+
 bool ModuleHost::networkSnapshotPolicy(
     mimita_network_policy::SnapshotPolicyV1* policy)
 {

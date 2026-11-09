@@ -64,6 +64,7 @@ constexpr std::uint32_t EVENT_COLLISION_BUILD_CHUNK = 400;
 constexpr std::uint32_t EVENT_COLLISION_CONTACT_POLICY = 401;
 constexpr std::uint32_t EVENT_COLLISION_SURFACE_POLICY = 402;
 constexpr std::uint32_t EVENT_COLLISION_CONTACT_SOLVE = 403;
+constexpr std::uint32_t EVENT_COLLISION_ACTOR_WORLD_SOLVE = 406;
 constexpr std::uint32_t EVENT_COLLISION_ACTOR_PAIR_POLICY = 404;
 constexpr std::uint32_t EVENT_COLLISION_FINAL_POSE_POLICY = 405;
 constexpr std::uint32_t EVENT_NPC_BEHAVIOR_DECISION = 500;

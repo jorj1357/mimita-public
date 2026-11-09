@@ -40,3 +40,10 @@ box; humans in the box count toward the cap; remaining attackers and defenders
 hold distinct nearby positions; visible legal threats interrupt movement;
 cover prevents fire; hidden targets beyond 25 m from the cart release pursuit;
 the assigned objective position resumes after target invalidation.
+
+Lane source pass, 2026-11-08: the NPC hot module now owns target selection,
+attack intent with exact suppression reason, dash policy, and the Payload role
+destination. The host keeps actor state, perception, weapon legality, damage
+authority, and movement execution. This is source/build work only. The live
+19-NPC Payload/FunWorld3 test is blocked by the navigator stall recorded in the
+server-tick regression; the report remains REPORTED / NOT YET REPRODUCED.
