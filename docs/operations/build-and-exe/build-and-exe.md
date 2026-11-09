@@ -12,9 +12,11 @@ world-streaming/navmesh/reconnect compile and runtime checklist, start at
 
 The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
 only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
-a build request, or a compiler directly. Agents use an isolated mode 2 lane,
-ensure its dev-loop is running, and read status/journals while the dev-loop
-auto-detects saved edits. See
+a build request, or a compiler directly. The target is a repository-local mode
+2 lane; agents ensure its dev-loop is running and read status/journals while it
+auto-detects saved edits. The current lane manager is not yet repository-local,
+so agents must not create or launch lanes until that implementation gap is
+closed. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
 
 A human may submit an explicit build or use the emergency override:
@@ -31,11 +33,19 @@ launches the latest successfully published artifact immediately, even if it is
 older than the source currently building; build completion publishes a new
 artifact but does not launch it automatically.
 
-A machine-wide scheduler outside the checkout allows exactly one EXE build and
-two module builds across all lanes and checkouts. It queues rather than failing,
-coalesces newer saves, runs below normal priority, caps compiler jobs at four on
-this machine, and waits when free physical memory is below the configured
-threshold. The per-checkout OS lock remains a second guard.
+The target machine-wide scheduler uses named Windows synchronization objects
+for exactly one EXE slot and two module slots; it creates no coordination files
+outside the project. Scheduler diagnostics and attempt records live under the
+coordinator checkout's ignored `.dev/` directory. It queues rather than
+failing, coalesces newer saves, runs below normal priority, caps compiler jobs
+at four on this machine, and waits when free physical memory is below the
+configured threshold.
+
+**Implementation gap:** the current scheduler still defaults to an external
+`%LOCALAPPDATA%` or system-temp directory, and the lane manager still creates
+worktrees beside the checkout. `build.py` also uses a per-worktree `build/ccache`
+rather than the target shared coordinator cache. Do not use agent-lane creation
+until these paths have been changed and tested for repository containment.
 
 On Windows, `[1]` launches the selected build through the fixed
 `.dev/current/mimita.exe` path. Each new published artifact uses its UTC
@@ -51,11 +61,11 @@ artifact folders remain readable and launchable.
 `build_agent.py`, `buildv2.py`, and setup entry points are compatibility
 wrappers that submit to this same dev-loop. `build.py build-only` and
 `build_game_dll.py` are internal compiler steps. Agents must not use them.
-Separate Git worktrees have independent locks and build outputs; the
-machine-wide scheduler prevents them from compiling at the same time. Use the
-lane workflow below for parallel agent work; do not share one mutable source
-checkout between agents. Do not use direct compiler scripts as a separate live
-build path.
+Separate Git worktrees have independent locks and build outputs; named OS build
+slots prevent excessive concurrent compilation. Use the lane workflow below
+only after repository-local lane support is implemented; do not share one
+mutable source checkout between agents. Do not use direct compiler scripts as
+a separate live build path.
 
 The build never terminates a running game to publish an artifact. Build
 identity and process lifetime are separate: selecting a new artifact requires
@@ -96,10 +106,11 @@ the dev-loop verifies and copies that executable and required runtime DLLs into
 executable or a running published artifact. The artifact ID and executable
 SHA-256 are stored in `build-identity.json`.
 
-Each agent build comes from a separate worktree, so agents can compile
-concurrently without sharing source, object files, PCH, executable output,
-dev-loop state, or the per-checkout build lock. Set `--jobs` per lane to keep
-compiler load within machine capacity. Each build also records its lane's
+Each agent build is intended to come from a separate worktree under
+`.dev/agent-lanes/<lane-id>/`, so lanes do not share source, object files, PCH,
+executable output, or dev-loop state. Shared OS build slots limit simultaneous
+compilation across lanes. Set `--jobs` per lane to keep compiler load within
+machine capacity. Each build also records its lane's
 source revision, submodule revisions, dirty-tree fingerprint, and whether the
 source changed while it was building.
 
@@ -165,26 +176,30 @@ build is how you get your own executable to test.
 
 ## Agent workflow mode 1 and mode 2
 
-Mode 2 is mandatory for agents. Each agent gets one isolated lane with its own
-worktree, `.dev`, artifact folder, module builds, run IDs, ports, and journals.
-Mode 1 remains a coordinator/human fallback and is not an agent workflow.
+Mode 2 is the required agent workflow after repository-local lane support is
+implemented. Each agent gets one isolated lane with its own worktree, `.dev`,
+artifact folder, module builds, run IDs, ports, and journals. Mode 1 remains a
+coordinator/human fallback and is not an agent workflow. Until implementation
+supports the `.dev/agent-lanes/` root, agents must not create or launch lanes.
 
-Agents never build. They ensure the lane dev-loop is running and read its
-status. The dev-loop auto-detects saved edits.
+After repo-local lane support is implemented, agents never build. They ensure
+the lane dev-loop is running and read its status. The dev-loop auto-detects
+saved edits.
 
 ```text
-python devscripts/agent-workflow.py --mode 2 create <lane-id>
-python devscripts/agent-workflow.py --mode 2 ensure <lane-id>
-python devscripts/agent-workflow.py --mode 2 run <lane-id> --launch-mode <id>
-python devscripts/agent-workflow.py --mode 2 check <lane-id>
-python devscripts/agent-workflow.py --mode 2 status <lane-id>
+python devscripts/agent-lane.py create <lane-id>
+python devscripts/agent-lane.py ensure <lane-id>
+python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
+python devscripts/agent-lane.py check <lane-id>
+python devscripts/agent-lane.py status <lane-id>
 ```
 
 Do not use `--mode 2 build` or `--mode 1 build`; those actions are refused.
-Mode 2 shares compiler cache storage, not build outputs: each lane still has
-its own object files, executable, dev-loop, module DLLs, and `events.jsonl`.
-The machine-wide scheduler allows one EXE build and two module builds across
-all lanes.
+Under the target design, Mode 2 shares only the content-addressed compiler
+cache under the coordinator checkout's `.dev/ccache`; each lane has its own
+object files, executable,
+dev-loop, module DLLs, and `events.jsonl`. Named OS build slots allow one EXE
+build and two module builds across lanes without an external scheduler folder.
 One compiler job per lane is the default. Independent builds can still slow a
 computer when many agents compile unique changes at once.
 
@@ -200,26 +215,29 @@ Mode 3 is the future save-to-live-code direction described in
 `docs/architecture/live-development/live-development.md`. It is not currently
 a selectable command or a guarantee that arbitrary C++ changes can be loaded
 into a running process. Until code has a safe replaceable boundary, use the
-mode 1/2 executable build and run path. The final reviewed integration still
-needs a stable build.
+executable build and run path. For agents, the repository-local mode 2 lane
+path becomes available only after its implementation is migrated; the human
+coordinator may use the canonical single-checkout dev-loop meanwhile. The
+final reviewed integration still needs a stable build.
 
 ## Independent agent lanes and stable promotion
 
-Create one isolated worktree per agent task from the coordinator checkout:
+After repo-local lane support is implemented, create one isolated worktree per
+agent task under `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`:
 
 ```text
 python devscripts/agent-lane.py create <lane-id> [--base <ref>]
-python devscripts/agent-lane.py build <lane-id> [--jobs 1]
 python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
 python devscripts/agent-lane.py check <lane-id> [--base <ref>]
 python devscripts/agent-lane.py status <lane-id>
 ```
 
-Assign the agent the worktree path printed by `create`. Each lane has an
-independent dev-loop daemon and per-process journals. `check` runs focused
-checks selected from changed files; build results remain separate from runtime
-and human acceptance evidence. `cleanup <lane-id>` stops only that lane's
-dev-loop processes and preserves its worktree and evidence.
+Assign the agent the repository-contained worktree path printed by `create`.
+Each lane has an independent dev-loop daemon and per-process journals. `check`
+runs focused checks selected from changed files; build results remain separate
+from runtime and human acceptance evidence. `cleanup <lane-id>` stops only that
+lane's dev-loop processes and preserves its worktree and evidence. All temporary
+files must be placed under the lane's `.dev/tmp/` directory.
 
 After reviewing completed commits, assemble them in order in an integration
 worktree and inspect the combined diff:

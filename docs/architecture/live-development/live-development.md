@@ -15,12 +15,14 @@ context and do not block the current workflow.
 
 ## Agent build authority (2026-11-08)
 
-Agents edit and observe; they never build. Every agent uses an isolated mode 2
-lane (`devscripts/agent-lane.py create/ensure/status/run`) with its own
-worktree, artifacts, module builds, run IDs, and journals. The lane dev-loop
+Agents edit and observe; they never build. The required mode 2 lane root is
+`<coordinator-repo>/.dev/agent-lanes/<lane-id>/`, with temporary files, caches,
+builds, run IDs, and journals kept inside the project. The lane dev-loop
 auto-detects saved edits; the running game's `ModuleHost` builds module
-generations. A machine-wide scheduler allows one EXE build and two module
-builds across all lanes. Agents must not run `build.py`,
+generations. Named OS synchronization objects allow one EXE build and two
+module builds across all lanes without an external scheduler directory. The
+current lane manager and scheduler do not yet honor the repository-local path
+policy; do not use lane creation until they do. Agents must not run `build.py`,
 `module-build-worker.py`, a build request, or a compiler directly. Only a human
 may use `MIMITA_BUILD_OVERRIDE=1`. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).

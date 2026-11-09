@@ -415,7 +415,11 @@ if build_slot is None:
     sys.exit(3)
 atexit.register(build_slot.release)
 
-os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
+coordinator_root = os.path.realpath(os.environ.get("MIMITA_COORDINATOR_ROOT", ROOT))
+ccache_root = os.path.realpath(os.path.join(coordinator_root, ".dev", "ccache"))
+if os.path.commonpath([coordinator_root, ccache_root]) != coordinator_root:
+    raise RuntimeError(f"CCACHE_DIR escapes coordinator repository: {ccache_root}")
+os.environ["CCACHE_DIR"] = ccache_root
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 

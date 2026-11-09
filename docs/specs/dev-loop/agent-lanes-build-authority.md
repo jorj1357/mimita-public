@@ -9,6 +9,16 @@
 
 # Agent lanes and build authority
 
+**Implementation status (2026-11-09):** this is the required repository-local
+target policy, but the current implementation does not yet comply. In
+particular, `devscripts/agent-lane.py` places worktrees beside the checkout,
+`devscripts/build_scheduler.py` defaults to `%LOCALAPPDATA%` or the system temp
+directory, and `devscripts/dev-loop.py` creates a room-code temp file through
+the system temp default. `build.py` also keeps ccache under each worktree's
+`build/ccache` instead of the shared coordinator `.dev/ccache` target. Do not
+claim the repository-only workflow is active until these paths are changed and
+verified.
+
 ## 1. The rule
 
 An agent edits and observes. It never builds.
@@ -52,31 +62,47 @@ Direct compiler or `ccache` invocation is also forbidden. The supported build
 entry points are the dev-loop's internal worker and `ModuleHost`'s module
 worker.
 
-## 2. Why mode 2 is mandatory
+## 2. Why mode 2 is the target for parallel agent work
 
 Mode 1 uses one shared checkout. Four agents editing that checkout interfere
 with each other's files, build generations, artifacts, module generations,
 ports, run IDs, and journals. A host edit from one agent can also rebuild code
-another agent is testing.
+another agent is testing. Keep this isolation, but do not create a lane until
+the lane manager uses the repository-local root described here.
 
 Mode 2 gives each agent:
 
-- its own Git worktree and branch;
+- its own Git worktree and branch under
+  `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`;
 - its own `.dev`, object files, PCH, executable artifacts, and build identity;
 - its own module build directory and module-set agreement;
 - its own run ID, server/client instances, ports, and `events.jsonl` files;
 - its own lane ID in status and journals.
 
-Lanes share only the content-addressed `ccache` cache. They do not share source,
-objects, executables, module DLLs, run state, or evidence.
+The coordinator checkout's `.dev/` owns the shared content-addressed `ccache`
+cache and per-attempt scheduler diagnostics. Lanes do not share source, objects,
+executables, module DLLs, run state, or evidence. All these paths remain within
+the coordinator repository.
 
 Mode 1 remains available for the human coordinator as a fallback. It is not an
 agent workflow.
 
-## 3. Machine-wide build scheduling
+## 3. Build scheduling without external files
 
-The scheduler uses a shared directory outside the checkout, normally
-`%LOCALAPPDATA%\MiMITA\build-scheduler`. Slots are:
+Use these named Windows mutexes for build-slot ownership; do not create a
+scheduler directory or coordination file outside the project:
+
+- `Global\MiMITA-EXE-Build` for the one EXE slot;
+- `Global\MiMITA-Module-Build-0` and
+  `Global\MiMITA-Module-Build-1` for the two module slots.
+
+These objects enforce the limits across Windows sessions and checkouts.
+Persist attempt details, wait intervals, and diagnostics in the requesting
+checkout's
+`.dev/build-timings/` and `.dev/build-scheduler/` folders. Keep the shared
+content-addressed cache at `<coordinator-repo>/.dev/ccache/`. These are ignored
+project-local runtime data. Do not accept an override such as
+`MIMITA_BUILD_SCHEDULER_DIR` when it resolves outside the project. Slots are:
 
 | Slot | Limit | Owner |
 |---|---:|---|
@@ -94,12 +120,31 @@ Rules:
 - Builds run below normal priority.
 - If free physical memory is below `MIMITA_BUILD_MIN_FREE_MB` (default 1024),
   the build waits and reports `waiting for memory`.
-- A stale slot whose owner PID has exited is reclaimed after a bounded age.
+- An abandoned OS synchronization object is reclaimed by the operating system;
+  do not use an external lock file or stale-file cleanup path.
 
-Status output includes the scheduler wait reason and the active slot when the
-build output is captured by the dev-loop.
+Status output includes the requested slot, wait reason, and wait duration. It
+reports another checkout's owner only when that identity is available through
+the OS process interface; otherwise it says `owner=unknown`, never consulting
+an outside coordination file.
 
 ## 4. Agent workflow
+
+### 4.0 Filesystem boundary
+
+The repository root is the boundary for every agent-created or agent-read
+project file. Use `<repo>/.dev/agent-lanes/<lane-id>/` for worktrees,
+`<repo>/.dev/tmp/<lane-id>/` for temporary files, and the lane's own `.dev/`,
+`build/`, and `logs/` for state, artifacts, caches, and journals. Resolve paths
+before use and reject symlinks, junctions, or configured roots that escape the
+repository. Python temporary-file APIs must be given an explicit in-repository
+`dir`; never rely on their system-temp default.
+
+The dev-loop may invoke an installed compiler or operating-system service
+through its supported interface. Agents must not browse or write to tool
+installations, user-profile directories, or other checkouts. If a needed input
+exists only outside the project, stop and ask a human to bring an authorized
+copy into the project.
 
 ### 4.1 Create or reuse a lane
 
@@ -189,4 +234,7 @@ MIMITA_BUILD_OVERRIDE=1 python build.py build-only
 ```
 
 This prints a warning and must be recorded as an intentional cold build. Agents
-must never use it.
+must never use it. An outside-project file path is a separate emergency
+exception: only a human may explicitly authorize it, and the exact path,
+reason, and cleanup must be recorded. There is no automatic external-path
+fallback.

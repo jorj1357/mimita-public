@@ -26,7 +26,7 @@ from dev_loop.source_identity import source_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 DEV_ROOT = ROOT / ".dev"
-LANE_ROOT = ROOT.parent / f"{ROOT.name}-agent-lanes"
+LANE_ROOT = DEV_ROOT / "agent-lanes"
 REGISTRY = DEV_ROOT / "agent-lanes"
 LANE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 
@@ -136,6 +136,7 @@ def devloop(path: Path, *args: str, capture: bool = False,
             env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     merged = os.environ.copy()
     merged["MIMITA_LANE_ID"] = path.name
+    merged["MIMITA_COORDINATOR_ROOT"] = str(ROOT.resolve())
     if env:
         merged.update(env)
     return run([sys.executable, "devscripts/dev-loop.py", *args], path,
@@ -152,6 +153,10 @@ def create_lane(args: argparse.Namespace) -> int:
     lane_id = args.lane_id
     validate_lane_id(lane_id)
     path = lane_path(lane_id)
+    resolved_root = ROOT.resolve()
+    resolved_lane_root = LANE_ROOT.resolve()
+    if not resolved_lane_root.is_relative_to(resolved_root):
+        raise RuntimeError(f"lane root escapes coordinator repository: {resolved_lane_root}")
     meta_file = metadata_path(lane_id)
     base = args.base or working_copy_snapshot()
     if not git(["rev-parse", "--verify", f"{base}^{{commit}}"], check=False).stdout.strip():

@@ -1,4 +1,78 @@
-﻿# Open Gameplay Issues
+﻿### top issue as of 2026 11 09 1041 jorj 
+
+2026 11 09 1027 jorj 
+
+issues
+
+1. build time took 18 min
+- this cannot happn
+- build times since  i think its best to move as much as we can to hot reloadable modules
+- make build times as close to 0 sec as possible
+
+if we fix build time issues, hto reloadable is much ebtter
+
+2. things aren't hot reloadable
+- want to fix a bug like reconnecting
+
+if we make things hot reloadable, for these next bugs, we can see the effects of our changes live, with no cold .exe kill and restart required 
+
+3. reconnecting for no reason
+- like i was fine
+- and then i have to reconect
+- then i reconnec thten i disconnect adn need to reconnect again
+- how come  gpt 6 luna on medium cant see the  events.jsonl logs like 
+- like in the exact file rigth next to it 
+- whatver
+
+4. Synchronizing map... 984.13s
+- like 
+- why am i stuck on ttihs
+- how am i stuck on this
+- what even do we need to  do this for 
+
+### other issues 
+
+2026 11 09 1029 jojr  todo make it so dev loop launchgin that just 1 single gui, make th gui like its own thing not part of dev-loop 
+
+
+2026 11 09 1001 jorj 
+
+"I checked the current module catalog and source ownership audit. **For this issue, the only hot-reloadable networking source is** [`network-policy-module.cpp`](/C:/mimita-v9/src/network/network-policy-module.cpp), registered as `network-policy` in [`modules.json`](/C:/mimita-v9/config/modules/modules.json). The audit passes with 9 module sources and 579 EXE sources.
+
+That module can change some snapshot and reconnect *policy* live. It does **not** currently own the map-ready handshake or the decision that actually changes the client to `Reconnecting`. Changes to the EXE-owned C++ files below won’t take effect in the already-running game; the dev loop can build a new EXE, but that EXE must then be launched.
+
+### Cold files directly involved
+
+These are the files most likely to matter for the fixes we discussed:
+
+| File | Why it may need to change |
+|---|---|
+| [`src/engine/engine-tick-state.cpp`](/C:/mimita-v9/src/engine/engine-tick-state.cpp:112) | Loads the initial default map and later loads the requested join map. This is the main owner for avoiding the unnecessary Dust2 load. |
+| [`src/engine/engine-tick-net.cpp`](/C:/mimita-v9/src/engine/engine-tick-net.cpp:749) | Checks that the local world matches the server’s required map, then sends `CLIENT_MAP_READY`. Needed only if changing that gate or its reporting. |
+| [`src/network/multiplayer-packets.cpp`](/C:/mimita-v9/src/network/multiplayer-packets.cpp:2042) | Builds the “synchronizing map” status text and owns connection-health checks, the snapshot-timeout event, reconnect startup, and client-side ICE setup. |
+| [`src/network/connection-health.cpp`](/C:/mimita-v9/src/network/connection-health.cpp:15) | Makes the actual connection-state decision. In this run, snapshot starvation caused the transition to `Reconnecting`. This is the key candidate for moving the decision behind the hot policy module. |
+| [`src/network/multiplayer-tick.cpp`](/C:/mimita-v9/src/network/multiplayer-tick.cpp:1362) | Handles join/welcome and reconnect packets, map-ready flag resets, incoming snapshots, and recovery state. |
+| [`src/network/multiplayer-context.h`](/C:/mimita-v9/src/network/multiplayer-context.h:615) | Holds the connection and map-readiness state those files share. Only needed if we add or change tracked state. |
+
+### Cold files needed only if the journals point there
+
+- **Server stops sending or mishandles readiness/spawn:** [`src/network/server-packets.cpp`](/C:/mimita-v9/src/network/server-packets.cpp:2781) builds and sends snapshots and handles map-ready/spawn packets; [`src/network/server.cpp`](/C:/mimita-v9/src/network/server.cpp) owns the server loop.
+- **ICE signaling or transport stalls:** [`src/network/server-ice.cpp`](/C:/mimita-v9/src/network/server-ice.cpp), [`src/network/coordinator-client.cpp`](/C:/mimita-v9/src/network/coordinator-client.cpp), [`src/network/coordinator-client.h`](/C:/mimita-v9/src/network/coordinator-client.h), [`src/network/ice/ice-agent.cpp`](/C:/mimita-v9/src/network/ice/ice-agent.cpp), and [`src/network/ice/ice-agent.h`](/C:/mimita-v9/src/network/ice/ice-agent.h). Transport interface headers—[`ice-transport.h`](/C:/mimita-v9/src/network/ice-transport.h), [`game-transport.h`](/C:/mimita-v9/src/network/game-transport.h), and [`udp-transport.h`](/C:/mimita-v9/src/network/udp-transport.h)—are only candidates if the fault is in that interface.
+- **Snapshot chunks are sent but fail to assemble:** [`src/network/snapshot-chunks.cpp`](/C:/mimita-v9/src/network/snapshot-chunks.cpp) and [`src/network/snapshot-chunks.h`](/C:/mimita-v9/src/network/snapshot-chunks.h).
+- **Wire format itself is wrong:** [`src/network/packets.h`](/C:/mimita-v9/src/network/packets.h) and possibly [`src/network/packets.cpp`](/C:/mimita-v9/src/network/packets.cpp). The current evidence doesn’t point to a packet-format problem.
+
+### Not EXE rebuilds
+
+[`devscripts/dev-launch-modes.json`](/C:/mimita-v9/devscripts/dev-launch-modes.json:522) can pass `funworld3` to mode 56’s client on the next launch; that’s launch configuration, not a hot module or an EXE source file. [`config/networkingconfig.json`](/C:/mimita-v9/config/networkingconfig.json) is also separate: networking settings are hot-reloaded, but changing the timeout there would tune the threshold, not explain why server traffic stopped.
+
+One correction to my previous message: `main-systems.cpp` contains another `dust2cyberiav4` declaration, but it has no references. It isn’t part of the active map-loading path and shouldn’t need an edit for this fix."
+
+all these files we need to mkae into hot reloadable m odules
+and packets.h too big
+need to make that  not be included evurwhere
+
+
+# Open Gameplay Issues
 
 Last updated: 2026-11-09
 

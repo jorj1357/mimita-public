@@ -9,9 +9,17 @@ Read these gates before doing anything else:
 0. AGENT BUILD AUTHORITY: An agent edits and observes; it never builds. Agents
    must not run `build.py`, `build_agent.py`, `buildv2.py`,
    `module-build-worker.py`, `devloop --request build`, or any direct
-   compiler/`ccache` command. Every agent uses an isolated mode 2 lane
-   (`devscripts/agent-lane.py create/ensure/status/run`); the lane dev-loop
-   auto-detects edits and builds. Only a human may use
+   compiler/`ccache` command. The required target is an isolated mode 2 lane
+   (`devscripts/agent-lane.py create/ensure/status/run`) rooted under this
+   checkout's ignored `.dev/agent-lanes/` directory. Agent-created worktrees,
+   temporary files, caches, scheduler state, builds, and journals must resolve
+   inside the project directory; do not use sibling folders, `%TEMP%`,
+   `%LOCALAPPDATA%`, or another checkout as an agent work area. The current
+   lane manager does not yet honor this root, so do not create or launch lanes
+   until the implementation is migrated. If an operation cannot stay inside
+   the project, stop and report the blocker instead of falling back outside.
+   The lane dev-loop auto-detects edits and builds. Only a human may authorize
+   an emergency outside-path exception or use
    `MIMITA_BUILD_OVERRIDE=1`. Read
    `docs/specs/dev-loop/agent-lanes-build-authority.md` before any edit.
 

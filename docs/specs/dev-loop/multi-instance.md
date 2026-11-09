@@ -4,10 +4,15 @@
 more servers and clients.
 
 This runtime topology applies within one checkout. Independent agent lanes use
-separate Git worktrees and therefore separate dev-loop daemons, build locks,
-artifacts, run manifests, and journals. Do not use this document's multiple
+separate Git worktrees under the coordinator checkout's
+`.dev/agent-lanes/<lane-id>/` directory and therefore separate dev-loop
+daemons, build locks, artifacts, run manifests, and journals. Do not use this document's multiple
 server/client instances as a substitute for source/build isolation between
 agents; see the independent agent worktree lane contract in `dev-loop.md`.
+
+This is the required target layout, not current behavior: `agent-lane.py` still
+creates worktrees beside the checkout. Agents must not create or launch lanes
+until the manager enforces the repository-local path.
 
 ## Purpose
 

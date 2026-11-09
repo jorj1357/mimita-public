@@ -71,6 +71,7 @@ WATCH_STATE_PATH = DEV_ROOT / "dev-loop-watch.json"
 WATCH_SCRIPT = ROOT / "devscripts" / "dev-loop-watch.py"
 WATCH_LOG_PATH = DEV_ROOT / "dev-loop-watch.log"
 DASHBOARD_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard.lock"
+DASHBOARD_START_LOCK_PATH = DEV_ROOT / "dev-loop-dashboard-start.lock"
 DASHBOARD_LOG_PATH = DEV_ROOT / "dev-loop-dashboard.log"
 DAEMON_LOG_PATH = DEV_ROOT / "dev-loop-console.log"
 DAEMON_READY_TIMEOUT_SECONDS = 60.0
@@ -638,7 +639,8 @@ def existing_dashboard_pid() -> int:
         result = run_hidden(
             [
                 "powershell", "-NoProfile", "-Command",
-                "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
+                "Get-CimInstance Win32_Process "
+                "| Where-Object { $_.Name -match '^pythonw?\\.exe$' } "
                 "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
             ],
             capture_output=True,
@@ -657,7 +659,8 @@ def existing_dashboard_pid() -> int:
         normalized_command = command_line.replace("/", "\\").lower()
         if (pid != os.getpid() and script_text in normalized_command
                 and "--daemon" not in normalized_command
-                and ("--dev-loop-role=dashboard" in normalized_command
+                and ("--dashboard" in normalized_command
+                     or "--dev-loop-role=dashboard" in normalized_command
                      or "--dev-loop-role dashboard" in normalized_command)):
             return pid
     return 0
@@ -3343,7 +3346,10 @@ class DevLoop:
             self.room_code = None
             self.server_unavailable = True
             self.cleanup_room_file()
-            room_fd, room_file_name = tempfile.mkstemp(prefix="mimita-dev-room-", suffix=".txt")
+            room_temp_root = ROOT / ".dev" / "tmp"
+            room_temp_root.mkdir(parents=True, exist_ok=True)
+            room_fd, room_file_name = tempfile.mkstemp(
+                prefix="mimita-dev-room-", suffix=".txt", dir=room_temp_root)
             os.close(room_fd)
             self.room_file_path = Path(room_file_name)
             self.room_file_path.write_text("", encoding="utf-8")
@@ -4952,9 +4958,23 @@ def daemon_lock_pid() -> int:
 
 def dashboard_pid() -> int:
     pid = _lock_pid(DASHBOARD_LOCK_PATH)
-    if pid and pid_alive(pid):
-        return pid
-    return existing_dashboard_pid()
+    if os.name == "nt":
+        # The PID file is a fast path, but a reused PID must not masquerade as
+        # this checkout's dashboard in Task Manager or suppress a real start.
+        existing = existing_dashboard_pid()
+        if existing:
+            return existing
+        if pid and pid_alive(pid):
+            identity = windows_process_identity(pid, fresh=True) or {}
+            command_line = str(identity.get("command_line") or "").replace("/", "\\").lower()
+            script = str(DEV_LOOP_SCRIPT).replace("/", "\\").lower()
+            if script in command_line and (
+                    "--dashboard" in command_line
+                    or "--dev-loop-role=dashboard" in command_line
+                    or "--dev-loop-role dashboard" in command_line):
+                return pid
+        return 0
+    return pid if pid and pid_alive(pid) else 0
 
 
 def process_image_name() -> str:
@@ -5034,12 +5054,83 @@ def start_daemon_detached(profile: str, launch_mode, visibility: str) -> int:
 
 
 def start_dashboard_detached(profile: str, launch_mode, visibility: str) -> int:
-    args = [sys.executable, str(DEV_LOOP_SCRIPT),
-            "--dev-loop-role=dashboard", "--profile", str(profile)]
-    if launch_mode is not None:
-        args += ["--launch-mode", str(launch_mode)]
-    args.append("--headless" if visibility == "headless" else "--visible")
-    return _spawn_detached(args, DASHBOARD_LOG_PATH)
+    # Serialize dashboard startup across command processes. The child also
+    # takes a lifetime lock, so a launcher race cannot leave two dashboard
+    # windows running for this checkout.
+    start_lock = _acquire_file_lock(DASHBOARD_START_LOCK_PATH)
+    if start_lock is None:
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            existing = dashboard_pid()
+            if existing:
+                return existing
+            time.sleep(0.05)
+        return 0
+    try:
+        existing = dashboard_pid()
+        if existing:
+            return existing
+        args = [sys.executable, str(DEV_LOOP_SCRIPT),
+                "--dev-loop-role=dashboard", "--profile", str(profile),
+                "--no-terminal-relaunch"]
+        if launch_mode is not None:
+            args += ["--launch-mode", str(launch_mode)]
+        args.append("--headless" if visibility == "headless" else "--visible")
+        started = _spawn_detached(args, DASHBOARD_LOG_PATH)
+        if not started:
+            return 0
+        # Give the dashboard time to acquire its lifetime lock and publish its
+        # PID before another command process checks whether it exists.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            owner = dashboard_pid()
+            if owner:
+                return owner
+            if not pid_alive(started):
+                return started
+            time.sleep(0.05)
+        return started
+    finally:
+        _release_file_lock(start_lock)
+
+
+def _acquire_file_lock(path: Path):
+    """Acquire a non-blocking OS lock on a repository-local file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return handle
+    except (OSError, ImportError):
+        handle.close()
+        return None
+
+
+def _release_file_lock(handle) -> None:
+    if handle is None:
+        return
+    try:
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except (OSError, ImportError):
+        pass
+    finally:
+        handle.close()
 
 
 def wait_for_daemon_ready(timeout: float):
@@ -5442,6 +5533,12 @@ def run_dashboard(args: argparse.Namespace) -> int:
     if term is not None and not args.no_terminal_relaunch:
         if term.relaunch_in_windows_terminal(title):
             return 0
+    # Acquire after any terminal handoff, so the original process does not
+    # hold the singleton lock while the replacement dashboard starts.
+    dashboard_instance_lock = _acquire_file_lock(
+        DEV_ROOT / "dev-loop-dashboard-instance.lock")
+    if dashboard_instance_lock is None:
+        return 0
     if term is not None:
         term.enable_virtual_terminal()
         term.set_title(title)
@@ -5707,6 +5804,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                 DASHBOARD_LOCK_PATH.unlink(missing_ok=True)
         except OSError:
             pass
+        _release_file_lock(dashboard_instance_lock)
         _append_journal_event(events_path, "dev-loop.dashboard.detach", {
             "dashboard_pid": os.getpid(),
             "frames": frames,

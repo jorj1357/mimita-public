@@ -1,7 +1,10 @@
 # Agent Lane Integration and Pending Validation
 
-Status: source integration is written; compile, runtime validation, and stable
-promotion are pending.
+Status: historical source integration is recorded; compile, runtime validation,
+and stable promotion are pending. The recorded lanes were placed outside the
+project before the repository-only policy. Agents must not inspect or write to
+those old locations. This handoff is blocked for agent execution until an
+authorized human imports the needed commits and evidence into the project.
 
 This document is the obvious starting point for:
 
@@ -24,13 +27,20 @@ authority rules still apply.
 4. Use the integration EXE for the test matrix below.
 5. Publish a stable artifact only after a clean build and runtime acceptance.
 
-## Current work
+## Historical lane state and import requirement
 
-Integration lane:
+The lane names below identify work created under the old sibling-folder
+workflow. Their worktrees and one changelog were stored outside the project;
+they are historical references, not paths agents may access. Continue only
+from commits and evidence already available inside the project. If required
+material is absent, stop and ask a human to import an approved copy under
+`.dev/agent-lanes/`.
+
+Legacy integration lane:
 
 ```text
 lane:     world-streaming-nav-reconnect-20261108
-worktree: C:\mimita-v9-agent-lanes\world-streaming-nav-reconnect-20261108
+worktree: historical external location; not accessible to agents
 branch:   codex/agent-world-streaming-nav-reconnect-20261108
 base:     dc7dea21889f84d6a7d7ad1a05d8563c63a39825
 ```
@@ -39,16 +49,18 @@ Preserved predecessor lane:
 
 ```text
 lane:     npc-collision-hot-20261108
-worktree: C:\mimita-v9-agent-lanes\npc-collision-hot-20261108
+worktree: historical external location; not accessible to agents
 ```
 
-The current lane is dirty and has not been compiled in this session. No
-successful build ID, compile result, runtime journal, or human acceptance is
-claimed.
+At the time of the original handoff, the lane was dirty and had not been
+compiled in that session. This historical note does not establish its current
+state. No successful build ID, compile result, runtime journal, or human
+acceptance is claimed here.
 
-Implemented source changes are listed in the integration lane's changelog:
-`C:\mimita-v9-agent-lanes\world-streaming-nav-reconnect-20261108\docs\changelog\2026-11-08\20261108_223500-world-streaming-nav-reconnect-integration.md`.
-Read that changelog before changing the lane.
+The integration lane's detailed changelog was stored outside the project and
+is not an agent-readable dependency. Do not fetch it from the old location.
+Any required source or evidence must first be imported by a human into this
+project, then reviewed from the imported copy.
 
 ## Pending code work
 
@@ -145,9 +157,10 @@ build, runtime, and human acceptance separately.
 Stop editing every lane that will be merged. Each lane must be committed:
 
 ```powershell
-git -C C:\mimita-v9-agent-lanes\<lane> status --short
-git -C C:\mimita-v9-agent-lanes\<lane> add <intended files>
-git -C C:\mimita-v9-agent-lanes\<lane> commit -m "<reviewed change>"
+$projectRoot = (Get-Location).Path
+git -C "$projectRoot\.dev\agent-lanes\<lane>" status --short
+git -C "$projectRoot\.dev\agent-lanes\<lane>" add <intended files>
+git -C "$projectRoot\.dev\agent-lanes\<lane>" commit -m "<reviewed change>"
 ```
 
 Record the exact commit SHA for each lane. Do not include uncommitted edits,
@@ -183,7 +196,7 @@ python devscripts/agent-lane.py promote integrate-all-20261108 `
 ```
 
 `promote` creates
-`C:\mimita-v9-agent-lanes\integrate-all-20261108` and cherry-picks the commits.
+`.dev\agent-lanes\integrate-all-20261108` and cherry-picks the commits.
 If a cherry-pick conflicts, resolve it in that integration worktree and commit
 the resolution. Do not force a merge in a feature lane.
 
@@ -207,8 +220,8 @@ Check these before building:
 Review the combined diff before building:
 
 ```powershell
-git -C C:\mimita-v9-agent-lanes\integrate-all-20261108 status --short
-git -C C:\mimita-v9-agent-lanes\integrate-all-20261108 diff --stat
+git -C "$projectRoot\.dev\agent-lanes\integrate-all-20261108" status --short
+git -C "$projectRoot\.dev\agent-lanes\integrate-all-20261108" diff --stat
 ```
 
 The integration worktree must be clean before stable promotion.
@@ -262,4 +275,5 @@ human acceptance:
 - `docs/specs/dev-loop/agent-lanes-build-authority.md`
 - `docs/specs/dev-loop/dev-loop.md`
 - `docs/workflows/runtime-scenario-validation.md`
-- `C:\mimita-v9-agent-lanes\world-streaming-nav-reconnect-20261108\docs\changelog\2026-11-08\20261108_223500-world-streaming-nav-reconnect-integration.md`
+- Imported lane changelog under `.dev/agent-lanes/<lane-id>/docs/changelog/` if
+  a human has supplied one; otherwise the required evidence remains missing.

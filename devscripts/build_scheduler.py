@@ -12,7 +12,6 @@ import ctypes
 import datetime
 import json
 import os
-import tempfile
 import time
 from pathlib import Path
 
@@ -22,11 +21,12 @@ STALE_SECONDS = 60.0
 
 
 def scheduler_root() -> Path:
+    coordinator = Path(os.environ.get("MIMITA_COORDINATOR_ROOT", Path(__file__).resolve().parents[1])).resolve()
     configured = os.environ.get("MIMITA_BUILD_SCHEDULER_DIR", "").strip()
-    if configured:
-        return Path(configured)
-    base = os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()
-    return Path(base) / "MiMITA" / "build-scheduler"
+    root = Path(configured).resolve() if configured else coordinator / ".dev" / "build-scheduler"
+    if not root.is_relative_to(coordinator):
+        raise RuntimeError(f"build scheduler path escapes coordinator repository: {root}")
+    return root
 
 
 def _now_utc() -> str:

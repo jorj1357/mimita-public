@@ -232,12 +232,15 @@ that gameplay evidence comes from the exact running artifact's `events.jsonl`.
 
 The dashboard is the human's always-visible window into the loop.
 
-- The single canonical dashboard must be visible on screen for the whole time
-  the loop is running. It must auto-open when the loop starts and must not be
-  hidden, closed, or replaced by an AI action.
+- The single canonical dashboard is the live view for the loop. A dev-loop
+  entry point reuses the existing dashboard; if none is running, it starts one.
+  Concurrent command entry points must serialize dashboard startup so only one
+  dashboard process/window remains for the checkout. Commands update the view
+  through daemon status and journal data; they do not replace or raise a second
+  dashboard.
 - The dashboard's existing bottom output/log pane must show every command the
   AI sends, in order, with a timestamp and result. Minimum record:
-  `YYYY-MM-DD HH:MM:SS UTC | AI | target instance | command | result`.
+  `YYYY-MM-DDTHH:MM:SS.sssZ | AI | target instance | command | result`.
 - The same command records must also be written to the loop journal and remain
   readable from the status view after the command finishes.
 - The AI must not hide the dashboard, must not open a second dashboard, and must
@@ -335,19 +338,28 @@ a build request, or a compiler directly; they ensure the lane dev-loop is
 running and read status/journals. The authoritative workflow is
 [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md).
 
-Mode 2 isolated lanes are mandatory for agents. Each lane has its own worktree,
-`.dev`, artifacts, module builds, run IDs, ports, and journals. The lane
-dev-loop auto-detects edits; there is no agent build command.
+Mode 2 isolated lanes are the required agent workflow once repository-local
+lane support is implemented. Each lane lives under
+`<coordinator-repo>/.dev/agent-lanes/<lane-id>/` and owns its build, run, and
+journal state. The lane dev-loop auto-detects edits; agents have no build
+command.
 
-A machine-wide scheduler outside the checkout permits exactly one EXE build and
-two module builds at once across all lanes and checkouts. Builds wait for a
-free slot, coalesce newer saves into the next generation, run below normal
-priority, cap compiler jobs at four on this machine, and wait if free physical
-memory is below the configured threshold. A build failure leaves the previous
-artifact or module generation active. Only a human may use
-`MIMITA_BUILD_OVERRIDE=1` for an explicit emergency build.
-This serialization is per checkout/worktree; independent agent worktrees have
-separate watchers, locks, outputs, and may compile concurrently.
+The target scheduler uses named Windows synchronization objects, not files
+outside the repository, to permit one EXE build and two module builds across
+lanes. Attempt records, wait details, caches, and temporary files stay under
+the coordinator repository's ignored `.dev/` tree. Builds wait for a free slot,
+coalesce newer saves into the next generation, run below normal priority, cap
+compiler jobs at four on this machine, and wait if free physical memory is
+below the configured threshold. A build failure leaves the previous artifact
+or module generation active. Only a human may use `MIMITA_BUILD_OVERRIDE=1`
+for an explicit emergency build.
+
+**Implementation gap:** the current lane manager still selects a sibling
+worktree root, the scheduler still falls back to `%LOCALAPPDATA%` or the system
+temp directory, and the room-code handoff uses the system-temp default. Do not
+create or run a lane until those paths have been migrated and repository
+containment has been verified. This policy describes the required target, not
+current executable behavior.
 
 The canonical build-input inventory is owned by `build.py`,
 `build_game_dll.py`, and `build_toolchain.py`. The dev loop must watch every
@@ -460,12 +472,11 @@ output, build end, publication complete, and any follow-up generation queued.
 The detailed phase, per-file, cache, persistence, and diagnosis contract is in
 [`build-time-observability.md`](build-time-observability.md). Use these
 measurements to find the slow stage and improve it. Compare a no-op save, a
-small source edit, and a broad/header edit. Keep one compiler/linker
-job active per checkout because overlapping jobs there can corrupt or
-invalidate shared outputs. Separate worktrees may build concurrently because
-their outputs and locks are isolated. Changes during a checkout's job must be
-accepted immediately and coalesced to the newest generation; do not start one
-competing compiler per file or save.
+small source edit, and a broad/header edit. Keep one compiler/linker job active
+per lane because overlapping jobs there can corrupt or invalidate shared
+outputs. Separate lanes have isolated outputs but contend for shared OS build
+slots. Changes during a lane's job must be accepted immediately and coalesced
+to the newest generation; do not start one competing compiler per file or save.
 Retain source-generation identity, artifact validation, running-client
 stability, and the persistent daemon while improving speed.
 
@@ -475,10 +486,11 @@ stability, and the persistent daemon while improving speed.
 for requesting builds, checking build state, and launching MiMITA. Humans and AI
 tools must submit build/launch requests to the dev-loop daemon for that
 checkout; they must not start a second build process directly while that daemon
-owns the checkout. Each checkout's daemon serializes its builds: at most one
+owns the checkout. Each lane's daemon serializes its builds: at most one
 compiler/linker job may be active in that worktree, and source changes observed
 during that job coalesce into one subsequent build for the newest observed
-source generation. Independent worktree daemons may build concurrently.
+source generation. Independent lane daemons use shared OS build slots and may
+wait on them.
 
 The dev loop is the coordinator, not the compiler implementation. These files
 remain internal build components while they have active responsibilities:
@@ -546,8 +558,8 @@ The ideal workflow is:
 
 Multiple simultaneous builds in one checkout, build processes launched outside
 that checkout's daemon, and queued duplicate requests for the same source
-generation are invalid. Independent agent worktrees have separate daemons and
-may build concurrently. The daemon may coalesce a source change into at most
+generation are invalid. Independent agent worktrees have separate daemons, but
+shared OS build-slot limits still apply. The daemon may coalesce a source change into at most
 one subsequent build per checkout, but it must never run two compiler/linker
 jobs in one worktree at once. Status or control commands must remain responsive
 during the active build.
@@ -565,8 +577,10 @@ the task.
 The canonical dev loop must build from a frozen input snapshot so edits made
 while a build is running cannot change what that build compiles. The snapshot
 also identifies the runtime data needed to run and inspect that build. This is
-an implementation target for the canonical single-checkout dev loop; it does
-not authorize using experimental mode 2 lanes.
+an implementation target for the canonical dev-loop and applies to each
+repository-local agent lane when lane support is available. The current lane
+manager does not meet the repository-local path requirement, so agent lanes
+remain unavailable until that implementation gap is closed.
 
 ### Snapshot capture
 
@@ -1533,8 +1547,9 @@ visible dashboard entry point:
 
 - The entry point ensures the one watchdog and one healthy daemon for this
   checkout, checking PID, authenticated control socket, heartbeat, run, and
-  source identity. The desktop entry also opens or reconnects the visible
-  dashboard; an AI command does not open a dashboard.
+  source identity. It reuses the single dashboard if present and starts one
+  only when none is running; all entry points serialize startup and the
+  dashboard reconnects to current daemon status and journal activity.
 - If the daemon is healthy, the entry point sends the request to it and exits
   with the request result.
 - If the daemon is absent, stale, or has a different script identity, the
@@ -2262,7 +2277,8 @@ authenticated control endpoint, then send the request exactly once and (for
 `--command`) wait for the correlated client result. This is still one script and
 one persistent daemon, not a second supervisor app. `--status` stays read-only
 and never starts the daemon. The visible dashboard is the default entry for the
-desktop shortcut; AI command calls never open a dashboard.
+desktop shortcut; AI command calls reuse the existing dashboard or start one
+if this checkout has no dashboard process.
 
 ## 20. Required implementation phases
 
@@ -2373,9 +2389,9 @@ client. The `ss` alias is a game-terminal alias defined in
 | `--visible` | Shows the game client window on its next launch. | Does not guarantee a separate daemon window or taskbar item. |
 | `--status` | Prints the last saved status. | Read-only; it never starts or wakes the daemon. |
 | `--json` | Prints status or control response as JSON. | Useful with `--status`, `--request`, `--command`, or `--scenario-file`. |
-| `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon first; never opens a dashboard; sends the command once. `--cmd` is an alias. |
-| `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon first; opens no dashboard. |
-| `--ensure-running` | Ensures one watchdog and one daemon exist, prints status, and exits. | Idempotent; never starts a duplicate. |
+| `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon and one dashboard (reusing the existing dashboard); sends the command once. `--cmd` is an alias. |
+| `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon and one dashboard (reusing the existing dashboard). |
+| `--ensure-running` | Ensures one watchdog, daemon, and dashboard exist, prints status, and exits. | Idempotent; never starts a duplicate. |
 | `--request launch` | Requests a build if needed, then launches the selected mode. | May include `--launch-mode NUMBER`. |
 | `--request stop-client` | Stops the dev-loop-owned client. | Leaves a healthy dedicated server running. |
 | `--request stop-server` | Requests stop of the identified dev-loop server. | Refuses to stop an unverified process. |
@@ -2724,21 +2740,23 @@ checkout, so agents using it share that build owner and can wait on one another.
 The published executable becomes the launch choice; a running game is not
 automatically replaced by the executable build.
 
-### Mode 2: separate agent lanes (experimental; do not use)
+### Mode 2: repository-local agent lanes
 
-**Do not use parallel agent lanes as of `2026-11-07 10:59` (jorj).** Lane
-worktrees, lane daemons, lane promotion, and parallel builds are experimental.
-They need to be revisited later. Use one worktree and the canonical single
-dev-loop owner until the user explicitly re-enables lanes.
+**Target policy:** use separate mode 2 worktrees under the coordinator
+checkout's ignored `.dev/agent-lanes/<lane-id>/` directory. Do not create lane
+folders beside the project or in a user-profile/temp directory. This target is
+not yet implemented by `devscripts/agent-lane.py`; until it is, agents must not
+run lane-creation commands. Use one coordinator-owned source tree for any
+authorized work that does not require agent isolation; do not have multiple
+agents edit that same tree concurrently.
 
 Each agent gets a worktree with its own source, incremental object files and
 PCH, executable artifact, dev-loop, run state, command queue, and
 `events.jsonl`. By default, a lane starts from a recorded snapshot of the
-coordinator's current tracked and non-ignored untracked work. Builds serialize
-inside that lane, but different lanes have independent build owners and no
-cross-lane build queue. One compiler job per lane is the default. Lanes share
-ccache storage only; cache reuse depends on matching compiler inputs, and
-unique edits still use machine resources.
+coordinator's current tracked and non-ignored untracked work. Lane state,
+temporary files, and shared ccache data live under the coordinator repository's
+`.dev/` tree. Builds serialize inside each lane and acquire the shared OS EXE or
+module slot across lanes. One compiler job per lane is the default.
 
 A lane's file changes are detected and incremental builds are coalesced by its
 dev-loop. Agents can run their own checks and executable. A changed `.cpp` may
@@ -2770,19 +2788,19 @@ C++ file live-reloadable or eliminate the final integrated stable build.
 
 ### Commands and integration
 
-Mode 1 is the fallback if lanes are unavailable. Mode 2 is the current choice
-for independent agent work. Mode 3 commands are not available yet.
+Mode 1 is a human fallback. Mode 2 is the agent target after repository-local
+lane support is implemented. Mode 3 commands are not available yet.
 
 ```text
 python devscripts/agent-workflow.py --mode 1 build
 python devscripts/agent-workflow.py --mode 1 run 1
 python devscripts/agent-workflow.py --mode 1 status
-python devscripts/agent-workflow.py --mode 2 create <lane-id>
-python devscripts/agent-workflow.py --mode 2 build <lane-id>
-python devscripts/agent-workflow.py --mode 2 run <lane-id> --launch-mode <id>
-python devscripts/agent-workflow.py --mode 2 check <lane-id>
-python devscripts/agent-workflow.py --mode 2 status <lane-id>
-python devscripts/agent-workflow.py --mode 2 cleanup <lane-id>
+python devscripts/agent-lane.py create <lane-id>
+python devscripts/agent-lane.py ensure <lane-id>
+python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
+python devscripts/agent-lane.py check <lane-id>
+python devscripts/agent-lane.py status <lane-id>
+python devscripts/agent-lane.py cleanup <lane-id>
 ```
 
 At the end, one integrator reviews selected agent commits, combines them on an
@@ -2792,26 +2810,30 @@ lane artifacts and journals remain available for diagnosis.
 
 ## Independent agent worktree lanes
 
-Agents use separate Git worktrees managed from the coordinator checkout:
+Agents use separate Git worktrees managed from the coordinator checkout. The
+target path is `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`; this path is
+not supported by the current lane-manager implementation yet.
 
 ```text
 python devscripts/agent-lane.py create <lane-id> [--base <ref>]
 python devscripts/agent-lane.py status <lane-id>
-python devscripts/agent-lane.py build <lane-id> [--mode debug|release] [--jobs 1]
 python devscripts/agent-lane.py run <lane-id> --launch-mode <id> [--profile <id>]
 python devscripts/agent-lane.py check <lane-id> [--base <ref>]
 python devscripts/agent-lane.py cleanup <lane-id>
 python devscripts/agent-lane.py promote <integration-id> --base <ref> --commit <sha> [--commit <sha> ...] [--build]
 ```
 
-Each worktree is a separate build and runtime owner. Lane creation copies or
+Each worktree is a separate build and runtime owner under
+`<coordinator-repo>/.dev/agent-lanes/<lane-id>/`. Lane creation copies or
 initializes the exact required submodule revisions and copies the local
 Manifold prebuilt library when available. Its `build/`, `src/pch.h.gch`, `.dev/`
 artifacts and locks, dev-loop daemon, process cap, run IDs, command queues, and
-`logs/` are checkout-local. Builds serialize within one worktree and may run
-concurrently across worktrees. The lane build defaults to one compiler job;
-tune `--jobs` only when machine capacity allows. Toolchain installations may
-be shared read-only. Agents should be assigned the printed worktree path.
+`logs/` remain within the project directory. Temporary files must specify a
+lane-local `.dev/tmp/` directory. Builds serialize within one worktree and
+acquire shared OS build slots across lanes. The lane build defaults to one
+compiler job; tune `--jobs` only when machine capacity allows. Installed
+toolchains may be invoked by the dev-loop, but agents must not inspect or
+write to their installation paths.
 
 Build artifact metadata records the source revision and a SHA-256 fingerprint
 of its source tree and submodule revisions at build start and publication,
@@ -2823,8 +2845,9 @@ source. Runtime behavior still requires a
 separate real run and inspection of that run's journal; these checks do not
 claim gameplay acceptance.
 
-Promotion takes explicit reviewed commit IDs, creates an integration worktree,
-and cherry-picks them onto the requested base in the supplied order. Review the
+Promotion takes explicit reviewed commit IDs, creates an integration worktree
+under `.dev/agent-lanes/<integration-id>/`, and cherry-picks them onto the
+requested base in the supplied order. Review the
 combined diff there before building. `promote --build` builds the integration
 worktree, requires a clean source tree and identical start/end source identity,
 then publishes an immutable artifact under the coordinator checkout's
