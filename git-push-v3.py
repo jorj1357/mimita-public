@@ -48,12 +48,14 @@ def main():
          "--format=%(refname:short)", "refs/heads"]
     ).stdout.splitlines()
     branches = []
-    for i, branch in enumerate(lines[:9], start=1):
+    for i, branch in enumerate(lines, start=1):
         branches.append(branch)
         print(f"{i}) {branch}")
 
     print()
-    pick = prompt("Pick branch (1-9) or press Enter to stay on current: ")
+    pick = prompt(
+        f"Pick branch (1-{len(branches)}) or press Enter to stay on current: "
+    )
     if pick:
         try:
             target = branches[int(pick) - 1]
