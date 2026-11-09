@@ -57,6 +57,8 @@ class NpcSystem;
 class Npc;
 struct World;
 struct Player;
+struct NavigationAgentProfile;
+class RecastNavMeshCandidate;
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -1107,6 +1109,16 @@ const std::vector<ServerPlayerBodyPartTemplate>* standardPlayerBodyTemplate();
 // NpcSystem to simulate against, derived from the headless collision world.
 void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
                             bool allowRecastPrewarm = true);
+
+// Worker-safe candidate build. Never touches PhysicalEntitySystem,
+// BehaviorProfileRegistry, serverInfiniteCollisionReset, or the Recast
+// singleton. The caller supplies destructible surface triangles captured on
+// the owning thread and receives an unpublished navmesh candidate.
+bool buildNpcWorldCollisionDetached(
+    World& npcWorld, const HeadlessWorld& hw,
+    const std::vector<CollisionTriangle>& destructibleSurfaceTriangles,
+    bool buildRecast, const NavigationAgentProfile& recastProfile,
+    RecastNavMeshCandidate* navOut);
 
 // Server-side NPC simulation that reuses the real client NpcSystem so online
 // NPCs behave exactly like the local ones (movement, aim, firing). The

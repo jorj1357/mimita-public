@@ -92,6 +92,62 @@ struct ReconcilePolicyV1
 
 // Remote interpolation discontinuity policy. The host owns the snapshot
 // buffer; the module decides teleport gap distance and extrapolation limits.
+// Client session-health decision. Host owns the transport and reconnect
+// machinery; the module owns the wait-vs-reconnect thresholds.
+struct SessionHealthPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint64_t lastHeardAgeMs;
+    std::uint64_t snapshotAgeMs;
+    std::uint32_t staleThresholdMs;
+    std::uint32_t hardTimeoutMs;
+    std::uint32_t snapshotsEverReceived;
+    std::uint32_t heardSinceDisconnect;
+    std::uint32_t reconnectAttempts;
+    std::uint32_t outState; // 0 connected, 1 weak, 2 waiting, 3 reconnecting, 4 failed
+    std::uint32_t outReconnect;
+    std::uint32_t outBackoffMs;
+    std::uint32_t outGeneration;
+};
+
+// Map-ready/load handshake policy. Host owns the map load and packets; the
+// module decides resend cadence and whether a duplicate handshake resets ready.
+struct MapSyncPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t connected;
+    std::uint32_t worldLoaded;
+    std::uint32_t mapReady;
+    std::uint32_t readySent;
+    std::uint32_t hasAuthoritativeSpawn;
+    std::uint32_t mapLoadAttempts;
+    std::uint64_t lastReadySendAgeMs;
+    std::uint32_t outRetryIntervalMs;
+    std::uint32_t outResendReady;
+    std::uint32_t outResetReady;
+    std::uint32_t outState; // 0 loading, 1 mismatch, 2 ready-not-sent, 3 waiting-spawn, 4 ready
+    std::uint32_t outGeneration;
+};
+
+// Server combat-validation tolerances. Host owns authoritative state and
+// geometry; the module owns acceptance tolerances/grace windows.
+struct CombatValidationPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t cooldownGraceTicks;
+    std::uint32_t equipGraceTicks;
+    float originTolerance;
+    float muzzleTolerance;
+    std::uint32_t outCooldownGraceTicks;
+    std::uint32_t outEquipGraceTicks;
+    float outOriginTolerance;
+    float outMuzzleTolerance;
+    std::uint32_t outGeneration;
+};
+
 struct InterpolationPolicyV1
 {
     std::uint32_t version;

@@ -31,6 +31,7 @@ enum class ConnectionState : uint8_t
     DisconnectPending,
     // ── Connection-health states (honest UI) ──────────────────────────
     WeakConnection,     // packets stale but session still alive; input still sent
+    WaitingForServer,   // snapshots stalled; wait until the hard timeout, do not reconnect
     ReconnectFailed,    // 60s grace expired, gave up (fully disconnected)
     HostClosed,         // server/host explicitly closed the session
     Kicked,             // server kicked this player

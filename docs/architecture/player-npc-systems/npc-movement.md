@@ -3083,3 +3083,31 @@ Acceptance scenarios:
 The Zombie Tower v1 specification requires at least 50 floors. Its latest
 design note asks whether the target should be 100; this navigation issue does
 not decide that open scope question.
+
+## Navigator stall at 19 NPCs — 2026-11-08
+
+Status: `CODE ONLY` / `NEEDS RUNTIME`.
+
+The first measured divergence is the navigator update, not target selection:
+
+- `npc.slow-update`: actor 1008, `navigator_ms=7,559.7`, `path_ms=12.1`,
+  total update 7,560.9 ms.
+- `npc.phase-window`: 62 updates took 7,587.9 ms.
+- `npc.server-phase-window`: `ai_ms=7,590.2`, `target_selection_ms=0.096`.
+- `performance.server-tick-stall`: `npc_ms=7,690`, total tick 7,700 ms.
+
+The exact navigator sub-stage is not yet identified. `path_ms` being small means
+the cost is in the navigator update around the path query, not the path query
+itself.
+
+Ideal fix:
+
+1. Add bounded timing for navigator selection, commit/replan, route projection,
+   graph/Recast queries, and any rebuild step.
+2. Find the operation that consumes seconds instead of milliseconds.
+3. Cache or reuse that operation instead of recomputing it per NPC.
+4. Bound the per-tick navigator work to the fixed 60 Hz budget.
+5. Re-run 19 NPCs on FunWorld3/Payload and require a sustained 60 Hz window.
+
+Acceptance: the same scene runs at 60 Hz with no `npc.slow-update` over budget,
+no `performance.server-tick-stall`, and correct NPC route progress and recovery.

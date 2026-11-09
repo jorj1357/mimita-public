@@ -63,6 +63,27 @@ claim that the general module workflow is implemented today. Full integration
 and release builds remain required when the kernel, module ABI, or other
 non-reloadable mechanism changes.
 
+## Cold-build policy
+
+Cold EXE builds are a boundary, not the normal workflow. They are reserved for
+process lifetime, device access, transport, packet schema, document storage,
+loaders, and public module ABI/capability changes. Gameplay and tool behavior
+belongs in modules.
+
+A module source, module-private header, or data/config edit must not relink the
+EXE. The working goal is "effectively never" for behavior work, not a literal
+promise of zero for clean machine builds. Warm boundary builds use ccache and
+object caching and target seconds; clean release/install builds remain slower.
+
+The long-term path to fewer boundaries is a generic, versioned, data-driven
+event/behavior IR: new gameplay mechanisms should use existing host
+capabilities and event/data schemas rather than add a new EXE call site. EXE
+changes then remain limited to process, authority, device, and transport
+mechanisms. See
+[`module-migration-plan.md`](../../architecture/live-development/module-migration-plan.md)
+and
+[`self-contained-workspace.md`](../../architecture/live-development/self-contained-workspace.md).
+
 ## 2. Module and kernel responsibilities
 
 ### 2.1 Module ownership
@@ -199,8 +220,9 @@ value (default `-O2`) so hot policy is not compiled slower than the host.
 Agents never invoke a builder. The lane dev-loop is the only EXE builder and
 the lane game's `ModuleHost` is the only module builder. Agents use isolated
 mode 2 lanes and read status/journals while the dev-loop auto-detects saved
-edits. A machine-wide scheduler allows one EXE build and two module builds
-across all lanes. See
+edits. A repository-local scheduler allows one EXE build and two module builds
+across the checkout's lanes; all writable state stays under the repository's
+gitignored .dev root. See
 [`../dev-loop/agent-lanes-build-authority.md`](../dev-loop/agent-lanes-build-authority.md).
 
 The live repair slice adds bounded collision and networking decisions without
@@ -638,11 +660,17 @@ boundary. The source catalog includes these modules:
   `src/npc/npc-utility-bridge.cpp` and retains no scoring policy.
 
 This inventory describes source ownership, not proof that every module has
-activated in the running EXE. NPC perception, target selection, state-machine
-execution, attack legality and weapon firing remain host code. Actor/world,
-physical-object, actor-pair, and weapon/projectile collision solvers remain
-host code. Their planned hot migration requires bounded versioned input and
-output, host-side result validation, and real gameplay evidence for each owner.
+activated in the running EXE. NPC perception, candidate gathering,
+state-machine execution, weapon legality, and weapon firing remain host code.
+Target priority/retention scoring, attack intent, and dash/down-dash threshold
+policy are module-owned source slices; state-machine transition extraction is
+deferred.
+
+Actor-versus-static-world correction now has a bounded hot snapshot/result path
+with host fallback. Dynamic-object, actor-pair, and weapon/projectile solvers
+remain host code. Their planned hot migration requires bounded versioned input
+and output, host-side result validation, and real gameplay evidence for each
+owner.
 
 Host capabilities cover editor operations, world-generation tables, mesh face
 submission, and collision-proxy construction. The host keeps documents, unsaved

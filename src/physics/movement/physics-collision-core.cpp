@@ -476,3 +476,103 @@ glm::vec3 solveBatchedCorrection(
 
     return correction;
 }
+
+glm::vec3 solveActorWorldCorrection(
+    const std::vector<RecoveryContact>& contacts,
+    float slop,
+    std::uint32_t actorId,
+    std::uint64_t tick,
+    float* outMaxPenetration,
+    glm::vec3* outWeightedNormal,
+    glm::vec3 intendedMove
+) {
+    const PlayerSettings& cfg = GetPlayerSettings();
+    if (contacts.size() <= mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS) {
+        using SolverContact = mimita_collision_policy::SolverContactV1;
+        static thread_local std::array<SolverContact,
+            mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS> input{};
+        static thread_local std::array<SolverContact,
+            mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS> scratch{};
+        static thread_local std::array<std::uint32_t,
+            mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS> sourceTriangles{};
+        bool finiteInputs = std::isfinite(slop) &&
+            std::isfinite(cfg.collisionMovementBias);
+        for (std::size_t i = 0; i < contacts.size() && finiteInputs; ++i) {
+            const RecoveryContact& c = contacts[i];
+            finiteInputs = std::isfinite(c.penetration) &&
+                std::isfinite(c.normal.x) && std::isfinite(c.normal.y) &&
+                std::isfinite(c.normal.z) && std::isfinite(c.point.x) &&
+                std::isfinite(c.point.y) && std::isfinite(c.point.z);
+            input[i] = {{c.normal.x, c.normal.y, c.normal.z},
+                        {c.point.x, c.point.y, c.point.z}, c.penetration};
+            sourceTriangles[i] = c.triangleIndex >= 0
+                ? static_cast<std::uint32_t>(c.triangleIndex + 1) : 0u;
+        }
+        if (finiteInputs && std::isfinite(intendedMove.x) &&
+            std::isfinite(intendedMove.y) && std::isfinite(intendedMove.z)) {
+            mimita_collision_policy::ActorWorldSolveV1 request{};
+            request.version = mimita_collision_policy::ABI_VERSION;
+            request.structSize = sizeof(request);
+            request.actorId = actorId;
+            request.tick = tick;
+            request.count = static_cast<std::uint32_t>(contacts.size());
+            request.capacity = mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS;
+            request.contacts = input.data();
+            request.sourceTriangles = sourceTriangles.data();
+            request.scratch = scratch.data();
+            request.slop = slop;
+            request.movementBias = cfg.collisionMovementBias;
+            request.intendedMove[0] = intendedMove.x;
+            request.intendedMove[1] = intendedMove.y;
+            request.intendedMove[2] = intendedMove.z;
+            if (ModuleHost::instance().collisionSolveActorWorld(&request)) {
+                const float limit = std::max(0.5f, glm::length(intendedMove) + slop);
+                bool valid = request.manifoldCount <= request.count &&
+                    std::isfinite(request.maxPenetration) &&
+                    request.maxPenetration >= 0.0f;
+                for (int axis = 0; axis < 3; ++axis)
+                    valid = valid && std::isfinite(request.correction[axis]) &&
+                        std::isfinite(request.weightedNormal[axis]) &&
+                        std::fabs(request.correction[axis]) <= limit + 0.001f;
+                if (valid) {
+                    static thread_local auto lastHotSample =
+                        std::chrono::steady_clock::time_point{};
+                    const auto now = std::chrono::steady_clock::now();
+                    if (now - lastHotSample >= std::chrono::seconds(1)) {
+                        lastHotSample = now;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Collision,
+                            StructuredLevel::Important,
+                            "collision.actor-world", "shared-solver",
+                            "module_result_applied", tick,
+                            nlohmann::json{{"actor", actorId},
+                                           {"generation", request.generation},
+                                           {"contact_count", request.count},
+                                           {"manifold_count", request.manifoldCount},
+                                           {"max_penetration", request.maxPenetration},
+                                           {"correction", {request.correction[0],
+                                                           request.correction[1],
+                                                           request.correction[2]}},
+                                           {"grounded", request.grounded != 0},
+                                           {"blocked", request.blocked != 0},
+                                           {"source_triangles",
+                                            {sourceTriangles[0], sourceTriangles[1],
+                                             sourceTriangles[2], sourceTriangles[3]}}});
+                    }
+                    if (outMaxPenetration)
+                        *outMaxPenetration = request.maxPenetration;
+                    if (outWeightedNormal)
+                        *outWeightedNormal = glm::vec3(
+                            request.weightedNormal[0], request.weightedNormal[1],
+                            request.weightedNormal[2]);
+                    return glm::vec3(request.correction[0], request.correction[1],
+                                     request.correction[2]);
+                }
+                LOG_COLLISION("actor_world_module_invalid",
+                    "[SOLVER] rejected invalid hot actor-world correction\n");
+            }
+        }
+    }
+    return solveBatchedCorrection(contacts, slop, outMaxPenetration,
+                                  outWeightedNormal, intendedMove);
+}

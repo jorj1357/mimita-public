@@ -18,6 +18,7 @@
 #include "renderer/renderer.h"
 #include "map/map_common.h"
 #include "world/world.h"
+#include "map/map-glb-authored.h"
 #include "render/lighting-config.h"
 #include "config/camera-config.h"
 #include "render/dynamic-light.h"
@@ -348,7 +349,10 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     hiddenRanges.clear();
     for (const MapGLBObject& object : mesh.objects)
     {
-        if (!object.hidden || object.vertexCount == 0)
+        const GLBObjectAuthoredV2* authored =
+            MapGLBAuthoredState::instance().find(&mesh, object.id);
+        if ((!object.hidden && (!authored || !authored->authoredHidden)) ||
+            object.vertexCount == 0)
             continue;
         const size_t first = object.vertexFirst;
         const size_t last = std::min(object.vertexFirst + object.vertexCount,

@@ -17,6 +17,7 @@
 // has a issue right now where i fall thru sometimes
 
 #include "world.h"
+#include "map/map-glb-authored.h"
 #include "physics/config.h"
 #include <cmath>
 #include <cstdio>
@@ -117,6 +118,7 @@ void World::getNearby(
 
 void World::clear()
 {
+    MapGLBAuthoredState::instance().clear(&mesh);
     blocks.clear();
     spheres.clear();
     chunks.clear();

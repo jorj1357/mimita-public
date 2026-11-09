@@ -136,7 +136,16 @@ json buildAuthoredDocument(const MapObjectiveConfig& current, const json& base)
     for (const auto& object : current.glbObjects) {
         root["glb_objects"].push_back({
             {"id", object.id}, {"name", object.name},
-            {"position", {object.position.x, object.position.y, object.position.z}}
+            {"position", {object.position.x, object.position.y, object.position.z}},
+            {"rotation", {object.rotation.x, object.rotation.y, object.rotation.z}},
+            {"scale", {object.scale.x, object.scale.y, object.scale.z}},
+            {"material", object.material},
+            {"source", object.source},
+            {"instance_id", object.instanceId},
+            {"visible", object.visible},
+            {"collision", object.collision},
+            {"deleted", object.deleted},
+            {"clone", object.clone}
         });
     }
 
@@ -612,13 +621,23 @@ bool MapConfigRegistry::loadFromStream(const std::string& mapId,
                 if (object.id.empty()) continue;
                 object.name = item.value("name", std::string{});
                 object.material = item.value("material", std::string{});
-                if (item.contains("position") && item["position"].is_array() &&
-                    item["position"].size() >= 3) {
-                    object.position = glm::vec3(
-                        item["position"][0].get<float>(),
-                        item["position"][1].get<float>(),
-                        item["position"][2].get<float>());
-                }
+                object.source = item.value("source", std::string{});
+                object.instanceId = item.value("instance_id", std::string{});
+                object.visible = item.value("visible", true);
+                object.collision = item.value("collision", true);
+                object.deleted = item.value("deleted", false);
+                object.clone = item.value("clone", false);
+                auto readVec3 = [&item](const char* key, glm::vec3 fallback) {
+                    if (!item.contains(key) || !item[key].is_array() ||
+                        item[key].size() < 3)
+                        return fallback;
+                    return glm::vec3(item[key][0].get<float>(),
+                                     item[key][1].get<float>(),
+                                     item[key][2].get<float>());
+                };
+                object.position = readVec3("position", object.position);
+                object.rotation = readVec3("rotation", object.rotation);
+                object.scale = readVec3("scale", object.scale);
                 next.glbObjects.push_back(std::move(object));
             }
         }

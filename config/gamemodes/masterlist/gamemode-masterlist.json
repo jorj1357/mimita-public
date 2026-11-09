@@ -1136,10 +1136,105 @@
     "world_streaming": {
       "type": "object",
       "required": false,
-      "additional": {
-        "type": "any"
-      },
-      "description": "Infinite-world streaming/LOD configuration for this mode."
+      "description": "Infinite-world streaming/LOD configuration. Only connected_world may enable this.",
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "required": false,
+          "default": false,
+          "description": "The sole gamemode gate for chunk streaming and streamed collision."
+        },
+        "visual_radius_m": {
+          "type": "number",
+          "required": false,
+          "default": 1000.0,
+          "min": 1.0
+        },
+        "collision_radius_m": {
+          "type": "number",
+          "required": false,
+          "default": 150.0,
+          "min": 0.0
+        },
+        "lookahead_seconds": {
+          "type": "number",
+          "required": false,
+          "default": 1.0,
+          "min": 0.0
+        },
+        "near_full_m": {
+          "type": "number",
+          "required": false,
+          "default": 150.0,
+          "min": 0.0
+        },
+        "mid_proxy_m": {
+          "type": "number",
+          "required": false,
+          "default": 400.0,
+          "min": 0.0
+        },
+        "far_proxy_m": {
+          "type": "number",
+          "required": false,
+          "default": 1000.0,
+          "min": 0.0
+        },
+        "max_loaded_chunks": {
+          "type": "integer",
+          "required": false,
+          "default": 512,
+          "min": 1
+        },
+        "max_pending_chunks": {
+          "type": "integer",
+          "required": false,
+          "default": 1024,
+          "min": 1
+        },
+        "max_chunks_per_frame": {
+          "type": "integer",
+          "required": false,
+          "default": 8,
+          "min": 1
+        },
+        "install_budget_ms": {
+          "type": "number",
+          "required": false,
+          "default": 2.0,
+          "min": 0.0
+        },
+        "coarse_collision": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "far_proxy": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        },
+        "fog_start_m": {
+          "type": "number",
+          "required": false,
+          "default": 300.0,
+          "min": 0.0
+        },
+        "fog_end_m": {
+          "type": "number",
+          "required": false,
+          "default": 1000.0,
+          "min": 0.0
+        },
+        "fog_color": {
+          "type": "array",
+          "required": false,
+          "default": [0.7, 0.8, 1.0],
+          "item": {
+            "type": "number"
+          }
+        }
+      }
     },
     "camera_fov": {
       "type": "number",

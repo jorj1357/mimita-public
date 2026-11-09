@@ -162,6 +162,28 @@
     "destructible_world": null,
     "destructible_world_reset": null
   },
+  "world_streaming": {
+    "enabled": false,
+    "visual_radius_m": 1000.0,
+    "collision_radius_m": 150.0,
+    "lookahead_seconds": 1.0,
+    "near_full_m": 150.0,
+    "mid_proxy_m": 400.0,
+    "far_proxy_m": 1000.0,
+    "max_loaded_chunks": 512,
+    "max_pending_chunks": 1024,
+    "max_chunks_per_frame": 8,
+    "install_budget_ms": 2.0,
+    "coarse_collision": true,
+    "far_proxy": true,
+    "fog_start_m": 300.0,
+    "fog_end_m": 1000.0,
+    "fog_color": [
+      0.7,
+      0.8,
+      1.0
+    ]
+  },
   "camera_fov": 70,
   "force_first_person": false,
   "hide_healthbars": false,

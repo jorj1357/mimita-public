@@ -265,6 +265,16 @@ bool GamemodeRegistry::validateFileJson(const std::string& path,
         const std::string stem = std::filesystem::path(path).stem().string();
         if (id != stem)
             errors.push_back("id: \"" + id + "\" does not match filename stem \"" + stem + "\"");
+        if (id != "connected_world" && root.contains("world_streaming") &&
+            root["world_streaming"].is_object())
+        {
+            const auto& streaming = root["world_streaming"];
+            if (streaming.contains("enabled") &&
+                streaming["enabled"].is_boolean() &&
+                streaming["enabled"].get<bool>())
+                errors.push_back(
+                    "world_streaming.enabled: only connected_world may enable streaming");
+        }
     }
     return !errors.empty();
 }

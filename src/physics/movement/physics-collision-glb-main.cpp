@@ -281,7 +281,11 @@ void doGLBTriangleCollisions(
             diag.depenContacts = (int)contacts.size();
 
             float iterMaxPen = 0.0f;
-            glm::vec3 correction = solveBatchedCorrection(contacts, SURFACE_SLOP, &iterMaxPen, nullptr, totalMove, p.pos);
+            glm::vec3 correction = solveActorWorldCorrection(
+                contacts, SURFACE_SLOP,
+                static_cast<std::uint32_t>(p.spawnGeneration),
+                p.movementSimulationTick,
+                &iterMaxPen, nullptr, totalMove);
 
             float corrLen = glm::length(correction);
             if (corrLen > MAX_CORRECTION)

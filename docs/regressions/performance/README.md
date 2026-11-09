@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 9
+Entries: 11
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -80,3 +80,12 @@ Entries: 9
   870.635 ms. Separate FCS runs show 19 NPC updates taking about 50–100 ms per
   server tick, with repeated client reconnect failures.
 - Detail: [fcs-journal-rotation-and-npc-tick-REG-2026-11-08.md](fcs-journal-rotation-and-npc-tick-REG-2026-11-08.md)
+
+## Entry 11 — Build time and cold-build frequency
+
+- Recorded: 2026-11-08T22:45:00Z
+- Status: UNRESOLVED — 20-minute lane rebuild observed; target 2–3 minutes
+- Summary: Wide shared headers, divergent lane scheduler roots, low memory, and
+  multiple concurrent lanes turned a debug rebuild into a tens-of-minutes
+  full rebuild. Build time is now recorded in uild/build-metrics.jsonl.
+- Detail: [build-time-REG-2026-11-08.md](build-time-REG-2026-11-08.md)

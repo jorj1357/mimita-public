@@ -32,6 +32,7 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
 // placement, or generated chunk geometry. Presentation-only and entity-only
 // changes are deliberately excluded so a live reload does not rebuild them.
 uint64_t authoredGeometrySignature(const MapObjectiveConfig& config);
+uint64_t authoredGeometrySignatureLive(const MapObjectiveConfig& config);
 
 // Applies the authored block list for `mapId` on top of an already loaded GLB
 // world. Repeated calls rebuild only the authored tail.
@@ -40,7 +41,9 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
 
 // Applies authored blocks to a headless server world. The server passes a
 // pristine GLB-only base each time so live rebuilds never duplicate the tail.
-bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId);
+bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
+                              const std::string& mapId,
+                              bool allowStreamedFootprint = true);
 
 // A replicated map solid supplies its own rendered/collidable surface after
 // activation. Save and hide only that GLB node's source triangle range.

@@ -616,13 +616,37 @@ void handleAttackRequest(
     const bool consumesAmmo = def->executionType != WeaponExecutionType::PhysicalContact &&
         def->magazineSize > 0;
 
+    mimita_network_policy::CombatValidationPolicyV1 combatPolicy{};
+    combatPolicy.version = mimita_network_policy::ABI_VERSION;
+    combatPolicy.structSize = sizeof(combatPolicy);
+    combatPolicy.cooldownGraceTicks = 2;
+    combatPolicy.equipGraceTicks = 0;
+    combatPolicy.originTolerance = 12.0f;
+    combatPolicy.muzzleTolerance = 0.0f;
+    const bool combatPolicyLoaded =
+        ModuleHost::instance().networkCombatValidationPolicy(&combatPolicy);
+    const uint64_t cooldownGraceTicks = combatPolicyLoaded
+        ? combatPolicy.outCooldownGraceTicks : 2ull;
+
     // ── Cooldown check (tick-based) ────────────────────────────────────
-    constexpr uint64_t COOLDOWN_GRACE_TICKS = 2;
     if (def->executionType != WeaponExecutionType::PhysicalContact &&
-        tick + COOLDOWN_GRACE_TICKS < rt.nextAllowedFireTick)
+        tick + cooldownGraceTicks < rt.nextAllowedFireTick)
     {
         Debug::log(Debug::Category::Weapons, "[ATTACK REJECT] playerId=%u requestId=%u cooldown tick=%u nextAllowed=%llu\n",
                    shooter.id, req->requestId, tick, (unsigned long long)rt.nextAllowedFireTick);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Weapons, StructuredLevel::Important,
+            "network.combat.cooldown_reject", std::to_string(shooter.id),
+            "authoritative-cooldown", tick,
+            nlohmann::json{{"actor", shooter.id},
+                           {"request_id", req->requestId},
+                           {"tick", tick},
+                           {"next_allowed_tick", rt.nextAllowedFireTick},
+                           {"grace_ticks", cooldownGraceTicks},
+                           {"policy_generation",
+                            combatPolicyLoaded ? combatPolicy.outGeneration : 0},
+                           {"weapon", def->id},
+                           {"mode", serverGamemodeState().matchMode}});
         emitAttackRejection(sock, players, tick, totalPacketsOut, retransmitState,
                             shooter, req->requestId, "COOLDOWN");
         sendAttackResult(sock, shooter, req, tick, false, 1, 0,
@@ -663,9 +687,10 @@ void handleAttackRequest(
         mimita_network_policy::HitClaimPolicyV1 claimPolicy{};
         claimPolicy.version = mimita_network_policy::ABI_VERSION;
         claimPolicy.structSize = sizeof(claimPolicy);
-        claimPolicy.baseOriginTolerance = 12.0f;
+        claimPolicy.baseOriginTolerance =
+            combatPolicyLoaded ? combatPolicy.outOriginTolerance : 12.0f;
         claimPolicy.pingAllowance = pingAllowance;
-        float originTolerance = 12.0f + pingAllowance;
+        float originTolerance = claimPolicy.baseOriginTolerance + pingAllowance;
         if (ModuleHost::instance().networkHitClaimPolicy(&claimPolicy))
             originTolerance = claimPolicy.outOriginTolerance;
         if (!finiteVec3(origin) || glm::length(direction) <= 0.0001f ||

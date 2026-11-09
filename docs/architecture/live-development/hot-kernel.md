@@ -21,6 +21,15 @@ interfaces, keeping only stable process/device mechanisms in the host. Each
 new host-to-module dispatch or public ABI change needs an EXE installation
 build before later module-only edits can reload in the same process.
 
+The current policy is module-first and repository-local. Cold EXE builds are
+reserved for process/device/transport/packet/document/loader/public-ABI
+changes; behavior work belongs in modules. The working goal is "effectively
+never" for behavior cold builds. The long-term route is a generic, versioned,
+data-driven event/behavior IR so new mechanisms use existing capabilities and
+schemas instead of adding host call sites. See
+[module-migration-plan.md](module-migration-plan.md) and
+[self-contained-workspace.md](self-contained-workspace.md).
+
 This file describes the **target architecture**, not the current set of tracked
 hot modules. The current source has a narrow `build_game_dll.py` target for
 effect-part and quick-hit debug-visual code; the map editor, NPC behavior, and

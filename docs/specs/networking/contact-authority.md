@@ -438,3 +438,28 @@ Shared geometry fields on `ServerContactRequest`:
 
 Runtime evidence: `devscripts/scenarios/explosion_smoke_v1.json` passed and
 proved rocket splash reaches `server.damage.applied` through the shared resolver.
+
+## Hit-claim authority validation pending — 2026-11-08
+
+Status: `NEEDS RUNTIME`.
+
+Current limitation: the client cannot complete a stable join while the server
+is stalled at roughly 0.2 Hz with 19 NPCs, so hit-claim authority has not been
+tested in this pass.
+
+Required test path:
+
+1. Client fires at a real target and records the predicted hit/claim.
+2. Server validates reach, visibility, duplicate suppression, and target state.
+3. Server applies damage through `applyActorDamage`.
+4. Client journal shows the confirmed result; the server journal shows the
+   accepted or rejected claim with the exact reason.
+
+Ideal fix if a valid hit is rejected: trace the first failing gate (ownership,
+team, reach, occlusion, duplicate, stale tick, or weapon state) and align it
+with the shared resolver. Do not add a second damage path and do not let the
+client reject authoritative damage.
+
+Acceptance: valid client claims are accepted and confirmed; invalid claims are
+rejected with a recorded reason; both client and server journals agree on the
+result.

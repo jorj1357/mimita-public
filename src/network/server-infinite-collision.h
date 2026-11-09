@@ -16,5 +16,5 @@ struct World;
 // streamed surface is appended to the same World collision mesh tail used by
 // authored map geometry, so NPC movement and navigation see one surface.
 void serverInfiniteCollisionTick(const std::vector<glm::vec3>& anchors,
-                                 World& npcWorld);
+                                 World& npcWorld, bool streamingEnabled);
 void serverInfiniteCollisionReset();

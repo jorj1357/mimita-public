@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "modules/api/module-abi.h"
+#include "modules/api/navigation-policy-api.h"
 #include "modules/api/network-policy-api.h"
 #include "modules/api/npc-behavior-api.h"
 
@@ -24,12 +25,14 @@ struct BoxMeshV1;
 }
 namespace mimita_worldgen { struct ResolveV1; }
 namespace mimita_chunk_collision { struct BuildChunkV1; }
+namespace mimita_map_geometry { struct SignatureV1; }
 namespace mimita_collision_policy {
 struct ContactPolicyV1;
 struct ContactSolveV1;
 struct SurfacePolicyV1;
 struct ActorPairPolicyV1;
 struct FinalPosePolicyV1;
+struct ActorWorldSolveV1;
 }
 
 class ModuleHost
@@ -96,6 +99,8 @@ public:
         std::uint32_t faceCapacity);
     bool worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1* request);
 
+    bool mapGeometrySignature(const char* bytes, std::uint32_t byteCount,
+                              std::uint64_t* outSignature);
     bool worldgenResolve(mimita_worldgen::ResolveV1* request);
     bool chunkCollisionBuild(
         mimita_chunk_collision::BuildChunkV1* request);
@@ -109,6 +114,8 @@ public:
         mimita_collision_policy::FinalPosePolicyV1* policy);
     bool collisionSolveContacts(
         mimita_collision_policy::ContactSolveV1* request);
+    bool collisionSolveActorWorld(
+        mimita_collision_policy::ActorWorldSolveV1* request);
     bool networkSnapshotPolicy(
         mimita_network_policy::SnapshotPolicyV1* policy);
     bool networkReconnectPolicy(
@@ -121,6 +128,14 @@ public:
         mimita_network_policy::ReconcilePolicyV1* policy);
     bool networkInterpolationPolicy(
         mimita_network_policy::InterpolationPolicyV1* policy);
+    bool networkSessionHealthPolicy(
+        mimita_network_policy::SessionHealthPolicyV1* policy);
+    bool networkMapSyncPolicy(
+        mimita_network_policy::MapSyncPolicyV1* policy);
+    bool networkCombatValidationPolicy(
+        mimita_network_policy::CombatValidationPolicyV1* policy);
+    bool navigationPolicy(
+        mimita_navigation_policy::NavigationPolicyV1* policy);
     bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);
     bool npcBehaviorAction(mimita_npc_behavior::ActionV1* action);
     bool npcGrenadeDecision(mimita_npc_behavior::GrenadeDecisionV1* decision);

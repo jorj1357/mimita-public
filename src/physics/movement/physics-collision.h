@@ -20,6 +20,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include "physics/physics-types.h"
 #include "physics/movement/movement-types.h"
@@ -198,6 +199,20 @@ glm::vec3 solveBatchedCorrection(
     glm::vec3* outWeightedNormal = nullptr,
     glm::vec3 intendedMove = glm::vec3(0.0f),
     glm::vec3 debugPosition = glm::vec3(0.0f)
+);
+
+// Actor-versus-static-world path. The host supplies bounded contacts and
+// provenance; the hot module owns the merge/correction math. If the module is
+// unavailable or returns an invalid result, this falls back to the shared
+// host solver above.
+glm::vec3 solveActorWorldCorrection(
+    const std::vector<RecoveryContact>& contacts,
+    float slop,
+    std::uint32_t actorId,
+    std::uint64_t tick,
+    float* outMaxPenetration = nullptr,
+    glm::vec3* outWeightedNormal = nullptr,
+    glm::vec3 intendedMove = glm::vec3(0.0f)
 );
 
 

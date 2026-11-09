@@ -943,8 +943,15 @@ combat priority and releases a hidden target beyond 25 m from the cart. The
 host retains the selected utility goal on the NPC, while the role is
 deterministically recalculated from the actor slot and cart facts each tick.
 
-This is an initial source slice. Target selection, state-machine transitions,
-attack/weapon intent, pursuit execution, and navigation remain host code and
-still require hot-boundary migration. The reported missed-attack symptom remains
-unreproduced; see the Payload combat regression record for the required live
-target-correlated capture.
+This is a source-only hot-boundary slice. The module now also owns target
+priority/retention scoring, attack intent with the exact suppression reason,
+and dash/down-dash threshold policy. The host still gathers candidates, owns
+perception and actor state, validates weapon legality, applies damage, executes
+movement, and owns navigation. State-machine transition extraction remains host
+code and is deferred until the performance pass; do not treat the current
+source ownership as runtime proof.
+
+The reported missed-attack symptom remains unreproduced; see the Payload combat
+regression record for the required live target-correlated capture. Live
+validation is currently blocked by the 19-NPC navigator stall recorded in the
+server-tick budget regression.

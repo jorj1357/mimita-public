@@ -620,7 +620,10 @@ int runServer(const LaunchOptions& options)
         printf("%s [SERVER WORLD] WARNING: headless GLB collision load failed; using floor fallback\n", serverTimestamp());
     else {
         serverCaptureAuthoredBaseWorld(world, mapName);
-        applyAuthoredMapGeometry(world, mapName);
+        applyAuthoredMapGeometry(
+            world, mapName,
+            GamemodeRegistry::instance().get(options.gameMode)
+                .worldStreaming.enabled);
         serverSeedAuthoredCache(world);
     }
 
@@ -1191,7 +1194,11 @@ int runServer(const LaunchOptions& options)
                 for (const Npc& npc : npcSystem.all())
                     if (!npc.body.dead)
                         anchors.push_back(npc.body.pos);
-                serverInfiniteCollisionTick(anchors, npcWorld);
+                serverInfiniteCollisionTick(
+                    anchors, npcWorld,
+                    GamemodeRegistry::instance()
+                        .get(serverGamemodeState().matchMode)
+                        .worldStreaming.enabled);
             }
             simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
                                mirrorPlayer, npcIdsAlive, projectiles,
@@ -1338,6 +1345,30 @@ int runServer(const LaunchOptions& options)
                         {"players", players.size()},
                         {"npcs", npcs.size()},
                         {"steps", steps}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+            const double projectileMs = static_cast<double>(projectileUs) / 1000.0;
+            const double contactMs = static_cast<double>(physicalContactUs) / 1000.0;
+            const double npcPhaseMs = static_cast<double>(npcUs) / 1000.0;
+            if (projectileMs > 4.0 || contactMs > 4.0 || npcPhaseMs > 10.0)
+            {
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "performance.server-phase-budget", "server",
+                    "server phase exceeded its 60 Hz share", tick,
+                    nlohmann::json{
+                        {"tick", tick},
+                        {"projectile_ms", projectileMs},
+                        {"projectile_budget_ms", 4.0},
+                        {"physical_contact_ms", contactMs},
+                        {"physical_contact_budget_ms", 4.0},
+                        {"npc_ms", npcPhaseMs},
+                        {"npc_budget_ms", 10.0},
+                        {"projectile_over", projectileMs > 4.0},
+                        {"contact_over", contactMs > 4.0},
+                        {"npc_over", npcPhaseMs > 10.0},
+                        {"npcs", npcs.size()},
+                        {"players", players.size()}},
                     __FILE__, __LINE__, __FUNCTION__);
             }
 
@@ -1584,7 +1615,11 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
     else {
         serverCaptureAuthoredBaseWorld(state.world, mapName);
-        applyAuthoredMapGeometry(state.world, mapName);
+        applyAuthoredMapGeometry(
+            state.world, mapName,
+            GamemodeRegistry::instance()
+                .get(settings ? settings->gameMode : std::string("sandbox"))
+                .worldStreaming.enabled);
         serverSeedAuthoredCache(state.world);
     }
 
@@ -1859,7 +1894,11 @@ static void simulateOneServerTick(ListenServerState& state)
             for (const Npc& npc : state.npcSystem->all())
                 if (!npc.body.dead)
                     anchors.push_back(npc.body.pos);
-            serverInfiniteCollisionTick(anchors, *state.npcWorld);
+            serverInfiniteCollisionTick(
+                anchors, *state.npcWorld,
+                GamemodeRegistry::instance()
+                    .get(serverGamemodeState().matchMode)
+                    .worldStreaming.enabled);
         }
         simulateSharedNpcs(state.sock, state.players, state.npcs,
                            *state.npcSystem, state.world, *state.npcWorld,

@@ -19,6 +19,7 @@ namespace mimita_collision_policy_module {
 void fillContactPolicy(mimita_collision_policy::ContactPolicyV1* policy);
 void fillSurfacePolicy(mimita_collision_policy::SurfacePolicyV1* policy);
 int solveContacts(mimita_collision_policy::ContactSolveV1* request);
+int solveActorWorld(mimita_collision_policy::ActorWorldSolveV1* request);
 void decideActorPair(mimita_collision_policy::ActorPairPolicyV1* policy);
 void fillFinalPosePolicy(mimita_collision_policy::FinalPosePolicyV1* policy);
 }
@@ -213,6 +214,10 @@ int onEvent(ModuleEventV1* event)
         event->payloadSize == sizeof(mimita_collision_policy::ContactSolveV1))
         return mimita_collision_policy_module::solveContacts(
             static_cast<mimita_collision_policy::ContactSolveV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_COLLISION_ACTOR_WORLD_SOLVE &&
+        event->payloadSize == sizeof(mimita_collision_policy::ActorWorldSolveV1))
+        return mimita_collision_policy_module::solveActorWorld(
+            static_cast<mimita_collision_policy::ActorWorldSolveV1*>(event->payload));
     if (event->typeId == mimita_module::EVENT_COLLISION_ACTOR_PAIR_POLICY &&
         event->payloadSize == sizeof(mimita_collision_policy::ActorPairPolicyV1)) {
         mimita_collision_policy_module::decideActorPair(

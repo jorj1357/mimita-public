@@ -43,6 +43,7 @@ constexpr std::uint32_t CAPABILITY_EDITOR = 1;
 constexpr std::uint32_t CAPABILITY_WORLDGEN = 2;
 constexpr std::uint32_t CAPABILITY_MESH = 3;
 constexpr std::uint32_t CAPABILITY_COLLISION = 4;
+constexpr std::uint32_t CAPABILITY_MAP_GEOMETRY = 5;
 
 // Generic event ids. A module only receives events that its catalog entry
 // declares; the host never dispatches by hard-coded module name.
@@ -64,6 +65,7 @@ constexpr std::uint32_t EVENT_COLLISION_BUILD_CHUNK = 400;
 constexpr std::uint32_t EVENT_COLLISION_CONTACT_POLICY = 401;
 constexpr std::uint32_t EVENT_COLLISION_SURFACE_POLICY = 402;
 constexpr std::uint32_t EVENT_COLLISION_CONTACT_SOLVE = 403;
+constexpr std::uint32_t EVENT_COLLISION_ACTOR_WORLD_SOLVE = 406;
 constexpr std::uint32_t EVENT_COLLISION_ACTOR_PAIR_POLICY = 404;
 constexpr std::uint32_t EVENT_COLLISION_FINAL_POSE_POLICY = 405;
 constexpr std::uint32_t EVENT_NPC_BEHAVIOR_DECISION = 500;
@@ -84,7 +86,12 @@ constexpr std::uint32_t EVENT_NETWORK_MOVEMENT_CORRECTION = 702;
 constexpr std::uint32_t EVENT_NETWORK_HIT_CLAIM_POLICY = 703;
 constexpr std::uint32_t EVENT_NETWORK_RECONCILE_POLICY = 704;
 constexpr std::uint32_t EVENT_NETWORK_INTERPOLATION_POLICY = 705;
+constexpr std::uint32_t EVENT_NETWORK_SESSION_HEALTH_POLICY = 706;
+constexpr std::uint32_t EVENT_NETWORK_MAP_SYNC_POLICY = 707;
+constexpr std::uint32_t EVENT_NETWORK_COMBAT_VALIDATION_POLICY = 708;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
+constexpr std::uint32_t EVENT_NAVIGATION_POLICY = 800;
+constexpr std::uint32_t EVENT_MAP_GEOMETRY_SIGNATURE = 810;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,

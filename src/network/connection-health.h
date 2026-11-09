@@ -26,15 +26,15 @@ namespace MimitaNet {
 //   hardTimeoutMs    — last packet age at which the session enters Reconnecting.
 //   snapshotStarved  — true when authoritative snapshots stopped despite a
 //                      previously received snapshot.
+//   snapshotTimedOut — true when snapshot staleness reached the hard timeout.
 //   graceDeadline    — wall-clock deadline of the reconnect grace window; 0 = none.
 //   graceMs          — length of the reconnect grace window (for tests; the
 //                       deadline is produced by the caller, not computed here).
 //
-// Returns the state the machine should move to. Connected/WeakConnection is a
-// single supervised pair; Reconnecting self-heals to Connected as soon as a
-// fresh packet arrives, and gives up (ReconnectFailed) when the grace window
-// expires. Terminal states (Disconnected, ReconnectFailed, HostClosed, Kicked,
-// ServerCrashed, Connecting/... pre-connect states) are left untouched.
+// Returns the state the machine should move to. Snapshot starvation becomes
+// WaitingForServer until the hard timeout, then Reconnecting. Connected stays
+// connected while snapshots flow. Reconnecting self-heals to Connected as soon
+// as a fresh authoritative snapshot arrives.
 ConnectionState mpNextConnectionHealth(
     ConnectionState current,
     uint64_t now,
@@ -43,6 +43,7 @@ ConnectionState mpNextConnectionHealth(
     uint64_t staleThresholdMs,
     uint64_t hardTimeoutMs,
     bool snapshotStarved,
+    bool snapshotTimedOut,
     uint64_t graceDeadline,
     uint64_t graceMs);
 

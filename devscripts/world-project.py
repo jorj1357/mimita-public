@@ -18,15 +18,19 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from path_containment import resolve_within
+
 
 ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def store_root() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-    if not base:
-        base = str(Path.home() / ".local" / "share")
-    return Path(base) / "Mimita" / "WorldProjects"
+    configured = os.environ.get("MIMITA_WORLD_PROJECTS_DIR", "").strip()
+    candidate = Path(configured) if configured else ROOT / ".dev" / "world-projects"
+    path = resolve_within(ROOT, candidate, label="world project store")
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def require_id(value: str) -> str:

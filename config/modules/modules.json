@@ -41,6 +41,17 @@
       ]
     },
     {
+      "name": "map-geometry",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_authored_geometry_apply",
+      "process_scope": "all",
+      "sources": ["src/map/map-geometry-module.cpp"],
+      "headers": ["src/modules/api/module-abi.h", "src/modules/api/map-geometry-api.h"],
+      "events": [810],
+      "capabilities": []
+    },
+    {
       "name": "world-rendering",
       "abi": 2,
       "state_schema": 1,
@@ -101,7 +112,8 @@
         402,
         403,
         404,
-        405
+        405,
+        406
       ],
       "capabilities": [
         4
@@ -127,8 +139,28 @@
         702,
         703,
         704,
-        705
+        705,
+        706,
+        707,
+        708
       ],
+      "capabilities": []
+    },
+    {
+      "name": "navigation-policy",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_fixed_server_tick",
+      "server_process": true,
+      "shared": true,
+      "sources": [
+        "src/navigation/navigation-policy-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/navigation-policy-api.h"
+      ],
+      "events": [800],
       "capabilities": []
     },
     {

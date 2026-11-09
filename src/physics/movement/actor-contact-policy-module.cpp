@@ -117,6 +117,52 @@ int solveContacts(ContactSolveV1* request)
     return 1;
 }
 
+int solveActorWorld(mimita_collision_policy::ActorWorldSolveV1* request)
+{
+    if (!request || request->version != mimita_collision_policy::ABI_VERSION ||
+        request->structSize != sizeof(*request) || !request->contacts ||
+        !request->scratch || request->count > request->capacity ||
+        request->capacity > mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS)
+        return 0;
+
+    ContactSolveV1 solve{};
+    solve.version = mimita_collision_policy::ABI_VERSION;
+    solve.structSize = sizeof(solve);
+    solve.count = request->count;
+    solve.capacity = request->capacity;
+    solve.contacts = request->contacts;
+    solve.scratch = request->scratch;
+    solve.slop = request->slop;
+    solve.movementBias = request->movementBias;
+    for (int axis = 0; axis < 3; ++axis)
+        solve.intendedMove[axis] = request->intendedMove[axis];
+    if (!solveContacts(&solve))
+        return 0;
+
+    request->maxPenetration = solve.maxPenetration;
+    request->manifoldCount = solve.manifoldCount;
+    for (int axis = 0; axis < 3; ++axis) {
+        request->correction[axis] = solve.correction[axis];
+        request->weightedNormal[axis] = solve.weightedNormal[axis];
+    }
+
+    request->grounded = 0;
+    request->blocked = 0;
+    for (std::uint32_t i = 0; i < request->count; ++i) {
+        const SolverContactV1& contact = request->contacts[i];
+        if (contact.normal[2] > 0.7f && contact.penetration > 0.0f)
+            request->grounded = 1;
+        const float moveDotNormal =
+            request->intendedMove[0] * contact.normal[0] +
+            request->intendedMove[1] * contact.normal[1] +
+            request->intendedMove[2] * contact.normal[2];
+        if (moveDotNormal < 0.0f && contact.penetration > 0.0f)
+            request->blocked = 1;
+    }
+    request->generation = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
 void fillContactPolicy(ContactPolicyV1* policy)
 {
     if (!policy)

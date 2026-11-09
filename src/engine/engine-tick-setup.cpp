@@ -209,13 +209,13 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
               if (gpActiveMapPath && !gpActiveMapPath->empty()) {
                   const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
                   const uint64_t before =
-                      authoredGeometrySignature(MapConfigRegistry::instance().current());
+                      authoredGeometrySignatureLive(MapConfigRegistry::instance().current());
                   if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)
                       MapConfigRegistry::instance().load(mapId);
                   else
                       MapConfigRegistry::instance().pollReload();
                   const uint64_t after =
-                      authoredGeometrySignature(MapConfigRegistry::instance().current());
+                      authoredGeometrySignatureLive(MapConfigRegistry::instance().current());
                   const bool alreadyApplied = mp &&
                       mp->appliedGeometrySignature == after;
                   if (after != before && !alreadyApplied && WORLD_LOADED &&

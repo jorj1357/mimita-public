@@ -33,3 +33,11 @@ only 19 side-facing normals (`abs(normal.z) < 0.5`); the most frequent surfaces
 were upward-facing. A stuck-recovery count alone is therefore a poor proxy for
 the reported cylinder embed. The actual cylinder contact still needs a human
 route and geometry-to-surface mapping.
+
+Lane source pass, 2026-11-08: actor-versus-static-world correction now has a
+bounded hot-module snapshot/result path with host fallback. The host supplies
+bounded contacts and source triangle IDs; the module returns correction,
+weighted normal, max penetration, grounded/blocked flags, and generation. The
+host logs sampled `collision.actor-world` provenance. This does not identify the
+reported FunWorld3 cylinder yet. The actual geometry reproduction and human
+review remain required; status stays REPORTED / NOT YET REPRODUCED.

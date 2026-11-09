@@ -290,7 +290,15 @@ struct MapGLBObjectOverride
     std::string id;
     std::string name;
     glm::vec3 position{0.0f};
+    glm::vec3 rotation{0.0f};
+    glm::vec3 scale{1.0f};
     std::string material;
+    std::string source;
+    std::string instanceId;
+    bool visible = true;
+    bool collision = true;
+    bool deleted = false;
+    bool clone = false;
 };
 
 struct ArenaBallConfig

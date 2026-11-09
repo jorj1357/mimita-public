@@ -28,6 +28,7 @@
 #include "mapeditor/map-editor.h"
 #include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
+#include "modules/api/map-geometry-api.h"
 #include "modules/api/map-editor-api.h"
 #include "modules/api/world-rendering-api.h"
 #include "modules/api/worldgen-api.h"
@@ -1286,6 +1287,28 @@ bool ModuleHost::worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1* reque
                         request, sizeof(*request));
 }
 
+bool ModuleHost::mapGeometrySignature(const char* bytes,
+                                      std::uint32_t byteCount,
+                                      std::uint64_t* outSignature)
+{
+    if (!outSignature)
+        return false;
+    mimita_map_geometry::SignatureV1 request{};
+    request.version = mimita_map_geometry::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.bytes = bytes;
+    request.byteCount = byteCount;
+    request.signatureVersion = mimita_map_geometry::SIGNATURE_VERSION;
+    if (!invokeModule("map-geometry",
+                      mimita_module::EVENT_MAP_GEOMETRY_SIGNATURE,
+                      &request, sizeof(request)))
+        return false;
+    if (!request.result || request.outSignature == 0)
+        return false;
+    *outSignature = request.outSignature;
+    return true;
+}
+
 bool ModuleHost::worldgenResolve(mimita_worldgen::ResolveV1* request)
 {
     if (!request)
@@ -1352,6 +1375,18 @@ bool ModuleHost::collisionSolveContacts(
                         request, sizeof(*request));
 }
 
+bool ModuleHost::collisionSolveActorWorld(
+    mimita_collision_policy::ActorWorldSolveV1* request)
+{
+    if (!request || request->version != mimita_collision_policy::ABI_VERSION ||
+        request->structSize != sizeof(*request) ||
+        request->count > mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS ||
+        request->capacity > mimita_collision_policy::MAX_ACTOR_WORLD_CONTACTS)
+        return false;
+    return invokeEvent(mimita_module::EVENT_COLLISION_ACTOR_WORLD_SOLVE,
+                       request, sizeof(*request), request->tick);
+}
+
 bool ModuleHost::networkSnapshotPolicy(
     mimita_network_policy::SnapshotPolicyV1* policy)
 {
@@ -1403,6 +1438,42 @@ bool ModuleHost::networkInterpolationPolicy(
     if (!policy)
         return false;
     return invokeEvent(mimita_module::EVENT_NETWORK_INTERPOLATION_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkSessionHealthPolicy(
+    mimita_network_policy::SessionHealthPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_SESSION_HEALTH_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkMapSyncPolicy(
+    mimita_network_policy::MapSyncPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_MAP_SYNC_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkCombatValidationPolicy(
+    mimita_network_policy::CombatValidationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_COMBAT_VALIDATION_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::navigationPolicy(
+    mimita_navigation_policy::NavigationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NAVIGATION_POLICY,
                        policy, sizeof(*policy), 0);
 }
 

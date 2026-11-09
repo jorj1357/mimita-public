@@ -7,6 +7,7 @@
 # Does NOT coordinate launch/run state; user-facing requests go through dev-loop.
 # Does NOT rebuild translation units whose objects are up to date.
 # Does NOT modify source files.
+# Uses a persistent link ledger so a killed/partial build relinks next time.
 
 # usage:
 #
@@ -23,6 +24,9 @@ import subprocess
 import shutil
 import time
 import atexit
+import hashlib
+import json
+import datetime
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -34,6 +38,8 @@ from devscripts.path_containment import (
     resolve_coordinator_root,
     resolve_within,
 )
+from devscripts.build_scheduler import scheduler_root as build_scheduler_root
+from devscripts.build_exclusive import acquire_exclusive_build
 
 # ============================================================
 # CONFIG
@@ -96,6 +102,8 @@ except FileNotFoundError as error:
 def ccache_cmd():
     # Fall back to the plain compiler when ccache.exe is not installed (e.g.
     # CI runners), so the build works without ccache.
+    if os.environ.get("MIMITA_CCACHE_DISABLE") == "1":
+        return [COMPILER]
     if os.path.isfile(CCACHE):
         return [CCACHE, COMPILER]
     return [COMPILER]
@@ -112,6 +120,35 @@ _MAX_BUILD_JOBS = max(1, os.cpu_count() or 1)
 BUILD_JOBS = _MAX_BUILD_JOBS
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")
+BUILD_METRICS_START = time.time()
+
+
+def write_build_metrics(result, link_reason=""):
+    try:
+        path = os.path.join(BUILD_DIR, "build-metrics.jsonl")
+        payload = {
+            "timestamp_utc": datetime.datetime.now(
+                datetime.timezone.utc).isoformat(
+                    timespec="seconds").replace("+00:00", "Z"),
+            "result": result,
+            "elapsed_s": round(time.time() - BUILD_METRICS_START, 3),
+            "compiled": compiled_count,
+            "skipped": skipped_count,
+            "cold_build": compiled_count >= 100 or pch_needs_build,
+            "jobs": BUILD_JOBS,
+            "mode": MODE,
+            "lane": os.environ.get("MIMITA_LANE_ID", ""),
+            "scheduler_root": str(build_scheduler_root()),
+            "link_reason": link_reason,
+        }
+        with open(path, "a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        with open(os.path.join(BUILD_DIR, "build-timing.json"), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+    except (OSError, ValueError):
+        pass
 
 # ============================================================
 # BUILD MODE
@@ -185,6 +222,9 @@ OBJ_DIR = os.path.join(BUILD_DIR, "obj-" + MODE)
 # GCC loads the precompiled header for "-include pch.h" from pch.h.gch
 # (next to pch.h), and accepts it across -Og/-O2, so a single shared PCH is used.
 PCH_OUTPUT = os.path.join(SRC_DIR, "pch.h.gch")
+
+if os.environ.get("MIMITA_LINKER", "").strip().lower() == "lld":
+    LINK_FLAGS.append("-fuse-ld=lld")
 
 # ============================================================
 # FLAGS
@@ -273,6 +313,89 @@ def ensure_dirs():
                         pass  # file locked by another process, skip
 
 
+
+
+LINK_STATE = os.path.join(BUILD_DIR, "link-state-%s.json" % MODE)
+LINK_PENDING = os.path.join(BUILD_DIR, "link.pending.json")
+
+
+def file_signature(path):
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return [stat.st_size, stat.st_mtime_ns]
+
+
+def object_signature(object_files):
+    return {
+        os.path.relpath(path, BUILD_DIR): file_signature(path)
+        for path in object_files
+    }
+
+
+def flags_fingerprint():
+    payload = json.dumps({
+        "compiler": COMPILER,
+        "cxx": CXX_FLAGS,
+        "include": INCLUDE_FLAGS,
+        "define": DEFINE_FLAGS,
+        "lib": LIB_FLAGS,
+        "link_libs": LINK_LIBS,
+        "link_flags": LINK_FLAGS,
+    }, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def read_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_json_atomic(path, payload):
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(temporary, path)
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def decide_link(object_files, exe_path):
+    if os.environ.get("MIMITA_FORCE_LINK") == "1":
+        return True, "forced"
+    if os.path.isfile(LINK_PENDING):
+        return True, "pending_or_failed_previous_link"
+    if not os.path.isfile(exe_path) or os.path.getsize(exe_path) == 0:
+        return True, "exe_missing_or_zero"
+    missing = [path for path in object_files
+               if not os.path.isfile(path) or os.path.getsize(path) == 0]
+    if missing:
+        return True, "missing_or_zero_objects"
+    state = read_json(LINK_STATE)
+    if state.get("status") != "linked":
+        return True, "no_successful_link_state"
+    if state.get("objects") != object_signature(object_files):
+        return True, "object_set_changed"
+    if state.get("flags") != flags_fingerprint():
+        return True, "flags_changed"
+    if state.get("exe") != file_signature(exe_path):
+        return True, "exe_changed_since_state"
+    newest_object = max(os.stat(path).st_mtime_ns for path in object_files)
+    if newest_object > os.stat(exe_path).st_mtime_ns:
+        return True, "objects_newer_than_exe"
+    return False, "current"
 
 
 def dep_path(src):
@@ -416,6 +539,7 @@ ensure_dirs()
 
 # Builds are owned by the dev-loop. Agents must never reach this path directly.
 require_authority(Path(ROOT), "exe", "build.py")
+_EXCLUSIVE_BUILD = acquire_exclusive_build(Path(ROOT), "build.py")
 build_slot = acquire_build_slot(
     "exe", f"build.py:{os.getpid()}",
     metadata={"lane": os.environ.get("MIMITA_LANE_ID", ""), "mode": MODE},
@@ -435,18 +559,33 @@ apply_temp_environment(
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 
-dll_environment = os.environ.copy()
-dll_environment["MIMITA_BUILD_LOCK_PARENT_PID"] = str(os.getpid())
-dll_creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
-                     if os.name == "nt" else 0)
-game_dll_build = subprocess.run(
-    [sys.executable, os.path.join(ROOT, "build_game_dll.py")],
-    env=dll_environment,
-    creationflags=dll_creationflags,
-)
-if game_dll_build.returncode != 0:
-    print("[HOT RELOAD] reload failed")
-    sys.exit(game_dll_build.returncode)
+start_time = time.time()
+
+# Presentation DLL is an optional fast path. It must never block or fail the
+# authoritative EXE build, and it only runs when one of its own inputs changed.
+game_dll = os.path.join(ROOT, "build", "mimita-game.dll")
+game_dll_inputs = [
+    os.path.join(ROOT, "src", "effects", "effect-part.cpp"),
+    os.path.join(ROOT, "src", "hot-reload", "quick-hit-debug-visual.cpp"),
+    os.path.join(ROOT, "src", "hot-reload", "game-api.h"),
+]
+game_dll_needed = not os.path.isfile(game_dll)
+if not game_dll_needed:
+    dll_mtime = os.path.getmtime(game_dll)
+    game_dll_needed = any(os.path.isfile(path) and os.path.getmtime(path) > dll_mtime
+                          for path in game_dll_inputs)
+if game_dll_needed:
+    dll_environment = os.environ.copy()
+    dll_environment["MIMITA_BUILD_LOCK_PARENT_PID"] = str(os.getpid())
+    dll_creationflags = (getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                         if os.name == "nt" else 0)
+    game_dll_build = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "build_game_dll.py")],
+        env=dll_environment,
+        creationflags=dll_creationflags,
+    )
+    if game_dll_build.returncode != 0:
+        print("[HOT RELOAD] presentation DLL failed; continuing with the EXE build")
 
 # Module DLLs are built on demand by the running game's ModuleHost. The EXE
 # build must not compile every module: that serializes the whole machine and
@@ -457,8 +596,6 @@ print(" MiMITA Build System")
 print("==================================================")
 print("Mode:", MODE)
 print()
-
-start_time = time.time()
 
 cpp_files = find_cpp_files()
 
@@ -539,9 +676,12 @@ def compile_cpp_file(src):
         "pch.h",
     ]
 
-    result = run_tool(cmd)
+    result = run_tool(cmd, stdout=subprocess.PIPE,
+                      stderr=subprocess.STDOUT, text=True)
 
     if result.returncode != 0:
+        if result.stdout:
+            print(result.stdout, flush=True)
         # A failed compiler can leave a partial object and dependency file.
         # Remove both so the next incremental build cannot mistake the partial
         # artifact for a valid translation unit and skip the real source.
@@ -829,22 +969,20 @@ if os.path.isfile(RC_FILE):
 
 exe_path = os.path.join(ROOT, EXE_NAME)
 
-needs_link = (
-    compiled_count > 0 or
-    res_compiled or
-    os.environ.get("MIMITA_FORCE_LINK") == "1" or
-    not os.path.exists(exe_path)
-)  
+needs_link, link_reason = decide_link(object_files, exe_path)
+if compiled_count > 0 and link_reason == "current":
+    needs_link, link_reason = True, "compiled_objects"
 
 if not needs_link:
     stage_runtime_dlls()
     print()
-    print("Nothing changed.")
+    print("Nothing changed. (%s)" % link_reason)
     print()
 
     elapsed = time.time() - start_time
 
     print("Time    : %.2f sec" % elapsed)
+    write_build_metrics("noop", link_reason)
 
     if RUN_AFTER_BUILD:
         print()
@@ -864,16 +1002,29 @@ if not needs_link:
 # ============================================================
 
 print()
-print("[LINK]", EXE_NAME)
+print("[LINK]", EXE_NAME, "reason=%s" % link_reason)
 
 # Windows limits CreateProcess command lines to roughly 32K characters.
 # The full object list exceeds that limit, so pass linker arguments through a
 # response file kept under build/ (which is already ignored by Git).
 link_response = os.path.join(BUILD_DIR, "link.rsp")
-link_args = object_files + LIB_FLAGS + LINK_LIBS + LINK_FLAGS + ["-o", EXE_NAME]
+link_out_dir = os.path.join(BUILD_DIR, "out")
+os.makedirs(link_out_dir, exist_ok=True)
+link_candidate = os.path.join(
+    link_out_dir, "mimita-candidate-%d.exe" % os.getpid())
+link_args = object_files + LIB_FLAGS + LINK_LIBS + LINK_FLAGS + ["-o", link_candidate]
 with open(link_response, "w", encoding="utf-8", newline="\n") as response:
     for argument in link_args:
         response.write('"' + argument.replace('"', '\\"') + '"\n')
+
+write_json_atomic(LINK_PENDING, {
+    "status": "pending",
+    "reason": link_reason,
+    "pid": os.getpid(),
+    "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "objects": object_signature(object_files),
+    "flags": flags_fingerprint(),
+})
 
 print("[LINK] using build/link.rsp", flush=True)
 cmd = ccache_cmd() + ["@" + link_response]
@@ -881,11 +1032,54 @@ cmd = ccache_cmd() + ["@" + link_response]
 result = run_tool(cmd)
 
 if result.returncode != 0:
+    write_json_atomic(LINK_PENDING, {
+        "status": "failed",
+        "reason": link_reason,
+        "pid": os.getpid(),
+        "exit_code": result.returncode,
+        "failed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
     print()
     print("==================================================")
     print(" LINK FAILED")
     print("==================================================")
     sys.exit(1)
+
+if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
+    write_json_atomic(LINK_PENDING, {
+        "status": "failed",
+        "reason": "link_output_missing_or_zero",
+        "pid": os.getpid(),
+    })
+    print("[LINK] output missing or zero: %s" % link_candidate, file=sys.stderr)
+    sys.exit(1)
+
+try:
+    os.replace(link_candidate, exe_path)
+except OSError as error:
+    print("[LINK] could not publish %s: %s" % (exe_path, error), file=sys.stderr)
+    write_json_atomic(LINK_PENDING, {
+        "status": "failed",
+        "reason": "exe_replace_locked_or_failed",
+        "pid": os.getpid(),
+        "error": str(error),
+    })
+    sys.exit(1)
+
+write_json_atomic(LINK_STATE, {
+    "status": "linked",
+    "reason": link_reason,
+    "pid": os.getpid(),
+    "linked_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    "objects": object_signature(object_files),
+    "flags": flags_fingerprint(),
+    "exe": file_signature(exe_path),
+    "sha256": sha256_file(exe_path),
+})
+try:
+    os.remove(LINK_PENDING)
+except OSError:
+    pass
 
 stage_runtime_dlls()
 
@@ -904,6 +1098,7 @@ print()
 print("Compiled:", compiled_count)
 print("Skipped :", skipped_count)
 print("Time    : %.2f sec" % elapsed)
+write_build_metrics("success", link_reason)
 
 if not RUN_AFTER_BUILD:
     sys.exit(0)

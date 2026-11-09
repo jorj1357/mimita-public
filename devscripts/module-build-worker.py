@@ -218,6 +218,8 @@ def build_module(module):
     output_dir = os.path.join(BUILD_ROOT, name)
     sources = expand_patterns(module.get("sources", []))
     headers = expand_patterns(module.get("headers", []))
+    headers += expand_patterns(module.get("private_headers", []))
+    headers = list(dict.fromkeys(headers))
     include_dirs = module.get("include_dirs", [])
     include_files = expand_include_dirs(include_dirs) if isinstance(include_dirs, list) else []
     dependencies = previous_dependencies(output_dir)

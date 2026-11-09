@@ -106,3 +106,38 @@ segment test. It must not become a second full collision query.
 Fun Counter Strike rush reuses the existing navigation route and shared
 movement/dash/jump inputs. It must not add a parallel mover, per-tick heap
 allocation, or an extra physics pass.
+
+## Pending performance validation — 2026-11-08 lane pass
+
+Status: `CODE ONLY` / `NEEDS RUNTIME`. These are known blockers, not accepted
+results.
+
+### Server 60 Hz with 19 NPCs
+
+- Observed: one fixed tick took 7,700 ms; `npc.phase-window` recorded 7,587.9 ms
+  for 62 NPC updates.
+- First divergence: the NPC navigator. `npc.slow-update` for actor 1008 shows
+  `navigator_ms=7,559.7`, while `path_ms=12.1` and
+  `target_selection_ms=0.096`.
+- Cause: one navigator update is doing roughly 7.5 seconds of work per NPC. The
+  new NPC target/attack/dash policy is not the measured cost.
+- Ideal fix: add sub-stage timing inside `NpcNavigator`, identify the 7.5 s
+  operation, cache/reuse it instead of rebuilding per NPC, and bound the
+  per-tick navigator work to the 60 Hz budget.
+- Required evidence: 19 NPCs, FunWorld3, Payload, sustained 60 Hz window;
+  `npc.slow-update`, `npc.phase-window`, and
+  `performance.server-tick-stall` in the lane journal.
+
+### Client 240 FPS
+
+- Status: `NEEDS RUNTIME`. It cannot be measured honestly while the server is
+  stalled at 0.2 Hz.
+- Ideal fix: after the server holds 60 Hz, measure client frame slices and fix
+  the largest frame scopes first. Target consistent frame times, not a peak
+  number.
+
+### Connection and hit-authority impact
+
+The 0.2 Hz server also blocks client join and hit-claim validation. See the
+networking and contact-authority specifications for the separate acceptance
+items.

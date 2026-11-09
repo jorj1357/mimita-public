@@ -5185,3 +5185,32 @@ An initial join or game/map synchronization is **Loading**, with the current sta
 The client reports total loading elapsed time in seconds and milliseconds, the current step, and completed-step durations. Stage boundaries use the existing owners and monotonic clock. Each step uses its existing watchdog; when it expires, explain which step stalled and offer Retry or Cancel. Do not add an unrelated global timeout or restart the session merely because a stage is still loading.
 
 Measure loading from the user's action to client-ready and measure each owned stage separately. The product target is to minimize avoidable waiting across the repository; 0.01 seconds (10 ms) is an ideal measurement target, not a guarantee or universal gate. Optimize only after evidence identifies the waiting step. Preserve server/client run identity and inspect both per-process journals when diagnosing transitions.
+
+## Current loading/reconnect loop evidence — 2026-11-08
+
+Status: `NEEDS RUNTIME`.
+
+Observed sequence from the direct Payload/FunWorld3 client:
+
+- The client loads the requested map and starts a direct connection.
+- `network.reconnect.resource-probe` reports `connection_state=Connecting`, then
+  `Disconnected`, with `disconnect_policy=connection-failure`.
+- `join_request_sends=0`; the server reports `players=0` and `packetsIn=0`.
+- The server is stalled at roughly 0.2 Hz with 19 NPCs.
+
+Cause: the client is not reaching a real join handshake because the server is
+not servicing the connection within the client's timeout. The visible
+"Loading / Reconnecting attempt #0" loop is a symptom of that server stall, not
+proof of a token or room-code bug.
+
+Ideal fix order:
+
+1. Restore the 60 Hz server path (navigator stall first).
+2. Re-test the same join. If it now connects, the loop was a downstream symptom.
+3. If it still fails, trace in order: join request send, room code, session
+   token/reconnect token, map sync handshake, and snapshot arrival.
+4. Do not reload the map on every reconnect attempt; map load is part of the
+   initial join, not the retry loop.
+
+Acceptance: one client joins once, completes map sync, remains connected, and
+does not emit repeated `Reconnecting` transitions while the server is live.

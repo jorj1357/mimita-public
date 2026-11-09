@@ -16,6 +16,8 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "Recast.h"
 #include "DetourCommon.h"
@@ -27,10 +29,19 @@
 #include "perf/perf.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/navigation-policy-api.h"
 
 namespace {
 
 constexpr const char* kCoordinateSystem = "mimita_z_up_to_recast_y_up";
+
+size_t baseCollisionTriangleCount(const World& world)
+{
+    const size_t total = world.collisionMesh.triangles.size();
+    const size_t tail = world.collisionMesh.streamedTailTriangles;
+    return tail > 0 && tail <= total ? total - tail : total;
+}
 
 glm::vec3 toRecast(const glm::vec3& v)
 {
@@ -206,15 +217,21 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     // Recompute from converted vertices when the cached bounds are absent, so
     // the conversion is always applied exactly once to authoritative data.
     glm::vec3 vmin(1.0e30f), vmax(-1.0e30f);
-    for (const CollisionTriangle& tri : world.collisionMesh.triangles) {
+    const size_t sourceTriangleCount = baseCollisionTriangleCount(world);
+    for (size_t i = 0; i < sourceTriangleCount; ++i) {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[i];
         for (const glm::vec3& raw : {tri.a, tri.b, tri.c}) {
             const glm::vec3 v = toRecast(raw);
             vmin = glm::min(vmin, v);
             vmax = glm::max(vmax, v);
         }
     }
-    if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z))
-        bmin = vmin, bmax = vmax;
+    if (sourceTriangleCount > 0) {
+        // Base geometry owns the navigation extent. Streamed collision may sit
+        // far away and must not rescale or move the published navmesh grid.
+        bmin = vmin;
+        bmax = vmax;
+    }
     if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z)) {
         error = "collision_bounds_invalid";
         return false;
@@ -232,18 +249,16 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         const float scale = std::ceil((requiredCell / cellSize) * 4.0f) / 4.0f;
         cellSize = 0.25f * scale;
         cellHeight = 0.20f * scale;
-        Debug::warn(Debug::Category::NpcMovement,
-            "[RECAST] world extent %.1f m exceeds the 8192-cell grid at 0.25 m; "
-            "using cellSize=%.2f cellHeight=%.2f\n",
-            maxAxisExtent, cellSize, cellHeight);
     }
 
     std::vector<float> verts;
     std::vector<int> tris;
     const auto& source = world.collisionMesh.triangles;
-    verts.reserve(source.size() * 9);
-    tris.reserve(source.size() * 3);
-    for (const CollisionTriangle& tri : source) {
+    verts.reserve(sourceTriangleCount * 9);
+    tris.reserve(sourceTriangleCount * 3);
+    for (size_t sourceIndex = 0; sourceIndex < sourceTriangleCount;
+         ++sourceIndex) {
+        const CollisionTriangle& tri = source[sourceIndex];
         const int base = static_cast<int>(verts.size() / 3);
         for (const glm::vec3& raw : {tri.a, tri.b, tri.c}) {
             const glm::vec3 v = toRecast(raw);
@@ -273,7 +288,7 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     rcVcopy(cfg.bmin, &bmin.x);
     rcVcopy(cfg.bmax, &bmax.x);
     rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
-    diag.sourceTriangleCount = static_cast<int>(source.size());
+    diag.sourceTriangleCount = static_cast<int>(sourceTriangleCount);
     diag.recastBoundsMin = bmin;
     diag.recastBoundsMax = bmax;
     diag.recastGridWidth = cfg.width;
@@ -297,17 +312,17 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
         return false;
     }
 
-    std::vector<unsigned char> areas(source.size(), 0);
+    std::vector<unsigned char> areas(sourceTriangleCount, 0);
     rcMarkWalkableTriangles(&context, cfg.walkableSlopeAngle,
                             verts.data(), static_cast<int>(verts.size() / 3),
-                            tris.data(), static_cast<int>(source.size()),
+                            tris.data(), static_cast<int>(sourceTriangleCount),
                             areas.data());
     for (unsigned char a : areas)
         if (a != 0) ++data.walkableTriangleCount;
     diag.walkableTriangleCount = data.walkableTriangleCount;
     if (!rcRasterizeTriangles(&context, verts.data(),
                               static_cast<int>(verts.size() / 3), tris.data(),
-                              areas.data(), static_cast<int>(source.size()),
+                              areas.data(), static_cast<int>(sourceTriangleCount),
                               *data.heightfield, cfg.walkableClimb)) {
         error = "rasterization_failed";
         return false;
@@ -448,6 +463,266 @@ bool buildNavMesh(const World& world, const NavigationAgentProfile& profile,
     return true;
 }
 
+constexpr float kNavTileSize = 32.0f;
+
+uint64_t navTileKey(int x, int y)
+{
+    return (uint64_t(uint32_t(x)) << 32) | uint64_t(uint32_t(y));
+}
+
+bool buildTileNavData(const World& world, const NavigationAgentProfile& profile,
+                      int tileX, int tileY, const glm::vec3& tileMin,
+                      const glm::vec3& tileMax, unsigned char*& outData,
+                      int& outSize, RecastNavigationResult& diag,
+                      std::string& error)
+{
+    outData = nullptr;
+    outSize = 0;
+    const size_t sourceTriangleCount = baseCollisionTriangleCount(world);
+    if (sourceTriangleCount == 0) {
+        error = "collision_mesh_empty";
+        return false;
+    }
+
+    float cellSize = 0.25f;
+    float cellHeight = 0.20f;
+    const float agentHeight = std::max(0.2f, profile.height);
+    const float agentRadius = std::max(0.05f, profile.radius);
+    const float stepHeight = std::max(0.01f, profile.stepHeight);
+
+    std::vector<float> verts;
+    std::vector<int> tris;
+    const AABB tileBox{tileMin, tileMax};
+    for (size_t i = 0; i < sourceTriangleCount; ++i) {
+        const CollisionTriangle& rawTri = world.collisionMesh.triangles[i];
+        CollisionTriangle tri;
+        tri.a = toRecast(rawTri.a);
+        tri.b = toRecast(rawTri.b);
+        tri.c = toRecast(rawTri.c);
+        tri.normal = toRecast(rawTri.normal);
+        const AABB triBox{
+            glm::min(tri.a, glm::min(tri.b, tri.c)),
+            glm::max(tri.a, glm::max(tri.b, tri.c))};
+        if (triBox.max.x < tileMin.x - 1.0f ||
+            triBox.min.x > tileMax.x + 1.0f ||
+            triBox.max.y < tileMin.y - 1.0f ||
+            triBox.min.y > tileMax.y + 1.0f)
+            continue;
+        const int base = static_cast<int>(verts.size() / 3);
+        for (const glm::vec3& v : {tri.a, tri.b, tri.c}) {
+            verts.push_back(v.x);
+            verts.push_back(v.y);
+            verts.push_back(v.z);
+        }
+        tris.push_back(base);
+        tris.push_back(base + 1);
+        tris.push_back(base + 2);
+    }
+    if (tris.empty())
+        return false;
+
+    rcConfig cfg{};
+    cfg.cs = cellSize;
+    cfg.ch = cellHeight;
+    cfg.walkableSlopeAngle = std::clamp(profile.maxSlopeDegrees, 1.0f, 89.0f);
+    cfg.walkableHeight = static_cast<int>(std::ceil(agentHeight / cellHeight));
+    cfg.walkableClimb = static_cast<int>(std::floor(stepHeight / cellHeight));
+    cfg.walkableRadius = static_cast<int>(std::ceil(agentRadius / cellSize));
+    cfg.maxEdgeLen = static_cast<int>(12.0f / cellSize);
+    cfg.maxSimplificationError = 1.3f;
+    cfg.minRegionArea = 8;
+    cfg.mergeRegionArea = 20;
+    cfg.maxVertsPerPoly = 6;
+    cfg.detailSampleDist = cellSize * 6.0f;
+    cfg.detailSampleMaxError = cellHeight * 1.0f;
+    rcVcopy(cfg.bmin, &tileMin.x);
+    rcVcopy(cfg.bmax, &tileMax.x);
+    rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
+    if (cfg.width <= 0 || cfg.height <= 0 || cfg.width > 8192 ||
+        cfg.height > 8192) {
+        error = "recast_tile_grid_out_of_bounds";
+        return false;
+    }
+
+    SilentBuildContext context;
+    BuildData data;
+    data.heightfield = rcAllocHeightfield();
+    if (!data.heightfield ||
+        !rcCreateHeightfield(&context, *data.heightfield, cfg.width, cfg.height,
+                             cfg.bmin, cfg.bmax, cfg.cs, cfg.ch)) {
+        error = "heightfield_create_failed";
+        return false;
+    }
+    const int triCount = static_cast<int>(tris.size() / 3);
+    std::vector<unsigned char> areas(triCount, 0);
+    rcMarkWalkableTriangles(&context, cfg.walkableSlopeAngle, verts.data(),
+                            static_cast<int>(verts.size() / 3), tris.data(),
+                            triCount, areas.data());
+    if (!rcRasterizeTriangles(&context, verts.data(),
+                              static_cast<int>(verts.size() / 3), tris.data(),
+                              areas.data(), triCount, *data.heightfield,
+                              cfg.walkableClimb)) {
+        error = "rasterization_failed";
+        return false;
+    }
+    rcFilterLowHangingWalkableObstacles(&context, cfg.walkableClimb,
+                                        *data.heightfield);
+    rcFilterLedgeSpans(&context, cfg.walkableHeight, cfg.walkableClimb,
+                       *data.heightfield);
+    rcFilterWalkableLowHeightSpans(&context, cfg.walkableHeight,
+                                   *data.heightfield);
+
+    data.compact = rcAllocCompactHeightfield();
+    if (!data.compact ||
+        !rcBuildCompactHeightfield(&context, cfg.walkableHeight,
+                                   cfg.walkableClimb, *data.heightfield,
+                                   *data.compact) ||
+        !rcErodeWalkableArea(&context, cfg.walkableRadius, *data.compact) ||
+        !rcBuildDistanceField(&context, *data.compact) ||
+        !rcBuildRegions(&context, *data.compact, 0, cfg.minRegionArea,
+                        cfg.mergeRegionArea)) {
+        error = "compact_build_failed";
+        return false;
+    }
+    data.contours = rcAllocContourSet();
+    if (!data.contours ||
+        !rcBuildContours(&context, *data.compact, cfg.maxSimplificationError,
+                         cfg.maxEdgeLen, *data.contours)) {
+        error = "contour_build_failed";
+        return false;
+    }
+    data.polyMesh = rcAllocPolyMesh();
+    if (!data.polyMesh ||
+        !rcBuildPolyMesh(&context, *data.contours, cfg.maxVertsPerPoly,
+                         *data.polyMesh)) {
+        error = "polygon_mesh_failed";
+        return false;
+    }
+    data.detail = rcAllocPolyMeshDetail();
+    if (!data.detail ||
+        !rcBuildPolyMeshDetail(&context, *data.polyMesh, *data.compact,
+                               cfg.detailSampleDist,
+                               cfg.detailSampleMaxError, *data.detail)) {
+        error = "detail_mesh_failed";
+        return false;
+    }
+    for (int i = 0; i < data.polyMesh->npolys; ++i) {
+        if (data.polyMesh->areas[i] == RC_WALKABLE_AREA) {
+            data.polyMesh->areas[i] = 1;
+            data.polyMesh->flags[i] = 1;
+        }
+    }
+
+    dtNavMeshCreateParams params{};
+    params.verts = data.polyMesh->verts;
+    params.vertCount = data.polyMesh->nverts;
+    params.polys = data.polyMesh->polys;
+    params.polyAreas = data.polyMesh->areas;
+    params.polyFlags = data.polyMesh->flags;
+    params.polyCount = data.polyMesh->npolys;
+    params.nvp = data.polyMesh->nvp;
+    params.detailMeshes = data.detail->meshes;
+    params.detailVerts = data.detail->verts;
+    params.detailVertsCount = data.detail->nverts;
+    params.detailTris = data.detail->tris;
+    params.detailTriCount = data.detail->ntris;
+    params.walkableHeight = agentHeight;
+    params.walkableRadius = agentRadius;
+    params.walkableClimb = stepHeight;
+    rcVcopy(params.bmin, data.polyMesh->bmin);
+    rcVcopy(params.bmax, data.polyMesh->bmax);
+    params.cs = cfg.cs;
+    params.ch = cfg.ch;
+    params.buildBvTree = true;
+    params.tileX = tileX;
+    params.tileY = tileY;
+    params.tileLayer = 0;
+    if (!dtCreateNavMeshData(&params, &outData, &outSize)) {
+        error = "detour_tile_data_failed";
+        return false;
+    }
+    diag.navMeshPolyCount += data.polyMesh->npolys;
+    diag.navMeshVertCount += data.polyMesh->nverts;
+    diag.sourceTriangleCount += triCount;
+    diag.walkableTriangleCount += data.walkableTriangleCount;
+    return true;
+}
+
+bool buildTiledNavMesh(const World& world, const NavigationAgentProfile& profile,
+                       dtNavMesh*& outMesh,
+                       std::unordered_map<uint64_t, dtTileRef>& tileRefs,
+                       glm::vec3& tileOrigin, int& tileCountX, int& tileCountY,
+                       RecastNavigationResult& diag, std::string& error)
+{
+    const size_t sourceTriangleCount = baseCollisionTriangleCount(world);
+    if (sourceTriangleCount == 0) {
+        error = "collision_mesh_empty";
+        return false;
+    }
+    glm::vec3 bmin(1.0e30f), bmax(-1.0e30f);
+    for (size_t i = 0; i < sourceTriangleCount; ++i) {
+        const CollisionTriangle& tri = world.collisionMesh.triangles[i];
+        for (const glm::vec3& raw : {tri.a, tri.b, tri.c}) {
+            const glm::vec3 v = toRecast(raw);
+            bmin = glm::min(bmin, v);
+            bmax = glm::max(bmax, v);
+        }
+    }
+    if (!(bmin.x < bmax.x && bmin.y < bmax.y && bmin.z < bmax.z)) {
+        error = "collision_bounds_invalid";
+        return false;
+    }
+    tileOrigin = bmin;
+    tileCountX = std::max(1, static_cast<int>(std::ceil(
+        (bmax.x - bmin.x) / kNavTileSize)));
+    tileCountY = std::max(1, static_cast<int>(std::ceil(
+        (bmax.y - bmin.y) / kNavTileSize)));
+
+    dtNavMeshParams params{};
+    rcVcopy(params.orig, &tileOrigin.x);
+    params.tileWidth = kNavTileSize;
+    params.tileHeight = kNavTileSize;
+    params.maxTiles = tileCountX * tileCountY + 8;
+    params.maxPolys = 4096;
+    dtNavMesh* mesh = dtAllocNavMesh();
+    if (!mesh || dtStatusFailed(mesh->init(&params))) {
+        if (mesh) dtFreeNavMesh(mesh);
+        error = "detour_tiled_mesh_init_failed";
+        return false;
+    }
+
+    tileRefs.clear();
+    for (int ty = 0; ty < tileCountY; ++ty) {
+        for (int tx = 0; tx < tileCountX; ++tx) {
+            const glm::vec3 tileMin(
+                tileOrigin.x + tx * kNavTileSize,
+                tileOrigin.y + ty * kNavTileSize, bmin.z - 1.0f);
+            const glm::vec3 tileMax(
+                tileMin.x + kNavTileSize, tileMin.y + kNavTileSize,
+                bmax.z + 1.0f);
+            unsigned char* data = nullptr;
+            int dataSize = 0;
+            std::string tileError;
+            if (!buildTileNavData(world, profile, tx, ty, tileMin, tileMax,
+                                  data, dataSize, diag, tileError))
+                continue;
+            dtTileRef ref = 0;
+            if (dtStatusFailed(mesh->addTile(data, dataSize,
+                                             DT_TILE_FREE_DATA, 0, &ref)))
+                dtFree(data);
+            else
+                tileRefs[navTileKey(tx, ty)] = ref;
+        }
+    }
+    if (tileRefs.empty()) {
+        dtFreeNavMesh(mesh);
+        error = "detour_tiled_mesh_empty";
+        return false;
+    }
+    outMesh = mesh;
+    return true;
+}
+
 } // namespace
 
 struct RecastNavigationBackend::State
@@ -459,12 +734,67 @@ struct RecastNavigationBackend::State
     std::uint64_t collisionHash = 0;
     std::size_t triangleCount = 0;
     std::uint64_t version = 0;
+    NavigationAgentProfile buildProfile;
+    bool profileMismatchLogged = false;
     int sourceTriangleCount = 0;
     int walkableTriangleCount = 0;
     int navMeshPolyCount = 0;
     int navMeshVertCount = 0;
     glm::vec3 recastBoundsMin{0.0f};
     glm::vec3 recastBoundsMax{0.0f};
+    std::unordered_map<uint64_t, dtTileRef> tileRefs;
+    std::unordered_set<uint64_t> dirtyTiles;
+    glm::vec3 tileOrigin{0.0f};
+    int tileCountX = 0;
+    int tileCountY = 0;
+    bool tiled = false;
+
+    bool rebuildDirtyTiles(const World& world,
+                           const NavigationAgentProfile& profile,
+                           int maxTiles, RecastNavigationResult& diag,
+                           std::string& error)
+    {
+        if (!mesh || !tiled || maxTiles <= 0)
+            return false;
+        int rebuilt = 0;
+        for (auto it = dirtyTiles.begin();
+             it != dirtyTiles.end() && rebuilt < maxTiles;) {
+            const uint64_t key = *it;
+            const int tx = static_cast<int>(key >> 32);
+            const int ty = static_cast<int>(key & 0xffffffffu);
+            const glm::vec3 tileMin(
+                tileOrigin.x + tx * kNavTileSize,
+                tileOrigin.y + ty * kNavTileSize, recastBoundsMin.z - 1.0f);
+            const glm::vec3 tileMax(
+                tileMin.x + kNavTileSize, tileMin.y + kNavTileSize,
+                recastBoundsMax.z + 1.0f);
+            unsigned char* data = nullptr;
+            int dataSize = 0;
+            std::string tileError;
+            const bool built = buildTileNavData(
+                world, profile, tx, ty, tileMin, tileMax, data, dataSize,
+                diag, tileError);
+            auto refIt = tileRefs.find(key);
+            if (refIt != tileRefs.end()) {
+                mesh->removeTile(refIt->second, nullptr, nullptr);
+                tileRefs.erase(refIt);
+            }
+            if (built) {
+                dtTileRef ref = 0;
+                if (dtStatusSucceed(mesh->addTile(
+                        data, dataSize, DT_TILE_FREE_DATA, 0, &ref))) {
+                    tileRefs[key] = ref;
+                    ++rebuilt;
+                } else {
+                    dtFree(data);
+                }
+            }
+            it = dirtyTiles.erase(it);
+        }
+        if (rebuilt > 0)
+            ++version;
+        return rebuilt > 0;
+    }
 
     ~State()
     {
@@ -499,6 +829,11 @@ void RecastNavigationBackend::invalidate()
     mState->world = nullptr;
     mState->geometryRevision = 0;
     mState->triangleCount = 0;
+    mState->tileRefs.clear();
+    mState->dirtyTiles.clear();
+    mState->tileCountX = 0;
+    mState->tileCountY = 0;
+    mState->tiled = false;
 }
 
 namespace {
@@ -516,22 +851,137 @@ std::uint64_t collisionContentHash(const World& world,
                                    const NavigationAgentProfile& profile)
 {
     std::uint64_t hash = 1469598103934665603ull;
-    hashBytes(hash, &profile.radius, sizeof(profile.radius));
-    hashBytes(hash, &profile.height, sizeof(profile.height));
-    hashBytes(hash, &profile.stepHeight, sizeof(profile.stepHeight));
-    hashBytes(hash, &profile.maxSlopeDegrees, sizeof(profile.maxSlopeDegrees));
-    for (const CollisionTriangle& triangle : world.collisionMesh.triangles) {
+    (void)profile;
+    const size_t baseTriangles = baseCollisionTriangleCount(world);
+    for (size_t i = 0; i < baseTriangles; ++i) {
+        const CollisionTriangle& triangle =
+            world.collisionMesh.triangles[i];
         hashBytes(hash, &triangle, sizeof(triangle));
     }
     if (!world.collisionMesh.solidIds.empty()) {
+        const size_t solidCount =
+            std::min(baseTriangles, world.collisionMesh.solidIds.size());
         hashBytes(hash, world.collisionMesh.solidIds.data(),
-                  world.collisionMesh.solidIds.size() *
-                      sizeof(world.collisionMesh.solidIds[0]));
+                  solidCount * sizeof(world.collisionMesh.solidIds[0]));
     }
     return hash;
 }
 
 } // namespace
+
+std::uint64_t navMeshContentHash(const World& world,
+                                 const NavigationAgentProfile& profile)
+{
+    return collisionContentHash(world, profile);
+}
+
+struct RecastNavMeshCandidate::Impl
+{
+    dtNavMesh* mesh = nullptr;
+    dtNavMeshQuery* query = nullptr;
+    RecastNavigationResult diagnostics;
+    NavigationAgentProfile profile;
+    std::uint64_t contentHash = 0;
+    std::size_t triangleCount = 0;
+
+    ~Impl()
+    {
+        if (query) dtFreeNavMeshQuery(query);
+        if (mesh) dtFreeNavMesh(mesh);
+    }
+};
+
+RecastNavMeshCandidate::RecastNavMeshCandidate()
+    : mImpl(std::make_unique<Impl>())
+{
+}
+
+RecastNavMeshCandidate::~RecastNavMeshCandidate() = default;
+
+RecastNavMeshCandidate::RecastNavMeshCandidate(
+    RecastNavMeshCandidate&& other) noexcept = default;
+
+RecastNavMeshCandidate& RecastNavMeshCandidate::operator=(
+    RecastNavMeshCandidate&& other) noexcept = default;
+
+RecastNavMeshCandidate RecastNavMeshCandidate::build(
+    const World& world, const NavigationAgentProfile& profile)
+{
+    RecastNavMeshCandidate candidate;
+    candidate.mImpl->profile = profile;
+    candidate.mImpl->contentHash = collisionContentHash(world, profile);
+    candidate.mImpl->triangleCount = world.collisionMesh.triangles.size();
+    std::string error;
+    if (!buildNavMesh(world, profile, candidate.mImpl->mesh,
+                      candidate.mImpl->diagnostics, error)) {
+        candidate.mImpl->diagnostics.failure = error;
+        return candidate;
+    }
+    candidate.mImpl->diagnostics.available = true;
+    candidate.mImpl->diagnostics.coordinateSystem = kCoordinateSystem;
+    candidate.mImpl->query = dtAllocNavMeshQuery();
+    if (!candidate.mImpl->query ||
+        dtStatusFailed(candidate.mImpl->query->init(candidate.mImpl->mesh, 4096))) {
+        candidate.mImpl->diagnostics.available = false;
+        candidate.mImpl->diagnostics.failure = "detour_query_init_failed";
+        return candidate;
+    }
+    return candidate;
+}
+
+bool RecastNavMeshCandidate::valid() const
+{
+    return mImpl && mImpl->mesh && mImpl->query &&
+           mImpl->diagnostics.available;
+}
+
+const RecastNavigationResult& RecastNavMeshCandidate::diagnostics() const
+{
+    static const RecastNavigationResult empty;
+    return mImpl ? mImpl->diagnostics : empty;
+}
+
+std::uint64_t RecastNavMeshCandidate::contentHash() const
+{
+    return mImpl ? mImpl->contentHash : 0;
+}
+
+std::size_t RecastNavMeshCandidate::triangleCount() const
+{
+    return mImpl ? mImpl->triangleCount : 0;
+}
+
+bool RecastNavigationBackend::adopt(const World& world,
+                                    RecastNavMeshCandidate&& candidate,
+                                    RecastNavMeshCandidate*)
+{
+    if (!mState) mState = new State();
+    if (!candidate.valid())
+        return false;
+    const std::uint64_t expected =
+        collisionContentHash(world, candidate.mImpl->profile);
+    if (expected != candidate.contentHash())
+        return false;
+
+    if (mState->query) dtFreeNavMeshQuery(mState->query);
+    if (mState->mesh) dtFreeNavMesh(mState->mesh);
+    mState->query = candidate.mImpl->query;
+    mState->mesh = candidate.mImpl->mesh;
+    candidate.mImpl->query = nullptr;
+    candidate.mImpl->mesh = nullptr;
+    mState->world = &world;
+    mState->geometryRevision = world.renderRevision;
+    mState->collisionHash = candidate.contentHash();
+    mState->triangleCount = candidate.triangleCount();
+    mState->sourceTriangleCount = candidate.mImpl->diagnostics.sourceTriangleCount;
+    mState->walkableTriangleCount = candidate.mImpl->diagnostics.walkableTriangleCount;
+    mState->navMeshPolyCount = candidate.mImpl->diagnostics.navMeshPolyCount;
+    mState->navMeshVertCount = candidate.mImpl->diagnostics.navMeshVertCount;
+    mState->recastBoundsMin = candidate.mImpl->diagnostics.recastBoundsMin;
+    mState->recastBoundsMax = candidate.mImpl->diagnostics.recastBoundsMax;
+    ++mState->version;
+    return true;
+}
 
 RecastNavigationResult RecastNavigationBackend::prepare(
     const World& world, const NavigationAgentProfile& profile)
@@ -544,11 +994,94 @@ RecastNavigationResult RecastNavigationBackend::prepare(
     const std::uint64_t contentHash = collisionContentHash(world, profile);
     const bool needsBuild = !mState->mesh || mState->world != &world ||
         mState->collisionHash != contentHash ||
-        mState->triangleCount != world.collisionMesh.triangles.size();
+        mState->triangleCount != baseCollisionTriangleCount(world) ||
+        !mState->dirtyTiles.empty();
     if (needsBuild) {
+        const bool incremental =
+            mState->mesh && mState->tiled && mState->world == &world;
+        if (incremental) {
+            const size_t baseCount = baseCollisionTriangleCount(world);
+            const bool contentChanged =
+                mState->collisionHash != contentHash ||
+                mState->triangleCount != baseCount;
+            if (contentChanged) {
+                for (int ty = 0; ty < mState->tileCountY; ++ty)
+                    for (int tx = 0; tx < mState->tileCountX; ++tx)
+                        mState->dirtyTiles.insert(navTileKey(tx, ty));
+                mState->collisionHash = contentHash;
+                mState->triangleCount = baseCount;
+            }
+            mimita_navigation_policy::NavigationPolicyV1 policy{};
+            policy.version = mimita_navigation_policy::ABI_VERSION;
+            policy.structSize = sizeof(policy);
+            policy.hasMesh = 1;
+            policy.staticTriangles = static_cast<std::uint32_t>(baseCount);
+            policy.streamedTriangles = static_cast<std::uint32_t>(
+                world.collisionMesh.streamedTailTriangles);
+            policy.collisionChanged = 1;
+            policy.dirtyTiles =
+                static_cast<std::uint32_t>(mState->dirtyTiles.size());
+            policy.inFixedTick =
+                ModuleHost::instance().insideFixedTick() ? 1u : 0u;
+            int tileBudget = 1;
+            if (ModuleHost::instance().navigationPolicy(&policy)) {
+                if (policy.outTilesPerUpdate > 0)
+                    tileBudget = static_cast<int>(policy.outTilesPerUpdate);
+                if (!policy.outAllowRebuild)
+                    tileBudget = 0;
+            }
+            std::string tileError;
+            if (tileBudget > 0)
+                mState->rebuildDirtyTiles(world, profile, tileBudget,
+                                          result, tileError);
+            result.available = true;
+            result.failure = "tile_rebuild_in_progress";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
+        mimita_navigation_policy::NavigationPolicyV1 policy{};
+        policy.version = mimita_navigation_policy::ABI_VERSION;
+        policy.structSize = sizeof(policy);
+        policy.hasMesh = mState->mesh ? 1u : 0u;
+        policy.staticTriangles =
+            static_cast<std::uint32_t>(baseCollisionTriangleCount(world));
+        policy.streamedTriangles = static_cast<std::uint32_t>(
+            world.collisionMesh.streamedTailTriangles);
+        policy.collisionChanged =
+            mState->collisionHash != contentHash ? 1u : 0u;
+        policy.profileChanged =
+            std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
+            std::abs(profile.height - mState->buildProfile.height) > 0.001f;
+        policy.inFixedTick = ModuleHost::instance().insideFixedTick() ? 1u : 0u;
+        if (ModuleHost::instance().navigationPolicy(&policy) &&
+            !policy.outAllowRebuild && mState->mesh) {
+            result.available = true;
+            result.failure = "rebuild_deferred_policy";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
         invalidate();
         std::string error;
-        if (!buildNavMesh(world, profile, mState->mesh, result, error)) {
+        if (!buildTiledNavMesh(world, profile, mState->mesh,
+                               mState->tileRefs, mState->tileOrigin,
+                               mState->tileCountX, mState->tileCountY,
+                               result, error)) {
             result.failure = error;
             result.buildMilliseconds = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - begin).count();
@@ -605,9 +1138,12 @@ RecastNavigationResult RecastNavigationBackend::prepare(
             return result;
         }
         mState->world = &world;
+        mState->tiled = true;
         mState->geometryRevision = world.renderRevision;
         mState->collisionHash = contentHash;
-        mState->triangleCount = world.collisionMesh.triangles.size();
+        mState->triangleCount = baseCollisionTriangleCount(world);
+        mState->buildProfile = profile;
+        mState->profileMismatchLogged = false;
         mState->sourceTriangleCount = result.sourceTriangleCount;
         mState->walkableTriangleCount = result.walkableTriangleCount;
         mState->navMeshPolyCount = result.navMeshPolyCount;
@@ -639,6 +1175,33 @@ RecastNavigationResult RecastNavigationBackend::prepare(
 
     // Publish build diagnostics even on a cache hit. A successful bake is a
     // build claim, not a route claim.
+    const bool profileMismatch =
+        std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
+        std::abs(profile.height - mState->buildProfile.height) > 0.001f ||
+        std::abs(profile.stepHeight - mState->buildProfile.stepHeight) > 0.001f ||
+        std::abs(profile.maxSlopeDegrees -
+                 mState->buildProfile.maxSlopeDegrees) > 0.01f;
+    if (profileMismatch && !mState->profileMismatchLogged) {
+        mState->profileMismatchLogged = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+            "npc.navmesh.profile-kept", "recast",
+            "reused published navmesh instead of rebuilding for an agent profile variant",
+            0,
+            nlohmann::json{
+                {"built_radius", mState->buildProfile.radius},
+                {"built_height", mState->buildProfile.height},
+                {"built_step_height", mState->buildProfile.stepHeight},
+                {"built_max_slope_degrees",
+                 mState->buildProfile.maxSlopeDegrees},
+                {"requested_radius", profile.radius},
+                {"requested_height", profile.height},
+                {"requested_step_height", profile.stepHeight},
+                {"requested_max_slope_degrees", profile.maxSlopeDegrees},
+                {"navmesh_version", mState->version}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     result.available = true;
     result.coordinateSystem = kCoordinateSystem;
     result.navmeshVersion = mState->version;
@@ -666,12 +1229,95 @@ RecastNavigationResult RecastNavigationBackend::query(
     const std::uint64_t contentHash = collisionContentHash(world, profile);
     const bool needsBuild = !mState->mesh || mState->world != &world ||
         mState->collisionHash != contentHash ||
-        mState->triangleCount != world.collisionMesh.triangles.size();
+        mState->triangleCount != baseCollisionTriangleCount(world) ||
+        !mState->dirtyTiles.empty();
     if (needsBuild) {
+        const bool incremental =
+            mState->mesh && mState->tiled && mState->world == &world;
+        if (incremental) {
+            const size_t baseCount = baseCollisionTriangleCount(world);
+            const bool contentChanged =
+                mState->collisionHash != contentHash ||
+                mState->triangleCount != baseCount;
+            if (contentChanged) {
+                for (int ty = 0; ty < mState->tileCountY; ++ty)
+                    for (int tx = 0; tx < mState->tileCountX; ++tx)
+                        mState->dirtyTiles.insert(navTileKey(tx, ty));
+                mState->collisionHash = contentHash;
+                mState->triangleCount = baseCount;
+            }
+            mimita_navigation_policy::NavigationPolicyV1 policy{};
+            policy.version = mimita_navigation_policy::ABI_VERSION;
+            policy.structSize = sizeof(policy);
+            policy.hasMesh = 1;
+            policy.staticTriangles = static_cast<std::uint32_t>(baseCount);
+            policy.streamedTriangles = static_cast<std::uint32_t>(
+                world.collisionMesh.streamedTailTriangles);
+            policy.collisionChanged = 1;
+            policy.dirtyTiles =
+                static_cast<std::uint32_t>(mState->dirtyTiles.size());
+            policy.inFixedTick =
+                ModuleHost::instance().insideFixedTick() ? 1u : 0u;
+            int tileBudget = 1;
+            if (ModuleHost::instance().navigationPolicy(&policy)) {
+                if (policy.outTilesPerUpdate > 0)
+                    tileBudget = static_cast<int>(policy.outTilesPerUpdate);
+                if (!policy.outAllowRebuild)
+                    tileBudget = 0;
+            }
+            std::string tileError;
+            if (tileBudget > 0)
+                mState->rebuildDirtyTiles(world, profile, tileBudget,
+                                          result, tileError);
+            result.available = true;
+            result.failure = "tile_rebuild_in_progress";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
+        mimita_navigation_policy::NavigationPolicyV1 policy{};
+        policy.version = mimita_navigation_policy::ABI_VERSION;
+        policy.structSize = sizeof(policy);
+        policy.hasMesh = mState->mesh ? 1u : 0u;
+        policy.staticTriangles =
+            static_cast<std::uint32_t>(baseCollisionTriangleCount(world));
+        policy.streamedTriangles = static_cast<std::uint32_t>(
+            world.collisionMesh.streamedTailTriangles);
+        policy.collisionChanged =
+            mState->collisionHash != contentHash ? 1u : 0u;
+        policy.profileChanged =
+            std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
+            std::abs(profile.height - mState->buildProfile.height) > 0.001f;
+        policy.inFixedTick = ModuleHost::instance().insideFixedTick() ? 1u : 0u;
+        if (ModuleHost::instance().navigationPolicy(&policy) &&
+            !policy.outAllowRebuild && mState->mesh) {
+            result.available = true;
+            result.failure = "rebuild_deferred_policy";
+            result.navmeshVersion = mState->version;
+            result.sourceTriangleCount = mState->sourceTriangleCount;
+            result.walkableTriangleCount = mState->walkableTriangleCount;
+            result.navMeshPolyCount = mState->navMeshPolyCount;
+            result.navMeshVertCount = mState->navMeshVertCount;
+            result.recastBoundsMin = mState->recastBoundsMin;
+            result.recastBoundsMax = mState->recastBoundsMax;
+            result.queryMilliseconds = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - begin).count();
+            return result;
+        }
         invalidate();
         std::string error;
         const auto buildBegin = std::chrono::steady_clock::now();
-        if (!buildNavMesh(world, profile, mState->mesh, result, error)) {
+        if (!buildTiledNavMesh(world, profile, mState->mesh,
+                               mState->tileRefs, mState->tileOrigin,
+                               mState->tileCountX, mState->tileCountY,
+                               result, error)) {
             result.failure = error;
             result.buildMilliseconds = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - buildBegin).count();
@@ -682,9 +1328,12 @@ RecastNavigationResult RecastNavigationBackend::query(
         result.buildMilliseconds = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - buildBegin).count();
         mState->world = &world;
+        mState->tiled = true;
         mState->geometryRevision = world.renderRevision;
         mState->collisionHash = contentHash;
-        mState->triangleCount = world.collisionMesh.triangles.size();
+        mState->triangleCount = baseCollisionTriangleCount(world);
+        mState->buildProfile = profile;
+        mState->profileMismatchLogged = false;
         mState->sourceTriangleCount = result.sourceTriangleCount;
         mState->walkableTriangleCount = result.walkableTriangleCount;
         mState->navMeshPolyCount = result.navMeshPolyCount;
@@ -699,6 +1348,33 @@ RecastNavigationResult RecastNavigationBackend::query(
                 std::chrono::steady_clock::now() - begin).count();
             return result;
         }
+    }
+
+    const bool profileMismatch =
+        std::abs(profile.radius - mState->buildProfile.radius) > 0.001f ||
+        std::abs(profile.height - mState->buildProfile.height) > 0.001f ||
+        std::abs(profile.stepHeight - mState->buildProfile.stepHeight) > 0.001f ||
+        std::abs(profile.maxSlopeDegrees -
+                 mState->buildProfile.maxSlopeDegrees) > 0.01f;
+    if (profileMismatch && !mState->profileMismatchLogged) {
+        mState->profileMismatchLogged = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Verbose,
+            "npc.navmesh.profile-kept", "recast",
+            "reused published navmesh instead of rebuilding for an agent profile variant",
+            0,
+            nlohmann::json{
+                {"built_radius", mState->buildProfile.radius},
+                {"built_height", mState->buildProfile.height},
+                {"built_step_height", mState->buildProfile.stepHeight},
+                {"built_max_slope_degrees",
+                 mState->buildProfile.maxSlopeDegrees},
+                {"requested_radius", profile.radius},
+                {"requested_height", profile.height},
+                {"requested_step_height", profile.stepHeight},
+                {"requested_max_slope_degrees", profile.maxSlopeDegrees},
+                {"navmesh_version", mState->version}},
+            __FILE__, __LINE__, __FUNCTION__);
     }
 
     result.available = true;

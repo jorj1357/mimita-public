@@ -653,6 +653,7 @@ struct MultiplayerContext
 
     // ── ClientMapReady tracking ───────────────────────────────────────
     bool clientMapReadySent = false;
+    uint64_t lastClientMapReadySendMs = 0;
 
     // ── Local event serials for remote replication ────────────────────
     // Persistent monotonic counters. Never reset to 0.

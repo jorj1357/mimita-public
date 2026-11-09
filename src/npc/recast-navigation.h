@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,32 @@ struct RecastNavigationResult
     float destProjectionDistance = 0.0f;
 };
 
+class RecastNavMeshCandidate
+{
+public:
+    RecastNavMeshCandidate();
+    ~RecastNavMeshCandidate();
+    RecastNavMeshCandidate(RecastNavMeshCandidate&&) noexcept;
+    RecastNavMeshCandidate& operator=(RecastNavMeshCandidate&&) noexcept;
+    RecastNavMeshCandidate(const RecastNavMeshCandidate&) = delete;
+    RecastNavMeshCandidate& operator=(const RecastNavMeshCandidate&) = delete;
+
+    static RecastNavMeshCandidate build(const World& world,
+                                        const NavigationAgentProfile& profile);
+    bool valid() const;
+    const RecastNavigationResult& diagnostics() const;
+    std::uint64_t contentHash() const;
+    std::size_t triangleCount() const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> mImpl;
+    friend class RecastNavigationBackend;
+};
+
+std::uint64_t navMeshContentHash(const World& world,
+                                 const NavigationAgentProfile& profile);
+
 class RecastNavigationBackend
 {
 public:
@@ -98,6 +125,9 @@ public:
                                  const glm::vec3& start,
                                  const glm::vec3& destination,
                                  const NavigationAgentProfile& profile);
+
+    bool adopt(const World& world, RecastNavMeshCandidate&& candidate,
+               RecastNavMeshCandidate* retired = nullptr);
 
     void invalidate();
 
