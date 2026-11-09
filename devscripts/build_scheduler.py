@@ -24,7 +24,7 @@ except ModuleNotFoundError:
     from path_containment import resolve_coordinator_root, resolve_within
 
 SLOT_LIMITS = {"exe": 1, "module": 2}
-DEFAULT_MIN_FREE_MB = 1024
+DEFAULT_MIN_FREE_MB = 16
 STALE_SECONDS = 60.0
 
 

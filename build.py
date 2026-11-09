@@ -40,6 +40,15 @@ from devscripts.path_containment import (
 # ============================================================
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+if os.name == "nt":
+    try:
+        import ctypes
+        _kernel32 = ctypes.windll.kernel32
+        _kernel32.SetPriorityClass(_kernel32.GetCurrentProcess(), 0x00000080)
+    except (AttributeError, OSError):
+        pass
+
 from build_lock import BuildLockBusy, acquire_checkout_build_lock
 
 try:

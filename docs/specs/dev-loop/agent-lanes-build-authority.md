@@ -115,10 +115,14 @@ Rules:
 - Repeated saves in one lane coalesce to the newest source generation.
 - Only one EXE build may actively compile at a time across all checkouts and
   agent lanes; additional lane requests wait for that slot.
-- The active EXE builder uses one compiler job per logical processor.
-- On Windows, the EXE build worker runs with `HIGH_PRIORITY_CLASS`.
-- If free physical memory is below `MIMITA_BUILD_MIN_FREE_MB` (default 1024),
-  the build waits and reports `waiting for memory`.
+- The active EXE builder uses all available logical processors: one compiler
+  job per logical processor, never a fixed four-job cap.
+- On Windows, the EXE build worker and its compiler children run with
+  `HIGH_PRIORITY_CLASS`. This is intentional: do not lower the build to below
+  normal priority.
+- If free physical memory is below `MIMITA_BUILD_MIN_FREE_MB` (default 16), the
+  build waits and reports `waiting for memory`. The low default favors build
+  speed; a human may raise it when the machine must stay responsive.
 - An abandoned OS synchronization object is reclaimed by the operating system;
   do not use an external lock file or stale-file cleanup path.
 
