@@ -128,8 +128,28 @@
         702,
         703,
         704,
-        705
+        705,
+        706,
+        707,
+        708
       ],
+      "capabilities": []
+    },
+    {
+      "name": "navigation-policy",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_fixed_server_tick",
+      "server_process": true,
+      "shared": true,
+      "sources": [
+        "src/navigation/navigation-policy-module.cpp"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/navigation-policy-api.h"
+      ],
+      "events": [800],
       "capabilities": []
     },
     {

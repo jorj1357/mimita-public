@@ -589,7 +589,9 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
     return true;
 }
 
-bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId)
+bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
+                              const std::string& mapId,
+                              bool allowStreamedFootprint)
 {
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
@@ -604,9 +606,10 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
     }
     world.connectedFlatGround = false;
     for (const GenerationZone& zone : config.generationZones) {
-        if (!config.generateWholeWorld || !zone.enabled ||
-            zone.modeId != "connected_world" || zone.repeatAxes.x == 0 ||
-            zone.repeatAxes.y == 0 || zone.repeatAxes.z != 0) continue;
+        if (!allowStreamedFootprint || !config.generateWholeWorld ||
+            !zone.enabled || zone.modeId != "connected_world" ||
+            zone.repeatAxes.x == 0 || zone.repeatAxes.y == 0 ||
+            zone.repeatAxes.z != 0) continue;
         bool valid = !config.chunks.empty();
         bool foundFloor = false;
         float floorZ = 0.0f;
@@ -648,7 +651,7 @@ bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string
             if (chunk.enabled && !chunk.parts.empty())
                 candidates.push_back(&chunk);
         std::vector<AuthoredChunk> modeChunks;
-        if (zone.modeId == "connected_world" || config.generateWholeWorld) {
+        if (allowStreamedFootprint) {
             MimitaWorldGen::WorldGenMode profile;
             std::string profileError;
             if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(

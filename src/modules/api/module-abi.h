@@ -85,7 +85,11 @@ constexpr std::uint32_t EVENT_NETWORK_MOVEMENT_CORRECTION = 702;
 constexpr std::uint32_t EVENT_NETWORK_HIT_CLAIM_POLICY = 703;
 constexpr std::uint32_t EVENT_NETWORK_RECONCILE_POLICY = 704;
 constexpr std::uint32_t EVENT_NETWORK_INTERPOLATION_POLICY = 705;
+constexpr std::uint32_t EVENT_NETWORK_SESSION_HEALTH_POLICY = 706;
+constexpr std::uint32_t EVENT_NETWORK_MAP_SYNC_POLICY = 707;
+constexpr std::uint32_t EVENT_NETWORK_COMBAT_VALIDATION_POLICY = 708;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
+constexpr std::uint32_t EVENT_NAVIGATION_POLICY = 800;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,

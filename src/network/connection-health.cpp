@@ -20,6 +20,7 @@ ConnectionState mpNextConnectionHealth(
     uint64_t staleThresholdMs,
     uint64_t hardTimeoutMs,
     bool snapshotStarved,
+    bool snapshotTimedOut,
     uint64_t graceDeadline,
     uint64_t graceMs)
 {
@@ -29,22 +30,23 @@ ConnectionState mpNextConnectionHealth(
     {
     case ConnectionState::Connected:
     case ConnectionState::WeakConnection:
-        // Missing authoritative snapshots require reconnect even when other
-        // packet types keep the transport heartbeat fresh.
+    case ConnectionState::WaitingForServer:
+        // A snapshot gap is not proof that the transport is dead. Keep the
+        // session and wait for the server until the hard timeout; reconnecting
+        // immediately was causing a loop while the server was still working.
+        if (snapshotTimedOut || lastHeardAge > hardTimeoutMs)
+            return ConnectionState::Reconnecting;
         if (snapshotStarved)
-            return ConnectionState::Reconnecting;
-        // A hard packet timeout beats a stale warning.
-        if (lastHeardAge > hardTimeoutMs)
-            return ConnectionState::Reconnecting;
+            return ConnectionState::WaitingForServer;
         if (lastHeardAge > staleThresholdMs)
             return ConnectionState::WeakConnection;
         return ConnectionState::Connected;
 
     case ConnectionState::Reconnecting:
         // Do not treat a reconnect response or unrelated packet as recovered
-        // gameplay state. Snapshot starvation triggered this reconnect, so
-        // recovery requires a fresh authoritative snapshot; otherwise the
-        // stale-snapshot check immediately starts the same reconnect again.
+        // gameplay state. Recovery requires a fresh authoritative snapshot;
+        // otherwise the stale-snapshot check immediately starts the same
+        // reconnect again.
         if (heardSinceDisconnect && !snapshotStarved)
             return ConnectionState::Connected;
         // Give up once the 60-second grace window expires.

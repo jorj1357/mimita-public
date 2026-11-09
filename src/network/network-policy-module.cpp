@@ -74,6 +74,47 @@ void decideReconcile(mimita_network_policy::ReconcilePolicyV1& p)
     p.outGeneration = MIMITA_MODULE_GENERATION;
 }
 
+void decideSessionHealth(
+    mimita_network_policy::SessionHealthPolicyV1& p)
+{
+    const bool snapshotWait =
+        p.snapshotsEverReceived && p.snapshotAgeMs > p.staleThresholdMs &&
+        p.snapshotAgeMs <= p.hardTimeoutMs &&
+        p.lastHeardAgeMs <= p.hardTimeoutMs;
+    const bool hardTimedOut =
+        p.lastHeardAgeMs > p.hardTimeoutMs ||
+        (p.snapshotsEverReceived && p.snapshotAgeMs > p.hardTimeoutMs);
+    p.outReconnect = hardTimedOut ? 1u : 0u;
+    p.outBackoffMs = p.reconnectAttempts > 0 ? 1000u : 0u;
+    p.outState = hardTimedOut ? 3u :
+        (snapshotWait ? 2u :
+         (p.lastHeardAgeMs > p.staleThresholdMs ? 1u : 0u));
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+}
+
+void decideMapSync(mimita_network_policy::MapSyncPolicyV1& p)
+{
+    p.outRetryIntervalMs = 500;
+    p.outResendReady = (p.connected && p.mapReady && p.readySent &&
+                        !p.hasAuthoritativeSpawn) ? 1u : 0u;
+    p.outResetReady = 0;
+    p.outState = !p.worldLoaded ? 0u :
+        (!p.mapReady ? 1u :
+         (!p.readySent ? 2u :
+          (!p.hasAuthoritativeSpawn ? 3u : 4u)));
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+}
+
+void decideCombatValidation(
+    mimita_network_policy::CombatValidationPolicyV1& p)
+{
+    p.outCooldownGraceTicks = p.cooldownGraceTicks;
+    p.outEquipGraceTicks = p.equipGraceTicks;
+    p.outOriginTolerance = std::max(0.0f, p.originTolerance);
+    p.outMuzzleTolerance = std::max(0.0f, p.muzzleTolerance);
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+}
+
 void decideInterpolation(
     mimita_network_policy::InterpolationPolicyV1& p)
 {
@@ -153,6 +194,40 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
             p.structSize != sizeof(p))
             return 0;
         decideReconcile(p);
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_NETWORK_SESSION_HEALTH_POLICY &&
+        event->payloadSize ==
+            sizeof(mimita_network_policy::SessionHealthPolicyV1)) {
+        auto& p = *static_cast<
+            mimita_network_policy::SessionHealthPolicyV1*>(event->payload);
+        if (p.version != mimita_network_policy::ABI_VERSION ||
+            p.structSize != sizeof(p))
+            return 0;
+        decideSessionHealth(p);
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_NETWORK_MAP_SYNC_POLICY &&
+        event->payloadSize ==
+            sizeof(mimita_network_policy::MapSyncPolicyV1)) {
+        auto& p = *static_cast<
+            mimita_network_policy::MapSyncPolicyV1*>(event->payload);
+        if (p.version != mimita_network_policy::ABI_VERSION ||
+            p.structSize != sizeof(p))
+            return 0;
+        decideMapSync(p);
+        return 1;
+    }
+    if (event->typeId ==
+            mimita_module::EVENT_NETWORK_COMBAT_VALIDATION_POLICY &&
+        event->payloadSize ==
+            sizeof(mimita_network_policy::CombatValidationPolicyV1)) {
+        auto& p = *static_cast<
+            mimita_network_policy::CombatValidationPolicyV1*>(event->payload);
+        if (p.version != mimita_network_policy::ABI_VERSION ||
+            p.structSize != sizeof(p))
+            return 0;
+        decideCombatValidation(p);
         return 1;
     }
     if (event->typeId == mimita_module::EVENT_NETWORK_INTERPOLATION_POLICY &&

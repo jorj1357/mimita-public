@@ -1398,20 +1398,63 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
     mFocusVel = player.vel;
     layer.setStreamFocus(
         player.pos, mStreaming.enabled ? mStreaming.collisionRadiusM : 0.0f);
-    const bool connectedWorldMode = gameModeId == "connected_world" ||
-        std::any_of(config.generationZones.begin(), config.generationZones.end(),
-                    [](const GenerationZone& zone) {
-                        return zone.enabled && zone.modeId == "connected_world";
-                    });
 
+    // The gamemode is the sole owner of whether chunk streaming exists. A map
+    // zone or generateWholeWorld flag must never opt a non-connected gamemode
+    // into streaming. This also keeps streamed collision out of ordinary maps.
+    if (!mStreaming.enabled) {
+        static std::string lastDisabledMode;
+        if (lastDisabledMode != gameModeId) {
+            lastDisabledMode = gameModeId;
+            logEvent("world-stream.disabled", gameModeId,
+                     {{"mode", gameModeId},
+                      {"map", config.mapId},
+                      {"reason", "gamemode_world_streaming_disabled"}});
+        }
+        if (mActive) reset();
+        layer.flushCollision(world);
+        return;
+    }
+
+    // A chunk collision compose that exceeds its frame budget pauses new chunk
+    // installation for a short cooldown. Dirty collision remains queued and is
+    // flushed after the cooldown instead of compounding a frame stall.
+    if (layer.collisionCooldownActive())
+        return;
+
+    const bool connectedWorldMode = gameModeId == "connected_world";
+
+    GenerationZone fallbackZone;
     const GenerationZone* mapZone = nullptr;
     for (const auto& zone : config.generationZones) {
         if (zone.enabled &&
-            (connectedWorldMode || config.generateWholeWorld ||
-             zoneContains(zone, player.pos))) {
+            (connectedWorldMode || zoneContains(zone, player.pos))) {
             mapZone = &zone;
             break;
         }
+    }
+    if (!mapZone && connectedWorldMode) {
+        fallbackZone.id = "connected_world";
+        fallbackZone.name = "Connected World";
+        fallbackZone.modeId = "connected_world";
+        fallbackZone.enabled = true;
+        for (const AuthoredChunk& chunk : config.chunks) {
+            if (!chunk.enabled) continue;
+            fallbackZone.boundsMin = glm::min(fallbackZone.boundsMin,
+                                              chunk.boundsMin);
+            fallbackZone.boundsMax = glm::max(fallbackZone.boundsMax,
+                                              chunk.boundsMax);
+        }
+        fallbackZone.origin = fallbackZone.boundsMin;
+        fallbackZone.cellSize = glm::vec3(104.0f);
+        fallbackZone.chunkSizeVec = glm::vec3(104.0f);
+        fallbackZone.repeatAxes = glm::ivec3(1, 1, 0);
+        fallbackZone.streamRadius = glm::ivec3(1, 1, 0);
+        fallbackZone.spacingMode = "center";
+        mapZone = &fallbackZone;
+        logEvent("world-stream.synthetic-zone", fallbackZone.id,
+                 {{"map", config.mapId},
+                  {"reason", "connected_world_without_map_zone"}});
     }
     if (!mapZone) {
         if (mActive) reset();

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "modules/api/module-abi.h"
+#include "modules/api/navigation-policy-api.h"
 #include "modules/api/network-policy-api.h"
 #include "modules/api/npc-behavior-api.h"
 
@@ -124,6 +125,14 @@ public:
         mimita_network_policy::ReconcilePolicyV1* policy);
     bool networkInterpolationPolicy(
         mimita_network_policy::InterpolationPolicyV1* policy);
+    bool networkSessionHealthPolicy(
+        mimita_network_policy::SessionHealthPolicyV1* policy);
+    bool networkMapSyncPolicy(
+        mimita_network_policy::MapSyncPolicyV1* policy);
+    bool networkCombatValidationPolicy(
+        mimita_network_policy::CombatValidationPolicyV1* policy);
+    bool navigationPolicy(
+        mimita_navigation_policy::NavigationPolicyV1* policy);
     bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);
     bool npcBehaviorAction(mimita_npc_behavior::ActionV1* action);
     bool npcGrenadeDecision(mimita_npc_behavior::GrenadeDecisionV1* decision);

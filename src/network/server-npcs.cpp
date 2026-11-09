@@ -253,6 +253,9 @@ void buildNpcWorldCollision(World& npcWorld, const HeadlessWorld& hw,
     // create open seams/T-junctions that the client never sees. Reuse it as-is.
     npcWorld.collisionMesh.triangles.clear();
     npcWorld.collisionMesh.solidIds.clear();
+    npcWorld.collisionMesh.streamedTailTriangles = 0;
+    npcWorld.collisionMesh.streamedTailSolidIds = 0;
+    npcWorld.collisionMesh.streamedChunkCount = 0;
     npcWorld.collisionMesh.triangles.reserve(hw.triangles.size());
     npcWorld.collisionMesh.solidIds.reserve(hw.triangles.size());
     size_t removedTriangles = 0;

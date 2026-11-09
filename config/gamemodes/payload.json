@@ -10,9 +10,7 @@
     "BLUE"
   ],
   "goal_value": 0,
-  // "weapon_set_id": 1,
   "weapon_set_id": 30,
-  // "force_weapon_set_for_all_actors": false,
   "force_weapon_set_for_all_actors": true,
   "time_limit_seconds": 0,
   "time_limit_winner_team": "",
@@ -234,6 +232,28 @@
     "destructible_body_parts": false,
     "destructible_world": null,
     "destructible_world_reset": null
+  },
+  "world_streaming": {
+    "enabled": false,
+    "visual_radius_m": 1000.0,
+    "collision_radius_m": 150.0,
+    "lookahead_seconds": 1.0,
+    "near_full_m": 150.0,
+    "mid_proxy_m": 400.0,
+    "far_proxy_m": 1000.0,
+    "max_loaded_chunks": 512,
+    "max_pending_chunks": 1024,
+    "max_chunks_per_frame": 8,
+    "install_budget_ms": 2.0,
+    "coarse_collision": true,
+    "far_proxy": true,
+    "fog_start_m": 300.0,
+    "fog_end_m": 1000.0,
+    "fog_color": [
+      0.7,
+      0.8,
+      1.0
+    ]
   },
   "camera_fov": 0.0,
   "force_first_person": false,

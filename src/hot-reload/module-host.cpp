@@ -1418,6 +1418,42 @@ bool ModuleHost::networkInterpolationPolicy(
                        policy, sizeof(*policy), 0);
 }
 
+bool ModuleHost::networkSessionHealthPolicy(
+    mimita_network_policy::SessionHealthPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_SESSION_HEALTH_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkMapSyncPolicy(
+    mimita_network_policy::MapSyncPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_MAP_SYNC_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkCombatValidationPolicy(
+    mimita_network_policy::CombatValidationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_COMBAT_VALIDATION_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::navigationPolicy(
+    mimita_navigation_policy::NavigationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NAVIGATION_POLICY,
+                       policy, sizeof(*policy), 0);
+}
+
 bool ModuleHost::npcBehaviorDecision(
     mimita_npc_behavior::DecisionV1* decision)
 {

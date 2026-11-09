@@ -2861,7 +2861,10 @@ bool tryLoadDuelMap(const std::string& mapId, HeadlessWorld& out,
     HeadlessWorld candidate = base;
     // Authored spawnpoint entities are part of the map, so apply them before
     // deciding whether the map has any usable spawns.
-    applyAuthoredMapGeometry(candidate, mapId);
+    applyAuthoredMapGeometry(
+        candidate, mapId,
+        GamemodeRegistry::instance().get(d.matchMode)
+            .worldStreaming.enabled);
     if (candidate.spawnPoints.empty())
         return false;
     out = std::move(candidate);
@@ -7941,7 +7944,10 @@ bool rebuildServerAuthoredGeometry(SOCKET sock,
         d.authoredCacheReady = true;
     } else {
         candidate = d.authoredBaseWorld;
-        if (!applyAuthoredMapGeometry(candidate, d.mapId))
+        if (!applyAuthoredMapGeometry(
+                candidate, d.mapId,
+                GamemodeRegistry::instance().get(d.matchMode)
+                    .worldStreaming.enabled))
             return reject("authored-apply-failed");
         d.authoredCacheWorldPrevious = std::move(d.authoredCacheWorld);
         d.authoredCacheSignaturePrevious = d.authoredCacheSignature;

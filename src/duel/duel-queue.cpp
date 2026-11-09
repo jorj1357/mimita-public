@@ -639,6 +639,7 @@ void DuelQueue::onDuelState(const DuelStatePacket& pkt)
         // load the same map and report CLIENT_MAP_READY.
         MP_CONTEXT.requiredMapId = serverMap;
         MP_CONTEXT.clientMapReadySent = false;
+        MP_CONTEXT.lastClientMapReadySendMs = 0;
         MP_CONTEXT.clientMapReadySentForMap.clear();
         MP_CONTEXT.clientMapReadySentForPlayerId = 0;
 

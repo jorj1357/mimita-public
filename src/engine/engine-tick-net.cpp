@@ -12,6 +12,7 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "actor/player-ai.h"
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <unordered_set>
@@ -53,6 +54,8 @@
 #include "game/game-state.h"
 #include "world/world-gltf-loader.h"
 #include "terminal/terminal-state.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/network-policy-api.h"
 
 extern DuelManager gDuelManager;
 
@@ -768,8 +771,31 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.clientMapReadySentForPlayerId == mpContext.localPlayerId &&
                 mapIdsReferToSameMap(mpContext.clientMapReadySentForMap, mpContext.requiredMapId);
 
+            std::uint32_t readyRetryIntervalMs = 500;
+            mimita_network_policy::MapSyncPolicyV1 mapSyncPolicy{};
+            mapSyncPolicy.version = mimita_network_policy::ABI_VERSION;
+            mapSyncPolicy.structSize = sizeof(mapSyncPolicy);
+            mapSyncPolicy.connected = mpContext.connected ? 1u : 0u;
+            mapSyncPolicy.worldLoaded = worldLoaded ? 1u : 0u;
+            mapSyncPolicy.mapReady = mapReady ? 1u : 0u;
+            mapSyncPolicy.readySent = readyAlreadySent ? 1u : 0u;
+            mapSyncPolicy.hasAuthoritativeSpawn =
+                mpContext.hasLocalServerPosition ? 1u : 0u;
+            mapSyncPolicy.mapLoadAttempts = mpContext.mapLoadAttempts;
+            mapSyncPolicy.lastReadySendAgeMs =
+                mpContext.lastClientMapReadySendMs &&
+                        now >= mpContext.lastClientMapReadySendMs
+                    ? now - mpContext.lastClientMapReadySendMs : 0;
+            if (ModuleHost::instance().networkMapSyncPolicy(&mapSyncPolicy) &&
+                mapSyncPolicy.outRetryIntervalMs > 0)
+                readyRetryIntervalMs = mapSyncPolicy.outRetryIntervalMs;
+            const bool awaitingSpawn =
+                readyAlreadySent && !mpContext.hasLocalServerPosition;
+            const bool readyRetryDue =
+                awaitingSpawn && now - mpContext.lastClientMapReadySendMs >=
+                                     readyRetryIntervalMs;
             if (mpContext.connected && mpContext.localPlayerId != 0 &&
-                mapReady && !readyAlreadySent)
+                mapReady && (!readyAlreadySent || readyRetryDue))
             {
                 std::string normalizedRequired = normalizeMapId(mpContext.requiredMapId);
                 ClientMapReadyPacket ready;
@@ -780,18 +806,77 @@ void engineTickNet(Engine& engine, float dt)
                 size_t mapIdLen = normalizedRequired.copy(ready.mapId, sizeof(ready.mapId) - 1);
                 ready.mapId[mapIdLen] = '\0';
                 mpSendPacket(mpContext, &ready, sizeof(ready));
+                mpContext.lastClientMapReadySendMs = now;
 
-                mpContext.clientMapReadySent = true;
-                mpContext.clientMapReadySentForPlayerId = mpContext.localPlayerId;
-                mpContext.clientMapReadySentForMap = mpContext.requiredMapId;
-                MimitaNet::mpLogConnectStage(mpContext, "map_ready", "sent",
-                    0, 0, "",
-                    "client reported the authoritative map as ready");
+                if (!readyAlreadySent) {
+                    mpContext.clientMapReadySent = true;
+                    mpContext.clientMapReadySentForPlayerId = mpContext.localPlayerId;
+                    mpContext.clientMapReadySentForMap = mpContext.requiredMapId;
+                    MimitaNet::mpLogConnectStage(mpContext, "map_ready", "sent",
+                        0, 0, "",
+                        "client reported the authoritative map as ready");
+                } else {
+                    static thread_local uint64_t lastRetryLogMs = 0;
+                    if (now - lastRetryLogMs >= 1000) {
+                        lastRetryLogMs = now;
+                        StructuredLogger::instance().writeEvent(
+                            StructuredCategory::Network, StructuredLevel::Important,
+                            "network.map-ready.retry", "",
+                            "client is still awaiting authoritative spawn; resending map-ready",
+                            mpContext.tick,
+                            {{"required_map_id", mpContext.requiredMapId},
+                             {"active_map_path", ACTIVE_MAP_PATH},
+                             {"last_send_ms", mpContext.lastClientMapReadySendMs},
+                             {"attempts", mpContext.mapLoadAttempts}},
+                            __FILE__, __LINE__, __FUNCTION__);
+                    }
+                }
 
                 printf("[CLIENT MAP READY] sent playerId=%u mapId=%s reason=%s\n",
                        mpContext.localPlayerId, ready.mapId,
-                       mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId)
-                           ? "already-loaded" : "load-completed");
+                       readyAlreadySent ? "awaiting-spawn-retry" :
+                       (mapIdsReferToSameMap(ACTIVE_MAP_PATH, mpContext.requiredMapId)
+                            ? "already-loaded" : "load-completed"));
+            }
+
+            const bool mapSyncPending =
+                mpContext.connected &&
+                (!mapReady || !mpContext.clientMapReadySent ||
+                 !mpContext.hasLocalServerPosition);
+            if (mapSyncPending) {
+                static thread_local uint64_t lastMapSyncLogMs = 0;
+                if (now - lastMapSyncLogMs >= 1000) {
+                    lastMapSyncLogMs = now;
+                    const char* state = !mpContext.requiredMapId.empty() &&
+                            !worldLoaded ? "world_not_loaded" :
+                        (!mapReady ? "active_map_mismatch" :
+                         (!mpContext.clientMapReadySent ? "ready_not_sent" :
+                          (!mpContext.hasLocalServerPosition
+                               ? "waiting_authoritative_spawn"
+                               : "ready")));
+                    StructuredLogger::instance().writeEvent(
+                        StructuredCategory::Network, StructuredLevel::Important,
+                        "network.map-sync.state", "",
+                        "client map synchronization state", mpContext.tick,
+                        {{"state", state},
+                         {"required_map_id", mpContext.requiredMapId},
+                         {"active_map_path", ACTIVE_MAP_PATH},
+                         {"world_loaded", worldLoaded},
+                         {"waiting_for_map_load", mpContext.waitingForMapLoad},
+                         {"map_ready", mapReady},
+                         {"ready_sent", mpContext.clientMapReadySent},
+                         {"ready_sent_for_map", mpContext.clientMapReadySentForMap},
+                         {"ready_sent_for_player",
+                          mpContext.clientMapReadySentForPlayerId},
+                         {"has_local_server_position",
+                          mpContext.hasLocalServerPosition},
+                         {"map_load_attempts", mpContext.mapLoadAttempts},
+                         {"local_player_id", mpContext.localPlayerId},
+                         {"connect_elapsed_ms",
+                          mpContext.connectStartMs && now >= mpContext.connectStartMs
+                              ? now - mpContext.connectStartMs : 0}},
+                        __FILE__, __LINE__, __FUNCTION__);
+                }
             }
         }
 

@@ -69,6 +69,7 @@ public:
     uint64_t chunksRemovedTotal() const { return mChunksRemovedTotal; }
     double lastCollisionRebuildMs() const { return mLastCollisionRebuildMs; }
     double maxCollisionRebuildMs() const { return mMaxCollisionRebuildMs; }
+    bool collisionCooldownActive() const;
     uint32_t lastLoadedChunkCount() const { return mLastLoadedChunkCount; }
     bool lastCollisionRevisionMatched() const {
         return mLastCollisionRevisionMatched;
@@ -137,8 +138,11 @@ private:
     uint64_t mChunksRemovedTotal = 0;
     double mLastCollisionRebuildMs = 0.0;
     double mMaxCollisionRebuildMs = 0.0;
+    double mCollisionFrameBudgetMs = 8.0;
+    uint64_t mCollisionCooldownUntilMs = 0;
     uint32_t mLastLoadedChunkCount = 0;
     size_t mBaseBroadphaseTriangles = 0;
+    uint64_t mBaseBroadphaseRevision = UINT64_MAX;
     bool mLastCollisionRevisionMatched = true;
     std::vector<Template> mTemplates;
     std::vector<ChunkRecord> mChunks;

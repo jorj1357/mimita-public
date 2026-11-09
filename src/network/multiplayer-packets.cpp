@@ -350,6 +350,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     ctx.connectionStatus.clear();
     ctx.waitingForMapLoad = false;
     ctx.clientMapReadySent = false;
+    ctx.lastClientMapReadySendMs = 0;
     ctx.requiredMapId.clear();
     ctx.showPlayerList = false;
 
@@ -858,6 +859,7 @@ const char* connectionStateName(ConnectionState state)
         case ConnectionState::Reconnecting:     return "Reconnecting";
         case ConnectionState::DisconnectPending: return "DisconnectPending";
         case ConnectionState::WeakConnection:   return "WeakConnection";
+        case ConnectionState::WaitingForServer: return "WaitingForServer";
         case ConnectionState::ReconnectFailed:  return "ReconnectFailed";
         case ConnectionState::HostClosed:       return "HostClosed";
         case ConnectionState::Kicked:           return "Kicked";
@@ -1813,6 +1815,8 @@ static void writeSessionHealthEvent(const MultiplayerContext& ctx,
             {"to", connectionStateName(next)},
             {"trigger", trigger},
             {"last_heard_age_ms", lastHeardAge},
+            {"snapshot_age_ms", ctx.lastSnapshotReceivedMs > 0
+                ? now - ctx.lastSnapshotReceivedMs : 0},
             {"stale_threshold_ms", (uint64_t)cfg.timeouts.stalePacketThresholdMs},
             {"hard_timeout_ms", (uint64_t)cfg.timeouts.clientTimeoutMs},
             {"grace_deadline_ms", ctx.reconnectGraceDeadlineMs},
@@ -1855,6 +1859,19 @@ void mpNotifyConnectionStateChange(MultiplayerContext& ctx,
         snprintf(buf, sizeof(buf),
                  "Server status: Weak connection — last packet %.2fs ago", age);
         title = "Weak connection";
+        message = buf;
+        break;
+    }
+    case ConnectionState::WaitingForServer:
+    {
+        const auto& cfg = NetworkingConfig::instance().data();
+        snprintf(buf, sizeof(buf),
+                 "Waiting for server — snapshots %.2fs old (hard timeout %.1fs)",
+                 ctx.lastSnapshotReceivedMs
+                     ? (double)(nowMs() - ctx.lastSnapshotReceivedMs) / 1000.0
+                     : 0.0,
+                 (double)cfg.timeouts.clientTimeoutMs / 1000.0);
+        title = "Waiting for server";
         message = buf;
         break;
     }
@@ -2045,6 +2062,15 @@ std::string mpConnectionHealthText(const MultiplayerContext& ctx)
         return "Disconnected";
 
     const uint64_t now = nowMs();
+    if (ctx.connectionState == ConnectionState::WaitingForServer)
+    {
+        const double age = ctx.lastSnapshotReceivedMs
+            ? (double)(now - ctx.lastSnapshotReceivedMs) / 1000.0 : 0.0;
+        char waiting[192];
+        snprintf(waiting, sizeof(waiting),
+                 "Waiting for server — snapshots %.2fs old", age);
+        return waiting;
+    }
     const bool reconnecting = ctx.connectionState == ConnectionState::Reconnecting ||
         ctx.connectionState == ConnectionState::ReconnectFailed;
     const bool ready = ctx.connected && !ctx.waitingForMapLoad &&
@@ -2131,9 +2157,12 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     // restored gameplay state.
     const bool snapshotStarved = ctx.lastSnapshotReceivedMs > 0 &&
                                  snapshotAge > staleThreshold;
+    const bool snapshotTimedOut = ctx.lastSnapshotReceivedMs > 0 &&
+                                  snapshotAge > hardTimeout;
     if (snapshotStarved &&
         (before == ConnectionState::Connected ||
-         before == ConnectionState::WeakConnection))
+         before == ConnectionState::WeakConnection ||
+         before == ConnectionState::WaitingForServer))
     {
         static thread_local uint64_t lastSnapshotTimeoutMs = 0;
         if (now - lastSnapshotTimeoutMs >= 1000)
@@ -2148,6 +2177,8 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
                 nlohmann::json{
                     {"snapshot_age_ms", snapshotAge},
                     {"stale_threshold_ms", staleThreshold},
+                    {"hard_timeout_ms", hardTimeout},
+                    {"snapshot_timed_out", snapshotTimedOut},
                     {"last_snapshot_tick", ctx.latestLocalSnapshotTick},
                     {"server_tick", ctx.latestServerTick},
                     {"last_heard_age_ms", lastHeardAge},
@@ -2160,8 +2191,30 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
     }
     ConnectionState next = mpNextConnectionHealth(
         before, now, lastHeardAge, heardSinceDisconnect,
-        staleThreshold, hardTimeout, snapshotStarved,
+        staleThreshold, hardTimeout, snapshotStarved, snapshotTimedOut,
         ctx.reconnectGraceDeadlineMs, graceMs);
+    if (before != ConnectionState::Reconnecting) {
+        mimita_network_policy::SessionHealthPolicyV1 policy{};
+        policy.version = mimita_network_policy::ABI_VERSION;
+        policy.structSize = sizeof(policy);
+        policy.lastHeardAgeMs = lastHeardAge;
+        policy.snapshotAgeMs = snapshotAge;
+        policy.staleThresholdMs = (std::uint32_t)staleThreshold;
+        policy.hardTimeoutMs = (std::uint32_t)hardTimeout;
+        policy.snapshotsEverReceived = ctx.lastSnapshotReceivedMs > 0 ? 1u : 0u;
+        policy.heardSinceDisconnect = heardSinceDisconnect ? 1u : 0u;
+        policy.reconnectAttempts = (std::uint32_t)ctx.reconnectAttempts;
+        if (ModuleHost::instance().networkSessionHealthPolicy(&policy)) {
+            switch (policy.outState) {
+            case 0: next = ConnectionState::Connected; break;
+            case 1: next = ConnectionState::WeakConnection; break;
+            case 2: next = ConnectionState::WaitingForServer; break;
+            case 3: next = ConnectionState::Reconnecting; break;
+            case 4: next = ConnectionState::ReconnectFailed; break;
+            default: break;
+            }
+        }
+    }
 
     if (next == before)
         return;

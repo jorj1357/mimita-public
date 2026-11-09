@@ -38,6 +38,13 @@ extern void setUniforms(GLuint shader, const glm::vec3& cameraPos);
 
 namespace {
 
+uint64_t monotonicMs()
+{
+    return static_cast<uint64_t>(std::chrono::duration_cast<
+        std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 glm::mat4 partMatrix(const ChunkPart& part)
 {
     return glm::translate(glm::mat4(1.0f), part.position) *
@@ -419,9 +426,16 @@ void removeExactDuplicateFaces(std::vector<CollisionTriangle>& triangles,
 
 } // namespace
 
+bool StreamedWorldLayer::collisionCooldownActive() const
+{
+    return mCollisionCooldownUntilMs > monotonicMs();
+}
+
 bool StreamedWorldLayer::flushCollision(World& world)
 {
     if (!mCollisionDirty)
+        return false;
+    if (collisionCooldownActive())
         return false;
 
     const auto started = std::chrono::steady_clock::now();
@@ -448,12 +462,16 @@ bool StreamedWorldLayer::flushCollision(World& world)
     if (mesh.triangleOBBs.size() > baseTriangles)
         mesh.triangleOBBs.resize(baseTriangles);
 
+    // The base world broadphase is owned by map load/authored geometry. Chunk
+    // installation must only rebuild the streamed tree, otherwise every chunk
+    // batch pays a full base-tree rebuild on the client frame.
     const bool baseBroadphaseChanged =
         mBaseBroadphaseTriangles != baseTriangles ||
-        world.collisionTree.ids.size() != baseTriangles;
+        mBaseBroadphaseRevision != world.renderRevision;
     if (baseBroadphaseChanged) {
         buildCollisionChunks(world, nullptr);
         mBaseBroadphaseTriangles = baseTriangles;
+        mBaseBroadphaseRevision = world.renderRevision;
     }
 
     std::vector<CollisionTriangle> surface;
@@ -559,6 +577,8 @@ bool StreamedWorldLayer::flushCollision(World& world)
         std::chrono::steady_clock::now() - started).count();
     mLastCollisionRebuildMs = elapsedMs;
     mMaxCollisionRebuildMs = std::max(mMaxCollisionRebuildMs, elapsedMs);
+    if (elapsedMs > mCollisionFrameBudgetMs)
+        mCollisionCooldownUntilMs = monotonicMs() + 250;
     mLastLoadedChunkCount = static_cast<uint32_t>(mChunks.size());
     mLastCollisionRevisionMatched =
         mLastLoadedChunkCount == mCollidedChunkCount;

@@ -27,10 +27,7 @@
   "spawn_strategy": "shared",
   "intermission_seconds": 0,
   "results_seconds": 0,
-  "maps": [
-    "infinite_cramped",
-    "infinite_mixed"
-  ],
+  "maps": [],
   "teams": [
     {
       "id": "sandbox_npcs",
@@ -196,7 +193,11 @@
     "far_proxy": true,
     "fog_start_m": 300.0,
     "fog_end_m": 1000.0,
-    "fog_color": [0.7, 0.8, 1.0]
+    "fog_color": [
+      0.7,
+      0.8,
+      1.0
+    ]
   },
   "camera_fov": 0.0,
   "force_first_person": false,

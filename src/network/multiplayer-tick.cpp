@@ -1348,6 +1348,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 rejectUnexpectedServer(ctx);
                 return;
             }
+            const uint32_t previousPlayerId = ctx.localPlayerId;
+            const std::string previousRequiredMap = ctx.requiredMapId;
+            const uint32_t previousEpoch = ctx.transformEpoch;
             ctx.localPlayerId = welcome->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
@@ -1359,11 +1362,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.requiredMapId = welcome->mapId;
             ctx.transformEpoch = welcome->header.transformEpoch;
             ctx.nextMovementSequence = 1;
-            ctx.clientMapReadySent = false;
-            ctx.clientMapReadySentForMap.clear();
-            ctx.clientMapReadySentForPlayerId = 0;
-            ctx.mapLoadAttempts = 0;
-            ctx.lastMapLoadAttemptMs = 0;
+            const bool mapSyncIdentityChanged =
+                previousPlayerId != ctx.localPlayerId ||
+                previousRequiredMap != ctx.requiredMapId ||
+                previousEpoch != ctx.transformEpoch;
+            if (mapSyncIdentityChanged) {
+                ctx.clientMapReadySent = false;
+                ctx.lastClientMapReadySendMs = 0;
+                ctx.clientMapReadySentForMap.clear();
+                ctx.clientMapReadySentForPlayerId = 0;
+                ctx.mapLoadAttempts = 0;
+                ctx.lastMapLoadAttemptMs = 0;
+            }
             mpLogConnectStage(ctx, "join_accept", "ok",
                 nowMs() - ctx.connectStartMs, 0, "", "welcome received");
             mpLogConnectStage(ctx, "map_required", "ok", 0, 0, "",
@@ -1421,6 +1431,9 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                 rejectUnexpectedServer(ctx);
                 return;
             }
+            const uint32_t previousPlayerId = ctx.localPlayerId;
+            const std::string previousRequiredMap = ctx.requiredMapId;
+            const uint32_t previousEpoch = ctx.transformEpoch;
             ctx.localPlayerId = accept->assignedPlayerId;
             ctx.connected = true;
             ctx.connectFailed = false;
@@ -1433,11 +1446,18 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.requiredMapId = accept->mapId;
             ctx.transformEpoch = accept->header.transformEpoch;
             ctx.nextMovementSequence = 1;
-            ctx.clientMapReadySent = false;
-            ctx.clientMapReadySentForMap.clear();
-            ctx.clientMapReadySentForPlayerId = 0;
-            ctx.mapLoadAttempts = 0;
-            ctx.lastMapLoadAttemptMs = 0;
+            const bool mapSyncIdentityChanged =
+                previousPlayerId != ctx.localPlayerId ||
+                previousRequiredMap != ctx.requiredMapId ||
+                previousEpoch != ctx.transformEpoch;
+            if (mapSyncIdentityChanged) {
+                ctx.clientMapReadySent = false;
+                ctx.lastClientMapReadySendMs = 0;
+                ctx.clientMapReadySentForMap.clear();
+                ctx.clientMapReadySentForPlayerId = 0;
+                ctx.mapLoadAttempts = 0;
+                ctx.lastMapLoadAttemptMs = 0;
+            }
             mpLogConnectStage(ctx, "join_accept", "ok",
                 nowMs() - ctx.connectStartMs, 0, "", "join accept received");
             StructuredLogger::instance().writeEvent(
@@ -1960,6 +1980,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             // new map and re-sends CLIENT_MAP_READY with the fresh id.
             ctx.requiredMapId = mc->mapId;
             ctx.clientMapReadySent = false;
+            ctx.lastClientMapReadySendMs = 0;
             ctx.clientMapReadySentForMap.clear();
             ctx.clientMapReadySentForPlayerId = 0;
             ctx.mapLoadAttempts = 0;

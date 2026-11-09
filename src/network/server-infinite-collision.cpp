@@ -43,6 +43,7 @@ struct ServerStreamState
     uint64_t lastBuildMs = 0;
     bool haveProfile = false;
     bool unsupportedConnector = false;
+    bool disabled = false;
     std::vector<AuthoredChunk> libraryChunks;
     std::vector<const AuthoredChunk*> candidates;
     MimitaWorldGen::WorldGenMode profile;
@@ -183,11 +184,36 @@ bool ensureProfile()
 const GenerationZone* connectedZone(const MapObjectiveConfig& config)
 {
     for (const GenerationZone& zone : config.generationZones) {
-        if (zone.enabled &&
-            (zone.modeId == "connected_world" || config.generateWholeWorld))
+        if (zone.enabled && zone.modeId == "connected_world")
             return &zone;
     }
     return nullptr;
+}
+
+GenerationZone syntheticZone(const MapObjectiveConfig& config,
+                             const MimitaWorldGen::WorldGenMode& profile)
+{
+    GenerationZone zone;
+    zone.id = "connected_world";
+    zone.name = "Connected World";
+    zone.modeId = "connected_world";
+    zone.enabled = true;
+    for (const AuthoredChunk& chunk : config.chunks) {
+        if (!chunk.enabled) continue;
+        zone.boundsMin = glm::min(zone.boundsMin, chunk.boundsMin);
+        zone.boundsMax = glm::max(zone.boundsMax, chunk.boundsMax);
+    }
+    zone.origin = profile.grid.origin;
+    zone.cellSize = profile.grid.cellSize;
+    zone.chunkSizeVec = profile.grid.chunkSize;
+    zone.repeatAxes = profile.grid.repeatAxes;
+    zone.streamRadius = profile.grid.streamRadius;
+    zone.spacingMode = profile.grid.spacingMode;
+    zone.connectorGap = profile.grid.connectorGap;
+    zone.maxBranchDepth = profile.maxBranchDepth;
+    zone.allowCycles = profile.allowCycles;
+    zone.allowCrossings = profile.allowCrossings;
+    return zone;
 }
 
 ServerChunk buildChunk(uint64_t key, const AuthoredChunk& chunk,
@@ -214,6 +240,10 @@ void applySurface(World& npcWorld,
         mesh.streamedTailSolidIds <= mesh.solidIds.size())
         mesh.solidIds.resize(mesh.solidIds.size() -
                              mesh.streamedTailSolidIds);
+    if (mesh.triangleAABBs.size() > mesh.triangles.size())
+        mesh.triangleAABBs.resize(mesh.triangles.size());
+    if (mesh.triangleOBBs.size() > mesh.triangles.size())
+        mesh.triangleOBBs.resize(mesh.triangles.size());
     if (!mesh.hidden.empty() && mesh.hidden.size() > mesh.triangles.size())
         mesh.hidden.resize(mesh.triangles.size());
 
@@ -224,11 +254,32 @@ void applySurface(World& npcWorld,
                          solidIds.end());
     if (!mesh.hidden.empty() && mesh.hidden.size() == baseTriangles)
         mesh.hidden.resize(mesh.triangles.size(), 0);
+
+    // Keep the base collision tree stable. The server streamed tail gets its
+    // own tree, so chunk churn never rebuilds the map-wide broadphase.
+    mesh.triangleAABBs.resize(mesh.triangles.size());
+    mesh.triangleOBBs.resize(mesh.triangles.size());
+    for (size_t i = 0; i < triangles.size(); ++i) {
+        const size_t index = baseTriangles + i;
+        buildCollisionTrianglePrimitive(mesh.triangles[index],
+                                        mesh.triangleAABBs[index],
+                                        mesh.triangleOBBs[index]);
+        mesh.boundsMin = glm::min(mesh.boundsMin,
+                                  mesh.triangleAABBs[index].min);
+        mesh.boundsMax = glm::max(mesh.boundsMax,
+                                  mesh.triangleAABBs[index].max);
+    }
+    npcWorld.streamedCollisionTree.clear();
+    if (!triangles.empty()) {
+        std::vector<int> streamedIds(triangles.size());
+        for (size_t i = 0; i < streamedIds.size(); ++i)
+            streamedIds[i] = static_cast<int>(baseTriangles + i);
+        npcWorld.streamedCollisionTree.build(streamedIds, mesh.triangleAABBs);
+    }
     mesh.streamedTailTriangles = triangles.size();
     mesh.streamedTailSolidIds = solidIds.size();
     mesh.streamedChunkCount = static_cast<uint32_t>(chunkCount);
     mesh.streamedRevision++;
-    buildCollisionChunks(npcWorld, nullptr);
 }
 
 void rebuildSurface(World& npcWorld)
@@ -273,8 +324,29 @@ void serverInfiniteCollisionReset()
 }
 
 void serverInfiniteCollisionTick(const std::vector<glm::vec3>& anchors,
-                                 World& npcWorld)
+                                 World& npcWorld, bool streamingEnabled)
 {
+    if (!streamingEnabled) {
+        if (gState.disabled)
+            return;
+        CollisionMeshCache& mesh = npcWorld.collisionMesh;
+        const bool hadTail = mesh.streamedTailTriangles > 0 ||
+                             mesh.streamedTailSolidIds > 0;
+        if (hadTail)
+            applySurface(npcWorld, {}, {}, 0);
+        resetState();
+        gState.disabled = true;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.collision-world.stream.disabled", "server",
+            "streamed NPC collision disabled because the gamemode does not stream",
+            0,
+            {{"had_tail", hadTail},
+             {"world_triangles", npcWorld.collisionMesh.triangles.size()}},
+            __FILE__, __LINE__, __func__);
+        return;
+    }
+    gState.disabled = false;
     if (anchors.empty())
         return;
     const uint64_t now = nowMs();
@@ -283,9 +355,14 @@ void serverInfiniteCollisionTick(const std::vector<glm::vec3>& anchors,
     gState.lastBuildMs = now;
 
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
-    const GenerationZone* zone = connectedZone(config);
-    if (!zone || !ensureProfile())
+    if (!ensureProfile())
         return;
+    const GenerationZone* zone = connectedZone(config);
+    GenerationZone fallback;
+    if (!zone) {
+        fallback = syntheticZone(config, gState.profile);
+        zone = &fallback;
+    }
 
     // Connector-mode placement is owned by the live worldgen module and its
     // graph frontier. The server stream currently covers the regular grid

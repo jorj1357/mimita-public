@@ -40,7 +40,9 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
 
 // Applies authored blocks to a headless server world. The server passes a
 // pristine GLB-only base each time so live rebuilds never duplicate the tail.
-bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world, const std::string& mapId);
+bool applyAuthoredMapGeometry(MimitaNet::HeadlessWorld& world,
+                              const std::string& mapId,
+                              bool allowStreamedFootprint = true);
 
 // A replicated map solid supplies its own rendered/collidable surface after
 // activation. Save and hide only that GLB node's source triangle range.
