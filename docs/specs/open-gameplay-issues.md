@@ -1,465 +1,47 @@
-﻿2026 11 08 1759 jorj todo
-we 
-need to amek it 
-stop
-take
-so much time 
-to buidl
-now aiting
+﻿# Open Gameplay Issues
 
+Last updated: 2026-11-09
 
-2026 11 08 1641 jorj 
-make all things move like
-outof headers
-make  alot of difrent headers
-to make compialtion
-quicker?
-idk
-i think the best thing to  do is 
-dont even care about the compiatlion speed
-but
-make it so u dotn need to bild at all realtl ever 
-u can just  like
-make edits and it happesn 
-
-2026 11 08 1457 jorj
-
-we eidted the 
-no mor build
-agents no more calling build
-
-new issue
-devloop
-the gui
-the gui needs to like be separate 
-like 
-when u run dev loop itmeans u run the script or whatever
-not mkae 2 guis or 0 guis
-just 1 gui showing at once
-
-we can even make it a .exe and make ti hot reload boundary etc
-or
-idk
-pthon
-pthon just watches and gets info and shows the info in the dashboard 
-
-or whatver
-thank goodness
-the dahsboard isnt that big of a deal not like needing to wokr its just like a thing taht i like
-
-also w enede to mak it so
-opencode does not need to ask me if it has access to whatevr its doing like
-
-do everthing u can in like
-the repo
-and then dont put it in git 
-gitignore the folder
-but make it so  u dont have to go out of the mitia repo to  do things 
-
-2026 11 08 1212 jorj
-
-chocoaltey cmd window keeps shwoing up
-git exe cmd window keeps showing up
-things jsut keep showign up  over adn v
-for no reason
- adn the are in the foreground
- and then i cant
-
-i cant write in here i have to alt tab like every 500 ms
-back and foth
-idk n not good 
-
-2026 11 08 1210 jorj 
-loading: snchroniznig map
-reconnecting: attempt #0 .... 2 sec
-
-it goes back and forth
-ebtween these
-over and over
-and over
-adn over
-adn over adn over and over
-
-i hope tat the network m odularization makes it so 
-this 
-like we can invesitaget what ishappneing live 
-and then fix it live
-no .exe rebuild
-bc 
-
-last time we did hot reload i did it  all at once and i didnt even check if each  edit even worked or the .exe build or 
-etc
-
-but its ju
-ughhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
-
-its jsut  so ther is so much bugs all the time for no reason 
-i m
-there is a reason 
-but i dont like it i dont want the bugs 
-i want to  have 
-no bugs
-
-so we do coding 
-with ai
-becaues i could look at it and figure it out 
-im much slower than ai so 
-
-and choco
-
-
-2026 11 08 1027 jojr 
-still reconenct issue
-and then i just e
-evnetuallt disconenct entirely
-whatever bro 
-
-whaaaatvre 
-
-2026 11 07 2246 jorj 
-ummmm
-idk waht te prbolem even is 
-DAMAGE
-NOT  AUTHROTIVVVEEEE
-DONT PREdisct the damage
-if its not atctual dmage
-and dotn reject damge tevents from my client bro
-that is an actual hit make it more allowable
-
-2026 11 07 2138 
-map editor hot reload
-goood
-
-draggable handles working actually
-supergood
-
-underestiamaetd
-the smooth awesomensss aspect
-so
-go hard on that 
-
-2026 11 07 1716 jorj
-
-big red outlines of enemies nto good
-
-also npcs getting stuck in the ground enemies on funwordl3
-ALSO
-WE NEED TO MAEKIT SO 
-SPAWNPOITNS IN THE GAME IS WHAT SPAWNS ARE USED
-NOT THE BELNDER ONES 
-
-2026 11 07 1710 jorj 
-position corerciton issue when im in funworld3 map
-payload
-map editor
-likeim getting caught on  nothing right now 
-the big spehre 
-idk
-
-still having issues where 
-60hz svrre its fine
-but i am stuck and getting like
-reconecint issue
-fo
-
-like i build up somethign
-idk what tproblem is but it ugh ugh ugh whtvr bro 
-
-2026 11 07 1428 jojr
-issue in live game  reconnceingt isuse for no reason
-ncps wont update idk hat the problem is 
-
-2026 11 07 1411 jorj
-map editor infinite world issue
-it onl works with 10x10
-not like 25x25 liek iw ant 
-
-its lik eoffset bad
-when i get far from the spawn point, it generates not like 
-its like  i go 10 meters awa but it thinks im going 25 meters awa
-25 meters = like 50 meters
-50 =100
-it not genrating wher i actually am  its like hardocdede fr me to be 10x10
-needto make it work not liek ttha
-
-also how do we put blocks on blocks
-so taht i can put tunnels and walls etc for the blocks
-
-and ned the texture rendingg and stuff to work, and npcs moving in the world meanas these generate chunks too
-not just me or clients
-it is all actors gnereate chunks 
-
-also textures not showing for all blocks 
-and im stuck 
-in the chunks
-
-like i put a block and it should have a lot of space but i cant walk thru it 
-npcs cant walk on the geometry i think eiterh ? idk 
-
-2026 11 07 1333 jorj
-
-"how to amke it so native c++ doesnt have to be compiled
-and all things are modules
-
-would it be cool to ahve npc health/pos/target etc in the kernel as well?
-givinga s much power to the module as possible so that we dont have to do
-builds for
-idk adding things like struct npc health, target, going to  npc struct health, target, pos,  like thats fine no issue
-
-i agree thats good, safe gameplay tick is good bc not frame based i want to do it tck based ensure that is in spec 
-
-can u exaplin more how
-ignore parallel agent work
-we should foucs just on the modules can u explain how we can 
-
-we need to define the actual problems like in numbers and then how modules would work and how we can  solution the problems with numberrs that modules improve 
-
-e.g.
-npc behavior ; something that is kinda buried in .cpp
-so u need to edit like 5 min,
-wait to build, test, like 1-2 min
-trial/error,  like 5-10 min? 
-
-if we putin modules
-then
-edit like 5 min
-skip build
-trial/error at the same time as edit almost, 5-10 min
-
-but the issue is trial/error is 5-10 min beacues u ahve to start at edit again 
-
-if module works how i think it wokrs, then, 
-
-given npc behavior problem
-its in a module
-its
-problem, implement code chanegs to fix
-start the .exe
-test with events.jsonl for npc behavior
-error found
-edit code to fix error according to events.jsonl
-that code change happens live, no build, no restarting the .exe
-u just see the edit and see if the code change worksk live 
-
-how do we do that, for all systems in the game, live editing, without breaking or making the code more complex or doing thigns that  agents or contriubutors wont understand
-
-we shoul ddo spec writign first and iw ant to understand it directly first"
-
-wi think this is best
-we tried this before
-if this is true , live edits
-for antthing module wise
-thatis awesome 
-lets do that 
-
-2026 11 07 1203 jorj todo explain
-what id 
-do we need to ahve server go to like 10 hz 5 hz 
-when things are building?
-why does tha thappen
-how do w sto that
-
-how do we amke it so liek
-npcs update on their own thread
-well idk
-matbe just a solo mode
-i wnana have th at
-liek speedrun modes like
-put checkpoints downinto the map and u ahve to do those as fast as u can 
-
-2026 11 07 1042 jojr 
-
-npcs behavior im watchingthe ai pla as teh npc
-and the np
-
-like
-the npc will just follow the temamates over adn over
-the issue here is 
-its like
-inefficient
-like
-idk hwo to explain like the npc will faill
-follow an npc that is like 
-
-it just follwos the one that is clsoest
-needs to follow 
-need to look for an enemy and hten fight with ur team
-but need to move much faster and be more efficent with the movement 
-
-NPCS STILL ARE FALLING THRU THE F GROUNDDDDDDD DWHATTTT WHATHERHWHAHTH
-
-2026 11 056 1837
- jorj 
-
-well
-okbservartions
-funworld3 counte r strike fun mode
-tis fun
-fun world fun strike
-ok so waht do we need
-better npc beahvior
-that is not so grounded
-
-npcs need to rocket jump
-i need to author like specific moves like
-npcs need to be doing dash and down dash and like jumping around and consider the environemtn and all their abilities 
-
-also npcs kill me too fast with tehrevovler ALSO
-HEALTHALL CMD DOESNT WORKk
-
-2026 11 06 1826
-jorj
-ok the issue isss
-
-
-2026 11 06 0828 jorj 
-i want to amke world chunks repeating and like
-make a new gamemode
-
-i want to be able to make new gamemodes in teh mapeditor in th egame
-
-as well as 
-avaatr doesnt show like i will just hav the avatar tat  have disappear
-
-camconfig head camera needs tobe smoothing
-more smoothing
-but ti good for bodycam mode
-
-but i wnat to do infinit world chunking and connect them and get it to be smooth and loading infinitely even at 100,000 m/s 
-
-also slowodnws
-
-
-can u invesitgate how coem serve perrfmance is like  doing much worse lower hz and reconnect issue like   also fps is low like fps jitter  framte time suttering  it sas networking is like 1 ms 2 ms 3 ms 6 ms sometimes  and it is slow in the networking like i keep like slow slow slowin gdown then stopping or not being able to connect  phsics also was 6 ms 
-
-12:18 AM
-What I found
-The server is repeatedly missing its 60 Hz tick budget in the current dev-loop run. Its journal records 308 ticks over 100 ms, with a worst tick of 642.7 ms. During the slow ticks, NPC simulation averaged 52.4 ms and contact/weapon work averaged 88.1 ms. Either can consume several 16.7 ms tick budgets by itself. The measurements are recorded in server.cpp (line 1163), with NPC costs reported by server-npcs.cpp (line 2556).
-
-The client’s recent frame summaries also show jitter: across the last 60 one-second windows, median FPS was about 195, median p95 frame time was 8.0 ms, median p99 was 14.9 ms, and the worst individual frame reached 118.5 ms. Logged networking work on the client was at most 0.046 ms in those windows. So the low FPS and stuttering are not explained by the client’s measured networking time; the server’s long tick stalls are a strong candidate for the freezes and delayed updates you feel. The client frame summaries are emitted by perf.cpp (line 1111).
-
-Reconnect problem
-The loop currently lists server PID 23344 at 127.0.0.1:50165 and client PID 33920 as stale. The client journal shows it trying to reconnect to 127.0.0.1:1357, room RCEAVWZ, and reaching ReconnectFailed after ten attempts. The server journal records a reconnect token rejection with players=0. That points to the client retrying against a server session that no longer has its player, rather than merely suffering a few milliseconds of network processing delay. The reconnect health transition is handled in multiplayer-packets.cpp (line 1885), and token rejection is logged in server-packets.cpp (line 2016).
-
-There’s also a run identity inconsistency to resolve: the client journal contains server records from PID 32956, while the run manifest lists PID 23344 as its server. That makes it harder to confidently attribute every client-side event to the server shown in the dashboard.
-
-Assessment
-Server tick rate: confirmed severe stalls in this run. NPC and contact/weapon work are the largest measured costs; the evidence doesn’t yet isolate the exact operation inside contact/weapon processing.
-Client frame pacing: confirmed intermittent large spikes. The user-visible feel still needs direct review.
-Reconnect: confirmed failure against an old address/room with a rejected token. The journal identity mismatch needs tracing before assigning the whole incident to one process.
-“Physics 6 ms” / network 1–6 ms: I can’t map those displayed numbers to the journal fields with confidence. The client’s logged networking phase is much smaller; server tick costs are much larger. A screenshot or the exact overlay labels would help identify which timers you’re reading.
-I made no code changes and did not restart or replace the running processes. The run evidence is in server-01/events.jsonl, client-01/events.jsonl, and run.json.
-
-12:20 AM
-can u see in live journal the issue like ti gets slower and slwoer until it stops
-is there somethign that relates to that in repo or change logs
-
-12:22 AM
-Yes. I need to correct my previous read: I looked at the journal after the worst slowdown, when the client had already disconnected and its frame rate had recovered. The earlier live entries do show the client getting dramatically slower.
-
-Between 05:16 and 05:18, the client’s one-second summaries report FPS falling to about 52–69, with average frame times reaching 42–53 ms. Individual frames reached 934 ms. During that same stretch, the measured Networking scope peaked at 580–690 ms. At 05:18:58, a 403 ms frame attributed 262 ms to that scope.
-
-The spike details narrow down what “Networking” means here: much of that time was spent in remote-entity updates starting audio. One spike records Audio::StartSound taking about 262 ms inside Network::RemoteEntities. The scope covers more than packet transport, so the overlay’s networking number does not prove the network connection itself took that long. The relevant paths are engine-tick-net.cpp (line 71), multiplayer-tick.cpp (line 2986), and audio.cpp (line 450). This makes remote-entity audio startup the clearest client-side lead in the live evidence.
-
-The server has a separate, serious problem in the same run: it logged 423 fixed-tick stalls over 100 ms between 05:15 and 05:22, with a worst stall of 642.7 ms. NPC simulation and contact/weapon processing repeatedly take far longer than the 16.7 ms budget for a 60 Hz tick. The stalls are frequent, though the records don’t show a steadily worsening server trend; the server was still writing events at 05:22. The client entered ReconnectFailed at 05:19:11, and the dev-loop currently reports it as stale.
-
-This closely matches existing unresolved records. The server tick budget regression says later NPC and weapon-contact stalls remained unresolved. The Nov. 5 investigation changelog records the same gap after an earlier fix: map setup and snapshot-starvation handling were addressed, but later tick overruns remained open. For the failed connection, the frozen-client regression describes a related stale-client/reconnect pattern.
-
-So the journal supports two connected leads: remote-entity audio work contributes to the client’s severe frame stalls, while server tick overruns delay authoritative updates and the client ultimately loses its session. It does not yet prove the exact server-side cause of the reconnect failure. The current run’s server and client journals are here and here.
-
-12:24 AM
-can u proove the serverside cause 
-
-12:27 AM
-Yes—the live server journal proves the stalls are happening inside the server’s simulation work, even when no clients are connected. It narrows the cause to NPC simulation and the melee/physical-contact phase. It does not yet identify the exact function inside that contact phase.
-
-In the current run, the server recorded 456 ticks taking over 100 ms between 05:15 and 05:28. The median was 147 ms, and the worst took 643 ms. The server is still alive and writing events; the journal shows it is falling far behind its 16.7 ms tick budget, rather than proving the server process itself has stopped.
-
-The phase timings make the cause more specific:
-
-NPC phase: over 16.7 ms in 417 of those ticks; median 51 ms, maximum 448 ms.
-Contact/weapon phase: over 16.7 ms in 425 ticks; median 88 ms, maximum 496 ms.
-Both phases exceeded 50 ms in 160 ticks.
-454 of the 456 stalls report zero connected players, while the server is simulating 19 NPCs.
-These are timed in the server tick itself. The NPC measurement wraps simulateSharedNpcs; the contact/weapon measurement wraps melee actions, physical-contact weapons, and world-impact processing in server.cpp (line 1038). That means the stall is not explained by waiting for a remote client. NPC work and contact/weapon processing are consuming the server’s tick time.
-
-The contact phase still groups several functions together, so the journal cannot tell me whether melee actions, NPC weapon contacts, or world-impact processing accounts for its largest spikes. The source shows NPCs continue through animated physical-contact processing even with no human players connected: server-physical-contact.cpp (line 533) and server-physical-contact-actors.cpp (line 439). That makes NPC contact work a strong candidate, but the current logs don’t time those inner functions separately.
-
-This matches the unresolved portion of the server tick budget record: the earlier fix removed a first-tick map-build stall, while later NPC and weapon-contact overruns remained open. The Nov. 5 changelog also says those later overruns were unresolved.
-
-One evidence limit: the running server uses build 2026-11-06T04:43:34Z; the dev loop reports a newer build published at 05:24:59Z, which is not the running server. So these results prove the behavior of the currently running executable, not whether the newer build changes it.
-
-The journals are server-01/events.jsonl and run.json. The next step to prove the exact inner cause is timing those existing contact-phase functions separately in a dev-loop build and comparing their measurements in that build’s live journal.
-
-12:29 AM
-yes do that
-
-12:32 AM
-I added separate timers for melee actions, physical-contact weapons, and world-impact flushing to the server’s existing stall event in server.cpp (line 1057). The patch passed git diff --check, and I recorded it in the changelog.
-
-I couldn’t build and run it: the dev-loop journal shows a later stop request at 05:44:39 UTC, and its watcher honored that shutdown at 05:46:18 UTC. I left the server process untouched. The new timings still need a fresh dev-loop build and runtime journal before I can identify which contact phase is responsible.
-
-May I restart the existing dev loop to finish that build and runtime check? Starting it again would override the recorded stop request.
-
-12:48 AM
-yes 
-
-12:48 AM
-Yes—this confirms a server-side tick performance problem in the FCS run.
-
-The instrumented server recorded five tick stalls between 05:56:25 and 05:58:09 UTC. They lasted 101–608 ms. In the worst stall, physical-contact processing took 415 ms; across the five stalls its median was 280 ms. Melee actions and impact flushing were each under 0.5 ms, so they don’t explain the spikes. NPC processing also took up to 213 ms and may contribute.
-
-This shows tickServerPhysicalContactWeapons() was the dominant measured phase in these stalls. It does not yet prove that this phase causes the progressively worsening slowdown or reconnect failures: the run only captured five stalls, and the dev loop’s 45-second check never saw FCS reach its “active” state, though the client did connect.
-
-The evidence and limits are recorded in the changelog. The instrumented build ran through the dev loop, and the final diff check passed.
-
-12:59 AM
-
-
-
-
-
-2026 11 05 1719 jojr todo also 
-animations must be presendted betewen clients better
-like
-npcs need animatins
-plauers need animatins
-remote players
-
-client A connects to server A and client B is thre too
-
-with cleint B's existing info that is sent frmo server A , i get what state/what aniamtion client B should be in  and my client handles it servr doenst do the edits and presetnatnon 
-
-2026 11 06 1640
-
-jorj 
-
-
-we also need json checker for gui bc somethings dont update  some fields in gui things dont eidt in game beahvior 
-
-also need inventor defined better 
-
-# Open Gameplay Issues
+This is the short, current index of reported problems and follow-up work. The
+first five entries are the current focus. Status describes the evidence
+available; it does not imply a fix unless stated.
 
 ## Purpose and audience
 
-This document is the short working index for current gameplay reports, verification work, and ideas that should not be lost.
+**Audience:** the player and contributors triaging gameplay, networking, and
+build-feedback problems.
 
-**Audience:** the player and contributors triaging gameplay and product work.
-
-**Does not:** replace feature-owner specifications, prove a fix, or turn an exploratory idea into a committed implementation requirement. The linked owner documents define behavior; runtime evidence and human review remain separate.
+**Does not:** replace feature-owner specifications, prove a fix, or turn an
+exploratory idea into a committed implementation requirement. Linked owner
+documents define behavior. Build, runtime, and human acceptance evidence stay
+separate.
 
 ## Status and evidence
 
-- **Active:** a current report or agreed work remains open.
-- **Needs recheck:** the user reports that something may be fixed, but it has not been confirmed here.
-- **Resolved (user report):** the user says the issue is fixed or no longer wanted; this is not independent runtime evidence.
+- **Active:** a current report or agreed verification work remains open.
+- **Needs recheck:** the user reports improvement or uncertainty, but the
+  behavior has not been confirmed in a current run.
+- **Resolved (user report):** the user says it is fixed; this is not independent
+  runtime evidence.
 - **Deferred:** retained for later prioritization.
 - **Idea:** a dated design direction, not a delivery commitment.
 
-Priorities: **P0** is the current top project goal; **P1** is high-impact active work; **P2** is follow-up or recheck; **P3** is deferred. Build, runtime, and human-acceptance evidence are distinct.
+Priorities: **P0** is the current top focus; **P1** is high-impact active work;
+**P2** is follow-up or recheck; **P3** is deferred. A code change or successful
+build alone does not prove that runtime behavior works.
+
+Items not revised in this pass keep their last recorded status; this pass did not
+retest them or make new runtime-acceptance claims.
 
 ## Active
+
+| ID | Priority | Issue | Current status and next step |
+|---|---:|---|---|
+| OGI-028 | P0 | Reconnects or disconnects even when the connection appears fine | User reports that reconnect starts after 2.5 seconds without authoritative snapshot traffic. Verify the trigger and first missing step in a fresh client/server run with matching run, process, endpoint, room, and journal identities; determine whether the snapshot stopped or the timeout policy is wrong. The 2026-11-08 reconnect change is recorded as compiled but not runtime-verified. [Networking](networking/networking.md), [reconnect regression](../regressions/networking/frozen-client-dead-REG-2026-11-04.md), [ICE reconnect change](../changelog/2026-11-08/20261108_1724-ice-transport-reconnect-rebuild.md). |
+| OGI-029 | P0 | Client loops between “Synchronizing map” and reconnecting or stays on “Synchronizing map” | Reported on 2026-11-08; not reproduced in a fresh, identity-matched run. Capture map snapshot send/receive/apply, revision, timeout, and reconnect events from both sides. The 2026-11-08 successful map snapshot proof covers a different case and does not close this report. [Networking](networking/networking.md), [map snapshot evidence](../changelog/2026-11-08/20261108_055845-live-map-geometry-authority-remote-snapshot.md). |
+| OGI-030 | P0 | Make networking code hot-reloadable and verify the recent modularization changes | The goal is to edit networking code and see the fix live without an EXE build. The latest 2026-11-08 lane notes record static/config checks but no build or runtime validation for the affected work. Inventory changed owners and cold boundaries, then prove the intended networking changes activate live and fix the reconnect/map-sync cases. Do not count unrelated pre-existing gate failures as new regressions. |
+| OGI-031 | P1 | Reduce build wait and keep routine agent work inside the repository | Work notes report a 1,070.877-second (~17.8-minute) cold build and a 1.157-second no-op; I could not locate the corresponding machine-readable timing record. Capture a comparable attempt with phase and per-file timings, then target the measured bottleneck. Current lane code puts worktrees at a sibling path, the scheduler under `%LOCALAPPDATA%`, and dev-loop temp files in the system temp directory. Review and redesign routine lane, scheduler, and temporary-file paths to stay under the repository; allow an outside path only for a documented emergency. Do not impose a speculative “10 symbols per header” rule before measuring header fan-out. [Build-time observability](dev-loop/build-time-observability.md), [agent build authority](dev-loop/agent-lanes-build-authority.md), [build operations](../operations/build-and-exe/build-and-exe.md), [cold-build debt](../regressions/cold-build-required-REG.md). |
+| OGI-032 | P2 | Dev-loop helper windows can appear repeatedly and interrupt work | The 2026-11-08 report describes command windows stealing focus; the visible-window regression remains only partially verified. Reproduce current dashboard/helper behavior and confirm one intended UI with no foreground console churn. [Visible game-window regression](../regressions/dev-loop/visible-game-window-REG-2026-11-08.md), [dev-loop](dev-loop/dev-loop.md). |
 
 | ID | Priority | Issue | Owner / next step |
 |---|---:|---|---|
@@ -471,7 +53,7 @@ Priorities: **P0** is the current top project goal; **P1** is high-impact active
 | OGI-010 | P1 | Scenario recording and replay are not reliably usable | [Scenario recording](dev-loop/scenario-input-recording.md); investigate incomplete/broken recordings, missing metadata, replay checkpoints, and reported performance impact. |
 | OGI-011 | P1 | JSON field inventory and stale cross-file references remain incomplete | [JSON configuration](../architecture/json-configuration/json-configuration.md); align runtime loading and validation across configuration families. |
 | OGI-012 | P1 | Automatic validation runner should finish from expected scenario events | [Quality gates](dev-loop/quality-gates.md); status retained as previously recorded per user request. |
-| OGI-022 | P1 | Freeze/slowdown is followed by reconnect, disconnect, or a failed return to the same server | [Networking](networking/networking.md), [performance](performance/performance.md); capture the exact server/client state and first divergence in a fresh report. User says leaving and rejoining can recover, but the slowdown/freeze still occurs. |
+| OGI-022 | P1 | Freeze/slowdown is followed by reconnect, disconnect, or a failed return to the same server | Separate from OGI-028, which tracks reconnects without an obvious preceding freeze. [Networking](networking/networking.md), [performance](performance/performance.md); capture the exact server/client state and first divergence in a fresh report. User says leaving and rejoining can recover, but the slowdown/freeze still occurs. |
 | OGI-023 | P1 | Rejoining can leave team identity and friendly/enemy outlines wrong | [Counter-Strike](gamemodes/counterstrike.md), [gamemodes](gamemodes/gamemodes.md); apply the server-assigned mode team before client outline/hostility presentation. Whether team choice persists across disconnect remains unspecified. |
 | OGI-024 | P2 | Server creation should be easier to find and work for local play without coordinator access | [Networking](networking/networking.md); keep local hosting usable when offline and clearly state that the room is local-only and not discoverable to remote players. |
 
