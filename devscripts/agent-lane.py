@@ -22,6 +22,10 @@ from pathlib import Path
 from typing import Any
 
 from dev_loop.source_identity import source_identity
+from path_containment import (
+    apply_temp_environment,
+    resolve_within,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,7 +45,7 @@ def git(args: list[str], cwd: Path = ROOT, *, check: bool = True) -> subprocess.
 
 def lane_path(lane_id: str) -> Path:
     validate_lane_id(lane_id)
-    return LANE_ROOT / lane_id
+    return resolve_within(ROOT, LANE_ROOT / lane_id, label="lane worktree")
 
 
 def validate_lane_id(lane_id: str) -> None:
@@ -51,13 +55,15 @@ def validate_lane_id(lane_id: str) -> None:
 
 def metadata_path(lane_id: str) -> Path:
     validate_lane_id(lane_id)
-    return REGISTRY / f"{lane_id}.json"
+    return resolve_within(ROOT, REGISTRY / f"{lane_id}.json", label="lane metadata")
 
 
 def working_copy_snapshot() -> str:
     """Create an immutable snapshot commit without changing the user's index."""
     DEV_ROOT.mkdir(parents=True, exist_ok=True)
-    snapshot_index = DEV_ROOT / f"agent-lane-snapshot-{uuid.uuid4().hex}.index"
+    snapshot_index = resolve_within(
+        ROOT, DEV_ROOT / f"agent-lane-snapshot-{uuid.uuid4().hex}.index",
+        label="lane snapshot index")
     env = os.environ.copy()
     env["GIT_INDEX_FILE"] = str(snapshot_index)
     try:
@@ -86,8 +92,9 @@ def read_metadata(lane_id: str) -> dict[str, Any]:
         raise RuntimeError(f"unknown lane {lane_id!r}; create it first") from error
     if not isinstance(data, dict) or data.get("lane_id") != lane_id:
         raise RuntimeError(f"invalid lane metadata: {path}")
-    worktree = Path(str(data.get("worktree", ""))).resolve()
-    if worktree != lane_path(lane_id).resolve():
+    worktree = resolve_within(
+        ROOT, Path(str(data.get("worktree", ""))), label="lane worktree metadata")
+    if worktree != lane_path(lane_id):
         raise RuntimeError(f"lane path mismatch in {path}; refusing to operate")
     return data
 
@@ -137,6 +144,7 @@ def devloop(path: Path, *args: str, capture: bool = False,
     merged = os.environ.copy()
     merged["MIMITA_LANE_ID"] = path.name
     merged["MIMITA_COORDINATOR_ROOT"] = str(ROOT.resolve())
+    apply_temp_environment(ROOT, path.name, merged)
     if env:
         merged.update(env)
     return run([sys.executable, "devscripts/dev-loop.py", *args], path,
@@ -153,10 +161,7 @@ def create_lane(args: argparse.Namespace) -> int:
     lane_id = args.lane_id
     validate_lane_id(lane_id)
     path = lane_path(lane_id)
-    resolved_root = ROOT.resolve()
-    resolved_lane_root = LANE_ROOT.resolve()
-    if not resolved_lane_root.is_relative_to(resolved_root):
-        raise RuntimeError(f"lane root escapes coordinator repository: {resolved_lane_root}")
+    lane_root = resolve_within(ROOT, LANE_ROOT, label="lane root")
     meta_file = metadata_path(lane_id)
     base = args.base or working_copy_snapshot()
     if not git(["rev-parse", "--verify", f"{base}^{{commit}}"], check=False).stdout.strip():
@@ -170,7 +175,7 @@ def create_lane(args: argparse.Namespace) -> int:
             raise RuntimeError(f"lane {lane_id!r} already exists at {path}")
         print(f"resuming lane setup at {path}")
     else:
-        LANE_ROOT.mkdir(parents=True, exist_ok=True)
+        lane_root.mkdir(parents=True, exist_ok=True)
         result = git(["worktree", "add", "-b", branch, str(path), base], check=False)
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or "git worktree add failed")
@@ -201,7 +206,8 @@ def create_lane(args: argparse.Namespace) -> int:
                 status="ready", submodules_initialized=True,
                 manifold_prebuilt_copied=lane_manifold.is_dir())
     write_metadata(data)
-    lane_config = path / ".dev" / "agent-lane-build.json"
+    lane_config = resolve_within(
+        path, path / ".dev" / "agent-lane-build.json", label="lane build config")
     if not lane_config.is_file():
         lane_config.parent.mkdir(parents=True, exist_ok=True)
         lane_config.write_text(json.dumps({"jobs": 4}, indent=2) + "\n",
@@ -360,14 +366,24 @@ def list_lanes(_args: argparse.Namespace) -> int:
     if not REGISTRY.is_dir():
         print("lanes=none")
         return 0
+    lane_root = resolve_within(ROOT, LANE_ROOT, label="lane root")
     count = 0
     for path in sorted(REGISTRY.glob("*.json")):
         try:
+            path = resolve_within(ROOT, path, label="lane metadata", must_exist=True)
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except (OSError, ValueError, RuntimeError):
             continue
         lane_id = str(data.get("lane_id", ""))
-        worktree = Path(str(data.get("worktree", "")))
+        try:
+            validate_lane_id(lane_id)
+            worktree = resolve_within(
+                lane_root, Path(str(data.get("worktree", ""))),
+                label="lane worktree")
+        except (ValueError, RuntimeError):
+            print(f"lane={lane_id or path.stem} status=outside_repo skipped "
+                  f"worktree={data.get('worktree', '')}")
+            continue
         lock = worktree / ".dev" / "dev-loop.lock"
         try:
             daemon_pid = int(lock.read_text(encoding="utf-8").strip())
@@ -423,7 +439,8 @@ def promote(args: argparse.Namespace) -> int:
     resolved_base = git(["rev-parse", "--verify", f"{base}^{{commit}}"], check=False).stdout.strip()
     if not resolved_base:
         raise RuntimeError(f"base revision does not resolve to a commit: {base}")
-    LANE_ROOT.mkdir(parents=True, exist_ok=True)
+    lane_root = resolve_within(ROOT, LANE_ROOT, label="lane root")
+    lane_root.mkdir(parents=True, exist_ok=True)
     branch = args.branch or f"codex/integration-{lane_id}"
     result = git(["worktree", "add", "-b", branch, str(path), resolved_base], check=False)
     if result.returncode:
@@ -462,14 +479,19 @@ def promote(args: argparse.Namespace) -> int:
 
 def publish_stable(lane_id: str, path: Path) -> int:
     """Promote a verified immutable integration artifact to the stable pointer."""
-    state_path = path / ".dev" / "state.json"
+    state_path = resolve_within(
+        path, path / ".dev" / "state.json", label="lane state", must_exist=True)
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
         folder = str(state["latest_artifact_folder"])
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
         raise RuntimeError(f"cannot identify the integration build in {state_path}") from error
-    artifact = path / ".dev" / "builds" / folder
-    metadata_path = artifact / "build-identity.json"
+    artifact = resolve_within(
+        path, path / ".dev" / "builds" / folder,
+        label="lane build artifact", must_exist=True)
+    metadata_path = resolve_within(
+        artifact, artifact / "build-identity.json",
+        label="artifact identity", must_exist=True)
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError) as error:
@@ -480,13 +502,15 @@ def publish_stable(lane_id: str, path: Path) -> int:
         raise RuntimeError("integration source changed during the build; rebuild before stable promotion")
     if start.get("dirty"):
         raise RuntimeError("integration worktree is dirty; commit the reviewed integration before promotion")
-    executable = artifact / "mimita.exe"
-    if not executable.is_file():
-        raise RuntimeError(f"integration executable is missing: {executable}")
+    executable = resolve_within(
+        artifact, artifact / "mimita.exe",
+        label="integration executable", must_exist=True)
 
-    stable_root = DEV_ROOT / "stable-builds"
+    stable_root = resolve_within(
+        ROOT, DEV_ROOT / "stable-builds", label="stable build root")
     stable_root.mkdir(parents=True, exist_ok=True)
-    stable_artifact = stable_root / folder
+    stable_artifact = resolve_within(
+        ROOT, stable_root / folder, label="stable artifact")
     if stable_artifact.exists():
         raise RuntimeError(f"stable artifact already exists; refusing to replace it: {stable_artifact}")
     shutil.copytree(artifact, stable_artifact)
@@ -503,8 +527,9 @@ def publish_stable(lane_id: str, path: Path) -> int:
         "executable": str(stable_artifact / "mimita.exe"),
         "artifact": str(stable_artifact),
     }
-    stable_pointer = DEV_ROOT / "stable-build.json"
-    temporary = stable_pointer.with_suffix(".json.tmp")
+    stable_pointer = resolve_within(
+        ROOT, DEV_ROOT / "stable-build.json", label="stable build pointer")
+    temporary = stable_pointer.with_name(stable_pointer.name + ".tmp")
     temporary.write_text(json.dumps(pointer, indent=2) + "\n", encoding="utf-8")
     os.replace(temporary, stable_pointer)
     print(f"stable_build_id={pointer['build_id']}")

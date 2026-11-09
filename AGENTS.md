@@ -14,10 +14,10 @@ Read these gates before doing anything else:
    checkout's ignored `.dev/agent-lanes/` directory. Agent-created worktrees,
    temporary files, caches, scheduler state, builds, and journals must resolve
    inside the project directory; do not use sibling folders, `%TEMP%`,
-   `%LOCALAPPDATA%`, or another checkout as an agent work area. The current
-   lane manager does not yet honor this root, so do not create or launch lanes
-   until the implementation is migrated. If an operation cannot stay inside
-   the project, stop and report the blocker instead of falling back outside.
+   `%LOCALAPPDATA%`, or another checkout as an agent work area. The lane manager
+   enforces this root and rejects escaping symlinks, junctions, metadata, and
+   scheduler/cache overrides. If an operation cannot stay inside the project,
+   stop and report the blocker instead of falling back outside.
    The lane dev-loop auto-detects edits and builds. Only a human may authorize
    an emergency outside-path exception or use
    `MIMITA_BUILD_OVERRIDE=1`. Read

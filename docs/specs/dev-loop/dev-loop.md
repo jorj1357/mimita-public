@@ -338,8 +338,7 @@ a build request, or a compiler directly; they ensure the lane dev-loop is
 running and read status/journals. The authoritative workflow is
 [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md).
 
-Mode 2 isolated lanes are the required agent workflow once repository-local
-lane support is implemented. Each lane lives under
+Mode 2 isolated lanes are the required agent workflow. Each lane lives under
 `<coordinator-repo>/.dev/agent-lanes/<lane-id>/` and owns its build, run, and
 journal state. The lane dev-loop auto-detects edits; agents have no build
 command.
@@ -354,12 +353,12 @@ below the configured threshold. A build failure leaves the previous artifact
 or module generation active. Only a human may use `MIMITA_BUILD_OVERRIDE=1`
 for an explicit emergency build.
 
-**Implementation gap:** the current lane manager still selects a sibling
-worktree root, the scheduler still falls back to `%LOCALAPPDATA%` or the system
-temp directory, and the room-code handoff uses the system-temp default. Do not
-create or run a lane until those paths have been migrated and repository
-containment has been verified. This policy describes the required target, not
-current executable behavior.
+**Implementation status:** the lane manager creates worktrees only under
+`.dev/agent-lanes/`, the scheduler defaults to `.dev/build-scheduler/`, the
+room-code handoff uses `.dev/tmp/<lane-id>/`, and the shared cache is
+`<coordinator>/.dev/ccache/`. `devscripts/path_containment.py` rejects paths,
+metadata, symlinks, junctions, and configured scheduler/cache roots that escape
+the repository.
 
 The canonical build-input inventory is owned by `build.py`,
 `build_game_dll.py`, and `build_toolchain.py`. The dev loop must watch every
@@ -578,9 +577,8 @@ The canonical dev loop must build from a frozen input snapshot so edits made
 while a build is running cannot change what that build compiles. The snapshot
 also identifies the runtime data needed to run and inspect that build. This is
 an implementation target for the canonical dev-loop and applies to each
-repository-local agent lane when lane support is available. The current lane
-manager does not meet the repository-local path requirement, so agent lanes
-remain unavailable until that implementation gap is closed.
+repository-local agent lane. The lane manager now enforces the
+`.dev/agent-lanes/` root and repository path containment.
 
 ### Snapshot capture
 
@@ -2742,13 +2740,13 @@ automatically replaced by the executable build.
 
 ### Mode 2: repository-local agent lanes
 
-**Target policy:** use separate mode 2 worktrees under the coordinator
-checkout's ignored `.dev/agent-lanes/<lane-id>/` directory. Do not create lane
-folders beside the project or in a user-profile/temp directory. This target is
-not yet implemented by `devscripts/agent-lane.py`; until it is, agents must not
-run lane-creation commands. Use one coordinator-owned source tree for any
-authorized work that does not require agent isolation; do not have multiple
-agents edit that same tree concurrently.
+**Policy:** use separate mode 2 worktrees under the coordinator checkout's
+ignored `.dev/agent-lanes/<lane-id>/` directory. Do not create lane folders
+beside the project or in a user-profile/temp directory. `devscripts/agent-lane.py`
+enforces this root and rejects escaping paths, metadata, symlinks, and
+junctions. Use one coordinator-owned source tree for any authorized work that
+does not require agent isolation; do not have multiple agents edit that same
+tree concurrently.
 
 Each agent gets a worktree with its own source, incremental object files and
 PCH, executable artifact, dev-loop, run state, command queue, and

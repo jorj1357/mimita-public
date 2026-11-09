@@ -46,6 +46,14 @@ from build_toolchain import compiler as resolve_compiler
 from build_toolchain import glfw_lib as resolve_glfw_lib
 from jsonc import load as load_jsonc
 from devscripts.module_ownership import module_source_paths, read_catalog
+from devscripts.path_containment import (
+    repository_temp_dir,
+    resolve_coordinator_root,
+    resolve_within,
+)
+
+COORDINATOR_ROOT = resolve_coordinator_root(ROOT)
+os.environ["MIMITA_COORDINATOR_ROOT"] = str(COORDINATOR_ROOT)
 
 DEV_ROOT = ROOT / ".dev"
 BUILD_ROOT = DEV_ROOT / "builds"
@@ -1891,6 +1899,7 @@ class DevLoop:
         path = Path(path_text).expanduser()
         if not path.is_absolute():
             path = ROOT / path
+        path = resolve_within(ROOT, path, label="scenario file", must_exist=True)
         text = path.read_text(encoding="utf-8")
         if "```json" in text:
             text = text.split("```json", 1)[1].split("```", 1)[0]
@@ -3346,8 +3355,8 @@ class DevLoop:
             self.room_code = None
             self.server_unavailable = True
             self.cleanup_room_file()
-            room_temp_root = ROOT / ".dev" / "tmp"
-            room_temp_root.mkdir(parents=True, exist_ok=True)
+            room_temp_root = repository_temp_dir(
+                ROOT, os.environ.get("MIMITA_LANE_ID", "dev-loop"))
             room_fd, room_file_name = tempfile.mkstemp(
                 prefix="mimita-dev-room-", suffix=".txt", dir=room_temp_root)
             os.close(room_fd)
@@ -4226,6 +4235,7 @@ def _scenario_load(path_text: str) -> dict:
     path = Path(path_text).expanduser()
     if not path.is_absolute():
         path = ROOT / path
+    path = resolve_within(ROOT, path, label="scenario file", must_exist=True)
     text = path.read_text(encoding="utf-8")
     if "```json" in text:
         text = text.split("```json", 1)[1].split("```", 1)[0]
@@ -4253,6 +4263,7 @@ def _read_input_header(path_text: str) -> dict:
     path = Path(path_text).expanduser()
     if not path.is_absolute():
         path = ROOT / path
+    path = resolve_within(ROOT, path, label="scenario input", must_exist=True)
     try:
         with path.open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -4831,7 +4842,12 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
                 "operation": "wait_seconds", "seconds": seconds, "result": "waited",
             }, "scenario pacing recorded", f"{request_id}:{index}")
         elif step.get("type") == "input_playback" or step.get("playback"):
-            path = str(step.get("path", step.get("playback", ""))).strip()
+            raw_path = str(step.get("path", step.get("playback", ""))).strip()
+            candidate = Path(raw_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = ROOT / candidate
+            path = str(resolve_within(
+                ROOT, candidate, label="scenario input", must_exist=True))
             rid = f"{request_id}:{index}"
             ok, detail = queue_command("scenario_play " + path, rid, time.time() + 15.0)
             if ok:

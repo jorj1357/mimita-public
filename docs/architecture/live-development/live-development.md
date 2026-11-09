@@ -21,8 +21,9 @@ builds, run IDs, and journals kept inside the project. The lane dev-loop
 auto-detects saved edits; the running game's `ModuleHost` builds module
 generations. Named OS synchronization objects allow one EXE build and two
 module builds across all lanes without an external scheduler directory. The
-current lane manager and scheduler do not yet honor the repository-local path
-policy; do not use lane creation until they do. Agents must not run `build.py`,
+lane manager and scheduler enforce the repository-local path policy and reject
+escaping paths, metadata, symlinks, junctions, and configured scheduler/cache
+roots. Agents must not run `build.py`,
 `module-build-worker.py`, a build request, or a compiler directly. Only a human
 may use `MIMITA_BUILD_OVERRIDE=1`. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).

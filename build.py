@@ -29,6 +29,11 @@ from pathlib import Path
 from build_toolchain import compiler, ccache, glfw_include, glfw_lib, runtime_path, run_tool
 from devscripts.build_authority import require_authority
 from devscripts.build_scheduler import acquire as acquire_build_slot
+from devscripts.path_containment import (
+    apply_temp_environment,
+    resolve_coordinator_root,
+    resolve_within,
+)
 
 # ============================================================
 # CONFIG
@@ -415,11 +420,13 @@ if build_slot is None:
     sys.exit(3)
 atexit.register(build_slot.release)
 
-coordinator_root = os.path.realpath(os.environ.get("MIMITA_COORDINATOR_ROOT", ROOT))
-ccache_root = os.path.realpath(os.path.join(coordinator_root, ".dev", "ccache"))
-if os.path.commonpath([coordinator_root, ccache_root]) != coordinator_root:
-    raise RuntimeError(f"CCACHE_DIR escapes coordinator repository: {ccache_root}")
-os.environ["CCACHE_DIR"] = ccache_root
+coordinator_root = resolve_coordinator_root(Path(ROOT))
+ccache_root = resolve_within(
+    coordinator_root, coordinator_root / ".dev" / "ccache", label="CCACHE_DIR")
+os.environ["CCACHE_DIR"] = str(ccache_root)
+os.environ["MIMITA_COORDINATOR_ROOT"] = str(coordinator_root)
+apply_temp_environment(
+    coordinator_root, os.environ.get("MIMITA_LANE_ID", "build"), os.environ)
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 

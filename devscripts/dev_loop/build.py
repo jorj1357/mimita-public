@@ -11,6 +11,11 @@ from pathlib import Path
 
 from dev_loop.source_identity import source_identity
 from devscripts.build_authority import write_authority
+from devscripts.path_containment import (
+    apply_temp_environment,
+    resolve_coordinator_root,
+    resolve_within,
+)
 
 
 def run_build(loop, requested_generation: int, request_ids: list[str], mode: str,
@@ -47,15 +52,20 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         creationflags |= 0x00004000  # BELOW_NORMAL_PRIORITY_CLASS
     # Mode 2 lanes share only ccache's content-addressed results. Their object
     # files, PCH, executable, dev-loop state, and journals remain checkout-local.
+    coordinator = resolve_coordinator_root(root)
+    environment["MIMITA_COORDINATOR_ROOT"] = str(coordinator)
+    shared_ccache = resolve_within(
+        coordinator, coordinator / ".dev" / "ccache", label="shared ccache")
+    shared_ccache.mkdir(parents=True, exist_ok=True)
+    environment["CCACHE_DIR"] = str(shared_ccache)
+    environment["CCACHE_BASEDIR"] = str(coordinator)
+    apply_temp_environment(
+        coordinator, environment.get("MIMITA_LANE_ID", root.name), environment)
     lane_job_config = root / ".dev" / "agent-lane-build.json"
     try:
         lane_jobs = json.loads(lane_job_config.read_text(encoding="utf-8")).get("jobs")
         if isinstance(lane_jobs, int) and 1 <= lane_jobs <= 256:
             environment["MIMITA_BUILD_JOBS"] = str(max(1, min(4, lane_jobs)))
-        shared_ccache = root.parent / ".dev" / "shared-agent-ccache"
-        shared_ccache.mkdir(parents=True, exist_ok=True)
-        environment["CCACHE_DIR"] = str(shared_ccache)
-        environment["CCACHE_BASEDIR"] = str(root.parent)
     except (OSError, ValueError, AttributeError, json.JSONDecodeError):
         pass
     ccache = find_ccache()

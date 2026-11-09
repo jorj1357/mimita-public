@@ -15,18 +15,24 @@ import os
 import time
 from pathlib import Path
 
+try:
+    from devscripts.path_containment import (
+        resolve_coordinator_root,
+        resolve_within,
+    )
+except ModuleNotFoundError:
+    from path_containment import resolve_coordinator_root, resolve_within
+
 SLOT_LIMITS = {"exe": 1, "module": 2}
 DEFAULT_MIN_FREE_MB = 1024
 STALE_SECONDS = 60.0
 
 
 def scheduler_root() -> Path:
-    coordinator = Path(os.environ.get("MIMITA_COORDINATOR_ROOT", Path(__file__).resolve().parents[1])).resolve()
+    coordinator = resolve_coordinator_root(Path(__file__).resolve().parents[1])
     configured = os.environ.get("MIMITA_BUILD_SCHEDULER_DIR", "").strip()
-    root = Path(configured).resolve() if configured else coordinator / ".dev" / "build-scheduler"
-    if not root.is_relative_to(coordinator):
-        raise RuntimeError(f"build scheduler path escapes coordinator repository: {root}")
-    return root
+    root = Path(configured) if configured else coordinator / ".dev" / "build-scheduler"
+    return resolve_within(coordinator, root, label="build scheduler path")
 
 
 def _now_utc() -> str:

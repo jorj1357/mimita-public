@@ -20,7 +20,10 @@ from .launch import select_launch_artifact
 
 class PublishedArtifactTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(prefix="dev-loop-artifacts-")
+        temp_root = Path(__file__).resolve().parents[2] / ".dev" / "tmp"
+        temp_root.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="dev-loop-artifacts-", dir=temp_root)
         self.root = Path(self.temporary.name)
 
     def tearDown(self) -> None:

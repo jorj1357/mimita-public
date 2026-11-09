@@ -12,11 +12,10 @@ world-streaming/navmesh/reconnect compile and runtime checklist, start at
 
 The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
 only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
-a build request, or a compiler directly. The target is a repository-local mode
-2 lane; agents ensure its dev-loop is running and read status/journals while it
-auto-detects saved edits. The current lane manager is not yet repository-local,
-so agents must not create or launch lanes until that implementation gap is
-closed. See
+a build request, or a compiler directly. The mode 2 lane is repository-local;
+agents ensure its dev-loop is running and read status/journals while it
+auto-detects saved edits. Lane creation rejects paths, metadata, symlinks,
+junctions, schedulers, and caches that escape this checkout. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
 
 A human may submit an explicit build or use the emergency override:
@@ -41,11 +40,10 @@ failing, coalesces newer saves, runs below normal priority, caps compiler jobs
 at four on this machine, and waits when free physical memory is below the
 configured threshold.
 
-**Implementation gap:** the current scheduler still defaults to an external
-`%LOCALAPPDATA%` or system-temp directory, and the lane manager still creates
-worktrees beside the checkout. `build.py` also uses a per-worktree `build/ccache`
-rather than the target shared coordinator cache. Do not use agent-lane creation
-until these paths have been changed and tested for repository containment.
+The scheduler defaults to the coordinator checkout's `.dev/build-scheduler/`.
+The lane manager creates worktrees only under `.dev/agent-lanes/`, and `build.py`
+uses the shared coordinator `.dev/ccache/` cache. A configured scheduler or
+cache path outside the repository fails clearly instead of falling back.
 
 On Windows, `[1]` launches the selected build through the fixed
 `.dev/current/mimita.exe` path. Each new published artifact uses its UTC
@@ -62,10 +60,10 @@ artifact folders remain readable and launchable.
 wrappers that submit to this same dev-loop. `build.py build-only` and
 `build_game_dll.py` are internal compiler steps. Agents must not use them.
 Separate Git worktrees have independent locks and build outputs; named OS build
-slots prevent excessive concurrent compilation. Use the lane workflow below
-only after repository-local lane support is implemented; do not share one
-mutable source checkout between agents. Do not use direct compiler scripts as
-a separate live build path.
+slots prevent excessive concurrent compilation. Use repository-local lane
+worktrees under `.dev/agent-lanes/`; do not share one mutable source checkout
+between agents. Do not use direct compiler scripts as a separate live build
+path.
 
 The build never terminates a running game to publish an artifact. Build
 identity and process lifetime are separate: selecting a new artifact requires

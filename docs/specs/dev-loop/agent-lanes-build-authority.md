@@ -9,15 +9,14 @@
 
 # Agent lanes and build authority
 
-**Implementation status (2026-11-09):** this is the required repository-local
-target policy, but the current implementation does not yet comply. In
-particular, `devscripts/agent-lane.py` places worktrees beside the checkout,
-`devscripts/build_scheduler.py` defaults to `%LOCALAPPDATA%` or the system temp
-directory, and `devscripts/dev-loop.py` creates a room-code temp file through
-the system temp default. `build.py` also keeps ccache under each worktree's
-`build/ccache` instead of the shared coordinator `.dev/ccache` target. Do not
-claim the repository-only workflow is active until these paths are changed and
-verified.
+**Implementation status (2026-11-09):** the repository-local paths are enforced.
+`devscripts/agent-lane.py` places worktrees under `.dev/agent-lanes/`,
+`devscripts/build_scheduler.py` defaults to `.dev/build-scheduler/`, the dev-loop
+room file uses `.dev/tmp/<lane-id>/`, and `build.py` uses the shared
+`<coordinator>/.dev/ccache/`. `devscripts/path_containment.py` rejects paths,
+metadata, symlinks, junctions, schedulers, and caches that resolve outside the
+coordinator repository. The focused containment checks live in
+`devscripts/quality/test_path_containment.py`.
 
 ## 1. The rule
 

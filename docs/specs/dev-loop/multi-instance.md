@@ -10,9 +10,8 @@ daemons, build locks, artifacts, run manifests, and journals. Do not use this do
 server/client instances as a substitute for source/build isolation between
 agents; see the independent agent worktree lane contract in `dev-loop.md`.
 
-This is the required target layout, not current behavior: `agent-lane.py` still
-creates worktrees beside the checkout. Agents must not create or launch lanes
-until the manager enforces the repository-local path.
+`agent-lane.py` enforces the repository-local path and rejects escaping
+worktrees, metadata, symlinks, and junctions.
 
 ## Purpose
 

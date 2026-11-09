@@ -10,12 +10,18 @@ import os
 import subprocess
 import sys
 import atexit
+from pathlib import Path
 
 from build_toolchain import compiler, ccache, glfw_include, run_tool
 from build_lock import (
     BuildLockBusy,
     acquire_checkout_build_lock,
     inherited_lock_parent_pid,
+)
+from devscripts.path_containment import (
+    apply_temp_environment,
+    resolve_coordinator_root,
+    resolve_within,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +51,13 @@ OUTPUT_DLL = os.path.join(BUILD_DIR, "mimita-game.dll")
 
 os.makedirs(BUILD_DIR, exist_ok=True)
 
-os.environ.setdefault("CCACHE_DIR", os.path.join(BUILD_DIR, "ccache"))
+coordinator_root = resolve_coordinator_root(Path(ROOT))
+ccache_root = resolve_within(
+    coordinator_root, coordinator_root / ".dev" / "ccache", label="CCACHE_DIR")
+os.environ["CCACHE_DIR"] = str(ccache_root)
+os.environ["MIMITA_COORDINATOR_ROOT"] = str(coordinator_root)
+apply_temp_environment(
+    coordinator_root, os.environ.get("MIMITA_LANE_ID", "build"), os.environ)
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
 

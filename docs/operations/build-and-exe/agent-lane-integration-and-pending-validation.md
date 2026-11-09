@@ -1,10 +1,10 @@
 # Agent Lane Integration and Pending Validation
 
-Status: historical source integration is recorded; compile, runtime validation,
-and stable promotion are pending. The recorded lanes were placed outside the
-project before the repository-only policy. Agents must not inspect or write to
-those old locations. This handoff is blocked for agent execution until an
-authorized human imports the needed commits and evidence into the project.
+Status: the seven legacy lane changes are staged inside this checkout under
+`.dev/agent-lane-imports/<lane-id>/` (the 2026-11-09 archive). Review, compile,
+runtime validation, and stable promotion are in progress. Agents must not
+inspect or write to the old sibling folder; all review and integration work is
+inside `C:\mimita-v9`.
 
 This document is the obvious starting point for:
 
@@ -30,17 +30,16 @@ authority rules still apply.
 ## Historical lane state and import requirement
 
 The lane names below identify work created under the old sibling-folder
-workflow. Their worktrees and one changelog were stored outside the project;
-they are historical references, not paths agents may access. Continue only
-from commits and evidence already available inside the project. If required
-material is absent, stop and ask a human to import an approved copy under
-`.dev/agent-lanes/`.
+workflow. The intended lane copies were imported by a human into this checkout
+under `.dev/agent-lane-imports/<lane-id>/`; the old sibling folder is an
+untouched archive. If required material is absent from the in-repo import, stop
+and ask the human for an authorized copy inside the project.
 
 Legacy integration lane:
 
 ```text
 lane:     world-streaming-nav-reconnect-20261108
-worktree: historical external location; not accessible to agents
+worktree: .dev/agent-lane-imports/world-streaming-nav-reconnect-20261108 (read-only import)
 branch:   codex/agent-world-streaming-nav-reconnect-20261108
 base:     dc7dea21889f84d6a7d7ad1a05d8563c63a39825
 ```
@@ -49,7 +48,7 @@ Preserved predecessor lane:
 
 ```text
 lane:     npc-collision-hot-20261108
-worktree: historical external location; not accessible to agents
+worktree: .dev/agent-lane-imports/npc-collision-hot-20261108 (read-only import)
 ```
 
 At the time of the original handoff, the lane was dirty and had not been
@@ -57,10 +56,9 @@ compiled in that session. This historical note does not establish its current
 state. No successful build ID, compile result, runtime journal, or human
 acceptance is claimed here.
 
-The integration lane's detailed changelog was stored outside the project and
-is not an agent-readable dependency. Do not fetch it from the old location.
-Any required source or evidence must first be imported by a human into this
-project, then reviewed from the imported copy.
+The integration lane's detailed changelog is available in the imported copy
+under `.dev/agent-lane-imports/world-streaming-nav-reconnect-20261108/docs/`.
+Do not fetch anything from the old sibling folder.
 
 ## Pending code work
 
