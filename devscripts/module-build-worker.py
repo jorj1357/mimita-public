@@ -25,6 +25,11 @@ from devscripts.build_authority import require_authority  # noqa: E402
 from devscripts.build_scheduler import acquire as acquire_build_slot  # noqa: E402
 from devscripts.module_ownership import audit as audit_ownership  # noqa: E402
 from devscripts.module_ownership import format_report, read_catalog  # noqa: E402
+from devscripts.path_containment import (  # noqa: E402
+    apply_temp_environment,
+    resolve_coordinator_root,
+    resolve_within,
+)
 
 # GCC invokes cc1plus from lib/gcc/...; on Windows that helper needs the
 # toolchain bin directory on PATH for its own runtime DLLs.
@@ -316,6 +321,22 @@ def build_module(module):
             pass
         build_env = os.environ.copy()
         build_env["PATH"] = runtime_path(compiler()) + os.pathsep + build_env.get("PATH", "")
+        # Match the EXE lane's shared content cache while keeping every cache
+        # path rewrite rooted in this worktree. This also applies to the module
+        # link subprocess below.
+        coordinator_root = resolve_coordinator_root(ROOT)
+        shared_ccache = resolve_within(
+            coordinator_root, coordinator_root / ".dev" / "ccache",
+            label="CCACHE_DIR")
+        shared_ccache.mkdir(parents=True, exist_ok=True)
+        build_env["MIMITA_COORDINATOR_ROOT"] = str(coordinator_root)
+        build_env["CCACHE_DIR"] = str(shared_ccache)
+        build_env["CCACHE_BASEDIR"] = str(os.path.realpath(ROOT))
+        build_env["CCACHE_NOHASHDIR"] = "1"
+        apply_temp_environment(
+            ROOT,
+            build_env.get("MIMITA_LANE_ID", os.path.basename(ROOT)),
+            build_env)
         objects = []
         dependency_files = set()
         compiled = 0

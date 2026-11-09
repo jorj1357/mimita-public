@@ -27,6 +27,7 @@ import atexit
 import hashlib
 import json
 import datetime
+import threading
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -111,6 +112,11 @@ def ccache_cmd():
 
 SRC_DIR = os.path.join(ROOT, "src")
 BUILD_DIR = os.path.join(ROOT, "build")
+PROGRESS_PATH = os.path.join(BUILD_DIR, "progress.json")
+BUILD_MONOTONIC_START = time.monotonic()
+PHASE_TIMINGS = {}
+_PROGRESS_LOCK = threading.RLock()
+_LAST_CURRENT_PROGRESS = 0.0
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
@@ -126,6 +132,7 @@ BUILD_METRICS_START = time.time()
 def write_build_metrics(result, link_reason=""):
     try:
         path = os.path.join(BUILD_DIR, "build-metrics.jsonl")
+        cache = ccache_stats()
         payload = {
             "timestamp_utc": datetime.datetime.now(
                 datetime.timezone.utc).isoformat(
@@ -140,6 +147,16 @@ def write_build_metrics(result, link_reason=""):
             "lane": os.environ.get("MIMITA_LANE_ID", ""),
             "scheduler_root": str(build_scheduler_root()),
             "link_reason": link_reason,
+            "phase_seconds": {
+                key: round(value, 3) for key, value in PHASE_TIMINGS.items()
+            },
+            "ccache_hits": cache.get("direct_cache_hit", 0) -
+                CCACHE_START_STATS.get("direct_cache_hit", 0),
+            "ccache_misses": cache.get("direct_cache_miss", 0) -
+                CCACHE_START_STATS.get("direct_cache_miss", 0),
+            "ccache_errors": cache.get("modified_input_file", 0) -
+                CCACHE_START_STATS.get("modified_input_file", 0),
+            "ccache_total": cache,
         }
         with open(path, "a", encoding="utf-8", newline="\n") as handle:
             handle.write(json.dumps(payload, sort_keys=True) + "\n")
@@ -248,11 +265,11 @@ INCLUDE_FLAGS = [
     "-Iinclude",
     "-Isrc",
     f"-I{GLFW_INCLUDE}",
-    f"-I{LIBJUICE_DIR}/include",
-    f"-I{MANIFOLD_INCLUDE}",
-    f"-I{ROOT}/external/recastnavigation/Recast/Include",
-    f"-I{ROOT}/external/recastnavigation/Detour/Include",
-    f"-I{ROOT}/external/recastnavigation/DetourTileCache/Include",
+    "-Iexternal/libjuice/include",
+    "-Iexternal/manifold-prebuilt/include",
+    "-Iexternal/recastnavigation/Recast/Include",
+    "-Iexternal/recastnavigation/Detour/Include",
+    "-Iexternal/recastnavigation/DetourTileCache/Include",
 ]
 
 DEFINE_FLAGS = [
@@ -362,6 +379,58 @@ def write_json_atomic(path, payload):
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
     os.replace(temporary, path)
+
+
+def write_progress(phase, **fields):
+    payload = {
+        "schema": 1,
+        "phase": phase,
+        "pid": os.getpid(),
+        "updated_utc": datetime.datetime.now(
+            datetime.timezone.utc).isoformat(
+                timespec="milliseconds").replace("+00:00", "Z"),
+        "elapsed_s": round(time.monotonic() - BUILD_MONOTONIC_START, 3),
+        "phase_seconds": {
+            key: round(value, 3) for key, value in PHASE_TIMINGS.items()
+        },
+    }
+    payload.update(fields)
+    with _PROGRESS_LOCK:
+        try:
+            write_json_atomic(PROGRESS_PATH, payload)
+        except OSError:
+            pass
+
+
+def progress_current(source_path):
+    global _LAST_CURRENT_PROGRESS
+    now = time.monotonic()
+    with _PROGRESS_LOCK:
+        if now - _LAST_CURRENT_PROGRESS < 0.5:
+            return
+        _LAST_CURRENT_PROGRESS = now
+    write_progress("compiling", current=source_path)
+
+
+def ccache_stats():
+    if not os.path.isfile(CCACHE):
+        return {}
+    try:
+        result = subprocess.run(
+            [CCACHE, "--print-stats", "--format=json"],
+            env=os.environ.copy(), capture_output=True, text=True, timeout=15)
+        if result.returncode != 0 or not result.stdout.strip():
+            return {}
+        data = json.loads(result.stdout)
+        keys = (
+            "direct_cache_hit", "direct_cache_miss", "cache_miss",
+            "local_storage_hit", "local_storage_miss", "cache_size_kibibyte",
+            "compile_failed", "modified_input_file", "no_input_file",
+            "called_for_link", "stats_updated_timestamp",
+        )
+        return {key: data.get(key, 0) for key in keys}
+    except (OSError, ValueError, subprocess.SubprocessError, json.JSONDecodeError):
+        return {}
 
 
 def sha256_file(path):
@@ -540,6 +609,7 @@ ensure_dirs()
 # Builds are owned by the dev-loop. Agents must never reach this path directly.
 require_authority(Path(ROOT), "exe", "build.py")
 _EXCLUSIVE_BUILD = acquire_exclusive_build(Path(ROOT), "build.py")
+build_slot_wait_started = time.monotonic()
 build_slot = acquire_build_slot(
     "exe", f"build.py:{os.getpid()}",
     metadata={"lane": os.environ.get("MIMITA_LANE_ID", ""), "mode": MODE},
@@ -548,6 +618,9 @@ if build_slot is None:
     print("[BUILD SCHEDULER] no EXE slot became available", file=sys.stderr)
     sys.exit(3)
 atexit.register(build_slot.release)
+PHASE_TIMINGS["scheduler_wait_s"] = time.monotonic() - build_slot_wait_started
+write_progress("setup", scheduler_wait_s=round(
+    PHASE_TIMINGS["scheduler_wait_s"], 3))
 
 coordinator_root = resolve_coordinator_root(Path(ROOT))
 ccache_root = resolve_within(
@@ -556,8 +629,11 @@ os.environ["CCACHE_DIR"] = str(ccache_root)
 os.environ["MIMITA_COORDINATOR_ROOT"] = str(coordinator_root)
 apply_temp_environment(
     coordinator_root, os.environ.get("MIMITA_LANE_ID", "build"), os.environ)
+os.environ.setdefault("CCACHE_BASEDIR", str(Path(ROOT).resolve()))
+os.environ.setdefault("CCACHE_NOHASHDIR", "1")
 os.environ.setdefault("CCACHE_SLOPPINESS", "time_macros,file_macro")
 os.environ.setdefault("CCACHE_MAXSIZE", "8G")
+CCACHE_START_STATS = ccache_stats()
 
 start_time = time.time()
 
@@ -607,10 +683,12 @@ pch_needs_build = (
     not os.path.exists(PCH_OUTPUT)
     or os.path.getmtime(PCH_HEADER) >= os.path.getmtime(PCH_OUTPUT)
 )
+pch_started = time.monotonic()
 
 if pch_needs_build:
 
-    print("[PCH ]", os.path.relpath(PCH_HEADER, ROOT))
+    write_progress("pch", current=os.path.relpath(PCH_HEADER, ROOT))
+    print("[PCH ]", os.path.relpath(PCH_HEADER, ROOT), flush=True)
 
     cmd = [
         COMPILER,
@@ -618,10 +696,13 @@ if pch_needs_build:
         "-x",
         "c++-header",
 
-        PCH_HEADER,
+        os.path.relpath(PCH_HEADER, ROOT),
 
         "-o",
-        PCH_OUTPUT,
+        os.path.relpath(PCH_OUTPUT, ROOT),
+
+        "-fno-working-directory",
+        "-ffile-prefix-map=" + ROOT.replace("\\", "/") + "=.",
     ]
 
     cmd += CXX_FLAGS
@@ -635,7 +716,12 @@ if pch_needs_build:
         print("==================================================")
         print(" PCH BUILD FAILED")
         print("==================================================")
+        write_progress("failed", phase_name="pch", result="failed")
         sys.exit(1)
+
+PHASE_TIMINGS["pch_s"] = (time.monotonic() - pch_started
+                          if pch_needs_build else 0.0)
+write_progress("pch", pch_s=round(PHASE_TIMINGS["pch_s"], 3))
 
 # glad.c manually
 glad_path = os.path.join(ROOT, "src", "glad.c")
@@ -656,15 +742,18 @@ def compile_cpp_file(src):
     if not source_changed(src):
         return ("skip", src)
 
-    print("[CXX ]", os.path.relpath(src, ROOT))
+    src_arg = os.path.relpath(src, ROOT)
+    obj_arg = os.path.relpath(obj, ROOT)
+    print("[CXX ]", src_arg, flush=True)
+    progress_current(src_arg)
 
     cmd = ccache_cmd() + [
 
         "-c",
-        src,
+        src_arg,
 
         "-o",
-        obj,
+        obj_arg,
     ]
 
     cmd += CXX_FLAGS
@@ -702,14 +791,17 @@ def compile_recast_file(src):
     if not recast_source_changed(src):
         return ("skip", src)
 
-    print("[CXX ]", os.path.relpath(src, ROOT))
-    cmd = ccache_cmd() + ["-c", src, "-o", obj]
+    src_arg = os.path.relpath(src, ROOT)
+    obj_arg = os.path.relpath(obj, ROOT)
+    print("[CXX ]", src_arg, flush=True)
+    progress_current(src_arg)
+    cmd = ccache_cmd() + ["-c", src_arg, "-o", obj_arg]
     cmd += CXX_FLAGS
     cmd += [
         "-DRC_DISABLE_ASSERTS",
-        f"-I{ROOT}/external/recastnavigation/Recast/Include",
-        f"-I{ROOT}/external/recastnavigation/Detour/Include",
-        f"-I{ROOT}/external/recastnavigation/DetourTileCache/Include",
+        "-Iexternal/recastnavigation/Recast/Include",
+        "-Iexternal/recastnavigation/Detour/Include",
+        "-Iexternal/recastnavigation/DetourTileCache/Include",
     ]
     result = run_tool(cmd)
     if result.returncode != 0:
@@ -724,6 +816,10 @@ def compile_recast_file(src):
 # ============================================================
 # PARALLEL COMPILE CPP FILES
 # ============================================================
+
+compile_started = time.monotonic()
+write_progress("compiling", current="", compiled=0, skipped=0,
+               total=len(cpp_files))
 
 with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
 
@@ -743,7 +839,7 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
         status, src = future.result()
 
         if status == "skip":
-            print("[SKIP]", os.path.relpath(src, ROOT))
+            print("[SKIP]", os.path.relpath(src, ROOT), flush=True)
             skipped_count += 1
 
         elif status == "compiled":
@@ -755,8 +851,13 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as executor:
             print("==================================================")
             print(" BUILD FAILED")
             print("==================================================")
-
+            write_progress("failed", phase_name="compiling", result="failed",
+                           current=os.path.relpath(src, ROOT))
             sys.exit(1)
+
+        write_progress("compiling", current=os.path.relpath(src, ROOT),
+                       compiled=compiled_count, skipped=skipped_count,
+                       total=len(cpp_files))
 
 # ============================================================
 # COMPILE VENDORED RECAST / DETOUR SOURCES
@@ -792,13 +893,14 @@ object_files.append(glad_obj)
 
 if source_changed(glad_path):
 
-    print("[CC  ] src/glad.c")
+    print("[CC  ] src/glad.c", flush=True)
+    progress_current("src/glad.c")
 
     cmd = ccache_cmd() + [
         "-c",
-        glad_path,
+        os.path.relpath(glad_path, ROOT),
         "-o",
-        glad_obj,
+        os.path.relpath(glad_obj, ROOT),
     ]
 
     cmd += CXX_FLAGS
@@ -834,9 +936,9 @@ juice_sources = [
 
 # Private includes: libjuice sources reference headers in src/, include/, and include/juice/
 juice_include_flags = [
-    f"-I{juice_src_dir}",
-    f"-I{LIBJUICE_DIR}/include",
-    f"-I{LIBJUICE_DIR}/include/juice",
+    "-Iexternal/libjuice/src",
+    "-Iexternal/libjuice/include",
+    "-Iexternal/libjuice/include/juice",
     "-DJUICE_STATIC",
 ]
 
@@ -851,14 +953,17 @@ def compile_juice_file(src_name):
         if src_mtime < obj_mtime:
             return ("skip", src_name)
 
-    print("[CC  ] external/libjuice/src/" + src_name)
+    src_arg = os.path.relpath(src_path, ROOT)
+    obj_arg = os.path.relpath(obj_path_full, ROOT)
+    print("[CC  ] " + src_arg, flush=True)
+    progress_current(src_arg)
 
     cmd = ccache_cmd() + [
         "-x", "c",
         "-c",
-        src_path,
+        src_arg,
         "-o",
-        obj_path_full,
+        obj_arg,
     ]
 
     # Use C flags (no -std=c++17) for libjuice C sources
@@ -916,6 +1021,11 @@ with ThreadPoolExecutor(max_workers=BUILD_JOBS) as juice_executor:
             print("==================================================")
             sys.exit(1)
 
+PHASE_TIMINGS["compile_s"] = time.monotonic() - compile_started
+write_progress("compiling", current="", compiled=compiled_count,
+               skipped=skipped_count, total=len(cpp_files),
+               compile_s=round(PHASE_TIMINGS["compile_s"], 3))
+
 # ============================================================
 # RESOURCE (icon) — mimita.rc → build/mimita.res.o
 # ============================================================
@@ -952,13 +1062,14 @@ if os.path.isfile(RC_FILE):
         if not WINDRES:
             print("[TOOLCHAIN] windres.exe was not found. Add MinGW to PATH or set MIMITA_WINDRES.")
             sys.exit(2)
-        print("[RC  ]", os.path.relpath(RC_FILE, ROOT))
+        print("[RC  ]", os.path.relpath(RC_FILE, ROOT), flush=True)
         r = run_tool([WINDRES, RC_FILE, "-O", "coff", "-o", RES_OBJ])
         if r.returncode != 0:
             print()
             print("==================================================")
             print(" RESOURCE BUILD FAILED")
             print("==================================================")
+            write_progress("failed", phase_name="resource", result="failed")
             sys.exit(1)
         res_compiled = True
     object_files.append(RES_OBJ)
@@ -974,15 +1085,20 @@ if compiled_count > 0 and link_reason == "current":
     needs_link, link_reason = True, "compiled_objects"
 
 if not needs_link:
+    staging_started = time.monotonic()
     stage_runtime_dlls()
+    PHASE_TIMINGS["staging_s"] = time.monotonic() - staging_started
     print()
-    print("Nothing changed. (%s)" % link_reason)
+    print("Nothing changed. (%s)" % link_reason, flush=True)
     print()
 
     elapsed = time.time() - start_time
 
-    print("Time    : %.2f sec" % elapsed)
+    print("Time    : %.2f sec" % elapsed, flush=True)
     write_build_metrics("noop", link_reason)
+    write_progress("build_complete", result="noop", link_reason=link_reason,
+                   compiled=compiled_count, skipped=skipped_count,
+                   elapsed_s=round(elapsed, 3))
 
     if RUN_AFTER_BUILD:
         print()
@@ -1001,8 +1117,10 @@ if not needs_link:
 # LINK
 # ============================================================
 
+link_started = time.monotonic()
 print()
-print("[LINK]", EXE_NAME, "reason=%s" % link_reason)
+print("[LINK]", EXE_NAME, "reason=%s" % link_reason, flush=True)
+write_progress("linking", link_reason=link_reason, current=EXE_NAME)
 
 # Windows limits CreateProcess command lines to roughly 32K characters.
 # The full object list exceeds that limit, so pass linker arguments through a
@@ -1043,6 +1161,8 @@ if result.returncode != 0:
     print("==================================================")
     print(" LINK FAILED")
     print("==================================================")
+    write_progress("failed", phase_name="linking", result="failed",
+                   link_reason=link_reason)
     sys.exit(1)
 
 if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
@@ -1052,6 +1172,8 @@ if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
         "pid": os.getpid(),
     })
     print("[LINK] output missing or zero: %s" % link_candidate, file=sys.stderr)
+    write_progress("failed", phase_name="linking", result="failed",
+                   link_reason=link_reason)
     sys.exit(1)
 
 try:
@@ -1064,7 +1186,11 @@ except OSError as error:
         "pid": os.getpid(),
         "error": str(error),
     })
+    write_progress("failed", phase_name="linking", result="failed")
     sys.exit(1)
+
+PHASE_TIMINGS["link_s"] = time.monotonic() - link_started
+write_progress("staging", link_s=round(PHASE_TIMINGS["link_s"], 3))
 
 write_json_atomic(LINK_STATE, {
     "status": "linked",
@@ -1081,7 +1207,10 @@ try:
 except OSError:
     pass
 
+staging_started = time.monotonic()
 stage_runtime_dlls()
+PHASE_TIMINGS["staging_s"] = time.monotonic() - staging_started
+write_progress("staging", staging_s=round(PHASE_TIMINGS["staging_s"], 3))
 
 # ============================================================
 # DONE
@@ -1099,6 +1228,9 @@ print("Compiled:", compiled_count)
 print("Skipped :", skipped_count)
 print("Time    : %.2f sec" % elapsed)
 write_build_metrics("success", link_reason)
+write_progress("build_complete", result="success",
+               compiled=compiled_count, skipped=skipped_count,
+               elapsed_s=round(elapsed, 3))
 
 if not RUN_AFTER_BUILD:
     sys.exit(0)

@@ -1468,6 +1468,7 @@ struct ReconnectAcceptPacket
     uint32_t spawnGeneration = 0;
     char approvedName[MAX_NAME_BYTES];
     char reconnectToken[MAX_RECONNECT_TOKEN_BYTES];
+    char mapId[MAX_MAP_ID_BYTES] = {};
     // Restored state
     int32_t restoredHealth = 100;
     int32_t restoredKills = 0;
@@ -1479,7 +1480,7 @@ struct ReconnectAcceptPacket
     char runtimeBuildId[MAX_RUNTIME_BUILD_ID_BYTES] = {};
 };
 
-static_assert(sizeof(ReconnectAcceptPacket) == 316, "ReconnectAcceptPacket wire size changed");
+static_assert(sizeof(ReconnectAcceptPacket) == 380, "ReconnectAcceptPacket wire size changed");
 
 struct ClientMapReadyPacket
 {

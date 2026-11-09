@@ -142,7 +142,8 @@
         705,
         706,
         707,
-        708
+        708,
+        709
       ],
       "capabilities": []
     },
@@ -162,6 +163,25 @@
       ],
       "events": [800],
       "capabilities": []
+    },
+    {
+      "name": "npc-perception",
+      "abi": 2,
+      "state_schema": 1,
+      "activation": "before_npc_sense",
+      "process_scope": "both",
+      "sources": [
+        "src/npc/npc-perception-module.cpp"
+      ],
+      "include_dirs": [
+        "include/glm"
+      ],
+      "headers": [
+        "src/modules/api/module-abi.h",
+        "src/modules/api/npc-perception-api.h"
+      ],
+      "events": [509],
+      "capabilities": [6]
     },
     {
       "name": "npc-behavior",

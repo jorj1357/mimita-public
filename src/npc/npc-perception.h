@@ -15,6 +15,7 @@
 #include <glm/glm.hpp>
 
 struct Npc;
+class Player;
 
 // One raw observation of a candidate this tick, before belief filtering.
 struct PerceptionSnapshot {
@@ -104,6 +105,25 @@ bool withinSightCone(const glm::vec3& origin,
                      const glm::vec3& facing,
                      const glm::vec3& targetPos,
                      float fovDegrees);
+
+// One fixed-tick sense step through the hot npc-perception module. The host
+// supplies actor/candidate state and one immutable world query; the module owns
+// the FOV/range/LOS gating, memory transition, belief, and prediction. Returns
+// false when the module is not active, so the caller can use its bounded
+// fallback without claiming the hot path ran.
+bool npcPerceptionPerceive(const Npc& npc, const Player& player,
+                           const glm::vec3& facingDir, bool candidateValid,
+                           bool losBlocked, bool queryLineOfSight,
+                           const glm::vec3& losFrom, const glm::vec3& losTo,
+                           const PerceptionTuning& tuning,
+                           PerceptionSnapshot& outSnapshot);
+bool npcPerceptionStep(const Npc& npc, const Player& player,
+                       const glm::vec3& facingDir, bool candidateValid,
+                       bool losBlocked, bool queryLineOfSight,
+                       const glm::vec3& losFrom, const glm::vec3& losTo,
+                       float dt, const PerceptionTuning& tuning,
+                       MemoryRecord& memory, PerceptionSnapshot& outSnapshot,
+                       BeliefState& outBelief);
 
 // World-independent selftest for the perception gates, memory decay, and
 // prediction error. Returns true on success and fills `report`.

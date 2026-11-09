@@ -192,6 +192,24 @@ dedicated-server gameplay
 There is one gameplay simulation. ONLY ONE
 The difference is only where the authoritative server process runs.
 
+### Hot networking ownership (2026-11-09)
+
+Networking behavior is hot. The host owns sockets, ICE/UDP transport, packet
+wire structs, encode/decode/framing, map/asset loading, connection lifetime, and
+the fixed tick. A hot networking module owns map-sync, reconnect, session
+health, snapshot policy, spawn-authority decisions, and combat-validation
+policy. It receives bounded connection/session events and returns decisions or
+actions; the host validates and applies them.
+
+Reconnect must restore the authoritative map id. If an older peer omits it, the
+client preserves its previous required map instead of clearing map-sync state.
+A reconnect re-arms the map-ready handshake even when the map did not change so
+the server can re-arm the authoritative transform epoch.
+
+Packet schema and transport changes remain cold boundaries. New networking
+behavior should use existing event/action schemas; adding a new one-off host
+call site is a `HOT_RELOAD_BOUNDARY_VIOLATION`.
+
 ### Remove offline/local gameplay paths
 
 A solo session is still a client connected to a local authoritative server

@@ -1565,6 +1565,24 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             ctx.approvedLocalName = accept->approvedName;
             ctx.reconnectToken = accept->reconnectToken;
             ctx.reliableEventSessionId = accept->reliableEventSessionId;
+            // A reconnect accept restores the player slot, but older servers
+            // could omit the map id. Preserve the previous authoritative map
+            // in that case instead of clearing map-sync and looping on
+            // "synchronizing map".
+            const std::string previousRequiredMap = ctx.requiredMapId;
+            const std::string acceptedMap = accept->mapId[0] != '\0'
+                ? std::string(accept->mapId)
+                : previousRequiredMap;
+            ctx.requiredMapId = acceptedMap;
+            // Re-arm the map-ready handshake for this transport. The server
+            // re-arms its transform epoch when it receives the fresh ready,
+            // including when the required map did not change.
+            ctx.clientMapReadySent = false;
+            ctx.lastClientMapReadySendMs = 0;
+            ctx.clientMapReadySentForMap.clear();
+            ctx.clientMapReadySentForPlayerId = 0;
+            ctx.mapLoadAttempts = 0;
+            ctx.lastMapLoadAttemptMs = 0;
             if (accept->spawnGeneration != 0)
                 ctx.lastKnownSpawnGeneration = accept->spawnGeneration;
             ctx.localServerPosition = {accept->restorePx, accept->restorePy, accept->restorePz};

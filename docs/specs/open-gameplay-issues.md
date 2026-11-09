@@ -8,7 +8,7 @@ repo-local workspace + module migration continuation recorded
 
 2026 11 08 1212 jorj
 
-2026 11 09 1027 jorj 
+2026 11 09 1027 jorj  
 
 issues
 
@@ -39,6 +39,10 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 - what even do we need to  do this for 
 
 ### other issues 
+
+2026 11 09 1600 glb map udates map editor a whole block is just missing bro funworld3 and pos corerction servre errors , as well as  map editor it onl shows the boxes for like, idk what it is but its like arranged in a differnet way than it actuallt is on the funworld3 actual map, so not sure what to do or how to fix 
+
+2026 11 09 1504 jorj  - everu time a agnet makes a new lane , the agent mkaes a new dev loop gui show up, not good 
 
 2026 11 09 1029 jojr  todo make it so dev loop launchgin that just 1 single gui, make th gui like its own thing not part of dev-loop 
 
@@ -120,10 +124,11 @@ retest them or make new runtime-acceptance claims.
 | ID | Priority | Issue | Current status and next step |
 |---|---:|---|---|
 | OGI-028 | P0 | Reconnects or disconnects even when the connection appears fine | User reports that reconnect starts after 2.5 seconds without authoritative snapshot traffic. Verify the trigger and first missing step in a fresh client/server run with matching run, process, endpoint, room, and journal identities; determine whether the snapshot stopped or the timeout policy is wrong. The 2026-11-08 reconnect change is recorded as compiled but not runtime-verified. [Networking](networking/networking.md), [reconnect regression](../regressions/networking/frozen-client-dead-REG-2026-11-04.md), [ICE reconnect change](../changelog/2026-11-08/20261108_1724-ice-transport-reconnect-rebuild.md). |
-| OGI-029 | P0 | Client loops between “Synchronizing map” and reconnecting or stays on “Synchronizing map” | Reported on 2026-11-08; not reproduced in a fresh, identity-matched run. Capture map snapshot send/receive/apply, revision, timeout, and reconnect events from both sides. The 2026-11-08 successful map snapshot proof covers a different case and does not close this report. [Networking](networking/networking.md), [map snapshot evidence](../changelog/2026-11-08/20261108_055845-live-map-geometry-authority-remote-snapshot.md). |
-| OGI-030 | P0 | Make networking code hot-reloadable and verify the recent modularization changes | The goal is to edit networking code and see the fix live without an EXE build. The latest 2026-11-08 lane notes record static/config checks but no build or runtime validation for the affected work. Inventory changed owners and cold boundaries, then prove the intended networking changes activate live and fix the reconnect/map-sync cases. Do not count unrelated pre-existing gate failures as new regressions. |
+| OGI-029 | P0 | Client loops between “Synchronizing map” and reconnecting or stays on “Synchronizing map” | The reconnect accept now carries the authoritative map id and the client preserves its previous required map when an older peer omits it; reconnect re-arms the map-ready handshake. The server-phase budget thresholds are hot policy. Needs a fresh identity-matched mode-56 run to prove `network.map-sync.state`, `network.snapshot.timeout`, and recovery in `events.jsonl`. [Networking](networking/networking.md), [map snapshot evidence](../changelog/2026-11-08/20261108_055845-live-map-geometry-authority-remote-snapshot.md). |
+| OGI-030 | P0 | Make networking and NPC behavior hot-reloadable and verify the recent modularization changes | The target is edit behavior and see the fix live without an EXE build. `network-policy` now also owns server phase-budget policy; map-sync/reconnect remain its hot state machines. `npc-perception` now owns FOV/range/LOS gating, memory, belief, and prediction through a bounded world-query capability. Transport, packet schema, map/loader, world/actor storage, and the fixed tick remain cold mechanisms. Prove activation and behavior in a fresh server/client journal; do not count unrelated pre-existing gate failures as new regressions. |
 | OGI-031 | P1 | Reduce build wait and keep routine agent work inside the repository | Work notes report a 1,070.877-second (~17.8-minute) cold build and a 1.157-second no-op; I could not locate the corresponding machine-readable timing record. Capture a comparable attempt with phase and per-file timings, then target the measured bottleneck. Lane worktrees now live under `.dev/agent-lanes/`, scheduler diagnostics under `.dev/build-scheduler/`, temporary files under `.dev/tmp/`, and the shared cache under `.dev/ccache/`. `devscripts/path_containment.py` rejects escaping paths; an outside path remains a documented human emergency only. Do not impose a speculative “10 symbols per header” rule before measuring header fan-out. [Build-time observability](dev-loop/build-time-observability.md), [agent build authority](dev-loop/agent-lanes-build-authority.md), [build operations](../operations/build-and-exe/build-and-exe.md), [cold-build debt](../regressions/cold-build-required-REG.md). |
 | OGI-032 | P2 | Dev-loop helper windows can appear repeatedly and interrupt work | The 2026-11-08 report describes command windows stealing focus; the visible-window regression remains only partially verified. Reproduce current dashboard/helper behavior and confirm one intended UI with no foreground console churn. [Visible game-window regression](../regressions/dev-loop/visible-game-window-REG-2026-11-08.md), [dev-loop](dev-loop/dev-loop.md). |
+| OGI-033 | P1 | Agent lanes open duplicate dashboard windows and status is hard to read | The main checkout owns one coordinator dashboard; ensuring or running a lane must not open a window. The dashboard lists the main checkout and registered lanes with build phase/elapsed time and runtime counts, plus one shared `Updated N seconds ago` indicator. Show discoverable MiMITA processes in a readable, scrollable table with lane, role, PID, state, and connection target when known. Keep build/run controls routed to the owning checkout. Validate multi-lane and multi-client/server visibility plus stale/unavailable lane handling. [Dashboard contract](dev-loop/dashboard.md), [multi-instance topology](dev-loop/multi-instance.md), [agent build authority](dev-loop/agent-lanes-build-authority.md). |
 
 | ID | Priority | Issue | Owner / next step |
 |---|---:|---|---|

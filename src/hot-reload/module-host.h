@@ -17,6 +17,9 @@
 #include "modules/api/navigation-policy-api.h"
 #include "modules/api/network-policy-api.h"
 #include "modules/api/npc-behavior-api.h"
+#include "modules/api/npc-perception-api.h"
+
+struct World;
 
 namespace mimita_map_editor { struct DragMathV1; struct GizmoPickV1; struct EditorInputV1; struct EditorClickV1; }
 namespace mimita_world_rendering {
@@ -134,6 +137,12 @@ public:
         mimita_network_policy::MapSyncPolicyV1* policy);
     bool networkCombatValidationPolicy(
         mimita_network_policy::CombatValidationPolicyV1* policy);
+    bool networkServerPhaseBudgetPolicy(
+        mimita_network_policy::ServerPhaseBudgetPolicyV1* policy);
+    bool npcPerceptionStep(
+        mimita_npc_perception::PerceptionRequestV1* request);
+    bool npcPerceptionLoaded() const;
+    void setNpcWorldQueryContext(const World* world);
     bool navigationPolicy(
         mimita_navigation_policy::NavigationPolicyV1* policy);
     bool npcBehaviorDecision(mimita_npc_behavior::DecisionV1* decision);

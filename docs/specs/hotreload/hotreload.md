@@ -84,6 +84,36 @@ mechanisms. See
 and
 [`self-contained-workspace.md`](../../architecture/live-development/self-contained-workspace.md).
 
+## Hot subsystem target: networking and NPC (2026-11-09)
+
+The target is not "some policy callbacks are hot." Entire behavior subsystems
+are hot. The host exposes bounded inputs and capabilities; the module owns the
+subsystem state machine and returns decisions/actions.
+
+### Networking
+
+`network-policy` owns map-sync, reconnect, session-health, snapshot, spawn
+authority, and combat-validation decisions. The host owns sockets, ICE/UDP
+transport, packet wire structs, encode/decode/framing, map loading, and fixed
+tick scheduling. A reconnect accept carries the authoritative map id (with a
+preserve-previous-map fallback) so map-sync can re-arm without an EXE restart.
+New networking behavior must use the existing event/action schemas; a new packet
+schema or transport mechanism is a deliberate cold boundary.
+
+### NPC perception and behavior
+
+`npc-behavior` owns goal/action/targeting/combat/team policy. `npc-perception`
+owns FOV/range/LOS gating, memory decay, belief, and prediction. The host owns
+actor state, the immutable world/navmesh query mechanism, collision and physics
+application, and the fixed tick. The `CAPABILITY_NPC_WORLD` capability exposes
+only bounded line-of-sight/ray queries; the module decides when to ask and how
+to gate the result. Editing perception, sensing cadence policy, targeting, or
+navigation choice must not relink the EXE.
+
+The ideal cold list is therefore only process/device/transport/packet-schema/
+document/loader/public-ABI changes. Everything else is a hot subsystem module
+with versioned plain-data inputs, module-owned state, and host validation.
+
 ## 2. Module and kernel responsibilities
 
 ### 2.1 Module ownership
@@ -658,13 +688,18 @@ boundary. The source catalog includes these modules:
   grenade throw policy, dash choices, and Payload cart-role destinations on the
   authoritative server. `npc-utility.cpp` is module-owned; the host adapter is
   `src/npc/npc-utility-bridge.cpp` and retains no scoring policy.
+- `npc-perception` — FOV/range/LOS gating, memory decay, belief, and prediction.
+  The host exposes `CAPABILITY_NPC_WORLD` for bounded line-of-sight/ray queries
+  and keeps actor/world ownership; `src/npc/npc-perception.cpp` is the host
+  adapter and retains the pre-module fallback only until parity is proven.
 
 This inventory describes source ownership, not proof that every module has
-activated in the running EXE. NPC perception, candidate gathering,
-state-machine execution, weapon legality, and weapon firing remain host code.
-Target priority/retention scoring, attack intent, and dash/down-dash threshold
-policy are module-owned source slices; state-machine transition extraction is
-deferred.
+activated in the running EXE. `npc-perception` owns FOV/range/LOS gating,
+memory, belief, and prediction through the bounded `CAPABILITY_NPC_WORLD` query.
+Candidate gathering, state-machine execution, weapon legality, and weapon firing
+remain host code. Target priority/retention scoring, attack intent, and
+dash/down-dash threshold policy are module-owned source slices; state-machine
+transition extraction is deferred.
 
 Actor-versus-static-world correction now has a bounded hot snapshot/result path
 with host fallback. Dynamic-object, actor-pair, and weapon/projectile solvers

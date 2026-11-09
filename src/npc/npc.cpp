@@ -41,6 +41,7 @@
 #include "npc/npc-navigation.h"
 #include "npc/npc-navigation-settings.h"
 #include "npc/npc-combat.h"
+#include "npc/npc-world-query.h"
 #include "combat/weapon-registry.h"
 #include "npc/npc-utility.h"
 #include "perf/perf.h"
@@ -295,31 +296,37 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
     // perception module so acquisition can never skip those gates.
     const bool candidateValid = !player.dead && player.currentHp > 0;
 
-    // Line of sight for perception uses the same shared ray trace as combat.
-    // Rate-limited to every 5 ticks (matching the prior cache cadence) so the
-    // chunk query does not run every tick for every NPC. Between checks the
-    // last result is retained, which is fine at 60 Hz for acquisition.
+    // The world-query mechanism stays in the host. The hot perception module
+    // decides when to ask for the shared line-of-sight ray and how to gate the
+    // result. The 5-tick cache cadence remains a host scheduling concern.
+    setNpcWorldQueryWorld(&world);
     bool losBlocked = npc.cachedLoSBlocked;
+    bool queryLineOfSight = false;
+    glm::vec3 losFrom(0.0f);
+    glm::vec3 losTo(0.0f);
     if (candidateValid) {
         static const int LOS_INTERVAL = 5;
         if (++npc.losTickCounter >= LOS_INTERVAL)
             npc.losTickCounter = 0;
         if (npc.losTickCounter == 0) {
-            glm::vec3 fromPos = npc.body.pos + NpcCombat::npcMuzzleOffset();
-            glm::vec3 toPos = player.pos + NpcCombat::npcMuzzleOffset();
-            glm::vec3 losDir = toPos - fromPos;
+            losFrom = npc.body.pos + NpcCombat::npcMuzzleOffset();
+            losTo = player.pos + NpcCombat::npcMuzzleOffset();
+            glm::vec3 losDir = losTo - losFrom;
             const float losDist = glm::length(losDir);
             losBlocked = false;
-            if (losDist > 0.5f) {
+            queryLineOfSight = ModuleHost::instance().npcPerceptionLoaded();
+            if (!queryLineOfSight && losDist > 0.5f) {
                 losDir /= losDist;
                 float hitDist = losDist;
-                if (rayTraverseGridCells(world, fromPos, losDir, losDist, hitDist, nullptr))
+                if (rayTraverseGridCells(world, losFrom, losDir, losDist,
+                                         hitDist, nullptr))
                     losBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
             }
             if (!losBlocked && hazards &&
                 areaEffectSegmentBlocked(*hazards, AreaEffectKind::Smoke,
-                                         fromPos, toPos)) {
+                                         losFrom, losTo)) {
                 losBlocked = true;
+                queryLineOfSight = false;
                 if (((uint32_t)(npc.sensors.time * 60.0f) % 120u) == 0u) {
                     StructuredLogger::instance().writeEvent(
                         StructuredCategory::NpcMovement, StructuredLevel::Important,
@@ -330,21 +337,58 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
                                        {"smoke_volumes", hazards->size()}});
                 }
             }
-            npc.cachedLoSBlocked = losBlocked;
+            if (!queryLineOfSight)
+                npc.cachedLoSBlocked = losBlocked;
         }
     }
 
     const glm::vec3 facing = glm::length(npc.currentFacing) > 0.0001f
         ? npc.currentFacing : glm::vec3(1.0f, 0.0f, 0.0f);
-    PerceptionSnapshot snap = perceive(
-        npc, candidateValid, player.pos, player.vel, facing, losBlocked, tuning);
-    npc.perception = snap;
-
     const NpcBehaviorTuning& behavior = npc.behavior;
     const bool radarMode = behavior.active &&
         (behavior.informationMode == "radar" ||
          behavior.informationMode == "perfect_radar");
     const bool perfectRadar = behavior.informationMode == "perfect_radar";
+    const bool informationNone =
+        behavior.active && behavior.informationMode == "none";
+
+    PerceptionSnapshot snap;
+    bool moduleOwnsMemory = false;
+    bool modulePerceived = false;
+    if (ModuleHost::instance().npcPerceptionLoaded()) {
+        if (radarMode || informationNone) {
+            modulePerceived = npcPerceptionPerceive(
+                npc, player, facing, candidateValid, losBlocked,
+                queryLineOfSight, losFrom, losTo, tuning, snap);
+        } else {
+            moduleOwnsMemory = npcPerceptionStep(
+                npc, player, facing, candidateValid, losBlocked,
+                queryLineOfSight, losFrom, losTo, dt, tuning,
+                npc.targetMemory, snap, npc.belief);
+            modulePerceived = moduleOwnsMemory;
+        }
+    }
+    if (!modulePerceived) {
+        if (queryLineOfSight) {
+            glm::vec3 losDir = losTo - losFrom;
+            const float losDist = glm::length(losDir);
+            losBlocked = false;
+            if (losDist > 0.5f) {
+                losDir /= losDist;
+                float hitDist = losDist;
+                if (rayTraverseGridCells(world, losFrom, losDir, losDist,
+                                         hitDist, nullptr))
+                    losBlocked = hitDist > 0.1f && hitDist < losDist - 0.5f;
+            }
+            npc.cachedLoSBlocked = losBlocked;
+        }
+        snap = perceive(npc, candidateValid, player.pos, player.vel,
+                        facing, losBlocked, tuning);
+    } else if (queryLineOfSight && candidateValid) {
+        npc.cachedLoSBlocked = !snap.hasLineOfSight;
+    }
+    npc.perception = snap;
+
     glm::vec3 knownPos = player.pos;
     glm::vec3 knownVel = player.vel;
     if (radarMode && candidateValid) {
@@ -362,29 +406,32 @@ void senseWorld(Npc& npc, const World& world, const Player& player, float dt,
     // Radar is knowledge, not vision. It can update pursuit memory, but
     // snap.visible remains false behind a wall so combat cannot shoot through
     // cover. `never` is cleared when the authoritative target becomes invalid.
-    if (snap.visible) {
-        updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
-    } else if (radarMode && candidateValid) {
-        PerceptionSnapshot radarSnapshot = snap;
-        radarSnapshot.radarKnown = true;
-        const int radarMemoryTicks = behavior.radarMemoryMode == "long"
-            ? behavior.radarMemoryTicks : tuning.memoryTicks;
-        PerceptionTuning radarTuning = tuning;
-        radarTuning.memoryTicks = radarMemoryTicks;
-        updateMemory(npc.targetMemory, radarSnapshot, knownPos, knownVel, dt, radarTuning);
-    } else if (radarMode && behavior.radarMemoryMode == "never") {
-        npc.targetMemory = MemoryRecord{};
-    } else if (behavior.active && behavior.informationMode == "none") {
-        npc.targetMemory = MemoryRecord{};
-    } else {
-        updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
-    }
+    if (!moduleOwnsMemory) {
+        if (snap.visible) {
+            updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+        } else if (radarMode && candidateValid) {
+            PerceptionSnapshot radarSnapshot = snap;
+            radarSnapshot.radarKnown = true;
+            const int radarMemoryTicks = behavior.radarMemoryMode == "long"
+                ? behavior.radarMemoryTicks : tuning.memoryTicks;
+            PerceptionTuning radarTuning = tuning;
+            radarTuning.memoryTicks = radarMemoryTicks;
+            updateMemory(npc.targetMemory, radarSnapshot, knownPos, knownVel, dt, radarTuning);
+        } else if (radarMode && behavior.radarMemoryMode == "never") {
+            npc.targetMemory = MemoryRecord{};
+        } else if (behavior.active && behavior.informationMode == "none") {
+            npc.targetMemory = MemoryRecord{};
+        } else {
+            updateMemory(npc.targetMemory, snap, player.pos, player.vel, dt, tuning);
+        }
 
-    // Aim error grows with uncertainty: a remembered, unseen target is aimed
-    // at less precisely than a currently visible one.
-    const float errorMeters = tuning.predictionErrorMeters;
-    npc.belief = buildBelief(snap, npc.targetMemory, /*targetActorId=*/0,
-                             errorMeters, tuning);
+        // Aim error grows with uncertainty: a remembered, unseen target is aimed
+        // at less precisely than a currently visible one.
+        const float errorMeters = tuning.predictionErrorMeters;
+        npc.belief = buildBelief(snap, npc.targetMemory, /*targetActorId=*/0,
+                                 errorMeters, tuning);
+    }
+    setNpcWorldQueryWorld(nullptr);
 
     npc.previousPosition = npc.body.pos;
 

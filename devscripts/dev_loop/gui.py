@@ -19,8 +19,8 @@ RED = "#ff0000"
 GREEN = "#00ff00"
 WHITE = "#ffffff"
 FONT_PATH = Path(r"C:\important\mingliu-font\mingliu.ttf")
-MIN_WIDTH = 400
-MIN_HEIGHT = 500
+MIN_WIDTH = 760
+MIN_HEIGHT = 680
 APP_USER_MODEL_ID = "MiMITA.DevLoop.Dashboard"
 
 
@@ -154,7 +154,7 @@ def run(status_provider: Callable[[], dict],
     root.overrideredirect(True)
     root.resizable(True, True)
     root.minsize(MIN_WIDTH, MIN_HEIGHT)
-    root.geometry(f"{MIN_WIDTH}x{MIN_HEIGHT}")
+    root.geometry("1120x900")
     root.configure(background=BLACK)
 
     state = {
@@ -173,6 +173,7 @@ def run(status_provider: Callable[[], dict],
         "animation_id": None,
         "minimized": False,
         "pending_request_id": "",
+        "pending_checkout_id": "main",
         "launch_started_monotonic": None,
         "launch_started_epoch": None,
         "current_events_path": "",
@@ -196,6 +197,8 @@ def run(status_provider: Callable[[], dict],
         "process_scan_last_success": "",
         "process_scan_last_success_monotonic": 0.0,
         "process_scan_error": "",
+        "checkout_rows": {},
+        "dashboard_refresh_monotonic": 0.0,
     }
 
     def frame(parent, *, padx=0, pady=0, **kwargs):
@@ -223,7 +226,7 @@ def run(status_provider: Callable[[], dict],
             "highlightthickness": 1,
             "highlightbackground": RED,
             "highlightcolor": RED,
-            "font": (family, 8, "bold"),
+            "font": (family, 10, "bold"),
             "padx": 5,
             "pady": 2,
             "takefocus": True,
@@ -288,7 +291,7 @@ def run(status_provider: Callable[[], dict],
     content = tk.Frame(shell, bg=BLACK, padx=7, pady=5)
     content.grid(row=1, column=0, sticky="nsew")
     content.grid_columnconfigure(0, weight=1)
-    content.grid_rowconfigure(4, weight=1)
+    content.grid_rowconfigure(5, weight=1)
 
     caption_buttons = tk.Frame(titlebar, bg=BLACK)
     caption_buttons.grid(row=0, column=1, sticky="e", padx=(0, 4))
@@ -418,7 +421,7 @@ def run(status_provider: Callable[[], dict],
     # The red labels remain fixed; only emphasized live values cycle hue.
     heading = label(content, "MiMITA DEV LOOP", size=9, bold=True)
     heading.grid(row=0, column=0, sticky="w", pady=(0, 4))
-    subtitle = label(content, "Connecting to the build/runtime service…", size=8)
+    subtitle = label(content, "Connecting to the build/runtime service…", size=10)
     subtitle.grid(row=1, column=0, sticky="ew", pady=(0, 4))
 
     cards = tk.Frame(content, bg=BLACK)
@@ -429,11 +432,11 @@ def run(status_provider: Callable[[], dict],
     def make_card(title_text: str):
         card = frame(cards, padx=5, pady=3)
         card.grid_columnconfigure(0, weight=1)
-        label(card, title_text.upper(), size=7, bold=True).grid(
+        label(card, title_text.upper(), size=9, bold=True).grid(
             row=0, column=0, sticky="w")
-        value = label(card, "—", size=8, bold=True, wraplength=340)
+        value = label(card, "—", size=11, bold=True, wraplength=500)
         value.grid(row=1, column=0, sticky="ew", pady=(2, 0))
-        detail = label(card, "", size=7, wraplength=340)
+        detail = label(card, "", size=9, wraplength=500)
         detail.grid(row=2, column=0, sticky="ew")
         detail.full_text = ""
         detail.short_text = ""
@@ -445,16 +448,40 @@ def run(status_provider: Callable[[], dict],
     runtime_card, runtime_value, runtime_detail = make_card("Runtime and mode/map")
     scenario_card, scenario_value, scenario_detail = make_card("Scenario evidence")
 
+    checkout_card = frame(content, padx=5, pady=3)
+    checkout_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
+    checkout_card.grid_columnconfigure(0, weight=1)
+    label(checkout_card, "CHECKOUTS AND AGENT LANES", size=9, bold=True).grid(
+        row=0, column=0, sticky="w")
+    checkout_canvas = tk.Canvas(checkout_card, height=126, background=BLACK,
+                                highlightthickness=0, bd=0)
+    checkout_canvas.grid(row=1, column=0, sticky="ew")
+    checkout_scroll = tk.Scrollbar(
+        checkout_card, orient="vertical", command=checkout_canvas.yview,
+        bg=BLACK, troughcolor=BLACK, activebackground=RED,
+        highlightbackground=RED, bd=1)
+    checkout_scroll.grid(row=1, column=1, sticky="ns")
+    checkout_canvas.configure(yscrollcommand=checkout_scroll.set)
+    checkout_rows_frame = tk.Frame(checkout_canvas, bg=BLACK)
+    checkout_rows_window = checkout_canvas.create_window(
+        (0, 0), window=checkout_rows_frame, anchor="nw")
+    checkout_rows_frame.bind(
+        "<Configure>", lambda _event: checkout_canvas.configure(
+            scrollregion=checkout_canvas.bbox("all")))
+    checkout_canvas.bind(
+        "<Configure>", lambda event: checkout_canvas.itemconfigure(
+            checkout_rows_window, width=event.width))
+
     process_card = frame(content, padx=5, pady=3)
-    process_card.grid(row=3, column=0, sticky="ew", pady=(3, 0))
+    process_card.grid(row=4, column=0, sticky="ew", pady=(3, 0))
     process_card.grid_columnconfigure(0, weight=1)
     process_card.grid_columnconfigure(1, weight=0)
-    label(process_card, "MIMITA PROCESSES", size=7, bold=True).grid(
+    label(process_card, "MIMITA PROCESSES", size=9, bold=True).grid(
         row=0, column=0, sticky="w")
     process_summary = label(process_card, "Checking for running MiMITA processes…",
-                            size=7, wraplength=350)
+                            size=9, wraplength=700)
     process_summary.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(1, 2))
-    process_canvas = tk.Canvas(process_card, height=78, background=BLACK,
+    process_canvas = tk.Canvas(process_card, height=190, background=BLACK,
                                highlightthickness=0, bd=0)
     process_canvas.grid(row=2, column=0, sticky="ew")
     process_scroll = tk.Scrollbar(
@@ -484,10 +511,10 @@ def run(status_provider: Callable[[], dict],
     refresh_process_button.grid(row=0, column=1, sticky="e")
 
     details = frame(content, padx=5, pady=3)
-    details.grid(row=4, column=0, sticky="nsew", pady=(1, 0))
+    details.grid(row=5, column=0, sticky="nsew", pady=(1, 0))
     details.grid_columnconfigure(0, weight=1)
     label(details, "LATEST BUILD AND LOOP ACTIVITY  ·  LAST 10 LINES",
-          size=7, bold=True).pack(anchor="w", pady=(0, 2))
+          size=9, bold=True).pack(anchor="w", pady=(0, 2))
     output_frame = tk.Frame(details, bg=BLACK)
     output_frame.pack(fill="both", expand=True)
     gutter = tk.Canvas(output_frame, width=28, bg=BLACK, highlightthickness=0,
@@ -497,7 +524,7 @@ def run(status_provider: Callable[[], dict],
                      background=BLACK, foreground=RED, insertbackground=RED,
                      selectbackground="#660000", selectforeground=WHITE,
                      relief="flat", bd=0, highlightthickness=0,
-                     font=(family, 8), padx=1, pady=1)
+                     font=(family, 10), padx=1, pady=1)
     output.pack(side="left", fill="both", expand=True)
     output_scroll = tk.Scrollbar(output_frame, orient="vertical", command=output.yview,
                                  bg=BLACK, troughcolor=BLACK, activebackground=RED,
@@ -516,7 +543,7 @@ def run(status_provider: Callable[[], dict],
                 index = output.index(f"@1,{y}")
                 line_number = int(index.split(".", 1)[0])
                 gutter.create_text(25, y, text=f"{line_number:02d}", anchor="ne",
-                                   fill=RED, font=(family, 8))
+                                   fill=RED, font=(family, 10))
                 y += line_height
         except (tk.TclError, ValueError):
             pass
@@ -524,19 +551,20 @@ def run(status_provider: Callable[[], dict],
     output.configure(yscrollcommand=update_gutter)
     output.bind("<Configure>", lambda _event: update_gutter())
 
-    action_status = label(content, "Ready", size=7)
-    action_status.grid(row=5, column=0, sticky="ew", pady=(3, 1))
+    action_status = label(content, "Ready", size=9)
+    action_status.grid(row=6, column=0, sticky="ew", pady=(3, 1))
     if state.get("window_registration_error"):
         action_status.configure(text=state["window_registration_error"])
     elif state.get("app_id_error"):
         action_status.configure(text="Windows app identity unavailable; taskbar window still enabled")
     controls = tk.Frame(content, bg=BLACK)
-    controls.grid(row=6, column=0, sticky="ew")
+    controls.grid(row=7, column=0, sticky="ew")
     controls.grid_columnconfigure(0, weight=3)
     controls.grid_columnconfigure(1, weight=1)
     controls.grid_columnconfigure(2, weight=1)
 
     def send(action: str, **fields) -> None:
+        state["pending_checkout_id"] = str(fields.get("checkout_id") or "main")
         launch_start = time.monotonic() if action == "build-or-launch" else None
         if launch_start is not None:
             state["launch_started_monotonic"] = launch_start
@@ -577,6 +605,64 @@ def run(status_provider: Callable[[], dict],
                 state["launch_readiness_elapsed"] = max(0.0, time.monotonic() - launch_start)
                 state["launch_timing_message"] = str(error)
         refresh()
+
+    def render_checkout_rows(model: dict) -> None:
+        checkouts = model.get("checkouts") or []
+        checkout_ids = {str(item.get("checkout_id") or "") for item in checkouts}
+        for checkout_id in list(state["checkout_rows"]):
+            if checkout_id not in checkout_ids:
+                state["checkout_rows"].pop(checkout_id)["frame"].destroy()
+        for index, checkout in enumerate(checkouts):
+            checkout_id = str(checkout.get("checkout_id") or "")
+            if not checkout_id:
+                continue
+            widgets = state["checkout_rows"].get(checkout_id)
+            if widgets is None:
+                row_frame = tk.Frame(checkout_rows_frame, bg=BLACK)
+                row_frame.grid_columnconfigure(1, weight=1)
+                name = label(row_frame, size=9, bold=True)
+                name.grid(row=0, column=0, sticky="w", padx=(2, 10))
+                detail = label(row_frame, size=9)
+                detail.grid(row=0, column=1, sticky="ew")
+                action_frame = tk.Frame(row_frame, bg=BLACK)
+                action_frame.grid(row=0, column=2, sticky="e", padx=(6, 2))
+                for action, caption in (("build", "Build"), ("launch", "Launch"),
+                                        ("start-server", "Server"), ("start-client", "Client")):
+                    button(action_frame, caption,
+                           lambda selected=checkout_id, verb=action:
+                           send(verb, checkout_id=selected), width=8).pack(side="left", padx=1)
+                widgets = {"frame": row_frame, "name": name, "detail": detail}
+                state["checkout_rows"][checkout_id] = widgets
+            status = checkout.get("state") or {}
+            if not checkout.get("available"):
+                availability = str(checkout.get("availability") or "unavailable").upper()
+                headline, color = (f"{availability} · status not available", "#888888")
+            else:
+                try:
+                    updated = datetime.fromisoformat(
+                        str(status.get("updated_at") or "").replace("Z", "+00:00"))
+                    age = max(0.0, (datetime.now(timezone.utc) - updated).total_seconds())
+                except (TypeError, ValueError):
+                    age = None
+                if age is None or age > 6.0:
+                    headline, color = "STALE · status has not refreshed", "#ffcc00"
+                else:
+                    build = str(status.get("build_status") or "build unknown").upper()
+                    phase = str(status.get("active_build_phase") or "").replace("_", " ")
+                    elapsed = status.get("active_build_elapsed_seconds")
+                    elapsed_text = f" {int(float(elapsed))}s" if elapsed is not None else ""
+                    instances = status.get("instances") or []
+                    servers = sum(1 for item in instances if item.get("role") == "server"
+                                  and item.get("state") not in ("offline", "stopped", "failed"))
+                    clients = sum(1 for item in instances if item.get("role") == "client"
+                                  and item.get("state") not in ("offline", "stopped", "failed"))
+                    headline = (f"{build}{(' · ' + phase) if phase else ''}{elapsed_text}"
+                                f" · {servers} server(s) / {clients} client(s)")
+                    color = RED if build in ("BUILDING", "FAILED", "ERROR") else GREEN
+            widgets["name"].configure(text=checkout.get("name") or checkout_id)
+            widgets["detail"].configure(text=headline, fg=color)
+            widgets["frame"].grid(row=index, column=0, sticky="ew", pady=1)
+            checkout_rows_frame.grid_columnconfigure(0, weight=1)
 
     def selected_process() -> dict | None:
         selected_key = state.get("selected_process_key")
@@ -850,13 +936,24 @@ def run(status_provider: Callable[[], dict],
 
     def live_process_rows(model):
         managed_by_pid = {}
-        for instance in model.get("instances", []) or []:
+        for checkout in model.get("checkouts", []) or []:
+            checkout_state = checkout.get("state") or {}
             try:
-                pid = int(instance.get("pid", 0) or 0)
+                update_time = datetime.fromisoformat(
+                    str(checkout_state.get("updated_at") or "").replace("Z", "+00:00"))
+                checkout_stale = (datetime.now(timezone.utc) - update_time).total_seconds() > 6
             except (TypeError, ValueError):
-                pid = 0
-            if pid and instance.get("state") not in ("offline", "stopped", "failed"):
-                managed_by_pid[pid] = instance
+                checkout_stale = True
+            for instance in (checkout.get("state") or {}).get("instances", []) or []:
+                try:
+                    pid = int(instance.get("pid", 0) or 0)
+                except (TypeError, ValueError):
+                    pid = 0
+                if pid and instance.get("state") not in ("offline", "stopped", "failed"):
+                    managed_by_pid[pid] = dict(
+                        instance, checkout_id=checkout.get("checkout_id"),
+                        checkout_available=checkout.get("available", False),
+                        checkout_stale=checkout_stale)
 
         rows = []
         for process in state.get("processes", []):
@@ -869,9 +966,12 @@ def run(status_provider: Callable[[], dict],
             command_line = str(process.get("command_line") or "")
             instance = managed_by_pid.get(pid)
             role = (str(instance.get("role") or "unknown") if instance else
-                    "server" if "--server" in command_line.lower().split() else "client")
+                    "server" if "--server" in command_line.lower().split() else "unverified")
             started = str(process.get("process_started_utc") or "")
             row = dict(instance or {})
+            if instance and (not instance.get("checkout_available", False)
+                             or instance.get("checkout_stale", False)):
+                row["state"] = "stale · daemon status unavailable"
             row.update({
                 "source": "managed" if instance else "external",
                 "process_key": f"{pid}:{started}",
@@ -883,6 +983,13 @@ def run(status_provider: Callable[[], dict],
                 "command_line": command_line,
                 "process_started_utc": started,
             })
+            try:
+                relative = Path(row["executable"]).resolve().relative_to(
+                    Path(__file__).resolve().parents[2])
+                if len(relative.parts) > 2 and relative.parts[:2] == (".dev", "agent-lanes"):
+                    row["checkout_id"] = relative.parts[2]
+            except (OSError, ValueError):
+                pass
             if not instance:
                 row["instance_id"] = f"external-{pid}"
                 row["label"] = f"external {role}"
@@ -893,14 +1000,11 @@ def run(status_provider: Callable[[], dict],
     def render_process_rows(model):
         rows = live_process_rows(model)
         state["rendered_processes"] = rows
-        scan_time = state.get("process_scan_last_success") or "not yet"
         count = len(rows)
-        noun = "process" if count == 1 else "processes"
         if state.get("process_scan_error"):
-            summary = (f"Process scan failed · last successful scan {scan_time} · "
-                       f"{state['process_scan_error'][:100]}")
+            summary = f"PROCESS SCAN FAILED · {state['process_scan_error'][:120]}"
         else:
-            summary = f"Found {count} running MiMITA {noun} · Last refreshed {scan_time}"
+            summary = f"{count} running MiMITA process(es)"
         process_summary.configure(text=summary)
 
         current_keys = {row["process_key"] for row in rows}
@@ -921,9 +1025,16 @@ def run(status_provider: Callable[[], dict],
             snapshot_age = row.get("snapshot_age_ms")
             snapshot_text = (f"snap={snapshot_age / 1000.0:.1f}s"
                              if snapshot_age is not None else "")
-            parts = [str(row.get("instance_id") or "MiMITA"), str(row.get("role") or "unknown"),
-                     str(row.get("state") or "running"), f"pid={row['pid']}"]
+            target = (row.get("connected_to") or row.get("server_instance_id") or
+                      row.get("connection_target") or "")
+            shown_state = ("stale · scan failed" if state.get("process_scan_error")
+                           else str(row.get("state") or "running"))
+            parts = [str(row.get("checkout_id") or "main"),
+                     str(row.get("instance_id") or "MiMITA"), str(row.get("role") or "unknown"),
+                     shown_state, f"pid={row['pid']}"]
             parts.extend(value for value in (uptime_text, snapshot_text) if value)
+            if target:
+                parts.append(f"-> {target}")
             text = "  ".join(parts)
             if row_state is None:
                 variable = tk.BooleanVar(value=False)
@@ -931,7 +1042,7 @@ def run(status_provider: Callable[[], dict],
                     process_rows_frame, text=text, variable=variable, anchor="w",
                     bg=BLACK, fg=RED, activebackground=BLACK, activeforeground=WHITE,
                     selectcolor=BLACK, disabledforeground="#660000", relief="flat",
-                    bd=0, highlightthickness=0, font=(family, 8),
+                    bd=0, highlightthickness=0, font=(family, 10),
                     command=lambda process_key=key:
                     state.__setitem__("selected_process_key", process_key))
                 state["process_rows"][key] = {"variable": variable, "widget": widget}
@@ -944,7 +1055,7 @@ def run(status_provider: Callable[[], dict],
             empty_text = ("Process scan unavailable" if state.get("process_scan_error")
                           else "0 running MiMITA processes found")
             if not state.get("process_empty_label"):
-                state["process_empty_label"] = label(process_rows_frame, empty_text, size=7)
+                state["process_empty_label"] = label(process_rows_frame, empty_text, size=9)
             else:
                 state["process_empty_label"].configure(text=empty_text)
             state["process_empty_label"].grid(row=0, column=0, sticky="w")
@@ -956,7 +1067,9 @@ def run(status_provider: Callable[[], dict],
             try:
                 apply_process_scan_result()
                 model = status_provider() or {}
+                state["dashboard_refresh_monotonic"] = time.monotonic()
                 state["latest_model"] = model
+                render_checkout_rows(model)
                 request_process_scan()
                 modes = _configured_launch_modes()
                 modes_changed = modes != state["launch_modes"]
@@ -975,7 +1088,12 @@ def run(status_provider: Callable[[], dict],
                             events_path and events_path != state["launch_events_path_before"]))
                     if state["launch_timing_status"] == "pending" else {}
                 )
-                last_control = model.get("last_control") or {}
+                pending_checkout_id = state.get("pending_checkout_id") or "main"
+                pending_checkout = next((item for item in model.get("checkouts", []) or []
+                                         if str(item.get("checkout_id") or "") == pending_checkout_id), {})
+                pending_state = pending_checkout.get("state") or {}
+                last_control = (pending_state.get("last_control")
+                                if pending_checkout_id != "main" else model.get("last_control")) or {}
                 if (state["launch_request_id"]
                         and last_control.get("request_id") == state["launch_request_id"]
                         and last_control.get("status") in ("failed", "rejected")
@@ -1149,9 +1267,17 @@ def run(status_provider: Callable[[], dict],
                 ))
 
                 subtitle.configure(text=(
-                    f"daemon {model.get('daemon_pid', '—')}  ·  "
-                    f"updated {model.get('updated_at', '—')}"
+                    f"Single coordinator dashboard  ·  {len(model.get('checkouts') or [])} checkout(s)/lane(s)  ·  "
+                    f"main daemon {model.get('daemon_pid', '—')}"
                 ))
+                refreshed = state.get("dashboard_refresh_monotonic") or time.monotonic()
+                refresh_age = int(max(0.0, time.monotonic() - refreshed))
+                process_count = len(state.get("rendered_processes") or [])
+                process_problem = (f"  ·  {state['process_scan_error'][:100]}"
+                                   if state.get("process_scan_error") else "")
+                process_summary.configure(
+                    text=f"Updated {refresh_age}s ago  ·  {process_count} running MiMITA process(es)"
+                         + process_problem)
                 build_lines = [f"[BUILD] {line}" for line in (model.get("build_output") or [])[-10:]]
                 activity_lines = [f"[LOOP] {line}" for line in (model.get("recent") or [])[-10:]]
                 source_line = model.get("source_activity")
@@ -1166,7 +1292,8 @@ def run(status_provider: Callable[[], dict],
                 output.configure(state="disabled")
                 output.yview_moveto(1.0)
                 update_gutter()
-                last_control = model.get("last_control") or {}
+                last_control = (pending_state.get("last_control")
+                                if pending_checkout_id != "main" else model.get("last_control")) or {}
                 pending_request = state.get("pending_request_id")
                 if (pending_request and last_control.get("request_id") == pending_request
                         and last_control.get("status") in ("completed", "failed", "rejected")):
@@ -1210,11 +1337,11 @@ def run(status_provider: Callable[[], dict],
 
     mode_map = tk.Frame(runtime_card, bg=BLACK)
     mode_map.grid(row=3, column=0, sticky="ew")
-    label(mode_map, "Mode:", size=7).grid(row=0, column=0, sticky="w")
-    mode_value = label(mode_map, "—", size=7, bold=True)
+    label(mode_map, "Mode:", size=9).grid(row=0, column=0, sticky="w")
+    mode_value = label(mode_map, "—", size=9, bold=True)
     mode_value.grid(row=0, column=1, sticky="w", padx=(3, 12))
-    label(mode_map, "Map:", size=7).grid(row=0, column=2, sticky="w")
-    map_value = label(mode_map, "—", size=7, bold=True)
+    label(mode_map, "Map:", size=9).grid(row=0, column=2, sticky="w")
+    map_value = label(mode_map, "—", size=9, bold=True)
     map_value.grid(row=0, column=3, sticky="w", padx=(3, 0))
 
     root.bind("<Configure>", reflow, add="+")

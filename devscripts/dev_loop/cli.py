@@ -56,6 +56,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--build-timeout", type=float, default=36000.0,
                         help="maximum seconds to wait with --wait-for-build")
     parser.add_argument("--ensure-running", action="store_true", help="ensure the watchdog and daemon exist and exit")
+    parser.add_argument("--no-dashboard", action="store_true",
+                        help="ensure or control the dev loop without opening a dashboard")
     parser.add_argument("--daemon", action="store_true", help="run the dev-loop daemon in this process (used by the watchdog/entry point)")
     parser.add_argument("--dashboard", action="store_true", help="open the visible dashboard view attached to the daemon")
     parser.add_argument("--dev-loop-role", default="", choices=("", "watchdog", "daemon", "dashboard"),

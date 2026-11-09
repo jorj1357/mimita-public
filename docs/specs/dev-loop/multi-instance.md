@@ -192,8 +192,9 @@ The dashboard is the single human heartbeat view. It must show, live:
   port/room, roster, snapshot age, badconn preset, and journal.
 - A separately labeled external-process group, excluded from active-run counts
   and the run manifest.
-- A live-process count and last successful process-scan time in UTC ISO 8601;
-  exited processes are removed from the process list.
+- A live-process count and the dashboard's one shared freshness indicator;
+  process-scan errors must remain visible and must not replace the last good
+  list with zero. Exited processes are removed after a successful scan.
 - Buttons to start one server, start one client, stop the selected instance,
   and restart the selected instance.
 - The selected row's detail and actions.

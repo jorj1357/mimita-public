@@ -42,6 +42,20 @@ Status: Draft v1 / target architecture and behavior
 Primary document: docs/architecture/player-npc-systems/npc-movement.md
 Navigation source inventory: external/npc-navigation-sources.md
 
+## Hot movement and perception ownership (2026-11-09)
+
+NPC movement intent, perception, sensing, targeting, and navigation choice
+belong to hot modules (`npc-behavior` and `npc-perception`). The host owns
+actor state, the immutable world and navmesh query mechanisms, collision and
+physics application, authoritative validation, and the fixed tick. The module
+asks through bounded capabilities and returns intent; it does not own physics,
+collision, or actor lifetime.
+
+Editing navigation choice, sensing policy, or movement intent must not relink
+the EXE. A change that needs a new host call site is a
+`HOT_RELOAD_BOUNDARY_VIOLATION`; generalize the existing capability/event
+surface instead.
+
 1. End goal
 
 MiMITA NPC movement should eventually be sufficiently human-like that, from movement alone, it is difficult to determine whether an actor is controlled by:

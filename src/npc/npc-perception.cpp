@@ -3,9 +3,12 @@
 #include "npc/npc-perception.h"
 
 #include "npc/npc.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/npc-perception-api.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace {
 
@@ -158,6 +161,168 @@ glm::vec3 predictTargetPosition(const glm::vec3& lastKnownPos,
     predicted.y += hashSigned(npcId, 2u) * errorMeters;
     predicted.z += hashSigned(npcId, 3u) * errorMeters * 0.5f;
     return predicted;
+}
+
+namespace {
+
+void copyVec3(const glm::vec3& from, float to[3])
+{
+    to[0] = from.x;
+    to[1] = from.y;
+    to[2] = from.z;
+}
+
+glm::vec3 toVec3(const float value[3])
+{
+    return glm::vec3(value[0], value[1], value[2]);
+}
+
+void fillMemory(const MemoryRecord& from, mimita_npc_perception::MemoryV1& to)
+{
+    to.hasMemory = from.hasMemory ? 1u : 0u;
+    copyVec3(from.lastKnownPosition, to.lastKnownPosition);
+    copyVec3(from.lastKnownVelocity, to.lastKnownVelocity);
+    to.ageSeconds = from.ageSeconds;
+    to.uncertainty = from.uncertainty;
+    to.confidence = from.confidence;
+}
+
+void fillSnapshot(const PerceptionSnapshot& from,
+                  mimita_npc_perception::SnapshotV1& to)
+{
+    to.candidateValid = from.candidateValid ? 1u : 0u;
+    to.withinFov = from.withinFov ? 1u : 0u;
+    to.withinRange = from.withinRange ? 1u : 0u;
+    to.hasLineOfSight = from.hasLineOfSight ? 1u : 0u;
+    to.visible = from.visible ? 1u : 0u;
+    to.radarKnown = from.radarKnown ? 1u : 0u;
+    copyVec3(from.position, to.position);
+    copyVec3(from.velocity, to.velocity);
+    to.distance = from.distance;
+}
+
+void readMemory(const mimita_npc_perception::MemoryV1& from, MemoryRecord& to)
+{
+    to.hasMemory = from.hasMemory != 0;
+    to.lastKnownPosition = toVec3(from.lastKnownPosition);
+    to.lastKnownVelocity = toVec3(from.lastKnownVelocity);
+    to.ageSeconds = from.ageSeconds;
+    to.uncertainty = from.uncertainty;
+    to.confidence = from.confidence;
+}
+
+PerceptionSnapshot readSnapshot(const mimita_npc_perception::SnapshotV1& from)
+{
+    PerceptionSnapshot to;
+    to.candidateValid = from.candidateValid != 0;
+    to.withinFov = from.withinFov != 0;
+    to.withinRange = from.withinRange != 0;
+    to.hasLineOfSight = from.hasLineOfSight != 0;
+    to.visible = from.visible != 0;
+    to.radarKnown = from.radarKnown != 0;
+    to.position = toVec3(from.position);
+    to.velocity = toVec3(from.velocity);
+    to.distance = from.distance;
+    return to;
+}
+
+BeliefState readBelief(const mimita_npc_perception::BeliefV1& from)
+{
+    BeliefState to;
+    to.hasVisibleTarget = from.hasVisibleTarget != 0;
+    to.hasTarget = from.hasTarget != 0;
+    to.targetActorId = from.targetActorId;
+    to.aimPosition = toVec3(from.aimPosition);
+    to.lastKnownPosition = toVec3(from.lastKnownPosition);
+    to.distance = from.distance;
+    to.confidence = from.confidence;
+    to.uncertainty = from.uncertainty;
+    return to;
+}
+
+} // namespace
+
+bool npcPerceptionPerceive(const Npc& npc, const Player& player,
+                           const glm::vec3& facingDir, bool candidateValid,
+                           bool losBlocked, bool queryLineOfSight,
+                           const glm::vec3& losFrom, const glm::vec3& losTo,
+                           const PerceptionTuning& tuning,
+                           PerceptionSnapshot& outSnapshot)
+{
+    if (!ModuleHost::instance().npcPerceptionLoaded())
+        return false;
+
+    mimita_npc_perception::PerceptionRequestV1 request{};
+    request.version = mimita_npc_perception::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.operation = mimita_npc_perception::OPERATION_PERCEIVE;
+    request.candidateValid = candidateValid ? 1u : 0u;
+    copyVec3(npc.body.pos, request.actorPosition);
+    copyVec3(facingDir, request.facing);
+    copyVec3(player.pos, request.candidatePosition);
+    copyVec3(player.vel, request.candidateVelocity);
+    request.tuning.horizontalFovDegrees = tuning.horizontalFovDegrees;
+    request.tuning.sightRangeMeters = tuning.sightRangeMeters;
+    request.tuning.hearingRangeMeters = tuning.hearingRangeMeters;
+    request.tuning.predictionSeconds = tuning.predictionSeconds;
+    request.tuning.predictionErrorMeters = tuning.predictionErrorMeters;
+    request.tuning.reactionDelayTicks = tuning.reactionDelayTicks;
+    request.tuning.memoryTicks = tuning.memoryTicks;
+    request.losMode = queryLineOfSight
+        ? mimita_npc_perception::LOS_QUERY_HOST
+        : mimita_npc_perception::LOS_PROVIDED;
+    request.losBlocked = losBlocked ? 1u : 0u;
+    copyVec3(losFrom, request.losFrom);
+    copyVec3(losTo, request.losTo);
+    if (!ModuleHost::instance().npcPerceptionStep(&request))
+        return false;
+    outSnapshot = readSnapshot(request.outSnapshot);
+    return true;
+}
+
+bool npcPerceptionStep(const Npc& npc, const Player& player,
+                       const glm::vec3& facingDir, bool candidateValid,
+                       bool losBlocked, bool queryLineOfSight,
+                       const glm::vec3& losFrom, const glm::vec3& losTo,
+                       float dt, const PerceptionTuning& tuning,
+                       MemoryRecord& memory, PerceptionSnapshot& outSnapshot,
+                       BeliefState& outBelief)
+{
+    if (!ModuleHost::instance().npcPerceptionLoaded())
+        return false;
+
+    mimita_npc_perception::PerceptionRequestV1 request{};
+    request.version = mimita_npc_perception::ABI_VERSION;
+    request.structSize = sizeof(request);
+    request.operation = mimita_npc_perception::OPERATION_STEP;
+    request.candidateValid = candidateValid ? 1u : 0u;
+    copyVec3(npc.body.pos, request.actorPosition);
+    copyVec3(facingDir, request.facing);
+    copyVec3(player.pos, request.candidatePosition);
+    copyVec3(player.vel, request.candidateVelocity);
+    request.tuning.horizontalFovDegrees = tuning.horizontalFovDegrees;
+    request.tuning.sightRangeMeters = tuning.sightRangeMeters;
+    request.tuning.hearingRangeMeters = tuning.hearingRangeMeters;
+    request.tuning.predictionSeconds = tuning.predictionSeconds;
+    request.tuning.predictionErrorMeters = tuning.predictionErrorMeters;
+    request.tuning.reactionDelayTicks = tuning.reactionDelayTicks;
+    request.tuning.memoryTicks = tuning.memoryTicks;
+    request.losMode = queryLineOfSight
+        ? mimita_npc_perception::LOS_QUERY_HOST
+        : mimita_npc_perception::LOS_PROVIDED;
+    request.losBlocked = losBlocked ? 1u : 0u;
+    copyVec3(losFrom, request.losFrom);
+    copyVec3(losTo, request.losTo);
+    request.dt = dt;
+    request.predictionErrorMeters = tuning.predictionErrorMeters;
+    fillMemory(memory, request.memory);
+    if (!ModuleHost::instance().npcPerceptionStep(&request))
+        return false;
+
+    outSnapshot = readSnapshot(request.outSnapshot);
+    readMemory(request.outMemory, memory);
+    outBelief = readBelief(request.outBelief);
+    return true;
 }
 
 bool npcPerceptionSelfTest(std::string& report)

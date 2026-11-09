@@ -232,12 +232,11 @@ that gameplay evidence comes from the exact running artifact's `events.jsonl`.
 
 The dashboard is the human's always-visible window into the loop.
 
-- The single canonical dashboard is the live view for the loop. A dev-loop
-  entry point reuses the existing dashboard; if none is running, it starts one.
-  Concurrent command entry points must serialize dashboard startup so only one
-  dashboard process/window remains for the checkout. Commands update the view
-  through daemon status and journal data; they do not replace or raise a second
-  dashboard.
+- The main checkout's single coordinator dashboard is the live view for the
+  main loop and registered lanes. Main-checkout entry points reuse it or start
+  it if absent. Lane entry points never start a dashboard. Commands update the
+  view through each daemon's status and journal data; they do not raise another
+  window.
 - The dashboard's existing bottom output/log pane must show every command the
   AI sends, in order, with a timestamp and result. Minimum record:
   `YYYY-MM-DDTHH:MM:SS.sssZ | AI | target instance | command | result`.
@@ -1547,9 +1546,10 @@ visible dashboard entry point:
 
 - The entry point ensures the one watchdog and one healthy daemon for this
   checkout, checking PID, authenticated control socket, heartbeat, run, and
-  source identity. It reuses the single dashboard if present and starts one
-  only when none is running; all entry points serialize startup and the
-  dashboard reconnects to current daemon status and journal activity.
+  source identity. A main-checkout entry point reuses the coordinator dashboard
+  or starts it when absent; lane entry points ensure only their own daemon.
+  Dashboard startup is serialized, and the coordinator reconnects to current
+  status and journal activity from every registered lane.
 - If the daemon is healthy, the entry point sends the request to it and exits
   with the request result.
 - If the daemon is absent, stale, or has a different script identity, the
@@ -2276,9 +2276,10 @@ ensure the watchdog and daemon exist, start them if absent, wait for the
 authenticated control endpoint, then send the request exactly once and (for
 `--command`) wait for the correlated client result. This is still one script and
 one persistent daemon, not a second supervisor app. `--status` stays read-only
-and never starts the daemon. The visible dashboard is the default entry for the
-desktop shortcut; AI command calls reuse the existing dashboard or start one
-if this checkout has no dashboard process.
+and never starts the daemon. The visible coordinator dashboard is the default
+entry for the main checkout's desktop shortcut; lane commands never open a
+dashboard. Main-checkout AI command calls reuse the one coordinator window or
+start it if absent.
 
 ## 20. Required implementation phases
 
@@ -2389,14 +2390,15 @@ client. The `ss` alias is a game-terminal alias defined in
 | `--visible` | Shows the game client window on its next launch. | Does not guarantee a separate daemon window or taskbar item. |
 | `--status` | Prints the last saved status. | Read-only; it never starts or wakes the daemon. |
 | `--json` | Prints status or control response as JSON. | Useful with `--status`, `--request`, `--command`, or `--scenario-file`. |
-| `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon and one dashboard (reusing the existing dashboard); sends the command once. `--cmd` is an alias. |
-| `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon and one dashboard (reusing the existing dashboard). |
-| `--ensure-running` | Ensures one watchdog, daemon, and dashboard exist, prints status, and exits. | Idempotent; never starts a duplicate. |
+| `--command "GAME COMMAND"` / `--cmd "GAME COMMAND"` | Sends one game-terminal command to the daemon, waits for the correlated result, prints it, and exits. | Ensures one watchdog/daemon; main-checkout calls reuse the coordinator dashboard, lane calls do not open another. Sends the command once. `--cmd` is an alias. |
+| `--scenario-file PATH` | Runs a repository-local Markdown/JSON scenario and returns its verdict. | Ensures one watchdog/daemon; only the main checkout reuses/opens the coordinator dashboard. |
+| `--ensure-running` | Ensures one watchdog and daemon, then prints status and exits. | Main checkout also opens/reuses the coordinator dashboard; lanes ensure only their daemon. |
+| `--no-dashboard` | Ensures/controls the dev-loop without opening a dashboard. | Used by agent lanes; does not affect any existing coordinator window. |
 | `--request launch` | Requests a build if needed, then launches the selected mode. | May include `--launch-mode NUMBER`. |
 | `--request stop-client` | Stops the dev-loop-owned client. | Leaves a healthy dedicated server running. |
 | `--request stop-server` | Requests stop of the identified dev-loop server. | Refuses to stop an unverified process. |
 | `--request stop` | Requests shutdown of the Python dev-loop daemon. | The server has its own lifetime and may remain running. |
-| `--dashboard` (default with no control option) | Opens/attaches the visible dashboard view. | This is the desktop-shortcut path; it ensures the watchdog/daemon then renders status. |
+| `--dashboard` (default with no control option) | Opens/attaches the visible dashboard view. | Main checkout opens/reuses the coordinator window; a lane only ensures its daemon and returns status. |
 | `--daemon` | Runs the build/game/control daemon in this process. | Used by the watchdog and the entry point; open by the shortcut only via the dashboard. |
 | `--dev-loop-role {watchdog,daemon,dashboard}` | Records a stable role marker in the process command line. | Windows Task Manager still shows `python.exe` as the image name; the Command Line column carries the role. |
 | `--no-terminal-relaunch` | Renders the dashboard in the current console. | Suppresses the Windows Terminal preference. |
@@ -2884,11 +2886,14 @@ not `null`, so a timed wait can be diagnosed from the journal alone.
 
 ## Native dashboard and contributor activity feed — desired
 
-The default desktop entry point opens a readable native Python window with
-MiMITA build/run status, recent activity, and clear build/launch controls. The
-terminal dashboard remains an explicit fallback. Keep the existing dev-loop
-process and status/control authority; the window is a presentation layer and
-must not create a competing build/run loop.
+The default desktop entry point opens one standalone native Python coordinator
+window with MiMITA build/run status, recent activity, and clear build/launch
+controls. It reads the main checkout and registered agent lanes and sends
+actions to each checkout's existing dev-loop daemon. Agent-lane ensure/run
+commands never open another window. The terminal dashboard remains an explicit
+fallback. Each dev-loop remains the source of truth for its own build/run state;
+the coordinator window is a presentation/control client, not a competing
+build/run loop. See `dashboard.md` for process discovery and presentation.
 
 The activity feed shows the latest ten available build-output lines and recent
 loop/runtime events, with build and loop sources labeled separately. Include

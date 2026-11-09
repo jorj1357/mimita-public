@@ -84,8 +84,7 @@ Entries: 11
 ## Entry 11 — Build time and cold-build frequency
 
 - Recorded: 2026-11-08T22:45:00Z
-- Status: UNRESOLVED — 20-minute lane rebuild observed; target 2–3 minutes
-- Summary: Wide shared headers, divergent lane scheduler roots, low memory, and
-  multiple concurrent lanes turned a debug rebuild into a tens-of-minutes
-  full rebuild. Build time is now recorded in uild/build-metrics.jsonl.
+- Status: MITIGATION COMMITTED — matched full-rebuild timing and causal attribution remain open
+- Summary: The previous four-job/below-normal policy was replaced with all logical processors at high priority. A later 11m40s cold lane build exposed zero ccache hits and a stale last-file status display; module workers were also missing shared-cache setup. Wide-header fan-out and cold dependency invalidation can still require many compile units.
 - Detail: [build-time-REG-2026-11-08.md](build-time-REG-2026-11-08.md)
+- Gold reference: [Build speed, one dev-loop, and liveable iteration](../../gold/2026-11-09-build-speed-and-diagnosis-reference.md)

@@ -23,7 +23,7 @@ Writable state lives under:
 .dev/builds/               immutable dev-loop artifacts
 .dev/current/              stable launch hardlinks
 .dev/stable-builds/        promoted stable artifacts
-.dev/shared-agent-ccache/  shared compiler cache for lanes
+.dev/ccache/              shared compiler cache for lanes
 .dev/tmp/                  all temporary files
 .dev/runtime/              room files and transient runtime files
 .dev/world-projects/       local authored world projects

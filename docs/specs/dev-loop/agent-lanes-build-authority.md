@@ -40,8 +40,10 @@ python devscripts/agent-lane.py check <lane>
 
 Long-term direction: every gameplay and tool behavior source belongs to a
 reloadable module. Cold EXE builds then shrink to process, device, transport,
-packet-schema, document-storage, loader, and public-ABI changes. Expanding the
-gap between cold builds is the primary performance goal; a module compile must
+packet-schema, document-storage, loader, and public-ABI changes. Networking
+state machines, NPC perception/sensing, targeting, navigation choice, and
+combat policy are hot subsystem behavior, not cold host code. Expanding the gap
+between cold builds is the primary performance goal; a module compile must
 never require an EXE relink.
 
 An agent must never run:
@@ -81,7 +83,10 @@ Mode 2 gives each agent:
 The coordinator checkout's `.dev/` owns the shared content-addressed `ccache`
 cache and per-attempt scheduler diagnostics. Lanes do not share source, objects,
 executables, module DLLs, run state, or evidence. All these paths remain within
-the coordinator repository.
+the coordinator repository. A lane build must normalize its cache inputs to the
+lane worktree root (`CCACHE_BASEDIR`, `CCACHE_NOHASHDIR=1`, relative project
+include/source paths) so identical source and flags hit the shared cache across
+worktrees; otherwise every new lane becomes an unnecessary full cold build.
 
 Mode 1 remains available for the human coordinator as a fallback. It is not an
 agent workflow.

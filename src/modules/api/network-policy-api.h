@@ -148,6 +148,29 @@ struct CombatValidationPolicyV1
     std::uint32_t outGeneration;
 };
 
+// Fixed-tick server phase budget policy. Host owns measured phase durations
+// and the tick loop; the module owns warning thresholds and yield intent.
+struct ServerPhaseBudgetPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t tick;
+    std::uint32_t npcCount;
+    std::uint32_t playerCount;
+    double totalMs;
+    double npcMs;
+    double projectileMs;
+    double contactMs;
+    std::uint32_t outTotalBudgetMs;
+    std::uint32_t outNpcBudgetMs;
+    std::uint32_t outProjectileBudgetMs;
+    std::uint32_t outContactBudgetMs;
+    std::uint32_t outOverBudget;
+    std::uint32_t outDeferNpc;
+    std::uint32_t outDeferContacts;
+    std::uint32_t outGeneration;
+};
+
 struct InterpolationPolicyV1
 {
     std::uint32_t version;

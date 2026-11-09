@@ -45,7 +45,10 @@ artifacts, and journals live inside the repository under gitignored roots.
 | `map-geometry` hot module | Pending | part of boundary | Signature/transform/flat-ground policy |
 | Full map-editor extraction | Pending | part of boundary | Snapshot store, undo/redo/clipboard, object/draw/input/command |
 | GLB schema v2 | Partial | sidecar | Rotation/scale/tombstone/clone runtime implemented; imports data model only |
-| Remaining hot owners | Later | reserved surfaces | Gamemode, networking, NPC, ragdoll, contact |
+| Networking behavior subsystem | In progress | one capability build | Map-sync/reconnect/session-health decisions; transport and packet schemas stay cold |
+| NPC perception subsystem | In progress | one capability build | FOV/range/LOS gates, memory, belief, prediction; world query stays host |
+| NPC behavior subsystem | In progress | no | Goal/action/targeting/combat/team policy; authoritative application stays host |
+| Remaining hot owners | Later | reserved surfaces | Gamemode, ragdoll, contact, remaining networking |
 | Data-driven IR/behavior | Long-term | eventual kernel only | New mechanisms without new host call sites |
 
 ## One ABI-first boundary
@@ -63,6 +66,27 @@ The single boundary build installs:
 After promotion, feature work is module-only unless a genuinely new kernel
 mechanism is discovered. That is a `HOT_RELOAD_BOUNDARY_VIOLATION` and is
 scheduled deliberately, not hidden.
+
+## Hot subsystem targets
+
+- **Networking:** move the map-sync, reconnect, session-health, snapshot,
+  spawn-authority, and combat-validation state machines into the networking
+  module. Keep transport, packet encode/decode, map/asset loaders, and sockets
+  cold. Reconnect accepts must restore the authoritative map id (or preserve the
+  previous map when an older peer omits it).
+- **NPC perception:** move FOV/range/LOS gating, memory decay, belief, and
+  prediction into `npc-perception`. Expose only a bounded world-query
+  capability; the module decides when to query and how to gate the result.
+- **NPC behavior:** move targeting, navigation choice, combat intent, team
+  coordination, and utility policy into `npc-behavior`. The host keeps actor
+  state, world/navmesh queries, collision/physics application, and the fixed
+  tick.
+- **Server budgets:** phase-budget thresholds and yield intent are hot policy;
+  measured durations and the tick loop remain host mechanisms.
+
+A new behavior that needs a one-off host call site is a
+`HOT_RELOAD_BOUNDARY_VIOLATION`. Generalize the event/action/capability surface
+instead.
 
 ## Immediate continuation order
 

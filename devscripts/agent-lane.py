@@ -10,6 +10,7 @@ and evidence for later review.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import datetime
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -151,6 +153,83 @@ def devloop(path: Path, *args: str, capture: bool = False,
                capture=capture, timeout=timeout, env=merged)
 
 
+# Dev-loop tooling is shared by every checkout but not snapshotted after lane
+# creation. Keep the lane's copy in sync so a coordinator tooling change (for
+# example the new --no-dashboard flag) does not make lane commands fail.
+TOOLING_FILES = (
+    "devscripts/dev-loop.py",
+    "devscripts/dev-loop-watch.py",
+)
+TOOLING_PACKAGE = "devscripts/dev_loop"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def tooling_paths(root: Path) -> list[Path]:
+    paths = [root / relative for relative in TOOLING_FILES]
+    package = root / TOOLING_PACKAGE
+    if package.is_dir():
+        paths.extend(sorted(package.glob("*.py")))
+    return [path for path in paths if path.is_file()]
+
+
+def sync_lane_tooling(path: Path) -> list[str]:
+    """Copy changed coordinator dev-loop tooling into a lane worktree."""
+    lane_root = resolve_within(ROOT, path, label="lane worktree", must_exist=True)
+    changed: list[str] = []
+    for source in tooling_paths(ROOT):
+        relative = source.relative_to(ROOT)
+        destination = resolve_within(
+            lane_root, lane_root / relative,
+            label=f"lane tooling {relative.as_posix()}")
+        if destination.is_file() and _sha256(source) == _sha256(destination):
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        changed.append(relative.as_posix())
+    return changed
+
+
+def lane_run_is_live(path: Path) -> bool:
+    result = devloop(path, "--status", "--json", capture=True, timeout=30)
+    if result.returncode:
+        return False
+    try:
+        return bool(json.loads(result.stdout).get("run_alive"))
+    except (ValueError, AttributeError):
+        return False
+
+
+def prepare_lane_tooling(lane_id: str, data: dict[str, Any], path: Path) -> list[str]:
+    """Sync lane dev-loop tooling and restart the daemon when it is safe."""
+    changed = sync_lane_tooling(path)
+    if not changed:
+        return changed
+    data["tooling_synced"] = changed
+    data["tooling_source_revision"] = git(["rev-parse", "HEAD"]).stdout.strip()
+    data["tooling_synced_utc"] = datetime.datetime.now(
+        datetime.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+    write_metadata(data)
+    print("tooling_synced=" + ",".join(changed))
+    if any(relative.endswith("dev-loop.py") or
+           "/dev_loop/" in relative.replace("\\", "/") for relative in changed):
+        if lane_run_is_live(path):
+            # A live game pair must not be replaced by tooling alone. The
+            # watcher defers the daemon replacement until the run ends.
+            print("tooling_restart=deferred (live run present)")
+        else:
+            devloop(path, "--request", "stop", "--json", capture=True, timeout=60)
+            # Let the daemon release its lock before ensure starts the new code.
+            time.sleep(1.0)
+    return changed
+
+
 def print_identity(lane_id: str, path: Path, identity: dict[str, Any]) -> None:
     branch = git(["branch", "--show-current"], path).stdout.strip()
     print(f"lane={lane_id} branch={branch or '(detached)'} revision={identity['revision']} "
@@ -263,7 +342,11 @@ def ensure_lane(args: argparse.Namespace) -> int:
     print_identity(args.lane_id, path, identity)
     data.update(source_revision=identity["revision"], status="ready")
     write_metadata(data)
-    result = devloop(path, "--ensure-running", capture=True, timeout=args.timeout)
+    prepare_lane_tooling(args.lane_id, data, path)
+    # The coordinator checkout owns the one visible dashboard. Lane commands
+    # ensure only their own watchdog/daemon and never open another window.
+    result = devloop(path, "--ensure-running", "--no-dashboard",
+                     capture=True, timeout=args.timeout)
     if result.returncode:
         if result.stdout:
             print(result.stdout.strip())
@@ -283,11 +366,23 @@ def run_lane(args: argparse.Namespace) -> int:
     data.update(source_revision=identity["revision"], source_dirty=identity["dirty"],
                 source_worktree_sha256=identity["worktree_sha256"])
     write_metadata(data)
-    result = devloop(path, "--request", "launch", "--launch-mode", args.launch_mode,
+    prepare_lane_tooling(args.lane_id, data, path)
+    result = devloop(path, "--request", "launch", "--no-dashboard",
+                     "--launch-mode", args.launch_mode,
                      "--profile", args.profile)
     if result.returncode:
         return result.returncode
     status_lane(argparse.Namespace(lane_id=args.lane_id))
+    return 0
+
+
+def sync_lane(args: argparse.Namespace) -> int:
+    data = read_metadata(args.lane_id)
+    path = lane_path(args.lane_id)
+    print_identity(args.lane_id, path, source_identity(path))
+    changed = prepare_lane_tooling(args.lane_id, data, path)
+    if not changed:
+        print("tooling_synced=none")
     return 0
 
 
@@ -551,6 +646,9 @@ def parser() -> argparse.ArgumentParser:
     runp = sub.add_parser("run", help="launch a build through this lane's dev-loop")
     runp.add_argument("lane_id"); runp.add_argument("--launch-mode", required=True)
     runp.add_argument("--profile", default="npc-navigation"); runp.set_defaults(func=run_lane)
+    syncp = sub.add_parser(
+        "sync", help="copy current checker dev-loop tooling into a lane")
+    syncp.add_argument("lane_id"); syncp.set_defaults(func=sync_lane)
     check = sub.add_parser("check", help="run focused checks selected from changed files")
     check.add_argument("lane_id"); check.add_argument("--base", default="")
     check.add_argument("--jobs", type=int, default=1)

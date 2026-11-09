@@ -50,6 +50,20 @@ or runtime ownership; those remain in their existing specifications.
   `docs/specs/movement/movement.md`, and
   `docs/architecture/player-npc-systems/npc-movement.md`.
 
+## Hot NPC ownership (2026-11-09)
+
+NPC behavior and perception are hot subsystem modules. `npc-behavior` owns
+goal/action selection, targeting, combat intent, team coordination, and utility
+policy. `npc-perception` owns FOV/range/LOS gating, memory decay, belief, and
+prediction. The host owns actors, the immutable world/navmesh query mechanism,
+collision and physics application, authoritative validation, and the fixed tick.
+
+The host exposes bounded `CAPABILITY_NPC_WORLD` line-of-sight/ray queries and
+plain-data event/action records. The module decides when to sense, which gates
+apply, how memory decays, and what action to request. Editing perception,
+sensing policy, targeting, navigation choice, or combat policy must not relink
+the EXE. A new one-off host call site is a `HOT_RELOAD_BOUNDARY_VIOLATION`.
+
 ## 1. Goals
 
 NPCs should be able to sustain a visible firefight by firing the weapons in

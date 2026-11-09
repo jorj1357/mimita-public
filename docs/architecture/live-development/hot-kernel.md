@@ -30,17 +30,48 @@ schemas instead of adding host call sites. See
 [module-migration-plan.md](module-migration-plan.md) and
 [self-contained-workspace.md](self-contained-workspace.md).
 
-This file describes the **target architecture**, not the current set of tracked
-hot modules. The current source has a narrow `build_game_dll.py` target for
-effect-part and quick-hit debug-visual code; the map editor, NPC behavior, and
-other gameplay systems remain in the normal EXE source path. The map editor's
-first module goal is specified in
+This file describes the **target architecture**, not a claim that every listed
+surface is already migrated. The current catalog includes the map editor,
+world rendering, world generation, collision, network policy, navigation, NPC
+behavior, NPC perception, and actor rendering; remaining host-owned NPC sensing
+queries, networking transport, packet schemas, loaders, and fixed-tick
+mechanisms stay cold. The map editor's first module goal is specified in
 [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md).
 Older examples and round notes in
 this architecture file are not proof that those module sources still exist in
 the checkout. Use
 [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md) for
 the source-checked current inventory and the desired migration contract.
+
+## Hot subsystem ideal (2026-11-09)
+
+The cold boundary is a mechanism boundary, not a file list. The host keeps only
+process/device/transport/packet-schema/document/loader/public-ABI mechanisms and
+the authoritative safety limits. Everything that decides behavior belongs to a
+hot subsystem module, including networking state machines and NPC perception,
+sensing, targeting, navigation choice, and combat policy.
+
+```text
+host bounded view/event
+    -> hot subsystem module decision/action
+    -> host validates and applies through the existing owner
+```
+
+Two subsystem modules are the target:
+
+- `network-policy` (or a later `network-session`) owns map-sync, reconnect,
+  session-health, snapshot-policy, spawn-authority, and combat-validation
+  decisions. The host keeps sockets, ICE/UDP transport, packet wire structs,
+  encode/decode, map loading, and fixed-tick scheduling.
+- `npc-behavior` plus `npc-perception` own NPC perception/LOS gating, memory,
+  belief, targeting, navigation choice, combat intent, and team logic. The host
+  keeps actors, the immutable world and navmesh queries, collision/physics,
+  authoritative application, and the fixed tick.
+
+New behavior must use generic capabilities and event/action data. Adding a new
+one-off host call site is a `HOT_RELOAD_BOUNDARY_VIOLATION`; generalize the
+existing capability/event surface instead. Packet schemas, transport, loaders,
+and the public module ABI remain deliberate cold boundaries.
 
 ## Model
 

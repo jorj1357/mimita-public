@@ -766,12 +766,13 @@ void engineTickNet(Engine& engine, float dt)
                         __FILE__, __LINE__, __FUNCTION__);
                 }
             }
-            const bool readyAlreadySent =
+            bool readyAlreadySent =
                 mpContext.clientMapReadySent &&
                 mpContext.clientMapReadySentForPlayerId == mpContext.localPlayerId &&
                 mapIdsReferToSameMap(mpContext.clientMapReadySentForMap, mpContext.requiredMapId);
 
             std::uint32_t readyRetryIntervalMs = 500;
+            bool mapSyncPolicyApplied = false;
             mimita_network_policy::MapSyncPolicyV1 mapSyncPolicy{};
             mapSyncPolicy.version = mimita_network_policy::ABI_VERSION;
             mapSyncPolicy.structSize = sizeof(mapSyncPolicy);
@@ -786,14 +787,26 @@ void engineTickNet(Engine& engine, float dt)
                 mpContext.lastClientMapReadySendMs &&
                         now >= mpContext.lastClientMapReadySendMs
                     ? now - mpContext.lastClientMapReadySendMs : 0;
-            if (ModuleHost::instance().networkMapSyncPolicy(&mapSyncPolicy) &&
-                mapSyncPolicy.outRetryIntervalMs > 0)
+            mapSyncPolicyApplied =
+                ModuleHost::instance().networkMapSyncPolicy(&mapSyncPolicy);
+            if (mapSyncPolicyApplied && mapSyncPolicy.outRetryIntervalMs > 0)
                 readyRetryIntervalMs = mapSyncPolicy.outRetryIntervalMs;
+            if (mapSyncPolicyApplied && mapSyncPolicy.outResetReady) {
+                mpContext.clientMapReadySent = false;
+                mpContext.lastClientMapReadySendMs = 0;
+                mpContext.clientMapReadySentForMap.clear();
+                mpContext.clientMapReadySentForPlayerId = 0;
+                readyAlreadySent = false;
+            }
             const bool awaitingSpawn =
                 readyAlreadySent && !mpContext.hasLocalServerPosition;
-            const bool readyRetryDue =
-                awaitingSpawn && now - mpContext.lastClientMapReadySendMs >=
-                                     readyRetryIntervalMs;
+            const bool readyRetryDue = mapSyncPolicyApplied
+                ? (mapSyncPolicy.outResendReady != 0 &&
+                   now - mpContext.lastClientMapReadySendMs >=
+                       readyRetryIntervalMs)
+                : (awaitingSpawn &&
+                   now - mpContext.lastClientMapReadySendMs >=
+                       readyRetryIntervalMs);
             if (mpContext.connected && mpContext.localPlayerId != 0 &&
                 mapReady && (!readyAlreadySent || readyRetryDue))
             {

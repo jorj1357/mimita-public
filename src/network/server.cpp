@@ -1350,7 +1350,29 @@ int runServer(const LaunchOptions& options)
             const double projectileMs = static_cast<double>(projectileUs) / 1000.0;
             const double contactMs = static_cast<double>(physicalContactUs) / 1000.0;
             const double npcPhaseMs = static_cast<double>(npcUs) / 1000.0;
-            if (projectileMs > 4.0 || contactMs > 4.0 || npcPhaseMs > 10.0)
+            mimita_network_policy::ServerPhaseBudgetPolicyV1 budget{};
+            budget.version = mimita_network_policy::ABI_VERSION;
+            budget.structSize = sizeof(budget);
+            budget.tick = tick;
+            budget.npcCount = static_cast<std::uint32_t>(npcs.size());
+            budget.playerCount = static_cast<std::uint32_t>(players.size());
+            budget.totalMs = static_cast<double>(totalTickUs) / 1000.0;
+            budget.npcMs = npcPhaseMs;
+            budget.projectileMs = projectileMs;
+            budget.contactMs = contactMs;
+            const bool budgetPolicyApplied =
+                ModuleHost::instance().networkServerPhaseBudgetPolicy(&budget);
+            const double projectileBudgetMs = budgetPolicyApplied
+                ? (double)budget.outProjectileBudgetMs : 4.0;
+            const double contactBudgetMs = budgetPolicyApplied
+                ? (double)budget.outContactBudgetMs : 4.0;
+            const double npcBudgetMs = budgetPolicyApplied
+                ? (double)budget.outNpcBudgetMs : 10.0;
+            const bool phaseOverBudget = budgetPolicyApplied
+                ? budget.outOverBudget != 0
+                : (projectileMs > 4.0 || contactMs > 4.0 ||
+                   npcPhaseMs > 10.0);
+            if (phaseOverBudget)
             {
                 StructuredLogger::instance().writeEvent(
                     StructuredCategory::Performance, StructuredLevel::Important,
@@ -1359,14 +1381,20 @@ int runServer(const LaunchOptions& options)
                     nlohmann::json{
                         {"tick", tick},
                         {"projectile_ms", projectileMs},
-                        {"projectile_budget_ms", 4.0},
+                        {"projectile_budget_ms", projectileBudgetMs},
                         {"physical_contact_ms", contactMs},
-                        {"physical_contact_budget_ms", 4.0},
+                        {"physical_contact_budget_ms", contactBudgetMs},
                         {"npc_ms", npcPhaseMs},
-                        {"npc_budget_ms", 10.0},
-                        {"projectile_over", projectileMs > 4.0},
-                        {"contact_over", contactMs > 4.0},
-                        {"npc_over", npcPhaseMs > 10.0},
+                        {"npc_budget_ms", npcBudgetMs},
+                        {"projectile_over", projectileMs > projectileBudgetMs},
+                        {"contact_over", contactMs > contactBudgetMs},
+                        {"npc_over", npcPhaseMs > npcBudgetMs},
+                        {"defer_npc", budgetPolicyApplied
+                            ? (budget.outDeferNpc != 0) : false},
+                        {"defer_contacts", budgetPolicyApplied
+                            ? (budget.outDeferContacts != 0) : false},
+                        {"policy_generation", budgetPolicyApplied
+                            ? budget.outGeneration : 0u},
                         {"npcs", npcs.size()},
                         {"players", players.size()}},
                     __FILE__, __LINE__, __FUNCTION__);

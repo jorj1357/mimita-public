@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import socket
@@ -978,6 +979,20 @@ def stage_stable_launch(build_exe: Path, expected_sha256: str) -> Path:
         raise
 
 
+def _replace_with_retry(source: Path, destination: Path,
+                        timeout: float = 10.0) -> None:
+    """Rename while Windows releases handles held by a just-finished build."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.25)
+
+
 def activate_stable_launch(stage_dir: Path) -> Path:
     """Atomically point the constant firewall path at a staged build."""
     resolved_dev_root = DEV_ROOT.resolve()
@@ -994,19 +1009,12 @@ def activate_stable_launch(stage_dir: Path) -> Path:
     try:
         if STABLE_LAUNCH_DIR.exists():
             # Windows can keep the executable directory locked briefly after
-            # taskkill reports success. Retry the atomic swap while the OS
-            # releases those handles; never fall back to deleting the live path.
-            deadline = time.monotonic() + 10.0
-            while True:
-                try:
-                    os.replace(STABLE_LAUNCH_DIR, backup_dir)
-                    break
-                except PermissionError:
-                    if time.monotonic() >= deadline:
-                        raise
-                    time.sleep(0.25)
+            # taskkill reports success or while AV scans the new bundle. Retry
+            # both swaps while the OS releases those handles; never fall back
+            # to deleting the live path.
+            _replace_with_retry(STABLE_LAUNCH_DIR, backup_dir)
             moved_old = True
-        os.replace(stage_dir, STABLE_LAUNCH_DIR)
+        _replace_with_retry(stage_dir, STABLE_LAUNCH_DIR)
     except Exception:
         if moved_old and backup_dir.exists() and not STABLE_LAUNCH_DIR.exists():
             os.replace(backup_dir, STABLE_LAUNCH_DIR)
@@ -1172,6 +1180,8 @@ class DevLoop:
         self.active_build_started_utc: str | None = None
         self.active_build_started_monotonic: float | None = None
         self.active_build_detail = "waiting for build worker"
+        self.active_build_phase = ""
+        self.active_build_progress: dict = {}
         self.build_output_tail: deque[str] = deque(maxlen=10)
         self.build_last_progress_save = 0.0
         self.build_worker: threading.Thread | None = None
@@ -1696,6 +1706,8 @@ class DevLoop:
                 "active_build_started_utc": self.active_build_started_utc,
                 "active_build_started_monotonic": self.active_build_started_monotonic,
                 "active_build_detail": self.active_build_detail,
+                "active_build_phase": self.active_build_phase,
+                "active_build_progress": dict(self.active_build_progress),
                 "build_output_tail": list(self.build_output_tail),
                 "last_build_result": self.last_build_result,
                 "last_build_duration_seconds": self.last_build_duration_seconds,
@@ -1779,6 +1791,8 @@ class DevLoop:
             "active_build_started_utc": build_snapshot["active_build_started_utc"],
             "active_build_elapsed_seconds": build_elapsed,
             "active_build_detail": build_snapshot["active_build_detail"],
+            "active_build_phase": build_snapshot["active_build_phase"],
+            "active_build_progress": build_snapshot["active_build_progress"],
             "build_output_tail": build_snapshot["build_output_tail"],
             "last_build_result": build_snapshot["last_build_result"],
             "last_build_duration_seconds": build_snapshot["last_build_duration_seconds"],
@@ -2592,6 +2606,8 @@ class DevLoop:
             self.active_build_started_utc = utc_now()
             self.active_build_started_monotonic = time.monotonic()
             self.active_build_detail = "starting compiler"
+            self.active_build_phase = "starting"
+            self.active_build_progress = {}
             self.build_output_tail.clear()
             self.build_pending = False
             self.build_status = "building"
@@ -2613,6 +2629,52 @@ class DevLoop:
         with self.lock:
             if detail:
                 self.build_output_tail.append(detail)
+                self.active_build_detail = detail
+                self.last_message = detail
+            save = now - self.build_last_progress_save >= 0.75
+            if save:
+                self.build_last_progress_save = now
+        if save:
+            self.save_state("building")
+
+    def _record_build_progress(self, progress: dict) -> None:
+        if not isinstance(progress, dict):
+            return
+        phase = str(progress.get("phase") or "")
+        if not phase:
+            return
+        current = str(progress.get("current") or "")
+        detail = str(progress.get("message") or "")
+        if phase == "compiling":
+            compiled = progress.get("compiled", 0)
+            total = progress.get("total", 0)
+            detail = f"compiling {compiled}/{total}"
+            if current:
+                detail += f" [CXX] {current}"
+        elif phase == "linking":
+            detail = "linking mimita.exe"
+            reason = str(progress.get("link_reason") or "")
+            if reason:
+                detail += f" ({reason})"
+        elif phase == "pch":
+            detail = "building precompiled header"
+            if current:
+                detail += f" ({current})"
+        elif phase == "setup":
+            detail = "preparing build"
+        elif phase == "publishing":
+            detail = "publishing validated executable"
+        elif phase == "completed":
+            detail = "build artifact published"
+        elif phase == "build_complete":
+            detail = "build worker complete"
+        elif phase == "failed":
+            detail = f"build failed in {progress.get('phase_name', phase)}"
+        now = time.monotonic()
+        with self.lock:
+            self.active_build_phase = phase
+            self.active_build_progress = dict(progress)
+            if detail:
                 self.active_build_detail = detail
                 self.last_message = detail
             save = now - self.build_last_progress_save >= 0.75
@@ -2650,6 +2712,8 @@ class DevLoop:
                 self.active_build_started_utc = None
                 self.active_build_started_monotonic = None
                 self.active_build_detail = ""
+                self.active_build_phase = ""
+                self.active_build_progress = {}
                 self.last_build_duration_seconds = float(result.get("duration_seconds", 0))
                 self.last_build_result = "success" if success else "failed"
                 if success:
@@ -3312,10 +3376,17 @@ class DevLoop:
                 shutil.rmtree(staged_launch, ignore_errors=True)
                 self.last_message = f"could not activate stable launch path: {error}"
                 stage("stable_launch_activation", "failed", self.last_message)
-                self.save_state("stable_launch_activate_failed")
-                print(f"[DEV] {self.last_message}")
-                return False
-            stage("stable_launch_activation", "succeeded", "stable launch path activated")
+                # The published artifact is already hash-verified and lives
+                # inside BUILD_ROOT. Do not lose a valid build to a Windows
+                # directory-swap failure; record and launch it directly.
+                launch_exe = exe
+                self.launch_executable = str(exe)
+                stage("launch_fallback", "selected",
+                      "launching verified published artifact after stable-path swap failure",
+                      launch_executable=str(exe))
+                print(f"[DEV] {self.last_message}; launching artifact directly: {exe}")
+            else:
+                stage("stable_launch_activation", "succeeded", "stable launch path activated")
         else:
             if stable_launch_matches(exe):
                 shutil.rmtree(staged_launch, ignore_errors=True)
@@ -3335,10 +3406,14 @@ class DevLoop:
                     shutil.rmtree(staged_launch, ignore_errors=True)
                     self.last_message = f"could not activate stable launch path: {error}"
                     stage("stable_launch_activation", "failed", self.last_message)
-                    self.save_state("stable_launch_activate_failed")
-                    print(f"[DEV] {self.last_message}")
-                    return False
-                stage("stable_launch_activation", "succeeded", "stable launch path activated")
+                    launch_exe = exe
+                    self.launch_executable = str(exe)
+                    stage("launch_fallback", "selected",
+                          "launching verified published artifact after stable-path swap failure",
+                          launch_executable=str(exe))
+                    print(f"[DEV] {self.last_message}; launching artifact directly: {exe}")
+                else:
+                    stage("stable_launch_activation", "succeeded", "stable launch path activated")
         if self.server_health() and (bool(self.room_code) or self.server_local_port):
             shutil.rmtree(staged_launch, ignore_errors=True)
             room_code = self.room_code
@@ -4075,6 +4150,8 @@ class DevLoop:
         snapshot = self.state(self.last_status_value)
         status_line = (
             snapshot.get("build_status"),
+            snapshot.get("active_build_phase"),
+            snapshot.get("active_build_detail"),
             self.running_build,
             self.latest_build,
             self.latest_stale,
@@ -4104,7 +4181,7 @@ class DevLoop:
         client_pids = snapshot.get("client_pids", [])
         lines = [
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
-            f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
+            f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} detail={snapshot.get('active_build_phase') or snapshot.get('active_build_detail') or '-'} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
             f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build_id') or snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
@@ -5181,6 +5258,13 @@ def ensure_running(profile: str, launch_mode, visibility: str,
     An explicit start also clears any prior explicit-shutdown intent so the
     watchdog resumes keeping a daemon alive (spec section 19.4).
     """
+    # A mode-2 lane is an independent daemon/build/runtime owner, not a second
+    # dashboard owner. Only the coordinator checkout may open the shared view.
+    try:
+        open_dashboard = bool(open_dashboard and
+                              ROOT.resolve() == COORDINATOR_ROOT.resolve())
+    except OSError:
+        open_dashboard = False
     events: list[dict] = []
     clear_stop_intent()
     wpid = watcher_pid()
@@ -5551,12 +5635,18 @@ def _read_dashboard_key():
 
 
 def run_dashboard(args: argparse.Namespace) -> int:
+    if ROOT.resolve() != COORDINATOR_ROOT.resolve():
+        # Even an explicit dashboard request from a mode-2 lane attaches to
+        # its daemon without creating a second visible window.
+        args.ensure_running = True
+        args.no_dashboard = True
+        return run_control_client(args)
     try:
         from dev_loop import terminal as term
     except ImportError:
         term = None
 
-    title = f"MiMITA Dev Loop Dashboard — {ROOT.name}"
+    title = f"MiMITA Coordinator Dashboard — {ROOT.name}"
     if term is not None and not args.no_terminal_relaunch:
         if term.relaunch_in_windows_terminal(title):
             return 0
@@ -5654,12 +5744,63 @@ def run_dashboard(args: argparse.Namespace) -> int:
     def snapshot() -> dict:
         return request_daemon_status(current, timeout=0.25) if current else None
 
+    checkout_states: dict[str, dict] = {"main": current or {}}
+
+    def collect_checkout_states() -> list[dict]:
+        """Read the coordinator and lane snapshots without waking lane daemons."""
+        nonlocal current
+        current = request_daemon_status(current, timeout=0.25) or read_current_run() or current or {}
+        checkout_states.clear()
+        checkout_states["main"] = current
+        rows = [{"checkout_id": "main", "name": "Main checkout",
+                 "available": bool(current), "state": current}]
+        registry = COORDINATOR_ROOT / ".dev" / "agent-lanes"
+        if not registry.is_dir():
+            return rows
+        for metadata_path in sorted(registry.glob("*.json")):
+            try:
+                metadata = read_json(resolve_within(
+                    COORDINATOR_ROOT, metadata_path, label="lane metadata", must_exist=True))
+                if not isinstance(metadata, dict):
+                    continue
+                lane_id = str(metadata.get("lane_id") or metadata_path.stem)
+                if not lane_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,47}", lane_id):
+                    continue
+                worktree = resolve_within(
+                    COORDINATOR_ROOT, Path(str(metadata.get("worktree") or "")),
+                    label="lane worktree", must_exist=True)
+                lane_state_path = resolve_within(
+                    COORDINATOR_ROOT, worktree / ".dev" / "current-run.json",
+                    label="lane status")
+                lane_state = read_json(lane_state_path)
+                if not isinstance(lane_state, dict):
+                    lane_state = {}
+                try:
+                    daemon_pid = int((worktree / ".dev" / "dev-loop.lock").read_text(
+                        encoding="ascii").strip())
+                except (OSError, ValueError):
+                    daemon_pid = 0
+                alive = bool(daemon_pid and pid_alive(daemon_pid))
+                checkout_states[lane_id] = lane_state
+                rows.append({"checkout_id": lane_id,
+                             "name": f"Lane {lane_id}",
+                             "available": alive and bool(lane_state),
+                             "availability": ("unavailable" if alive else "not started"),
+                             "state": lane_state,
+                             "worktree": str(worktree),
+                             "daemon_pid": daemon_pid,
+                             "lane_status": str(metadata.get("status") or "unknown")})
+            except (OSError, ValueError, RuntimeError, TypeError):
+                continue
+        return rows
+
     if not args.no_tk:
         try:
             from dev_loop import gui as dev_loop_gui
             if dev_loop_gui.available():
                 def gui_status():
                     latest = snapshot() or current or {}
+                    checkouts = collect_checkout_states()
                     identity = latest.get("build_identity") or {}
                     scenario = _scenario_state(str(latest.get("events_path") or ""))
                     scenario["build_id"] = scenario.get("build_id") or identity.get("build_id") or "—"
@@ -5687,6 +5828,7 @@ def run_dashboard(args: argparse.Namespace) -> int:
                     if not artifact_display and identity.get("build_number") is not None:
                         artifact_display = f"LEGACY #{identity['build_number']}"
                     return {
+                        "checkouts": checkouts,
                         "checkout": str(ROOT),
                         "daemon_pid": latest.get("daemon_pid") or role_pids.get("daemon"),
                         "updated_at": latest.get("updated_at") or "—",
@@ -5750,9 +5892,13 @@ def run_dashboard(args: argparse.Namespace) -> int:
                     return checkout_mimita_processes(strict=True)
 
                 def gui_control(action: str, **fields):
+                    checkout_id = str(fields.pop("checkout_id", "main") or "main")
+                    target = checkout_states.get(checkout_id)
+                    if not target:
+                        return {"accepted": False, "message": f"{checkout_id}: status unavailable"}
                     if action == "stop":
                         fields["explicit_stop"] = True
-                    response = control(current, action, **fields)
+                    response = _dashboard_control(target, action, **fields)
                     return response or {"accepted": False, "message": view_status}
 
                 return dev_loop_gui.run(
@@ -6014,7 +6160,9 @@ def run_control_client(args: argparse.Namespace) -> int:
 
     if action in ("command", "scenario-file", "launch", "build", "start-server",
                   "start-client", "stop-instance", "restart-instance") or args.ensure_running:
-        current, ensure_events = ensure_running(args.profile, args.launch_mode, visibility)
+        current, ensure_events = ensure_running(
+            args.profile, args.launch_mode, visibility,
+            open_dashboard=not args.no_dashboard)
         for event in ensure_events:
             print(f"[DEV CONTROL] recovery action={event.get('action')} "
                   f"pid={event.get('pid')} ok={event.get('ok')}")

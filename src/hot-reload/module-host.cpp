@@ -26,6 +26,7 @@
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
 #include "mapeditor/map-editor.h"
+#include "npc/npc-world-query.h"
 #include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
 #include "modules/api/map-geometry-api.h"
@@ -586,6 +587,31 @@ const void* MIMITA_MODULE_CALL hostGetCapability(
     return ModuleHost::instance().capability(capabilityId, version);
 }
 
+int MIMITA_MODULE_CALL hostNpcLineOfSightBlocked(
+    const float from[3], const float to[3])
+{
+    return npcWorldLineOfSightBlocked(from, to) ? 1 : 0;
+}
+
+int MIMITA_MODULE_CALL hostNpcRaycastBlocked(
+    const float from[3], const float direction[3], float maxDistance,
+    float* outDistance)
+{
+    return npcWorldRaycastBlocked(from, direction, maxDistance, outDistance)
+        ? 1 : 0;
+}
+
+const mimita_npc_perception::NpcWorldServicesV1* npcWorldServices()
+{
+    static const mimita_npc_perception::NpcWorldServicesV1 services = {
+        mimita_npc_perception::ABI_VERSION,
+        sizeof(mimita_npc_perception::NpcWorldServicesV1),
+        hostNpcLineOfSightBlocked,
+        hostNpcRaycastBlocked,
+    };
+    return &services;
+}
+
 const mimita_module::HostServicesV1* genericHostServices()
 {
     static const mimita_module::HostServicesV1 services = {
@@ -1091,6 +1117,9 @@ const void* ModuleHost::capability(std::uint32_t capabilityId,
     case mimita_module::CAPABILITY_COLLISION:
         return version == mimita_chunk_collision::ABI_VERSION
             ? chunkCollisionServices() : nullptr;
+    case mimita_module::CAPABILITY_NPC_WORLD:
+        return version == mimita_npc_perception::ABI_VERSION
+            ? npcWorldServices() : nullptr;
     default:
         return nullptr;
     }
@@ -1466,6 +1495,36 @@ bool ModuleHost::networkCombatValidationPolicy(
         return false;
     return invokeEvent(mimita_module::EVENT_NETWORK_COMBAT_VALIDATION_POLICY,
                        policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkServerPhaseBudgetPolicy(
+    mimita_network_policy::ServerPhaseBudgetPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(
+        mimita_module::EVENT_NETWORK_SERVER_PHASE_BUDGET_POLICY,
+        policy, sizeof(*policy), policy->tick);
+}
+
+bool ModuleHost::npcPerceptionStep(
+    mimita_npc_perception::PerceptionRequestV1* request)
+{
+    if (!request || request->version != mimita_npc_perception::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_PERCEPTION, request,
+                       sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcPerceptionLoaded() const
+{
+    return moduleLoaded("npc-perception");
+}
+
+void ModuleHost::setNpcWorldQueryContext(const World* world)
+{
+    setNpcWorldQueryWorld(world);
 }
 
 bool ModuleHost::navigationPolicy(

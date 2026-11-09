@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 24
+Entries: 25
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -186,3 +186,10 @@ correction in the detail file.
 - Status: PARTIALLY FIXED — launch visibility/restore behavior changed; foreground activation and taskbar presence remain unverified.
 - Summary: The dev loop showed the client window without activating it, then restored the previous foreground app. A server-reuse path also left `prelaunch_windows` unset and crashed during launch completion.
 - Detail: [visible-game-window-REG-2026-11-08.md](visible-game-window-REG-2026-11-08.md)
+
+## Entry 25 — Coordinator dashboard stayed on connecting status
+
+- Recorded: 2026-11-09T20:50:40Z (2026-11-09 15:50:40 EST)
+- Status: FIXED — dashboard status and lane list refreshed live after adding the missing import.
+- Summary: The coordinator's lane-status collector called `re.fullmatch` without importing `re`. Its refresh handler displayed the exception while the UI remained on “Connecting to the build/runtime service…”.
+- Detail: [dashboard-status-refresh-REG-2026-11-09.md](dashboard-status-refresh-REG-2026-11-09.md)

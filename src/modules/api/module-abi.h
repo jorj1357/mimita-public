@@ -44,6 +44,7 @@ constexpr std::uint32_t CAPABILITY_WORLDGEN = 2;
 constexpr std::uint32_t CAPABILITY_MESH = 3;
 constexpr std::uint32_t CAPABILITY_COLLISION = 4;
 constexpr std::uint32_t CAPABILITY_MAP_GEOMETRY = 5;
+constexpr std::uint32_t CAPABILITY_NPC_WORLD = 6;
 
 // Generic event ids. A module only receives events that its catalog entry
 // declares; the host never dispatches by hard-coded module name.
@@ -77,6 +78,7 @@ constexpr std::uint32_t EVENT_NPC_GOAL_SCORE = 505;
 constexpr std::uint32_t EVENT_NPC_TARGET_SELECT = 506;
 constexpr std::uint32_t EVENT_NPC_ATTACK_INTENT = 507;
 constexpr std::uint32_t EVENT_NPC_DASH_DECISION = 508;
+constexpr std::uint32_t EVENT_NPC_PERCEPTION = 509;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_POSE = 600;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_BOUNDS = 601;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_OUTLINE = 602;
@@ -89,6 +91,7 @@ constexpr std::uint32_t EVENT_NETWORK_INTERPOLATION_POLICY = 705;
 constexpr std::uint32_t EVENT_NETWORK_SESSION_HEALTH_POLICY = 706;
 constexpr std::uint32_t EVENT_NETWORK_MAP_SYNC_POLICY = 707;
 constexpr std::uint32_t EVENT_NETWORK_COMBAT_VALIDATION_POLICY = 708;
+constexpr std::uint32_t EVENT_NETWORK_SERVER_PHASE_BUDGET_POLICY = 709;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
 constexpr std::uint32_t EVENT_NAVIGATION_POLICY = 800;
 constexpr std::uint32_t EVENT_MAP_GEOMETRY_SIGNATURE = 810;

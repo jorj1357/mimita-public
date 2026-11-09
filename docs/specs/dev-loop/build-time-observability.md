@@ -29,6 +29,43 @@ The purpose is to answer, from each build attempt:
 4. Which phase dominated wall time, and what evidence supports the next
    improvement?
 
+## Cache reuse and live phase reporting (2026-11-09)
+
+A lane build must reuse the coordinator's shared ccache when source, compiler,
+flags, and precompiled-header inputs match. The build worker normalizes cache
+inputs so absolute worktree paths do not create different keys:
+
+- compile source, object, and project-owned include arguments use paths relative
+  to the worktree root;
+- `CCACHE_DIR` points at the shared coordinator cache;
+- `CCACHE_BASEDIR` points at the current worktree root;
+- `CCACHE_NOHASHDIR=1` prevents the working directory from changing the key;
+- shared external paths (for example the installed GLFW toolchain) are the only
+  expected absolute include paths.
+- the precompiled header is compiled from a relative source/output path with
+  working-directory and file-prefix normalization, so its content does not
+  contain the lane worktree path; otherwise every lane PCH gets a different
+  cache key even when the source is identical.
+
+The build writes `build/progress.json` during the attempt. It reports the active
+phase (`setup`, `pch`, `compiling`, `linking`, `staging`, `publishing`,
+`build_complete`, `completed`, or `failed`), current translation unit, compiled
+and skipped counts, and phase durations. Phase transitions and current-file
+updates must be flushed as they happen. The dev-loop status and dashboard read
+this file; they must not infer that a build is stuck on the last `[CXX]` line
+while the worker is linking or publishing.
+
+A cold build is identified by `compiled` substantially matching the full EXE
+translation-unit count and `skipped` being zero. For such an attempt, report the
+ccache direct-hit/miss counts and cache size. `player-animation.cpp` or any other
+single filename is not evidence of a hang; a stall claim requires no progress
+timestamp change, a live worker, and the current phase.
+
+The timing record also reports `scheduler_wait_s`, `pch_s`, `compile_s`,
+`link_s`, `staging_s`, ccache hits/misses/errors, and whether the source changed
+during the attempt. A new lane with identical source should become an
+incremental or cached build, not another full cold build.
+
 ## Time and identity rules
 
 - Store event timestamps as UTC ISO 8601 with `Z`, following the universal

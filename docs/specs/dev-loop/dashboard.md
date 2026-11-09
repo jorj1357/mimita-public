@@ -4,9 +4,9 @@
 
 ## Purpose and audience
 
-Define the Python developer dashboard's responsibilities, process visibility,
-and controls. This specification is for MiMITA contributors and maintainers
-working on the development loop.
+Define the standalone Python coordinator dashboard's responsibilities, process
+visibility, and controls. This specification is for MiMITA contributors and
+maintainers working on the development loop and its agent lanes.
 
 This document does not define MiMITA's in-game GUI, gameplay, build mechanics,
 or a second owner for dev-loop state. In-game presentation remains governed by
@@ -15,10 +15,19 @@ by `docs/specs/dev-loop/dev-loop.md`.
 
 ## Python dashboard boundary
 
-- Python owns the developer dashboard presentation, process discovery view,
-  and requests sent to the dev-loop daemon.
+- Python owns the standalone coordinator dashboard presentation, process
+  discovery view, and requests sent to dev-loop daemons.
 - The dashboard is a view and control client. The single dev-loop daemon remains
-  the source of truth for builds, active runs, instance manifests, and actions.
+  the source of truth for its checkout's builds, active runs, instance
+  manifests, and actions. The coordinator dashboard reads the main checkout
+  and every valid lane listed in `.dev/agent-lanes/`; it does not merge their
+  run manifests or build state.
+- The main checkout owns one visible coordinator dashboard process. Starting,
+  ensuring, or running an agent lane never opens another dashboard. The shared
+  view reconnects to each checkout's existing daemon and can restart without
+  stopping a daemon or game process.
+- The dashboard is separate from the build/run daemon's lifetime. Closing the
+  window closes only the view.
 - Python is suitable here because dashboard layout, status formatting, and
   process orchestration do not run in MiMITA's fixed-tick gameplay path.
 - Dashboard animation and refresh work must remain bounded and must not delay
@@ -35,7 +44,18 @@ by `docs/specs/dev-loop/dev-loop.md`.
   behavior and layout; this does not make Python a replacement for the game's
   JSON-defined GUI presentation or C++ gameplay owners.
 
-## Process visibility
+## Checkout and process visibility
+
+Show the main checkout and each registered lane in a compact overview. Each
+row identifies its checkout/lane and shows build state, active build phase and
+elapsed time, plus server and client counts. A registered lane whose daemon is
+absent is `not started` or `unavailable`; a daemon whose saved status timestamp
+is older than six seconds is `stale`. Keep other checkout rows visible when a
+lane cannot be read.
+
+Build, Launch, Server, and Client actions target the checkout/lane row's own
+authenticated daemon. Never route a lane action to the main checkout by
+default. Per-instance actions remain scoped to their owning run.
 
 The dashboard presents two distinct groups:
 
@@ -68,18 +88,19 @@ launch path; discovery itself does not adopt or relabel an external process.
 - The process panel has a visible **Refresh** button. Pressing it starts a new
   process scan immediately, without restarting the dashboard or dev-loop
   daemon.
-- The panel also refreshes automatically. Every completed scan replaces the
-  existing count and timestamp in place; it never appends another status line.
-- Show the total unique live MiMITA process count and the scan completion time
-  in UTC ISO 8601 form, for example `Found 2 running MiMITA processes · Last
-  refreshed 2026-11-05T19:33:24.123Z`.
+- The panel also refreshes automatically. Keep one shared `Updated N seconds
+  ago` freshness indicator for the dashboard; do not show separate last-updated
+  timestamps for each checkout or process scan.
+- Show the total unique live MiMITA process count beside the shared indicator.
+  If a process scan fails, show the error and keep the last successful list
+  marked stale until a scan succeeds.
 - The process list contains only processes confirmed alive by the current
   successful scan. Once a process exits, remove its row. Do not show an exited
   server as `stopped` in this live process list; keep final lifecycle history
   in the run manifest/journal and runtime summary instead.
 - Count unique PIDs, so a run-owned instance and its matching OS process appear
-  once. If enumeration fails, show the scan error and last successful scan
-  time; do not report zero or replace the last known list with an empty result.
+  once. If enumeration fails, show the scan error; do not report zero or
+  replace the last known list with an empty result.
 - Each live process row has its own checkbox. Keep checked state attached to
   process identity (PID plus process start time) across refreshes. Remove the
   selection when that process disappears or its identity changes.
@@ -117,11 +138,13 @@ launch path; discovery itself does not adopt or relabel an external process.
 
 ## Acceptance
 
-- The Refresh button starts a scan immediately. Automatic scans also update the
-  same count/timestamp display in place using UTC ISO 8601 timestamps.
-- With no running MiMITA processes, the panel says `Found 0 running MiMITA
-  processes` and shows the time of the latest successful scan. A stopped server
-  row disappears from the live list.
+- The Refresh button starts a scan immediately. Automatic scans update the
+  same count and shared freshness display in place.
+- The main checkout and every registered lane remain visible with a clear
+  live, stale, unavailable, or not-started state. Build phase and elapsed time
+  update while a build runs.
+- With no running MiMITA processes, the panel says `0 running MiMITA
+  processes`. A stopped server row disappears from the live list.
 - Checked rows can be stopped together. Each target has a visible result, and
   the existing Start server and Start client controls remain available.
 - A separately launched MiMITA client with verifiable executable and role
@@ -136,5 +159,10 @@ launch path; discovery itself does not adopt or relabel an external process.
   counts.
 - Dashboard restart reconnects to the same daemon and refreshes current status
   without restarting healthy game processes.
+- Ensuring or starting multiple agent lanes leaves exactly one dashboard
+  window. Each lane can be built, launched, or used to start a server/client
+  through its own daemon.
+- Process rows identify their lane, role, PID, state, and connection target
+  when known; a process without role evidence remains unverified.
 - Daemon source changes are distinguishable by source identity after its
   controlled restart; no claim of in-place Python hot reload is made.

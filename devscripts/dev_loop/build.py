@@ -27,6 +27,15 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def read_progress(root: Path) -> dict:
+    try:
+        value = json.loads((root / "build" / "progress.json").read_text(
+            encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+
+
 def latest_artifact_matches(root: Path, loop) -> tuple[str, str, Path] | None:
     folder = getattr(loop, "latest_build_folder", "") or ""
     if not folder:
@@ -61,7 +70,7 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
     except (OSError, subprocess.SubprocessError):
         source_at_start = {"revision": "unknown", "dirty": True,
                            "worktree_sha256": "unknown"}
-    command = [sys.executable, str(root / "build.py"), "build-only"]
+    command = [sys.executable, "-u", str(root / "build.py"), "build-only"]
     if mode == "release":
         command.append("release")
     environment = os.environ.copy()
@@ -71,6 +80,7 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
     environment["TEMP"] = str(repo_tmp)
     environment["TMPDIR"] = str(repo_tmp)
     environment["MIMITA_DEV_LOOP_BUILD"] = "1"
+    environment["PYTHONUNBUFFERED"] = "1"
     environment["MIMITA_BUILD_AUTHORITY"] = write_authority(
         root, "exe", "dev-loop",
         {"lane": environment.get("MIMITA_LANE_ID", ""),
@@ -91,7 +101,10 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         coordinator, coordinator / ".dev" / "ccache", label="shared ccache")
     shared_ccache.mkdir(parents=True, exist_ok=True)
     environment["CCACHE_DIR"] = str(shared_ccache)
-    environment["CCACHE_BASEDIR"] = str(coordinator)
+    # Normalize each worktree to its own root so lane and coordinator builds
+    # produce the same relative compiler inputs and cache keys.
+    environment["CCACHE_BASEDIR"] = str(root)
+    environment["CCACHE_NOHASHDIR"] = "1"
     apply_temp_environment(
         coordinator, environment.get("MIMITA_LANE_ID", root.name), environment)
     ccache = find_ccache()
@@ -102,6 +115,11 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
         print("[DEV] ccache: not found; build will still work without it")
 
     print("[DEV] starting incremental build")
+    loop._record_build_progress({
+        "phase": "waiting_for_slot",
+        "elapsed_s": 0,
+        "message": "waiting for the EXE build slot",
+    })
     output: list[str] = []
     result = 2
     destination: Path | None = None
@@ -125,6 +143,9 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
             print(line, end="")
             output.append(line)
             loop._record_build_output(line)
+            progress = read_progress(root)
+            if progress:
+                loop._record_build_progress(progress)
         result = process.wait()
     except OSError as error:
         error_message = f"could not start canonical build: {error}"
@@ -148,10 +169,20 @@ def run_build(loop, requested_generation: int, request_ids: list[str], mode: str
                 artifact_id, folder_name, destination = reused
                 print(f"[DEV] reusing artifact {folder_name} (EXE unchanged)")
             else:
+                loop._record_build_progress({
+                    "phase": "publishing",
+                    "message": "publishing the validated executable",
+                })
                 artifact_id, folder_name = make_artifact_id()
                 destination = publish_build(artifact_id, folder_name,
                                            requested_generation, mode,
                                            source_at_start, source_at_publish)
+            loop._record_build_progress({
+                "phase": "completed",
+                "artifact_id": artifact_id,
+                "folder_name": folder_name,
+                "message": "build artifact published",
+            })
         except Exception as error:
             successful = False
             error_message = f"publish failed: {error}"

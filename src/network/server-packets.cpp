@@ -2175,6 +2175,8 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     copyName(accept.approvedName, p.name);
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
+    std::memset(accept.mapId, 0, sizeof(accept.mapId));
+    std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
     accept.restoredHealth = p.health;
     accept.restoredKills = p.kills;
     accept.restoredDeaths = p.deaths;

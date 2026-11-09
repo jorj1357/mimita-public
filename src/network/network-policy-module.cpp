@@ -115,6 +115,26 @@ void decideCombatValidation(
     p.outGeneration = MIMITA_MODULE_GENERATION;
 }
 
+void decideServerPhaseBudget(
+    mimita_network_policy::ServerPhaseBudgetPolicyV1& p)
+{
+    p.outTotalBudgetMs = 16;
+    p.outNpcBudgetMs = 10;
+    p.outProjectileBudgetMs = 4;
+    p.outContactBudgetMs = 4;
+    p.outOverBudget =
+        (p.npcMs > (double)p.outNpcBudgetMs ||
+         p.projectileMs > (double)p.outProjectileBudgetMs ||
+         p.contactMs > (double)p.outContactBudgetMs) ? 1u : 0u;
+    // Intent only: the host may yield optional NPC/contact work on the next
+    // tick. The fixed tick itself is never skipped.
+    p.outDeferNpc =
+        p.npcCount > 0 && p.npcMs > (double)p.outNpcBudgetMs ? 1u : 0u;
+    p.outDeferContacts =
+        p.contactMs > (double)p.outContactBudgetMs ? 1u : 0u;
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+}
+
 void decideInterpolation(
     mimita_network_policy::InterpolationPolicyV1& p)
 {
@@ -228,6 +248,18 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
             p.structSize != sizeof(p))
             return 0;
         decideCombatValidation(p);
+        return 1;
+    }
+    if (event->typeId ==
+            mimita_module::EVENT_NETWORK_SERVER_PHASE_BUDGET_POLICY &&
+        event->payloadSize ==
+            sizeof(mimita_network_policy::ServerPhaseBudgetPolicyV1)) {
+        auto& p = *static_cast<
+            mimita_network_policy::ServerPhaseBudgetPolicyV1*>(event->payload);
+        if (p.version != mimita_network_policy::ABI_VERSION ||
+            p.structSize != sizeof(p))
+            return 0;
+        decideServerPhaseBudget(p);
         return 1;
     }
     if (event->typeId == mimita_module::EVENT_NETWORK_INTERPOLATION_POLICY &&
