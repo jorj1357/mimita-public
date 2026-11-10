@@ -1,12 +1,100 @@
 // 2026-11-08
 #include "modules/api/map-geometry-api.h"
 
+#include <cctype>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "modules/api/module-abi.h"
 #include <module-identity.h>
 
 namespace {
+
+bool containsAny(const char* text, const char* const* needles,
+                 std::size_t needleCount)
+{
+    if (!text)
+        return false;
+    for (std::size_t i = 0; i < needleCount; ++i) {
+        const char* needle = needles[i];
+        if (!needle || !*needle)
+            continue;
+        const std::size_t length = std::strlen(needle);
+        for (const char* at = text; *at; ++at) {
+            std::size_t matched = 0;
+            while (matched < length && at[matched] &&
+                   std::tolower(static_cast<unsigned char>(at[matched])) ==
+                       std::tolower(static_cast<unsigned char>(needle[matched])))
+                ++matched;
+            if (matched == length)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool isSkyName(const char* name)
+{
+    static const char* const needles[] = {
+        "sky", "skybox", "skydome", "sky_dome", "environment",
+        "worldsphere"};
+    return containsAny(name, needles,
+                       sizeof(needles) / sizeof(needles[0]));
+}
+
+bool textEquals(const char* a, const char* b)
+{
+    return a && b && std::strcmp(a, b) == 0;
+}
+
+bool startsWithNodeId(const char* id)
+{
+    return id && std::strncmp(id, "node:", 5) == 0;
+}
+
+int nodePolicy(mimita_map_geometry::NodePolicyV1& policy)
+{
+    if (policy.version != mimita_map_geometry::ABI_VERSION ||
+        policy.structSize != sizeof(policy))
+        return 0;
+    policy.outInclude = policy.hasMesh ? 1u : 0u;
+    policy.outReason = 0u;
+    if (policy.hasMesh && isSkyName(policy.name)) {
+        policy.outInclude = 2u;
+        policy.outReason = 1u;
+    }
+    policy.result = 1;
+    return 1;
+}
+
+int objectPlan(mimita_map_geometry::ObjectPlanV1& plan)
+{
+    if (plan.version != mimita_map_geometry::ABI_VERSION ||
+        plan.structSize != sizeof(plan))
+        return 0;
+    plan.outMatch = 0u;
+    plan.outMatchKind = 0u;
+    if (plan.hasOverride) {
+        if (textEquals(plan.overrideId, plan.objectId)) {
+            plan.outMatch = 1u;
+            plan.outMatchKind = 1u;
+        } else if (plan.overrideSource[0] &&
+                   textEquals(plan.overrideSource, plan.objectId)) {
+            plan.outMatch = 1u;
+            plan.outMatchKind = 3u;
+        } else if (startsWithNodeId(plan.overrideId) &&
+                   plan.overrideName[0] &&
+                   textEquals(plan.overrideName, plan.objectName)) {
+            // A GLB re-export can move a node index. Match the saved display
+            // name only for index-based ids so unrelated objects do not match.
+            plan.outMatch = 1u;
+            plan.outMatchKind = 2u;
+        }
+    }
+    plan.result = 1;
+    return 1;
+}
 
 int signature(mimita_map_geometry::SignatureV1& request)
 {
@@ -31,6 +119,14 @@ int onEvent(mimita_module::ModuleEventV1* event)
     if (event->typeId == mimita_module::EVENT_MAP_GEOMETRY_SIGNATURE &&
         event->payloadSize == sizeof(mimita_map_geometry::SignatureV1))
         return signature(*static_cast<mimita_map_geometry::SignatureV1*>(
+            event->payload));
+    if (event->typeId == mimita_module::EVENT_MAP_GEOMETRY_NODE_POLICY &&
+        event->payloadSize == sizeof(mimita_map_geometry::NodePolicyV1))
+        return nodePolicy(*static_cast<mimita_map_geometry::NodePolicyV1*>(
+            event->payload));
+    if (event->typeId == mimita_module::EVENT_MAP_GEOMETRY_OBJECT_PLAN &&
+        event->payloadSize == sizeof(mimita_map_geometry::ObjectPlanV1))
+        return objectPlan(*static_cast<mimita_map_geometry::ObjectPlanV1*>(
             event->payload));
     return 0;
 }

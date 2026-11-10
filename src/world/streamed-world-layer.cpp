@@ -834,8 +834,24 @@ void StreamedWorldLayer::addChunk(uint64_t key, const AuthoredChunk& chunk,
         }
 
     Template* templateData = ensureTemplate(chunk.id, false);
-    if (templateData->verts.empty())
+    if (templateData->verts.empty()) {
+        // Library chunks (config/worldgen/chunks/*.json) are not in
+        // MapConfigRegistry. The streamed record already carries the authored
+        // chunk, so build the render template from it directly. Collision was
+        // already built and was the only part working before this fallback.
         rebuildTemplate(*templateData, chunk.id);
+        if (templateData->verts.empty() && !templateData->proxy)
+            rebuildTemplateFromChunk(*templateData, chunk);
+        if (templateData->verts.empty())
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Errors,
+                "world-stream.chunk.render-template-missing", chunk.id,
+                "streamed chunk has no render template", 0,
+                {{"chunk", chunk.id},
+                 {"parts", chunk.parts.size()},
+                 {"proxy", templateData->proxy}},
+                __FILE__, __LINE__, __FUNCTION__);
+    }
     if (templateData->vboDirty)
         uploadTemplate(*templateData);
 

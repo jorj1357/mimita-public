@@ -56,6 +56,23 @@ void decideMovementCorrection(
     p.outGeneration = MIMITA_MODULE_GENERATION;
 }
 
+void decideMovementValidation(
+    mimita_network_policy::MovementValidationPolicyV1& p)
+{
+    // Default is to keep the host's correction. The policy exists so a live
+    // edit can suppress corrections when the client and server geometry
+    // disagree or when a post-gap drift is below the active threshold.
+    p.outAllowCorrection = 1u;
+    if (p.reasonCode == 22u) {
+        const bool drifted = p.clientGapTicks > 30u &&
+            p.positionError > p.postGapCorrectionDistance;
+        p.outAllowCorrection = drifted ? 1u : 0u;
+    } else if (p.reasonCode == 19u && p.belowVoid && !p.flyEnabled) {
+        p.outAllowCorrection = 1u;
+    }
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+}
+
 void decideHitClaim(mimita_network_policy::HitClaimPolicyV1& p)
 {
     p.outHitTolerance = std::max(0.0f, p.rewindHitTolerance) +
@@ -194,6 +211,17 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
             p.structSize != sizeof(p))
             return 0;
         decideMovementCorrection(p);
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_NETWORK_MOVEMENT_VALIDATION &&
+        event->payloadSize ==
+            sizeof(mimita_network_policy::MovementValidationPolicyV1)) {
+        auto& p = *static_cast<
+            mimita_network_policy::MovementValidationPolicyV1*>(event->payload);
+        if (p.version != mimita_network_policy::ABI_VERSION ||
+            p.structSize != sizeof(p))
+            return 0;
+        decideMovementValidation(p);
         return 1;
     }
     if (event->typeId == mimita_module::EVENT_NETWORK_HIT_CLAIM_POLICY &&

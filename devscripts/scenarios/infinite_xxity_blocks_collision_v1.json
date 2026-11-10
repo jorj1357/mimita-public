@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "infinite_xxity_blocks_collision_v1",
+  "description": "Infinite World XXity: prove streamed city chunks render (template installed) and contribute collision triangles to the live world.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "58",
+    "map": "infinite_xxity",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "teleport_origin", "command": "teleport", "args": ["0,0,3"], "delay_ms_after": 500},
+    {"id": "stream_warmup", "wait_seconds": 10}
+  ],
+  "steps": [
+    {"id": "probe_spawn", "command": "collision_probe", "args": ["0,0,-0.2"], "delay_ms_after": 500},
+    {"id": "probe_east", "command": "collision_probe", "args": ["12,0,-0.2"], "delay_ms_after": 500},
+    {"id": "settle", "wait_seconds": 2}
+  ],
+  "assertions": [
+    {"type": "event_count_at_least", "event": "world-stream.chunk.applied", "minimum": 1},
+    {"type": "event_field_at_least", "event": "world-stream.collision.sync", "field": "stream_triangles", "value": 12},
+    {"type": "event_absent", "event": "world-stream.chunk.render-template-missing"},
+    {"type": "event_present", "event": "collision.probe"}
+  ],
+  "timeout_seconds": 180
+}

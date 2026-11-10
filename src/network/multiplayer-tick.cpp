@@ -924,6 +924,32 @@ void sendJoinRequest(MultiplayerContext& ctx, const std::string& playerName)
     printf("[NET CONNECT] join request sent token=%s\n", ctx.joinToken.c_str());
 }
 
+// A snapshot is authoritative gameplay traffic, but it is not proof that this
+// client was accepted into the session. Promoting Connected here stops the
+// Hello/JoinRequest loop and leaves requiredMapId empty, which shows
+// "synchronizing map" forever. Stay in the join state until Welcome/JoinAccept.
+void noteSnapshotBeforeAccept(MultiplayerContext& ctx)
+{
+    if (ctx.connectionState != ConnectionState::WaitJoinAccept &&
+        ctx.connectionState != ConnectionState::Connecting)
+        return;
+    static thread_local uint64_t lastLogMs = 0;
+    const uint64_t now = nowMs();
+    if (now - lastLogMs < 2000)
+        return;
+    lastLogMs = now;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "network.join.snapshot-before-accept", "",
+        "authoritative snapshot arrived before join accept; staying in join state",
+        ctx.tick,
+        {{"local_player_id", ctx.localPlayerId},
+         {"required_map_id", ctx.requiredMapId},
+         {"server_address", ctx.serverAddress},
+         {"join_request_sends", ctx.joinRequestSends}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
 } // namespace
 
 static const char* disconnectReasonStr(MultiplayerContext& ctx)
@@ -1638,9 +1664,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                     ctx.postGapResyncDeadlineMs = nowMs() + POST_GAP_RESYNC_WINDOW_MS;
                 }
             }
-            if (ctx.connectionState == ConnectionState::WaitJoinAccept ||
-                ctx.connectionState == ConnectionState::Connecting)
-                ctx.connectionState = ConnectionState::Connected;
+            noteSnapshotBeforeAccept(ctx);
             ++ctx.snapshotsReceived;
             // Monotonic: a reordered older snapshot must never regress the
             // newest-seen tick used for missed-snapshot accounting and UI.
@@ -1668,9 +1692,7 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
                  bytes >= (int)sizeof(PacketHeader) + 12 &&
                  bytes < (int)sizeof(SnapshotPacket))
         {
-            if (ctx.connectionState == ConnectionState::WaitJoinAccept ||
-                ctx.connectionState == ConnectionState::Connecting)
-                ctx.connectionState = ConnectionState::Connected;
+            noteSnapshotBeforeAccept(ctx);
 
             SnapshotChunkPacket chunk{};
             std::string chunkError;

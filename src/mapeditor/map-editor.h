@@ -30,7 +30,9 @@ enum class EditorObjectKind {
     MapGLBObject,
     ChunkPart,
     ChunkConnector,
-    ChunkSpawn
+    ChunkSpawn,
+    Chunk,
+    GenerationZone
 };
 
 struct EditorObjectRef {
@@ -40,6 +42,16 @@ struct EditorObjectRef {
     bool operator==(const EditorObjectRef& other) const {
         return kind == other.kind && id == other.id;
     }
+};
+
+struct MapEditorWorldObjectView {
+    char id[128] = {};
+    char name[256] = {};
+    int nodeIndex = -1;
+    unsigned int vertexCount = 0;
+    float basePosition[3] = {0.0f, 0.0f, 0.0f};
+    float boundsMin[3] = {0.0f, 0.0f, 0.0f};
+    float boundsMax[3] = {0.0f, 0.0f, 0.0f};
 };
 
 class MapEditor {
@@ -103,6 +115,10 @@ public:
     void moduleSetSelection(const std::vector<EditorObjectRef>& refs) {
         mSelection = refs;
     }
+    unsigned int moduleWorldObjectCount() const;
+    bool moduleWorldObjectAt(unsigned int index,
+                             MapEditorWorldObjectView& out) const;
+    bool moduleMapBounds(glm::vec3& outMin, glm::vec3& outMax) const;
 
     // Commands that intentionally mutate authored map data through the editor,
     // so they share selection, history, and geometry rebuild behavior.
@@ -249,6 +265,8 @@ private:
     bool mChunkPreviewValid = false;
     std::string mChunkPreviewChunkId;
     glm::vec3 mChunkPreviewOrigin{0.0f};
+    uint64_t mChunkPreviewKey = 0;
+    AuthoredChunk mChunkPreviewChunk;
     float mCameraSpeedMultiplier = -1.0f;
     bool mCollisionDirty = false;
     bool mGeometryDirty = false;
@@ -307,6 +325,8 @@ private:
                               std::string& itemId);
     bool ensureChunkPreview(const std::string& chunkId);
     void refreshPreviewChunk();
+    void installChunkPreview();
+    void removeChunkPreview();
 
     glm::vec3 objectPosition(const EditorObjectRef& ref) const;
     void setObjectPosition(const EditorObjectRef& ref, const glm::vec3& position);

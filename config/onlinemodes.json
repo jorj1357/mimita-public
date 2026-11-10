@@ -17,6 +17,14 @@
       "score_limit": 0
     },
     {
+      "id": "infinite_xxity",
+      "gamemode_id": "connected_world",
+      "name": "Infinite World: XXity",
+      "description": "An endlessly generating connected city built from authored road, building, park, and plaza chunks.",
+      "teams": 0,
+      "score_limit": 0
+    },
+    {
       "id": "free_for_all",
       "gamemode_id": "ffa",
       "name": "Free For All",

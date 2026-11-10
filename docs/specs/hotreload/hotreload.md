@@ -84,6 +84,23 @@ mechanisms. See
 and
 [`self-contained-workspace.md`](../../architecture/live-development/self-contained-workspace.md).
 
+### Cold boundaries are the current phase, not permanent
+
+The cold list above is the boundary for the current phase, not a permanent
+classification. Physics/collision query infrastructure, loaders, document
+storage, transport, device access, packet schema, and the public ABI are cold
+now because they need stable process-wide ownership, lifetime control, and
+authoritative safety validation. The long-term direction is that even those
+mechanisms become hot behind versioned capabilities or the generic
+event/behavior IR. Physics and collision policy in particular are intended
+eventual hot candidates.
+
+That migration is explicitly out of scope for current work. Do not delay
+behavior extraction or hold back a live fix because a mechanism is "cold
+forever." Whenever such a mechanism does move later, it obeys the same rule as
+everything else: install the generic host seam once with one intentional
+boundary build, then keep later changes module-only.
+
 ## Hot subsystem target: networking and NPC (2026-11-09)
 
 The target is not "some policy callbacks are hot." Entire behavior subsystems

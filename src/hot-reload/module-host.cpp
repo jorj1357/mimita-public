@@ -345,6 +345,48 @@ int MIMITA_MODULE_CALL hostSetSelection(
     return 1;
 }
 
+std::uint32_t MIMITA_MODULE_CALL hostGetWorldObjectCount()
+{
+    return MapEditor::instance().moduleWorldObjectCount();
+}
+
+int MIMITA_MODULE_CALL hostGetWorldObjectInfo(
+    std::uint32_t index, mimita_map_editor::WorldObjectInfoV1* out)
+{
+    if (!out)
+        return 0;
+    MapEditorWorldObjectView view;
+    if (!MapEditor::instance().moduleWorldObjectAt(index, view))
+        return 0;
+    std::snprintf(out->id, sizeof(out->id), "%s", view.id);
+    std::snprintf(out->name, sizeof(out->name), "%s", view.name);
+    out->nodeIndex = view.nodeIndex;
+    out->vertexCount = view.vertexCount;
+    for (int i = 0; i < 3; ++i) {
+        out->basePosition[i] = view.basePosition[i];
+        out->boundsMin[i] = view.boundsMin[i];
+        out->boundsMax[i] = view.boundsMax[i];
+    }
+    return 1;
+}
+
+int MIMITA_MODULE_CALL hostGetMapBounds(float outMin[3], float outMax[3])
+{
+    if (!outMin || !outMax)
+        return 0;
+    glm::vec3 minValue(0.0f);
+    glm::vec3 maxValue(0.0f);
+    if (!MapEditor::instance().moduleMapBounds(minValue, maxValue))
+        return 0;
+    outMin[0] = minValue.x;
+    outMin[1] = minValue.y;
+    outMin[2] = minValue.z;
+    outMax[0] = maxValue.x;
+    outMax[1] = maxValue.y;
+    outMax[2] = maxValue.z;
+    return 1;
+}
+
 int MIMITA_MODULE_CALL hostGetProfileFootprint(float outFootprint[3])
 {
     outFootprint[0] = 10.0f;
@@ -577,6 +619,9 @@ const EditorServicesV1* editorServices()
         hostCreateConnector,
         hostPreviewConnections,
         hostEvaluateConnectorPair,
+        hostGetWorldObjectCount,
+        hostGetWorldObjectInfo,
+        hostGetMapBounds,
     };
     return &services;
 }
@@ -1338,6 +1383,26 @@ bool ModuleHost::mapGeometrySignature(const char* bytes,
     return true;
 }
 
+bool ModuleHost::mapGeometryNodePolicy(
+    mimita_map_geometry::NodePolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeModule("map-geometry",
+                        mimita_module::EVENT_MAP_GEOMETRY_NODE_POLICY,
+                        policy, sizeof(*policy));
+}
+
+bool ModuleHost::mapGeometryObjectPlan(
+    mimita_map_geometry::ObjectPlanV1* plan)
+{
+    if (!plan)
+        return false;
+    return invokeModule("map-geometry",
+                        mimita_module::EVENT_MAP_GEOMETRY_OBJECT_PLAN,
+                        plan, sizeof(*plan));
+}
+
 bool ModuleHost::worldgenResolve(mimita_worldgen::ResolveV1* request)
 {
     if (!request)
@@ -1440,6 +1505,15 @@ bool ModuleHost::networkMovementCorrection(
     if (!policy)
         return false;
     return invokeEvent(mimita_module::EVENT_NETWORK_MOVEMENT_CORRECTION,
+                       policy, sizeof(*policy), 0);
+}
+
+bool ModuleHost::networkMovementValidationPolicy(
+    mimita_network_policy::MovementValidationPolicyV1* policy)
+{
+    if (!policy)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NETWORK_MOVEMENT_VALIDATION,
                        policy, sizeof(*policy), 0);
 }
 

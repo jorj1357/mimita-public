@@ -8,6 +8,7 @@
 #include "modules/api/map-editor-api.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -207,6 +208,86 @@ void trimArgument(const char* input, char* out, std::uint32_t capacity)
     }
 }
 
+int handleGlbDump(mimita_map_editor::EditorCommandV1* payload)
+{
+    if (!gEditor || !payload)
+        return 0;
+    const std::uint32_t count = gEditor->getWorldObjectCount
+        ? gEditor->getWorldObjectCount() : 0;
+    float boundsMin[3] = {0.0f, 0.0f, 0.0f};
+    float boundsMax[3] = {0.0f, 0.0f, 0.0f};
+    const bool hasBounds = gEditor->getMapBounds &&
+        gEditor->getMapBounds(boundsMin, boundsMax);
+    std::uint32_t outside = 0;
+    std::uint32_t sampled = 0;
+    char sample[1024] = {};
+    std::size_t used = 0;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        mimita_map_editor::WorldObjectInfoV1 info{};
+        if (!gEditor->getWorldObjectInfo ||
+            !gEditor->getWorldObjectInfo(i, &info))
+            continue;
+        bool isOutside = false;
+        if (hasBounds) {
+            for (int axis = 0; axis < 3; ++axis) {
+                if (info.basePosition[axis] < boundsMin[axis] - 1.0f ||
+                    info.basePosition[axis] > boundsMax[axis] + 1.0f) {
+                    isOutside = true;
+                    break;
+                }
+            }
+        }
+        if (isOutside)
+            ++outside;
+        if (isOutside && sampled < 6) {
+            char entry[512];
+            const int written = std::snprintf(
+                entry, sizeof(entry),
+                "%s{\"id\":\"%s\",\"name\":\"%s\",\"pos\":[%.2f,%.2f,%.2f]}",
+                sampled ? "," : "", info.id, info.name,
+                info.basePosition[0], info.basePosition[1],
+                info.basePosition[2]);
+            if (written > 0 && static_cast<std::size_t>(written) <
+                    sizeof(sample) - used) {
+                std::memcpy(sample + used, entry,
+                            static_cast<std::size_t>(written));
+                used += static_cast<std::size_t>(written);
+                sample[used] = '\0';
+                ++sampled;
+            } else {
+                break;
+            }
+        }
+    }
+    char fields[1400];
+    std::snprintf(
+        fields, sizeof(fields),
+        "{\"objects\":%u,\"outside_map_bounds\":%u,\"has_bounds\":%s,"
+        "\"bounds_min\":[%.2f,%.2f,%.2f],\"bounds_max\":[%.2f,%.2f,%.2f],"
+        "\"sample\":[%s],\"module_generation\":%u}",
+        static_cast<unsigned>(count), static_cast<unsigned>(outside),
+        hasBounds ? "true" : "false",
+        boundsMin[0], boundsMin[1], boundsMin[2],
+        boundsMax[0], boundsMax[1], boundsMax[2], sample,
+        static_cast<unsigned>(MIMITA_MODULE_GENERATION));
+    if (gHost && gHost->log)
+        gHost->log(mimita_module::LOG_CATEGORY_WORLD,
+                   mimita_module::LOG_LEVEL_IMPORTANT,
+                   "map-editor.glb-dump", "map-editor",
+                   "bounded GLB/outliner object dump", 0, fields,
+                   __FILE__, __LINE__, __FUNCTION__);
+    if (gEditor->logLine) {
+        char line[256];
+        std::snprintf(line, sizeof(line),
+                      "[MAPEDIT] glb objects=%u outside_bounds=%u",
+                      static_cast<unsigned>(count),
+                      static_cast<unsigned>(outside));
+        gEditor->logLine(line);
+    }
+    payload->result = 1;
+    return 1;
+}
+
 int handleCommand(mimita_map_editor::EditorCommandV1* payload)
 {
     if (!gEditor || !payload || !payload->command)
@@ -216,6 +297,9 @@ int handleCommand(mimita_map_editor::EditorCommandV1* payload)
     const char* arguments = payload->arguments;
     char arg[128] = {};
     trimArgument(arguments, arg, sizeof(arg));
+
+    if (std::strcmp(command, "glbdump") == 0)
+        return handleGlbDump(payload);
 
     if (std::strcmp(command, "select") == 0) {
         if (arg[0] == '\0') {

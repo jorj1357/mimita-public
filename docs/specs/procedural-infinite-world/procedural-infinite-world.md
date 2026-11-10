@@ -232,6 +232,69 @@ config/mapeditor.json                      editor scales, layout, alpha
 config/gui/map-editor.json                 toolbar/button rects
 ```
 
+### Map-level infinite world variants (2026-11-09)
+
+The first variant family is authored as **map-level variants under the existing
+`connected_world` gamemode**, not as new gamemode ids. Each variant owns its map
+JSON, worldgen profile, chunk files, optional base GLB, dev-launch mode, and
+scenario, while sharing the same `InfiniteWorldRuntime`, `StreamedWorldLayer`,
+`infinite-worldgen`, and `chunk-collision` owners.
+
+Planned/implemented named worlds:
+
+```text
+infinite_cramped   small connected test chunks
+infinite_mixed     library chunks with mixed sizes
+infinite_xxity     connected city: roads, buildings, parks, plazas
+```
+
+`infinite_xxity` is the city generator:
+
+```text
+config/maps/infinite_xxity.json
+config/worldgen/infinite_xxity.json
+config/worldgen/chunks/city_road_straight.json
+config/worldgen/chunks/city_road_corner.json
+config/worldgen/chunks/city_road_t.json
+config/worldgen/chunks/city_road_cross.json
+config/worldgen/chunks/city_block_small.json
+config/worldgen/chunks/city_block_tall.json
+config/worldgen/chunks/city_park.json
+config/worldgen/chunks/city_plaza.json
+assets/maps/infinite_xxity.glb
+```
+
+The city zone uses `"mode": "connected_world"`, `"spacing_mode": "connector"`,
+`"rule_set": "city"`, and a live-editable `stream_radius`. Roads and buildings
+carry four-sided connectors with the `flat` tag; the worldgen module chooses a
+compatible chunk for each frontier connector. Adding the map to
+`connected_world.json` `maps`, `config/gamemode-good-maps.json`, an
+`onlinemodes.json` entry, and dev launch mode `58` makes it selectable without
+new gamemode C++.
+
+Launch and prove it:
+
+```text
+python devscripts/dev-loop.py --request launch --launch-mode 58
+worldstream status
+worldmode radius infinite_xxity 120 120 0
+python devscripts/dev-loop.py --scenario-file devscripts/scenarios/infinite_xxity_load_v1.json
+```
+
+Scenarios for this family:
+
+```text
+infinite_xxity_load_v1              profile + chunks + streamed collision
+infinite_xxity_radius_live_v1       live profile reload + stream reset
+infinite_xxity_connectors_v1        connector matching + chunk install
+infinite_xxity_blocks_collision_v1  render template + streamed collision
+```
+
+The map-level variant rule is intentional: a genuine new gamemode id currently
+requires generalizing the hardcoded `connected_world` streaming checks. That is
+a later migration; the variant family must not claim to be a new authoritative
+gamemode until those gates use `world_streaming` instead of the mode name.
+
 ### Create a 10 x 10 m floor chunk
 
 Terminal:

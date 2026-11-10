@@ -61,6 +61,17 @@
       "discord_notification": false,
       "map_rotation": false,
       "join_host": true
+    },
+    "infinite_xxity_1": {
+      "server_name": "Infinite World: XXity",
+      "map": "infinite_xxity",
+      "mode": "connected_world",
+      "max_players": 32,
+      "startup_npcs": false,
+      "npc_count": 0,
+      "discord_notification": false,
+      "map_rotation": false,
+      "join_host": true
     }
 
   }

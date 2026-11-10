@@ -1367,7 +1367,7 @@ class DevLoop:
         return [path for path in dict.fromkeys(paths) if path]
 
     @staticmethod
-    def _tail_records(path: str | None, max_bytes: int = 262144) -> list[dict]:
+    def _tail_records(path: str | None, max_bytes: int = 1048576) -> list[dict]:
         if not path:
             return []
         try:
@@ -1376,23 +1376,37 @@ class DevLoop:
                 size = handle.tell()
                 handle.seek(max(0, size - max_bytes))
                 raw = handle.read()
-        except OSError:
+        except (OSError, MemoryError):
             return []
-        records = []
-        for line in raw.decode("utf-8", errors="replace").splitlines():
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(value, dict):
-                records.append(value)
+        try:
+            text = raw.decode("utf-8", errors="replace")
+        except MemoryError:
+            return []
+        records: list[dict] = []
+        try:
+            for line in text.splitlines():
+                try:
+                    value = json.loads(line)
+                except (json.JSONDecodeError, MemoryError):
+                    continue
+                if isinstance(value, dict):
+                    records.append(value)
+                    # Status readers only need the newest records; never let
+                    # a dense journal turn a tail read into an unbounded parse.
+                    if len(records) >= 4096:
+                        break
+        except MemoryError:
+            return records
         return records
 
     def _journal_last(self, path: str | None, events: set[str] | None = None,
-                      max_bytes: int = 262144) -> dict | None:
-        for record in reversed(self._tail_records(path, max_bytes)):
-            if events is None or str(record.get("event", "")) in events:
-                return record
+                      max_bytes: int = 1048576) -> dict | None:
+        # Journals rotate; the active file may not contain the newest event of
+        # the requested type. Scan the newest segments, bounded per segment.
+        for segment in reversed(_journal_segment_paths(path)):
+            for record in reversed(self._tail_records(str(segment), max_bytes)):
+                if events is None or str(record.get("event", "")) in events:
+                    return record
         return None
 
     @staticmethod
@@ -1624,7 +1638,7 @@ class DevLoop:
             last = self._journal_last(journal)
             snap = self._journal_last(
                 journal, {"network.client-snapshot-window"},
-                max_bytes=4 * 1024 * 1024)
+                max_bytes=1024 * 1024)
             event_age = self._age_ms(last, now_ms)
             snap_age = self._age_ms(snap, now_ms)
             snap_tick = (snap or {}).get("fields", {}).get("server_tick") \
@@ -4803,10 +4817,12 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
     # If the runner launched a fresh run, read its whole journal (server start,
     # join, initial spawn). If it reused a live run, read only new records.
     launched_fresh = need_launch
-    try:
-        start_offset = 0 if launched_fresh else Path(events_path).stat().st_size
-    except OSError:
-        start_offset = 0
+    journal_paths: list[str] = []
+    for candidate in (events_path,
+                      str(current.get("client_journal_path") or ""),
+                      str(current.get("server_journal_path") or "")):
+        if candidate and candidate not in journal_paths:
+            journal_paths.append(candidate)
 
     _append_journal_event(events_path, "scenario.started", {
         "scenario_id": scenario_id,
@@ -4818,11 +4834,15 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
         "weapon_set": desired_set,
     }, "scenario started by control client", request_id)
 
+    # Server and client write separate canonical journals. Read all of them so
+    # scenario assertions and command delivery can see client/server events.
     records: list[dict] = []
-    cursor = _JournalCursor(events_path, start_at_end=not launched_fresh)
+    cursors = [_JournalCursor(path, start_at_end=not launched_fresh)
+               for path in journal_paths]
 
     def pump() -> None:
-        records.extend(cursor.read())
+        for cursor in cursors:
+            records.extend(cursor.read())
 
     def wait_for_event(spec: dict, deadline: float) -> tuple[bool, dict | None]:
         name = str(spec.get("wait_for_event", ""))
@@ -4838,12 +4858,14 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
             time.sleep(0.25)
         pump()
         # A reused run may already have passed the requested lifecycle event
-        # before this scenario started. Accept it from the full run journal.
-        for record in _JournalCursor(events_path).read():
-            if record.get("event") != name:
-                continue
-            if all(_field_path(record, key) == value for key, value in where.items()):
-                return True, record
+        # before this scenario started. Accept it from the full run journals.
+        for path in journal_paths:
+            for record in _JournalCursor(path).read():
+                if record.get("event") != name:
+                    continue
+                if all(_field_path(record, key) == value
+                       for key, value in where.items()):
+                    return True, record
         return False, None
 
     def wait_for_playback_terminal(path: str, deadline: float) -> tuple[bool, str]:

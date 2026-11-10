@@ -543,6 +543,17 @@
       "expect_npcs": 19,
       "require_client_connection": true,
       "require_mode_start": true
+    },
+    "58": {
+      "name": "Infinite World - XXity city",
+      "server_args": ["--mode", "connected_world", "--gamemode", "connected_world", "--no-npcs"],
+      "client_args": [],
+      "map": "infinite_xxity",
+      "expect_map": "infinite_xxity",
+      "expect_mode": "connected_world",
+      "expect_gamemode": "connected_world",
+      "require_client_connection": true,
+      "require_mode_start": true
     }
   }
 }

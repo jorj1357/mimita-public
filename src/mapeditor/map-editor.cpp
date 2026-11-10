@@ -48,6 +48,7 @@
 #include "vehicles/vehicle-config.h"
 #include "vehicles/vehicle-system.h"
 #include "world/streamed-world-layer.h"
+#include "worldgen/worldgen-library.h"
 #include "world/world.h"
 
 extern Renderer* gRenderer;
@@ -227,6 +228,7 @@ bool MapEditor::setActive(bool enabled)
     endDrag(false);
     if (dirty()) autosave();
     flushCollisionNow();
+    removeChunkPreview();
     mActive = false;
     mLooking = false;
     mHoverValid = false;
@@ -414,16 +416,82 @@ ChunkSpawnPoint* MapEditor::chunkSpawnFor(const EditorObjectRef& ref) const
 
 bool MapEditor::ensureChunkPreview(const std::string& chunkId)
 {
+    const AuthoredChunk* found = nullptr;
     for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks())
-        if (chunk.id == chunkId) {
-            if (!mChunkPreviewValid || mChunkPreviewChunkId != chunkId) {
-                mChunkPreviewChunkId = chunkId;
-                mChunkPreviewOrigin = THE_CAMERA.pos + THE_CAMERA.front * 12.0f;
-                mChunkPreviewValid = true;
+        if (chunk.id == chunkId) { found = &chunk; break; }
+    if (!found) {
+        std::string error;
+        MimitaWorldGen::WorldGenMode profile;
+        std::vector<AuthoredChunk> libraryChunks;
+        if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                mapId(), profile, &error) &&
+            MimitaWorldGen::WorldGenLibrary::instance().loadChunksForMode(
+                profile, libraryChunks, &error)) {
+            for (const AuthoredChunk& chunk : libraryChunks)
+                if (chunk.id == chunkId) { found = &chunk; break; }
+            if (found) {
+                mChunkPreviewChunk = *found;
+                found = &mChunkPreviewChunk;
             }
-            return true;
         }
-    return false;
+    } else {
+        mChunkPreviewChunk = *found;
+        found = &mChunkPreviewChunk;
+    }
+    if (!found)
+        return false;
+    if (!mChunkPreviewValid || mChunkPreviewChunkId != chunkId) {
+        removeChunkPreview();
+        mChunkPreviewChunkId = chunkId;
+        mChunkPreviewOrigin = THE_CAMERA.pos + THE_CAMERA.front * 12.0f;
+        mChunkPreviewValid = true;
+        installChunkPreview();
+    }
+    return true;
+}
+
+void MapEditor::removeChunkPreview()
+{
+    if (mChunkPreviewKey == 0)
+        return;
+    StreamedWorldLayer::instance().removeChunk(mChunkPreviewKey);
+    mChunkPreviewKey = 0;
+    if (gpWorld)
+        StreamedWorldLayer::instance().flushCollision(*gpWorld);
+}
+
+void MapEditor::installChunkPreview()
+{
+    if (!mChunkPreviewValid || !gpWorld)
+        return;
+    removeChunkPreview();
+    {
+        const AuthoredChunk& chunk = mChunkPreviewChunk;
+        if (chunk.id != mChunkPreviewChunkId)
+            return;
+        uint64_t key = 1469598103934665603ull;
+        for (unsigned char c : chunk.id) {
+            key ^= c;
+            key *= 1099511628211ull;
+        }
+        mChunkPreviewKey = key | (1ull << 63);
+        const glm::mat4 transform =
+            glm::translate(glm::mat4(1.0f), mChunkPreviewOrigin);
+        StreamedWorldLayer::instance().addChunk(mChunkPreviewKey, chunk,
+                                                transform);
+        StreamedWorldLayer::instance().flushCollision(*gpWorld);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map-editor.chunk-preview.installed", chunk.id,
+            "chunk preview mesh and collision installed in the editor world", 0,
+            {{"chunk", chunk.id},
+             {"key", mChunkPreviewKey},
+             {"origin", {mChunkPreviewOrigin.x, mChunkPreviewOrigin.y,
+                         mChunkPreviewOrigin.z}},
+             {"parts", chunk.parts.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return;
+    }
 }
 
 void MapEditor::refreshPreviewChunk()
@@ -432,6 +500,7 @@ void MapEditor::refreshPreviewChunk()
     for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks())
         if (chunk.id == mChunkPreviewChunkId) {
             StreamedWorldLayer::instance().refreshChunk(chunk);
+            installChunkPreview();
             return;
         }
 }
@@ -443,6 +512,7 @@ bool MapEditor::previewChunk(const std::string& chunkId)
         return false;
     }
     mChunkPreviewOrigin = THE_CAMERA.pos + THE_CAMERA.front * 12.0f;
+    installChunkPreview();
     notify("previewing chunk " + chunkId);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
@@ -470,6 +540,19 @@ glm::vec3 MapEditor::objectPosition(const EditorObjectRef& ref) const
     if (ref.kind == EditorObjectKind::ChunkSpawn) {
         if (const ChunkSpawnPoint* spawn = chunkSpawnFor(ref))
             return mChunkPreviewOrigin + spawn->position;
+        return glm::vec3(0.0f);
+    }
+    if (ref.kind == EditorObjectKind::Chunk) {
+        for (const AuthoredChunk& chunk : MapConfigRegistry::instance().chunks())
+            if (chunk.id == ref.id)
+                return (chunk.boundsMin + chunk.boundsMax) * 0.5f;
+        return glm::vec3(0.0f);
+    }
+    if (ref.kind == EditorObjectKind::GenerationZone) {
+        for (const GenerationZone& zone :
+             MapConfigRegistry::instance().current().generationZones)
+            if (zone.id == ref.id)
+                return (zone.boundsMin + zone.boundsMax) * 0.5f;
         return glm::vec3(0.0f);
     }
     if (ref.kind == EditorObjectKind::PayloadCartOrigin)
@@ -1330,6 +1413,8 @@ std::string MapEditor::kindName(EditorObjectKind kind)
         case EditorObjectKind::ChunkPart: return "chunk_part";
         case EditorObjectKind::ChunkConnector: return "chunk_connector";
         case EditorObjectKind::ChunkSpawn: return "chunk_spawn";
+        case EditorObjectKind::Chunk: return "chunk";
+        case EditorObjectKind::GenerationZone: return "zone";
     }
     return "object";
 }
@@ -1745,8 +1830,15 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
                     " vehicle car"))
             out.push_back({EditorObjectKind::Vehicle, vehicle.id});
     }
+    for (const auto& zone : config.generationZones) {
+        if (zone.enabled && matches(zone.id + " " + zone.name + " " +
+                zone.modeId + " " + zone.generatorVersion + " zone"))
+            out.push_back({EditorObjectKind::GenerationZone, zone.id});
+    }
     for (const auto& chunk : config.chunks) {
         if (!chunk.enabled) continue;
+        if (matches(chunk.id + " " + chunk.name + " chunk root"))
+            out.push_back({EditorObjectKind::Chunk, chunk.id});
         for (const auto& part : chunk.parts) {
             const std::string id = chunk.id + "/" + part.id;
             if (matches(id + " " + part.name + " " + part.kind + " " +
@@ -3021,6 +3113,13 @@ void MapEditor::selectAllEdit()
     if (gpWorld)
         for (const auto& object : gpWorld->mesh.objects)
             mSelection.push_back({EditorObjectKind::MapGLBObject, object.id});
+    for (const auto& chunk : MapConfigRegistry::instance().current().chunks)
+        if (chunk.enabled)
+            mSelection.push_back({EditorObjectKind::Chunk, chunk.id});
+    for (const auto& zone :
+         MapConfigRegistry::instance().current().generationZones)
+        if (zone.enabled)
+            mSelection.push_back({EditorObjectKind::GenerationZone, zone.id});
     notify("selected " + std::to_string(mSelection.size()) + " objects");
 }
 
@@ -4090,6 +4189,8 @@ bool MapEditor::selectKind(const std::string& kind)
         want = EditorObjectKind::ChunkConnector;
     else if (normalized == "chunk_spawn" || normalized == "spawn")
         want = EditorObjectKind::ChunkSpawn;
+    else if (normalized == "chunk") want = EditorObjectKind::Chunk;
+    else if (normalized == "zone") want = EditorObjectKind::GenerationZone;
     else {
         notify("select_kind expects entity, block, vehicle, bombsite, route, cart, glb, part, connector, or all");
         return false;
@@ -4108,6 +4209,8 @@ bool MapEditor::selectKind(const std::string& kind)
         if (splitChunkRef(mSelection.front().id, chunkId, itemId))
             ensureChunkPreview(chunkId);
     }
+    if (!mSelection.empty() && want == EditorObjectKind::Chunk)
+        ensureChunkPreview(mSelection.front().id);
     if (mSelection.empty()) {
         notify("no " + kind + " objects to select");
         return false;
@@ -4155,6 +4258,44 @@ bool MapEditor::moduleApplyPrimaryPosition(const glm::vec3& position)
     if (glm::length(delta) <= 0.0001f)
         return true;
     nudgeSelection(delta);
+    return true;
+}
+
+unsigned int MapEditor::moduleWorldObjectCount() const
+{
+    if (!gpWorld || !WORLD_LOADED)
+        return 0;
+    return static_cast<unsigned int>(gpWorld->mesh.objects.size());
+}
+
+bool MapEditor::moduleWorldObjectAt(unsigned int index,
+                                    MapEditorWorldObjectView& out) const
+{
+    if (!gpWorld || !WORLD_LOADED || index >= gpWorld->mesh.objects.size())
+        return false;
+    const MapGLBObject& object = gpWorld->mesh.objects[index];
+    std::snprintf(out.id, sizeof(out.id), "%s", object.id.c_str());
+    std::snprintf(out.name, sizeof(out.name), "%s", object.name.c_str());
+    out.nodeIndex = object.nodeIndex;
+    out.vertexCount = static_cast<unsigned int>(object.vertexCount);
+    out.basePosition[0] = object.basePosition.x;
+    out.basePosition[1] = object.basePosition.y;
+    out.basePosition[2] = object.basePosition.z;
+    out.boundsMin[0] = object.boundsMin.x;
+    out.boundsMin[1] = object.boundsMin.y;
+    out.boundsMin[2] = object.boundsMin.z;
+    out.boundsMax[0] = object.boundsMax.x;
+    out.boundsMax[1] = object.boundsMax.y;
+    out.boundsMax[2] = object.boundsMax.z;
+    return true;
+}
+
+bool MapEditor::moduleMapBounds(glm::vec3& outMin, glm::vec3& outMax) const
+{
+    if (!gpWorld || !WORLD_LOADED)
+        return false;
+    outMin = gpWorld->collisionMesh.boundsMin;
+    outMax = gpWorld->collisionMesh.boundsMax;
     return true;
 }
 
@@ -4751,6 +4892,10 @@ void MapEditor::renderUI(GLFWwindow* window)
                     color = textOf("map-editor.row-connector", {1.0f, 0.65f, 0.2f, 1}); break;
                 case EditorObjectKind::ChunkSpawn:
                     color = textOf("map-editor.row-spawn", {0.35f, 1.0f, 0.55f, 1}); break;
+                case EditorObjectKind::Chunk:
+                    color = textOf("map-editor.row-chunk", {0.9f, 0.85f, 0.4f, 1}); break;
+                case EditorObjectKind::GenerationZone:
+                    color = textOf("map-editor.row-zone", {0.85f, 0.5f, 1.0f, 1}); break;
             }
         }
         char rowText[256];

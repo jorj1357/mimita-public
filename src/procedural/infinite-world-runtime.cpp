@@ -214,6 +214,15 @@ bool independentGrid(const GenerationZone& zone,
 {
     if (zone.modeId != "connected_world" || zone.repeatAxes.z != 0 ||
         zone.connectorGap != 0.0f || candidates.empty()) return false;
+    // Center-spaced cells are independent by definition. Selecting by cell
+    // hash here matches the server's grid selection; connector compatibility
+    // filtering is only needed for graph placement.
+    if (zone.spacingMode != "connector") {
+        for (const AuthoredChunk* candidate : candidates)
+            if (!candidate || candidate->parts.empty())
+                return false;
+        return true;
+    }
     for (const AuthoredChunk* a : candidates) {
         if (!a || a->parts.empty()) return false;
         for (const AuthoredChunk* b : candidates) {
@@ -418,6 +427,10 @@ void InfiniteWorldRuntime::applyStreamingConfig(
     const GenerationZone& zone, const GamemodeWorldStreaming& config)
 {
     if (!config.enabled)
+        return;
+    // The map zone / worldgen profile radius is the authoritative editable
+    // radius. The gamemode visual radius is only a default when neither set one.
+    if (zone.streamRadius.x > 0 || zone.streamRadius.y > 0)
         return;
     const int visual = std::max(1, static_cast<int>(std::ceil(
         config.visualRadiusM)));
@@ -1393,7 +1406,24 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
     const uint64_t revision = registry.revision();
     const std::string& gameModeId =
         MimitaNet::CommunityMatchClient::instance().mode();
-    mStreaming = GamemodeRegistry::instance().get(gameModeId).worldStreaming;
+    const bool mapDeclaresConnectedWorld =
+        config.generateWholeWorld &&
+        std::any_of(config.generationZones.begin(), config.generationZones.end(),
+                    [](const GenerationZone& zone) {
+                        return zone.enabled && zone.modeId == "connected_world";
+                    });
+    GamemodeWorldStreaming streaming =
+        GamemodeRegistry::instance().get(gameModeId).worldStreaming;
+    if (!streaming.enabled && gameModeId.empty() &&
+        mapDeclaresConnectedWorld) {
+        // Map-level connected-world variants can finish loading before the
+        // replicated match mode arrives. Let the map's own connected_world zone
+        // opt in using the connected_world streaming policy instead of silently
+        // disabling chunk streaming for the whole first join.
+        streaming = GamemodeRegistry::instance()
+            .get("connected_world").worldStreaming;
+    }
+    mStreaming = streaming;
     mFocusPos = player.pos;
     mFocusVel = player.vel;
     layer.setStreamFocus(
@@ -1422,7 +1452,8 @@ void InfiniteWorldRuntime::tick(const Player& player, World& world)
     if (layer.collisionCooldownActive())
         return;
 
-    const bool connectedWorldMode = gameModeId == "connected_world";
+    const bool connectedWorldMode = gameModeId == "connected_world" ||
+        (gameModeId.empty() && mapDeclaresConnectedWorld);
 
     GenerationZone fallbackZone;
     const GenerationZone* mapZone = nullptr;

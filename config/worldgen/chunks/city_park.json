@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "id": "city_park",
+  "bounds_min": [-5.0, -5.0, -0.5],
+  "bounds_max": [5.0, 5.0, 4.0],
+  "parts": [
+    {"id": "floor", "kind": "floor", "position": [0.0, 0.0, -0.25], "size": [10.0, 10.0, 0.5], "rotation": [0.0, 0.0, 0.0], "material": "floorv2", "collision": true, "visible": true},
+    {"id": "planter_a", "kind": "block", "position": [-3.2, 3.2, 0.4], "size": [2.0, 2.0, 0.8], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true},
+    {"id": "planter_b", "kind": "block", "position": [3.2, -3.2, 0.4], "size": [2.0, 2.0, 0.8], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true},
+    {"id": "bench", "kind": "block", "position": [0.0, 0.0, 0.35], "size": [1.4, 0.5, 0.7], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true}
+  ],
+  "connectors": [
+    {"id": "east", "side": "east", "orientation": "doorway", "role": "bidirectional", "position": [5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "west", "side": "west", "orientation": "doorway", "role": "bidirectional", "position": [-5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "north", "side": "north", "orientation": "doorway", "role": "bidirectional", "position": [0.0, 5.0, 0.0], "tags": ["flat"]},
+    {"id": "south", "side": "south", "orientation": "doorway", "role": "bidirectional", "position": [0.0, -5.0, 0.0], "tags": ["flat"]}
+  ],
+  "tags": ["flat", "city", "park"],
+  "enabled": true
+}

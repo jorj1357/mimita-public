@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "map_editor_glb_missing_blocks_v1",
+  "description": "Mode 56 funworld3: enter the map editor, enumerate GLB/outliner objects, compare with map bounds and saved GLB overrides, and capture position-correction evidence.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "56",
+    "map": "funworld3",
+    "visibility": "visible",
+    "fresh_journal_required": true
+  },
+  "setup": [
+    {"id": "enter_editor", "command": "mapeditor", "args": ["1"], "delay_ms_after": 1500}
+  ],
+  "steps": [
+    {"id": "editor_status", "command": "mapeditor", "args": ["status"], "delay_ms_after": 300},
+    {"id": "glb_dump", "command": "mapeditor", "args": ["glbdump"], "delay_ms_after": 1000},
+    {"id": "snapshot", "command": "agent.snapshot", "args": ["editor_glb_dump"], "delay_ms_after": 300}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "map.load-success"},
+    {"type": "event_present", "event": "map.server-load-success"},
+    {"type": "map_ids_agree"},
+    {"type": "event_present", "event": "map-editor.command"},
+    {"type": "event_present", "event": "map-editor.glb-dump"}
+  ],
+  "timeout_seconds": 180
+}

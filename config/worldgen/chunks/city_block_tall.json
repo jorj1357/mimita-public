@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "city_block_tall",
+  "bounds_min": [-5.0, -5.0, -0.5],
+  "bounds_max": [5.0, 5.0, 8.0],
+  "parts": [
+    {"id": "floor", "kind": "floor", "position": [0.0, 0.0, -0.25], "size": [10.0, 10.0, 0.5], "rotation": [0.0, 0.0, 0.0], "material": "floorv2", "collision": true, "visible": true},
+    {"id": "tower", "kind": "block", "position": [-3.0, -3.0, 4.0], "size": [3.5, 3.5, 8.0], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true},
+    {"id": "awning", "kind": "wall", "position": [-1.0, -3.0, 1.0], "size": [0.4, 3.5, 0.3], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true}
+  ],
+  "connectors": [
+    {"id": "east", "side": "east", "orientation": "doorway", "role": "bidirectional", "position": [5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "west", "side": "west", "orientation": "doorway", "role": "bidirectional", "position": [-5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "north", "side": "north", "orientation": "doorway", "role": "bidirectional", "position": [0.0, 5.0, 0.0], "tags": ["flat"]},
+    {"id": "south", "side": "south", "orientation": "doorway", "role": "bidirectional", "position": [0.0, -5.0, 0.0], "tags": ["flat"]}
+  ],
+  "tags": ["flat", "city", "building"],
+  "enabled": true
+}

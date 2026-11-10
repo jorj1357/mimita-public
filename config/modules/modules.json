@@ -48,7 +48,7 @@
       "process_scope": "all",
       "sources": ["src/map/map-geometry-module.cpp"],
       "headers": ["src/modules/api/module-abi.h", "src/modules/api/map-geometry-api.h"],
-      "events": [810],
+      "events": [810, 811, 812],
       "capabilities": []
     },
     {
@@ -76,6 +76,7 @@
       "abi": 2,
       "state_schema": 1,
       "activation": "before_fixed_world_tick",
+      "process_scope": "all",
       "sources": [
         "src/worldgen/infinite-worldgen-module.cpp"
       ],
@@ -143,7 +144,8 @@
         706,
         707,
         708,
-        709
+        709,
+        710
       ],
       "capabilities": []
     },

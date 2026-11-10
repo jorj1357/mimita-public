@@ -27,7 +27,11 @@
   "spawn_strategy": "shared",
   "intermission_seconds": 0,
   "results_seconds": 0,
-  "maps": [],
+  "maps": [
+    "infinite_cramped",
+    "infinite_mixed",
+    "infinite_xxity"
+  ],
   "teams": [
     {
       "id": "sandbox_npcs",

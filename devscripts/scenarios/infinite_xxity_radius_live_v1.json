@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "infinite_xxity_radius_live_v1",
+  "description": "Infinite World XXity: edit the stream radius live, prove the worldgen profile reloads and the stream resets/updates without an EXE restart.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "58",
+    "map": "infinite_xxity",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "teleport_origin", "command": "teleport", "args": ["0,0,3"], "delay_ms_after": 500},
+    {"id": "stream_warmup", "wait_seconds": 8}
+  ],
+  "steps": [
+    {"id": "set_radius", "command": "worldmode", "args": ["radius", "infinite_xxity", "120", "120", "0"], "delay_ms_after": 1500},
+    {"id": "wait_reload", "wait_for_event": "worldgen.profile.reloaded", "timeout_seconds": 15},
+    {"id": "wait_apply", "wait_for_event": "world-stream.profile.reloaded", "timeout_seconds": 15},
+    {"id": "settle", "wait_seconds": 3}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "worldgen.profile.reloaded"},
+    {"type": "event_present", "event": "world-stream.profile.reloaded"},
+    {"type": "event_present", "event": "world-stream.reset"},
+    {"type": "event_field_at_least", "event": "world-stream.update", "field": "loaded", "value": 1}
+  ],
+  "timeout_seconds": 180
+}

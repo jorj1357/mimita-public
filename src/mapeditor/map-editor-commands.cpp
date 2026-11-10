@@ -19,7 +19,7 @@ void registerMapEditorCommands()
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart|chunk <geometry>|zone <seed>> [id]|chunk_connector <chunkId> <connectorId> <side> <orientation> [tags...]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart|chunk <geometry>|zone <seed>> [id]|chunk_connector <chunkId> <connectorId> <side> <orientation> [tags...]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|glbdump|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -84,7 +84,8 @@ void registerMapEditorCommands()
                 command == "set_rotation" || command == "set_rot" ||
                 command == "set_scale" || command == "set_size" ||
                 command == "resize" || command == "set_radius" ||
-                command == "site_radius" || command == "rename";
+                command == "site_radius" || command == "rename" ||
+                command == "glbdump";
             if (moduleCommand) {
                 const bool needsActive =
                     command != "save" && command != "reload" &&

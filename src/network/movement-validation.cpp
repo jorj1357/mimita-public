@@ -671,13 +671,28 @@ MovementValidationResult validateClientMovementReport(
         const float drift = glm::length(report.position - player.pos);
         if (drift > config.postGapCorrectionDistance)
         {
-            result.decision = MovementValidationDecision::Correct;
-            result.reason = MovementValidationReason::TooFarFromAuthoritative;
-            result.acceptedState.position = player.pos;
-            result.acceptedState.baseVelocity = glm::vec3(0.0f);
-            result.acceptedState.externalImpulse = glm::vec3(0.0f);
-            result.metrics.positionError = drift;
-            return result;
+            mimita_network_policy::MovementValidationPolicyV1 policy{};
+            policy.version = mimita_network_policy::ABI_VERSION;
+            policy.structSize = sizeof(policy);
+            policy.reasonCode = 22u;
+            policy.clientGapTicks = static_cast<uint32_t>(
+                std::min<uint64_t>(clientGapTicks, 0xffffffffu));
+            policy.flyEnabled = player.flyEnabled ? 1u : 0u;
+            policy.belowVoid = (context.world &&
+                report.position.z < context.world->boundsMin.z) ? 1u : 0u;
+            policy.positionError = drift;
+            policy.postGapCorrectionDistance = config.postGapCorrectionDistance;
+            const bool policyApplied =
+                ModuleHost::instance().networkMovementValidationPolicy(&policy);
+            if (!policyApplied || policy.outAllowCorrection) {
+                result.decision = MovementValidationDecision::Correct;
+                result.reason = MovementValidationReason::TooFarFromAuthoritative;
+                result.acceptedState.position = player.pos;
+                result.acceptedState.baseVelocity = glm::vec3(0.0f);
+                result.acceptedState.externalImpulse = glm::vec3(0.0f);
+                result.metrics.positionError = drift;
+                return result;
+            }
         }
     }
 
@@ -693,8 +708,26 @@ MovementValidationResult validateClientMovementReport(
         // Skip the correction when the player is falling into the void below
         // the map. Void death handles the fall; snapping back up would
         // rubberband the player above the kill threshold forever.
-        if (player.flyEnabled ||
-            !(context.world && report.position.z < context.world->boundsMin.z))
+        const bool belowVoid =
+            context.world && report.position.z < context.world->boundsMin.z;
+        mimita_network_policy::MovementValidationPolicyV1 policy{};
+        policy.version = mimita_network_policy::ABI_VERSION;
+        policy.structSize = sizeof(policy);
+        policy.reasonCode = 19u;
+        policy.clientGapTicks = static_cast<uint32_t>(
+            std::min<uint64_t>(clientGapTicks, 0xffffffffu));
+        policy.flyEnabled = player.flyEnabled ? 1u : 0u;
+        policy.belowVoid = belowVoid ? 1u : 0u;
+        policy.positionError = glm::length(report.position - previousPosition);
+        policy.postGapCorrectionDistance = config.postGapCorrectionDistance;
+        const bool policyApplied =
+            ModuleHost::instance().networkMovementValidationPolicy(&policy);
+        if ((policyApplied && !policy.outAllowCorrection) ||
+            (!player.flyEnabled && belowVoid))
+        {
+            // The module (or void handling) suppressed the correction.
+        }
+        else
         {
             result.decision = MovementValidationDecision::Correct;
             result.reason = MovementValidationReason::BlockingGeometry;

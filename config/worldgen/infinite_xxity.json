@@ -1,0 +1,27 @@
+{
+  "allow_crossings": true,
+  "allow_cycles": true,
+  "chunk_files": [
+    "config/worldgen/chunks/city_road_straight.json",
+    "config/worldgen/chunks/city_road_corner.json",
+    "config/worldgen/chunks/city_road_t.json",
+    "config/worldgen/chunks/city_road_cross.json",
+    "config/worldgen/chunks/city_block_small.json",
+    "config/worldgen/chunks/city_block_tall.json",
+    "config/worldgen/chunks/city_park.json",
+    "config/worldgen/chunks/city_plaza.json"
+  ],
+  "format": 1,
+  "grid": {
+    "cell_size": [10.0, 10.0, 10.0],
+    "chunk_size": [10.0, 10.0, 8.0],
+    "connector_gap": 0.0,
+    "origin": [0.0, 0.0, 0.0],
+    "plane": "xy",
+    "repeat_axes": [1, 1, 0],
+    "spacing_mode": "center",
+    "stream_radius": [4, 4, 0]
+  },
+  "max_branch_depth": 16,
+  "mode": "connected_world"
+}

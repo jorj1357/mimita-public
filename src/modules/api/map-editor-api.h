@@ -96,6 +96,19 @@ struct EditorSelectionRefV1
     char id[mimita_module::MAX_OBJECT_ID];
 };
 
+// Bounded world-object view for editor diagnostics. The host owns the world;
+// the module formats the outliner/dump decision without receiving pointers.
+struct WorldObjectInfoV1
+{
+    char id[mimita_module::MAX_OBJECT_ID];
+    char name[mimita_module::MAX_TAG_TEXT];
+    std::int32_t nodeIndex;
+    std::uint32_t vertexCount;
+    float basePosition[3];
+    float boundsMin[3];
+    float boundsMax[3];
+};
+
 struct EditorInputV1
 {
     float rawCursor[2];
@@ -190,6 +203,13 @@ struct EditorServicesV1
         const char* parentChunk, const char* parentConnector,
         const char* childChunk, const char* childConnector,
         float outTransform[16], char* reason, std::uint32_t reasonCapacity);
+
+    // Bounded outliner/dump enumeration. Returns 0 when the world is not loaded.
+    std::uint32_t (MIMITA_MODULE_CALL *getWorldObjectCount)();
+    int (MIMITA_MODULE_CALL *getWorldObjectInfo)(
+        std::uint32_t index, WorldObjectInfoV1* out);
+    int (MIMITA_MODULE_CALL *getMapBounds)(
+        float outMin[3], float outMax[3]);
 };
 
 } // namespace mimita_map_editor

@@ -58,6 +58,24 @@ struct MovementCorrectionPolicyV1
     std::uint32_t outGeneration;
 };
 
+// Server movement-validation decision. The host owns the collision sweep,
+// authoritative state, finite/bounds safety checks, and packet emission; the
+// module decides whether a proposed correction is applied. `reasonCode` mirrors
+// MovementValidationReason (19 blocking geometry, 22 too far from authoritative).
+struct MovementValidationPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t reasonCode;
+    std::uint32_t clientGapTicks;
+    std::uint32_t flyEnabled;
+    std::uint32_t belowVoid;
+    float positionError;
+    float postGapCorrectionDistance;
+    std::uint32_t outAllowCorrection;
+    std::uint32_t outGeneration;
+};
+
 // Server hit-claim acceptance tolerances. The host owns the rewind pose and
 // geometric tests; the module decides the tolerance values and can reject an
 // over-wide claim budget live.

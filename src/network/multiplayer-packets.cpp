@@ -2216,6 +2216,34 @@ void mpUpdateConnectionHealth(MultiplayerContext& ctx)
         }
     }
 
+    // Connected means "accepted into this session", not merely "packets are
+    // arriving". A pre-join snapshot or keepalive must not suppress the join
+    // retry loop; otherwise map-sync waits forever for a required map id.
+    const bool hasAssignedSession =
+        ctx.localPlayerId != 0 && !ctx.requiredMapId.empty();
+    if (next == ConnectionState::Connected && !hasAssignedSession) {
+        static thread_local uint64_t lastJoinMissingLogMs = 0;
+        if (now - lastJoinMissingLogMs >= 2000) {
+            lastJoinMissingLogMs = now;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.join.map-required-missing", "",
+                "connected transport has no accepted player/map; staying in join state",
+                ctx.tick,
+                nlohmann::json{
+                    {"local_player_id", ctx.localPlayerId},
+                    {"required_map_id", ctx.requiredMapId},
+                    {"server_address", ctx.serverAddress},
+                    {"room_code", ctx.roomCode.empty()
+                        ? ctx.currentRoomCode : ctx.roomCode},
+                    {"snapshots_received", ctx.snapshotsReceived}},
+                __FILE__, __LINE__, __func__);
+        }
+        next = (before == ConnectionState::Connecting ||
+                before == ConnectionState::WaitJoinAccept)
+            ? before : ConnectionState::WaitingForServer;
+    }
+
     if (next == before)
         return;
 

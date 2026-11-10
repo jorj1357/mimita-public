@@ -18,6 +18,8 @@
 
 #include "world/texture-store.h"
 #include "debug/debug-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/map-geometry-api.h"
 
 extern TextureStore gTextures;
 
@@ -45,7 +47,7 @@ bool validVec3(glm::vec3 v)
     return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
 }
 
-bool isSkyNode(const std::string& name)
+bool isSkyNodeFallback(const std::string& name)
 {
     std::string lower;
     lower.reserve(name.size());
@@ -56,6 +58,21 @@ bool isSkyNode(const std::string& name)
            lower.find("sky_dome") != std::string::npos ||
            lower.find("environment") != std::string::npos ||
            lower.find("worldsphere") != std::string::npos;
+}
+
+// Node include/sky routing is hot policy; the fallback keeps the pre-module
+// behavior when the module is not loaded.
+bool nodeRoutesToSky(int nodeIndex, const std::string& name)
+{
+    mimita_map_geometry::NodePolicyV1 policy{};
+    policy.version = mimita_map_geometry::ABI_VERSION;
+    policy.structSize = sizeof(policy);
+    policy.nodeIndex = nodeIndex;
+    policy.hasMesh = 1;
+    std::snprintf(policy.name, sizeof(policy.name), "%s", name.c_str());
+    if (ModuleHost::instance().mapGeometryNodePolicy(&policy) && policy.result)
+        return policy.outInclude == 2u;
+    return isSkyNodeFallback(name);
 }
 
 bool nodeMatrix(const tinygltf::Node& node, int nodeIndex, glm::mat4& out)
@@ -152,7 +169,8 @@ void walkNode(
     if (node.mesh >= 0 && node.mesh < (int)model.meshes.size())
     {
         const tinygltf::Mesh& gltfMesh = model.meshes[node.mesh];
-        Mesh& target = (skyMesh && isSkyNode(node.name)) ? *skyMesh : mesh;
+        Mesh& target = (skyMesh && nodeRoutesToSky(nodeIndex, node.name))
+            ? *skyMesh : mesh;
 
         if (loggedNodes < 20 || (loggedNodes % 100) == 0)
         {

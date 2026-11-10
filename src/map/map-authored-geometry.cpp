@@ -26,6 +26,7 @@
 #include "config/collision-lod-config.h"
 #include "gamemode/map-config.h"
 #include "hot-reload/module-host.h"
+#include "modules/api/map-geometry-api.h"
 #include "modules/api/worldgen-api.h"
 #include "worldgen/worldgen-library.h"
 #include "map/map-loader-collision.h"
@@ -37,6 +38,104 @@
 #include "world/world.h"
 
 namespace {
+
+// Exact id match is the fast path. When a GLB re-export moves node indices, the
+// hot map-geometry module may match a saved index-based override by its display
+// name or explicit source id.
+int resolveGLBOverrideIndex(
+    const std::string& objectId, const std::string& objectName, int nodeIndex,
+    const std::vector<MapGLBObjectOverride>& overrides,
+    const std::vector<bool>& claimed,
+    const std::vector<std::string>& objectIds)
+{
+    for (size_t i = 0; i < overrides.size(); ++i)
+        if (overrides[i].id == objectId)
+            return static_cast<int>(i);
+    if (!ModuleHost::instance().moduleLoaded("map-geometry"))
+        return -1;
+    for (size_t i = 0; i < overrides.size(); ++i) {
+        if (claimed[i])
+            continue;
+        // Never let a name alias steal an override whose saved id still exists
+        // on a later object.
+        if (std::find(objectIds.begin(), objectIds.end(), overrides[i].id) !=
+            objectIds.end())
+            continue;
+        mimita_map_geometry::ObjectPlanV1 plan{};
+        plan.version = mimita_map_geometry::ABI_VERSION;
+        plan.structSize = sizeof(plan);
+        std::snprintf(plan.objectId, sizeof(plan.objectId), "%s",
+                      objectId.c_str());
+        std::snprintf(plan.objectName, sizeof(plan.objectName), "%s",
+                      objectName.c_str());
+        plan.nodeIndex = nodeIndex;
+        plan.hasOverride = 1;
+        std::snprintf(plan.overrideId, sizeof(plan.overrideId), "%s",
+                      overrides[i].id.c_str());
+        std::snprintf(plan.overrideName, sizeof(plan.overrideName), "%s",
+                      overrides[i].name.c_str());
+        std::snprintf(plan.overrideSource, sizeof(plan.overrideSource), "%s",
+                      overrides[i].source.c_str());
+        if (ModuleHost::instance().mapGeometryObjectPlan(&plan) &&
+            plan.result && plan.outMatch)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+void refreshBatchesForVertexRange(World& world, size_t first, size_t last)
+{
+    last = std::min(last, world.mesh.verts.size());
+    if (first >= last)
+        return;
+    for (Mesh::Batch& batch : world.mesh.batches) {
+        const size_t batchLast = std::min(
+            batch.first + batch.count, world.mesh.verts.size());
+        if (batchLast <= first || batch.first >= last || batch.first >= batchLast)
+            continue;
+        glm::vec3 boundsMin(std::numeric_limits<float>::max());
+        glm::vec3 boundsMax(std::numeric_limits<float>::lowest());
+        for (size_t i = batch.first; i < batchLast; ++i) {
+            boundsMin = glm::min(boundsMin, world.mesh.verts[i].pos);
+            boundsMax = glm::max(boundsMax, world.mesh.verts[i].pos);
+        }
+        batch.boundsMin = boundsMin;
+        batch.boundsMax = boundsMax;
+        batch.hasBounds = true;
+    }
+}
+
+void logUnmatchedGLBOverrides(
+    const std::vector<MapGLBObjectOverride>& overrides,
+    const std::vector<bool>& claimed, const char* side)
+{
+    int unmatched = 0;
+    for (size_t i = 0; i < overrides.size(); ++i) {
+        if (claimed[i] || overrides[i].clone)
+            continue;
+        if (unmatched < 8) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::World, StructuredLevel::Important,
+                "map.glb-object.unmatched", overrides[i].id,
+                "saved GLB override did not match any loaded object", 0,
+                nlohmann::json{{"side", side},
+                               {"override_id", overrides[i].id},
+                               {"override_name", overrides[i].name},
+                               {"source", overrides[i].source}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        ++unmatched;
+    }
+    if (unmatched > 0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "map.glb-object.unmatched-summary", "map-geometry",
+            "saved GLB overrides could not be resolved", 0,
+            nlohmann::json{{"side", side}, {"unmatched", unmatched},
+                           {"overrides", overrides.size()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
 
 uint64_t serverCellHash(uint32_t seed, const std::string& version,
                         const std::string& deps, int x, int y, int z)
@@ -409,6 +508,12 @@ std::string mapIdFromAssetPath(const std::string& path)
 void applyGLBObjectOverrides(World& world,
                              const std::vector<MapGLBObjectOverride>& overrides)
 {
+    std::vector<bool> claimed(overrides.size(), false);
+    std::vector<std::string> objectIds;
+    objectIds.reserve(world.mesh.objects.size());
+    for (const MapGLBObject& object : world.mesh.objects)
+        objectIds.push_back(object.id);
+    bool geometryChanged = false;
     for (MapGLBObject& object : world.mesh.objects) {
         glm::vec3 target = object.basePosition;
         glm::vec3 rotation(0.0f);
@@ -430,17 +535,19 @@ void applyGLBObjectOverrides(World& world,
                 state.baseNormals.push_back(world.mesh.verts[i].normal);
             }
         }
-        const MapGLBObjectOverride* matched = nullptr;
-        for (const MapGLBObjectOverride& override : overrides) {
-            if (override.id == object.id) {
-                matched = &override;
-                target = override.position;
-                rotation = override.rotation;
-                scale = glm::max(override.scale, glm::vec3(0.0001f));
-                if (!override.material.empty())
-                    object.materialName = override.material;
-                break;
-            }
+        const int matchedIndex = resolveGLBOverrideIndex(
+            object.id, object.name, object.nodeIndex, overrides, claimed,
+            objectIds);
+        const MapGLBObjectOverride* matched =
+            matchedIndex >= 0 ? &overrides[matchedIndex] : nullptr;
+        if (matchedIndex >= 0)
+            claimed[matchedIndex] = true;
+        if (matched) {
+            target = matched->position;
+            rotation = matched->rotation;
+            scale = glm::max(matched->scale, glm::vec3(0.0001f));
+            if (!matched->material.empty())
+                object.materialName = matched->material;
         }
         state.position = target;
         state.rotation = rotation;
@@ -497,6 +604,11 @@ void applyGLBObjectOverrides(World& world,
             object.boundsMax = object.basePosition;
         }
         if (matched) {
+            // Render culling uses batch bounds and the VBO only re-uploads on a
+            // render revision change. Keep both in sync with the moved vertices
+            // or a moved object becomes collidable but invisible.
+            refreshBatchesForVertexRange(world, first, last);
+            geometryChanged = true;
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::World, StructuredLevel::Important,
                 "map.glb-object.applied", object.id,
@@ -519,9 +631,12 @@ void applyGLBObjectOverrides(World& world,
                                {"range_valid", rangeValid},
                                {"vertices_moved", rangeValid ? last - first : 0},
                                {"material", object.materialName}},
-                __FILE__, __LINE__, __FUNCTION__);
+                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
+    logUnmatchedGLBOverrides(overrides, claimed, "client");
+    if (geometryChanged)
+        world.renderRevision++;
 }
 
 void applyGLBObjectClones(World& world,
@@ -704,21 +819,28 @@ void applyGLBObjectClones(MimitaNet::HeadlessWorld& world,
 void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                              const std::vector<MapGLBObjectOverride>& overrides)
 {
+    std::vector<bool> claimed(overrides.size(), false);
+    std::vector<std::string> objectIds;
+    objectIds.reserve(world.glbObjects.size());
+    for (const MimitaNet::HeadlessGLBObject& object : world.glbObjects)
+        objectIds.push_back(object.id);
     for (MimitaNet::HeadlessGLBObject& object : world.glbObjects) {
         glm::vec3 target = object.basePosition;
         glm::vec3 rotation(0.0f);
         glm::vec3 scale(1.0f);
-        const MapGLBObjectOverride* matched = nullptr;
-        for (const MapGLBObjectOverride& override : overrides) {
-            if (override.id == object.id) {
-                matched = &override;
-                target = override.position;
-                rotation = override.rotation;
-                scale = glm::max(override.scale, glm::vec3(0.0001f));
-                if (!override.material.empty())
-                    object.materialName = override.material;
-                break;
-            }
+        const int matchedIndex = resolveGLBOverrideIndex(
+            object.id, object.name, object.nodeIndex, overrides, claimed,
+            objectIds);
+        const MapGLBObjectOverride* matched =
+            matchedIndex >= 0 ? &overrides[matchedIndex] : nullptr;
+        if (matchedIndex >= 0)
+            claimed[matchedIndex] = true;
+        if (matched) {
+            target = matched->position;
+            rotation = matched->rotation;
+            scale = glm::max(matched->scale, glm::vec3(0.0001f));
+            if (!matched->material.empty())
+                object.materialName = matched->material;
         }
         const size_t first = std::min(object.triangleFirst, world.triangles.size());
         const size_t last = std::min(object.triangleFirst + object.triangleCount,
@@ -773,27 +895,7 @@ void applyGLBObjectOverrides(MimitaNet::HeadlessWorld& world,
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
-    for (const MapGLBObjectOverride& override : overrides) {
-        const bool found = std::any_of(
-            world.glbObjects.begin(), world.glbObjects.end(),
-            [&override](const MimitaNet::HeadlessGLBObject& object) {
-                return object.id == override.id;
-            });
-        if (!found) {
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::World, StructuredLevel::Errors,
-                "map.glb-object.override-unmatched", override.id,
-                "server GLB override does not match any raw GLB node",
-                0,
-                nlohmann::json{{"side", "server"},
-                               {"object", override.id},
-                               {"name", override.name},
-                               {"target_position", {override.position.x,
-                                                    override.position.y,
-                                                    override.position.z}}},
-                __FILE__, __LINE__, __FUNCTION__);
-        }
-    }
+    logUnmatchedGLBOverrides(overrides, claimed, "server");
     if (!world.triangles.empty()) {
         world.boundsMin = glm::vec3(std::numeric_limits<float>::max());
         world.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());

@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "id": "city_plaza",
+  "bounds_min": [-5.0, -5.0, -0.5],
+  "bounds_max": [5.0, 5.0, 4.0],
+  "parts": [
+    {"id": "floor", "kind": "floor", "position": [0.0, 0.0, -0.25], "size": [10.0, 10.0, 0.5], "rotation": [0.0, 0.0, 0.0], "material": "floorv2", "collision": true, "visible": true},
+    {"id": "fountain", "kind": "block", "position": [0.0, 0.0, 0.45], "size": [2.4, 2.4, 0.9], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true},
+    {"id": "kiosk", "kind": "block", "position": [3.4, 3.4, 1.3], "size": [2.0, 2.0, 2.6], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true}
+  ],
+  "connectors": [
+    {"id": "east", "side": "east", "orientation": "doorway", "role": "bidirectional", "position": [5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "west", "side": "west", "orientation": "doorway", "role": "bidirectional", "position": [-5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "north", "side": "north", "orientation": "doorway", "role": "bidirectional", "position": [0.0, 5.0, 0.0], "tags": ["flat"]},
+    {"id": "south", "side": "south", "orientation": "doorway", "role": "bidirectional", "position": [0.0, -5.0, 0.0], "tags": ["flat"]}
+  ],
+  "tags": ["flat", "city", "plaza"],
+  "enabled": true
+}

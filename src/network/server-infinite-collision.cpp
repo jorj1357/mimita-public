@@ -16,6 +16,7 @@
 #include "config/collision-lod-config.h"
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
+#include "procedural/procedural-world.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
 #include "world/streamed-world-layer.h"
@@ -24,7 +25,7 @@
 
 namespace {
 
-constexpr size_t kMaxServerChunks = 256;
+constexpr size_t kMaxServerChunks = 512;
 constexpr uint64_t kRebuildIntervalMs = 250;
 
 struct ServerChunk
@@ -65,12 +66,24 @@ uint64_t nowMs()
             std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-uint64_t mixCell(uint32_t seed, int x, int y, int z)
+std::string zoneDepsIdentity(const GenerationZone& zone)
 {
-    uint64_t h = uint64_t(seed) * 0x9E3779B97F4A7C15ull;
-    h ^= uint64_t(uint32_t(x)) * 0xC2B2AE3D27D4EB4Full;
-    h ^= uint64_t(uint32_t(y)) * 0x165667B19E3779F9ull;
-    h ^= uint64_t(uint32_t(z)) * 0x27D4EB2F165667C5ull;
+    std::string identity;
+    for (size_t i = 0; i < zone.chunkDependencies.size(); ++i) {
+        if (i) identity += ",";
+        identity += zone.chunkDependencies[i];
+    }
+    return identity;
+}
+
+// Must match InfiniteWorldRuntime::mixCoord so client and server select the
+// same authored chunk in the same grid cell.
+uint64_t mixCoord(uint32_t seed, const std::string& version,
+                  const std::string& deps, int x, int y, int z)
+{
+    uint64_t h = MimitaProcedural::proceduralZoneChunkHash(seed, version, deps,
+                                                           x, y);
+    h ^= (uint64_t(uint32_t(z)) * 0xC2B2AE3D27D4EB4Full) + 0x9E3779B97F4A7C15ull;
     h = (h ^ (h >> 30)) * 0xBF58476D1CE4E5B9ull;
     return h ^ (h >> 27);
 }
@@ -386,9 +399,10 @@ void serverInfiniteCollisionTick(const std::vector<glm::vec3>& anchors,
     const glm::vec3 cell = gState.profile.grid.cellSize;
     const glm::ivec3 repeat = gState.profile.grid.repeatAxes;
     const glm::ivec3 radius = gState.profile.grid.streamRadius;
-    const int rx = std::clamp(radius.x, 0, 12);
-    const int ry = std::clamp(radius.y, 0, 12);
+    const int rx = std::clamp(radius.x, 0, 512);
+    const int ry = std::clamp(radius.y, 0, 512);
     const int rz = std::clamp(radius.z, 0, 2);
+    const std::string deps = zoneDepsIdentity(*zone);
 
     struct Wanted
     {
@@ -451,7 +465,8 @@ void serverInfiniteCollisionTick(const std::vector<glm::vec3>& anchors,
         if (gState.loaded.count(item.key) ||
             gState.loaded.size() >= kMaxServerChunks)
             continue;
-        const uint64_t hash = mixCell(zone->seed, item.x, item.y, item.z);
+        const uint64_t hash = mixCoord(zone->seed, zone->generatorVersion, deps,
+                                       item.x, item.y, item.z);
         const AuthoredChunk* chunk =
             gState.candidates[hash % gState.candidates.size()];
         if (!chunk)

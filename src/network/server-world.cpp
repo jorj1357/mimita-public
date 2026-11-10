@@ -7,6 +7,8 @@
 #include "map/map-static-union.h"
 #include "config/collision-lod-config.h"
 #include "debug/structured-log.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/map-geometry-api.h"
 
 #include <algorithm>
 #include <cctype>
@@ -16,6 +18,7 @@
 #include <ctime>
 #include <functional>
 #include <limits>
+#include <string>
 #include <unordered_map>
 
 namespace MimitaNet {
@@ -145,6 +148,19 @@ void appendPrimitive(const tinygltf::Model& model, const tinygltf::Primitive& pr
     }
 }
 
+bool nodeRoutesToSky(int nodeIndex, const std::string& name)
+{
+    mimita_map_geometry::NodePolicyV1 policy{};
+    policy.version = mimita_map_geometry::ABI_VERSION;
+    policy.structSize = sizeof(policy);
+    policy.nodeIndex = nodeIndex;
+    policy.hasMesh = 1;
+    std::snprintf(policy.name, sizeof(policy.name), "%s", name.c_str());
+    if (ModuleHost::instance().mapGeometryNodePolicy(&policy) && policy.result)
+        return policy.outInclude == 2u;
+    return false;
+}
+
 void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& parent, HeadlessWorld& world)
 {
     if (nodeIndex < 0 || nodeIndex >= (int)model.nodes.size())
@@ -152,7 +168,8 @@ void walkNode(const tinygltf::Model& model, int nodeIndex, const glm::mat4& pare
     const tinygltf::Node& node = model.nodes[nodeIndex];
     glm::mat4 transform = parent * nodeTransform(node);
 
-    if (node.mesh >= 0 && node.mesh < (int)model.meshes.size())
+    if (node.mesh >= 0 && node.mesh < (int)model.meshes.size() &&
+        !nodeRoutesToSky(nodeIndex, node.name))
     {
         const size_t firstTriangle = world.triangles.size();
         for (const tinygltf::Primitive& prim : model.meshes[node.mesh].primitives)

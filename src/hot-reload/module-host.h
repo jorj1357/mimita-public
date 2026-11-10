@@ -28,7 +28,11 @@ struct BoxMeshV1;
 }
 namespace mimita_worldgen { struct ResolveV1; }
 namespace mimita_chunk_collision { struct BuildChunkV1; }
-namespace mimita_map_geometry { struct SignatureV1; }
+namespace mimita_map_geometry {
+struct SignatureV1;
+struct NodePolicyV1;
+struct ObjectPlanV1;
+}
 namespace mimita_collision_policy {
 struct ContactPolicyV1;
 struct ContactSolveV1;
@@ -104,6 +108,10 @@ public:
 
     bool mapGeometrySignature(const char* bytes, std::uint32_t byteCount,
                               std::uint64_t* outSignature);
+    bool mapGeometryNodePolicy(
+        mimita_map_geometry::NodePolicyV1* policy);
+    bool mapGeometryObjectPlan(
+        mimita_map_geometry::ObjectPlanV1* plan);
     bool worldgenResolve(mimita_worldgen::ResolveV1* request);
     bool chunkCollisionBuild(
         mimita_chunk_collision::BuildChunkV1* request);
@@ -125,6 +133,8 @@ public:
         mimita_network_policy::ReconnectPolicyV1* policy);
     bool networkMovementCorrection(
         mimita_network_policy::MovementCorrectionPolicyV1* policy);
+    bool networkMovementValidationPolicy(
+        mimita_network_policy::MovementValidationPolicyV1* policy);
     bool networkHitClaimPolicy(
         mimita_network_policy::HitClaimPolicyV1* policy);
     bool networkReconcilePolicy(

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "infinite_xxity_connectors_v1",
+  "description": "Infinite World XXity: prove authored city chunks connect through connectors and install in the live stream.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "58",
+    "map": "infinite_xxity",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "teleport_origin", "command": "teleport", "args": ["0,0,3"], "delay_ms_after": 500},
+    {"id": "stream_warmup", "wait_seconds": 10}
+  ],
+  "steps": [
+    {"id": "teleport_east", "command": "teleport", "args": ["80,0,3"], "delay_ms_after": 1500},
+    {"id": "teleport_north", "command": "teleport", "args": ["80,80,3"], "delay_ms_after": 1500},
+    {"id": "settle", "wait_seconds": 3}
+  ],
+  "assertions": [
+    {"type": "event_count_at_least", "event": "world-stream.chunk.applied", "minimum": 4},
+    {"type": "event_present", "event": "world-stream.collision.sync"},
+    {"type": "event_absent", "event": "world-stream.chunk.render-template-missing"}
+  ],
+  "timeout_seconds": 180
+}

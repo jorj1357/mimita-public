@@ -10,6 +10,7 @@
 #include "analytics/analytics-manager.h"
 #include "map/map_loader.h"
 #include "map/map-authored-geometry.h"
+#include "map/map-glb-authored.h"
 #include "map/map-loader-collision.h"
 #include "map/map-static-union.h"
 #include "impact/destructible-mesh-loader.h"
@@ -132,6 +133,10 @@ bool loadWorldFromGLB(World& world, const char* path)
     const auto unloadStarted = std::chrono::steady_clock::now();
     releaseMeshGLResources(world.mesh);
     world = std::move(candidate);
+    // Authored GLB state is keyed by the stable &World.mesh address and node:N.
+    // A new map reuses that address, so stale entries from the previous map
+    // would otherwise move the new map's nodes to the old map's coordinates.
+    MapGLBAuthoredState::instance().clear(&world.mesh);
     applyAuthoredMapGeometry(world, mapIdFromAssetPath(path ? path : ""));
     const auto finished = std::chrono::steady_clock::now();
     timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();

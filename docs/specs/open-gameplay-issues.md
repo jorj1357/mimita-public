@@ -40,6 +40,10 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ### other issues 
 
+2026 11 09 2343 moevment sourcejorj movemt soure not hcanging 
+the actual behavior
+i disable dash and stuff but it doenst disable it for me 
+
 2026 11 09 1600 glb map udates map editor a whole block is just missing bro funworld3 and pos corerction servre errors , as well as  map editor it onl shows the boxes for like, idk what it is but its like arranged in a differnet way than it actuallt is on the funworld3 actual map, so not sure what to do or how to fix 
 
 2026 11 09 1504 jorj  - everu time a agnet makes a new lane , the agent mkaes a new dev loop gui show up, not good 

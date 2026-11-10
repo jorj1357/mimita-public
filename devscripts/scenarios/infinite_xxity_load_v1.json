@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "infinite_xxity_load_v1",
+  "description": "Infinite World XXity: launch the connected city, stream chunks, and prove loaded chunks plus streamed collision from client/server journals.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "58",
+    "map": "infinite_xxity",
+    "visibility": "visible",
+    "reuse_matching_run": false
+  },
+  "setup": [
+    {"id": "teleport_origin", "command": "teleport", "args": ["0,0,3"], "delay_ms_after": 500},
+    {"id": "stream_warmup", "wait_seconds": 8}
+  ],
+  "steps": [
+    {"id": "stream_status", "command": "worldstream", "args": ["status"], "delay_ms_after": 500},
+    {"id": "chunk_check", "wait_seconds": 3}
+  ],
+  "assertions": [
+    {"type": "event_present", "event": "world-stream.profile"},
+    {"type": "event_present", "event": "world-stream.identity"},
+    {"type": "event_count_at_least", "event": "world-stream.chunk.applied", "minimum": 1},
+    {"type": "event_field_at_least", "event": "world-stream.update", "field": "loaded", "value": 1},
+    {"type": "event_present", "event": "world-stream.collision.sync"},
+    {"type": "event_field_at_least", "event": "world-stream.collision.sync", "field": "stream_triangles", "value": 12}
+  ],
+  "timeout_seconds": 180
+}

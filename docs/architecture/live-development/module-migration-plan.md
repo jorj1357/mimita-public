@@ -49,6 +49,7 @@ artifacts, and journals live inside the repository under gitignored roots.
 | NPC perception subsystem | In progress | one capability build | FOV/range/LOS gates, memory, belief, prediction; world query stays host |
 | NPC behavior subsystem | In progress | no | Goal/action/targeting/combat/team policy; authoritative application stays host |
 | Remaining hot owners | Later | reserved surfaces | Gamemode, ragdoll, contact, remaining networking |
+| Physics/collision behavior | Later (not current scope) | reserved surfaces | Query/collision policy behind bounded hot capabilities; fixed tick, cached broadphase, collision solver, and authority stay host |
 | Data-driven IR/behavior | Long-term | eventual kernel only | New mechanisms without new host call sites |
 
 ## One ABI-first boundary

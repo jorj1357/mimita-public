@@ -99,11 +99,16 @@ THE BEHAVIOR CHANGES
 - fixed-tick scheduler
 - network transport and reliable gameplay event replication
 - server/client authority infrastructure
-- physics query mechanism
+- physics query mechanism (eventual hot candidate)
 - render/audio/input capability handles
 - hot module loader and stable runtime ABI (`src/hot-reload/game-api.h`)
 - persistent world/session state
 - explicit authoritative safety limits (separate from gameplay tuning)
+
+This kernel split is the current phase, not a permanent verdict. The physics
+query mechanism, loaders, packet schema, transport, device access, and document
+storage are intended eventual hot candidates behind generic capabilities or the
+IR. No such migration is scheduled now; until then they remain cold boundaries.
 
 ## Hot gameplay
 

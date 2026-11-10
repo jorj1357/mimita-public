@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "id": "city_road_straight",
+  "bounds_min": [-5.0, -5.0, -0.5],
+  "bounds_max": [5.0, 5.0, 4.0],
+  "parts": [
+    {"id": "floor", "kind": "floor", "position": [0.0, 0.0, -0.25], "size": [10.0, 10.0, 0.5], "rotation": [0.0, 0.0, 0.0], "material": "floorv2", "collision": true, "visible": true},
+    {"id": "sidewalk_n", "kind": "wall", "position": [0.0, 4.5, 0.15], "size": [10.0, 1.0, 0.3], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true},
+    {"id": "sidewalk_s", "kind": "wall", "position": [0.0, -4.5, 0.15], "size": [10.0, 1.0, 0.3], "rotation": [0.0, 0.0, 0.0], "material": "wallv2", "collision": true, "visible": true}
+  ],
+  "connectors": [
+    {"id": "east", "side": "east", "orientation": "doorway", "role": "bidirectional", "position": [5.0, 0.0, 0.0], "tags": ["flat"]},
+    {"id": "west", "side": "west", "orientation": "doorway", "role": "bidirectional", "position": [-5.0, 0.0, 0.0], "tags": ["flat"]}
+  ],
+  "tags": ["flat", "city", "road"],
+  "enabled": true
+}

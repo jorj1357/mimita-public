@@ -92,9 +92,12 @@ constexpr std::uint32_t EVENT_NETWORK_SESSION_HEALTH_POLICY = 706;
 constexpr std::uint32_t EVENT_NETWORK_MAP_SYNC_POLICY = 707;
 constexpr std::uint32_t EVENT_NETWORK_COMBAT_VALIDATION_POLICY = 708;
 constexpr std::uint32_t EVENT_NETWORK_SERVER_PHASE_BUDGET_POLICY = 709;
+constexpr std::uint32_t EVENT_NETWORK_MOVEMENT_VALIDATION = 710;
 constexpr std::uint32_t EVENT_ACTOR_RENDER_DRAW_PLAN = 603;
 constexpr std::uint32_t EVENT_NAVIGATION_POLICY = 800;
 constexpr std::uint32_t EVENT_MAP_GEOMETRY_SIGNATURE = 810;
+constexpr std::uint32_t EVENT_MAP_GEOMETRY_NODE_POLICY = 811;
+constexpr std::uint32_t EVENT_MAP_GEOMETRY_OBJECT_PLAN = 812;
 
 using LogFn = void (MIMITA_MODULE_CALL *)(
     std::uint32_t category,
