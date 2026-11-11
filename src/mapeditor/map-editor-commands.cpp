@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <string>
 #include <vector>
@@ -13,13 +14,14 @@
 #include "mapeditor/map-editor.h"
 #include "modules/api/map-editor-api.h"
 #include "terminal/terminal-state.h"
+#include "worldgen/worldgen-library.h"
 
 void registerMapEditorCommands()
 {
     auto& terminal = Terminal::instance();
     terminal.registerCommand({
         "mapeditor", "Enter/leave the freecam map editor or run an editor action",
-        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart|chunk <geometry>|zone <seed>> [id]|chunk_connector <chunkId> <connectorId> <side> <orientation> [tags...]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|glbdump|help]",
+        "mapeditor [0|1|status|save|reload|freeze <0|1>|rebuild_collision|autosave|focus|add <entity <type>|block|vehicle [template]|bombsite|route|cart|chunk <geometry>|zone <seed>> [id]|chunk_connector <chunkId> <connectorId> <side> <orientation> [tags...]|spawn_vehicle [id]|vehicle_wheel <index> <hub x y z|radius|width> [values]|route_checkpoint <0|1>|route_final <0|1>|route_enabled <0|1>|route_radius <m>|route_bonus <sec>|route_wait <ticks>|route_move <up|down>|route_validate|cart_origin_to_route_start|route_start_to_cart_origin|nudge <dx> <dy> <dz>|set_position <x> <y> <z>|set_radius <m>|select <id>|select_kind <entity|block|vehicle|bombsite|route|cart|glb|all>|select_route|selectall|copy|paste|cut|duplicate|delete|undo|redo|glbdump|chunk_field <id> <field> <value>|zone_field <id> <field> <value>|help]",
         [](const std::vector<std::string>& args) {
             MapEditor& editor = MapEditor::instance();
             if (args.empty()) {
@@ -667,6 +669,159 @@ void registerMapEditorCommands()
             if (command == "delete") {
                 if (!editor.active() && !editor.setActive(true)) return;
                 editor.deleteEdit();
+                return;
+            }
+            if (command == "zone_field") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] zone_field <zoneId> <field> <value...>");
+                    return;
+                }
+                auto& zones =
+                    MapConfigRegistry::instance().generationZonesMutable();
+                GenerationZone* zone = nullptr;
+                for (GenerationZone& candidate : zones)
+                    if (candidate.id == args[1]) { zone = &candidate; break; }
+                if (!zone) {
+                    Terminal::instance().addLog("[MAPEDIT] zone not found " + args[1]);
+                    return;
+                }
+                const std::string& field = args[2];
+                auto number = [&](size_t index) {
+                    return index < args.size() ? std::atof(args[index].c_str())
+                                               : 0.0;
+                };
+                if (field == "seed") zone->seed = static_cast<uint32_t>(
+                    std::strtoul(args[3].c_str(), nullptr, 10));
+                else if (field == "generator_version") zone->generatorVersion = args[3];
+                else if (field == "rule_set") zone->ruleSet = args[3];
+                else if (field == "mode") zone->modeId = args[3];
+                else if (field == "spacing") zone->spacingMode = args[3];
+                else if (field == "name") zone->name = args[3];
+                else if (field == "enabled") zone->enabled = std::atoi(args[3].c_str()) != 0;
+                else if (field == "radius") {
+                    zone->streamRadius = glm::ivec3(
+                        static_cast<int>(number(3)), static_cast<int>(number(4)),
+                        static_cast<int>(number(5)));
+                    // The runtime profile currently owns the effective radius;
+                    // keep it in sync so a typed zone radius applies live.
+                    std::string error;
+                    MimitaWorldGen::WorldGenMode profile;
+                    const std::string mapId =
+                        MapConfigRegistry::instance().current().mapId;
+                    if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                            mapId, profile, &error)) {
+                        profile.id = mapId;
+                        profile.grid.streamRadius = zone->streamRadius;
+                        MimitaWorldGen::WorldGenLibrary::instance().saveMode(
+                            profile, &error);
+                    }
+                } else if (field == "cell") {
+                    zone->cellSize = glm::vec3(number(3), number(4), number(5));
+                } else if (field == "origin") {
+                    zone->origin = glm::vec3(number(3), number(4), number(5));
+                } else if (field == "chunk_size") {
+                    zone->chunkSizeVec = glm::vec3(number(3), number(4), number(5));
+                } else if (field == "dependency") {
+                    if (args[3] == "add" && args.size() > 4)
+                        zone->chunkDependencies.push_back(args[4]);
+                    else if (args[3] == "remove" && args.size() > 4) {
+                        auto& deps = zone->chunkDependencies;
+                        deps.erase(std::remove(deps.begin(), deps.end(), args[4]),
+                                   deps.end());
+                    }
+                } else {
+                    Terminal::instance().addLog("[MAPEDIT] unknown zone field " + field);
+                    return;
+                }
+                MapConfigRegistry::instance().markChanged();
+                editor.rebuildGeometry();
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "map-editor.zone-field", zone->id,
+                    "typed zone field edited", 0,
+                    {{"zone", zone->id}, {"field", field}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                Terminal::instance().addLog("[MAPEDIT] zone " + zone->id +
+                                            " field " + field + " updated");
+                return;
+            }
+            if (command == "chunk_field") {
+                if (args.size() < 4) {
+                    Terminal::instance().addLog(
+                        "[MAPEDIT] chunk_field <chunkId> <field> <value...>");
+                    return;
+                }
+                AuthoredChunk* chunk = nullptr;
+                for (AuthoredChunk& candidate :
+                     MapConfigRegistry::instance().chunksMutable())
+                    if (candidate.id == args[1]) { chunk = &candidate; break; }
+                AuthoredChunk libraryChunk;
+                bool libraryChunkSelected = false;
+                if (!chunk) {
+                    std::string error;
+                    MimitaWorldGen::WorldGenMode profile;
+                    std::vector<AuthoredChunk> library;
+                    if (MimitaWorldGen::WorldGenLibrary::instance().loadMode(
+                            MapConfigRegistry::instance().current().mapId,
+                            profile, &error) &&
+                        MimitaWorldGen::WorldGenLibrary::instance()
+                            .loadChunksForMode(profile, library, &error)) {
+                        for (AuthoredChunk& candidate : library)
+                            if (candidate.id == args[1]) {
+                                libraryChunk = candidate;
+                                chunk = &libraryChunk;
+                                libraryChunkSelected = true;
+                                break;
+                            }
+                    }
+                }
+                if (!chunk) {
+                    Terminal::instance().addLog("[MAPEDIT] chunk not found " + args[1]);
+                    return;
+                }
+                const std::string& field = args[2];
+                if (field == "name") chunk->name = args[3];
+                else if (field == "geometry") chunk->geometryPath = args[3];
+                else if (field == "enabled")
+                    chunk->enabled = std::atoi(args[3].c_str()) != 0;
+                else if (field == "dependency") {
+                    if (args[3] == "add" && args.size() > 4) {
+                        for (GenerationZone& zone :
+                             MapConfigRegistry::instance().generationZonesMutable())
+                            if (zone.enabled) zone.chunkDependencies.push_back(args[4]);
+                    } else if (args[3] == "remove" && args.size() > 4) {
+                        for (GenerationZone& zone :
+                             MapConfigRegistry::instance().generationZonesMutable()) {
+                            auto& deps = zone.chunkDependencies;
+                            deps.erase(std::remove(deps.begin(), deps.end(), args[4]),
+                                       deps.end());
+                        }
+                    }
+                } else {
+                    Terminal::instance().addLog("[MAPEDIT] unknown chunk field " + field);
+                    return;
+                }
+                if (libraryChunkSelected) {
+                    std::string error;
+                    if (!MimitaWorldGen::WorldGenLibrary::instance().saveChunk(
+                            *chunk, &error)) {
+                        Terminal::instance().addLog(
+                            "[MAPEDIT] library chunk save failed: " + error);
+                        return;
+                    }
+                } else {
+                    MapConfigRegistry::instance().markChanged();
+                    editor.rebuildGeometry();
+                }
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::World, StructuredLevel::Important,
+                    "map-editor.chunk-field", chunk->id,
+                    "typed chunk field edited", 0,
+                    {{"chunk", chunk->id}, {"field", field}},
+                    __FILE__, __LINE__, __FUNCTION__);
+                Terminal::instance().addLog("[MAPEDIT] chunk " + chunk->id +
+                                            " field " + field + " updated");
                 return;
             }
             if (command == "help") {

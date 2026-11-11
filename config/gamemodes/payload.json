@@ -10,7 +10,10 @@
     "BLUE"
   ],
   "goal_value": 0,
-  "weapon_set_id": 30,
+  // fun CS with grenades but unbalanced
+  // "weapon_set_id": 30,
+  // tdm , revovler shotgun rocket launcher, melee
+  "weapon_set_id": 29,
   "force_weapon_set_for_all_actors": true,
   "time_limit_seconds": 0,
   "time_limit_winner_team": "",

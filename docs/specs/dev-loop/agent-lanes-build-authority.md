@@ -63,6 +63,65 @@ Direct compiler or `ccache` invocation is also forbidden. The supported build
 entry points are the dev-loop's internal worker and `ModuleHost`'s module
 worker.
 
+## 1.1 One shared host EXE, shared modules, and auto-land (2026-11-11 policy)
+
+The approved direction is one canonical host EXE plus a shared module store,
+not one EXE per lane. A lane still owns its editable source/config and its
+validation artifacts, but module-only lanes must not rebuild the EXE.
+
+Lane roles:
+
+- **module-lane**: edits module sources, module-private headers, and config.
+  It consumes the stable shared host EXE, builds only modules, and validates
+  with a lane overlay.
+- **host-lane**: edits host code, public ABI, packet/wire schemas, loaders,
+  transport, or fixed-tick mechanisms. It needs one host boundary build.
+- **integration-lane**: cherry-picks reviewed commits onto current main and
+  validates the combined source.
+
+Shared, published artifacts:
+
+- one stable host EXE artifact;
+- a content-addressed module store keyed by
+  `(module, abi, state_schema, code_hash)`;
+- one runtime root for config/assets/modules, with a lane overlay for
+  unvalidated work;
+- the shared compiler cache.
+
+Working source, object files, PCH, lane journals, and validation module
+generations remain lane-local. Published host artifacts and promoted module
+generations may be shared. This replaces the older rule that lanes may never
+share executables or module DLLs; it does not permit sharing mutable working
+source.
+
+Module generations must be canonical. Identical code must map to the same
+generation, or the module-set hash and peer agreement will not match. Only the
+land command may publish into the shared store; game processes and lane module
+workers must never write it.
+
+### Auto-land policy
+
+A lane becomes landable only after its own dev-loop proves the behavior in that
+lane's `events.jsonl`. Auto-land means:
+
+1. the agent freezes the lane and commits the reviewed change;
+2. `promote` cherry-picks the commits onto current main in an integration lane;
+3. `validate` runs the shared host plus integration overlay and asserts the
+   journal;
+4. module-only green lanes may land automatically;
+5. host/ABI/packet/gameplay-sensitive lanes require explicit human approval;
+6. `land` updates main, publishes the host artifact if needed, and updates
+   module pointers atomically.
+
+Conflicts, dirty main, failed validation, or source-identity changes stop the
+land. Never auto-resolve a conflict. Keep the previous main commit, host
+artifact, and module pointers for rollback.
+
+Post-land shared-host smoke and automatic rollback are required policy but are
+not implemented yet. The intended behavior is: after landing, run a bounded
+smoke through the shared host; if it fails, restore the previous stable host and
+module pointers and report the failure.
+
 ## 2. Why mode 2 is the target for parallel agent work
 
 Mode 1 uses one shared checkout. Four agents editing that checkout interfere
@@ -81,9 +140,12 @@ Mode 2 gives each agent:
 - its own lane ID in status and journals.
 
 The coordinator checkout's `.dev/` owns the shared content-addressed `ccache`
-cache and per-attempt scheduler diagnostics. Lanes do not share source, objects,
-executables, module DLLs, run state, or evidence. All these paths remain within
-the coordinator repository. A lane build must normalize its cache inputs to the
+cache, the stable host EXE, the shared module store, and per-attempt scheduler
+diagnostics. Lanes do not share mutable working source, object files, PCH, run
+state, or evidence. Published host artifacts and promoted module generations
+are shared by design. All these paths remain within the coordinator repository.
+Module-only lanes use a sparse worktree and a runtime-root overlay rather than
+duplicating `assets/`, host EXE artifacts, or build trees. A lane build must normalize its cache inputs to the
 lane worktree root (`CCACHE_BASEDIR`, `CCACHE_NOHASHDIR=1`, relative project
 include/source paths) so identical source and flags hit the shared cache across
 worktrees; otherwise every new lane becomes an unnecessary full cold build.

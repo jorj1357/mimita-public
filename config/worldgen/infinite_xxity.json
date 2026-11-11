@@ -13,14 +13,34 @@
   ],
   "format": 1,
   "grid": {
-    "cell_size": [10.0, 10.0, 10.0],
-    "chunk_size": [10.0, 10.0, 8.0],
+    "cell_size": [
+      10.0,
+      10.0,
+      10.0
+    ],
+    "chunk_size": [
+      10.0,
+      10.0,
+      8.0
+    ],
     "connector_gap": 0.0,
-    "origin": [0.0, 0.0, 0.0],
+    "origin": [
+      0.0,
+      0.0,
+      0.0
+    ],
     "plane": "xy",
-    "repeat_axes": [1, 1, 0],
-    "spacing_mode": "center",
-    "stream_radius": [4, 4, 0]
+    "repeat_axes": [
+      1,
+      1,
+      0
+    ],
+    "spacing_mode": "connector",
+    "stream_radius": [
+      60,
+      60,
+      0
+    ]
   },
   "max_branch_depth": 16,
   "mode": "connected_world"

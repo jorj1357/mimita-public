@@ -121,8 +121,15 @@ _LAST_CURRENT_PROGRESS = 0.0
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
 # Machine-wide policy serializes EXE builds. Each active build uses all
-# logical processors.
+# logical processors unless the operator pins a lower job count for a
+# memory-constrained machine.
 _MAX_BUILD_JOBS = max(1, os.cpu_count() or 1)
+try:
+    _requested_jobs = int(os.environ.get("MIMITA_BUILD_JOBS", "0"))
+except ValueError:
+    _requested_jobs = 0
+if _requested_jobs > 0:
+    _MAX_BUILD_JOBS = min(_MAX_BUILD_JOBS, _requested_jobs)
 BUILD_JOBS = _MAX_BUILD_JOBS
 
 PCH_HEADER = os.path.join(SRC_DIR, "pch.h")

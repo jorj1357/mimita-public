@@ -43,6 +43,27 @@ the checkout. Use
 [`docs/specs/hotreload/hotreload.md`](../../specs/hotreload/hotreload.md) for
 the source-checked current inventory and the desired migration contract.
 
+## One host EXE and shared module store (2026-11-11)
+
+The host EXE is built once and shared by every lane. Gameplay behavior stays in
+module DLLs loaded from one content-addressed module store; do not static-link
+all modules into the EXE, because that removes hot reload and forces a cold
+build for every behavior edit.
+
+- Canonical module identity is `(module, abi, state_schema, code_hash)`.
+  Identical code must reuse the same generation; otherwise the module-set hash
+  and shared peer agreement cannot match.
+- Config/assets/modules resolve from one runtime root (`MIMITA_RUNTIME_ROOT`)
+  with an optional lane overlay (`MIMITA_RUNTIME_OVERLAY`) checked first.
+- Lane working source, object files, PCH, journals, and validation modules
+  remain isolated. Published host artifacts and promoted module generations
+  are shared.
+- Only the lane land/publish path writes the shared host/store. Game processes
+  and lane module workers never do.
+- Host/ABI/packet changes are host-lane boundaries and require one host build
+  plus human approval. Module-only green lanes may publish automatically after
+  runtime evidence.
+
 ## Hot subsystem ideal (2026-11-09)
 
 The cold boundary is a mechanism boundary, not a file list. The host keeps only

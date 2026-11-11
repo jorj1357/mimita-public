@@ -58,6 +58,8 @@ struct MovementCorrectionPolicyV1
     std::uint32_t outGeneration;
 };
 
+// `clientTick` lets policy suppress corrections during the initial streaming
+// settle window after spawn.
 // Server movement-validation decision. The host owns the collision sweep,
 // authoritative state, finite/bounds safety checks, and packet emission; the
 // module decides whether a proposed correction is applied. `reasonCode` mirrors
@@ -68,6 +70,7 @@ struct MovementValidationPolicyV1
     std::uint32_t structSize;
     std::uint32_t reasonCode;
     std::uint32_t clientGapTicks;
+    std::uint32_t clientTick;
     std::uint32_t flyEnabled;
     std::uint32_t belowVoid;
     float positionError;

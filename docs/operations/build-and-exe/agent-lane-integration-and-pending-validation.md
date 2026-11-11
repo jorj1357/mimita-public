@@ -16,6 +16,48 @@ Read `docs/specs/dev-loop/agent-lanes-build-authority.md` and
 `docs/specs/dev-loop/dev-loop.md` before running any command. The build
 authority rules still apply.
 
+## 2026-11-11 one-host EXE and auto-land policy
+
+The approved direction is one canonical host EXE plus a shared module store,
+not one EXE per lane. The host artifact is built once from current main and is
+used by every lane. Module-only lanes publish a module generation and never
+relink the host; host/ABI/packet lanes require one host boundary build.
+
+Lane roles:
+
+- module-lane: consumes the shared host, edits modules/config, validates in a
+  lane overlay, no EXE artifact;
+- host-lane: owns host/ABI/packet changes and requires the one host build;
+- integration-lane: cherry-picks reviewed commits onto current main.
+
+Shared stores:
+
+- stable host artifact and pointer;
+- content-addressed module store keyed by
+  `(module, abi, state_schema, code_hash)`;
+- runtime root for config/assets/modules with a lane overlay;
+- shared compiler cache.
+
+Auto-land flow: `submit` -> `promote` -> `validate` -> `land`.
+
+- `submit` freezes the lane, commits the reviewed change, and records the exact
+  `events.jsonl` evidence.
+- `promote` creates an integration lane from current main and cherry-picks.
+- `validate` runs the shared host plus integration overlay and asserts the
+  journal.
+- Green module-only lanes may land automatically. Host/ABI/packet/gameplay-
+  sensitive lanes require explicit human approval.
+- `land` publishes the host only when host/ABI changed, otherwise publishes
+  module pointers; it merges main and updates pointers atomically.
+
+Dirty main, conflicts, failed validation, or source identity changes stop the
+land. Never auto-resolve a conflict. Keep the previous main commit, host
+artifact, and module pointers for rollback. Post-land shared-host smoke with
+automatic rollback is required policy but not implemented yet.
+
+A feature lane uses `run --shared-host` (planned) to select the stable host and
+launch it with the lane overlay. Do not publish a lane EXE as the stable host.
+
 ## Short version
 
 1. Commit each reviewed lane change. `promote` accepts commits, not dirty

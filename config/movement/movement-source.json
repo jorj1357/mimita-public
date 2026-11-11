@@ -104,7 +104,9 @@
     // building total speed.
     //
     // Matches the fast Source preset.
-    "air_max_wishspeed": 2.0,
+    // "air_max_wishspeed": 2.0,
+    // "air_max_wishspeed": 33.0,
+    "air_max_wishspeed": 3.0,
 
     // Historical Valve-style AirAccelerate behavior.
     //
@@ -197,16 +199,16 @@
     // the same fast MiMITA movement tuning as the "source" preset.
 
     // Shift ground/air dash.
-    // "dash_enabled": true,
-    "dash_enabled": false,
+    "dash_enabled": true,
+    // "dash_enabled": false,
 
     // Q down-dash / slam.
-    // "down_dash_enabled": true,
-    "down_dash_enabled": false,
+    "down_dash_enabled": true,
+    // "down_dash_enabled": false,
 
     // MiMITA freeze ability.
-    // "freeze_enabled": true,
-    "freeze_enabled": false,
+    "freeze_enabled": true,
+    // "freeze_enabled": false,
 
     // Time after a dash during which its boost is protected from ordinary
     // ground friction.
@@ -301,8 +303,8 @@
     // The numeric values remain defined so this can be enabled live without
     // requiring another schema/config change.
 
-    // "speed_limit_enabled": false,
-    "speed_limit_enabled": true,
+    "speed_limit_enabled": false,
+    // "speed_limit_enabled": true,
 
     // Only used if speed_limit_enabled is true.
     "speed_limit": 50.0,

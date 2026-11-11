@@ -209,3 +209,62 @@
     map-editor module.
 - Build `2026-11-10T06:08:25.194695Z:7c126078...c101`, incremental
   `Compiled: 13`, `Skipped: 611`, `Time: 87.07 sec`.
+
+## Connector graph server parity, typed editing, damage scenario (2026-11-10 UTC)
+
+- `server-infinite-collision.cpp` now builds a module-backed connector graph:
+  seed via `worldgenResolve` kind 0, frontier via kind 1, connector tags/links,
+  profile radius/cell/branch settings, a 12 m coverage margin, 1.5 m anchor
+  update threshold, and the 512-chunk cap (`buildConnectorSurface`).
+- City restored to `spacing_mode: "connector"` with `stream_radius [60,60,0]`.
+- Runtime: server connector graph streamed 136–193 chunks; client 162–166.
+  Position corrections observed only during the initial streaming settle window
+  (`client_tick` 20).
+- Added a hot `network-policy` rule suppressing blocking-geometry corrections
+  while `clientTick < 180` (`MovementValidationPolicyV1.clientTick`). The final
+  build for this rule was queued but not completed because another lane held the
+  machine-wide EXE slot; it is not runtime-verified.
+- Typed editor commands added to `map-editor-commands.cpp`:
+  `mapeditor chunk_field <chunkId> <field> <value...>` and
+  `mapeditor zone_field <zoneId> <field> <value...>`. Supported fields:
+  chunk name/geometry/enabled/dependency add|remove; zone
+  seed/generator_version/rule_set/mode/spacing/name/enabled/radius/cell/origin/
+  chunk_size/dependency add|remove. Build succeeded; not runtime-exercised
+  before the lab slot was lost.
+- Added `devscripts/scenarios/infinite_xxity_damage_v1.json` (rocket damage on a
+  spawned NPC; asserts `server.damage.applied` and no `server.damage.rejected`).
+  It did not reach damage because `npc_spawn_legacy` command delivery timed out;
+  it is not yet a passing proof.
+- Static validation: module ownership PASS, dev-loop py_compile PASS, JSON parse
+  PASS.
+
+Validation follow-up (2026-11-10 UTC):
+
+- `infinite_xxity_network_parity_v1` now PASSES with the `clientTick` grace
+  build (`2026-11-10T13:59:06.756356Z:bbbce650...5f19`), run
+  `20261110_140008`: client connector stream `loaded=163`, server connector
+  graph `chunks=193`, and **zero** `movement.server-position-corrected` across
+  the whole run including startup.
+- `infinite_xxity_damage_v1` now PASSES, run `20261110_141335`:
+  `server.damage.applied` present, `server.damage.rejected` absent. The scenario
+  now uses `npc_spawn 1`, weapon set 10, aims at the NPC safe point
+  `[0,0,4]`, and waits for `server.damage.applied`.
+- `zone_field` was exercised live on run `20261110_141335`:
+  `map-editor.zone-field zone=xxity_zone field=radius`, then `field=seed`.
+  The seed edit produced `world-stream.reset` (`generation-signature-changed`).
+  The effective radius stayed 60 because the worldgen profile owns radius; a
+  follow-up edit now also writes the active profile radius
+  (`saveMode` with `profile.id = mapId`).
+- `chunk_field` gained a worldgen-library fallback: a library chunk not present
+  in the map document is loaded from the active profile, edited, and saved with
+  `WorldGenLibrary::saveChunk`. This is code-complete but not runtime-verified.
+- The build containing the profile-radius sync and library-chunk edit reached
+  `LINK FAILED` with no compiler diagnostic in `build-output.log` (the lane was
+  also under memory pressure and the machine-wide EXE slot was held by another
+  lane). It is not validated.
+
+Remaining:
+- Rebuild and live-verify the profile-radius sync (`zone_field radius` should
+  change `world-stream.update.radius_m`) and the library-chunk `chunk_field`
+  save path.
+- Human visual acceptance of the connector city and collision.

@@ -716,6 +716,8 @@ MovementValidationResult validateClientMovementReport(
         policy.reasonCode = 19u;
         policy.clientGapTicks = static_cast<uint32_t>(
             std::min<uint64_t>(clientGapTicks, 0xffffffffu));
+        policy.clientTick = static_cast<uint32_t>(
+            std::min<uint64_t>(report.clientSimulationTick, 0xffffffffu));
         policy.flyEnabled = player.flyEnabled ? 1u : 0u;
         policy.belowVoid = belowVoid ? 1u : 0u;
         policy.positionError = glm::length(report.position - previousPosition);

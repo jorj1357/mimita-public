@@ -63,7 +63,11 @@ void decideMovementValidation(
     // edit can suppress corrections when the client and server geometry
     // disagree or when a post-gap drift is below the active threshold.
     p.outAllowCorrection = 1u;
-    if (p.reasonCode == 22u) {
+    if (p.reasonCode == 19u && p.clientTick < 180u) {
+        // A freshly streamed spawn can briefly outrun the client's chunk
+        // surface. Do not rubber-band the player before streaming settles.
+        p.outAllowCorrection = 0u;
+    } else if (p.reasonCode == 22u) {
         const bool drifted = p.clientGapTicks > 30u &&
             p.positionError > p.postGapCorrectionDistance;
         p.outAllowCorrection = drifted ? 1u : 0u;

@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "id": "infinite_xxity_damage_v1",
+  "description": "Infinite World XXity: apply real server damage to a spawned NPC and verify the authoritative damage path accepts it without rejection.",
+  "launch": {
+    "profile": "npc-navigation",
+    "launch_mode": "58",
+    "map": "infinite_xxity",
+    "visibility": "visible",
+    "reuse_matching_run": false,
+    "weapon_set": "10"
+  },
+  "setup": [
+    {
+      "id": "wait_spawn",
+      "wait_for_event": "client.actor.spawn_packet_applied",
+      "timeout_seconds": 40
+    },
+    {
+      "id": "client_ready",
+      "wait_seconds": 3
+    },
+    {
+      "id": "teleport_origin",
+      "command": "teleport",
+      "args": [
+        "0,0,3"
+      ],
+      "delay_ms_after": 1000
+    },
+    {
+      "id": "spawn_npc",
+      "command": "npc_spawn",
+      "args": [
+        "1"
+      ],
+      "delay_ms_after": 3000
+    },
+    {
+      "id": "equip",
+      "command": "equipweapon",
+      "args": [
+        "rocket_launcher"
+      ],
+      "delay_ms_after": 1500
+    },
+    {
+      "id": "aim",
+      "command": "agent.aim",
+      "args": [
+        "0",
+        "0",
+        "4"
+      ],
+      "delay_ms_after": 800
+    }
+  ],
+  "steps": [
+    {
+      "id": "shoot",
+      "command": "agent.shoot",
+      "args": [],
+      "delay_ms_after": 2500
+    },
+    {
+      "id": "wait_damage",
+      "wait_for_event": "server.damage.applied",
+      "timeout_seconds": 20
+    },
+    {
+      "id": "settle",
+      "command": "agent.snapshot",
+      "args": [
+        "xxity_damage"
+      ],
+      "delay_ms_after": 1000
+    }
+  ],
+  "assertions": [
+    {
+      "type": "event_present",
+      "event": "server.damage.applied"
+    },
+    {
+      "type": "event_absent",
+      "event": "server.damage.rejected"
+    }
+  ],
+  "timeout_seconds": 180
+}

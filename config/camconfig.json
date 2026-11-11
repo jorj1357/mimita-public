@@ -4,8 +4,8 @@
   "orientationMode": "mouse",
   // "orientationMode": "head_world",
   "proximityFade": {
-    // "enabled": true,
-    "enabled": false,
+    "enabled": true,
+    // "enabled": false,
     // "startDistanceMeters": 1.0,
     "startDistanceMeters": 2.0,
     // "startDistanceMeters": 3.0,

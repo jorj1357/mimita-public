@@ -2827,12 +2827,15 @@ python devscripts/agent-lane.py cleanup <lane-id>
 python devscripts/agent-lane.py promote <integration-id> --base <ref> --commit <sha> [--commit <sha> ...] [--build]
 ```
 
-Each worktree is a separate build and runtime owner under
-`<coordinator-repo>/.dev/agent-lanes/<lane-id>/`. Lane creation copies or
+Each host lane is a separate build and runtime owner under
+`<coordinator-repo>/.dev/agent-lanes/<lane-id>/`. A module-only lane is a
+sparse worktree that consumes one stable shared host EXE and a shared module
+store; it does not build an EXE. Its config overlay, validation module
+generations, dev-loop daemon, process cap, run IDs, command queues, and
+`logs/` remain within the project directory. Lane creation copies or
 initializes the exact required submodule revisions and copies the local
 Manifold prebuilt library when available. Its `build/`, `src/pch.h.gch`, `.dev/`
-artifacts and locks, dev-loop daemon, process cap, run IDs, command queues, and
-`logs/` remain within the project directory. Temporary files must specify a
+artifacts and locks remain within the project directory. Temporary files must specify a
 lane-local `.dev/tmp/` directory. Builds serialize within one worktree and
 acquire shared OS build slots across lanes. The single active EXE build uses
 one compiler job per logical processor. Installed
@@ -2851,13 +2854,21 @@ claim gameplay acceptance.
 
 Promotion takes explicit reviewed commit IDs, creates an integration worktree
 under `.dev/agent-lanes/<integration-id>/`, and cherry-picks them onto the
-requested base in the supplied order. Review the
-combined diff there before building. `promote --build` builds the integration
-worktree, requires a clean source tree and identical start/end source identity,
-then publishes an immutable artifact under the coordinator checkout's
-`.dev/stable-builds/` and atomically updates `.dev/stable-build.json`. This
-pointer names the latest stable executable; it never overwrites a running
-binary. Agent worktrees and their artifacts remain available for diagnosis.
+current main base in the supplied order. The approved 2026-11-11 flow is
+`submit` -> `promote` -> `validate` -> `land`. `validate` runs the shared host
+plus integration overlay and asserts the real `events.jsonl`. `land` merges to
+main, publishes one host artifact only if host/ABI files changed, publishes
+module generations otherwise, and updates all pointers atomically. Module-only
+green lanes may auto-land; host/ABI/packet/gameplay-sensitive lanes require
+human approval. Keep the previous main commit, host artifact, and module
+pointers for rollback. Post-land shared-host smoke with automatic rollback is
+required policy but not implemented yet. `promote --build` remains deprecated
+and must not be used.
+
+Module-only lanes use `agent-lane.py run --shared-host` when implemented: the
+lane selects the stable coordinator host artifact and launches it with the lane
+as CWD/overlay. The lane still owns its validation modules, config overlay,
+journals, and run identity, but no lane EXE artifact is created.
 
 `cleanup` stops only the selected lane's dev-loop-owned processes and preserves
 the worktree, build artifacts, journals, and metadata. It does not delete a

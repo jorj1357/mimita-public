@@ -23,7 +23,10 @@ Writable state lives under:
 .dev/builds/               immutable dev-loop artifacts
 .dev/current/              stable launch hardlinks
 .dev/stable-builds/        promoted stable artifacts
-.dev/ccache/              shared compiler cache for lanes
+.dev/host/                 canonical shared host EXE and stable pointer
+.dev/modules/              shared content-addressed module generations
+.dev/runtime/              shared runtime-root config/assets view
+.dev/ccache/               shared compiler cache for lanes
 .dev/tmp/                  all temporary files
 .dev/runtime/              room files and transient runtime files
 .dev/world-projects/       local authored world projects
@@ -37,6 +40,29 @@ module, cache, room, or journal file is tracked.
 External paths are read-only dependencies only: the installed compiler
 toolchain, GLFW, Blender, GPU/audio drivers, and OS services. They are not
 agent write targets.
+
+## Shared host and sparse lanes (2026-11-11)
+
+Feature lanes do not need a full duplicate checkout. The approved reuse model:
+
+- one stable host EXE in `.dev/host/`, used by module-only lanes;
+- one shared content-addressed module store in `.dev/modules/`;
+- a runtime root (`MIMITA_RUNTIME_ROOT`) for config/assets, with a lane overlay
+  (`MIMITA_RUNTIME_OVERLAY`) checked first;
+- sparse feature-lane checkouts may omit `assets/`, host build output, lane EXE
+  artifacts, and unchanged large dependency trees; those resolve from the
+  runtime root;
+- the shared compiler cache remains `.dev/ccache/`.
+
+Do not junction or hardlink tracked editable directories. Hardlinks and
+junctions share writes, mutate both paths, and break lane isolation. Use sparse
+checkout plus the runtime-root resolver instead. Published immutable host
+artifacts and promoted module generations are the only shared executable
+content; working source, object files, PCH, journals, and validation module
+generations remain lane-local.
+
+Only the lane land/publish path may write the shared host and module store.
+Game processes and lane module workers must never write the shared store.
 
 ## Agent commands
 

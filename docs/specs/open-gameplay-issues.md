@@ -40,6 +40,174 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ### other issues 
 
+2026 11 11 0904 jorj
+
+todo logs folder needs to have 1gb limit total
+as well as replays folder
+get rid of the oldest?
+i think?
+or combo into like somethign smaller
+idk
+
+but i have to like re delete things over and over bc things int he repo are just taking up so much space for no reasn 
+
+2026 11 10 1008 jorj 
+
+ok just problems in general
+60hz making the hhole game suck
+we need to like
+idk
+i think we need to rethink the 
+npc behavior?
+becuse 
+like an actual human or client 
+at a lower hz like
+u get 30hz of their snapshots
+still theyr emoving fast, but u jsut see 1/2 the snapshots
+still, smae speed
+if the server itself is like 30hz, then u literally the game is at 1/2 the speed
+need to be like
+not liek that
+
+also cooldown issue
+i shoto and shoot and shoot and etc
+and then its 
+cooldown issue
+
+payload needs an actual map, and map authoring in the game i think we need better for that
+infintie world we might be able to  leave alone?
+its more exploratory nad i want to do more fighitng
+
+how can we make it fun to fight people i think its like paload and maps and stuff 
+
+we need to also have like
+sizing in mind
+becasue its gonna be like 
+ur super fast so u need like a lot of 
+map things
+between u and epopel
+buttttttt
+
+idk waht the prblem 
+
+its so 
+its slow
+its slow thats the problem
+
+game needs ot be faster
+no more freaking
+grneades
+all in m face bro 
+
+so we nede to make it ez to edit rpesentation live 
+but
+
+what to focus on
+editors 
+andm aking the
+
+make the game fun first
+then
+make vidoe editor/repla editor
+to m ake edits
+i want to do that that is huge  edits
+
+like tdm mode is fun 
+its just me shooting people
+we can do this
+its prob also because its dust 2 map
+funworld3 is not balanced for like
+its not reallt like a map map
+it need slike
+walls and sizing 
+10x10 meter chunks
+i think it might be the map el o el 
+thats crazy 
+
+but 
+infinite world, vr
+4d dimeinsions 
+infinite exploration
+rooms bigger on the inside
+portals
+that stuff is huge and epic 
+
+2026 11 10 0922 jojr 
+"(request.mode == WEAPON_CHOICE_FORCE) {
+    if (valid(request.forceIndex))
+        choose(request.forceIndex, WEAPON_CHOICE_FORCE);
+        choose(request.forceIndex, WEAPON_CHOICE_REASON_FORCE);
+    else
+        keep(WEAPON_CHOICE_NO_CANDIDATE);
+} else if (request.mode == WEAPON_CHOICE_SCORED) {
+    const float currentScore = valid(request.currentIndex)
+$ $old='2026-11-10T13:38:43.371704Z'; python devscripts/agent-lane.py run --launch-mode 1 --profile npc-navigation hot-session-20261109 2>&1 | Select-Object -Last 5
+
+build_id=2026-11-10T13:38:43.371704Z:236bc468dd026441ae8c562e85e98c5f8ed7afed38ba2db5d8e7a70ba8363983 executable=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\builds\2026-11-10T13-38-43.371704Z\mimita.exe
+build_source_revision=75436e453e04055c3aeb76dc0bd3d0a6cced3dfc dirty=True changed_during_build=False source_sha256=39ae81da4c3d8a36de3e680d7a3a752a28c96d78c027a5c4ff7ef49ce74456c3
+run_id=20261110_135719 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_135719\dev-loop\events.jsonl
+instance=server-01 role=server pid=18940 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_135719\server-01\events.jsonl
+instance=client-01 role=client pid=1636 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_135719\client-01\events.jsonl
+Build queued. Wait/poll for new build. The previous failed build compiled some; now only the API header changed (fix) and module source; the header change may trigger full rebuild again. The failed build likely compiled many files before hitting the enum error in some TUs; the next build needs to recompile all TUs that include the header. It may take a while. We need to wait and check for errors.
+
+Use a shorter poll command (avoid harness kill): sleep 300s then status/build log. Or poll 20 times. Let's wait 5 min then check. The build may take 4-10 min. We'll use Start-Sleep 300; status; tail. If no build, wait more.
+
+Also, note the run 135719 is active old build; after build, relaunch mode 57. The module source changed; after EXE build and launch, module hot-build gen 12 (weapon choice) should trigger. The stale lock? We removed; module build currently gen 11, no lock. Good.
+
+Let's wait 300s and check.
+
+$ Start-Sleep -Seconds 300; python devscripts/agent-lane.py status hot-session-20261109 2>&1 | Select-Object -First 8; Write-Output '=== compilers ==='; (Get-Process -Name 'cc1plus','g++' -ErrorAction SilentlyContinue | Measure-Object).Count; Write-Output '=== new build dirs ==='; Get-ChildItem 'C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\builds' -Directory | Sort-Object Name -Descending | Select-Object -First 2 Name; Write-Output '=== build log tail ==='; Get-Content 'C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\build-output.log' -Tail 15
+
+lane=hot-session-20261109 branch=codex/agent-hot-session-20261109 revision=75436e453e04055c3aeb76dc0bd3d0a6cced3dfc dirty=true source_sha256=7ec55fadc730dcc82daa4974319e614941b5c968ebacd6bb3019ded7830ad293
+worktree=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109 status=dirty
+build_id=2026-11-10T13:38:43.371704Z:236bc468dd026441ae8c562e85e98c5f8ed7afed38ba2db5d8e7a70ba8363983 executable=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\builds\2026-11-10T13-38-43.371704Z\mimita.exe
+build_source_revision=75436e453e04055c3aeb76dc0bd3d0a6cced3dfc dirty=True changed_during_build=False source_sha256=39ae81da4c3d8a36de3e680d7a3a752a28c96d78c027a5c4ff7ef49ce74456c3
+run_id=20261110_141432 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_141432\dev-loop\events.jsonl
+instance=server-01 role=server pid=32548 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_141432\server-01\events.jsonl
+instance=client-01 role=client pid=4732 journal=C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\logs\2026-11-10\20261110_141432\client-01\events.jsonl
+=== compilers ===
+5
+=== new build dirs ===
+
+Name
+----
+2026-11-10T13-38-43.371704Z
+2026-11-10T13-28-20.308251Z
+=== build log tail ===
+  417 |     WEAPON_CHOICE_FORCE = 8,
+      |                           ^
+src/modules/api/npc-behavior-api.h:399:5: note: previous declaration 'mimita_npc_behavior::WeaponChoiceMode mimita_npc_behavior::WEAPON_CHOICE_FORCE'
+  399 |     WEAPON_CHOICE_FORCE = 3,
+      |     ^~~~~~~~~~~~~~~~~~~
+
+In file included from src/hot-reload/module-host.h:20,
+                 from src\procedural\infinite-world-runtime.cpp:24:
+src/modules/api/npc-behavior-api.h:417:27: error: 'WEAPON_CHOICE_FORCE' conflicts with a previous declaration
+  417 |     WEAPON_CHOICE_FORCE = 8,
+      |                           ^
+src/modules/api/npc-behavior-api.h:399:5: note: previous declaration 'mimita_npc_behavior::WeaponChoiceMode mimita_npc_behavior::WEAPON_CHOICE_FORCE'
+  399 |     WEAPON_CHOICE_FORCE = 3,
+      |     ^~~~~~~~~~~~~~~~~~~
+
+
+The build log still shows the old error at line 417; the new build started at 14:14:32 (run) and compilers=5; the log is from the previous failed build, not yet overwritten. The source hash changed to 7ec...; build queued/compiling. Wait for completion. The old log tail is stale; check timestamp/last write. It may still be building. We need to wait more.
+
+The run 141432 launched old build. The build is in progress. Wait 5 min and check. The source change (enum fix) invalidated many objects; full rebuild may take ~4-10 min. Let's wait 300s.
+
+We also need to ensure the module build gen 12 after launch. We'll see.
+
+Let's wait.
+
+$ Start-Sleep -Seconds 300; python devscripts/agent-lane.py status hot-session-20261109 2>&1 | Select-Object -First 8; Write-Output '=== compilers ==='; (Get-Process -Name 'cc1plus','g++' -ErrorAction SilentlyContinue | Measure-Object).Count; Write-Output '=== build log tail ==='; Get-Content 'C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\build-output.log' -Tail 20; Write-Output '=== builds ==='; Get-ChildItem 'C:\mimita-v9\.dev\agent-lanes\hot-session-20261109\.dev\builds' -Directory | Sort-Object Name -Descending | Select-Object -First 2 Name"
+
+these things 
+need to  
+no happenign 
+annmore
+all hneeds to be module
+nothing heren eesa  rebuild 
+needs rebuild never ever 
+
 2026 11 09 2343 moevment sourcejorj movemt soure not hcanging 
 the actual behavior
 i disable dash and stuff but it doenst disable it for me 

@@ -52,6 +52,22 @@ artifacts, and journals live inside the repository under gitignored roots.
 | Physics/collision behavior | Later (not current scope) | reserved surfaces | Query/collision policy behind bounded hot capabilities; fixed tick, cached broadphase, collision solver, and authority stay host |
 | Data-driven IR/behavior | Long-term | eventual kernel only | New mechanisms without new host call sites |
 
+## One host EXE and shared module store
+
+The target workflow is one canonical host EXE plus one shared content-addressed
+module store. Module-only lanes consume the shared host and publish module
+generations; they do not create a per-lane EXE. Host/ABI/packet lanes require a
+single host boundary build. Config/assets/modules resolve from one runtime root
+with a lane overlay for unvalidated work. Static-linking all modules into the
+EXE is explicitly not the target because it removes hot reload.
+
+Canonical generation identity is `(module, abi, state_schema, code_hash)`.
+Identical module code must not produce different generations, or the module-set
+hash and peer agreement will diverge. The lane land/publish path is the only
+writer of the shared host/store; game processes and module workers never write
+it. See `docs/specs/dev-loop/agent-lanes-build-authority.md` and
+`docs/specs/dev-loop/dev-loop.md`.
+
 ## One ABI-first boundary
 
 The single boundary build installs:
