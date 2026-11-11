@@ -43,6 +43,82 @@ enum ContextFlag : std::uint32_t {
     PAYLOAD_OBJECTIVE = 1u << 25,
 };
 
+// Bounded actor snapshot + decision result for the hot NPC brain boundary.
+// The module returns outUseModule=0 to keep the legacy host brain; setting it
+// to 1 (a module-only edit) lets the module own state/move/attack decisions.
+struct ActorStateV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t tick;
+    std::uint32_t actorId;
+    std::uint32_t team;
+    std::uint32_t hasTarget;
+    std::uint32_t targetVisible;
+    std::uint32_t targetRemembered;
+    std::uint32_t currentState;
+    std::uint32_t trainingMode;
+    std::uint32_t onGround;
+    std::uint32_t weaponReady;
+    std::uint32_t attackCooldownReady;
+    float difficulty01;
+    float healthFraction;
+    float aggression;
+    float preferredRange;
+    float selfPos[3];
+    float selfVel[3];
+    float targetPos[3];
+    float targetVel[3];
+    float lastKnownPos[3];
+    float targetDistance;
+    float stateTimer;
+    float nextDecisionTime;
+    std::uint32_t outUseModule;
+    std::uint32_t outState;
+    float outMinTime;
+    float outMaxTime;
+    std::uint32_t outAttack;
+    std::uint32_t outJump;
+    std::uint32_t outDash;
+    float outMoveDir[3];
+    std::uint32_t outGeneration;
+};
+
+// State min/max decision timing. The host owns the NpcStateMachine and applies
+// the result; the module owns the per-state timing policy.
+struct StateTimingV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t tick;
+    std::uint32_t state; // NpcState numeric (Idle=0 .. Patrol=13)
+    float difficulty01;
+    float outMinTime;
+    float outMaxTime;
+    std::uint32_t outGeneration;
+};
+
+// Gamemode/difficulty targeting policy. The module owns mode parsing and
+// inclusion fallbacks; the host keeps candidate gathering and application.
+struct TargetingPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t tick;
+    std::uint32_t configured;
+    char mode[24];
+    std::uint32_t includePlayers;
+    std::uint32_t includeNpcs;
+    char difficultyTargetMode[24];
+    std::uint32_t damageOtherNpcs;
+    std::uint32_t teamMatch;
+    std::uint32_t outConfigured;
+    std::uint32_t outMode; // 0 player, 1 closest, 2 opposite_team
+    std::uint32_t outIncludePlayers;
+    std::uint32_t outIncludeNpcs;
+    std::uint32_t outGeneration;
+};
+
 struct ScoreV1 {
     std::uint32_t kind;
     float relevance;
@@ -194,6 +270,186 @@ enum AttackReason : std::uint32_t {
     ATTACK_REASON_SAME_TEAM = 4,
     ATTACK_REASON_REACTION = 5,
     ATTACK_REASON_COOLDOWN = 6,
+};
+
+enum FireFlag : std::uint32_t {
+    FIRE_HAS_TARGET = 1u << 0,
+    FIRE_TARGET_ALIVE = 1u << 1,
+    FIRE_TARGET_VISIBLE = 1u << 2,
+    FIRE_LOS_CLEAR = 1u << 3,
+    FIRE_COOLDOWN_READY = 1u << 4,
+    FIRE_HAS_WEAPON = 1u << 5,
+    FIRE_RANGE_BLOCKED = 1u << 6,
+    FIRE_HAS_AMMO_OR_RESERVE = 1u << 7,
+    FIRE_MAGAZINE_EMPTY = 1u << 8,
+    FIRE_RELOADING = 1u << 9,
+};
+
+enum FireReason : std::uint32_t {
+    FIRE_REASON_ALLOW = 0,
+    FIRE_REASON_TARGET_DEAD = 1,
+    FIRE_REASON_COOLDOWN = 2,
+    FIRE_REASON_NO_WEAPON = 3,
+    FIRE_REASON_RANGE = 4,
+    FIRE_REASON_NO_AMMO = 5,
+    FIRE_REASON_START_RELOAD = 6,
+    FIRE_REASON_RELOADING = 7,
+    FIRE_REASON_MAGAZINE_EMPTY = 8,
+    FIRE_REASON_NO_LOS = 9,
+};
+
+// Detailed fire gate. The host owns the weapon runtime, reload mutation, ammo
+// decrement, RNG, and shot execution; the module owns the gate order/reason.
+struct FireGateV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t actorId;
+    std::uint32_t tick;
+    std::uint32_t flags;
+    float targetDistance;
+    float healthFraction;
+    float attackCooldown;
+    float reloadTime;
+    float aggression;
+    float fireCadenceMultiplier;
+    std::uint32_t currentAmmo;
+    std::uint32_t reserveAmmo;
+    std::uint32_t magazineSize;
+    std::uint32_t behaviorType;
+    std::uint32_t outUseModule;
+    std::uint32_t outAllow;
+    std::uint32_t outStartReload;
+    std::uint32_t outReason;
+    std::uint32_t outGeneration;
+};
+
+enum AimFlag : std::uint32_t {
+    AIM_HAS_TARGET = 1u << 0,
+    AIM_PROJECTILE = 1u << 1,
+    AIM_FORCE_HIT = 1u << 2,
+};
+
+// Aim point, projectile lead, and error-angle policy. The host draws the error
+// cone RNG stream and applies weapon spread/hitscan/projectile execution.
+struct AimPolicyV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t actorId;
+    std::uint32_t tick;
+    std::uint32_t flags;
+    float selfPos[3];
+    float selfFacing[3];
+    float targetPos[3];
+    float targetVel[3];
+    float predictedTarget[3];
+    float targetDistance;
+    float projectileSpeed;
+    float aimLeadSeconds;
+    float difficulty01;
+    float baseAimErrorDeg;
+    float profileAimErrorDeg;
+    float difficultyErrorScale;
+    std::uint32_t forceHit;
+    float outAimPoint[3];
+    float outErrorDeg;
+    std::uint32_t outUseModule;
+    std::uint32_t outGeneration;
+};
+
+// Numeric values deliberately match combat/weapon-types.h.
+enum WeaponBehaviorKind : std::uint32_t {
+    WEAPON_BEHAVIOR_NONE = 0,
+    WEAPON_BEHAVIOR_HITSCAN = 1,
+    WEAPON_BEHAVIOR_PROJECTILE = 2,
+    WEAPON_BEHAVIOR_GODBALL = 3,
+    WEAPON_BEHAVIOR_MELEE = 4,
+    WEAPON_BEHAVIOR_SWORDSWORD = 5,
+    WEAPON_BEHAVIOR_ROCKET_LAUNCHER = 6,
+    WEAPON_BEHAVIOR_GRENADE_LAUNCHER = 7,
+    WEAPON_BEHAVIOR_HAFS = 8,
+    WEAPON_BEHAVIOR_QUICK_HIT = 9,
+    WEAPON_BEHAVIOR_SPY_KNIFE = 10,
+};
+
+constexpr std::uint32_t MAX_WEAPON_CANDIDATES = 12;
+
+struct WeaponCandidateV1 {
+    char id[32];
+    std::uint32_t behaviorType;
+    std::uint32_t magazineSize;
+    std::uint32_t currentAmmo;
+    std::uint32_t reserveAmmo;
+    std::uint32_t isReloading;
+    std::uint32_t attackCapable;
+    std::uint32_t ammoReady;
+    std::uint32_t usable;
+    std::uint32_t visitShots;
+    float damage;
+    std::uint32_t pelletCount;
+    float effectiveRange;
+    float projectileSpeed;
+};
+
+enum WeaponChoiceMode : std::uint32_t {
+    WEAPON_CHOICE_CYCLE = 0,
+    WEAPON_CHOICE_SCORED = 1,
+    WEAPON_CHOICE_LEGACY = 2,
+    WEAPON_CHOICE_FORCE = 3,
+};
+
+enum WeaponChoiceFlag : std::uint32_t {
+    WEAPON_CHOICE_HAS_TARGET = 1u << 0,
+    WEAPON_CHOICE_CYCLE_EMPTY = 1u << 1,
+    WEAPON_CHOICE_CURRENT_USABLE = 1u << 2,
+};
+
+enum WeaponChoiceReason : std::uint32_t {
+    WEAPON_CHOICE_KEEP = 0,
+    WEAPON_CHOICE_CYCLE_NEXT = 1,
+    WEAPON_CHOICE_FIRST_CURRENT = 2,
+    WEAPON_CHOICE_SCORED_BEST = 3,
+    WEAPON_CHOICE_LEGACY_EMPTY = 4,
+    WEAPON_CHOICE_LEGACY_CLOSE = 5,
+    WEAPON_CHOICE_LEGACY_FAR = 6,
+    WEAPON_CHOICE_LEGACY_MID = 7,
+    WEAPON_CHOICE_REASON_FORCE = 8,
+    WEAPON_CHOICE_NO_CANDIDATE = 9,
+};
+
+// The host owns the loadout, weapon runtimes, visit state, switch cooldown,
+// RNG jitter/delay, and npcSwitchWeapon(). The module owns candidate
+// eligibility/order and which candidate to keep or select.
+struct WeaponChoiceV1
+{
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::uint32_t actorId;
+    std::uint32_t tick;
+    std::uint32_t mode;
+    std::uint32_t flags;
+    std::int32_t currentIndex;
+    std::int32_t firstReadyIndex;
+    std::int32_t forceIndex;
+    std::int32_t cycleOrder[MAX_WEAPON_CANDIDATES];
+    std::uint32_t cycleOrderCount;
+    std::uint32_t currentVisitShotsRemaining;
+    float targetDistance;
+    float healthFraction;
+    float rangeBias;
+    float damageBias;
+    float safetyBias;
+    float switchThreshold;
+    float closeSwitchDist;
+    float farSwitchDist;
+    std::uint32_t candidateCount;
+    WeaponCandidateV1 candidates[MAX_WEAPON_CANDIDATES];
+    std::int32_t outIndex;
+    std::uint32_t outKeepCurrent;
+    std::uint32_t outReason;
+    std::uint32_t outUseModule;
+    std::uint32_t outGeneration;
 };
 
 // Host draws the deterministic roll so the module swap does not reset or

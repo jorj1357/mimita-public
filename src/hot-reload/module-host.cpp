@@ -1653,6 +1653,31 @@ bool ModuleHost::npcGoalScore(mimita_npc_behavior::GoalScoreV1* score)
                        score, sizeof(*score), score->tick);
 }
 
+bool ModuleHost::npcTargetingPolicy(
+    mimita_npc_behavior::TargetingPolicyV1* request)
+{
+    if (!request)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_TARGETING_POLICY,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcStateTiming(mimita_npc_behavior::StateTimingV1* request)
+{
+    if (!request)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_STATE_TIMING,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcActorState(mimita_npc_behavior::ActorStateV1* request)
+{
+    if (!request)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_ACTOR_STATE,
+                       request, sizeof(*request), request->tick);
+}
+
 bool ModuleHost::npcTargetSelect(mimita_npc_behavior::TargetSelectV1* request)
 {
     if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
@@ -1669,6 +1694,35 @@ bool ModuleHost::npcAttackIntent(mimita_npc_behavior::AttackIntentV1* request)
         request->structSize != sizeof(*request))
         return false;
     return invokeEvent(mimita_module::EVENT_NPC_ATTACK_INTENT,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcFireGate(mimita_npc_behavior::FireGateV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_FIRE_GATE,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcAimPolicy(mimita_npc_behavior::AimPolicyV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request))
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_AIM_POLICY,
+                       request, sizeof(*request), request->tick);
+}
+
+bool ModuleHost::npcWeaponChoice(mimita_npc_behavior::WeaponChoiceV1* request)
+{
+    if (!request || request->version != mimita_npc_behavior::ABI_VERSION ||
+        request->structSize != sizeof(*request) ||
+        request->candidateCount > mimita_npc_behavior::MAX_WEAPON_CANDIDATES ||
+        request->cycleOrderCount > mimita_npc_behavior::MAX_WEAPON_CANDIDATES)
+        return false;
+    return invokeEvent(mimita_module::EVENT_NPC_WEAPON_CHOICE,
                        request, sizeof(*request), request->tick);
 }
 

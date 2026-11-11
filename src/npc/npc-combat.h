@@ -29,7 +29,7 @@ inline glm::vec3 npcMuzzleOffset()
 
 bool tryFire(Npc& npc, const World& world, Player& player, float dt);
 
-glm::vec3 applyAimError(const Npc& npc, glm::vec3 aimDir);
+glm::vec3 applyAimError(const Npc& npc, glm::vec3 aimDir, float errorDeg);
 
 float aimErrorDegrees(float difficulty);
 // Effective aim error for the actor: the role behavior profile override when

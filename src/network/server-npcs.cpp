@@ -1844,7 +1844,31 @@ void simulateSharedNpcs(SOCKET sock,
     NpcTargetingPolicy targeting;
     const Gamemode& activeGamemodeForTargeting =
         GamemodeRegistry::instance().get(serverGamemodeState().matchMode);
-    if (activeGamemodeForTargeting.npcTargeting.configured) {
+    mimita_npc_behavior::TargetingPolicyV1 targetingPolicy{};
+    targetingPolicy.version = mimita_npc_behavior::ABI_VERSION;
+    targetingPolicy.structSize = sizeof(targetingPolicy);
+    targetingPolicy.tick = 0;
+    targetingPolicy.configured =
+        activeGamemodeForTargeting.npcTargeting.configured ? 1u : 0u;
+    std::snprintf(targetingPolicy.mode, sizeof(targetingPolicy.mode), "%s",
+                  activeGamemodeForTargeting.npcTargeting.mode.c_str());
+    targetingPolicy.includePlayers =
+        activeGamemodeForTargeting.npcTargeting.includePlayers ? 1u : 0u;
+    targetingPolicy.includeNpcs =
+        activeGamemodeForTargeting.npcTargeting.includeNpcs ? 1u : 0u;
+    std::snprintf(targetingPolicy.difficultyTargetMode,
+                  sizeof(targetingPolicy.difficultyTargetMode), "%s",
+                  npcDifficulty.targetMode.c_str());
+    targetingPolicy.damageOtherNpcs =
+        npcDifficulty.damageOtherNpcs ? 1u : 0u;
+    targetingPolicy.teamMatch = teamMatch ? 1u : 0u;
+    // Policy values are module-owned; this host loop only gathers candidates.
+    if (ModuleHost::instance().npcTargetingPolicy(&targetingPolicy)) {
+        targeting.configured = targetingPolicy.outConfigured != 0;
+        targeting.mode = (NpcTargetingMode)targetingPolicy.outMode;
+        targeting.includePlayers = targetingPolicy.outIncludePlayers != 0;
+        targeting.includeNpcs = targetingPolicy.outIncludeNpcs != 0;
+    } else if (activeGamemodeForTargeting.npcTargeting.configured) {
         targeting.configured = true;
         bool modeOk = false;
         targeting.mode = npcTargetingModeFromString(
@@ -2723,13 +2747,18 @@ void simulateSharedNpcs(SOCKET sock,
     {
         static uint64_t lastNpcTrace = 0;
         const uint64_t nowTrace = nowMs();
-        if (nowTrace - lastNpcTrace >= 1000)
+        if (nowTrace - lastNpcTrace >= 2000)
         {
             lastNpcTrace = nowTrace;
             const auto traceStart = std::chrono::steady_clock::now();
             nlohmann::json actors = nlohmann::json::array();
+            constexpr std::size_t kTraceActorLimit = 8;
+            std::size_t tracedActors = 0;
             for (const Npc& n : npcSystem.all())
             {
+                if (tracedActors >= kTraceActorLimit)
+                    break;
+                ++tracedActors;
                 const auto containmentStart = std::chrono::steady_clock::now();
                 const bool insideSolid =
                     actorRootInsideClosedSolid(world, n.body.pos);
@@ -2756,6 +2785,7 @@ void simulateSharedNpcs(SOCKET sock,
                 nlohmann::json{{"mode", serverGamemodeState().matchMode},
                                {"map", serverGamemodeState().mapId},
                                {"count", actors.size()},
+                               {"total_count", npcSystem.all().size()},
                                {"npcs", std::move(actors)}},
                 __FILE__, __LINE__, __FUNCTION__);
             traceMs = std::chrono::duration<double, std::milli>(
@@ -2853,7 +2883,10 @@ void simulateSharedNpcs(SOCKET sock,
             __FILE__, __LINE__, __FUNCTION__);
         phaseWindow = NpcServerWindow{};
     }
-    if (totalMs > 50.0) {
+    static uint64_t lastNpcCostLog = 0;
+    if (totalMs > 50.0 &&
+        (lastNpcCostLog == 0 || now - lastNpcCostLog >= 1000)) {
+        lastNpcCostLog = now;
         const auto loggerIoAfter = StructuredLogger::instance().ioStats(false);
         const auto loggerCounterDelta = [](uint64_t after, uint64_t before) {
             return after >= before ? after - before : after;

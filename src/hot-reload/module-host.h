@@ -161,7 +161,14 @@ public:
     bool npcBehaviorSelfTest(mimita_npc_behavior::SelfTestV1* test);
     bool npcGoalScore(mimita_npc_behavior::GoalScoreV1* score);
     bool npcTargetSelect(mimita_npc_behavior::TargetSelectV1* request);
+    bool npcTargetingPolicy(
+        mimita_npc_behavior::TargetingPolicyV1* request);
+    bool npcStateTiming(mimita_npc_behavior::StateTimingV1* request);
+    bool npcActorState(mimita_npc_behavior::ActorStateV1* request);
     bool npcAttackIntent(mimita_npc_behavior::AttackIntentV1* request);
+    bool npcFireGate(mimita_npc_behavior::FireGateV1* request);
+    bool npcAimPolicy(mimita_npc_behavior::AimPolicyV1* request);
+    bool npcWeaponChoice(mimita_npc_behavior::WeaponChoiceV1* request);
     bool npcDashDecision(mimita_npc_behavior::DashDecisionV1* request);
     bool npcPayloadRole(mimita_npc_behavior::PayloadRoleV1* role);
     bool npcBehaviorHoldPursuit(std::uint32_t actorId, std::uint32_t tick);

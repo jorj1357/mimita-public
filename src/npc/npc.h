@@ -145,6 +145,13 @@ public:
     bool grenadeAvailabilityLogged = false;
     std::string lastLoggedGrenadeWeapon;
     NpcSensorContext sensors;
+    // Hot actor-state boundary result. The module owns the decision when it
+    // returns outUseModule; these fields are applied on the same fixed tick.
+    bool moduleDecisionActive = false;
+    bool moduleJump = false;
+    bool moduleDash = false;
+    bool moduleAttack = false;
+    glm::vec3 moduleMoveDir{0.0f};
     // Human-like perception: the last observation, the belief, and the memory.
     // sightRange/FOV/reaction/memory are resolved per life from the difficulty
     // config; the belief feeds target acquisition and combat aim.

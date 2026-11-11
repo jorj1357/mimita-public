@@ -415,6 +415,246 @@ int decideAttack(mimita_npc_behavior::AttackIntentV1& request)
     return 1;
 }
 
+int decideFireGate(mimita_npc_behavior::FireGateV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    auto has = [&](mimita_npc_behavior::FireFlag flag) {
+        return (request.flags & static_cast<std::uint32_t>(flag)) != 0;
+    };
+    request.outUseModule = 1;
+    request.outAllow = 0;
+    request.outStartReload = 0;
+    request.outReason = mimita_npc_behavior::FIRE_REASON_ALLOW;
+    if (!has(mimita_npc_behavior::FIRE_TARGET_ALIVE)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_TARGET_DEAD;
+    } else if (!has(mimita_npc_behavior::FIRE_COOLDOWN_READY)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_COOLDOWN;
+    } else if (!has(mimita_npc_behavior::FIRE_HAS_WEAPON)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_NO_WEAPON;
+    } else if (has(mimita_npc_behavior::FIRE_RANGE_BLOCKED)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_RANGE;
+    } else if (!has(mimita_npc_behavior::FIRE_HAS_AMMO_OR_RESERVE)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_NO_AMMO;
+    } else if (has(mimita_npc_behavior::FIRE_MAGAZINE_EMPTY) &&
+               !has(mimita_npc_behavior::FIRE_RELOADING)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_START_RELOAD;
+        request.outStartReload = 1;
+    } else if (has(mimita_npc_behavior::FIRE_RELOADING)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_RELOADING;
+    } else if (has(mimita_npc_behavior::FIRE_MAGAZINE_EMPTY)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_MAGAZINE_EMPTY;
+    } else if (!has(mimita_npc_behavior::FIRE_LOS_CLEAR)) {
+        request.outReason = mimita_npc_behavior::FIRE_REASON_NO_LOS;
+    } else {
+        request.outAllow = 1;
+        request.outReason = mimita_npc_behavior::FIRE_REASON_ALLOW;
+    }
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int decideAim(mimita_npc_behavior::AimPolicyV1& request)
+{
+    if (request.version != mimita_npc_behavior::ABI_VERSION ||
+        request.structSize != sizeof(request))
+        return 0;
+    request.outUseModule = 1;
+
+    float aimX = request.predictedTarget[0];
+    float aimY = request.predictedTarget[1];
+    float aimZ = request.predictedTarget[2];
+    if (request.flags & mimita_npc_behavior::AIM_PROJECTILE) {
+        const float travel = request.targetDistance /
+            std::max(1.0f, request.projectileSpeed);
+        const float lead = travel + request.aimLeadSeconds;
+        aimX = request.targetPos[0] + request.targetVel[0] * lead;
+        aimY = request.targetPos[1] + request.targetVel[1] * lead;
+        aimZ = request.targetPos[2] + request.targetVel[2] * lead;
+    }
+    request.outAimPoint[0] = aimX;
+    request.outAimPoint[1] = aimY;
+    request.outAimPoint[2] = aimZ;
+
+    if (request.profileAimErrorDeg >= 0.0f) {
+        request.outErrorDeg = request.profileAimErrorDeg;
+    } else if (request.forceHit ||
+               (request.flags & mimita_npc_behavior::AIM_FORCE_HIT)) {
+        request.outErrorDeg = 0.0f;
+    } else {
+        request.outErrorDeg =
+            request.baseAimErrorDeg *
+            (1.0f - request.difficulty01 * request.difficultyErrorScale);
+    }
+    if (request.outErrorDeg < 0.0f)
+        request.outErrorDeg = 0.0f;
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
+int decideWeaponChoice(mimita_npc_behavior::WeaponChoiceV1& request)
+{
+    using namespace mimita_npc_behavior;
+    if (request.version != ABI_VERSION ||
+        request.structSize != sizeof(request) ||
+        request.candidateCount > MAX_WEAPON_CANDIDATES ||
+        request.cycleOrderCount > MAX_WEAPON_CANDIDATES)
+        return 0;
+
+    request.outUseModule = 1;
+    request.outIndex = -1;
+    request.outKeepCurrent = 0;
+    request.outReason = WEAPON_CHOICE_NO_CANDIDATE;
+
+    auto valid = [&](std::int32_t index) {
+        return index >= 0 && index < (std::int32_t)request.candidateCount;
+    };
+    auto score = [&](const WeaponCandidateV1& c) {
+        const float effRange = std::max(1.0f, c.effectiveRange);
+        const float rangeFit = 1.0f - std::clamp(
+            std::fabs(effRange - request.targetDistance) /
+                std::max(effRange, 1.0f), 0.0f, 1.0f);
+        const float burst = c.damage * (float)std::max(1u, c.pelletCount);
+        const float damageUtility = std::clamp(burst / 80.0f, 0.0f, 1.0f);
+        float safety = std::clamp(effRange / 80.0f, 0.0f, 1.0f);
+        if (c.behaviorType == WEAPON_BEHAVIOR_ROCKET_LAUNCHER ||
+            c.behaviorType == WEAPON_BEHAVIOR_GRENADE_LAUNCHER ||
+            c.behaviorType == WEAPON_BEHAVIOR_PROJECTILE)
+            safety *= 0.5f;
+        else if (c.behaviorType == WEAPON_BEHAVIOR_MELEE ||
+                 c.behaviorType == WEAPON_BEHAVIOR_SWORDSWORD)
+            safety = 0.05f;
+        return rangeFit * request.rangeBias +
+               damageUtility * request.damageBias +
+               safety * request.safetyBias;
+    };
+    auto keep = [&](std::uint32_t reason) {
+        request.outKeepCurrent = 1;
+        request.outIndex = request.currentIndex;
+        request.outReason = reason;
+    };
+    auto choose = [&](std::int32_t index, std::uint32_t reason) {
+        request.outIndex = index;
+        request.outKeepCurrent = index == request.currentIndex ? 1u : 0u;
+        request.outReason = reason;
+    };
+    auto idIs = [&](const WeaponCandidateV1& c, const char* id) {
+        return std::strcmp(c.id, id) == 0;
+    };
+
+    if (request.mode == WEAPON_CHOICE_FORCE) {
+        if (valid(request.forceIndex))
+            choose(request.forceIndex, WEAPON_CHOICE_REASON_FORCE);
+        else
+            keep(WEAPON_CHOICE_NO_CANDIDATE);
+    } else if (request.mode == WEAPON_CHOICE_SCORED) {
+        const float currentScore = valid(request.currentIndex)
+            ? score(request.candidates[request.currentIndex]) : -1e30f;
+        std::int32_t bestIndex = -1;
+        float bestScore = -1e30f;
+        for (std::uint32_t i = 0; i < request.candidateCount; ++i) {
+            if (!request.candidates[i].usable)
+                continue;
+            const float s = score(request.candidates[i]);
+            if (s > bestScore) {
+                bestScore = s;
+                bestIndex = (std::int32_t)i;
+            }
+        }
+        if (bestIndex < 0) {
+            keep(WEAPON_CHOICE_NO_CANDIDATE);
+        } else if (valid(request.currentIndex) &&
+                   request.candidates[request.currentIndex].usable &&
+                   bestIndex != request.currentIndex &&
+                   bestScore <= currentScore + request.switchThreshold) {
+            keep(WEAPON_CHOICE_KEEP);
+        } else {
+            choose(bestIndex, WEAPON_CHOICE_SCORED_BEST);
+        }
+    } else if (request.mode == WEAPON_CHOICE_LEGACY) {
+        std::int32_t chosen = -1;
+        std::uint32_t reason = WEAPON_CHOICE_NO_CANDIDATE;
+        const bool currentEmpty = valid(request.currentIndex) &&
+            request.candidates[request.currentIndex].currentAmmo == 0 &&
+            !request.candidates[request.currentIndex].isReloading;
+        auto firstWithAmmo = [&](bool shotgun, bool explosive, bool revolver) {
+            for (std::uint32_t i = 0; i < request.candidateCount; ++i) {
+                const WeaponCandidateV1& c = request.candidates[i];
+                if (c.currentAmmo == 0)
+                    continue;
+                const bool match =
+                    (shotgun && idIs(c, "shotgun")) ||
+                    (explosive && (idIs(c, "rocket_launcher") ||
+                                   idIs(c, "grenade_launcher"))) ||
+                    (revolver && idIs(c, "revolver"));
+                if (match)
+                    return (std::int32_t)i;
+            }
+            return (std::int32_t)-1;
+        };
+        if (currentEmpty) {
+            for (std::uint32_t i = 0; i < request.candidateCount; ++i) {
+                if (request.candidates[i].currentAmmo > 0) {
+                    chosen = (std::int32_t)i;
+                    reason = WEAPON_CHOICE_LEGACY_EMPTY;
+                    break;
+                }
+            }
+        } else if (request.targetDistance < request.closeSwitchDist) {
+            chosen = firstWithAmmo(true, false, false);
+            reason = WEAPON_CHOICE_LEGACY_CLOSE;
+        } else if (request.targetDistance > request.farSwitchDist) {
+            chosen = firstWithAmmo(false, true, false);
+            reason = WEAPON_CHOICE_LEGACY_FAR;
+        } else {
+            chosen = firstWithAmmo(false, false, true);
+            reason = WEAPON_CHOICE_LEGACY_MID;
+        }
+        if (chosen >= 0 && chosen != request.currentIndex)
+            choose(chosen, reason);
+        else
+            keep(WEAPON_CHOICE_KEEP);
+    } else {
+        auto ready = [&](std::int32_t index) {
+            return valid(index) && request.candidates[index].attackCapable &&
+                   request.candidates[index].ammoReady;
+        };
+        std::int32_t currentPos = -1;
+        for (std::uint32_t i = 0; i < request.cycleOrderCount; ++i) {
+            if (!valid(request.cycleOrder[i]))
+                continue;
+            if (request.cycleOrder[i] == request.currentIndex) {
+                currentPos = (std::int32_t)i;
+                break;
+            }
+        }
+        std::int32_t next = -1;
+        if (request.cycleOrderCount > 0) {
+            const std::uint32_t count = request.cycleOrderCount;
+            const std::uint32_t start = currentPos >= 0
+                ? ((std::uint32_t)currentPos + 1u) % count : 0u;
+            for (std::uint32_t step = 0; step < count; ++step) {
+                const std::int32_t candidate =
+                    request.cycleOrder[(start + step) % count];
+                if (candidate == request.currentIndex)
+                    continue;
+                if (ready(candidate)) {
+                    next = candidate;
+                    break;
+                }
+            }
+        }
+        if (next >= 0)
+            choose(next, WEAPON_CHOICE_CYCLE_NEXT);
+        else
+            keep(WEAPON_CHOICE_NO_CANDIDATE);
+    }
+
+    request.outGeneration = MIMITA_MODULE_GENERATION;
+    return 1;
+}
+
 int decideDash(mimita_npc_behavior::DashDecisionV1& request)
 {
     if (request.version != mimita_npc_behavior::ABI_VERSION ||
@@ -456,6 +696,172 @@ int MIMITA_MODULE_CALL initialize(const mimita_module::HostServicesV1* services)
 
 void MIMITA_MODULE_CALL shutdown() { gServices = nullptr; }
 
+int decideTargetingPolicy(mimita_npc_behavior::TargetingPolicyV1& p)
+{
+    if (p.version != mimita_npc_behavior::ABI_VERSION ||
+        p.structSize != sizeof(p))
+        return 0;
+    auto parseMode = [](const char* mode) -> std::uint32_t {
+        if (std::strcmp(mode, "player") == 0)
+            return 0u;
+        if (std::strcmp(mode, "opposite_team") == 0)
+            return 2u;
+        return 1u; // closest (including invalid/unset)
+    };
+    if (p.configured) {
+        p.outConfigured = 1u;
+        p.outMode = parseMode(p.mode);
+        p.outIncludePlayers = p.includePlayers ? 1u : 0u;
+        p.outIncludeNpcs = p.includeNpcs ? 1u : 0u;
+    } else {
+        p.outConfigured = 0u;
+        p.outMode = std::strcmp(p.difficultyTargetMode, "player") == 0
+            ? 0u : 1u;
+        p.outIncludePlayers = 1u;
+        p.outIncludeNpcs =
+            (p.damageOtherNpcs || p.teamMatch) ? 1u : 0u;
+    }
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+    static bool loggedOnce = false;
+    if (!loggedOnce && gServices && gServices->log) {
+        loggedOnce = true;
+        char fields[160];
+        std::snprintf(
+            fields, sizeof(fields),
+            "{\"configured\":%u,\"mode\":%u,\"players\":%u,\"npcs\":%u,"
+            "\"generation\":%u}",
+            p.outConfigured, p.outMode, p.outIncludePlayers,
+            p.outIncludeNpcs, p.outGeneration);
+        gServices->log(mimita_module::LOG_CATEGORY_NPC_MOVEMENT,
+                       mimita_module::LOG_LEVEL_IMPORTANT,
+                       "npc.targeting.policy", "",
+                       "npc-behavior targeting policy", 0, fields,
+                       __FILE__, __LINE__, __func__);
+    }
+    return 1;
+}
+
+int decideStateTiming(mimita_npc_behavior::StateTimingV1& p)
+{
+    if (p.version != mimita_npc_behavior::ABI_VERSION ||
+        p.structSize != sizeof(p))
+        return 0;
+    float minTime = 0.2f;
+    float maxTime = 1.5f;
+    const float base = 1.0f - p.difficulty01 * 0.5f;
+    switch (p.state) {
+    case 0: minTime = 0.3f; maxTime = 3.0f * base; break;  // Idle
+    case 1: minTime = 0.5f; maxTime = 4.0f * base; break;  // RandomWalk
+    case 2: minTime = 0.3f; maxTime = 2.0f * base; break;  // Chase
+    case 3: minTime = 0.3f; maxTime = 3.0f * base; break;  // Circle
+    case 4: minTime = 0.3f; maxTime = 2.5f * base; break;  // Strafe
+    case 5: minTime = 0.2f; maxTime = 1.5f * base; break;  // Retreat
+    case 6: minTime = 0.08f; maxTime = 0.3f; break;        // Attack
+    case 7: minTime = 0.1f; maxTime = 0.5f * base; break;  // Recover
+    case 8: minTime = 0.3f; maxTime = 2.0f * base; break;  // Advance
+    case 9: minTime = 0.3f; maxTime = 2.5f * base; break;  // HoldPosition
+    case 10: minTime = 0.3f; maxTime = 2.0f * base; break; // Peek
+    case 11: minTime = 0.15f; maxTime = 1.5f * base; break;// Aim
+    case 12: minTime = 0.4f; maxTime = 2.5f * base; break; // ZigZag
+    case 13: minTime = 0.5f; maxTime = 3.0f * base; break; // Patrol
+    default: break;
+    }
+    p.outMinTime = minTime;
+    p.outMaxTime = maxTime;
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+    static bool loggedOnce = false;
+    if (!loggedOnce && gServices && gServices->log) {
+        loggedOnce = true;
+        char fields[160];
+        std::snprintf(fields, sizeof(fields),
+                      "{\"state\":%u,\"min_s\":%.3f,\"max_s\":%.3f,"
+                      "\"generation\":%u}",
+                      p.state, minTime, maxTime, p.outGeneration);
+        gServices->log(mimita_module::LOG_CATEGORY_NPC_MOVEMENT,
+                       mimita_module::LOG_LEVEL_IMPORTANT,
+                       "npc.state-timing", "",
+                       "npc-behavior state timing", 0, fields,
+                       __FILE__, __LINE__, __func__);
+    }
+    return 1;
+}
+
+// Flip this to true (module-only edit) to let the hot module own state/move/
+// attack decisions. Default false preserves the legacy host brain exactly.
+constexpr bool kActorPolicyLive = true;
+
+void decideActorState(mimita_npc_behavior::ActorStateV1& p)
+{
+    p.outUseModule = kActorPolicyLive ? 1u : 0u;
+    std::uint32_t state = p.currentState;
+    if (p.targetVisible) {
+        if (p.healthFraction < 0.35f)
+            state = 5u; // Retreat
+        else if (p.targetDistance > (p.preferredRange > 0.0f
+                                         ? p.preferredRange * 0.8f
+                                         : 8.0f))
+            state = 2u; // Chase
+        else
+            state = 6u; // Attack
+    } else if (p.targetRemembered) {
+        state = 2u; // Chase last known
+    } else {
+        state = 13u; // Patrol
+    }
+    p.outState = state;
+    const float base = 1.0f - p.difficulty01 * 0.5f;
+    switch (state) {
+    case 0: p.outMinTime = 0.3f; p.outMaxTime = 3.0f * base; break;
+    case 1: p.outMinTime = 0.5f; p.outMaxTime = 4.0f * base; break;
+    case 2: p.outMinTime = 0.3f; p.outMaxTime = 2.0f * base; break;
+    case 3: p.outMinTime = 0.3f; p.outMaxTime = 3.0f * base; break;
+    case 4: p.outMinTime = 0.3f; p.outMaxTime = 2.5f * base; break;
+    case 5: p.outMinTime = 0.2f; p.outMaxTime = 1.5f * base; break;
+    case 6: p.outMinTime = 0.08f; p.outMaxTime = 0.3f; break;
+    case 7: p.outMinTime = 0.1f; p.outMaxTime = 0.5f * base; break;
+    case 8: p.outMinTime = 0.3f; p.outMaxTime = 2.0f * base; break;
+    case 9: p.outMinTime = 0.3f; p.outMaxTime = 2.5f * base; break;
+    case 10: p.outMinTime = 0.3f; p.outMaxTime = 2.0f * base; break;
+    case 11: p.outMinTime = 0.15f; p.outMaxTime = 1.5f * base; break;
+    case 12: p.outMinTime = 0.4f; p.outMaxTime = 2.5f * base; break;
+    case 13: p.outMinTime = 0.5f; p.outMaxTime = 3.0f * base; break;
+    default: p.outMinTime = 0.2f; p.outMaxTime = 1.5f * base; break;
+    }
+    p.outAttack =
+        (p.targetVisible && p.attackCooldownReady) ? 1u : 0u;
+    p.outJump = 0u;
+    p.outDash = 0u;
+    float dx = p.targetPos[0] - p.selfPos[0];
+    float dy = p.targetPos[1] - p.selfPos[1];
+    const float len = std::sqrt(dx * dx + dy * dy);
+    if (p.targetVisible && len > 0.001f) {
+        p.outMoveDir[0] = dx / len;
+        p.outMoveDir[1] = dy / len;
+        p.outMoveDir[2] = 0.0f;
+    } else {
+        p.outMoveDir[0] = 0.0f;
+        p.outMoveDir[1] = 0.0f;
+        p.outMoveDir[2] = 0.0f;
+    }
+    p.outGeneration = MIMITA_MODULE_GENERATION;
+    static bool loggedOnce = false;
+    if (!loggedOnce && gServices && gServices->log) {
+        loggedOnce = true;
+        char fields[192];
+        std::snprintf(
+            fields, sizeof(fields),
+            "{\"use_module\":%u,\"state\":%u,\"attack\":%u,"
+            "\"min_s\":%.3f,\"max_s\":%.3f,\"generation\":%u}",
+            p.outUseModule, p.outState, p.outAttack, p.outMinTime,
+            p.outMaxTime, p.outGeneration);
+        gServices->log(mimita_module::LOG_CATEGORY_NPC_MOVEMENT,
+                       mimita_module::LOG_LEVEL_IMPORTANT,
+                       "npc.actor-state", "",
+                       "npc-behavior actor-state decision", 0, fields,
+                       __FILE__, __LINE__, __func__);
+    }
+}
+
 int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
 {
     if (!event || !event->payload) return 0;
@@ -482,6 +888,25 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
         event->payloadSize == sizeof(mimita_npc_behavior::GoalScoreV1))
         return scoreGoal(
             *static_cast<mimita_npc_behavior::GoalScoreV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_ACTOR_STATE &&
+        event->payloadSize == sizeof(mimita_npc_behavior::ActorStateV1)) {
+        auto& state =
+            *static_cast<mimita_npc_behavior::ActorStateV1*>(event->payload);
+        if (state.version != mimita_npc_behavior::ABI_VERSION ||
+            state.structSize != sizeof(state))
+            return 0;
+        decideActorState(state);
+        return 1;
+    }
+    if (event->typeId == mimita_module::EVENT_NPC_STATE_TIMING &&
+        event->payloadSize == sizeof(mimita_npc_behavior::StateTimingV1))
+        return decideStateTiming(*static_cast<
+            mimita_npc_behavior::StateTimingV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_TARGETING_POLICY &&
+        event->payloadSize ==
+            sizeof(mimita_npc_behavior::TargetingPolicyV1))
+        return decideTargetingPolicy(*static_cast<
+            mimita_npc_behavior::TargetingPolicyV1*>(event->payload));
     if (event->typeId == mimita_module::EVENT_NPC_TARGET_SELECT &&
         event->payloadSize == sizeof(mimita_npc_behavior::TargetSelectV1))
         return selectTarget(
@@ -490,6 +915,18 @@ int MIMITA_MODULE_CALL onEvent(mimita_module::ModuleEventV1* event)
         event->payloadSize == sizeof(mimita_npc_behavior::AttackIntentV1))
         return decideAttack(
             *static_cast<mimita_npc_behavior::AttackIntentV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_FIRE_GATE &&
+        event->payloadSize == sizeof(mimita_npc_behavior::FireGateV1))
+        return decideFireGate(
+            *static_cast<mimita_npc_behavior::FireGateV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_AIM_POLICY &&
+        event->payloadSize == sizeof(mimita_npc_behavior::AimPolicyV1))
+        return decideAim(
+            *static_cast<mimita_npc_behavior::AimPolicyV1*>(event->payload));
+    if (event->typeId == mimita_module::EVENT_NPC_WEAPON_CHOICE &&
+        event->payloadSize == sizeof(mimita_npc_behavior::WeaponChoiceV1))
+        return decideWeaponChoice(
+            *static_cast<mimita_npc_behavior::WeaponChoiceV1*>(event->payload));
     if (event->typeId == mimita_module::EVENT_NPC_DASH_DECISION &&
         event->payloadSize == sizeof(mimita_npc_behavior::DashDecisionV1))
         return decideDash(

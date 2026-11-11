@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -48,6 +50,32 @@
 #include "npc/npc-state-machine.h"
 #include "npc/npc-movement-context.h"
 #include "actor/actor-intent.h"
+
+static void logModuleWeaponChoice(
+    const Npc& npc, const mimita_npc_behavior::WeaponChoiceV1& choice,
+    const std::string& selected)
+{
+    static std::unordered_map<std::uint64_t, std::uint32_t> sLogged;
+    const std::uint64_t key =
+        (static_cast<std::uint64_t>(choice.mode) << 32) | npc.id;
+    auto it = sLogged.find(key);
+    if (it != sLogged.end() && it->second == choice.outGeneration)
+        return;
+    sLogged[key] = choice.outGeneration;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::NpcCombat, StructuredLevel::Important,
+        "npc.weapon-choice.module", std::to_string(npc.id),
+        "module-owned weapon choice evaluated", 0,
+        nlohmann::json{
+            {"actor", npc.id},
+            {"mode", choice.mode},
+            {"keep", choice.outKeepCurrent},
+            {"reason", choice.outReason},
+            {"current", npc.body.equippedWeaponId},
+            {"selected", selected},
+            {"generation", choice.outGeneration}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
 
 float targetCanSeeNpc(const Npc& npc, const World& world)
 {
@@ -1784,21 +1812,99 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 (npc.cycleVisitShotsRemaining <= 0 ? "visit_complete" :
                  (!curDef || !isAttackCapable(*curDef) ? "unsupported" :
                   !ammoReady(npc.body.equippedWeaponId) ? "empty" : "not_equipped"));
-            size_t start = 0;
-            const auto currentIt = std::find(order.begin(), order.end(),
-                                             npc.body.equippedWeaponId);
-            if (currentIt != order.end())
-                start = (size_t)(currentIt - order.begin()) + 1;
-            if (npc.cycleWeapon.empty())
-                start = 0;  // fresh cycle starts at the authored first weapon
             std::string next;
-            for (size_t i = 0; i < order.size(); ++i) {
-                const std::string& wid = order[(start + i) % order.size()];
-                if (wid == npc.body.equippedWeaponId) continue;
+            mimita_npc_behavior::WeaponChoiceV1 choice{};
+            choice.version = mimita_npc_behavior::ABI_VERSION;
+            choice.structSize = sizeof(choice);
+            choice.actorId = npc.id;
+            choice.tick = 0;
+            choice.mode = mimita_npc_behavior::WEAPON_CHOICE_CYCLE;
+            choice.flags = static_cast<std::uint32_t>(
+                mimita_npc_behavior::WEAPON_CHOICE_HAS_TARGET);
+            if (npc.cycleWeapon.empty()) {
+                choice.flags |= static_cast<std::uint32_t>(
+                    mimita_npc_behavior::WEAPON_CHOICE_CYCLE_EMPTY);
+            }
+            if (currentUsable) {
+                choice.flags |= static_cast<std::uint32_t>(
+                    mimita_npc_behavior::WEAPON_CHOICE_CURRENT_USABLE);
+            }
+            choice.currentVisitShotsRemaining =
+                (std::uint32_t)std::max(0, npc.cycleVisitShotsRemaining);
+            choice.targetDistance = npc.sensors.targetDistance;
+
+            std::int32_t currentIndex = -1;
+            std::int32_t firstReady = -1;
+            for (std::size_t i = 0;
+                 i < order.size() &&
+                 choice.candidateCount <
+                     mimita_npc_behavior::MAX_WEAPON_CANDIDATES;
+                 ++i) {
+                const std::string& wid = order[i];
                 const WeaponDefinition* d = defFor(wid);
-                if (!d || !isAttackCapable(*d) || !ammoReady(wid)) continue;
-                next = wid;
-                break;
+                if (!d) continue;
+                mimita_npc_behavior::WeaponCandidateV1& c =
+                    choice.candidates[choice.candidateCount];
+                std::strncpy(c.id, wid.c_str(), sizeof(c.id) - 1);
+                c.id[sizeof(c.id) - 1] = '\0';
+                c.behaviorType = static_cast<std::uint32_t>(d->behaviorType);
+                c.magazineSize = (std::uint32_t)std::max(0, d->magazineSize);
+                auto it = npc.body.weaponRuntimes.find(wid);
+                const int ammo = it != npc.body.weaponRuntimes.end()
+                    ? it->second.currentAmmo : 0;
+                const int reserve = it != npc.body.weaponRuntimes.end()
+                    ? it->second.reserveAmmo : 0;
+                const bool reloading = it != npc.body.weaponRuntimes.end() &&
+                    it->second.isReloading;
+                c.currentAmmo = (std::uint32_t)std::max(0, ammo);
+                c.reserveAmmo = (std::uint32_t)std::max(0, reserve);
+                c.isReloading = reloading ? 1u : 0u;
+                c.attackCapable = isAttackCapable(*d) ? 1u : 0u;
+                c.ammoReady = ammoReady(wid) ? 1u : 0u;
+                c.usable = (c.attackCapable && c.ammoReady) ? 1u : 0u;
+                c.visitShots = (std::uint32_t)std::max(1, visitCountFor(*d));
+                c.damage = d->damage;
+                c.pelletCount = (std::uint32_t)std::max(0, d->pelletCount);
+                c.effectiveRange = weaponSelectionRangeOf(*d);
+                c.projectileSpeed = d->projectileSpeed;
+                if (wid == npc.body.equippedWeaponId)
+                    currentIndex = (std::int32_t)choice.candidateCount;
+                if (firstReady < 0 && c.usable)
+                    firstReady = (std::int32_t)choice.candidateCount;
+                choice.cycleOrder[choice.cycleOrderCount] =
+                    (std::int32_t)choice.candidateCount;
+                ++choice.cycleOrderCount;
+                ++choice.candidateCount;
+            }
+            choice.currentIndex = currentIndex;
+            choice.firstReadyIndex = firstReady;
+
+            const bool moduleCycle =
+                ModuleHost::instance().npcWeaponChoice(&choice) &&
+                choice.outUseModule != 0;
+            if (moduleCycle) {
+                if (!choice.outKeepCurrent && choice.outIndex >= 0 &&
+                    choice.outIndex < (std::int32_t)choice.candidateCount) {
+                    next = choice.candidates[choice.outIndex].id;
+                }
+                logModuleWeaponChoice(npc, choice,
+                    next.empty() ? npc.body.equippedWeaponId : next);
+            } else {
+                size_t start = 0;
+                const auto currentIt = std::find(order.begin(), order.end(),
+                                                 npc.body.equippedWeaponId);
+                if (currentIt != order.end())
+                    start = (size_t)(currentIt - order.begin()) + 1;
+                if (npc.cycleWeapon.empty())
+                    start = 0;  // fresh cycle starts at the authored first weapon
+                for (size_t i = 0; i < order.size(); ++i) {
+                    const std::string& wid = order[(start + i) % order.size()];
+                    if (wid == npc.body.equippedWeaponId) continue;
+                    const WeaponDefinition* d = defFor(wid);
+                    if (!d || !isAttackCapable(*d) || !ammoReady(wid)) continue;
+                    next = wid;
+                    break;
+                }
             }
             if (!next.empty()) {
                 const float delayMin = npc.behavior.weaponSwitchDelayMin >= 0.0f
@@ -1849,7 +1955,84 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
         // override ignores the global forceWeapon so roles stay authoritative.
         if (npc.loadoutOverride.empty() && !cfg.forceWeapon.empty()) {
             bestWeapon = cfg.forceWeapon;
-        } else if (npc.behavior.active) {
+        } else {
+            mimita_npc_behavior::WeaponChoiceV1 choice{};
+            choice.version = mimita_npc_behavior::ABI_VERSION;
+            choice.structSize = sizeof(choice);
+            choice.actorId = npc.id;
+            choice.tick = 0;
+            choice.mode = npc.behavior.active
+                ? mimita_npc_behavior::WEAPON_CHOICE_SCORED
+                : mimita_npc_behavior::WEAPON_CHOICE_LEGACY;
+            choice.flags = static_cast<std::uint32_t>(
+                mimita_npc_behavior::WEAPON_CHOICE_HAS_TARGET);
+            choice.targetDistance = dist;
+            choice.healthFraction = (float)npc.body.currentHp /
+                (float)std::max(1, npc.body.maxHp);
+            choice.rangeBias = npc.behavior.weaponRangeBias;
+            choice.damageBias = npc.behavior.weaponDamageBias;
+            choice.safetyBias = npc.behavior.weaponSafetyBias;
+            choice.switchThreshold = npc.behavior.weaponSwitchThreshold;
+            choice.closeSwitchDist = cfg.closeSwitchDist;
+            choice.farSwitchDist = cfg.farSwitchDist;
+
+            std::int32_t currentIndex = -1;
+            std::int32_t firstReady = -1;
+            const auto& registry = WeaponRegistry::instance();
+            for (std::size_t i = 0;
+                 i < loadout.size() &&
+                 choice.candidateCount <
+                     mimita_npc_behavior::MAX_WEAPON_CANDIDATES;
+                 ++i) {
+                const WeaponDefinition* d = registry.get(loadout[i]);
+                if (!d) continue;
+                mimita_npc_behavior::WeaponCandidateV1& c =
+                    choice.candidates[choice.candidateCount];
+                std::strncpy(c.id, loadout[i].c_str(), sizeof(c.id) - 1);
+                c.id[sizeof(c.id) - 1] = '\0';
+                c.behaviorType = static_cast<std::uint32_t>(d->behaviorType);
+                c.magazineSize = (std::uint32_t)std::max(0, d->magazineSize);
+                auto it = npc.body.weaponRuntimes.find(loadout[i]);
+                const int ammo = it != npc.body.weaponRuntimes.end()
+                    ? it->second.currentAmmo : 0;
+                const int reserve = it != npc.body.weaponRuntimes.end()
+                    ? it->second.reserveAmmo : 0;
+                const bool reloading = it != npc.body.weaponRuntimes.end() &&
+                    it->second.isReloading;
+                c.currentAmmo = (std::uint32_t)std::max(0, ammo);
+                c.reserveAmmo = (std::uint32_t)std::max(0, reserve);
+                c.isReloading = reloading ? 1u : 0u;
+                c.attackCapable = 1;
+                c.ammoReady = ammo > 0 ? 1u : 0u;
+                c.usable = (ammo > 0 || reserve > 0 || reloading) ? 1u : 0u;
+                c.damage = d->damage;
+                c.pelletCount = (std::uint32_t)std::max(0, d->pelletCount);
+                c.effectiveRange = weaponSelectionRangeOf(*d);
+                c.projectileSpeed = d->projectileSpeed;
+                if (loadout[i] == npc.body.equippedWeaponId)
+                    currentIndex = (std::int32_t)choice.candidateCount;
+                if (firstReady < 0 && c.ammoReady && c.usable)
+                    firstReady = (std::int32_t)choice.candidateCount;
+                ++choice.candidateCount;
+            }
+            choice.currentIndex = currentIndex;
+            choice.firstReadyIndex = firstReady;
+
+            const bool moduleChoice =
+                ModuleHost::instance().npcWeaponChoice(&choice) &&
+                choice.outUseModule != 0;
+            if (moduleChoice) {
+                if (choice.outKeepCurrent) {
+                    bestWeapon = npc.body.equippedWeaponId;
+                } else if (choice.outIndex >= 0 &&
+                           choice.outIndex <
+                               (std::int32_t)choice.candidateCount) {
+                    bestWeapon = choice.candidates[choice.outIndex].id;
+                } else {
+                    bestWeapon = npc.body.equippedWeaponId;
+                }
+                logModuleWeaponChoice(npc, choice, bestWeapon);
+            } else if (npc.behavior.active) {
             // Scored weapon selection from existing weapon metadata plus the
             // behavior profile weights. Ammo/legality remain authoritative.
             const NpcBehaviorTuning& b = npc.behavior;
@@ -1940,6 +2123,7 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
                 }
             }
         }
+        }
 
         if (bestWeapon != npc.body.equippedWeaponId) {
             const std::string previousWeapon = npc.body.equippedWeaponId;
@@ -2009,6 +2193,67 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             NpcState oldState = npc.stateMachine.currentState;
             NpcState newState = pickNextState(npc);
 
+            bool moduleActorActive = false;
+            float moduleMinT = 0.0f;
+            float moduleMaxT = 0.0f;
+            {
+                mimita_npc_behavior::ActorStateV1 actor{};
+                actor.version = mimita_npc_behavior::ABI_VERSION;
+                actor.structSize = sizeof(actor);
+                actor.tick = static_cast<std::uint32_t>(npc.sensors.time * 60.0f);
+                actor.actorId = npc.id;
+                actor.hasTarget = npc.sensors.hasTarget ? 1u : 0u;
+                actor.targetVisible = npc.sensors.hasTarget ? 1u : 0u;
+                actor.targetRemembered =
+                    (!npc.sensors.hasTarget && npc.targetMemory.hasMemory)
+                        ? 1u : 0u;
+                actor.currentState = static_cast<std::uint32_t>(newState);
+                actor.trainingMode = static_cast<std::uint32_t>(npc.trainingMode);
+                actor.onGround = npc.sensors.touchFloor ? 1u : 0u;
+                actor.weaponReady = 1u;
+                actor.attackCooldownReady = npc.attackCooldown <= 0.0f ? 1u : 0u;
+                actor.difficulty01 = difficulty01(npc.difficulty);
+                actor.healthFraction = npc.body.maxHp > 0
+                    ? static_cast<float>(npc.body.currentHp) /
+                      static_cast<float>(npc.body.maxHp)
+                    : 1.0f;
+                actor.aggression = npc.tuning.aggression;
+                actor.preferredRange = npc.behavior.active
+                    ? npc.behavior.preferredRange : 0.0f;
+                actor.selfPos[0] = npc.body.pos.x;
+                actor.selfPos[1] = npc.body.pos.y;
+                actor.selfPos[2] = npc.body.pos.z;
+                actor.selfVel[0] = npc.sensors.selfVel.x;
+                actor.selfVel[1] = npc.sensors.selfVel.y;
+                actor.selfVel[2] = npc.sensors.selfVel.z;
+                actor.targetPos[0] = npc.sensors.targetPos.x;
+                actor.targetPos[1] = npc.sensors.targetPos.y;
+                actor.targetPos[2] = npc.sensors.targetPos.z;
+                actor.targetVel[0] = npc.sensors.targetVel.x;
+                actor.targetVel[1] = npc.sensors.targetVel.y;
+                actor.targetVel[2] = npc.sensors.targetVel.z;
+                actor.lastKnownPos[0] = npc.targetMemory.lastKnownPosition.x;
+                actor.lastKnownPos[1] = npc.targetMemory.lastKnownPosition.y;
+                actor.lastKnownPos[2] = npc.targetMemory.lastKnownPosition.z;
+                actor.targetDistance = npc.sensors.targetDistance;
+                actor.stateTimer = npc.stateMachine.stateTimer;
+                actor.nextDecisionTime = npc.stateMachine.nextDecisionTime;
+                if (ModuleHost::instance().npcActorState(&actor) &&
+                    actor.outUseModule) {
+                    moduleActorActive = true;
+                    newState = static_cast<NpcState>(actor.outState);
+                    moduleMinT = actor.outMinTime;
+                    moduleMaxT = actor.outMaxTime;
+                    npc.moduleDecisionActive = true;
+                    npc.moduleAttack = actor.outAttack != 0;
+                    npc.moduleJump = actor.outJump != 0;
+                    npc.moduleDash = actor.outDash != 0;
+                    npc.moduleMoveDir = glm::vec3(actor.outMoveDir[0],
+                                                  actor.outMoveDir[1],
+                                                  actor.outMoveDir[2]);
+                }
+            }
+
             if (newState == NpcState::Retreat && oldState != NpcState::Retreat)
                 npc.stateMachine.retreatTimer = 0.0f;
 
@@ -2059,8 +2304,25 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
             npc.stateMachine.currentState = newState;
             npc.stateMachine.stateTimer = 0.0f;
 
-            float minT = stateMinTime(newState, difficulty01(npc.difficulty));
-            float maxT = stateMaxTime(newState, difficulty01(npc.difficulty));
+            const float timingDifficulty = difficulty01(npc.difficulty);
+            mimita_npc_behavior::StateTimingV1 timing{};
+            timing.version = mimita_npc_behavior::ABI_VERSION;
+            timing.structSize = sizeof(timing);
+            timing.tick = static_cast<std::uint32_t>(npc.sensors.time * 60.0f);
+            timing.state = static_cast<std::uint32_t>(newState);
+            timing.difficulty01 = timingDifficulty;
+            float minT;
+            float maxT;
+            if (moduleActorActive) {
+                minT = moduleMinT;
+                maxT = moduleMaxT;
+            } else if (ModuleHost::instance().npcStateTiming(&timing)) {
+                minT = timing.outMinTime;
+                maxT = timing.outMaxTime;
+            } else {
+                minT = stateMinTime(newState, timingDifficulty);
+                maxT = stateMaxTime(newState, timingDifficulty);
+            }
             npc.stateMachine.nextDecisionTime = minT + random01(npc.rngState) * (maxT - minT);
             npcPickMs = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - npcPickStart).count();
@@ -2293,6 +2555,18 @@ void NpcSystem::updateOneNpc(Npc& npc, const World& world,
     if (!inMirrorPhase)
     {
         computeStateMovement(npc, moveDir, jump, dash, attack, safeDt);
+    }
+
+    // Hot actor-state boundary: when the module opted in this tick, its
+    // movement/attack decision replaces the legacy state output. The navigator
+    // may still refine the route (host mechanism) after this point.
+    if (npc.moduleDecisionActive)
+    {
+        moveDir = npc.moduleMoveDir;
+        jump = npc.moduleJump;
+        dash = npc.moduleDash;
+        attack = npc.moduleAttack;
+        npc.moduleDecisionActive = false;
     }
 
     // ── Goal -> navigation -> movement ──────────────────────────────

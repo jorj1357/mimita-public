@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <unordered_map>
@@ -25,6 +26,8 @@
 #include "world/world.h"
 #include "npc/npc-internal.h"
 #include "npc/npc-difficulty-config.h"
+#include "hot-reload/module-host.h"
+#include "modules/api/npc-behavior-api.h"
 
 namespace {
 
@@ -237,9 +240,9 @@ bool NpcCombat::rayCapsule(const glm::vec3& origin, const glm::vec3& dir,
     return false;
 }
 
-glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir)
+glm::vec3 NpcCombat::applyAimError(const Npc& npc, glm::vec3 aimDir,
+                                   float errorDeg)
 {
-    float errorDeg = effectiveAimErrorDegrees(npc);
     float maxErrorRad = glm::radians(errorDeg);
     if (maxErrorRad > 0.0001f) {
         float theta = random01(const_cast<Npc&>(npc).rngState) * glm::two_pi<float>();
@@ -268,6 +271,23 @@ static float computeFireAggression(const Npc& npc)
     return glm::clamp(base + lowHealth + closeTarget + recentlyHit + visible, 0.0f, 1.0f);
 }
 
+static const char* fireReasonName(std::uint32_t reason)
+{
+    using namespace mimita_npc_behavior;
+    switch (reason) {
+    case FIRE_REASON_TARGET_DEAD: return "target_dead";
+    case FIRE_REASON_COOLDOWN: return "cooldown";
+    case FIRE_REASON_NO_WEAPON: return "no_weapon";
+    case FIRE_REASON_RANGE: return "range_cap";
+    case FIRE_REASON_NO_AMMO: return "no_ammo";
+    case FIRE_REASON_START_RELOAD: return "start_reload";
+    case FIRE_REASON_RELOADING: return "reloading";
+    case FIRE_REASON_MAGAZINE_EMPTY: return "magazine_empty";
+    case FIRE_REASON_NO_LOS: return "no_line_of_sight";
+    default: return "module_block";
+    }
+}
+
 bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
 {
     // Never fire at a dead/unconscious target. Stops the post-death shot/sound
@@ -278,12 +298,6 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
     }
 
     const int hpBeforeShot = player.currentHp;
-
-    if (npc.attackCooldown > 0.0f)
-    {
-        emitFireBlocked(npc, "cooldown");
-        return false;
-    }
 
     float dist = npc.sensors.targetDistance;
 
@@ -305,48 +319,124 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         npc.id, npc.body.equippedWeaponId.c_str(), def->id.c_str(),
         (int)def->behaviorType, def->pelletCount, def->damage);
 
-    // Range gate is effectively unlimited so an NPC never idles purely because
-    // a target is far away. The hitscan/projectile itself still has its own
-    // weapon range, so damage only lands within reach; the NPC always fires.
-    if (npcFiringRangeBlocked(dist))
-    {
-        emitFireBlocked(npc, "range_cap");
-        return false;
-    }
-
     auto& rt = npc.body.weaponRuntimes[def->id];
 
-    // No ammo and no reserve — can't fire
-    if (rt.currentAmmo <= 0 && rt.reserveAmmo <= 0)
-    {
-        emitFireBlocked(npc, "no_ammo");
-        return false;
+    mimita_npc_behavior::FireGateV1 gate{};
+    gate.version = mimita_npc_behavior::ABI_VERSION;
+    gate.structSize = sizeof(gate);
+    gate.actorId = npc.id;
+    gate.tick = 0;
+    auto setFireFlag = [&](mimita_npc_behavior::FireFlag flag) {
+        gate.flags |= static_cast<std::uint32_t>(flag);
+    };
+    setFireFlag(mimita_npc_behavior::FIRE_HAS_TARGET);
+    if (player.currentHp > 0) setFireFlag(mimita_npc_behavior::FIRE_TARGET_ALIVE);
+    if (!npc.cachedLoSBlocked) {
+        setFireFlag(mimita_npc_behavior::FIRE_TARGET_VISIBLE);
+        setFireFlag(mimita_npc_behavior::FIRE_LOS_CLEAR);
     }
+    if (npc.attackCooldown <= 0.0f) setFireFlag(mimita_npc_behavior::FIRE_COOLDOWN_READY);
+    setFireFlag(mimita_npc_behavior::FIRE_HAS_WEAPON);
+    if (npcFiringRangeBlocked(dist)) setFireFlag(mimita_npc_behavior::FIRE_RANGE_BLOCKED);
+    if (rt.currentAmmo > 0 || rt.reserveAmmo > 0)
+        setFireFlag(mimita_npc_behavior::FIRE_HAS_AMMO_OR_RESERVE);
+    if (rt.currentAmmo <= 0) setFireFlag(mimita_npc_behavior::FIRE_MAGAZINE_EMPTY);
+    if (rt.isReloading) setFireFlag(mimita_npc_behavior::FIRE_RELOADING);
+    gate.targetDistance = dist;
+    gate.healthFraction = (float)npc.body.currentHp /
+        (float)std::max(1, npc.body.maxHp);
+    gate.attackCooldown = npc.attackCooldown;
+    gate.reloadTime = def->reloadTime;
+    gate.aggression = computeFireAggression(npc);
+    gate.fireCadenceMultiplier = 1.0f;
+    gate.currentAmmo = (std::uint32_t)std::max(0, rt.currentAmmo);
+    gate.reserveAmmo = (std::uint32_t)std::max(0, rt.reserveAmmo);
+    gate.magazineSize = (std::uint32_t)std::max(0, def->magazineSize);
+    gate.behaviorType = (std::uint32_t)def->behaviorType;
 
-    // Reload if empty
-    if (rt.currentAmmo <= 0 && rt.reserveAmmo > 0 && !rt.isReloading)
+    const bool moduleGate =
+        ModuleHost::instance().npcFireGate(&gate) && gate.outUseModule != 0;
+    if (moduleGate)
     {
-        rt.isReloading = true;
-        rt.reloadTimer = def->reloadTime;
-        Debug::log(Debug::Category::NpcCombat,
-            "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
-            npc.id, def->id.c_str(), def->reloadTime, rt.currentAmmo, rt.reserveAmmo);
-        emitFireBlocked(npc, "start_reload");
-        return false;
+        static std::unordered_map<std::uint32_t, std::uint32_t> sLoggedGate;
+        auto logged = sLoggedGate.find(npc.id);
+        if (logged == sLoggedGate.end() ||
+            logged->second != gate.outGeneration) {
+            sLoggedGate[npc.id] = gate.outGeneration;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcCombat, StructuredLevel::Important,
+                "npc.fire-gate.module", std::to_string(npc.id),
+                "module-owned fire gate evaluated", 0,
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"allow", gate.outAllow},
+                    {"reason", gate.outReason},
+                    {"generation", gate.outGeneration},
+                    {"current_ammo", gate.currentAmmo},
+                    {"reserve_ammo", gate.reserveAmmo},
+                    {"cooldown", gate.attackCooldown}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        if (!gate.outAllow)
+        {
+            if (gate.outStartReload)
+            {
+                rt.isReloading = true;
+                rt.reloadTimer = def->reloadTime;
+                Debug::log(Debug::Category::NpcCombat,
+                    "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
+                    npc.id, def->id.c_str(), def->reloadTime,
+                    rt.currentAmmo, rt.reserveAmmo);
+            }
+            emitFireBlocked(npc, fireReasonName(gate.outReason));
+            return false;
+        }
     }
-
-    // Currently reloading
-    if (rt.isReloading)
+    else
     {
-        emitFireBlocked(npc, "reloading");
-        return false;
-    }
-
-    // No ammo in magazine
-    if (rt.currentAmmo <= 0)
-    {
-        emitFireBlocked(npc, "magazine_empty");
-        return false;
+        if (npc.attackCooldown > 0.0f)
+        {
+            emitFireBlocked(npc, "cooldown");
+            return false;
+        }
+        // Range gate is effectively unlimited so an NPC never idles purely
+        // because a target is far away; the weapon still applies its own range.
+        if (npcFiringRangeBlocked(dist))
+        {
+            emitFireBlocked(npc, "range_cap");
+            return false;
+        }
+        if (rt.currentAmmo <= 0 && rt.reserveAmmo <= 0)
+        {
+            emitFireBlocked(npc, "no_ammo");
+            return false;
+        }
+        if (rt.currentAmmo <= 0 && rt.reserveAmmo > 0 && !rt.isReloading)
+        {
+            rt.isReloading = true;
+            rt.reloadTimer = def->reloadTime;
+            Debug::log(Debug::Category::NpcCombat,
+                "[NPC RELOAD] npc=%u weapon=%s started reload=%.2fs ammo=%d reserve=%d",
+                npc.id, def->id.c_str(), def->reloadTime, rt.currentAmmo, rt.reserveAmmo);
+            emitFireBlocked(npc, "start_reload");
+            return false;
+        }
+        if (rt.isReloading)
+        {
+            emitFireBlocked(npc, "reloading");
+            return false;
+        }
+        if (rt.currentAmmo <= 0)
+        {
+            emitFireBlocked(npc, "magazine_empty");
+            return false;
+        }
+        // Use cached LOS from updateOneNpc (avoids redundant gather).
+        if (npc.cachedLoSBlocked)
+        {
+            emitFireBlocked(npc, "no_line_of_sight");
+            return false;
+        }
     }
 
     glm::vec3 aimDir;
@@ -357,34 +447,105 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         facingPlanar = glm::vec3(1.0f, 0.0f, 0.0f);
     glm::vec3 npcPos = npc.body.pos + npcMuzzleOffset() + facingPlanar * 0.7f;
 
-    // Use cached LOS from updateOneNpc (avoids redundant gather + triangle loop)
-    if (npc.cachedLoSBlocked)
-    {
-        emitFireBlocked(npc, "no_line_of_sight");
-        return false;
-    }
-
     // The bullet fires where the gun points (the model's smooth facing), tilted
     // up/down to the target's chest, plus a small arcade error cone. The NPC
     // must actually aim its gun at the target to hit; while the gun is still
     // turning, shots go where it points (wide). No snap: the model is not
     // teleported to the shot direction.
-    // Aim point: hitscan uses the perception prediction (small, latency-sized
-    // lead). Projectiles additionally lead by their real travel time so an
-    // elite NPC does not fire at where a moving target used to be.
-    glm::vec3 aimPoint = npc.sensors.predictedTarget;
     const bool projectile = def->projectileSpeed > 0.0f &&
         (def->behaviorType == WeaponBehaviorType::Projectile ||
          def->behaviorType == WeaponBehaviorType::RocketLauncher ||
          def->behaviorType == WeaponBehaviorType::GrenadeLauncher ||
          def->behaviorType == WeaponBehaviorType::Godball);
+
+    mimita_npc_behavior::AimPolicyV1 aimRequest{};
+    aimRequest.version = mimita_npc_behavior::ABI_VERSION;
+    aimRequest.structSize = sizeof(aimRequest);
+    aimRequest.actorId = npc.id;
+    aimRequest.tick = 0;
+    aimRequest.flags = static_cast<std::uint32_t>(
+        mimita_npc_behavior::AIM_HAS_TARGET);
     if (projectile) {
-        const float travel = dist / std::max(1.0f, def->projectileSpeed);
-        const float extraLead = npc.behavior.active && npc.behavior.aimLeadSeconds > 0.0f
-            ? npc.behavior.aimLeadSeconds : 0.0f;
-        aimPoint = npc.sensors.targetPos +
-            npc.sensors.targetVel * (travel + extraLead);
+        aimRequest.flags |= static_cast<std::uint32_t>(
+            mimita_npc_behavior::AIM_PROJECTILE);
     }
+    if (npcDiffSettings.forceHit) {
+        aimRequest.flags |= static_cast<std::uint32_t>(
+            mimita_npc_behavior::AIM_FORCE_HIT);
+    }
+    aimRequest.selfPos[0] = npcPos.x;
+    aimRequest.selfPos[1] = npcPos.y;
+    aimRequest.selfPos[2] = npcPos.z;
+    aimRequest.selfFacing[0] = facingPlanar.x;
+    aimRequest.selfFacing[1] = facingPlanar.y;
+    aimRequest.selfFacing[2] = facingPlanar.z;
+    aimRequest.targetPos[0] = npc.sensors.targetPos.x;
+    aimRequest.targetPos[1] = npc.sensors.targetPos.y;
+    aimRequest.targetPos[2] = npc.sensors.targetPos.z;
+    aimRequest.targetVel[0] = npc.sensors.targetVel.x;
+    aimRequest.targetVel[1] = npc.sensors.targetVel.y;
+    aimRequest.targetVel[2] = npc.sensors.targetVel.z;
+    aimRequest.predictedTarget[0] = npc.sensors.predictedTarget.x;
+    aimRequest.predictedTarget[1] = npc.sensors.predictedTarget.y;
+    aimRequest.predictedTarget[2] = npc.sensors.predictedTarget.z;
+    aimRequest.targetDistance = dist;
+    aimRequest.projectileSpeed = def->projectileSpeed;
+    aimRequest.aimLeadSeconds =
+        npc.behavior.active && npc.behavior.aimLeadSeconds > 0.0f
+            ? npc.behavior.aimLeadSeconds : 0.0f;
+    aimRequest.difficulty01 = difficulty01(npc.difficulty);
+    aimRequest.baseAimErrorDeg = npcDiffSettings.maxAngularErrorDegrees;
+    aimRequest.profileAimErrorDeg =
+        npc.behavior.active && npc.behavior.aimErrorDeg >= 0.0f
+            ? npc.behavior.aimErrorDeg : -1.0f;
+    aimRequest.difficultyErrorScale = npcDiffSettings.difficultyErrorScale;
+    aimRequest.forceHit = npcDiffSettings.forceHit ? 1u : 0u;
+
+    const bool moduleAim =
+        ModuleHost::instance().npcAimPolicy(&aimRequest) &&
+        aimRequest.outUseModule != 0;
+    if (moduleAim) {
+        static std::unordered_map<std::uint32_t, std::uint32_t> sLoggedAim;
+        auto logged = sLoggedAim.find(npc.id);
+        if (logged == sLoggedAim.end() ||
+            logged->second != aimRequest.outGeneration) {
+            sLoggedAim[npc.id] = aimRequest.outGeneration;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcCombat, StructuredLevel::Important,
+                "npc.aim-policy.module", std::to_string(npc.id),
+                "module-owned aim policy evaluated", 0,
+                nlohmann::json{
+                    {"actor", npc.id},
+                    {"generation", aimRequest.outGeneration},
+                    {"projectile", projectile},
+                    {"error_deg", aimRequest.outErrorDeg},
+                    {"target_distance", dist},
+                    {"aim_lead_seconds", aimRequest.aimLeadSeconds}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
+    glm::vec3 aimPoint;
+    float errorDeg;
+    if (moduleAim) {
+        aimPoint = glm::vec3(aimRequest.outAimPoint[0],
+                             aimRequest.outAimPoint[1],
+                             aimRequest.outAimPoint[2]);
+        errorDeg = aimRequest.outErrorDeg;
+    } else {
+        // Fallback: hitscan uses the perception prediction; projectiles lead
+        // by their real travel time plus the profile lead.
+        aimPoint = npc.sensors.predictedTarget;
+        if (projectile) {
+            const float travel = dist / std::max(1.0f, def->projectileSpeed);
+            const float extraLead =
+                npc.behavior.active && npc.behavior.aimLeadSeconds > 0.0f
+                    ? npc.behavior.aimLeadSeconds : 0.0f;
+            aimPoint = npc.sensors.targetPos +
+                npc.sensors.targetVel * (travel + extraLead);
+        }
+        errorDeg = NpcCombat::effectiveAimErrorDegrees(npc);
+    }
+
     glm::vec3 toChest = (aimPoint + glm::vec3(0.0f, 0.0f, 0.8f)) - npcPos;
     float horizDist = glm::length(glm::vec2(toChest.x, toChest.y));
     float pitch = horizDist > 0.001f ? std::atan2(toChest.z, horizDist) : 0.0f;
@@ -392,10 +553,9 @@ bool NpcCombat::tryFire(Npc& npc, const World& world, Player& player, float dt)
         facingPlanar.x * std::cos(pitch),
         facingPlanar.y * std::cos(pitch),
         std::sin(pitch)));
-    aimDir = NpcCombat::applyAimError(npc, aimDir);
+    aimDir = NpcCombat::applyAimError(npc, aimDir, errorDeg);
 
     glm::vec3 idealDir = glm::normalize(npc.sensors.targetPos + glm::vec3(0.0f, 0.0f, 0.8f) - npcPos);
-    float errorDeg = NpcCombat::effectiveAimErrorDegrees(npc);
     float angleDiff = glm::degrees(std::acos(std::clamp(glm::dot(idealDir, aimDir), -1.0f, 1.0f)));
 
     DBG(NpcCombat, "id=%u dist=%.1fm maxError=%.1fdeg "
