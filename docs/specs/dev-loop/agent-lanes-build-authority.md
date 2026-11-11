@@ -9,6 +9,24 @@
 
 # Agent lanes and build authority
 
+## Current repository policy (2026-11-11)
+
+For normal agent development, the user has selected one shared checkout:
+`C:\mimita-v9`, its current branch, the root dev-loop, and the same EXE.
+Mode 2 lanes and additional worktrees/branches are not the active workflow.
+Do not create, enter, build, or clean up a lane unless the user explicitly
+asks to resume lane work. Existing lane directories and their edits are
+preserved; this policy change does not delete or merge them.
+
+Agents may edit and inspect the shared checkout, but must not run build scripts
+or direct compiler commands. The existing root dev-loop remains the only live
+build/run authority. Use its status and control interface, and serialize shared
+source edits so two agents do not overwrite each other. This policy changes
+where work happens; it does not itself make EXE-owned C++ hot-reloadable.
+
+The detailed mode 2 procedure below is retained as historical/reference
+documentation and is superseded by this current policy for ordinary work.
+
 **Implementation status (2026-11-09):** the repository-local paths are enforced.
 `devscripts/agent-lane.py` places worktrees under `.dev/agent-lanes/`,
 `devscripts/build_scheduler.py` defaults to `.dev/build-scheduler/`, the dev-loop

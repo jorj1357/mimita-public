@@ -1,15 +1,301 @@
-// 2026-11-07
-/* purpose
-* define the desired native C++ module build/reload path and migration target
-* distinguish current source behavior from architecture goals and historical notes
-* define state ownership, safe activation, generation identity, and proof
-* Audience: gameplay, engine, tools, and AI contributors changing C++ behavior
-* DOES NOT define individual gameplay formulas or visual design
-* DOES NOT promise that native C++ source runs without compilation
-* DOES NOT claim all C++ is currently reloadable
-*/
+2026 11 11 1507 jorj
 
-# MiMITA Live Modules and Hot Reload
+"Finish the inventory. Map each .cpp to its dependencies and identify which code owns persistent state, active callbacks, and background jobs. python devscripts/module_ownership.py already checks current source ownership; extend that inventory for the planned runtime and game targets.
+
+Install the runtime/game boundary. Add a resident runtime.dll for persistent state and coordination, and a whole-game lifecycle API for game.dll. The EXE becomes a small launcher. The current EXE does not have this boundary, so installing it requires one initial EXE build. After that, ordinary game-code edits should not relink the EXE.
+
+Prove one NPC path. Keep the same NPCs and world alive, edit NPC C++, build a candidate game.dll, and activate it in the same process. Prove state continuity, compile-failure fallback, rollback, and journal evidence.
+
+Expand the default source ownership. Once that proof works, route ordinary implementation .cpp files to one game.dll. Split the DLL only if measured link times make that useful.
+
+Add the one-command Python loop. A command such as python devscripts/live.py should watch saves, snapshot inputs, compile affected files in the background, and notify the runtime when a candidate is ready. It can automate the workflow; it cannot create the missing runtime boundary by itself."
+
+do this all
+
+# MiMITA Continuous Live Development
+
+*Purpose: define the intended C++ edit-to-live loop, its architecture, migration phases, and proof requirements.*
+*Audience: engine, gameplay, tools, build, and AI contributors.*
+*This document distinguishes desired behavior from source-checked implementation status. It does not claim universal hot reload before the acceptance evidence exists.*
+
+## 1. Goal and user-visible contract
+
+Keep the same MiMITA process, world, players, NPCs, vehicles, documents, and connected sessions alive while ordinary C++ implementation changes become active. The intended loop is:
+
+```text
+edit a game-owned .cpp and save
+  -> detect the completed save automatically
+  -> compile affected translation units and link a candidate game.dll in the background
+  -> validate the candidate and any state migration
+  -> activate at a safe simulation/render boundary
+  -> keep the same process and runtime state
+  -> inspect the exact process events.jsonl and exercise the behavior
+```
+
+For ordinary game-code edits, “no build” means no manual build request, no full EXE relink, and no process restart. Native C++ still has to compile and link to machine code. Save-to-live latency must be measured by stage; it is not assumed to be one second or constant for every edit.
+
+The first implementation target is one large `game.dll`. Split it into multiple code DLLs only if measured compile/link/activation times, ownership, or failure isolation justify the extra boundaries. A source file is not its own DLL.
+
+## 2. Agreed architecture
+
+### 2.1 Bootstrap EXE
+
+The EXE is the small process entry point. It parses launch mode and starts the resident runtime. It does not contain ordinary game behavior. The same process remains open while game-code generations change.
+
+### 2.2 Resident `runtime.dll`
+
+`runtime.dll` stays loaded across `game.dll` generations. It owns persistent runtime data and generic services, including entity/component records, player and NPC state, world/session state, connected-peer state, active-generation agreement, and safe activation coordination.
+
+The runtime data store is schema-aware and generic. It does not require one fixed C++ struct to gain a new member every time game code adds a field. Runtime records have entity/type identity and schema version; new game generations provide migration/default logic for records they own. Migrations are validated and committed atomically with code activation. A failed migration leaves the old generation and old state active. The hot per-tick path must use batched or direct stable-handle access; it must not perform reflective field-name lookups for every NPC field on every tick. Schema conversion happens at generation activation, not continuously during play.
+
+Keep the runtime's own editable behavior small. Changeable NPC, networking, rendering, physics, gameplay, GUI, and tool logic belongs in `game.dll`, even when it reads or changes runtime-owned data. The runtime API should be broad and versioned so ordinary behavior and component-field changes do not require a runtime rebuild. Only a genuinely missing stable mechanism or incompatible runtime ABI is a runtime boundary change; this is minimized, not claimed impossible forever.
+
+### 2.3 Replaceable `game.dll`
+
+Initially, ordinary game implementation `.cpp` files are assigned to one `game.dll` by default. The DLL receives a versioned runtime function table and stable handles; it owns behavior, not persistent world/session data.
+
+Function signatures and C++ types inside `game.dll` may change freely when the affected code is rebuilt together. Across the runtime/game boundary, use a versioned ABI with size/version fields, plain data, handles, and explicit ownership. Do not pass STL containers, exceptions, allocator-owned objects, or pointers to short-lived game-DLL memory across that boundary.
+
+Adding or changing a field such as position, velocity, or health is a game-owned schema change plus migration. It should not alter a fixed runtime C++ struct. The runtime preserves the record; the candidate game generation interprets or migrates it.
+
+### 2.4 Multiplayer and graphics
+
+The runtime preserves connection/session state and coordinates candidate-generation identity, compatibility, readiness, and activation timing. Changeable multiplayer rules live in `game.dll`. Use a generic versioned message/event envelope where possible so new behavior does not require a new runtime wire mechanism. A protocol feature that needs a capability the runtime does not provide is a deliberate boundary change.
+
+Native-code sharing is for explicitly trusted development sessions. The host approves the candidate and all participating processes report compatible code/schema generations before activation. Public servers do not execute arbitrary client-supplied native code.
+
+A live renderer/backend change may recreate the graphics device and re-upload resources while keeping the process and runtime state alive. It is limited to backends supported by the current platform, driver, and build. A backend unavailable on the current OS or hardware cannot be enabled by hot reload alone.
+
+## 3. Save, build, validate, activate
+
+The eventual human/AI entry point should be one command, proposed as:
+
+```powershell
+python devscripts/live.py
+```
+
+This command does not exist yet. It should start or attach to the canonical live-development coordinator; it must not require fixed sleeps or repeated manual status polling.
+
+The coordinator must:
+
+1. Watch the source inventory and debounce completed saves. Resolve each changed `.cpp` and header to the game or runtime owner. Ordinary game `.cpp` files default to `game.dll`; runtime/bootstrap files are explicitly listed. Ambiguous ownership is an error, never a silent cold-build fallback.
+2. Snapshot consistent inputs. Compile only affected translation units using discovered header dependencies and a compiler cache, then link an immutable candidate DLL. If files change during a build, finish the captured snapshot and queue one newest follow-up.
+3. Report source hash, changed files, compile/link/validation/activation times, diagnostics, and generation identity through events and the process journal. Compile errors leave the active generation untouched.
+4. Validate ABI, dependency set, code hash, required runtime capabilities, and state-schema migration before activation.
+5. Stop new calls into the old generation at a safe boundary and wait for active calls, callbacks, and jobs to finish. Activate gameplay at the fixed 60 Hz tick boundary and rendering/tool code at its owning safe boundary. Never unload code while a thread or stored callback can still execute it.
+6. Keep the prior generation available for rollback. A failed candidate or a runtime regression must not discard the current world/session state.
+
+This pipeline can automatically assign and build files after ownership rules exist. It cannot safely convert arbitrary code merely by changing a filename or compiler flag: source that directly owns persistent state, relies on EXE globals, or leaves callbacks/jobs pointing into a DLL needs a one-time boundary adaptation.
+
+### 3.1 Concrete first-implementation runbook
+
+This is the implementation order for the first working save-to-live loop. It deliberately starts in the existing repository with one NPC behavior slice; it does not require a new repository or a complete field-by-field audit of all 594 current source files before work can begin. Keep world loading on its current path during this proof. Expand the audit as each later source batch is moved.
+
+#### Step 0: reuse what already exists and identify the seam
+
+Before changing code, re-check the source inventory and these current implementation touchpoints:
+
+| Existing path | Current job | How the pilot uses it |
+|---|---|---|
+| `build_game_dll.py` | Builds the existing focused game DLL source list. | Extend or replace its focused list for the pilot; do not mistake it for a whole-game build. |
+| `src/hot-reload/game-api.h` | Declares the existing narrow `GameAPI` and export. | Evolve toward the versioned lifecycle/function-table boundary while preserving compatibility until the replacement is proven. |
+| `src/hot-reload/hot-reload-system.cpp` | Loads candidates and currently triggers its focused DLL build synchronously. | Keep candidate loading/rollback ownership here or move it to the chosen resident owner; remove synchronous compilation from the game tick. |
+| `src/engine/engine-tick-setup.cpp` | Calls the current reload check during engine setup/tick work. | Keep only a cheap notification/activation check at the safe boundary; never wait for compilation here. |
+| `devscripts/module_ownership.py` and its catalog | Audits source-to-target ownership for existing subsystem modules and the EXE. | Extend the single ownership map to distinguish bootstrap, runtime, and game targets and reject duplicate/unassigned production owners. |
+| `devscripts/cpp-source-inventory.py` | Records source/dependency and planned ownership evidence. | Keep it as the generated audit/report; the build coordinator should consume the canonical owner manifest rather than infer ownership from filenames. |
+
+The current source-checked snapshot says the focused DLL contains `src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`, while 582 sources are assigned to the EXE and 12 to subsystem modules. Re-check before implementation because the counts can change. The existing effect/debug API proves only that narrow feature path, not arbitrary C++ reload.
+
+Use the mapped server NPC path as the first trace: `runServer -> simulateSharedNpcs -> NpcSystem::updateOneWithTarget -> NpcSystem::updateOneNpc`. The existing functions pass live C++ references such as `Npc&`, `World&`, `Player&`, and `NpcMovementContext&`; those references are not the permanent cross-DLL interface. Inspect the actual field reads/writes and choose the smallest behavior decision that can be represented as plain input/output data. If the selected decision needs world information, request it through a bounded runtime capability rather than passing a `World&` through the ABI.
+
+#### Step 1: establish the persistent-data rule
+
+- `runtime.dll` is resident code plus the owner of live process-memory records. The DLL file itself is not where changing player/NPC positions are stored.
+- The runtime allocates and owns the state that must survive game-code replacement: for the pilot, at minimum the NPC's stable ID and the exact fields used by the selected behavior, plus whatever world/session identity is needed to prove the same test is continuing.
+- Implement only the runtime record types and fields needed by this pilot, while following the generic entity/type/schema-version rules above. Do not migrate every entity/component or build a reflective field database before the first reload works.
+- `game.dll` owns replaceable behavior and temporary implementation state. Do not put the only copy of NPC position, health, identity, or session state in a game-DLL global, static, heap allocation, callback closure, or thread-local object.
+- The first proof is code-only: keep the state schema unchanged. This isolates “did code reload preserve the NPC?” from “did a data migration work?” Add field/schema migration after code-only replacement passes.
+- If the process exits, runtime-owned memory also exits unless separately saved. Persistent-across-process saves remain a separate data-saving path; this plan promises continuity across a game-code DLL switch, not automatic disk persistence.
+
+#### Step 2: install the one-time stable loader boundary
+
+1. Define the minimum versioned C ABI needed for startup, querying runtime capabilities, game-module initialization, one NPC decision call, quiescence, and shutdown. Put the authoritative declaration in one shared header. Include ABI version and structure-size fields.
+2. Pass fixed-width values, plain structs, byte spans, and stable entity handles across the boundary. Keep C++ classes, STL containers, references, exceptions, RTTI-dependent objects, and allocator ownership on one side.
+3. Make the EXE load `runtime.dll`; make the resident runtime load and validate the candidate `game.dll`. Keep a stable function table in the runtime and call the active generation through it.
+4. Create or update the agent-lane host target so this boundary is installed by one intentional initial EXE/runtime build. This is the expected cold boundary. After it is running, a game-owned `.cpp` edit must only compile/link a game DLL generation; it must not relink the EXE.
+5. Retain current subsystem modules and the current world-loading implementation while the pilot is built. Do not copy the entire repository into a new repo or attempt to move world loading in the same boundary change.
+
+Before proceeding, start the game once and confirm that the runtime and a trivial game module load, report their ABI/generation, reject an invalid candidate, and leave the process open. This verifies the loader before NPC behavior is mixed in.
+
+#### Step 3: move one NPC decision behind the ABI
+
+1. Keep the current server tick, entity lookup, world loading, physics/collision, and authoritative application in their existing owners for this proof.
+2. At the chosen NPC decision seam, build a bounded `NpcBehaviorInputV1` from runtime-owned data. Include stable entity IDs and only the values that decision needs. Add an output struct containing the decision/result; do not return pointers into game-DLL memory.
+3. If the decision needs a world/nav query, expose a versioned runtime capability that accepts stable handles and plain query/result structs. The runtime performs the query with current host-owned data; the game module chooses behavior from the result.
+4. Validate the returned action in the authoritative owner, apply it to the same NPC record, and keep fixed-tick physics rules unchanged.
+5. Initially leave the NPC object and complex systems in their current representation. Adapt only the selected decision seam. Later migrations can move whole subsystems once their ownership is clear.
+
+The intended shape is:
+
+```text
+resident server tick looks up NPC state
+  -> runtime makes plain versioned input
+  -> game.dll computes NPC behavior
+  -> runtime/server validates and applies result
+  -> same NPC record continues to next tick
+```
+
+This is one ABI adaptation at the behavior boundary, not a wrapper added to every C++ function. Calls wholly inside `game.dll` remain ordinary C++ calls.
+
+#### Step 4: make save trigger an asynchronous candidate build
+
+- Use one watcher/coordinator owned by the existing dev-loop/module build system. `python devscripts/live.py` is the proposed human-facing entry point, but it does not exist yet. Do not start an independent competing build loop.
+- Watch only the canonical source manifest and dependency graph. A saved game-owned source defaults to `game.dll`; runtime, bootstrap, tool, test, and data owners are explicit. Unknown ownership stops with a useful error instead of silently requesting an EXE build.
+- On save, capture an immutable source revision (hash and changed paths). Compile only affected translation units plus required dependents, then link a candidate DLL in the approved repository-local lane path. Continue the running simulation while the build runs.
+- Coalesce multiple saves while a build is active: finish the captured revision, then build the newest coherent revision. Never compile a file while it is only partially saved, and never publish a DLL assembled from mixed revisions.
+- Publish to a unique immutable path such as `game-g000042.dll`; Windows cannot safely overwrite the currently loaded DLL. Validate exports, ABI version/size, runtime capabilities, dependency/source hash, and any state migration before notifying the runtime.
+- Keep game-thread work bounded: compilation/linking belongs to the background coordinator. The runtime receives a ready-candidate event and activates only at the owning safe point.
+- Report detected revision, affected translation units, compile/link/validation durations, candidate path/hash, and errors. The old generation remains active when a stage fails.
+
+#### Step 5: activate, prove continuity, and roll back safely
+
+At a fixed simulation boundary for NPC/gameplay code:
+
+1. Stop dispatching new NPC calls to the old generation.
+2. Unregister callbacks owned by that generation and prevent new jobs from entering it.
+3. Drain/cancel and join old-generation jobs; wait for in-flight function calls to return.
+4. Prepare and validate any required state migration without overwriting the live records.
+5. Atomically change the runtime's active function table/generation.
+6. Run a bounded first-call health check. On success, commit migration and mark the generation active. On failure, restore the old function table and old state.
+7. Unload the old DLL only when no call, callback, job, function pointer, or return address can still enter it. Keep its immutable file available for rollback.
+
+Record the EXE process ID, map/mode, NPC ID, NPC position/health before and after, active DLL generation, changed source revision, activation event, behavior result, frame/tick measurements, and exact `events.jsonl`. For a no-op/failed candidate, assert the previous generation remains active. For rollback, assert world/NPC data is unchanged.
+
+#### Step 6: use an explicit proof ladder
+
+| Proof | Edit or failure | Required observation in the same process |
+|---|---|---|
+| Loader proof | Valid trivial game generation | ABI accepted; generation changes; EXE PID stays the same. |
+| NPC behavior proof | Change one NPC decision constant/math expression | Same NPC ID/world remains; visible behavior changes; no EXE link/restart. |
+| Compile-failure proof | Introduce a temporary syntax error | Build reports source diagnostic; old generation and world continue. |
+| Recovery proof | Fix the syntax error and save | Newer valid generation activates in the existing process. |
+| State-layout proof | Later, add one versioned NPC field | Migration/default is validated; existing NPC continuity and rollback are proven. |
+| Rollback proof | Activate a valid but deliberately worse behavior generation | Prior code is restored; runtime-owned NPC/world state is retained. |
+
+Do not combine the first code reload with a schema change, world-loader move, networking protocol change, or renderer-device rewrite. Prove each boundary separately so a failure has one likely cause.
+
+#### Step 7: expand from one behavior to all eligible game sources
+
+After the NPC proof passes, update the canonical ownership manifest so ordinary production implementation files under `src/**/*.cpp` default to `game.dll`. For each batch:
+
+1. Select a dependency-connected group from the inventory and name its current owner, planned owner, persistent state, jobs/callbacks, and external resources.
+2. Move ownership in the build manifest and remove each moved source from its old EXE/subsystem target in the same change. Enforce exactly one link owner.
+3. Resolve EXE globals and static data by moving durable state into runtime records, converting constants to immutable module data, or making temporary state generation-scoped and resettable.
+4. Keep third-party implementations, build tools, tests, bootstrap/process/device/transport mechanisms, and runtime/ABI mechanisms in their correct targets; list each exception and reason. Do not report these as ordinary game sources.
+5. Build/activate through the lane workflow and exercise the real feature. Record source counts, compile/link/activation times, state continuity, and journal evidence for each batch.
+6. Move existing subsystem-module sources into the single `game.dll` target only after their behavior and dependencies are accounted for. Avoid duplicate copies in both subsystem modules and `game.dll`.
+
+Start with low-fanout behavior leaves. Defer central orchestration, shared headers, world loading, renderer/audio/physics resources, networking transport, and public packet/ABI code until the relevant state and lifecycle owners are mapped. The target remains one large `game.dll` until measured link time, ownership isolation, or rollback requirements justify splitting it.
+
+## 4. Migration phases
+
+### Phase 0 — Inventory and baseline
+
+- Inventory every active `src/**/*.cpp`, header dependency, current build target, global/static state owner, thread/job callback, and network message boundary.
+- Record current EXE, narrow DLL, and subsystem-module ownership. Separate source facts from proposed future ownership.
+- Measure current build stages and representative save-to-evidence cycles: save detection, affected translation units, compile, link, validation, activation, and first decisive journal event.
+- Capture an FPS/server-tick baseline on named hardware and workload. Do not assume an NPC triangle-scan problem until the journal or profiler identifies it.
+
+**Pilot-start gate:** enough evidence for the selected NPC path, not a full understanding of the whole repo: exact source/call path; fields read/written by the chosen decision; current owner of those fields; callbacks/jobs that can execute that path; existing loader/target; one repeatable map/workload; and an authorized route for the boundary build/runtime run. This lets Phase 1 begin while the wider inventory continues.
+
+**Full Phase 0 exit evidence:** complete, overlap-free inventory; exact representative build/save-to-activation timings; named-hardware runtime baseline; and known state/loader boundaries for the sources planned for migration. Do not mark all of Phase 0 complete based only on the pilot-start gate.
+
+### Phase 1 — Runtime/game boundary and NPC vertical proof
+
+- Install the resident runtime state store, versioned component records, stable game ABI, generation validation, safe call/job quiescence, and rollback path.
+- Move one complete NPC decision/update path into the pilot `game.dll` target. Keep the same NPC identities, positions, health, world, and connected session in runtime-owned state.
+- Save a change to NPC movement code. Build and activate it without relinking the EXE or restarting the process. Confirm that the NPC behavior changes and the pre-existing NPC/world state remains.
+- Record the candidate generation and the relevant before/after NPC, movement, frame-time, and server-tick evidence in the exact running process journal.
+
+**Exit evidence:** real same-process activation, state continuity, compile error keeps the old version active, and rollback restores the prior behavior without losing world state.
+
+### Phase 2 — Default whole-game DLL ownership and scale the one-command workflow
+
+- Change build ownership so ordinary game implementation `.cpp` files are routed to `game.dll` by default; retain only the minimal bootstrap and generic resident runtime implementation in their stable targets.
+- Make the source inventory/catalog, build scripts, dependency scanner, and watcher agree on one owner per file. Preserve existing module code during transition; merge it into the pilot target or keep it explicitly catalogued until migration is verified.
+- Generalize the pilot watcher/coordinator to every game-owned source. Use background incremental compilation and immutable candidate generations; do not make the game thread compile synchronously.
+- Measure single-`.cpp`, shared-header, and large-link edits. Keep one `game.dll` while timings meet agreed targets; split only when measurements show the large link is the bottleneck.
+
+**Exit evidence:** every active implementation source is classified, ordinary saved game-source edits build only the affected game objects plus a new DLL link, and no EXE relink or restart occurs.
+
+### Phase 3 — Use the live loop to restore performance
+
+- Use owner-level performance events to identify the actual expensive NPC/system path. Distinguish render frame cost, GPU/device wait, fixed-tick cost, allocations, and background work.
+- Change the identified C++ implementation in `game.dll`; save, compile, activate, exercise the real workload, and compare the same measurements. Repeat without restarting the process.
+- Treat “NPC scans every map triangle every tick” as a hypothesis until code-path and runtime evidence confirm it. If confirmed, compare a spatially bounded query against the existing path while preserving collision correctness and the cached broadphase rule.
+
+**FPS target:** at least 99.99% of rendered frames meet the 240 FPS budget (frame time at or below 4.17 ms), with worst frame and p50/p95/p99/p99.99 reported separately. State workload, duration, hardware, and frame count. Do not substitute average FPS for the frame-budget result.
+
+**Server target:** maintain the authoritative fixed 60 Hz tick and report missed/over-budget ticks separately. A hot reload must not change tick semantics. At least 99.99% of legitimate, server-consistent client hit claims should be accepted over the full measured test session; report the valid-claim count and false-rejection count. Invalid claims must still be rejected.
+
+### Phase 4 — Multiplayer, world editing, and more subsystems
+
+- Prove one host/server plus multiple local clients. Preserve connections and game state through a C++ edit; require compatible code/schema hashes and coordinated activation. Test mismatched or disconnected clients and rollback.
+- Add and migrate component fields while existing entities remain alive. Prove defaults, migration, rejection of incompatible schemas, and rollback.
+- Expand live implementation coverage to movement/collision, weapons, vehicles, rendering, GUI, animation, audio, and creation tools. Keep each subsystem's fixed-tick, authority, and resource-lifetime rules.
+- Treat maps, music, animation, video, and documents as synchronized data operations; they should not need C++ compilation for ordinary content edits.
+- For renderer backend changes, prove same-process device recreation and resource recovery on each supported platform/backend pair. Do not claim unsupported drivers/backends or simultaneous mixed backends without separate evidence.
+
+### Phase 5 — Collaborative authoring and durable operations
+
+- Use one canonical project/build coordinator with isolated revisions, conflict detection, and per-user undo history; do not destroy or overwrite existing agent-lane work before verifying and preserving it.
+- Synchronize trusted native-code proposals only after host approval and compatibility validation. Synchronize creative document/map/media edits as data operations.
+- Record who proposed, approved, built, activated, and rolled back each code generation. Public clients never run unapproved native code.
+
+## 5. Latency goals and reporting
+
+The ideal is about one second for a tiny warm edit. The practical goal is to make a routine single-`.cpp` edit take seconds and avoid routine waits over one minute. These are targets to measure, not guarantees for every source change. A widely included header or a large DLL link may take longer and must be reported separately.
+
+For every trial, report:
+
+- changed files and dependency fan-out;
+- warm/cold compiler-cache state and toolchain;
+- compile time, DLL link time, validation/migration time, and save-to-activation time;
+- active/previous generation and process identity;
+- runtime state continuity and behavior evidence;
+- the exact `events.jsonl` path and owner-level event;
+- whether any stable runtime/ABI boundary remained.
+
+Do not use `Start-Sleep` as a build-completion detector. The coordinator should notify on completion and expose a machine-readable state/event stream.
+
+## 6. Current source status (2026-11-11)
+
+Source inspection on 2026-11-11 found 594 `src/**/*.cpp` files. The existing `devscripts/module_ownership.py` audit assigns 12 sources to subsystem modules and 582 to the EXE. `build_game_dll.py` builds only `src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`; `HotReloadSystem` watches that focused source list and invokes its build synchronously. The current `GameMemory`/`GameAPI` supports a small effect/debug feature, not a complete game/runtime boundary. No whole-game `game.dll` or persistent-state `runtime.dll` implementation was verified.
+
+The repository also has a subsystem `ModuleHost` and catalog. These are existing migration assets, not evidence that all `.cpp` files are hot. During the transition, keep current module builds working until their sources and behavior have been proven in the `game.dll` path. Do not bulk-reassign files in the catalog and claim they are reloadable without a successful runtime proof.
+
+## 7. Acceptance gates
+
+Do not claim the target is implemented until the relevant running-game evidence exists:
+
+1. Saving NPC movement C++ produces a candidate game generation without an EXE relink or process restart.
+2. The same NPC IDs, positions, health, world, client/server session, and editor documents survive activation.
+3. The changed NPC behavior is observed in play and in the correct process's `events.jsonl`; a generation-loaded event alone is insufficient.
+4. A compile error, ABI mismatch, failed schema migration, and runtime regression each leave the last-known-good generation and state usable; rollback is observed in the same process.
+5. The source inventory assigns every active implementation file exactly once to bootstrap/runtime/game ownership; a saved ordinary game `.cpp` is detected automatically.
+6. Latency evidence includes build stages and generation identity; no fixed sleep is needed.
+7. The 240 FPS frame-budget and 60 Hz server-tick goals are measured under stated workload and hardware, separately from code-reload success.
+8. Multiplayer activation is coordinated across trusted connected clients; incompatible clients are held on the prior generation or safely disconnected, never silently divergent.
+9. GUI/rendering, creative-data collaboration, and supported backend recreation each receive their own real runtime proof before being marked complete.
+
+A build proves compilation/linking. An activation event proves code was selected. Only exercising the behavior and observing the resulting state proves runtime behavior. Visual/gameplay acceptance remains a separate human judgment.
+
+## 8. Historical and implementation-specific notes
+
+The remaining sections document the existing subsystem-module implementation, past module proofs, inventories, and JSON hot reload. They remain useful evidence. Where they describe subsystem DLLs as the final target, an EXE-owned kernel, or map-editor-first migration order, the architecture and phases above supersede that older target. Do not treat an old module activation or dated inventory as proof of the new `runtime.dll` + whole-game `game.dll` design.
+# Existing subsystem-module implementation and dated evidence
+
+> **Status:** The material below records the earlier subsystem-module design and implementation evidence. It is retained so existing code ownership and successful module proofs are not lost. The current desired architecture, phase order, and acceptance rules are in sections 1–7 above and take precedence wherever the text below describes modules or an EXE-owned kernel as the final target.
 
 ## Actor rendering migration (2026-11-08)
 
@@ -30,7 +316,7 @@ stable draw-plan interface, leaving as little policy in the host as practical. A
 save is hot only for behavior already behind this boundary; changes to the
 host adapter or public ABI still require an EXE build.
 
-## 1. Goal and plain-language contract
+## Legacy module target: goal and plain-language contract
 
 The goal is to let contributors change gameplay and tool behavior while the
 same MiMITA process remains open. The ordinary workflow is:
@@ -131,7 +417,7 @@ The ideal cold list is therefore only process/device/transport/packet-schema/
 document/loader/public-ABI changes. Everything else is a hot subsystem module
 with versioned plain-data inputs, module-owned state, and host validation.
 
-## 2. Module and kernel responsibilities
+## Legacy module target: module and kernel responsibilities
 
 ### 2.1 Module ownership
 
@@ -206,7 +492,7 @@ source saves stay fast and safe. Moving more of that surface behind module
 capabilities should be done incrementally with parity and runtime evidence, not
 as an unverified rewrite.
 
-## 3. Save-to-live build and activation contract
+## Legacy module target: save-to-live build and activation contract
 
 1. Detect a completed save, debounce editor writes, and resolve every changed
    path to its module and dependency set. Unsaved keystrokes do not start a
@@ -313,7 +599,7 @@ the existing `infinite-worldgen` and `map-editor` policy modules.
 `movement-validation.cpp` own correction and validation mechanisms. This is a
 trace inventory, not an instruction to move every listed file into a DLL.
 
-## 4. Generations, multiplayer, and journal evidence
+## Existing module-generation evidence
 
 Each process has one run identity and an active generation map keyed by module
 name. The run manifest records the EXE build identity and, for every loaded
@@ -364,7 +650,7 @@ running process and journal, confirms the new module generation activated,
 exercises the real behavior, and checks the owner-level inputs, decision, and
 result. Visual or gameplay acceptance is reported separately.
 
-## 5. First proof: map-editor transform and save
+## Existing map-editor module proof
 
 The first module goal is to make all map-editor-specific C++ behavior
 reloadable as one `map-editor` module. Related editor files are grouped into
@@ -529,7 +815,7 @@ remains a separate claim; an unreached face is `NOT_COVERED`.
 This six-face scenario verifies the hot rendering path. It does not claim that an
 unspecified existing missing-face bug has been diagnosed or fixed.
 
-## 6. All-systems migration inventory
+## Historical subsystem-module inventory
 
 The target is a source-backed inventory for every active subsystem. It records
 the current native-code owner, current hot-reload status, intended module
@@ -554,7 +840,7 @@ Before promoting any row to implemented, trace the active source owner and
 prove its real module build, load, behavior, and journal. A module is one
 cohesive subsystem target, not one DLL per `.cpp` file.
 
-## 7. Timing baseline and improvement measures
+## Historical module timing baseline
 
 Do not promise zero seconds or invent a speedup. Before setting numerical
 targets, measure representative edit-to-evidence cycles and report their
@@ -577,7 +863,7 @@ targets only after these measurements. The aim is to make a normal module edit
 approach the compile/link/activation floor, then reduce repeated human setup and
 evidence-search time through automatic testing and journal correlation.
 
-## 8. Acceptance gates
+## Existing module-system acceptance gates
 
 The module workflow is acceptable only when all of the following are shown in
 the real game process:

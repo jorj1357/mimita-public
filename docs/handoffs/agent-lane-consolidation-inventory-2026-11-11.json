@@ -1,0 +1,2063 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-11-11T22:14:13+00:00",
+  "root": {
+    "path": "C:\\mimita-v9",
+    "branch": "checkpoint/pre-live-kernel-20261108",
+    "head": "9bfbaeff2ceb82b4133ef7400933c466b1b0956f",
+    "dirty_paths": [
+      "AGENTS.md",
+      "config/accounts/default.json",
+      "config/analytics.json",
+      "config/audio/music-settings.json",
+      "config/video-settings.json",
+      "docs/architecture/live-development/self-contained-workspace.md",
+      "docs/specs/dev-loop/agent-lanes-build-authority.md",
+      "docs/specs/dev-loop/dev-loop.md",
+      "docs/specs/hotreload/hotreload.md",
+      "docs/specs/open-gameplay-issues.md",
+      ".codex/",
+      "build-identity.json",
+      "devscripts/cpp-source-inventory.py",
+      "docs/changelog/2026-11-11/",
+      "\"docs/gold/2026 11 11 1607 gpt 6 luna medium quote.md\"",
+      "docs/handoffs/cpp-source-inventory.json"
+    ]
+  },
+  "summary": {
+    "present_repo_local_lane_worktrees": 11,
+    "missing_prunable_worktrees": 7,
+    "lane_branches": 17,
+    "lanes_with_uncommitted_work": 7,
+    "paths_touched_by_multiple_lane_worktrees": 94,
+    "root_dirty_paths_overlapping_lane_work": 10
+  },
+  "lane_branches": [
+    "codex/agent-build-boundary-20261108 37ce5958 Agent lane baseline snapshot",
+    "codex/agent-cache-proof-20261109 2b2bd8ca Agent lane baseline snapshot",
+    "codex/agent-grenade-collision-20261105 6acf629f Agent lane baseline snapshot",
+    "codex/agent-hot-npc-net-20261109 a30f1d52 Agent lane baseline snapshot",
+    "codex/agent-hot-session-20261109 75436e45 fix: avoid network event id collision (movement validation 710)",
+    "codex/agent-infinite-xxity-20261109 fc674c3d Agent lane baseline snapshot",
+    "codex/agent-integrate-all-20261109 388e2e04 build: stop tracking generated pch dependency output",
+    "codex/agent-map-editor-glb-boundary-20261109 a1b38256 Agent lane baseline snapshot",
+    "codex/agent-network-session-diagnostics-20261105 6acf629f Agent lane baseline snapshot",
+    "codex/agent-npc-collision-hot-20261108 32a7939e Agent lane baseline snapshot",
+    "codex/agent-one-exe-npc-hooks-20261111 9bfbaeff feat: install hot NPC hooks into one host",
+    "codex/agent-reconnect-lane-local-20261109 dcbf37a4 dev-loop: separate detailed timing dashboard",
+    "codex/agent-vehicle-arena-20261105 0888303a Agent lane baseline snapshot",
+    "codex/agent-verify-repo-local-20261109 2fa7178c merge: integrate reviewed agent lanes into pre-live kernel",
+    "codex/agent-warm-cache-20261109 93d98ee6 Agent lane baseline snapshot",
+    "codex/agent-world-projects-20261105 535f586d Agent lane baseline snapshot",
+    "codex/agent-world-streaming-nav-reconnect-20261108 dc7dea21 Agent lane baseline snapshot"
+  ],
+  "worktrees": [
+    {
+      "worktree_path": ".dev/agent-lanes/cache-proof-20261109",
+      "state": "present",
+      "branch": "codex/agent-cache-proof-20261109",
+      "head": "2b2bd8cacbe3eb178fff4533441f6a5c7e94fd1f",
+      "merge_base_with_root": "8dfb1a4c86a06de8905ddbb68f5bcb0ed8ea4b1e",
+      "commits_behind_root": 5,
+      "commits_ahead_of_root": 1,
+      "committed_changed_file_count": 38,
+      "committed_changed_files": [
+        "build.py",
+        "config/analytics.json",
+        "config/modules/modules.json",
+        "devscripts/dev-loop.py",
+        "devscripts/dev_loop/build.py",
+        "devscripts/module-build-worker.py",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/architecture/live-development/self-contained-workspace.md",
+        "docs/architecture/player-npc-systems/npc-movement.md",
+        "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+        "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+        "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+        "docs/regressions/performance/README.md",
+        "docs/regressions/performance/build-time-REG-2026-11-08.md",
+        "docs/specs/dev-loop/agent-lanes-build-authority.md",
+        "docs/specs/dev-loop/build-time-observability.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/networking/networking.md",
+        "docs/specs/npc-behavior/npc-behavior.md",
+        "docs/specs/open-gameplay-issues.md",
+        "src/engine/engine-tick-net.cpp",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/modules/api/npc-perception-api.h",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/packets.h",
+        "src/network/server-packets.cpp",
+        "src/network/server.cpp",
+        "src/npc/npc-perception-module.cpp",
+        "src/npc/npc-perception.cpp",
+        "src/npc/npc-perception.h",
+        "src/npc/npc-world-query.cpp",
+        "src/npc/npc-world-query.h",
+        "src/npc/npc.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "2b2bd8cacbe3eb178fff4533441f6a5c7e94fd1f",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "build.py",
+            "config/analytics.json",
+            "config/modules/modules.json",
+            "devscripts/dev-loop.py",
+            "devscripts/dev_loop/build.py",
+            "devscripts/module-build-worker.py",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/architecture/live-development/self-contained-workspace.md",
+            "docs/architecture/player-npc-systems/npc-movement.md",
+            "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+            "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+            "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+            "docs/regressions/performance/README.md",
+            "docs/regressions/performance/build-time-REG-2026-11-08.md",
+            "docs/specs/dev-loop/agent-lanes-build-authority.md",
+            "docs/specs/dev-loop/build-time-observability.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/networking/networking.md",
+            "docs/specs/npc-behavior/npc-behavior.md",
+            "docs/specs/open-gameplay-issues.md",
+            "src/engine/engine-tick-net.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/packets.h",
+            "src/network/server-packets.cpp",
+            "src/network/server.cpp",
+            "src/npc/npc-perception-module.cpp",
+            "src/npc/npc-perception.cpp",
+            "src/npc/npc-perception.h",
+            "src/npc/npc-world-query.cpp",
+            "src/npc/npc-world-query.h",
+            "src/npc/npc.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "build.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/cli.py"
+        }
+      ],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      "state": "present",
+      "branch": "codex/hot-net-npc-promote-20261109",
+      "head": "f03a1ea574b0bdc79ccb8314bed85607a219627a",
+      "merge_base_with_root": "5681e370b5a41923e99a641c22dc8f54446add2d",
+      "commits_behind_root": 3,
+      "commits_ahead_of_root": 3,
+      "committed_changed_file_count": 69,
+      "committed_changed_files": [
+        "assets/maps/infinite_xxity.glb",
+        "config/analytics.json",
+        "config/gamemode-good-maps.json",
+        "config/gamemodes/connected_world.json",
+        "config/maps/infinite_xxity.json",
+        "config/modules/modules.json",
+        "config/movement/movement-source.json",
+        "config/onlinemodes.json",
+        "config/server-presets.json",
+        "config/worldgen/chunks/city_block_small.json",
+        "config/worldgen/chunks/city_block_tall.json",
+        "config/worldgen/chunks/city_park.json",
+        "config/worldgen/chunks/city_plaza.json",
+        "config/worldgen/chunks/city_road_corner.json",
+        "config/worldgen/chunks/city_road_cross.json",
+        "config/worldgen/chunks/city_road_straight.json",
+        "config/worldgen/chunks/city_road_t.json",
+        "config/worldgen/infinite_xxity.json",
+        "devscripts/dev-launch-modes.json",
+        "devscripts/dev-loop.py",
+        "devscripts/scenarios/infinite_xxity_blocks_collision_v1.json",
+        "devscripts/scenarios/infinite_xxity_connectors_v1.json",
+        "devscripts/scenarios/infinite_xxity_load_v1.json",
+        "devscripts/scenarios/infinite_xxity_radius_live_v1.json",
+        "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+        "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/open-gameplay-issues.md",
+        "docs/specs/procedural-infinite-world/procedural-infinite-world.md",
+        "src/audio/music-manager.cpp",
+        "src/engine/engine-tick-net.cpp",
+        "src/engine/engine-tick-state.cpp",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/map/map-authored-geometry.cpp",
+        "src/map/map-geometry-module.cpp",
+        "src/map/map-glb-authored.cpp",
+        "src/map/map-loader-gltf-nodes.cpp",
+        "src/mapeditor/map-editor-commands.cpp",
+        "src/mapeditor/map-editor-module.cpp",
+        "src/mapeditor/map-editor.cpp",
+        "src/mapeditor/map-editor.h",
+        "src/modules/api/map-editor-api.h",
+        "src/modules/api/map-geometry-api.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/modules/api/network-session-api.h",
+        "src/modules/api/npc-behavior-api.h",
+        "src/modules/api/npc-perception-api.h",
+        "src/network/movement-validation.cpp",
+        "src/network/multiplayer-packets.cpp",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/network-session-module.cpp",
+        "src/network/packets.h",
+        "src/network/reconnect-visuals.cpp",
+        "src/network/server-npcs.cpp",
+        "src/network/server-world.cpp",
+        "src/network/wire/join.h",
+        "src/network/wire/protocol.h",
+        "src/npc/npc-behavior-module.cpp",
+        "src/npc/npc.cpp",
+        "src/npc/npc.h",
+        "src/procedural/infinite-world-runtime.cpp",
+        "src/world/streamed-world-layer.cpp",
+        "src/world/world-gltf-loader.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "f03a1ea574b0bdc79ccb8314bed85607a219627a",
+          "subject": "docs: record network event id collision resolution",
+          "files": [
+            "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md"
+          ]
+        },
+        {
+          "sha": "bb3767e9d7b723fdc9f29bb6c564769deaed0093",
+          "subject": "feat: hot network session, NPC actor policy, map-sync verdict, audio stall fix",
+          "files": [
+            "config/modules/modules.json",
+            "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md",
+            "src/audio/music-manager.cpp",
+            "src/engine/engine-tick-net.cpp",
+            "src/engine/engine-tick-state.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/network-session-api.h",
+            "src/modules/api/npc-behavior-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-packets.cpp",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/network-session-module.cpp",
+            "src/network/packets.h",
+            "src/network/reconnect-visuals.cpp",
+            "src/network/server-npcs.cpp",
+            "src/network/wire/join.h",
+            "src/network/wire/protocol.h",
+            "src/npc/npc-behavior-module.cpp",
+            "src/npc/npc.cpp",
+            "src/npc/npc.h"
+          ]
+        },
+        {
+          "sha": "71eff0fb293d77b950c2ee0b00ff4305f308993d",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "assets/maps/infinite_xxity.glb",
+            "config/analytics.json",
+            "config/gamemode-good-maps.json",
+            "config/gamemodes/connected_world.json",
+            "config/maps/infinite_xxity.json",
+            "config/modules/modules.json",
+            "config/movement/movement-source.json",
+            "config/onlinemodes.json",
+            "config/server-presets.json",
+            "config/worldgen/chunks/city_block_small.json",
+            "config/worldgen/chunks/city_block_tall.json",
+            "config/worldgen/chunks/city_park.json",
+            "config/worldgen/chunks/city_plaza.json",
+            "config/worldgen/chunks/city_road_corner.json",
+            "config/worldgen/chunks/city_road_cross.json",
+            "config/worldgen/chunks/city_road_straight.json",
+            "config/worldgen/chunks/city_road_t.json",
+            "config/worldgen/infinite_xxity.json",
+            "devscripts/dev-launch-modes.json",
+            "devscripts/dev-loop.py",
+            "devscripts/scenarios/infinite_xxity_blocks_collision_v1.json",
+            "devscripts/scenarios/infinite_xxity_connectors_v1.json",
+            "devscripts/scenarios/infinite_xxity_load_v1.json",
+            "devscripts/scenarios/infinite_xxity_radius_live_v1.json",
+            "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/open-gameplay-issues.md",
+            "docs/specs/procedural-infinite-world/procedural-infinite-world.md",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/map/map-authored-geometry.cpp",
+            "src/map/map-geometry-module.cpp",
+            "src/map/map-glb-authored.cpp",
+            "src/map/map-loader-gltf-nodes.cpp",
+            "src/mapeditor/map-editor-commands.cpp",
+            "src/mapeditor/map-editor-module.cpp",
+            "src/mapeditor/map-editor.cpp",
+            "src/mapeditor/map-editor.h",
+            "src/modules/api/map-editor-api.h",
+            "src/modules/api/map-geometry-api.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/network/movement-validation.cpp",
+            "src/network/multiplayer-packets.cpp",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/server-world.cpp",
+            "src/procedural/infinite-world-runtime.cpp",
+            "src/world/streamed-world-layer.cpp",
+            "src/world/world-gltf-loader.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": false,
+      "working_tree_paths": [],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/hot-npc-net-20261109",
+      "state": "present",
+      "branch": "codex/agent-hot-npc-net-20261109",
+      "head": "a30f1d5229db1bd8e57f98a9b7977a9591f66b7a",
+      "merge_base_with_root": "8dfb1a4c86a06de8905ddbb68f5bcb0ed8ea4b1e",
+      "commits_behind_root": 5,
+      "commits_ahead_of_root": 1,
+      "committed_changed_file_count": 31,
+      "committed_changed_files": [
+        "config/analytics.json",
+        "config/modules/modules.json",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/architecture/player-npc-systems/npc-movement.md",
+        "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+        "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+        "docs/regressions/performance/README.md",
+        "docs/regressions/performance/build-time-REG-2026-11-08.md",
+        "docs/specs/dev-loop/agent-lanes-build-authority.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/networking/networking.md",
+        "docs/specs/npc-behavior/npc-behavior.md",
+        "docs/specs/open-gameplay-issues.md",
+        "src/engine/engine-tick-net.cpp",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/modules/api/npc-perception-api.h",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/packets.h",
+        "src/network/server-packets.cpp",
+        "src/network/server.cpp",
+        "src/npc/npc-perception-module.cpp",
+        "src/npc/npc-perception.cpp",
+        "src/npc/npc-perception.h",
+        "src/npc/npc-world-query.cpp",
+        "src/npc/npc-world-query.h",
+        "src/npc/npc.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "a30f1d5229db1bd8e57f98a9b7977a9591f66b7a",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "config/analytics.json",
+            "config/modules/modules.json",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/architecture/player-npc-systems/npc-movement.md",
+            "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+            "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+            "docs/regressions/performance/README.md",
+            "docs/regressions/performance/build-time-REG-2026-11-08.md",
+            "docs/specs/dev-loop/agent-lanes-build-authority.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/networking/networking.md",
+            "docs/specs/npc-behavior/npc-behavior.md",
+            "docs/specs/open-gameplay-issues.md",
+            "src/engine/engine-tick-net.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/packets.h",
+            "src/network/server-packets.cpp",
+            "src/network/server.cpp",
+            "src/npc/npc-perception-module.cpp",
+            "src/npc/npc-perception.cpp",
+            "src/npc/npc-perception.h",
+            "src/npc/npc-world-query.cpp",
+            "src/npc/npc-world-query.h",
+            "src/npc/npc.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "build.py"
+        },
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/build.py"
+        },
+        {
+          "status": " M",
+          "path": "src/network/server.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/npc/npc.cpp"
+        }
+      ],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/hot-session-20261109",
+      "state": "present",
+      "branch": "codex/agent-hot-session-20261109",
+      "head": "75436e453e04055c3aeb76dc0bd3d0a6cced3dfc",
+      "merge_base_with_root": "8dfb1a4c86a06de8905ddbb68f5bcb0ed8ea4b1e",
+      "commits_behind_root": 5,
+      "commits_ahead_of_root": 3,
+      "committed_changed_file_count": 51,
+      "committed_changed_files": [
+        "build.py",
+        "config/analytics.json",
+        "config/modules/modules.json",
+        "devscripts/dev-loop.py",
+        "devscripts/dev_loop/build.py",
+        "devscripts/module-build-worker.py",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/architecture/live-development/self-contained-workspace.md",
+        "docs/architecture/player-npc-systems/npc-movement.md",
+        "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+        "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+        "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md",
+        "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+        "docs/regressions/performance/README.md",
+        "docs/regressions/performance/build-time-REG-2026-11-08.md",
+        "docs/specs/dev-loop/agent-lanes-build-authority.md",
+        "docs/specs/dev-loop/build-time-observability.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/networking/networking.md",
+        "docs/specs/npc-behavior/npc-behavior.md",
+        "docs/specs/open-gameplay-issues.md",
+        "src/audio/music-manager.cpp",
+        "src/engine/engine-tick-net.cpp",
+        "src/engine/engine-tick-state.cpp",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/modules/api/network-session-api.h",
+        "src/modules/api/npc-behavior-api.h",
+        "src/modules/api/npc-perception-api.h",
+        "src/network/multiplayer-packets.cpp",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/network-session-module.cpp",
+        "src/network/packets.h",
+        "src/network/reconnect-visuals.cpp",
+        "src/network/server-npcs.cpp",
+        "src/network/server-packets.cpp",
+        "src/network/server.cpp",
+        "src/network/wire/join.h",
+        "src/network/wire/protocol.h",
+        "src/npc/npc-behavior-module.cpp",
+        "src/npc/npc-perception-module.cpp",
+        "src/npc/npc-perception.cpp",
+        "src/npc/npc-perception.h",
+        "src/npc/npc-world-query.cpp",
+        "src/npc/npc-world-query.h",
+        "src/npc/npc.cpp",
+        "src/npc/npc.h"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "75436e453e04055c3aeb76dc0bd3d0a6cced3dfc",
+          "subject": "fix: avoid network event id collision (movement validation 710)",
+          "files": [
+            "config/modules/modules.json",
+            "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md",
+            "src/modules/api/module-abi.h"
+          ]
+        },
+        {
+          "sha": "6a50be6f0ed5d462506afe69bbf682b98d422f4c",
+          "subject": "feat: hot network session, NPC actor policy, map-sync verdict, audio stall fix",
+          "files": [
+            "config/modules/modules.json",
+            "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md",
+            "src/audio/music-manager.cpp",
+            "src/engine/engine-tick-net.cpp",
+            "src/engine/engine-tick-state.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/network-session-api.h",
+            "src/modules/api/npc-behavior-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-packets.cpp",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/network-session-module.cpp",
+            "src/network/packets.h",
+            "src/network/reconnect-visuals.cpp",
+            "src/network/server-npcs.cpp",
+            "src/network/wire/join.h",
+            "src/network/wire/protocol.h",
+            "src/npc/npc-behavior-module.cpp",
+            "src/npc/npc.cpp",
+            "src/npc/npc.h"
+          ]
+        },
+        {
+          "sha": "171b573ff3fa5f2499f68351f3b5aa14fc88f60f",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "build.py",
+            "config/analytics.json",
+            "config/modules/modules.json",
+            "devscripts/dev-loop.py",
+            "devscripts/dev_loop/build.py",
+            "devscripts/module-build-worker.py",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/architecture/live-development/self-contained-workspace.md",
+            "docs/architecture/player-npc-systems/npc-movement.md",
+            "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+            "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+            "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+            "docs/regressions/performance/README.md",
+            "docs/regressions/performance/build-time-REG-2026-11-08.md",
+            "docs/specs/dev-loop/agent-lanes-build-authority.md",
+            "docs/specs/dev-loop/build-time-observability.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/networking/networking.md",
+            "docs/specs/npc-behavior/npc-behavior.md",
+            "docs/specs/open-gameplay-issues.md",
+            "src/engine/engine-tick-net.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/packets.h",
+            "src/network/server-packets.cpp",
+            "src/network/server.cpp",
+            "src/npc/npc-perception-module.cpp",
+            "src/npc/npc-perception.cpp",
+            "src/npc/npc-perception.h",
+            "src/npc/npc-world-query.cpp",
+            "src/npc/npc-world-query.h",
+            "src/npc/npc.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "config/accounts/default.json"
+        },
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "config/audio/music-settings.json"
+        },
+        {
+          "status": " M",
+          "path": "config/maps/connected_world.json"
+        },
+        {
+          "status": " M",
+          "path": "config/maps/infinite_cramped.json"
+        },
+        {
+          "status": " M",
+          "path": "config/modules/modules.json"
+        },
+        {
+          "status": " M",
+          "path": "config/movement/movement-source-fast.json"
+        },
+        {
+          "status": " M",
+          "path": "config/movement/movement-source.json"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop-watch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/__init__.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/artifacts.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/cli.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/gui.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/instances.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/launch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/runtime.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/source_identity.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/state.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/status.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/terminal.py"
+        },
+        {
+          "status": " M",
+          "path": "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md"
+        },
+        {
+          "status": " M",
+          "path": "src/audio/music-manager.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/audio/music-manager.h"
+        },
+        {
+          "status": " M",
+          "path": "src/engine/engine-tick-net.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/engine/engine-tick-state.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/hot-reload/module-host.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/hot-reload/module-host.h"
+        },
+        {
+          "status": " M",
+          "path": "src/main.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/map/map-authored-geometry.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/map/map-authored-geometry.h"
+        },
+        {
+          "status": " M",
+          "path": "src/map/map_loader.h"
+        },
+        {
+          "status": " M",
+          "path": "src/modules/api/module-abi.h"
+        },
+        {
+          "status": " M",
+          "path": "src/modules/api/npc-behavior-api.h"
+        },
+        {
+          "status": " M",
+          "path": "src/network/server-npcs.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/npc/npc-behavior-module.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/npc/npc-combat.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/npc/npc-combat.h"
+        },
+        {
+          "status": " M",
+          "path": "src/npc/npc.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/world/world-gltf-loader.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/world/world-gltf-loader.h"
+        },
+        {
+          "status": "??",
+          "path": "src/map/map-loader-debug.cpp"
+        }
+      ],
+      "untracked_path_count": 1
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/infinite-xxity-20261109",
+      "state": "present",
+      "branch": "codex/agent-infinite-xxity-20261109",
+      "head": "fc674c3d4b2b0c5c8dc7e4574f9f47423005df28",
+      "merge_base_with_root": "5681e370b5a41923e99a641c22dc8f54446add2d",
+      "commits_behind_root": 3,
+      "commits_ahead_of_root": 1,
+      "committed_changed_file_count": 51,
+      "committed_changed_files": [
+        "assets/maps/infinite_xxity.glb",
+        "config/analytics.json",
+        "config/gamemode-good-maps.json",
+        "config/gamemodes/connected_world.json",
+        "config/maps/infinite_xxity.json",
+        "config/modules/modules.json",
+        "config/onlinemodes.json",
+        "config/server-presets.json",
+        "config/worldgen/chunks/city_block_small.json",
+        "config/worldgen/chunks/city_block_tall.json",
+        "config/worldgen/chunks/city_park.json",
+        "config/worldgen/chunks/city_plaza.json",
+        "config/worldgen/chunks/city_road_corner.json",
+        "config/worldgen/chunks/city_road_cross.json",
+        "config/worldgen/chunks/city_road_straight.json",
+        "config/worldgen/chunks/city_road_t.json",
+        "config/worldgen/infinite_xxity.json",
+        "devscripts/dev-launch-modes.json",
+        "devscripts/dev-loop.py",
+        "devscripts/scenarios/infinite_xxity_blocks_collision_v1.json",
+        "devscripts/scenarios/infinite_xxity_connectors_v1.json",
+        "devscripts/scenarios/infinite_xxity_load_v1.json",
+        "devscripts/scenarios/infinite_xxity_radius_live_v1.json",
+        "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/procedural-infinite-world/procedural-infinite-world.md",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/map/map-authored-geometry.cpp",
+        "src/map/map-geometry-module.cpp",
+        "src/map/map-glb-authored.cpp",
+        "src/map/map-loader-gltf-nodes.cpp",
+        "src/mapeditor/map-editor-commands.cpp",
+        "src/mapeditor/map-editor-module.cpp",
+        "src/mapeditor/map-editor.cpp",
+        "src/mapeditor/map-editor.h",
+        "src/modules/api/map-editor-api.h",
+        "src/modules/api/map-geometry-api.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/network/movement-validation.cpp",
+        "src/network/multiplayer-packets.cpp",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/server-world.cpp",
+        "src/procedural/infinite-world-runtime.cpp",
+        "src/world/streamed-world-layer.cpp",
+        "src/world/world-gltf-loader.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "fc674c3d4b2b0c5c8dc7e4574f9f47423005df28",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "assets/maps/infinite_xxity.glb",
+            "config/analytics.json",
+            "config/gamemode-good-maps.json",
+            "config/gamemodes/connected_world.json",
+            "config/maps/infinite_xxity.json",
+            "config/modules/modules.json",
+            "config/onlinemodes.json",
+            "config/server-presets.json",
+            "config/worldgen/chunks/city_block_small.json",
+            "config/worldgen/chunks/city_block_tall.json",
+            "config/worldgen/chunks/city_park.json",
+            "config/worldgen/chunks/city_plaza.json",
+            "config/worldgen/chunks/city_road_corner.json",
+            "config/worldgen/chunks/city_road_cross.json",
+            "config/worldgen/chunks/city_road_straight.json",
+            "config/worldgen/chunks/city_road_t.json",
+            "config/worldgen/infinite_xxity.json",
+            "devscripts/dev-launch-modes.json",
+            "devscripts/dev-loop.py",
+            "devscripts/scenarios/infinite_xxity_blocks_collision_v1.json",
+            "devscripts/scenarios/infinite_xxity_connectors_v1.json",
+            "devscripts/scenarios/infinite_xxity_load_v1.json",
+            "devscripts/scenarios/infinite_xxity_radius_live_v1.json",
+            "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/procedural-infinite-world/procedural-infinite-world.md",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/map/map-authored-geometry.cpp",
+            "src/map/map-geometry-module.cpp",
+            "src/map/map-glb-authored.cpp",
+            "src/map/map-loader-gltf-nodes.cpp",
+            "src/mapeditor/map-editor-commands.cpp",
+            "src/mapeditor/map-editor-module.cpp",
+            "src/mapeditor/map-editor.cpp",
+            "src/mapeditor/map-editor.h",
+            "src/modules/api/map-editor-api.h",
+            "src/modules/api/map-geometry-api.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/network/movement-validation.cpp",
+            "src/network/multiplayer-packets.cpp",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/server-world.cpp",
+            "src/procedural/infinite-world-runtime.cpp",
+            "src/world/streamed-world-layer.cpp",
+            "src/world/world-gltf-loader.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "build.py"
+        },
+        {
+          "status": " M",
+          "path": "config/accounts/default.json"
+        },
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "config/maps/infinite_xxity.json"
+        },
+        {
+          "status": " M",
+          "path": "config/worldgen/connected_world.json"
+        },
+        {
+          "status": " M",
+          "path": "config/worldgen/infinite_xxity.json"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop-watch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/__init__.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/artifacts.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/instances.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/launch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/runtime.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/source_identity.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/state.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/status.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/terminal.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/scenarios/infinite_xxity_connectors_v1.json"
+        },
+        {
+          "status": " M",
+          "path": "src/mapeditor/map-editor-commands.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/mapeditor/map-editor.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/mapeditor/map-editor.h"
+        },
+        {
+          "status": " M",
+          "path": "src/modules/api/network-policy-api.h"
+        },
+        {
+          "status": " M",
+          "path": "src/network/movement-validation.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/network/network-policy-module.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/network/server-infinite-collision.cpp"
+        },
+        {
+          "status": " M",
+          "path": "src/procedural/infinite-world-runtime.cpp"
+        },
+        {
+          "status": "??",
+          "path": "devscripts/scenarios/infinite_xxity_damage_v1.json"
+        },
+        {
+          "status": "??",
+          "path": "devscripts/scenarios/infinite_xxity_network_parity_v1.json"
+        }
+      ],
+      "untracked_path_count": 2
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/integrate-all-20261109",
+      "state": "present",
+      "branch": "codex/agent-integrate-all-20261109",
+      "head": "388e2e0450c7b3d90664c17b0f1fa1dab17096a4",
+      "merge_base_with_root": "388e2e0450c7b3d90664c17b0f1fa1dab17096a4",
+      "commits_behind_root": 10,
+      "commits_ahead_of_root": 0,
+      "committed_changed_file_count": 0,
+      "committed_changed_files": [],
+      "commits_not_in_root": [],
+      "working_tree_dirty": false,
+      "working_tree_paths": [],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      "state": "present",
+      "branch": "codex/agent-map-editor-glb-boundary-20261109",
+      "head": "a1b38256b0b16c95d01ebbe065b4893d8d252e1c",
+      "merge_base_with_root": "5681e370b5a41923e99a641c22dc8f54446add2d",
+      "commits_behind_root": 3,
+      "commits_ahead_of_root": 1,
+      "committed_changed_file_count": 22,
+      "committed_changed_files": [
+        "config/modules/modules.json",
+        "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+        "docs/specs/hotreload/hotreload.md",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/map/map-authored-geometry.cpp",
+        "src/map/map-geometry-module.cpp",
+        "src/map/map-loader-gltf-nodes.cpp",
+        "src/mapeditor/map-editor-commands.cpp",
+        "src/mapeditor/map-editor-module.cpp",
+        "src/mapeditor/map-editor.cpp",
+        "src/mapeditor/map-editor.h",
+        "src/modules/api/map-editor-api.h",
+        "src/modules/api/map-geometry-api.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/network/movement-validation.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/server-world.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "a1b38256b0b16c95d01ebbe065b4893d8d252e1c",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "config/modules/modules.json",
+            "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md",
+            "docs/specs/hotreload/hotreload.md",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/map/map-authored-geometry.cpp",
+            "src/map/map-geometry-module.cpp",
+            "src/map/map-loader-gltf-nodes.cpp",
+            "src/mapeditor/map-editor-commands.cpp",
+            "src/mapeditor/map-editor-module.cpp",
+            "src/mapeditor/map-editor.cpp",
+            "src/mapeditor/map-editor.h",
+            "src/modules/api/map-editor-api.h",
+            "src/modules/api/map-geometry-api.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/network/movement-validation.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/server-world.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop-watch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/__init__.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/artifacts.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/instances.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/launch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/runtime.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/source_identity.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/state.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/status.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/terminal.py"
+        },
+        {
+          "status": " M",
+          "path": "src/map/map-geometry-module.cpp"
+        }
+      ],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/one-exe-npc-hooks-20261111",
+      "state": "present",
+      "branch": "codex/agent-one-exe-npc-hooks-20261111",
+      "head": "9bfbaeff2ceb82b4133ef7400933c466b1b0956f",
+      "merge_base_with_root": "9bfbaeff2ceb82b4133ef7400933c466b1b0956f",
+      "commits_behind_root": 0,
+      "commits_ahead_of_root": 0,
+      "committed_changed_file_count": 0,
+      "committed_changed_files": [],
+      "commits_not_in_root": [],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "config/accounts/default.json"
+        },
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "config/audio/music-settings.json"
+        },
+        {
+          "status": " M",
+          "path": "config/video-settings.json"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev-loop-watch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/__init__.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/artifacts.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/instances.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/launch.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/runtime.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/source_identity.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/state.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/status.py"
+        },
+        {
+          "status": " M",
+          "path": "devscripts/dev_loop/terminal.py"
+        }
+      ],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/reconnect-lane-local-20261109",
+      "state": "present",
+      "branch": "codex/agent-reconnect-lane-local-20261109",
+      "head": "dcbf37a405b51460029adf1e36b464299f042a21",
+      "merge_base_with_root": "95c55bd00232e09253f31224e7459c9069eeb702",
+      "commits_behind_root": 18,
+      "commits_ahead_of_root": 3,
+      "committed_changed_file_count": 26,
+      "committed_changed_files": [
+        "AGENTS.md",
+        "build.py",
+        "config/analytics.json",
+        "devscripts/agent-lane.py",
+        "devscripts/build_scheduler.py",
+        "devscripts/dev-loop-dashboard.py",
+        "devscripts/dev-loop.py",
+        "devscripts/dev_loop/build.py",
+        "devscripts/dev_loop/build_timing.py",
+        "devscripts/dev_loop/dashboard_client.py",
+        "devscripts/dev_loop/gui.py",
+        "devscripts/dev_loop/test_build_timing.py",
+        "devscripts/dev_loop/test_dashboard_client.py",
+        "docs/architecture/live-development/live-development.md",
+        "docs/changelog/2026-11-09/20261109_111100-build-time-observability.md",
+        "docs/changelog/2026-11-09/20261109_123400-separate-build-timing-dashboard.md",
+        "docs/changelog/2026-11-09/20261109_151417-agent-repository-local-workspace-policy.md",
+        "docs/operations/build-and-exe/agent-lane-integration-and-pending-validation.md",
+        "docs/operations/build-and-exe/build-and-exe.md",
+        "docs/operations/task-completion/task-completion.md",
+        "docs/specs/debug-logging/debug-logging.md",
+        "docs/specs/dev-loop/agent-lanes-build-authority.md",
+        "docs/specs/dev-loop/dashboard.md",
+        "docs/specs/dev-loop/dev-loop.md",
+        "docs/specs/dev-loop/multi-instance.md",
+        "docs/specs/open-gameplay-issues.md"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "dcbf37a405b51460029adf1e36b464299f042a21",
+          "subject": "dev-loop: separate detailed timing dashboard",
+          "files": [
+            "devscripts/dev-loop-dashboard.py",
+            "devscripts/dev-loop.py",
+            "devscripts/dev_loop/build_timing.py",
+            "devscripts/dev_loop/dashboard_client.py",
+            "devscripts/dev_loop/gui.py",
+            "devscripts/dev_loop/test_dashboard_client.py",
+            "docs/changelog/2026-11-09/20261109_123400-separate-build-timing-dashboard.md",
+            "docs/specs/dev-loop/dashboard.md",
+            "docs/specs/dev-loop/dev-loop.md"
+          ]
+        },
+        {
+          "sha": "8dbf120f40b663d1ef378f0c65c66f57c574c625",
+          "subject": "dev-loop: complete build timing coverage",
+          "files": [
+            "build.py",
+            "devscripts/build_scheduler.py",
+            "devscripts/dev-loop.py",
+            "devscripts/dev_loop/build.py",
+            "devscripts/dev_loop/build_timing.py",
+            "devscripts/dev_loop/gui.py",
+            "devscripts/dev_loop/test_build_timing.py",
+            "docs/changelog/2026-11-09/20261109_111100-build-time-observability.md"
+          ]
+        },
+        {
+          "sha": "6812030fda25513c5a2aef438cb04f3ce5f7a069",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "AGENTS.md",
+            "build.py",
+            "config/analytics.json",
+            "devscripts/agent-lane.py",
+            "devscripts/build_scheduler.py",
+            "devscripts/dev-loop.py",
+            "docs/architecture/live-development/live-development.md",
+            "docs/changelog/2026-11-09/20261109_151417-agent-repository-local-workspace-policy.md",
+            "docs/operations/build-and-exe/agent-lane-integration-and-pending-validation.md",
+            "docs/operations/build-and-exe/build-and-exe.md",
+            "docs/operations/task-completion/task-completion.md",
+            "docs/specs/debug-logging/debug-logging.md",
+            "docs/specs/dev-loop/agent-lanes-build-authority.md",
+            "docs/specs/dev-loop/dev-loop.md",
+            "docs/specs/dev-loop/multi-instance.md",
+            "docs/specs/open-gameplay-issues.md"
+          ]
+        }
+      ],
+      "working_tree_dirty": true,
+      "working_tree_paths": [
+        {
+          "status": " M",
+          "path": "config/analytics.json"
+        },
+        {
+          "status": " M",
+          "path": "src/pch.h.d"
+        }
+      ],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/verify-repo-local-20261109",
+      "state": "present",
+      "branch": "codex/agent-verify-repo-local-20261109",
+      "head": "2fa7178ce94a5d633ec4de55a53ace13c7333305",
+      "merge_base_with_root": "2fa7178ce94a5d633ec4de55a53ace13c7333305",
+      "commits_behind_root": 7,
+      "commits_ahead_of_root": 0,
+      "committed_changed_file_count": 0,
+      "committed_changed_files": [],
+      "commits_not_in_root": [],
+      "working_tree_dirty": false,
+      "working_tree_paths": [],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": ".dev/agent-lanes/warm-cache-20261109",
+      "state": "present",
+      "branch": "codex/agent-warm-cache-20261109",
+      "head": "93d98ee6bdc40facb30c2d653608250978b16e4e",
+      "merge_base_with_root": "8dfb1a4c86a06de8905ddbb68f5bcb0ed8ea4b1e",
+      "commits_behind_root": 5,
+      "commits_ahead_of_root": 1,
+      "committed_changed_file_count": 38,
+      "committed_changed_files": [
+        "build.py",
+        "config/analytics.json",
+        "config/modules/modules.json",
+        "devscripts/dev-loop.py",
+        "devscripts/dev_loop/build.py",
+        "devscripts/module-build-worker.py",
+        "docs/architecture/live-development/hot-kernel.md",
+        "docs/architecture/live-development/module-migration-plan.md",
+        "docs/architecture/live-development/self-contained-workspace.md",
+        "docs/architecture/player-npc-systems/npc-movement.md",
+        "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+        "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+        "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+        "docs/regressions/performance/README.md",
+        "docs/regressions/performance/build-time-REG-2026-11-08.md",
+        "docs/specs/dev-loop/agent-lanes-build-authority.md",
+        "docs/specs/dev-loop/build-time-observability.md",
+        "docs/specs/hotreload/hotreload.md",
+        "docs/specs/networking/networking.md",
+        "docs/specs/npc-behavior/npc-behavior.md",
+        "docs/specs/open-gameplay-issues.md",
+        "src/engine/engine-tick-net.cpp",
+        "src/hot-reload/module-host.cpp",
+        "src/hot-reload/module-host.h",
+        "src/modules/api/module-abi.h",
+        "src/modules/api/network-policy-api.h",
+        "src/modules/api/npc-perception-api.h",
+        "src/network/multiplayer-tick.cpp",
+        "src/network/network-policy-module.cpp",
+        "src/network/packets.h",
+        "src/network/server-packets.cpp",
+        "src/network/server.cpp",
+        "src/npc/npc-perception-module.cpp",
+        "src/npc/npc-perception.cpp",
+        "src/npc/npc-perception.h",
+        "src/npc/npc-world-query.cpp",
+        "src/npc/npc-world-query.h",
+        "src/npc/npc.cpp"
+      ],
+      "commits_not_in_root": [
+        {
+          "sha": "93d98ee6bdc40facb30c2d653608250978b16e4e",
+          "subject": "Agent lane baseline snapshot",
+          "files": [
+            "build.py",
+            "config/analytics.json",
+            "config/modules/modules.json",
+            "devscripts/dev-loop.py",
+            "devscripts/dev_loop/build.py",
+            "devscripts/module-build-worker.py",
+            "docs/architecture/live-development/hot-kernel.md",
+            "docs/architecture/live-development/module-migration-plan.md",
+            "docs/architecture/live-development/self-contained-workspace.md",
+            "docs/architecture/player-npc-systems/npc-movement.md",
+            "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md",
+            "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md",
+            "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md",
+            "docs/regressions/performance/README.md",
+            "docs/regressions/performance/build-time-REG-2026-11-08.md",
+            "docs/specs/dev-loop/agent-lanes-build-authority.md",
+            "docs/specs/dev-loop/build-time-observability.md",
+            "docs/specs/hotreload/hotreload.md",
+            "docs/specs/networking/networking.md",
+            "docs/specs/npc-behavior/npc-behavior.md",
+            "docs/specs/open-gameplay-issues.md",
+            "src/engine/engine-tick-net.cpp",
+            "src/hot-reload/module-host.cpp",
+            "src/hot-reload/module-host.h",
+            "src/modules/api/module-abi.h",
+            "src/modules/api/network-policy-api.h",
+            "src/modules/api/npc-perception-api.h",
+            "src/network/multiplayer-tick.cpp",
+            "src/network/network-policy-module.cpp",
+            "src/network/packets.h",
+            "src/network/server-packets.cpp",
+            "src/network/server.cpp",
+            "src/npc/npc-perception-module.cpp",
+            "src/npc/npc-perception.cpp",
+            "src/npc/npc-perception.h",
+            "src/npc/npc-world-query.cpp",
+            "src/npc/npc-world-query.h",
+            "src/npc/npc.cpp"
+          ]
+        }
+      ],
+      "working_tree_dirty": false,
+      "working_tree_paths": [],
+      "untracked_path_count": 0
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\build-boundary-20261108",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-build-boundary-20261108",
+      "head": "37ce5958709ee3703615fd3b9bf6d5f001b1c365",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\grenade-collision-20261105",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-grenade-collision-20261105",
+      "head": "6acf629f8512f4fec045552ce8f54bc9d6069637",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\network-session-diagnostics-20261105",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-network-session-diagnostics-20261105",
+      "head": "6acf629f8512f4fec045552ce8f54bc9d6069637",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\npc-collision-hot-20261108",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-npc-collision-hot-20261108",
+      "head": "32a7939e4ed605d7ffc4b5bddf632bc5e9d28c36",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\vehicle-arena-20261105",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-vehicle-arena-20261105",
+      "head": "0888303aa53b205552f1846d7a7fc04ed0adc6ad",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\world-projects-20261105",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-world-projects-20261105",
+      "head": "535f586d1b4d0c64bc78eb69a0d6c4983e542ae4",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    },
+    {
+      "worktree_path": "C:\\mimita-v9-agent-lanes\\world-streaming-nav-reconnect-20261108",
+      "state": "missing_prunable",
+      "branch": "refs/heads/codex/agent-world-streaming-nav-reconnect-20261108",
+      "head": "dc7dea21889f84d6a7d7ad1a05d8563c63a39825",
+      "note": "Worktree path is absent; branch ref remains. Uncommitted state cannot be inspected from this path."
+    }
+  ],
+  "lane_path_overlaps": {
+    "docs/architecture/live-development/self-contained-workspace.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/network/network-policy-module.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/engine/engine-tick-net.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/network/packets.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc-world-query.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "devscripts/module-build-worker.py": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "devscripts/dev_loop/build.py": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc-world-query.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc-perception.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc-perception-module.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/dev-loop/build-time-observability.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "build.py": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc-perception.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/modules/api/npc-perception-api.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/architecture/player-npc-systems/npc-movement.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/modules/api/module-abi.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/hot-reload/module-host.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/open-gameplay-issues.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/changelog/2026-11-09/20261109_182915-build-speed-regression-gold-reference.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/dev-loop/agent-lanes-build-authority.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/hotreload/hotreload.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/hot-reload/module-host.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/networking/networking.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/modules/api/network-policy-api.h": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/regressions/performance/README.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/architecture/live-development/hot-kernel.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/network/server-packets.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "devscripts/dev_loop/cli.py": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/network/multiplayer-tick.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/npc/npc.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/architecture/live-development/module-migration-plan.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/regressions/performance/build-time-REG-2026-11-08.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "config/modules/modules.json": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "devscripts/dev-loop.py": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/gold/2026-11-09-build-speed-and-diagnosis-reference.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/changelog/2026-11-09/20261109_193154-build-cache-lane-regression.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/network/server.cpp": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/npc-behavior/npc-behavior.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "config/analytics.json": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "src/mapeditor/map-editor.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/procedural/infinite-world-runtime.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/world/streamed-world-layer.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/map/map-authored-geometry.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "config/worldgen/chunks/city_road_corner.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/worldgen/chunks/city_road_straight.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/network/server-world.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "config/worldgen/chunks/city_block_tall.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/dev-launch-modes.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/gamemodes/connected_world.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/scenarios/map_editor_glb_missing_blocks_v1.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/modules/api/npc-behavior-api.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "config/movement/movement-source.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/map/map-loader-gltf-nodes.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/network/network-session-module.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "assets/maps/infinite_xxity.glb": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/scenarios/infinite_xxity_blocks_collision_v1.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/network/wire/join.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/engine/engine-tick-state.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "docs/specs/procedural-infinite-world/procedural-infinite-world.md": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/modules/api/map-editor-api.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "config/worldgen/chunks/city_block_small.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/scenarios/infinite_xxity_radius_live_v1.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/scenarios/infinite_xxity_load_v1.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/map/map-geometry-module.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "devscripts/scenarios/infinite_xxity_connectors_v1.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/worldgen/chunks/city_road_cross.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/audio/music-manager.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/npc/npc-behavior-module.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/modules/api/map-geometry-api.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "config/worldgen/infinite_xxity.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/network/server-npcs.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/mapeditor/map-editor-module.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/network/movement-validation.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "docs/changelog/2026-11-09/20261109_223437-hot-network-session-build-race-notify-npc.md": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "src/npc/npc.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "config/worldgen/chunks/city_road_t.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/map/map-glb-authored.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/maps/infinite_xxity.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/onlinemodes.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/server-presets.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/mapeditor/map-editor-commands.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/network/wire/protocol.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "config/gamemode-good-maps.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/modules/api/network-session-api.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "docs/changelog/2026-11-09/20261109_164256-map-editor-glb-hot-boundary-net-validation.md": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/network/reconnect-visuals.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109"
+    ],
+    "config/worldgen/chunks/city_park.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/world/world-gltf-loader.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "config/worldgen/chunks/city_plaza.json": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "src/mapeditor/map-editor.h": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109"
+    ],
+    "src/network/multiplayer-packets.cpp": [
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109"
+    ],
+    "devscripts/dev_loop/gui.py": [
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109"
+    ],
+    "config/audio/music-settings.json": [
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111"
+    ],
+    "config/accounts/default.json": [
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111"
+    ]
+  },
+  "root_dirty_overlap": {
+    "AGENTS.md": [
+      ".dev/agent-lanes/reconnect-lane-local-20261109"
+    ],
+    "config/accounts/default.json": [
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111"
+    ],
+    "config/analytics.json": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "config/audio/music-settings.json": [
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111"
+    ],
+    "config/video-settings.json": [
+      ".dev/agent-lanes/one-exe-npc-hooks-20261111"
+    ],
+    "docs/architecture/live-development/self-contained-workspace.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/dev-loop/agent-lanes-build-authority.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/dev-loop/dev-loop.md": [
+      ".dev/agent-lanes/reconnect-lane-local-20261109"
+    ],
+    "docs/specs/hotreload/hotreload.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/infinite-xxity-20261109",
+      ".dev/agent-lanes/map-editor-glb-boundary-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ],
+    "docs/specs/open-gameplay-issues.md": [
+      ".dev/agent-lanes/cache-proof-20261109",
+      ".dev/agent-lanes/hot-net-npc-promote-20261109",
+      ".dev/agent-lanes/hot-npc-net-20261109",
+      ".dev/agent-lanes/hot-session-20261109",
+      ".dev/agent-lanes/reconnect-lane-local-20261109",
+      ".dev/agent-lanes/warm-cache-20261109"
+    ]
+  },
+  "safety_notes": [
+    "Read-only inventory only; no lane, branch, or file was modified or removed.",
+    "Missing old worktree folders cannot reveal uncommitted changes; their branch refs/commits remain available for recovery.",
+    "Present lanes contain commits and/or uncommitted work. Integrate one reviewed change set at a time into the root checkout; do not copy entire directories or merge every lane wholesale.",
+    "Do not remove worktrees until all committed changes are reachable from the root branch and all uncommitted files are committed or archived and reviewed."
+  ]
+}

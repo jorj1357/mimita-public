@@ -6,21 +6,16 @@ Favor deleting code over adding code when both solutions achieve the same result
 
 Read these gates before doing anything else:
 
-0. AGENT BUILD AUTHORITY: An agent edits and observes; it never builds. Agents
-   must not run `build.py`, `build_agent.py`, `buildv2.py`,
-   `module-build-worker.py`, `devloop --request build`, or any direct
-   compiler/`ccache` command. The required target is an isolated mode 2 lane
-   (`devscripts/agent-lane.py create/ensure/status/run`) rooted under this
-   checkout's ignored `.dev/agent-lanes/` directory. Agent-created worktrees,
-   temporary files, caches, scheduler state, builds, and journals must resolve
-   inside the project directory; do not use sibling folders, `%TEMP%`,
-   `%LOCALAPPDATA%`, or another checkout as an agent work area. The lane manager
-   enforces this root and rejects escaping symlinks, junctions, metadata, and
-   scheduler/cache overrides. If an operation cannot stay inside the project,
-   stop and report the blocker instead of falling back outside.
-   The lane dev-loop auto-detects edits and builds. Only a human may authorize
-   an emergency outside-path exception or use
-   `MIMITA_BUILD_OVERRIDE=1`. Read
+0. SHARED CHECKOUT BUILD AUTHORITY: Work in this repository root, on its
+   currently checked-out branch, and use its existing dev-loop and executable.
+   Do not create or use mode 2 lanes, extra worktrees, branches, or a second
+   checkout for normal agent work. Preserve existing lane data; do not delete
+   or merge it as part of an unrelated task. Only one agent should edit shared
+   source files at a time. Agents must not invoke build scripts, direct
+   compiler/`ccache` commands, or a dev-loop build request. For gameplay,
+   source changes are built and run by the existing root dev-loop. Reuse its
+   status/control path rather than starting a competing loop or launching a
+   stale executable. Read
    `docs/specs/dev-loop/agent-lanes-build-authority.md` before any edit.
 
 1. ROUTER CHAIN: This file is not the complete instruction set. Read

@@ -1,0 +1,20 @@
+{
+  "artifact_id": "2026-11-11T15:30:20.831546Z",
+  "build_id": "2026-11-11T15:30:20.831546Z:b48a26749e72ddd9e2bc122a2f0b27f27dc4833175a16485c029e9eacf7b5d27",
+  "created_utc": "2026-11-11T15:30:20.831546Z",
+  "sha256": "b48a26749e72ddd9e2bc122a2f0b27f27dc4833175a16485c029e9eacf7b5d27",
+  "source_generation": 1,
+  "build_mode": "debug",
+  "executable": "C:\\mimita-v9\\.dev\\builds\\2026-11-11T15-30-20.831546Z\\mimita.exe",
+  "source_at_build_start": {
+    "revision": "9bfbaeff2ceb82b4133ef7400933c466b1b0956f",
+    "dirty": true,
+    "worktree_sha256": "e2f10489affea9222575f8b318ba07d51033bb0cd58a3b20e6e46be6d2fdda5f"
+  },
+  "source_at_publish": {
+    "revision": "9bfbaeff2ceb82b4133ef7400933c466b1b0956f",
+    "dirty": true,
+    "worktree_sha256": "e2f10489affea9222575f8b318ba07d51033bb0cd58a3b20e6e46be6d2fdda5f"
+  },
+  "source_changed_during_build": false
+}

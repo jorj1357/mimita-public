@@ -40,6 +40,29 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ### other issues 
 
+2026 11 11 1637 jorj 
+space on disk
+not good
+not good  its just
+idk
+mimita opening inthe backrgound
+for noreason
+eating space
+need o get rid of this 
+itsbeen issue for like a week i think 
+
+2026 11 11 1323
+
+"Current Baseline
+Server first tick 1916.778 ms (npc_ms 1215.419); 17 >100 ms tick stalls observed.
+Client startup still shows a 1593.75 ms State stall; async map-load benefit is not proven in this main host.
+Pre-existing noise: npc-perception host capability 6 unavailable; missing avatar animation JSON files.
+42-NPC clean fixture, 240 FPS target, true server conformance, and Agent 2 packet splits are still pending.
+Next
+Create the 21v21 Payload fixture and start Agent 1 Phase 0: true server tick conformance, client NPC/snapshot diagnostics, and resolve the startup State stall before touching NPC AI performance."
+
+from deepseek v41 flash 1017
+
 2026 11 11 0904 jorj
 
 todo logs folder needs to have 1gb limit total

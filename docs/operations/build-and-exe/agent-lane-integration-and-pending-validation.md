@@ -1,10 +1,46 @@
 # Agent Lane Integration and Pending Validation
 
-Status: the seven legacy lane changes are staged inside this checkout under
-`.dev/agent-lane-imports/<lane-id>/` (the 2026-11-09 archive). Review, compile,
-runtime validation, and stable promotion are in progress. Agents must not
-inspect or write to the old sibling folder; all review and integration work is
-inside `C:\mimita-v9`.
+## Current status (2026-11-11): consolidate into Mode 1
+
+The active workflow is one shared checkout: `C:\mimita-v9`, the current branch,
+its root dev-loop, and its EXE. Do not create or use mode 2 lanes for normal
+agent work. Do not delete lane folders or branch refs as a shortcut.
+
+Read-only inventory found 11 lane worktrees inside `.dev/agent-lanes/`, 7
+registered worktrees whose old folders are missing, and 17 lane branch refs.
+Seven of the 11 present worktrees have uncommitted changes. There are 94 file
+paths touched by more than one lane, and 10 currently dirty root paths overlap
+lane work. `.dev/agent-lane-imports/` does not currently exist. The detailed
+path/commit inventory is
+[`docs/handoffs/agent-lane-consolidation-inventory-2026-11-11.json`](../../handoffs/agent-lane-consolidation-inventory-2026-11-11.json).
+
+The old lane changes are not yet all in the root checkout. Preserve each
+existing worktree and branch while changes are reviewed. Bring work into Mode 1
+one feature-sized change set at a time; do not copy whole lane folders over the
+root or merge every lane at once. For each set, preserve its exact commit IDs,
+save any uncommitted and untracked work, compare against the root's existing
+edits, then apply only the reviewed changes in the root checkout. Validate with
+the root dev-loop before marking the set integrated. The build lock was
+unresolved during the inventory, so integration requiring a build must wait
+until the root dev-loop can build reliably.
+
+Only after every committed change is either integrated or deliberately parked,
+and every dirty/untracked change is integrated or safely archived, can the
+duplicate worktree directories be removed to reclaim disk space. Keep the
+branch refs or an equivalent verified archive until the user explicitly agrees
+that the retained backup is no longer needed. Missing old worktree folders
+cannot reveal whether they had uncommitted files; their surviving refs preserve
+committed history only.
+
+**Historical lane instructions below are not current commands.** They document
+the former integration design and pending runtime checks; use the Mode 1
+procedure above for current work.
+
+---
+
+Historical status from 2026-11-09 said seven legacy lane changes were staged
+under `.dev/agent-lane-imports/<lane-id>/`. That claim is superseded by the
+2026-11-11 inventory above; the directory is absent in the current checkout.
 
 This document is the obvious starting point for:
 

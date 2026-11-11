@@ -9,6 +9,20 @@
 
 # Self-contained workspace
 
+## Current working mode (2026-11-11)
+
+Normal agent work happens in the one shared repository checkout, on its current
+branch, using the existing root dev-loop and EXE. Do not create or use mode 2
+lanes, additional worktrees, branches, or duplicate checkouts unless the user
+explicitly asks to resume that workflow. Keep existing `.dev/agent-lanes/`
+content intact; it is preserved historical/in-progress work, not the active
+workspace. Only one agent should edit shared source files at a time. The root
+dev-loop remains the build/run authority.
+
+The lane-specific instructions later in this document describe the previous
+isolated workflow and are superseded for normal work by this section and
+`docs/specs/dev-loop/agent-lanes-build-authority.md`.
+
 ## Rule
 
 The repository root is the workspace root. Agents must be able to do all normal

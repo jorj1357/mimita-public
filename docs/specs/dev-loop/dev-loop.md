@@ -2728,10 +2728,12 @@ The journal may rotate into sealed `events-NNNN.jsonl` segments plus the active
 ## Agent build modes: 1, 2, and 3
 
 These modes describe who owns source and builds, and how quickly saved code
-can reach a running game. Modes 1 and 2 are available now. Mode 3 is a staged
-direction, not a feature that is fully implemented.
+can reach a running game. The current project workflow is Mode 1: the shared
+checkout. Mode 2 is retired for ordinary agent development by the current
+repository policy. Mode 3 is a staged direction, not a feature that is fully
+implemented.
 
-### Mode 1: shared checkout (available fallback)
+### Mode 1: shared checkout (current workflow)
 
 All work uses the coordinator's checkout, its dev-loop, its build files, and
 its runtime. The dev-loop detects compiler-input changes, groups nearby file
@@ -2742,11 +2744,12 @@ checkout, so agents using it share that build owner and can wait on one another.
 The published executable becomes the launch choice; a running game is not
 automatically replaced by the executable build.
 
-### Mode 2: repository-local agent lanes (mandatory for agents)
+### Mode 2: repository-local agent lanes (historical, not active)
 
-Mode 2 isolated lanes are the required agent workflow. The authoritative rules
-are in [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md). Use
-separate worktrees under the coordinator checkout's ignored
+The following lane procedure is retained as historical reference only. Do not
+use it for normal agent development. The current shared-checkout rule is in
+[`agent-lanes-build-authority.md`](agent-lanes-build-authority.md). The old
+procedure used separate worktrees under the coordinator checkout's ignored
 `.dev/agent-lanes/<lane-id>/` directory. Do not create lane folders beside the
 project or in a user-profile/temp directory. `devscripts/agent-lane.py` enforces
 this root and rejects escaping paths, metadata, symlinks, and junctions. An
@@ -2812,7 +2815,10 @@ integration branch, validates that combined source, and publishes the stable
 executable. This final build contains the reviewed combined revision; individual
 lane artifacts and journals remain available for diagnosis.
 
-## Independent agent worktree lanes
+## Historical: independent agent worktree lanes (not active)
+
+Everything in this section records the former lane workflow. It is not current
+instruction to create or use lanes; follow the shared-checkout policy above.
 
 Agents use separate Git worktrees managed from the coordinator checkout. The
 target path is `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`; this path is
