@@ -175,17 +175,26 @@ Do not set `MIMITA_EXE_NAME` to overwrite a running executable and do not create
 alternate test executables. Never kill a running `mimita*.exe`; a new timestamped
 build is how you get your own executable to test.
 
-## Agent workflow mode 1 and mode 2
+## Agent workflow: Mode 1 shared checkout
 
-Mode 2 is the required agent workflow after repository-local lane support is
-implemented. Each agent gets one isolated lane with its own worktree, `.dev`,
-artifact folder, module builds, run IDs, ports, and journals. Mode 1 remains a
-coordinator/human fallback and is not an agent workflow. Until implementation
-supports the `.dev/agent-lanes/` root, agents must not create or launch lanes.
+Mode 1 is the active workflow for agents and the human coordinator. Everyone
+uses this checkout, its current branch, root dev-loop, build files, and EXE.
+Agents may inspect and edit the shared checkout, but only one agent edits a
+shared source file at a time. Agents do not start builds; the root dev-loop is
+the only build/run authority. Its source watcher may build after a saved
+compiler input changes. C++ DLL migration, not agent lanes, is the route to
+reducing cold EXE builds.
 
-After repo-local lane support is implemented, agents never build. They ensure
-the lane dev-loop is running and read its status. The dev-loop auto-detects
-saved edits.
+Mode 2 lane instructions below are historical reference only. Do not create,
+start, build, merge, or delete a lane as normal work. Preserve existing lane
+worktrees and edits until they have been reviewed and deliberately integrated
+or parked.
+
+### Historical Mode 2 reference — do not run these commands
+
+The former workflow gave each agent an isolated worktree, `.dev` state,
+artifact folder, run IDs, ports, and journals. Its example commands are kept
+below only to explain old lane state; they are not current instructions.
 
 ```text
 python devscripts/agent-lane.py create <lane-id>
@@ -220,7 +229,7 @@ path becomes available only after its implementation is migrated; the human
 coordinator may use the canonical single-checkout dev-loop meanwhile. The
 final reviewed integration still needs a stable build.
 
-## Independent agent lanes and stable promotion
+### Historical: independent agent lanes and stable promotion
 
 After repo-local lane support is implemented, create one isolated worktree per
 agent task under `<coordinator-repo>/.dev/agent-lanes/<lane-id>/`:

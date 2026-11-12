@@ -2,18 +2,21 @@
 """Write a source-backed C++ dependency and ownership inventory.
 
 This is a read-only inventory tool. It never invokes a compiler or changes
-source ownership. Existing GCC/MinGW .d files provide compiler-observed
-dependencies; current #include scanning fills in a present-day project graph
-where no usable .d file exists.
+source ownership. It enumerates every repository .cpp, marks canonical game
+build members and alternate/vendor/tool sources, and records available GCC/
+MinGW .d snapshots plus current include and unload-risk candidates.
 
 Usage:
     python devscripts/cpp-source-inventory.py
     python devscripts/cpp-source-inventory.py --output docs/handoffs/my-inventory.json
+    python devscripts/cpp-source-inventory.py --csv-output docs/handoffs/my-inventory.csv
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
+import csv
 import hashlib
 import json
 import os
@@ -24,12 +27,18 @@ from collections import Counter, defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_VERSION = 2
+SCRIPT_VERSION = 3
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 DEFAULT_OUTPUT = Path("docs/handoffs/cpp-source-inventory.json")
 SOURCE_ROOT = ROOT / "src"
+RECAST_SOURCE_DIRS = [
+    ROOT / "external/recastnavigation/Recast/Source",
+    ROOT / "external/recastnavigation/Detour/Source",
+    ROOT / "external/recastnavigation/DetourTileCache/Source",
+]
+SKIP_CPP_WALK_DIRS = {".git", ".dev", "build", "node_modules", ".venv"}
 
 INCLUDE_DIRS = [
     ROOT / "src",
@@ -75,10 +84,52 @@ def rel(path: Path) -> str | None:
         return None
 
 
+def repository_cpp_sources() -> list[Path]:
+    """Return every repository .cpp while skipping metadata and build output."""
+    found: list[Path] = []
+    for directory, child_dirs, filenames in os.walk(ROOT):
+        child_dirs[:] = [name for name in child_dirs
+                         if name not in SKIP_CPP_WALK_DIRS and not name.startswith(".codex")]
+        for filename in filenames:
+            if filename.lower().endswith(".cpp"):
+                found.append((Path(directory) / filename).resolve())
+    return sorted(set(found))
+
+
+def active_game_cpp_sources(repo_sources: list[Path]) -> set[str]:
+    """C++ translation units selected by the canonical EXE/module build."""
+    from devscripts.module_ownership import exe_source_relpaths
+
+    active = set(exe_source_relpaths(ROOT))
+    for path in repo_sources:
+        path_rel = rel(path)
+        if path_rel and path_rel.startswith("src/") and path_rel.endswith(".cpp"):
+            active.add(path_rel)
+    for source_dir in RECAST_SOURCE_DIRS:
+        if source_dir.is_dir():
+            active.update(rel(path) for path in source_dir.glob("*.cpp") if rel(path))
+    return active
+
+
+def manifold_configured_cpp_sources() -> set[str]:
+    """Read existing Ninja source membership for the prebuilt Manifold library."""
+    manifest = ROOT / "build/manifold-release/build.ninja"
+    if not manifest.is_file():
+        return set()
+    text = manifest.read_text(encoding="utf-8", errors="replace")
+    found = set()
+    for match in re.finditer(r"external/manifold/src/([^\s|]+\.cpp)", text.replace("\\", "/")):
+        source_rel = "external/manifold/src/" + match.group(1)
+        if (ROOT / source_rel).is_file():
+            found.add(source_rel)
+    return found
+
+
 @lru_cache(maxsize=65536)
 def resolve_include(includer: Path, include_text: str) -> Path | None:
     """Resolve an include against source-local and configured build include dirs."""
-    candidate_roots = [includer.parent, *INCLUDE_DIRS]
+    candidate_roots = [includer.parent, *INCLUDE_DIRS,
+                       ROOT / "src/modules/api", ROOT / "include/glm"]
     for base in candidate_roots:
         candidate = base / include_text
         try:
@@ -274,9 +325,9 @@ def normalize_dep_key(token: str | None) -> str:
     value = token.replace("\\", "/").casefold()
     while value.startswith("./"):
         value = value[2:]
-    marker = "/src/"
-    if marker in value:
-        value = "src/" + value.rsplit(marker, 1)[1]
+    root_key = str(ROOT.resolve()).replace("\\", "/").casefold().rstrip("/") + "/"
+    if value.startswith(root_key):
+        value = value[len(root_key):]
     return value
 
 
@@ -321,6 +372,12 @@ def current_owner_label(source_rel: str, exe_sources: set[str],
         return "module:" + str(module["name"])
     if source_rel in exe_sources:
         return "exe"
+    if source_rel.startswith("external/recastnavigation/"):
+        return "vendored:recastnavigation"
+    if source_rel.startswith("external/manifold/src/"):
+        return "vendored:manifold"
+    if source_rel.startswith("external/"):
+        return "repository_only:third_party"
     return "header_or_unmapped"
 
 
@@ -449,7 +506,11 @@ def scan_lifetime_signals(source_texts: dict[str, str], exe_sources: set[str],
     callback_sites = []
     thread_job_sites = []
     for source_rel, raw_text in sorted(source_texts.items()):
-        if not source_rel.startswith("src/"):
+        is_cpp = source_rel.lower().endswith(".cpp")
+        is_project_header = (source_rel.startswith(("src/", "external/")) and
+                             Path(source_rel).suffix.lower() in
+                             (".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp"))
+        if not is_cpp and not is_project_header:
             continue
         text = BLOCK_COMMENT_RE.sub("", raw_text)
         lines = LINE_COMMENT_RE.sub("", text).splitlines()
@@ -584,6 +645,26 @@ def source_loader_boundary(exe_sources: set[str], module_info: dict[str, dict]) 
                                             source_rel, exe_sources, module_info),
                                         "also_in_exe_source_catalog": source_rel in exe_sources})
 
+    cmake_path = ROOT / "CMakeLists.txt"
+    cmake_text = cmake_path.read_text(encoding="utf-8", errors="replace") \
+        if cmake_path.is_file() else ""
+    cmake_sources = []
+    cmake_match = re.search(r"add_library\s*\(\s*mimita-game\s+SHARED(.*?)\)",
+                            cmake_text, re.DOTALL | re.IGNORECASE)
+    if cmake_match:
+        for source in re.findall(r"(?m)^\s*([A-Za-z0-9_./\\-]+\.cpp)\s*$",
+                                 cmake_match.group(1)):
+            source_rel = Path(source.replace("\\", "/")).as_posix()
+            cmake_sources.append({
+                "path": source_rel,
+                "current_catalog_owner": current_owner_label(
+                    source_rel, exe_sources, module_info),
+                "declared_in": "CMakeLists.txt:mimita-game",
+                "canonical_build.py_uses_this_target": False,
+            })
+    manifold_ninja = ROOT / "build/manifold-release/build.ninja"
+    manifold_configured_sources = sorted(manifold_configured_cpp_sources())
+
     def symbol_locations(path_rel: str, symbols: tuple[str, ...]) -> list[dict]:
         path = ROOT / Path(path_rel)
         if not path.is_file():
@@ -605,6 +686,12 @@ def source_loader_boundary(exe_sources: set[str], module_info: dict[str, dict]) 
     return {
         "current_focused_game_dll": "build/mimita-game.dll",
         "focused_game_dll_sources": current_dll_sources,
+        "cmake_declared_game_dll_sources": cmake_sources,
+        "manifold_static_library_configured_sources": manifold_configured_sources,
+        "manifold_source_manifest": (rel(manifold_ninja) if manifold_ninja.is_file() else None),
+        "manifold_source_manifest_mtime_utc": (
+            datetime.fromtimestamp(manifold_ninja.stat().st_mtime, timezone.utc).isoformat()
+            if manifold_ninja.is_file() else None),
         "game_api_version": (re.search(r"MIMITA_GAME_API_VERSION\s*=\s*(\d+)", api_text).group(1)
                               if re.search(r"MIMITA_GAME_API_VERSION\s*=\s*(\d+)", api_text) else None),
         "game_api_fields": block_fields(api_text, "GameAPI"),
@@ -632,10 +719,67 @@ def source_loader_boundary(exe_sources: set[str], module_info: dict[str, dict]) 
         ) if (ROOT / "src" / "runtime").is_dir() else [],
         "runtime_dll_binary_exists": (ROOT / "build" / "runtime.dll").is_file(),
         "whole_game_live_command_exists": (ROOT / "devscripts" / "live.py").is_file(),
-        "interpretation": "Current focused GameAPI/HotReloadSystem and subsystem ModuleHost are migration assets. They do not establish the planned whole-game game.dll plus resident runtime.dll boundary.",
+        "interpretation": "The two-source build_game_dll.py target is the canonical build.py optional DLL path. CMakeLists.txt separately declares a six-source SHARED target but build.py does not invoke it. These narrow targets do not establish the planned whole-game game.dll plus resident runtime.dll boundary.",
         "current_game_api_header": "src/hot-reload/game-api.h",
         "current_loader_header": "src/hot-reload/hot-reload-system.h",
         "watch_and_activation_boundary": "src/engine/engine-tick-setup.cpp",
+    }
+
+
+def mimita_exe_link_input_inventory(exe_sources: set[str],
+                                    recast_sources: set[str],
+                                    module_info: dict[str, dict]) -> dict:
+    """Describe non-C++ translation units, resources, and link inputs from build.py."""
+    build_path = ROOT / "build.py"
+    build_text = build_path.read_text(encoding="utf-8", errors="replace")
+    build_ast = ast.parse(build_text, filename=str(build_path))
+    assignments: dict[str, object] = {}
+    for node in ast.walk(build_ast):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    try:
+                        assignments[target.id] = ast.literal_eval(node.value)
+                    except (ValueError, TypeError):
+                        pass
+    juice_names = assignments.get("juice_sources", [])
+    link_libs = assignments.get("LINK_LIBS", [])
+    if not isinstance(juice_names, list) or not all(isinstance(x, str) for x in juice_names):
+        juice_names = []
+    if not isinstance(link_libs, list) or not all(isinstance(x, str) for x in link_libs):
+        link_libs = []
+    c_sources = ["src/glad.c"] + [f"external/libjuice/src/{name}" for name in juice_names]
+    resource_path = ROOT / "mimita.rc"
+    resource_text = resource_path.read_text(encoding="utf-8", errors="replace") \
+        if resource_path.is_file() else ""
+    icon_match = re.search(r"^\s*\d+\s+ICON\s+\"([^\"]+)\"", resource_text, re.MULTILINE)
+    runtime_sidecars = ["libgcc_s_seh-1.dll", "libstdc++-6.dll",
+                        "libwinpthread-1.dll", "glfw3.dll"]
+    return {
+        "evidence": "Static read of build.py assignments and build flow; compiler/linker was not invoked.",
+        "exe_owned_cpp_sources": sorted(exe_sources),
+        "recast_cpp_sources_linked_into_exe": sorted(recast_sources),
+        "exe_cpp_source_count": len(exe_sources) + len(recast_sources),
+        "subsystem_module_cpp_sources_not_in_exe": sorted(
+            source for source in module_info),
+        "subsystem_module_cpp_source_count": len(module_info),
+        "c_translation_units_compiled_into_exe": c_sources,
+        "c_translation_unit_count": len(c_sources),
+        "resource_script": "mimita.rc",
+        "resource_icon": icon_match.group(1).replace("\\", "/") if icon_match else None,
+        "static_archive_linked_into_exe": "external/manifold-prebuilt/lib/libmanifold.a",
+        "manifold_archive_source_provenance": (
+            "A saved build/manifold-release/build.ninja manifest lists 18 source files; "
+            "its freshness and correspondence to the linked archive are unverified."),
+        "link_libraries": link_libs,
+        "runtime_sidecar_dlls_staged_beside_exe": runtime_sidecars,
+        "precompiled_header": "src/pch.h (forced include during C++ compilation; not a link object)",
+        "limitations": [
+            "System import libraries resolve to OS/toolchain installations and are not repository source files.",
+            "The static Manifold archive is linked, but its current object/source provenance is not verified.",
+            "Runtime sidecar DLLs are loaded beside the executable and are not embedded in mimita.exe.",
+            "This describes build.py's declared link inputs, not a post-link PE import/object inspection.",
+        ],
     }
 
 
@@ -876,19 +1020,52 @@ def existing_build_timing_snapshot() -> dict:
     }
 
 
+def source_owner_resolver():
+    """Optional canonical owner map from devscripts/source_manifest.py."""
+    try:
+        from devscripts.source_manifest import OwnerResolver
+        return OwnerResolver(ROOT)
+    except Exception:  # noqa: BLE001 - inventory must still run without the manifest
+        return None
+
+
+_SOURCE_OWNER_RESOLVER = None
+_SOURCE_OWNER_RESOLVER_LOADED = False
+
+
+def owner_category_for(source_rel: str) -> tuple[str, str]:
+    global _SOURCE_OWNER_RESOLVER, _SOURCE_OWNER_RESOLVER_LOADED
+    if not _SOURCE_OWNER_RESOLVER_LOADED:
+        _SOURCE_OWNER_RESOLVER = source_owner_resolver()
+        _SOURCE_OWNER_RESOLVER_LOADED = True
+    if _SOURCE_OWNER_RESOLVER is None:
+        return ("unresolved", "source manifest unavailable")
+    return _SOURCE_OWNER_RESOLVER.resolve(source_rel)
+
+
 def build_inventory() -> dict:
-    sources = sorted(path.resolve() for path in SOURCE_ROOT.rglob("*.cpp") if path.is_file())
+    sources = repository_cpp_sources()
     source_relpaths = [rel(path) for path in sources]
-    print(f"[CPP INVENTORY] discovered_sources={len(sources)}; scanning includes", flush=True)
+    active_sources = active_game_cpp_sources(sources)
+    linked_library_sources = manifold_configured_cpp_sources()
+    active_vendor_sources = {
+        path_rel for path_rel in active_sources
+        if path_rel.startswith("external/recastnavigation/")
+    }
+    print(f"[CPP INVENTORY] repository_cpp={len(sources)} active_game_cpp={len(active_sources)}; scanning includes", flush=True)
     graph, graph_notes = current_include_graph(sources)
     print(f"[CPP INVENTORY] scanned_files={len(graph)}; reading depfiles", flush=True)
     dep_snapshots = read_dep_snapshots(sources)
     print(f"[CPP INVENTORY] depfile_translation_units={len(dep_snapshots)}; assembling report", flush=True)
     owners, overlaps, exe_sources, shared, module_info = source_owner_data()
+    loader_inventory = source_loader_boundary(exe_sources, module_info)
+    focused_dll_paths = {row["path"] for row in loader_inventory["focused_game_dll_sources"]}
+    cmake_dll_paths = {row["path"] for row in loader_inventory["cmake_declared_game_dll_sources"]}
     source_texts = {}
     for path_rel in graph:
-        if path_rel.startswith("src/") and Path(path_rel).suffix.lower() in (
-                ".cpp", ".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp"):
+        suffix = Path(path_rel).suffix.lower()
+        if suffix == ".cpp" or (path_rel.startswith(("src/", "external/", "include/"))
+                                 and suffix in (".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp")):
             try:
                 source_texts[path_rel] = (ROOT / path_rel).read_text(
                     encoding="utf-8", errors="replace")
@@ -897,7 +1074,6 @@ def build_inventory() -> dict:
     lifetime_inventory = scan_lifetime_signals(source_texts, exe_sources, module_info)
     state_owner_review = reviewed_state_ownership_anchors()
     network_inventory = network_boundary_inventory(source_texts)
-    loader_inventory = source_loader_boundary(exe_sources, module_info)
     build_timing_snapshot = existing_build_timing_snapshot()
     performance_snapshot = existing_performance_run()
 
@@ -912,6 +1088,7 @@ def build_inventory() -> dict:
     module_counts: Counter[str] = Counter()
     current_target_counts: Counter[str] = Counter()
     planned_target_counts: Counter[str] = Counter()
+    active_target_counts: Counter[str] = Counter()
     source_directory_counts: Counter[str] = Counter()
     source_scan_unresolved = []
 
@@ -957,12 +1134,33 @@ def build_inventory() -> dict:
         elif source_rel in exe_sources:
             current_owner = "exe"
             current_target = "exe"
+        elif source_rel in active_vendor_sources:
+            current_owner = "vendored"
+            current_target = "exe:recastnavigation"
+        elif source_rel in linked_library_sources:
+            current_owner = "vendored"
+            current_target = "exe:manifold-static"
+        elif source_rel == "launcher/main.cpp":
+            current_owner = "launcher"
+            current_target = "launcher:standalone-build"
+        elif source_rel.startswith("tools/"):
+            current_owner = "tool_or_probe"
+            current_target = "not_in_canonical_game_build"
         else:
-            current_owner = "unmapped_or_entry"
-            current_target = "unmapped_or_entry"
+            current_owner = "repository_only"
+            current_target = "not_in_canonical_game_build"
         current_target_counts[current_target] += 1
+        is_active = source_rel in active_sources
+        if is_active:
+            active_target_counts[current_target] += 1
 
-        if source_rel == "src/main.cpp":
+        if not is_active and current_owner in {"repository_only", "tool_or_probe"}:
+            planned_target = "not_in_game_runtime"
+        elif source_rel in linked_library_sources and not is_active:
+            planned_target = "game_dll_vendor_static_source_review"
+        elif source_rel == "launcher/main.cpp":
+            planned_target = "stable_launcher_exception"
+        elif source_rel == "src/main.cpp":
             planned_target = "split_bootstrap_from_game"
         elif source_rel in ("src/hot-reload/hot-reload-system.cpp",
                             "src/hot-reload/module-host.cpp"):
@@ -974,11 +1172,61 @@ def build_inventory() -> dict:
         source_directory_counts[directory] += 1
         code_text = source_texts.get(source_rel) or source.read_text(
             encoding="utf-8", errors="replace")
+        code_for_signals = LINE_COMMENT_RE.sub(
+            "", BLOCK_COMMENT_RE.sub("", code_text))
         direct_unresolved = [item["spelling"] for item in direct
                              if item["resolved_path"] is None]
+        lifetime_review = {
+            "static_or_extern_candidates": [],
+            "callback_candidates": [],
+            "thread_or_job_candidates": [],
+        }
+        for field, records in (
+            ("static_or_extern_candidates", lifetime_inventory["persistent_storage_candidates"]),
+            ("callback_candidates", lifetime_inventory["callback_registration_or_storage_candidates"]),
+            ("thread_or_job_candidates", lifetime_inventory["thread_async_and_job_sites"]),
+        ):
+            lifetime_review[field] = [
+                {"line": record["line"], "snippet": record["snippet"],
+                 **({"signals": record["signals"]} if "signals" in record else {})}
+                for record in records if record["path"] == source_rel
+            ]
+        additional_link_targets = []
+        if source_rel in focused_dll_paths:
+            additional_link_targets.append("build_game_dll.py:build/mimita-game.dll")
+        if source_rel in cmake_dll_paths:
+            additional_link_targets.append("CMakeLists.txt:mimita-game (declared alternate target)")
+        if source_rel in active_sources:
+            membership_evidence = ("build.py source inventory and module catalog"
+                                   if source_rel.startswith("src/") else
+                                   "build.py RECAST_SOURCE_DIRS enumeration")
+        elif source_rel in linked_library_sources:
+            membership_evidence = (
+                "saved build/manifold-release/build.ninja source manifest; "
+                "Manifold archive freshness unverified")
+        else:
+            membership_evidence = "not present in reviewed canonical game source/link manifests"
+        source_name = Path(source_rel).name.lower()
+        if any(token in source_name for token in ("test", "selftest", "probe", "demo")):
+            source_kind = "test_or_tool_candidate_review"
+        elif source_rel.startswith("external/"):
+            source_kind = "vendored_cpp"
+        elif source_rel.startswith("launcher/"):
+            source_kind = "launcher_cpp"
+        elif source_rel.startswith("tools/"):
+            source_kind = "build_or_development_tool_cpp"
+        else:
+            source_kind = "game_source_candidate"
 
+        owner_category, owner_reason = owner_category_for(source_rel)
         items.append({
             "path": source_rel,
+            "source_kind": source_kind,
+            "active_in_canonical_game_build": is_active,
+            "directly_compiled_into_mimita_exe": (
+                source_rel in exe_sources or source_rel in active_vendor_sources),
+            "currently_owned_by_subsystem_module": source_rel in module_info,
+            "in_linked_library_source_manifest": source_rel in linked_library_sources,
             "size_bytes": source.stat().st_size,
             "line_count": len(code_text.splitlines()),
             "sha256": file_signature(source).get("sha256"),
@@ -989,8 +1237,12 @@ def build_inventory() -> dict:
                 "in_exe_source_list": source_rel in exe_sources,
                 "shared_with_host": source_rel in shared,
                 "ownership_overlap": [item for item in overlaps if source_rel in item],
+                "additional_link_targets": additional_link_targets,
+                "membership_evidence": membership_evidence,
             },
             "planned_target": planned_target,
+            "owner_category": owner_category,
+            "owner_reason": owner_reason,
             "include_dependencies": {
                 "direct": direct,
                 "transitive_repository_headers_by_current_source_scan": transitive,
@@ -999,17 +1251,19 @@ def build_inventory() -> dict:
                 "source_scan_unresolved": direct_unresolved,
             },
             "reload_review_signals": {
-                "contains_main_function": bool(re.search(r"\bmain\s*\(", code_text)),
+                "contains_main_function": bool(re.search(
+                    r"^\s*(?:int|auto)\s+main\s*\(", code_for_signals, re.MULTILINE)),
                 "mentions_thread_or_async": bool(re.search(
-                    r"\b(std::thread|std::async|CreateThread|_beginthread|jthread)\b", code_text)),
+                    r"\b(std::thread|std::async|CreateThread|_beginthread|jthread)\b", code_for_signals)),
                 "mentions_function_pointer_or_callback": bool(re.search(
-                    r"\b(callback|function_ptr|functionPointer|std::function)\b", code_text,
+                    r"\b(callback|function_ptr|functionPointer|std::function)\b", code_for_signals,
                     re.IGNORECASE)),
-                "mentions_packets_or_network_context": any(token in code_text for token in
+                "mentions_packets_or_network_context": any(token in code_for_signals for token in
                     ("network/packets.h", "MultiplayerContext", "PACKET_")),
                 "mentions_global_state_keywords": len(re.findall(
-                    r"\b(extern|static)\b", code_text)),
+                    r"\b(extern|static)\b", code_for_signals)),
                 "perf_scope_count": code_text.count("MIMITA_PERF_SCOPE("),
+                "lifetime_review_candidates": lifetime_review,
                 "note": "Heuristic source signals only; inspect code before assigning runtime/game ownership.",
             },
         })
@@ -1068,7 +1322,7 @@ def build_inventory() -> dict:
                  "read_only": True, "compiler_invoked": False},
         "generated_utc": generated,
         "repository": ".",
-        "scope": "All active .cpp files recursively under src/.",
+        "scope": "Every repository .cpp file (active game/build, launcher/tool, and vendored/test/demo candidates), with canonical runtime-build membership marked separately.",
         "limitations": [
             "Include dependencies are not a function-call or linker-symbol call graph.",
             "Compiler .d files are existing build artifacts and may be stale; dependency freshness is explicitly unknown.",
@@ -1079,13 +1333,37 @@ def build_inventory() -> dict:
         ],
         "summary": {
             "cpp_count": len(items),
+            "repository_cpp_count": len(items),
+            "active_canonical_game_cpp_count": len(active_sources),
+            "directly_compiled_into_mimita_exe_cpp_count": (
+                len(exe_sources) + len(active_vendor_sources)),
+            "existing_subsystem_module_cpp_count": len(module_info),
+            "linked_library_source_manifest_cpp_count": len(linked_library_sources),
+            "game_build_or_link_manifest_cpp_count": len(active_sources | linked_library_sources),
+            "not_in_game_build_or_link_manifest_count": len(
+                set(source_relpaths) - active_sources - linked_library_sources),
+            "not_directly_compiled_into_mimita_exe_cpp_count": (
+                len(items) - len(exe_sources) - len(active_vendor_sources)),
             "current_owner_counts": dict(Counter(item["current_build"]["owner"] for item in items)),
             "current_target_counts": dict(current_target_counts),
+            "active_current_target_counts": dict(active_target_counts),
             "current_module_source_counts": dict(module_counts),
             "planned_target_counts": dict(planned_target_counts),
+            "owner_category_counts": dict(Counter(item["owner_category"] for item in items)),
+            "owner_category_unresolved": [
+                item["path"] for item in items if item["owner_category"] == "unresolved"],
             "source_directory_counts": dict(sorted(source_directory_counts.items())),
             "ownership_overlap_count": len(overlaps),
             "ownership_overlaps": overlaps,
+            "active_sources_without_canonical_owner": [
+                item["path"] for item in items
+                if item["active_in_canonical_game_build"] and
+                item["current_build"]["target"] in ("not_in_canonical_game_build",
+                                                       "launcher:standalone-build")],
+            "duplicate_or_alternate_target_claims": [
+                {"path": item["path"], "primary_target": item["current_build"]["target"],
+                 "additional_targets": item["current_build"]["additional_link_targets"]}
+                for item in items if item["current_build"]["additional_link_targets"]],
             "compiler_depfile_source_coverage": {
                 "freshness_verified_current": current_depfiles,
                 "freshness_verified_stale": stale_depfiles,
@@ -1101,6 +1379,8 @@ def build_inventory() -> dict:
                  "line_count": item["line_count"]} for item in largest_sources],
         },
         "module_build_dependencies": module_build_dependencies,
+        "mimita_exe_link_input_inventory": mimita_exe_link_input_inventory(
+            exe_sources, active_vendor_sources, module_info),
         "reviewed_runtime_state_ownership": state_owner_review,
         "npc_pilot_source_map": {
             "source_file_count": len(npc_source_map),
@@ -1109,9 +1389,9 @@ def build_inventory() -> dict:
         },
         "phase_0_completion_assessment": {
             "status": "PARTIAL: source/dependency inventory and existing observational evidence are recorded; controlled baselines and complete ownership tracing remain open.",
-            "source_list_dependencies_and_current_build_owners": "covered for all discovered src/**/*.cpp files",
-            "global_static_state": "candidate declarations inventoried; manual ownership and lifetime tracing remains",
-            "callbacks_threads_and_jobs": "source locations inventoried heuristically; unload quiescence and captures remain unproven",
+            "source_list_dependencies_and_current_build_owners": "all repository .cpp files enumerated; canonical src and active Recast translation units marked; Manifold static-library source manifest marked separately because it is a saved build-tree manifest; other tool, launcher, test, demo, and vendored code marked outside those targets",
+            "global_static_state": "per-source lexical candidate locations inventoried; semantic mutability, owner, and lifetime tracing remains",
+            "callbacks_threads_and_jobs": "per-source candidate locations inventoried heuristically; captures, registration owners, cancellation, joins, and unload quiescence remain unproven",
             "primary_live_state_holders": "Dedicated/listen server maps and threads, NpcSystem/Npc, ServerNpc, World, MultiplayerContext, and current GameMemory have source-reviewed anchors; field-by-field authority and migration are not complete.",
             "npc_vertical_slice": "runServer -> simulateSharedNpcs -> NpcSystem::updateOneWithTarget -> NpcSystem::updateOneNpc is source-mapped; current signatures pass live C++ object references and cannot cross the planned ABI as-is.",
             "network_boundaries": "PacketType values and source references inventoried; full serializer/authority/client-server trace remains",
@@ -1119,7 +1399,7 @@ def build_inventory() -> dict:
             "build_timing_baseline": "one existing build progress snapshot recorded; not a controlled set of representative edit builds",
             "runtime_performance_baseline": "existing client/server journal windows summarized; not a named-hardware controlled benchmark",
             "next_evidence": [
-                "Manually resolve persistent mutable state and long-lived callback/job owners for the selected NPC vertical slice.",
+                "Review per-source state/callback/job candidates in dependency-connected batches across the entire active game source set; establish authoritative state owner and unload behavior.",
                 "Capture setup/PCH/compile/link/validation/publication and save-to-activation timings for a representative source edit using the authorized dev-loop workflow.",
                 "Capture a named CPU/GPU, fixed workload NPC/frame/server-tick baseline and calculate the spec's 240-FPS frame budget and 60-Hz tick results.",
                 "Then install and prove the stable runtime/game boundary; keep ordinary watcher automation after that boundary exists.",
@@ -1134,29 +1414,136 @@ def build_inventory() -> dict:
     }
 
 
+def write_csv_report(inventory: dict, output: Path) -> None:
+    """Write a sortable one-row-per-source summary beside the full JSON."""
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_suffix(output.suffix + ".tmp")
+    lifetime_by_path: dict[str, dict[str, list[dict]]] = defaultdict(
+        lambda: {"static": [], "callbacks": [], "jobs": []})
+    runtime_lifetime = inventory.get("runtime_lifetime_inventory", {})
+    for key, label in (
+        ("persistent_storage_candidates", "static"),
+        ("callback_registration_or_storage_candidates", "callbacks"),
+        ("thread_async_and_job_sites", "jobs"),
+    ):
+        for candidate in runtime_lifetime.get(key, []):
+            lifetime_by_path[candidate["path"]][label].append(candidate)
+    columns = [
+        "path", "source_kind", "active_in_canonical_game_build",
+        "directly_compiled_into_mimita_exe", "currently_owned_by_subsystem_module",
+        "in_linked_library_source_manifest", "current_owner",
+        "current_target", "additional_link_targets", "planned_target", "size_bytes",
+        "line_count", "sha256", "direct_include_count",
+        "transitive_repository_header_count", "compiler_observed_header_count",
+        "depfile_snapshot_count", "unresolved_direct_include_count",
+        "static_or_extern_candidate_count", "callback_candidate_count",
+        "thread_or_job_candidate_count", "contains_main_function",
+        "mentions_packets_or_network_context", "mentions_global_state_keywords",
+        "automated_lifetime_triage_status", "lifetime_triage_bucket",
+        "mutable_static_candidate_count", "scope_unresolved_static_candidate_count",
+        "semantic_lifetime_review_status", "persistent_state_owner_review",
+        "callback_job_quiescence_review", "external_resource_lifetime_review",
+        "safe_unload_evidence", "atomic_cutover_review_group",
+    ]
+    with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        for item in inventory["sources"]:
+            deps = item["include_dependencies"]
+            signals = item["reload_review_signals"]
+            lifetime = signals["lifetime_review_candidates"]
+            candidates = lifetime_by_path[item["path"]]
+            mutable_static_count = sum(
+                candidate.get("mutable_candidate", False)
+                for candidate in candidates["static"])
+            unresolved_static_count = sum(
+                candidate.get("declaration_or_definition_scope") ==
+                "requires_manual_scope_review"
+                for candidate in candidates["static"])
+            if candidates["callbacks"] or candidates["jobs"]:
+                triage_bucket = "CALLBACK_OR_THREAD_LIFETIME_REVIEW"
+            elif mutable_static_count:
+                triage_bucket = "MUTABLE_STATIC_STATE_REVIEW"
+            elif unresolved_static_count:
+                triage_bucket = "STATIC_SCOPE_REVIEW"
+            else:
+                triage_bucket = "NO_LEXICAL_LIFETIME_HIT_STILL_REQUIRES_REVIEW"
+            writer.writerow({
+                "path": item["path"],
+                "source_kind": item["source_kind"],
+                "active_in_canonical_game_build": item["active_in_canonical_game_build"],
+                "directly_compiled_into_mimita_exe": item.get(
+                    "directly_compiled_into_mimita_exe", False),
+                "currently_owned_by_subsystem_module": item.get(
+                    "currently_owned_by_subsystem_module", False),
+                "in_linked_library_source_manifest": item["in_linked_library_source_manifest"],
+                "current_owner": item["current_build"]["owner"],
+                "current_target": item["current_build"]["target"],
+                "additional_link_targets": ";".join(item["current_build"]["additional_link_targets"]),
+                "planned_target": item["planned_target"],
+                "size_bytes": item["size_bytes"],
+                "line_count": item["line_count"],
+                "sha256": item["sha256"],
+                "direct_include_count": len(deps["direct"]),
+                "transitive_repository_header_count": len(
+                    deps["transitive_repository_headers_by_current_source_scan"]),
+                "compiler_observed_header_count": len(
+                    deps["compiler_observed_headers_best_snapshot"]),
+                "depfile_snapshot_count": len(deps["compiler_dependency_snapshots"]),
+                "unresolved_direct_include_count": len(deps["source_scan_unresolved"]),
+                "static_or_extern_candidate_count": len(lifetime["static_or_extern_candidates"]),
+                "callback_candidate_count": len(lifetime["callback_candidates"]),
+                "thread_or_job_candidate_count": len(lifetime["thread_or_job_candidates"]),
+                "contains_main_function": signals["contains_main_function"],
+                "mentions_packets_or_network_context": signals["mentions_packets_or_network_context"],
+                "mentions_global_state_keywords": signals["mentions_global_state_keywords"],
+                "automated_lifetime_triage_status": "COMPLETE_HEURISTIC_SCAN_ONLY",
+                "lifetime_triage_bucket": triage_bucket,
+                "mutable_static_candidate_count": mutable_static_count,
+                "scope_unresolved_static_candidate_count": unresolved_static_count,
+                "semantic_lifetime_review_status": "NOT_SEMANTICALLY_REVIEWED",
+                "persistent_state_owner_review": "NOT_REVIEWED",
+                "callback_job_quiescence_review": "NOT_REVIEWED",
+                "external_resource_lifetime_review": "NOT_REVIEWED",
+                "safe_unload_evidence": "NOT_PROVEN",
+                "atomic_cutover_review_group": "UNASSIGNED",
+            })
+    temporary.replace(output)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT),
                         help="JSON output path, relative to repository root by default.")
+    parser.add_argument("--csv-output", default="docs/handoffs/cpp-source-inventory.csv",
+                        help="Sortable CSV summary path, relative to repository root by default.")
     args = parser.parse_args()
-    output = Path(args.output)
-    if not output.is_absolute():
-        output = ROOT / output
-    output = output.resolve(strict=False)
-    try:
-        output.relative_to(ROOT)
-    except ValueError:
-        parser.error("output must stay inside the repository")
+    outputs = []
+    for label, value in (("JSON output", args.output), ("CSV output", args.csv_output)):
+        output = Path(value)
+        if not output.is_absolute():
+            output = ROOT / output
+        output = output.resolve(strict=False)
+        try:
+            output.relative_to(ROOT)
+        except ValueError:
+            parser.error(f"{label} must stay inside the repository")
+        outputs.append(output)
 
     inventory = build_inventory()
+    output, csv_output = outputs
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + ".tmp")
     temporary.write_text(json.dumps(inventory, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8", newline="\n")
     temporary.replace(output)
+    write_csv_report(inventory, csv_output)
     summary = inventory["summary"]
     print(f"[CPP INVENTORY] output={rel(output)}")
-    print(f"[CPP INVENTORY] cpp={summary['cpp_count']} owners={summary['current_owner_counts']}")
+    print(f"[CPP INVENTORY] csv={rel(csv_output)}")
+    print(f"[CPP INVENTORY] repository_cpp={summary['repository_cpp_count']} "
+          f"active_game_cpp={summary['active_canonical_game_cpp_count']} "
+          f"owners={summary['current_owner_counts']}")
     print(f"[CPP INVENTORY] depfiles={summary['compiler_depfile_source_coverage']}")
     print("[CPP INVENTORY] unresolved_or_external_source_includes="
           f"{summary['source_scan_unresolved_or_external_include_count']}")

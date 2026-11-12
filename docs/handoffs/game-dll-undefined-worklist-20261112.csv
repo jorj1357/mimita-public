@@ -1,0 +1,301 @@
+symbol,refs,family,signature,strategy
+DuelQueue::instance(),28,duel queue,scalar,typed-family-bridge
+MimitaNet::serverGameOverrides(),19,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::netShutdown(),17,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+IceAgent::state() const,16,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+MimitaNet::isServerHost(),14,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+"MimitaNet::serverSendToPlayer(unsigned long long, MimitaNet::ServerPlayer const&, void const*, unsigned long long)",14,MimitaNet (session/server/world-rebuild),reference,split: transport vs session/state
+HotReloadSystem::instance(),9,HotReloadSystem,scalar,typed-family-bridge
+IceAgent::~IceAgent(),7,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+LogManager::instance(),7,LogManager,scalar,typed-family-bridge
+"IceAgent::pollEvents(std::vector<IceEvent, std::allocator<IceEvent> >&)",6,ICE transport,complex-ownership,keep resident; CAP_TRANSPORT signaling
+MimitaNet::netStartup(),6,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+ModuleHost::worldgenResolve(mimita_worldgen::ResolveV1*),6,ModuleHost policy,scalar,typed-family-bridge
+"audioOwnerKey(unsigned int, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)",6,audio helpers,complex-ownership,typed-family-bridge
+"playSound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)",6,audio helpers,complex-ownership,typed-family-bridge
+PersistenceQueue::instance(),6,persistence,scalar,typed-family-bridge
+"MimitaNet::startListenServer(MimitaNet::ListenServerState&, unsigned short, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, MimitaNet::ServerLaunchSettings const*)",5,MimitaNet (session/server/world-rebuild),complex-ownership,split: transport vs session/state
+"ModuleHost::invokeEvent(unsigned int, void*, unsigned int, unsigned long long)",5,ModuleHost policy,scalar,typed-family-bridge
+seekReplayMusicPreview(float),5,audio helpers,scalar,typed-family-bridge
+setReplayMusicPreviewVolume(float),5,audio helpers,scalar,typed-family-bridge
+stopReplayMusicPreview(),5,audio helpers,scalar,typed-family-bridge
+HotReloadSystem::gameMemory(),4,HotReloadSystem,scalar,typed-family-bridge
+IceAgent::IceAgent(),4,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+IceAgent::gatherCandidates(),4,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+IceAgent::initialize(IceConfiguration const&),4,ICE transport,reference,keep resident; CAP_TRANSPORT signaling
+IceAgent::localSdp[abi:cxx11]() const,4,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+IceAgent::shutdown(),4,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+MimitaNet::AuthoredWorldRebuildWorker::instance(),4,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+ModuleHost::navigationPolicy(mimita_navigation_policy::NavigationPolicyV1*),4,ModuleHost policy,scalar,typed-family-bridge
+getReplayMusicPreviewDuration(),4,audio helpers,scalar,typed-family-bridge
+pauseReplayMusicPreview(),4,audio helpers,scalar,typed-family-bridge
+setReplayMusicPreviewSpeed(float),4,audio helpers,scalar,typed-family-bridge
+"decodeAudioToPCM(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<short, std::allocator<short> >&, unsigned int&, unsigned int&, unsigned int, unsigned int)",4,other,complex-ownership,do not bridge; redesign bounded
+"playEventSound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)",4,other,complex-ownership,do not bridge; redesign bounded
+ReplaySaveWorker::queueDepth() const,4,replay save jobs,scalar,CAP_JOBS lease
+"IceAgent::send(void const*, unsigned long long)",3,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+"IceAgent::setRemoteDescription(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)",3,ICE transport,complex-ownership,keep resident; CAP_TRANSPORT signaling
+MimitaNet::setNonBlocking(unsigned long long),3,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+isReplayMusicPreviewPlaying(),3,audio helpers,scalar,typed-family-bridge
+"playReplayMusicPreview(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)",3,audio helpers,complex-ownership,typed-family-bridge
+setGlobalDuck(float),3,audio helpers,scalar,typed-family-bridge
+DuelQueue::stopQueue(),3,duel queue,scalar,typed-family-bridge
+HotReloadSystem::gameAPI() const,2,HotReloadSystem,scalar,typed-family-bridge
+HotReloadSystem::loaded() const,2,HotReloadSystem,scalar,typed-family-bridge
+IceAgent::tick(),2,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+LogManager::fileCount() const,2,LogManager,scalar,typed-family-bridge
+MimitaNet::stopListenServer(MimitaNet::ListenServerState&),2,MimitaNet (session/server/world-rebuild),reference,split: transport vs session/state
+ModuleHost::collisionActorPairPolicy(mimita_collision_policy::ActorPairPolicyV1*),2,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::mapEditorComputeDragDelta(mimita_map_editor::DragMathV1 const*, float*)",2,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::mapEditorPickGizmoAxis(mimita_map_editor::GizmoPickV1 const*, int*)",2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::mapGeometryNodePolicy(mimita_map_geometry::NodePolicyV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkHitClaimPolicy(mimita_network_policy::HitClaimPolicyV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkMovementValidationPolicy(mimita_network_policy::MovementValidationPolicyV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcBehaviorSelfTest(mimita_npc_behavior::SelfTestV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcGrenadeDecision(mimita_npc_behavior::GrenadeDecisionV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcPerceptionStep(mimita_npc_perception::PerceptionRequestV1*),2,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcWeaponChoice(mimita_npc_behavior::WeaponChoiceV1*),2,ModuleHost policy,scalar,typed-family-bridge
+Renderer::setVSync(bool),2,Renderer device,scalar,CAP_RENDER command stream
+audioUpdate(float),2,audio helpers,scalar,typed-family-bridge
+"logAudioAnalysis(StructuredCategory, StructuredLevel, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, AudioBufferAnalysis const&)",2,audio helpers,complex-ownership,typed-family-bridge
+resumeReplayMusicPreview(),2,audio helpers,scalar,typed-family-bridge
+mimita::host::HostRuntime::instance(),2,direct host calls,scalar,"use HostServices, not HostRuntime"
+DuelQueue::countdownActive() const,2,duel queue,scalar,typed-family-bridge
+"JsonFileWatch::JsonFileWatch(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::chrono::duration<long long, std::ratio<1ll, 1000ll> >)",2,json watch jobs,complex-ownership,CAP_JOBS lease
+JsonFileWatch::consumeDirty(),2,json watch jobs,scalar,CAP_JOBS lease
+JsonFileWatch::~JsonFileWatch(),2,json watch jobs,scalar,CAP_JOBS lease
+PersistenceQueue::enqueueKill(PersistenceKillEvent const&),2,persistence,reference,typed-family-bridge
+ReplaySaveWorker::enqueue(std::function<void ()>),2,replay save jobs,complex-ownership,CAP_JOBS lease
+gladLoadGLLoader,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glActiveTexture,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glAttachShader,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBindBuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBindFramebuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBindRenderbuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBindTexture,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBindVertexArray,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBlendFunc,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBlendFuncSeparate,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBlitFramebuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glBufferData,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glCheckFramebufferStatus,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glClear,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glClearColor,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glCompileShader,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glCreateProgram,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glCreateShader,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glCullFace,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteBuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteFramebuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteProgram,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteRenderbuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteShader,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteTextures,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDeleteVertexArrays,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDepthFunc,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDepthMask,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDisable,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDisableVertexAttribArray,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDrawArrays,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDrawArraysInstanced,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glDrawBuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glEnable,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glEnableVertexAttribArray,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glFramebufferRenderbuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glFramebufferTexture2D,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenBuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenFramebuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenQueries,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenRenderbuffers,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenTextures,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenVertexArrays,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGenerateMipmap,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetBooleanv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetError,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetFloatv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetIntegerv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetProgramInfoLog,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetProgramiv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetQueryObjectui64v,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetQueryObjectuiv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetShaderInfoLog,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetShaderiv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetStringi,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetTexLevelParameteriv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetUniformLocation,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glGetUniformiv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glIsEnabled,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glLineWidth,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glLinkProgram,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glPixelStorei,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glPolygonMode,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glQueryCounter,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glReadBuffer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glReadPixels,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glRenderbufferStorage,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glScissor,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glShaderSource,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glTexImage2D,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glTexParameterf,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glTexParameterfv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glTexParameteri,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glTexSubImage2D,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform1f,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform1fv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform1i,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform2f,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform2fv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform3f,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform3fv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniform4f,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUniformMatrix4fv,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glUseProgram,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glVertexAttribDivisor,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glVertexAttribPointer,1,GLAD device,device-function,CAP_RENDER command stream
+glad_glViewport,1,GLAD device,device-function,CAP_RENDER command stream
+HotReloadSystem::reloadGameDLLIfChanged(),1,HotReloadSystem,scalar,typed-family-bridge
+IceAgent::candidates() const,1,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+IceAgent::logSelectedPath(),1,ICE transport,scalar,keep resident; CAP_TRANSPORT signaling
+LogManager::flush(),1,LogManager,scalar,typed-family-bridge
+MimitaNet::AuthoredWorldRebuildWorker::cancelAndWait(),1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::AuthoredWorldRebuildWorker::retire(std::shared_ptr<MimitaNet::AuthoredRebuildResult>),1,MimitaNet (session/server/world-rebuild),complex-ownership,split: transport vs session/state
+MimitaNet::AuthoredWorldRebuildWorker::submit(MimitaNet::AuthoredRebuildRequest),1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::AuthoredWorldRebuildWorker::tryTakeResult(),1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::ListenServerState::~ListenServerState(),1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+"MimitaNet::destructionReplicationSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)",1,MimitaNet (session/server/world-rebuild),complex-ownership,split: transport vs session/state
+MimitaNet::disableUdpConnReset(unsigned long long),1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::gServerHostPlayerId,1,MimitaNet (session/server/world-rebuild),scalar,split: transport vs session/state
+MimitaNet::initServerIceListener(MimitaNet::ListenServerState&),1,MimitaNet (session/server/world-rebuild),reference,split: transport vs session/state
+"MimitaNet::tickListenServer(MimitaNet::ListenServerState&, float)",1,MimitaNet (session/server/world-rebuild),reference,split: transport vs session/state
+ModuleHost::chunkCollisionBuild(mimita_chunk_collision::BuildChunkV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::collisionContactPolicy(mimita_collision_policy::ContactPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::collisionFinalPosePolicy(mimita_collision_policy::FinalPosePolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::collisionSolveActorWorld(mimita_collision_policy::ActorWorldSolveV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::collisionSolveContacts(mimita_collision_policy::ContactSolveV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::collisionSurfacePolicy(mimita_collision_policy::SurfacePolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::mapEditorAddChunk(char const*, char*, unsigned int)",1,ModuleHost policy,string,typed-family-bridge
+"ModuleHost::mapEditorAddChunkPart(char const*, char*, unsigned int)",1,ModuleHost policy,string,typed-family-bridge
+ModuleHost::mapEditorAddConnector(char const*),1,ModuleHost policy,string,typed-family-bridge
+"ModuleHost::mapEditorEvaluateConnectorPair(char const*, char const*, char const*, char const*, float*, char*, unsigned int)",1,ModuleHost policy,string,typed-family-bridge
+"ModuleHost::mapEditorExecuteCommand(char const*, char const*)",1,ModuleHost policy,string,typed-family-bridge
+ModuleHost::mapEditorMapCursor(mimita_map_editor::EditorInputV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::mapEditorPreviewConnections(char*, unsigned int)",1,ModuleHost policy,string,typed-family-bridge
+ModuleHost::mapEditorResolveClick(mimita_map_editor::EditorClickV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::mapEditorSetSelectedPosition(float const*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::mapGeometryObjectPlan(mimita_map_geometry::ObjectPlanV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::mapGeometrySignature(char const*, unsigned int, unsigned long long*)",1,ModuleHost policy,string,typed-family-bridge
+ModuleHost::networkCombatValidationPolicy(mimita_network_policy::CombatValidationPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkInterpolationPolicy(mimita_network_policy::InterpolationPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkMapSyncPolicy(mimita_network_policy::MapSyncPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkMovementCorrection(mimita_network_policy::MovementCorrectionPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkReconcilePolicy(mimita_network_policy::ReconcilePolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkReconnectPolicy(mimita_network_policy::ReconnectPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkSessionHealthPolicy(mimita_network_policy::SessionHealthPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::networkSnapshotPolicy(mimita_network_policy::SnapshotPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcActorState(mimita_npc_behavior::ActorStateV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcAimPolicy(mimita_npc_behavior::AimPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcAttackIntent(mimita_npc_behavior::AttackIntentV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcBehaviorAction(mimita_npc_behavior::ActionV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::npcBehaviorDashChoice(unsigned int, unsigned int, float)",1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcBehaviorDecision(mimita_npc_behavior::DecisionV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::npcBehaviorHoldPursuit(unsigned int, unsigned int)",1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcDashDecision(mimita_npc_behavior::DashDecisionV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcFireGate(mimita_npc_behavior::FireGateV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcGoalScore(mimita_npc_behavior::GoalScoreV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcPayloadRole(mimita_npc_behavior::PayloadRoleV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcStateTiming(mimita_npc_behavior::StateTimingV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcTargetSelect(mimita_npc_behavior::TargetSelectV1*),1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::npcTargetingPolicy(mimita_npc_behavior::TargetingPolicyV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"ModuleHost::worldRenderingAnalyzeFaces(float const*, float const*, mimita_world_rendering::FaceAuditV1*, unsigned int)",1,ModuleHost policy,scalar,typed-family-bridge
+ModuleHost::worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1*),1,ModuleHost policy,scalar,typed-family-bridge
+"Renderer::Renderer(int, int, char const*)",1,Renderer device,string,CAP_RENDER command stream
+"Renderer::applyVideoMode(int, int, FullscreenMode)",1,Renderer device,scalar,CAP_RENDER command stream
+Renderer::beginFrame(),1,Renderer device,scalar,CAP_RENDER command stream
+Renderer::endFrame(),1,Renderer device,scalar,CAP_RENDER command stream
+Renderer::reloadWorldShaderIfChanged(),1,Renderer device,scalar,CAP_RENDER command stream
+Renderer::shouldClose(),1,Renderer device,scalar,CAP_RENDER command stream
+Renderer::shutdown(),1,Renderer device,scalar,CAP_RENDER command stream
+"analyzeAudioBuffer(std::vector<float, std::allocator<float> > const&, unsigned int, unsigned short, unsigned int, unsigned int)",1,audio helpers,complex-ownership,typed-family-bridge
+"analyzeAudioBuffer(std::vector<short, std::allocator<short> > const&, unsigned int, unsigned short, unsigned int, unsigned int)",1,audio helpers,complex-ownership,typed-family-bridge
+audioListenerForward(),1,audio helpers,scalar,typed-family-bridge
+"getAudioFileDuration(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)",1,audio helpers,complex-ownership,typed-family-bridge
+getGlobalDuck(),1,audio helpers,scalar,typed-family-bridge
+playAirJumpSound(),1,audio helpers,scalar,typed-family-bridge
+playMenuClick(),1,audio helpers,scalar,typed-family-bridge
+playMenuHover(),1,audio helpers,scalar,typed-family-bridge
+"playSoundPitched(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float, float)",1,audio helpers,complex-ownership,typed-family-bridge
+"resolveSoundPath(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)",1,audio helpers,complex-ownership,typed-family-bridge
+"setAudioListener(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>)",1,audio helpers,vec3,typed-family-bridge
+setAudioSpatialWorld(World const*),1,audio helpers,scalar,typed-family-bridge
+installCrashHandler(),1,crash handler,scalar,resident bridge
+setCrashHandlerTestMode(bool),1,crash handler,scalar,resident bridge
+crosshairRightExtent(float),1,crosshair/GUI,scalar,CAP_GUI
+"drawCrosshair(float, float, float, bool)",1,crosshair/GUI,scalar,CAP_GUI
+"drawCrosshairPreview(float, float, float)",1,crosshair/GUI,scalar,CAP_GUI
+"updateCrosshairDynamic(float, float, bool, bool, bool)",1,crosshair/GUI,scalar,CAP_GUI
+mimita::host::HostRuntime::probeNpcTargetSelect(mimita::host::NpcTargetDecisionV1*),1,direct host calls,scalar,"use HostServices, not HostRuntime"
+DuelQueue::countdownLeft() const,1,duel queue,scalar,typed-family-bridge
+DuelQueue::defaultProfileId[abi:cxx11](),1,duel queue,scalar,typed-family-bridge
+DuelQueue::onDuelEnemySpawn(MimitaNet::DuelEnemySpawnPacket const&),1,duel queue,reference,typed-family-bridge
+DuelQueue::onDuelState(MimitaNet::DuelStatePacket const&),1,duel queue,reference,typed-family-bridge
+"DuelQueue::onMapChange(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, unsigned int)",1,duel queue,complex-ownership,typed-family-bridge
+DuelQueue::requestRematchNow(),1,duel queue,scalar,typed-family-bridge
+"DuelQueue::requestRematchWith(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)",1,duel queue,complex-ownership,typed-family-bridge
+DuelQueue::returnToQueue(),1,duel queue,scalar,typed-family-bridge
+"DuelQueue::startQueue(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)",1,duel queue,complex-ownership,typed-family-bridge
+DuelQueue::update(float),1,duel queue,scalar,typed-family-bridge
+"captureThreadStackTrace(unsigned int, char*, unsigned long long)",1,other,string,classify
+"dryFireFeedbackFade(unsigned long long, int)",1,other,scalar,classify
+"gameUpdateQuickHitDebugVisual(GameMemory*, GameQuickHitDebugVisualState*)",1,other,scalar,classify
+"runIceConnect(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, IceTestOptions const&)",1,other,complex-ownership,do not bridge; redesign bounded
+"triggerDryFireFeedback(unsigned long long, char const*, char const*)",1,other,string,classify
+PersistenceQueue::enqueueMatchResult(PersistenceMatchEvent const&),1,persistence,reference,typed-family-bridge
+"PersistenceQueue::observePlayer(unsigned int, unsigned long long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool)",1,persistence,complex-ownership,typed-family-bridge
+PersistenceQueue::queueDepth() const,1,persistence,scalar,typed-family-bridge
+PersistenceQueue::sessionId[abi:cxx11]() const,1,persistence,scalar,typed-family-bridge
+PersistenceQueue::takeNotices(),1,persistence,scalar,typed-family-bridge
+PersistenceQueue::tick(),1,persistence,scalar,typed-family-bridge
+PersistenceQueue::totalDuplicates() const,1,persistence,scalar,typed-family-bridge
+PersistenceQueue::totalRetries() const,1,persistence,scalar,typed-family-bridge
+PersistenceQueue::totalSent() const,1,persistence,scalar,typed-family-bridge
+gDuelManager,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gFramePacer,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gGamemodeManager,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gMainmenuDebug,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gNetDebugEntities,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gNetPresentationDebug,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gReplayCinematicMode,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gReplayExportRenderMode,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gRoomCodeShow,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpActiveGameMode[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpActiveMapPath[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpCamera,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpChatHistory,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpCommandBinds[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpDeathPosition,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpDuelConfig,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpEditorMode,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpFreecamEnabled,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpGameState,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpMpContext,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpNpcSystem,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpPlayer,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayActorModels[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayBrowser,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayCameraMgr,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayChatStates[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayClipsCache[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayFactory,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayPlayer,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayRecorder,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayTimeline,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayWeaponModels[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpSelectedEditorObject,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWeapons,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWorld,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWorldLoaded,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+"MimitaImpact::destructibleSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)",1,self-tests,complex-ownership,exclude or test owner
+"MimitaImpact::destructionStressSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)",1,self-tests,complex-ownership,exclude or test owner
+"MimitaWorldProject::worldEditSessionSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)",1,self-tests,complex-ownership,exclude or test owner
+"MimitaWorldProject::worldProjectStoreSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)",1,self-tests,complex-ownership,exclude or test owner
+"structuredLogRotationSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)",1,self-tests,complex-ownership,exclude or test owner

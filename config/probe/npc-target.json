@@ -1,0 +1,20 @@
+{
+  "name": "npc-target-probe",
+  "abi": 1,
+  "description": "Validation-only game generation for the NPC target-selection seam. Built by devscripts/game_build_worker.py --sources-file. Reverted before the all-files cutover.",
+  "sources": [
+    "src/game/probe/npc-target-probe-module.cpp",
+    "src/npc/npc-targeting.cpp",
+    "src/game/host-log-bridge-module.cpp",
+    "src/game/transport-bridge-module.cpp",
+    "src/game/module-host-bridge-module.cpp",
+    "src/game/audio-bridge-module.cpp",
+    "src/game/effects-bridge-module.cpp",
+    "src/game/entity-bridge-module.cpp",
+    "src/game/lifetime-bridge-module.cpp",
+    "src/game/render-bridge-module.cpp"
+  ],
+  "build_args": {
+    "no_pch": true
+  }
+}

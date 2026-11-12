@@ -7,36 +7,27 @@
 * this file DOES NOT permit killing, closing, or relinking a running game
 */
 
-## Current policy (2026-11-08)
+## Current policy (2026-11-11)
 
 Gameplay and tool behavior belongs in reloadable modules. Cold EXE builds are
 reserved for process, device, transport, packet-schema, document-storage,
 loader, and public-ABI changes. The working goal is "effectively never" for
 behavior work; literal zero is not promised for clean machine builds.
 
-All normal work is repository-local and lane-owned. See
-[self-contained-workspace.md](self-contained-workspace.md) and
-[module-migration-plan.md](module-migration-plan.md). The historical cold/live
-discussion below explains the invariant and remains background, not a workflow
-that agents may invoke.
+All normal work uses the shared `C:\mimita-v9` checkout, its current branch,
+and its root dev-loop. Do not create or use Mode 2 lanes for normal work.
+Serialize edits to shared source files so two agents do not overwrite each
+other. Existing lane data remains preserved until its edits are reviewed.
+DLL migration is independent of the work mode: it changes which code requires
+an EXE build, not which checkout owns edits.
 
-## Agent build authority (2026-11-08)
+## Agent build authority (2026-11-11)
 
-Agents edit and observe; they never build. The required mode 2 lane root is
-`<coordinator-repo>/.dev/agent-lanes/<lane-id>/`, with temporary files, caches,
-builds, run IDs, and journals kept inside the project. The lane dev-loop
-auto-detects saved edits; the running game's `ModuleHost` builds module
-generations. Named OS synchronization objects allow one EXE build and two
-module builds across all lanes without an external scheduler directory. The
-lane manager and scheduler enforce the repository-local path policy and reject
-escaping paths, metadata, symlinks, junctions, and configured scheduler/cache
-roots. Agents must not run `build.py`,
-`module-build-worker.py`, a build request, or a compiler directly. Only a human
-may use `MIMITA_BUILD_OVERRIDE=1`. All lanes, scheduler slots, caches, temp
-files, runtime files, world projects, artifacts, and journals live inside the
-repository under gitignored roots. See
+Agents edit and observe; the root dev-loop owns builds and runs. Agents must
+not invoke `build.py`, a module worker, a build request, or a compiler
+directly. The previous lane-specific build authority below is historical and
+is not active policy. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md),
-[`self-contained-workspace.md`](self-contained-workspace.md), and
 [`module-migration-plan.md`](module-migration-plan.md).
 
 # Live development invariant

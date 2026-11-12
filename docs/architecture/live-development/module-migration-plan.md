@@ -1,134 +1,114 @@
-// 2026-11-08
+// 2026-11-11
 /* purpose
-* own the continuation plan for moving MiMITA behavior into live modules
-* track cold-build boundaries, repo-local build work, and remaining migrations
-* this plan DOES NOT redefine gameplay behavior or the module ABI
-* this plan DOES NOT permit agents to invoke builds
+* state that Mode 2 agent lanes are deferred
+* define the active path toward one replaceable whole-game DLL
+* make NPC behavior the first proof slice, not the permanent DLL scope
 */
 
-# Module migration plan
+# Whole-game DLL migration plan
 
-Canonical status and continuation plan for the module-first direction.
+As of **2026-11-11 18:41 EST**, Mode 2 agent lanes are deferred. The target is
+one replaceable `game.dll` for ordinary game implementation, not one DLL per
+source file and not a permanent NPC-only DLL. Completion means the actual game
+runs with its ordinary game code in that DLL; an NPC-only reload demo is not
+completion.
 
-## Working goal
+## Active working rules
 
-The slogan is "one cold build every 999999 years." The engineering target is:
+- Use the current root checkout, current branch, canonical root dev-loop, and
+  existing executable.
+- Do not create, start, build, sync, promote, or clean up Mode 2 lanes. The
+  agent workflow scripts reject lane mutations. Read-only lane status/list
+  remain available.
+- Preserve existing lane worktrees, branches, metadata, artifacts, and
+  journals as parked historical evidence. Review and migrate useful changes
+  deliberately later; do not bulk merge or delete them.
+- The repair launcher is the process-control path for already-running root or
+  lane watchdogs, daemons, and build-only workers. This policy does not mean
+  they are stopped until the launcher has run and confirmed it.
+- Only the root dev-loop owns source builds. Do not start another watcher or
+  request a build from an agent.
 
-- cold builds only for process, device, transport, packet-schema, document
-  storage, loader, and public-ABI changes;
-- every gameplay and tool behavior owned by a reloadable module;
-- module, module-private-header, and config edits never relink the EXE;
-- warm boundary builds are seconds with ccache/object cache;
-- clean release/install builds remain slower and are not claimed to be zero.
+See [dev-loop policy](../../specs/dev-loop/agent-lanes-build-authority.md),
+[dev-loop operation](../../specs/dev-loop/dev-loop.md), and
+[workspace policy](self-contained-workspace.md).
 
-Exact zero is not physically possible for a clean machine build. The long-term
-path to "effectively never" is a generic, versioned, data-driven event/behavior
-IR so new gameplay behavior does not add host call sites. EXE changes then
-remain limited to process/authority/device/transport mechanisms.
+## Where hot reload is now
 
-## Repository-local workspace
+There is a focused game DLL containing only `src/effects/effect-part.cpp` and
+`src/hot-reload/quick-hit-debug-visual.cpp`. The source inventory records 582
+translation units assigned to the EXE and 12 to subsystem modules in the
+snapshot; re-count before acting because it can change. `npc-behavior` and
+`npc-perception` are useful existing hot subsystem modules and host adapters,
+but they are not a resident-runtime boundary and do not make the full game
+replaceable. The current build still needs an EXE for most C++ changes.
 
-See [self-contained-workspace.md](self-contained-workspace.md). All lanes,
-scheduler slots, ccache, temp files, runtime room files, world projects, build
-artifacts, and journals live inside the repository under gitignored roots.
+The desired architecture is:
 
-## Status
+| Part | Owns |
+|---|---|
+| Launcher EXE | Process entry and startup only |
+| Resident `runtime.dll` | Stable ABI, persistent live state, services, safe generation switching |
+| One `game.dll` | Ordinary changeable game behavior and implementation |
 
-| Work | Status | Cold boundary? | Notes |
-|---|---|---|---|
-| Agent lane authority | Implemented / active | no | Agents observe; lane dev-loop builds; module host builds modules |
-| Repo-local lanes/scheduler/cache/temp | This plan | no | Lane root moves to `.dev/agent-lanes` |
-| Link ledger and no-op artifact reuse | Implemented | no | Stale relinks self-repair; no-op does not create a new artifact |
-| Module-private headers | Implemented | no | Private headers rebuild only the module |
-| One ABI-first boundary build | Next | **yes, one** | Install all host seams before feature extraction |
-| Async authored rebuild + detached Recast + atomic swap | Implemented | host slice | Worker off-tick; atomic swap; old worlds retired |
-| `map-geometry` hot module | Pending | part of boundary | Signature/transform/flat-ground policy |
-| Full map-editor extraction | Pending | part of boundary | Snapshot store, undo/redo/clipboard, object/draw/input/command |
-| GLB schema v2 | Partial | sidecar | Rotation/scale/tombstone/clone runtime implemented; imports data model only |
-| Networking behavior subsystem | In progress | one capability build | Map-sync/reconnect/session-health decisions; transport and packet schemas stay cold |
-| NPC perception subsystem | In progress | one capability build | FOV/range/LOS gates, memory, belief, prediction; world query stays host |
-| NPC behavior subsystem | In progress | no | Goal/action/targeting/combat/team policy; authoritative application stays host |
-| Remaining hot owners | Later | reserved surfaces | Gamemode, ragdoll, contact, remaining networking |
-| Physics/collision behavior | Later (not current scope) | reserved surfaces | Query/collision policy behind bounded hot capabilities; fixed tick, cached broadphase, collision solver, and authority stay host |
-| Data-driven IR/behavior | Long-term | eventual kernel only | New mechanisms without new host call sites |
+A source `.cpp` is compiled into a target; it does not become an individual
+DLL. Keep one large game DLL unless measured link time or failure isolation
+proves a split is useful. Keep explicit exceptions for bootstrap/runtime,
+platform/device, transport, third-party, and build/test code.
 
-## One host EXE and shared module store
+## Migration order
 
-The target workflow is one canonical host EXE plus one shared content-addressed
-module store. Module-only lanes consume the shared host and publish module
-generations; they do not create a per-lane EXE. Host/ABI/packet lanes require a
-single host boundary build. Config/assets/modules resolve from one runtime root
-with a lane overlay for unvalidated work. Static-linking all modules into the
-EXE is explicitly not the target because it removes hot reload.
+1. **Inventory the whole game.** Account for every active game `.cpp` and
+   header: current target, dependencies, durable/static state, callbacks/jobs,
+   and proposed owner. The source inventory is a current snapshot; it is not
+   yet a complete reload-safety map. Work can start on the runtime seam while
+   owners are classified, but the end target remains every eligible game
+   implementation in `game.dll`.
+2. **Install the runtime/game seam.** Add the stable C ABI, resident runtime,
+   generation validation, callback/job quiescence, safe activation, and
+   rollback. This needs one deliberate initial EXE build. The aim afterward is
+   that ordinary game C++ edits do not relink or restart the EXE.
+3. **Prove the DLL lifecycle.** Use one NPC decision as the first bounded
+   probe that same-process activation, failure fallback, state continuity, and
+   rollback work. This only validates the loader mechanism; it does not mean
+   the game is migrated or ready.
+4. **Cut over the running game into one DLL.** Finish semantic state/lifetime
+   tracing for every eligible game source and linked game dependency, then
+   prepare one complete owner manifest. Move all eligible implementation
+   sources to one `game.dll` in a single ownership cutover, removing each from
+   its former EXE/subsystem target in the same change. Preparatory loader and
+   runtime work can be developed before this cutover; do not leave ordinary
+   game sources split across old and new owners as a long-lived migration
+   state. Keep every feature present. The completion check covers the real
+   launch path and modes, not only NPC behavior. Bootstrap/runtime and
+   documented platform/build exceptions remain outside the replaceable game
+   code.
+5. **Automate the one-click root loop.** A single launcher opens the canonical
+   Python GUI/coordinator. It detects saves, snapshots coherent inputs,
+   compiles affected translation units, links an immutable candidate, validates
+   it, and signals safe activation. Coalesce edits during a build; retain the
+   prior generation when compile, validation, or activation fails. Editing any
+   eligible game `.cpp` must select the DLL target automatically; no manual
+   per-file DLL request.
+6. **Verify whole-game completion.** Confirm the game launches and its ordinary
+   systems run from the active `game.dll`; then edit representative sources
+   across the inventory and confirm each edit builds/activates a new DLL
+   generation in the same process. Measure compile, link, activation, and
+   save-to-live time. Performance is a later tuning target. Keep one DLL unless
+   a measured limitation requires splitting it.
 
-Canonical generation identity is `(module, abi, state_schema, code_hash)`.
-Identical module code must not produce different generations, or the module-set
-hash and peer agreement will diverge. The lane land/publish path is the only
-writer of the shared host/store; game processes and module workers never write
-it. See `docs/specs/dev-loop/agent-lanes-build-authority.md` and
-`docs/specs/dev-loop/dev-loop.md`.
+## Completion evidence
 
-## One ABI-first boundary
+Report source/build evidence separately from runtime behavior and human review.
+For each proof, record the root revision, source hash, candidate generation,
+process ID, exact `events.jsonl`, before/after state, and observed fallback or
+rollback. A successful link or generation swap alone does not prove behavior.
+Do not claim process cleanup unless the repair launcher confirms it.
 
-The single boundary build installs:
+## Related documents
 
-- detached `RecastNavMeshCandidate`, adopt/retire, non-building query;
-- async rebuild worker snapshot/result types and fixed-tick drain/swap hooks;
-- `map-geometry` capability/events and host fallback;
-- editor snapshot/object/draw/UI/input/command/project/world-edit services;
-- GLB v2 schema/base-transform/tombstone/clone/import host hooks;
-- generic reserved policy surfaces for later hot owners;
-- module-private header catalog support.
-
-After promotion, feature work is module-only unless a genuinely new kernel
-mechanism is discovered. That is a `HOT_RELOAD_BOUNDARY_VIOLATION` and is
-scheduled deliberately, not hidden.
-
-## Hot subsystem targets
-
-- **Networking:** move the map-sync, reconnect, session-health, snapshot,
-  spawn-authority, and combat-validation state machines into the networking
-  module. Keep transport, packet encode/decode, map/asset loaders, and sockets
-  cold. Reconnect accepts must restore the authoritative map id (or preserve the
-  previous map when an older peer omits it).
-- **NPC perception:** move FOV/range/LOS gating, memory decay, belief, and
-  prediction into `npc-perception`. Expose only a bounded world-query
-  capability; the module decides when to query and how to gate the result.
-- **NPC behavior:** move targeting, navigation choice, combat intent, team
-  coordination, and utility policy into `npc-behavior`. The host keeps actor
-  state, world/navmesh queries, collision/physics application, and the fixed
-  tick.
-- **Server budgets:** phase-budget thresholds and yield intent are hot policy;
-  measured durations and the tick loop remain host mechanisms.
-
-A new behavior that needs a one-off host call site is a
-`HOT_RELOAD_BOUNDARY_VIOLATION`. Generalize the event/action/capability surface
-instead.
-
-## Immediate continuation order
-
-1. Finish repo-local workspace migration and documentation.
-2. Create the boundary lane inside `.dev/agent-lanes`.
-3. Implement and run the one ABI-first boundary build through the lane dev-loop.
-4. Land async candidate rebuild and detached Recast.
-5. Add the `map-geometry` module.
-6. Extract the map editor in phases (snapshot/undo/clipboard, objects, draw/UI,
-   input, commands/projects/world-edit, remove host duplicates).
-7. Add GLB v2 rotation/scale/tombstones/clones/imports.
-8. Move gamemode/network/NPC/ragdoll/contact policy behind reserved surfaces.
-9. Introduce the data-driven IR/behavior path behind the same evidence rules.
-
-## Evidence rules
-
-Build, runtime, and human acceptance are separate claims. Every module change
-reports lane, worktree, module generation, PID, exact `events.jsonl`, the owner
-event, and before/after fields. A build or `module.activated` alone is not
-behavior proof.
-
-## Cross-references
-
-- [Hot reload specification](../../specs/hotreload/hotreload.md)
-- [Live development invariant](live-development.md)
+- [Hot-reload specification](../../specs/hotreload/hotreload.md)
+- [Live-development invariant](live-development.md)
 - [Hot kernel](hot-kernel.md)
 - [Agent lanes and build authority](../../specs/dev-loop/agent-lanes-build-authority.md)
 - [Build and EXE](../../operations/build-and-exe/build-and-exe.md)

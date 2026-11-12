@@ -114,6 +114,8 @@
 #include "render/lighting-config.h"
 #include "hot-reload/hot-reload-system.h"
 #include "hot-reload/module-host.h"
+#include "host/host-runtime.h"
+#include "host/host-transport-adapter.h"
 #include "profile/local-profile-system.h"
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
@@ -545,6 +547,7 @@ int main(int argc, char** argv)
     while (engine.running())
     {
         engineTick(engine);
+        mimita::host::HostRuntime::instance().poll();
 
         // Startup commands belong to the visible client terminal, not the
         // headless server. Wait until the room connection and the gameplay
@@ -598,6 +601,9 @@ int main(int argc, char** argv)
             gpMpContext ? gpMpContext->tick : 0);
     }
     AnalyticsManager::instance().shutdown();
+    mimita::host::HostTransportAdapter::instance().unbind();
+    mimita::host::HostRuntime::instance().clearTransportAdapter();
+    mimita::host::HostRuntime::instance().shutdown();
     ModuleHost::instance().shutdown();
     HotReloadSystem::instance().unloadGameDLL();
     engine.shutdown();

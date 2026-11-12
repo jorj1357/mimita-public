@@ -39,6 +39,9 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "devscripts"))
+from process_identity import pid_alive as _process_pid_alive  # noqa: E402
+
 DEV_ROOT = ROOT / ".dev"
 DEV_LOOP_SCRIPT = ROOT / "devscripts" / "dev-loop.py"
 LOCK_PATH = DEV_ROOT / "dev-loop.lock"
@@ -85,8 +88,9 @@ def write_json(path: Path, value) -> None:
 def script_sha256() -> str:
     try:
         digest = hashlib.sha256()
-        sources = [DEV_LOOP_SCRIPT, *sorted(
-            (ROOT / "devscripts" / "dev_loop").glob("*.py"), key=lambda path: path.name)]
+        sources = [DEV_LOOP_SCRIPT, ROOT / "devscripts" / "process_identity.py",
+                   *sorted((ROOT / "devscripts" / "dev_loop").glob("*.py"),
+                           key=lambda path: path.name)]
         for source in sources:
             digest.update(source.name.encode("utf-8"))
             digest.update(b"\0")
@@ -99,30 +103,7 @@ def script_sha256() -> str:
 
 def pid_alive(pid: int) -> bool:
     """Cross-platform liveness that never signals the target process."""
-    if not pid or pid <= 0:
-        return False
-    if os.name == "nt":
-        import ctypes
-
-        SYNCHRONIZE = 0x00100000
-        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(
-            SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
-        if not handle:
-            return False
-        try:
-            code = ctypes.c_ulong()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-                return code.value == 259  # STILL_ACTIVE
-            return False
-        finally:
-            kernel32.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    return _process_pid_alive(pid)
 
 
 def lock_pid() -> int:

@@ -1,3 +1,64 @@
+2026 11 12 1008 jorj
+
+the end goal i think here is
+
+edit any cpp file => ctrl + s => it changes live
+
+because i want to get rid of as much waiting as possible, and as much closing/opening the exe as possible
+becasue this is emergent from the deeper desire to  shrink teh time betewen idea and reality as much as possible thta i want to do with this code wise 
+
+so the way i curently understand it to be done, is,  
+all cpp files no longer build into .exe, the build into a .dll
+
+game.dll
+
+the game.dll is reloaded live, adn the .exe is 
+not small in size like megabtes, but
+like, in what it does
+small in teh amount of times it needs to be closed and opened again
+the exe should be like the doorway into a garage
+it should be open like all the time, accepts 99.99% of things u put in the garage
+
+becasuse antother big thing is
+i want to be abel to add totally new arbitrarry things like
+
+new video editor
+new rendering backend, e.g. vulkan metal directx instead of opengl
+new dimeional geometry, 4 dimensions. 3.5 dimesions, fractal rooms
+rooms bigger on the inside than the outside
+
+adding portals live would be amazing , no exe restart needed 
+adding competely new things like ray tracing, realisitc graphics
+new primitives, adding cones, elongated spheres, arbitrary geometry e.g. points => lines => faces, things all made of triangles ideally 
+
+anything like that, that u might want to do, whether its game engine related collisions etc, networking, rendering, supporting a new OS/platform, porting to browser, making mobile port, console port, chromebook port from 2ombie suggested, etc
+all should be doable live without the exe having to close
+
+the exe is simply a mirror of the code , and a mirror cahnges live, 
+mirror does not need to break and be put back together to update the mirrors visuals 
+
+> **Current target and literal limits (2026-11-12):**
+>
+> - "All `.cpp` hot" means all **ordinary game implementation** sources. The resident core (loader, barrier, device, transport mechanism, document storage, capability table) stays loaded and is deliberately cold.
+> - **Hot now:** gameplay, networking packet schema/IDs/handlers/error paths, render primitives and draw policy, world-query composition, portals, 4D/fractal geometry, GUI, audio policy, tools.
+> - **Cold now:** process lifetime, loader/barrier, OS/device/driver interface, transport mechanism (sockets/ICE/framing/encryption/reliability), document storage, public capability table.
+> - **Backend/device changes may require device recreation** while the device is active. The long-term goal is a resident backend interface with hot-reloadable backend modules; hot backend is a later phase, not a current claim.
+> - The default is hot. Every cold boundary is a debt to retire, not a normal workflow.
+
+> **Literal contract (2026-11-12):** any ordinary game implementation `.cpp`
+> can be added, edited, or removed; a save produces a candidate `game.dll`; the
+> host validates and activates it in the same process. No EXE relink and no
+> process restart are required for ordinary game code. This includes physics,
+> collision, NPC behavior, rendering commands/primitives, packet schemas and
+> handlers, gameplay authority, GUI, and tools. A new backend, OS, or platform is
+> a resident backend interface plus a loadable backend module; adding the module
+> must not rebuild the EXE. Changing the active device may require device
+> recreation, which is a runtime constraint, not an EXE rebuild.
+
+2026 11 11 1939 jorj
+
+Next: fill in the lifetime review for every eligible source and linked game dependency, using the dependency map to organize the review. Then finish the resident-runtime/game boundary and validate the loader and NPC continuity as proofs. After those pass, update the build ownership manifest once to move the eligible game sources into game.dll. I have not changed runtime/build ownership or run a build; the repo’s instructions assign builds to the root dev loop.
+dot his
 2026 11 11 1507 jorj
 
 "Finish the inventory. Map each .cpp to its dependencies and identify which code owns persistent state, active callbacks, and background jobs. python devscripts/module_ownership.py already checks current source ownership; extend that inventory for the planned runtime and game targets.
@@ -9,6 +70,10 @@ Prove one NPC path. Keep the same NPCs and world alive, edit NPC C++, build a ca
 Expand the default source ownership. Once that proof works, route ordinary implementation .cpp files to one game.dll. Split the DLL only if measured link times make that useful.
 
 Add the one-command Python loop. A command such as python devscripts/live.py should watch saves, snapshot inputs, compile affected files in the background, and notify the runtime when a candidate is ready. It can automate the workflow; it cannot create the missing runtime boundary by itself."
+
+> **2026-11-12 architecture decision:** the resident host is the canonical EXE, not a separate `runtime.dll`. See sections 2.1, 2.2, and 2.2.1. The `runtime.dll` wording in the dated notes above is superseded by that decision; extracting `runtime.dll` later remains an optional, ABI-preserving move.
+>
+> **2026-11-12 execution decision:** every eligible ordinary game source becomes hot in one reviewed cutover, not through a long-lived per-file migration. Stages 0-4 prepare that cutover with current ownership unchanged. A temporary validation-only probe may prove the loader/barrier mechanism and is reverted before the cutover; it is not a migration destination.
 
 do this all
 
@@ -38,33 +103,241 @@ The first implementation target is one large `game.dll`. Split it into multiple 
 
 ## 2. Agreed architecture
 
-### 2.1 Bootstrap EXE
+### 2.1 Resident host EXE
 
-The EXE is the small process entry point. It parses launch mode and starts the resident runtime. It does not contain ordinary game behavior. The same process remains open while game-code generations change.
+The canonical EXE is the resident host. It parses launch mode, owns process lifetime, keeps the persistent world/session/device/network state, holds the versioned C function table, and loads and swaps `game.dll` generations. It does not contain ordinary replaceable game behavior. The same process and the same resident records remain open while game-code generations change.
 
-### 2.2 Resident `runtime.dll`
+This replaces the earlier proposal to move the same responsibilities into a separate `runtime.dll`. The resident host may be extracted into `runtime.dll` later behind the same ABI if measurements justify it; that extraction is mechanical, not a prerequisite for hot reload.
 
-`runtime.dll` stays loaded across `game.dll` generations. It owns persistent runtime data and generic services, including entity/component records, player and NPC state, world/session state, connected-peer state, active-generation agreement, and safe activation coordination.
+### 2.2 Resident state store and services
 
-The runtime data store is schema-aware and generic. It does not require one fixed C++ struct to gain a new member every time game code adds a field. Runtime records have entity/type identity and schema version; new game generations provide migration/default logic for records they own. Migrations are validated and committed atomically with code activation. A failed migration leaves the old generation and old state active. The hot per-tick path must use batched or direct stable-handle access; it must not perform reflective field-name lookups for every NPC field on every tick. Schema conversion happens at generation activation, not continuously during play.
+The EXE host owns persistent runtime data and generic services, including entity/component records, player and NPC state, world/session state, connected-peer state, active-generation agreement, and safe activation coordination.
 
-Keep the runtime's own editable behavior small. Changeable NPC, networking, rendering, physics, gameplay, GUI, and tool logic belongs in `game.dll`, even when it reads or changes runtime-owned data. The runtime API should be broad and versioned so ordinary behavior and component-field changes do not require a runtime rebuild. Only a genuinely missing stable mechanism or incompatible runtime ABI is a runtime boundary change; this is minimized, not claimed impossible forever.
+The resident data store is schema-aware and generic. It does not require one fixed C++ struct to gain a new member every time game code adds a field. Resident records have entity/type identity and schema version; new game generations provide migration/default logic for records they own. Migrations are validated and committed atomically with code activation. A failed migration leaves the old generation and old state active. The hot per-tick path must use batched or direct stable-handle access; it must not perform reflective field-name lookups for every NPC field on every tick. Schema conversion happens at generation activation, not continuously during play.
+
+Keep the host's own editable behavior small. Changeable NPC, networking, rendering, physics, gameplay, GUI, and tool logic belongs in `game.dll`, even when it reads or changes resident-owned data. The host API should be broad and versioned so ordinary behavior and component-field changes do not require a host rebuild. Only a genuinely missing stable mechanism or incompatible host ABI is a host boundary change; this is minimized, not claimed impossible forever.
+
+### 2.2.1 Why the EXE host instead of a separate `runtime.dll`
+
+The hot-reload contract needs three things to stay resident: the loader, the persistent state store, and the versioned C ABI table. It does not require them to live in a separate DLL file. Keeping them in the EXE is the smaller and faster design:
+
+- **Fewer moving parts.** One process image hosts the loader and state; there is no second artifact to build, stage, version, validate, or load.
+- **One boundary instead of two.** Game code crosses one versioned table. A separate `runtime.dll` adds an EXE-to-runtime hop and a second ABI that must be versioned and proven.
+- **No extra cold dependency before the first proof.** The initial EXE build installs the boundary either way. Adding `runtime.dll` also requires building and wiring that DLL before the first proof can run.
+- **Same resident-host cost.** The resident host is not hot in either design: changing it, or the ABI, is a deliberate cold build. `runtime.dll` does not make resident behavior hot.
+- **Marginal long-term gain.** The only plausible benefit is a cheaper rebuild of a host that is still under heavy development. Once every eligible game source lives in `game.dll`, the EXE host is already small, so that advantage mostly disappears.
+
+The efficiency cost of a separate `runtime.dll` is therefore real and immediate (an extra artifact, loader hop, ABI, and validation path) while its benefit is delayed and likely small. Extract it later only if measured EXE relink time, artifact size, or ownership isolation shows a concrete gain, and do the extraction behind an unchanged ABI so it stays mechanical.
+
+For the rest of this document, "runtime" means the resident host and its records (currently the EXE) unless a separate `runtime.dll` is explicitly named.
 
 ### 2.3 Replaceable `game.dll`
 
-Initially, ordinary game implementation `.cpp` files are assigned to one `game.dll` by default. The DLL receives a versioned runtime function table and stable handles; it owns behavior, not persistent world/session data.
+Initially, ordinary game implementation `.cpp` files are assigned to one `game.dll` by default. The DLL receives a versioned resident function table and stable handles; it owns behavior, not persistent world/session data.
 
-Function signatures and C++ types inside `game.dll` may change freely when the affected code is rebuilt together. Across the runtime/game boundary, use a versioned ABI with size/version fields, plain data, handles, and explicit ownership. Do not pass STL containers, exceptions, allocator-owned objects, or pointers to short-lived game-DLL memory across that boundary.
+Function signatures and C++ types inside `game.dll` may change freely when the affected code is rebuilt together. Across the resident-host/game boundary, use a versioned ABI with size/version fields, plain data, handles, and explicit ownership. Do not pass STL containers, exceptions, allocator-owned objects, or pointers to short-lived game-DLL memory across that boundary.
 
-Adding or changing a field such as position, velocity, or health is a game-owned schema change plus migration. It should not alter a fixed runtime C++ struct. The runtime preserves the record; the candidate game generation interprets or migrates it.
+Adding or changing a field such as position, velocity, or health is a game-owned schema change plus migration. It should not alter a fixed resident C++ struct. The resident host preserves the record; the candidate game generation interprets or migrates it.
 
 ### 2.4 Multiplayer and graphics
 
-The runtime preserves connection/session state and coordinates candidate-generation identity, compatibility, readiness, and activation timing. Changeable multiplayer rules live in `game.dll`. Use a generic versioned message/event envelope where possible so new behavior does not require a new runtime wire mechanism. A protocol feature that needs a capability the runtime does not provide is a deliberate boundary change.
+The resident host preserves connection/session state and coordinates candidate-generation identity, compatibility, readiness, and activation timing. Changeable multiplayer rules live in `game.dll`. Use a generic versioned message/event envelope where possible so new behavior does not require a new host wire mechanism. A protocol feature that needs a capability the host does not provide is a deliberate boundary change.
 
 Native-code sharing is for explicitly trusted development sessions. The host approves the candidate and all participating processes report compatible code/schema generations before activation. Public servers do not execute arbitrary client-supplied native code.
 
 A live renderer/backend change may recreate the graphics device and re-upload resources while keeping the process and runtime state alive. It is limited to backends supported by the current platform, driver, and build. A backend unavailable on the current OS or hardware cannot be enabled by hot reload alone.
+
+## 2.5 The plan in plain words (2026-11-12)
+
+This section explains the same plan without jargon. It is the shared picture; the numbered stages below are the checklist.
+
+### The toy-robot picture
+
+- The **EXE** is the robot's body and memory. It stays switched on. It remembers where the NPCs and players are and who is connected.
+- **`game.dll`** is a **dance card** that tells the robot how to dance. Ordinary game `.cpp` files are the steps on that card.
+- Live editing means **swapping the dance card while the robot keeps dancing**. The body and memories stay.
+- The **loader** is the hand that swaps the card.
+- The **barrier** says: freeze for one split second, make sure no hand is still moving, then swap. If the new card is broken, put the old card back.
+- The **manifest** is the list of which page belongs to which book.
+- The **builder** is a helper that photocopies only the changed pages and prints a new card in the background.
+
+The robot is not allowed to throw away its memory card (the EXE host) or its loader hand. Only the dance card changes.
+
+### What already exists
+
+- `config/source-owners.json` says who owns every `.cpp`: dance card (`game`), body (`resident`), process start (`bootstrap`), existing small modules, tools, tests, vendor.
+- `devscripts/source_manifest.py` makes the list, hashes one revision, and notices added, removed, renamed, or header-changed files.
+- `src/host/abi/game-host-abi.h` is the plug shape between the body and the dance card: version, size, plain data, stable handles, and a `quiesce`/`shutdown` result.
+- `src/host/host-loader.h` is the hand that loads and validates a card.
+- `src/host/host-barrier.h` is the freeze rule.
+- `src/host/host-runtime.h/.cpp` plugs those together in the EXE. It is idle unless `MIMITA_GAME_PROBE=1`.
+- `devscripts/game_build_worker.py` prints a candidate card in the background.
+- `devscripts/live.py` watches files and asks the builder for a new card.
+
+### Step A: prove one real NPC decision (the validation probe)
+
+The chosen decision is "which enemy should this NPC target?" in `simulateSharedNpcs` (`src/network/server-npcs.cpp`). It is small: a list of candidate actors in, one target ID out.
+
+1. The host gathers up to 64 candidates (ID, team, human/NPC, dead, relative position) and the current targeting policy.
+2. It calls the active `game.dll` through the barrier: event `720`, `NpcTargetDecisionV1`.
+3. The DLL runs the same pure policy (`src/npc/npc-targeting.cpp`) and writes one target ID.
+4. The host checks the answer is a real, live candidate.
+5. **Parity-only first:** the host logs `npc.target.probe` with `inline_target`, `probe_target`, `match`, `candidates`, and `generation`. The inline result stays authoritative. Only after parity is proven does a later change let the DLL result apply.
+6. The probe source set is explicit: `config/probe/npc-target.json`. It is reverted before the all-files cutover.
+
+Owner-run commands:
+
+```powershell
+python devscripts/source_manifest.py --write
+python devscripts/game_build_worker.py --sources-file config/probe/npc-target.json `
+  --out build/probe/npc-target
+$env:MIMITA_GAME_PROBE = "1"
+$env:MIMITA_GAME_DLL = (Get-Content build/probe/npc-target/current.json | ConvertFrom-Json).dll
+```
+
+### Step B: prove the whole path
+
+In one running process, with the exact journal:
+
+- load a valid card and see `game.host.probe.started`;
+- edit `src/npc/npc-targeting.cpp`, rebuild, swap, and see a new generation handling `npc.target.probe` with the same NPC IDs and world;
+- add a source and see it in the candidate set; remove it and see it leave;
+- change a header and see only dependents rebuild;
+- break the compile and see the old generation keep running;
+- fix it and see recovery;
+- activate a worse-but-valid card and roll back.
+
+### Step C: all files at once
+
+1. **Audit** every source: who owns its state, which callbacks/jobs can re-enter it, which resources it holds, and what crosses the boundary.
+2. **Move durable state** into resident records. Behavior moves; memory stays.
+3. **Wrap every host→game call** with the barrier. Replace detached workers with a resident executor or generation lease.
+4. **Build the whole dance card** from all `game` sources in the background. Calls inside the card are ordinary C++ calls; only the plug (host services) changes.
+5. **One cutover**: add every `game` source to `game.dll`, remove it from the EXE/module/CMake targets in the same change. Keep body/tool/test/vendor pages explicit.
+6. **Measure** single-file, header, and whole-card build times. Keep one card unless measurements justify splitting.
+
+### What only the root dev-loop owner or a human can do
+
+- Run the one intentional cold boundary build that compiles the new host headers.
+- Launch the server/client, exercise the NPC probe, and read the exact `events.jsonl`.
+- Confirm the same PID, state continuity, compile-failure fallback, recovery, and rollback.
+- Approve the final owner cutover and the human-visible gameplay result.
+
+An agent may write and inspect code, but may not claim build or runtime proof.
+
+### 2.6 Capability families and the complexity budget
+
+There is one capability lookup: `get_capability(id, version)` returns a versioned plain-data struct. There are a small number of broad families, not one per file and not one giant interface.
+
+Current families:
+
+| Family | Responsibility | Folds in |
+|---|---|---|
+| `CAP_LOG` | structured event + text + counters | `StructuredLogger`, `DebugLog`, `Perf` |
+| `CAP_TERMINAL` | emit + terminal state | `Terminal`, `TerminalState` |
+| `CAP_GUI` | element/text read/write | `GuiLayoutManager`, tooltips, UI config |
+| `CAP_DEBUG_VIS` | bounded draw queue | `DebugVis`, debug overlays |
+| `CAP_ENTITY` | handle read/write snapshots | `PhysicalEntitySystem`, player/NPC records |
+| `CAP_PHYSICS` | constraint/vehicle queries | `ConstraintSystem`, `VehicleSystem` |
+| `CAP_WORLD` | broadphase + read-only spans + ray/query | world queries, audio occlusion |
+| `CAP_RENDER` | draw-command stream + shader/resource handles | render primitives |
+| `CAP_TRANSPORT` | opaque `{channel, typeId, bytes}` + session | `gpMpContext`, packets |
+| `CAP_JOBS` / `CAP_CALLBACKS` / `CAP_RESOURCES` | lifetime mechanisms | barrier-owned work and resources |
+
+The small one-off families from Pass C fold rather than adding new families: `CAP_PERSISTENCE` becomes a resident bridge or `CAP_REGISTRY`; `CAP_MODULES` becomes a resident bridge (the existing subsystem host); `CAP_AUTH` and `CAP_GAMEMODE` become `CAP_REGISTRY`/`CAP_CONFIG` reads.
+
+Rules:
+
+- No one-use capabilities. If a capability would retire only one or two files and is not a mandatory lifetime mechanism, fold it into a family or keep the file resident with a thin bridge.
+- Every capability has one owner, one spec section, and a bounded plain-data op list.
+- **If the family count keeps growing, stop and consolidate.** A growing capability table is the same failure mode as the discarded branch: more layers, less reasoning. Consolidation is required before adding another family.
+- The manifest assigns sources. It cannot add a new host mechanism; that is a deliberate capability install, not a data change.
+
+#### Family-level migration, not per-file
+
+The remaining work is organized by **capability family**, not by file. One bridge
+can retire every source in a family:
+
+| Family | Remaining refs (2026-11-12) |
+|---|---:|
+| `ModuleHost` | 219 |
+| audio (`AudioManager`/`MusicManager`/helpers) | 216 |
+| `MimitaNet` (transport/session) | 95 |
+| effects (`EffectPartSystem`) | 94 |
+| GLAD (vendored C) | 87 |
+| ICE (`IceAgent`) | 59 |
+| duel queue | 43 |
+| process globals (`gpWorld`, …) | 36 |
+| HotReloadSystem / LogManager / Renderer | 37 |
+
+This is why the work is "little steps": each step is a family, not a file. A full
+family bridge is preferred; a partial bridge is allowed when a family is large or
+risky, but the remaining methods must stay `UNRESOLVED` and the link may still
+fail. Do not add silent stubs that make the DLL link while disabling behavior.
+
+The safe order is family-by-family, with the partial bridge first for the large
+families (ModuleHost, audio, effects), then transport receive, then the smaller
+families. The ownership cutover happens only after a probe.
+
+#### Foundation-first bridge strategy
+
+The linker is the worklist, but the unit of work is a capability foundation, not
+one shim per symbol. The worklist tool is `devscripts/game_link_worklist.py`:
+
+1. Read the linker undefined-reference list.
+2. Classify each symbol: pure, singleton policy, device/transport, or state.
+3. Pure/stateless code moves into `game.dll`; do not bridge it.
+4. Singleton policy gets one typed family bridge.
+5. Device/transport gets a bounded command or queue capability; never expose the
+   device object or a raw operating-system handle.
+6. State gets a resident record and stable handle; never pass C++ containers or
+   references across the ABI.
+7. Generate shims for scalar/string/vector signatures; hand-write only complex
+   ownership and callbacks.
+8. Batch all host ABI additions into one intentional cold EXE build.
+9. After each batch, relink and record the remaining reference budget.
+
+The foundation batch is:
+
+- real `CAP_ENTITY` player/NPC records and `entity_read`/`entity_write`;
+- inbound `CAP_TRANSPORT` delivery through
+  `GameModuleV1::on_event(kEventTransportMessage)`;
+- a server transport adapter with `send_to_player`/`broadcast`;
+- `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES` generation leases;
+- a `CAP_RENDER` command-stream skeleton.
+
+#### Networking hot/cold split
+
+**Cold (resident host):**
+
+- sockets, UDP, ICE, framing, encryption;
+- the reliability/ordering mechanism;
+- peer/session table, timeouts, receive/send timing;
+- transport mechanism setup.
+
+**Hot (`game.dll`):**
+
+- packet IDs, schemas, encode/decode;
+- handlers and validation;
+- reconnect/error policy;
+- gameplay authority.
+
+Rules:
+
+- The host routes opaque `{channel, typeId, bytes}` and never parses payloads.
+- Inbound messages use `TransportMessageV1` through
+  `GameModuleV1::on_event(kEventTransportMessage)`.
+- Outbound messages use `CAP_TRANSPORT`.
+- No `SOCKET`, `sockaddr_in`, `IceAgent`, `ServerPlayer`, `World&`, or other
+  C++ object crosses the boundary.
+- Adding or removing packet IDs and handlers is hot. IDs are tombstones and are
+  never reused.
+- The reliability/ordering *guarantee* is cold; the decision to retry,
+  reconnect, or abort is hot policy.
+- `PACKET_SERVER_COMMAND` is the first networking proof because it is the
+  terminal-first control path. It needs the inbound gate, the server transport
+  adapter, the player/session state phone, and a bounded command policy before
+  it can move authority out of the resident handler.
 
 ## 3. Save, build, validate, activate
 
@@ -89,7 +362,7 @@ This pipeline can automatically assign and build files after ownership rules exi
 
 ### 3.1 Concrete first-implementation runbook
 
-This is the implementation order for the first working save-to-live loop. It deliberately starts in the existing repository with one NPC behavior slice; it does not require a new repository or a complete field-by-field audit of all 594 current source files before work can begin. Keep world loading on its current path during this proof. Expand the audit as each later source batch is moved.
+This is the implementation order for the whole-game save-to-live loop. The project completion target is one `game.dll` containing all eligible game implementation code, not an NPC-only DLL. The NPC path is a bounded loader proof within that whole-game effort. Inventory every repository `.cpp` before assigning the final source set; detailed semantic state/callback review may continue in dependency-connected batches. Keep world loading on its current path during the first loader proof.
 
 #### Step 0: reuse what already exists and identify the seam
 
@@ -102,36 +375,38 @@ Before changing code, re-check the source inventory and these current implementa
 | `src/hot-reload/hot-reload-system.cpp` | Loads candidates and currently triggers its focused DLL build synchronously. | Keep candidate loading/rollback ownership here or move it to the chosen resident owner; remove synchronous compilation from the game tick. |
 | `src/engine/engine-tick-setup.cpp` | Calls the current reload check during engine setup/tick work. | Keep only a cheap notification/activation check at the safe boundary; never wait for compilation here. |
 | `devscripts/module_ownership.py` and its catalog | Audits source-to-target ownership for existing subsystem modules and the EXE. | Extend the single ownership map to distinguish bootstrap, runtime, and game targets and reject duplicate/unassigned production owners. |
-| `devscripts/cpp-source-inventory.py` | Records source/dependency and planned ownership evidence. | Keep it as the generated audit/report; the build coordinator should consume the canonical owner manifest rather than infer ownership from filenames. |
+| `devscripts/cpp-source-inventory.py` | Enumerates repository `.cpp` files, active build membership, current owners, dependencies, and unload-risk candidates. | Keep the JSON as the detailed audit and CSV as the sortable map; the build coordinator should consume the canonical owner manifest rather than infer ownership from filenames. |
 
-The current source-checked snapshot says the focused DLL contains `src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`, while 582 sources are assigned to the EXE and 12 to subsystem modules. Re-check before implementation because the counts can change. The existing effect/debug API proves only that narrow feature path, not arbitrary C++ reload.
+The current source-checked snapshot says the focused builder compiles two sources,
+`src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`, while both remain in the
+583-source EXE list. The repo also declares a separate six-source CMake DLL target. These are separate source claims, not proof that the whole game is assigned to a DLL. Re-check the generated inventory before each migration batch.
 
-Use the mapped server NPC path as the first trace: `runServer -> simulateSharedNpcs -> NpcSystem::updateOneWithTarget -> NpcSystem::updateOneNpc`. The existing functions pass live C++ references such as `Npc&`, `World&`, `Player&`, and `NpcMovementContext&`; those references are not the permanent cross-DLL interface. Inspect the actual field reads/writes and choose the smallest behavior decision that can be represented as plain input/output data. If the selected decision needs world information, request it through a bounded runtime capability rather than passing a `World&` through the ABI.
+Use the mapped server NPC path as the first trace: `runServer -> simulateSharedNpcs -> NpcSystem::updateOneWithTarget -> NpcSystem::updateOneNpc`. The existing functions pass live C++ references such as `Npc&`, `World&`, `Player&`, and `NpcMovementContext&`; those references are not the permanent cross-DLL interface. Inspect the actual field reads/writes and choose the smallest behavior decision that can be represented as plain input/output data. If the selected decision needs world information, request it through a bounded resident capability rather than passing a `World&` through the ABI.
 
 #### Step 1: establish the persistent-data rule
 
-- `runtime.dll` is resident code plus the owner of live process-memory records. The DLL file itself is not where changing player/NPC positions are stored.
-- The runtime allocates and owns the state that must survive game-code replacement: for the pilot, at minimum the NPC's stable ID and the exact fields used by the selected behavior, plus whatever world/session identity is needed to prove the same test is continuing.
-- Implement only the runtime record types and fields needed by this pilot, while following the generic entity/type/schema-version rules above. Do not migrate every entity/component or build a reflective field database before the first reload works.
+- The resident host (currently the EXE) is resident code plus the owner of live process-memory records. The host image itself is not where changing player/NPC positions are stored.
+- The resident host allocates and owns the state that must survive game-code replacement: for the pilot, at minimum the NPC's stable ID and the exact fields used by the selected behavior, plus whatever world/session identity is needed to prove the same test is continuing.
+- Implement only the resident record types and fields needed by this pilot, while following the generic entity/type/schema-version rules above. Do not migrate every entity/component or build a reflective field database before the first reload works.
 - `game.dll` owns replaceable behavior and temporary implementation state. Do not put the only copy of NPC position, health, identity, or session state in a game-DLL global, static, heap allocation, callback closure, or thread-local object.
 - The first proof is code-only: keep the state schema unchanged. This isolates “did code reload preserve the NPC?” from “did a data migration work?” Add field/schema migration after code-only replacement passes.
-- If the process exits, runtime-owned memory also exits unless separately saved. Persistent-across-process saves remain a separate data-saving path; this plan promises continuity across a game-code DLL switch, not automatic disk persistence.
+- If the process exits, resident-owned memory also exits unless separately saved. Persistent-across-process saves remain a separate data-saving path; this plan promises continuity across a game-code DLL switch, not automatic disk persistence.
 
 #### Step 2: install the one-time stable loader boundary
 
-1. Define the minimum versioned C ABI needed for startup, querying runtime capabilities, game-module initialization, one NPC decision call, quiescence, and shutdown. Put the authoritative declaration in one shared header. Include ABI version and structure-size fields.
+1. Define the minimum versioned C ABI needed for startup, querying resident capabilities, game-module initialization, one NPC decision call, quiescence, and shutdown. Put the authoritative declaration in one shared header. Include ABI version and structure-size fields.
 2. Pass fixed-width values, plain structs, byte spans, and stable entity handles across the boundary. Keep C++ classes, STL containers, references, exceptions, RTTI-dependent objects, and allocator ownership on one side.
-3. Make the EXE load `runtime.dll`; make the resident runtime load and validate the candidate `game.dll`. Keep a stable function table in the runtime and call the active generation through it.
-4. Create or update the agent-lane host target so this boundary is installed by one intentional initial EXE/runtime build. This is the expected cold boundary. After it is running, a game-owned `.cpp` edit must only compile/link a game DLL generation; it must not relink the EXE.
+3. Keep the loader in the EXE; the resident host loads and validates the candidate `game.dll`. Keep a stable function table in the resident host and call the active generation through it.
+4. Update the canonical root host target so this boundary is installed by one intentional initial EXE build. This is the expected cold boundary. After it is running, a game-owned `.cpp` edit must only compile/link a game DLL generation; it must not relink the EXE.
 5. Retain current subsystem modules and the current world-loading implementation while the pilot is built. Do not copy the entire repository into a new repo or attempt to move world loading in the same boundary change.
 
-Before proceeding, start the game once and confirm that the runtime and a trivial game module load, report their ABI/generation, reject an invalid candidate, and leave the process open. This verifies the loader before NPC behavior is mixed in.
+Before proceeding, start the game once and confirm that the resident host and a trivial game module load, report their ABI/generation, reject an invalid candidate, and leave the process open. This verifies the loader before NPC behavior is mixed in.
 
 #### Step 3: move one NPC decision behind the ABI
 
 1. Keep the current server tick, entity lookup, world loading, physics/collision, and authoritative application in their existing owners for this proof.
-2. At the chosen NPC decision seam, build a bounded `NpcBehaviorInputV1` from runtime-owned data. Include stable entity IDs and only the values that decision needs. Add an output struct containing the decision/result; do not return pointers into game-DLL memory.
-3. If the decision needs a world/nav query, expose a versioned runtime capability that accepts stable handles and plain query/result structs. The runtime performs the query with current host-owned data; the game module chooses behavior from the result.
+2. At the chosen NPC decision seam, build a bounded `NpcBehaviorInputV1` from resident-owned data. Include stable entity IDs and only the values that decision needs. Add an output struct containing the decision/result; do not return pointers into game-DLL memory.
+3. If the decision needs a world/nav query, expose a versioned resident capability that accepts stable handles and plain query/result structs. The resident host performs the query with current host-owned data; the game module chooses behavior from the result.
 4. Validate the returned action in the authoritative owner, apply it to the same NPC record, and keep fixed-tick physics rules unchanged.
 5. Initially leave the NPC object and complex systems in their current representation. Adapt only the selected decision seam. Later migrations can move whole subsystems once their ownership is clear.
 
@@ -139,9 +414,9 @@ The intended shape is:
 
 ```text
 resident server tick looks up NPC state
-  -> runtime makes plain versioned input
+  -> resident host makes plain versioned input
   -> game.dll computes NPC behavior
-  -> runtime/server validates and applies result
+  -> host/server validates and applies result
   -> same NPC record continues to next tick
 ```
 
@@ -151,7 +426,7 @@ This is one ABI adaptation at the behavior boundary, not a wrapper added to ever
 
 - Use one watcher/coordinator owned by the existing dev-loop/module build system. `python devscripts/live.py` is the proposed human-facing entry point, but it does not exist yet. Do not start an independent competing build loop.
 - Watch only the canonical source manifest and dependency graph. A saved game-owned source defaults to `game.dll`; runtime, bootstrap, tool, test, and data owners are explicit. Unknown ownership stops with a useful error instead of silently requesting an EXE build.
-- On save, capture an immutable source revision (hash and changed paths). Compile only affected translation units plus required dependents, then link a candidate DLL in the approved repository-local lane path. Continue the running simulation while the build runs.
+- On save, capture an immutable source revision (hash and changed paths). Compile only affected translation units plus required dependents, then link a candidate DLL in the canonical repository-local build path. Continue the running simulation while the build runs.
 - Coalesce multiple saves while a build is active: finish the captured revision, then build the newest coherent revision. Never compile a file while it is only partially saved, and never publish a DLL assembled from mixed revisions.
 - Publish to a unique immutable path such as `game-g000042.dll`; Windows cannot safely overwrite the currently loaded DLL. Validate exports, ABI version/size, runtime capabilities, dependency/source hash, and any state migration before notifying the runtime.
 - Keep game-thread work bounded: compilation/linking belongs to the background coordinator. The runtime receives a ready-candidate event and activates only at the owning safe point.
@@ -180,7 +455,7 @@ Record the EXE process ID, map/mode, NPC ID, NPC position/health before and afte
 | Compile-failure proof | Introduce a temporary syntax error | Build reports source diagnostic; old generation and world continue. |
 | Recovery proof | Fix the syntax error and save | Newer valid generation activates in the existing process. |
 | State-layout proof | Later, add one versioned NPC field | Migration/default is validated; existing NPC continuity and rollback are proven. |
-| Rollback proof | Activate a valid but deliberately worse behavior generation | Prior code is restored; runtime-owned NPC/world state is retained. |
+| Rollback proof | Activate a valid but deliberately worse behavior generation | Prior code is restored; resident-owned NPC/world state is retained. |
 
 Do not combine the first code reload with a schema change, world-loader move, networking protocol change, or renderer-device rewrite. Prove each boundary separately so a failure has one likely cause.
 
@@ -192,41 +467,384 @@ After the NPC proof passes, update the canonical ownership manifest so ordinary 
 2. Move ownership in the build manifest and remove each moved source from its old EXE/subsystem target in the same change. Enforce exactly one link owner.
 3. Resolve EXE globals and static data by moving durable state into runtime records, converting constants to immutable module data, or making temporary state generation-scoped and resettable.
 4. Keep third-party implementations, build tools, tests, bootstrap/process/device/transport mechanisms, and runtime/ABI mechanisms in their correct targets; list each exception and reason. Do not report these as ordinary game sources.
-5. Build/activate through the lane workflow and exercise the real feature. Record source counts, compile/link/activation times, state continuity, and journal evidence for each batch.
-6. Move existing subsystem-module sources into the single `game.dll` target only after their behavior and dependencies are accounted for. Avoid duplicate copies in both subsystem modules and `game.dll`.
+5. Build/activate through the canonical root dev-loop and exercise the real feature. Record source counts, compile/link/activation times, state continuity, and journal evidence for each batch.
+6. Complete the semantic trace for every eligible game source and linked game dependency before changing source ownership. Record the state owner, callback/job quiescence, external-resource lifetime, ABI crossing, and unload decision per source.
+7. Prepare one complete owner manifest, then move all eligible game implementation translation units into one `game.dll` in a single ownership cutover. Remove each from its prior EXE/subsystem target in that same change. Do not maintain a long-lived partial migration with ordinary game files split across targets.
+8. Keep launcher/bootstrap, resident host, platform/device mechanisms, standalone tools, tests/demos, and unrelated vendor code outside `game.dll` with an explicit owner and reason. For linked vendor implementations used by the game, verify source/build provenance and route them into `game.dll` or document the verified binary dependency.
 
-Start with low-fanout behavior leaves. Defer central orchestration, shared headers, world loading, renderer/audio/physics resources, networking transport, and public packet/ABI code until the relevant state and lifecycle owners are mapped. The target remains one large `game.dll` until measured link time, ownership isolation, or rollback requirements justify splitting it.
+The loader and NPC continuity proof validates the mechanism; it is not an NPC-only source migration. Preparation may require multiple code changes, but the ordinary game-source ownership switch is one reviewed cutover. Keep one large `game.dll` unless measured link time, ownership isolation, or rollback requirements justify splitting it.
 
 ## 4. Migration phases
 
+The NPC path is the first end-to-end proof of the loader, state continuity,
+failure fallback, and rollback. It is not the migration destination. After the
+proof, the ownership target is one `game.dll` for ordinary eligible game
+implementation `.cpp` files across the project, with explicit documented
+exceptions for bootstrap/runtime, device/platform, transport, third-party, and
+build/test code. Split that DLL only when measurements justify it.
+
 ### Phase 0 — Inventory and baseline
 
-- Inventory every active `src/**/*.cpp`, header dependency, current build target, global/static state owner, thread/job callback, and network message boundary.
-- Record current EXE, narrow DLL, and subsystem-module ownership. Separate source facts from proposed future ownership.
+- Enumerate every repository `.cpp` and every code-bearing input to the EXE, including C translation units and vendored static archives. Distinguish EXE sources from subsystem DLLs, launcher/tools/tests/demos, and unused vendor trees. Record actual source/archive provenance, resources, and runtime sidecar dependencies.
+- For every source, record current owning target, overlapping/alternate target declarations, direct and transitive project-header dependencies, available compiler depfile dependencies and freshness, file size/hash, main-entry signal, and lexical state/callback/thread/job/network signals with line references.
+- Map mutable state to its actual lifetime owner; trace callback captures/registration/unregistration, job submission/cancellation/join, and thread shutdown for every eligible game source and linked game dependency. Lexical matches are investigation leads, not safety findings.
+- Record current EXE, narrow DLL, subsystem-module, CMake-declared DLL, and vendored static-library ownership separately from the proposed `game.dll` owner. The CSV and JSON source maps are linked below.
+- Build a complete per-file semantic trace and one-owner cutover manifest for all active game code, including active vendored C++ implementations; explicitly mark stable launcher/runtime/platform/build/test exceptions.
 - Measure current build stages and representative save-to-evidence cycles: save detection, affected translation units, compile, link, validation, activation, and first decisive journal event.
 - Capture an FPS/server-tick baseline on named hardware and workload. Do not assume an NPC triangle-scan problem until the journal or profiler identifies it.
 
+**First-pass file maps (2026-11-12):** [sortable per-file `.cpp` CSV](../../handoffs/cpp-source-inventory.csv), [full dependency/lifetime JSON](../../handoffs/cpp-source-inventory.json), and [EXE link-input inventory](../../handoffs/mimita-exe-link-inputs.md). The `.cpp` map covers every repository `.cpp`; the EXE map also identifies directly compiled C files, the resource, libraries, and runtime sidecars. These are static source/build-script maps, not proof that code is safe to unload or that current depfiles are fresh.
+
 **Pilot-start gate:** enough evidence for the selected NPC path, not a full understanding of the whole repo: exact source/call path; fields read/written by the chosen decision; current owner of those fields; callbacks/jobs that can execute that path; existing loader/target; one repeatable map/workload; and an authorized route for the boundary build/runtime run. This lets Phase 1 begin while the wider inventory continues.
 
-**Full Phase 0 exit evidence:** complete, overlap-free inventory; exact representative build/save-to-activation timings; named-hardware runtime baseline; and known state/loader boundaries for the sources planned for migration. Do not mark all of Phase 0 complete based only on the pilot-start gate.
+**Full Phase 0 exit evidence:** every repository `.cpp` and every code-bearing EXE link input classified; every eligible game source and linked game dependency semantically traced; one complete owner manifest prepared; alternate/duplicate targets and static-archive provenance resolved; dependency evidence refreshed for the current source revision; exact representative build/save-to-activation timings; named-hardware runtime baseline; and known state/loader boundaries. Track semantic review per source in the CSV; heuristic scan hits are leads, not completed reviews. The first-pass maps do not complete semantic lifetime review or the controlled timing/runtime baselines. Do not mark all of Phase 0 complete based only on the pilot-start gate.
 
-### Phase 1 — Runtime/game boundary and NPC vertical proof
+### Phase 0 semantic-review evidence gate — every C++ source
 
-- Install the resident runtime state store, versioned component records, stable game ABI, generation validation, safe call/job quiescence, and rollback path.
-- Move one complete NPC decision/update path into the pilot `game.dll` target. Keep the same NPC identities, positions, health, world, and connected session in runtime-owned state.
+The automated inventory is a map, not the review. Before the Phase 2 ownership cutover, complete a source-by-source semantic record for every repository `.cpp` and every code-bearing implementation linked into the game. “Complete” means every row has evidence and a disposition; it does not mean pretending that every file belongs in the game DLL. Build tools, tests, launchers, bootstrap/runtime mechanisms, unused vendor trees, and binary-only libraries must each receive an explicit owner/reason. Every active game implementation source must either qualify for `game.dll` or name the concrete blocker and its resident adapter/owner. Unknown or unverified is a blocking result, never an implicit pass.
+
+For each source row, record:
+
+1. **Identity and build ownership:** repository path, content hash/revision, current target(s), exact compile/link input evidence, duplicate/alternate declarations, proposed single owner, and whether it is active, unused, tool/test-only, or vendor code. For archives, identify the actual linked binary and prove source/build provenance before claiming its source is reloadable.
+2. **Dependencies:** direct and transitive project headers, generated inputs, external libraries, link symbols or call edges that cross the proposed boundary, dependency evidence revision/freshness, and all callers/callees that matter to ownership. A header include graph alone is not a call graph.
+3. **Persistent state:** each mutable global/static/thread-local, singleton, long-lived object, and externally stored pointer/callback introduced or used by the source; its true owner and lifetime; all readers/writers; initialization, reset, migration, and shutdown paths; and the exact resident record or generation-scoped state that will replace it. Classify immutable constants separately from mutable state.
+4. **Asynchronous execution and callbacks:** every callback registration and capture, callback owner and unregister path; every thread, future, job queue, task and completion closure; cancellation, submission blocking, drain/join, and proof no callback, in-flight call, function pointer, return address, or job can enter the old generation after its unload barrier.
+5. **External resources:** graphics/context objects, audio engines/voices, sockets/transports, OS handles, files/watchers, timers, library objects, and other resources. Record creation, use, release owner, release conditions, thread/context requirements, and recreation after activation. A numeric GL/socket handle does not make its resource lifetime safe.
+6. **ABI and memory ownership:** every value/pointer/object crossing the proposed DLL boundary; whether it is plain versioned data or a stable handle; allocator and destructor ownership; and any adapter required to prevent STL, exceptions, RTTI, vtables, or old-generation memory from crossing the boundary.
+7. **Disposition and proof:** `GAME_DLL_READY`, `RESIDENT_ADAPTER_REQUIRED`, `EXPLICIT_EXCEPTION`, or `UNRESOLVED`. Cite source functions/lines and the shutdown/activation path. `GAME_DLL_READY` requires evidence for all preceding fields and the safe-unload barrier, not merely absence of lexical matches. An exception requires its reason, owner, and whether changes to it require a cold host build.
+
+Maintain these fields in the sortable per-file inventory (or a linked per-source review record), with reviewer/date/revision and evidence references. Review in dependency-connected batches, but reconcile the entire source set against one final ownership manifest. Every source in the final manifest must occur exactly once in its active link owner. Re-run source and build-input enumeration after review; any added, removed, renamed, or re-owned source invalidates its row until re-reviewed. Verify dependency snapshots against the same revision through the authorized root build workflow. Resolve saved-manifest-only vendor sources against the exact linked archive. Track C translation units and embedded/resource/link inputs alongside `.cpp`; they can also hold callbacks, state, or resources.
+
+**No-unresolved-row cutover gate:** do not perform the whole-game ownership cutover while any eligible source/dependency has `NOT_REVIEWED`, `UNRESOLVED`, stale/unknown build provenance, an unowned callback/job/resource, or an unproved boundary crossing. The completion claim is “all discovered active inputs classified and every eligible game implementation source has evidence-backed ownership and unload disposition”; do not claim literal 110% certainty. New evidence can reveal missed inputs, so keep the manifest checkable and repeatable.
+
+### Immediate next work and current evidence status (2026-11-12)
+
+The inventory exists, but the migration is still in Phase 0. The current CSV contains 733 repository `.cpp` rows and marks all 733 `NOT_SEMANTICALLY_REVIEWED`. It maps 634 current-game or saved-library candidates (616 sources across the EXE/subsystem targets plus 18 Manifold manifest-only candidates); the EXE link-input report separately lists 22 directly compiled C files. A first detached-worker review record covers eight active EXE-owned sources and identifies blockers; it is not full semantic closure for those rows. The focused two-source DLL and existing subsystem modules are not the whole-game boundary. No universal save-to-game-DLL flow or whole-game continuity proof is established.
+
+Do this next, in order, without changing source ownership early:
+
+1. **Continue the per-file evidence batches.** Use the dependency map and risk signals to review each active source and linked game dependency. For every row, record actual target/overlap, content hash, state owner and lifetime, readers/writers/reset, callback/job/thread registration and stop/join, external-resource creation/release/recreation, ABI/memory ownership, source evidence, and disposition. Record `UNRESOLVED` wherever evidence is missing; do not mark a file ready because a scan found no candidates. Review all repository `.cpp` rows for an explicit owner, and include active C/vendor/link/resource inputs. The first detached-worker record is `docs/handoffs/cpp-lifetime-batch-detached-20261112.md`.
+2. **Resolve build and dependency truth.** Verify the exact canonical EXE/DLL/archive link inputs and duplicate target claims. Verify or regenerate dependency evidence for the same source revision through the authorized root build workflow. Prove whether the listed Manifold sources produced the archive actually linked. Keep launcher, tools, tests, bootstrap, resident host, device/platform, unused vendor, and binary-only dependencies explicitly classified.
+3. **Implement and prove the resident reload barrier.** Route all game-generation calls through one stable resident function table. At swap, block new calls and task submissions; unregister callbacks; drain/cancel and join managed work; wait for in-flight calls; release generation-owned resources while their required context is current; and require an explicit quiesced/ready result before unload. Preserve state in resident versioned records or validate a transactional migration. Keep the previous generation active on any busy, failed, or invalid result. Replace detached workers or give them a resident task owner/generation lease. Ensure partial candidate initialization has a cleanup path.
+4. **Create one canonical source-owner/dependency manifest and its save coordinator.** Every active source has exactly one owner. A saved game `.cpp` compiles into a candidate game DLL; a header edit rebuilds affected dependents; adding or removing a game `.cpp` updates the candidate source set and link; unknown ownership stops with a diagnostic. Snapshot/hash one coherent revision, debounce/coalesce saves, compile/link in the background through the existing root dev-loop/module build authority, validate the candidate, and notify the resident host for safe-point activation. Compilation must not block the simulation thread. Assets/configuration use explicit data reload routes; host/loader edits remain explicit cold-boundary changes unless migrated behind a stable resident service.
+5. **Prove the complete path before cutover.** In one process, verify edit of an existing source, addition of a source, removal of a source, dependent-header edit, compile failure retaining the previous generation, recovery, state continuity, and rollback. Record exact source revision, affected translation units, DLL hash/generation, unchanged EXE PID, activation/rollback events, and runtime journal. The NPC continuity path is the first behavior proof, not the final ownership scope.
+6. **Perform one reviewed ownership cutover.** Only after every eligible game source/dependency has an evidence-backed disposition, the resident barrier is proven, and the manifest has no unresolved eligible rows, move all eligible game implementation sources into one `game.dll` and remove them from old targets in the same cutover. Retain explicit non-game and resident exceptions with reasons. Re-enumerate the resulting link inputs and verify each source has one owner.
+
+**Meaning of “edit any C++ file live”:** the target is that any ordinary active game implementation source can be added, changed, or removed and the new valid game generation can become active in the same process. It does not mean the code that keeps the process alive and loads DLLs can unload itself; the bootstrap/resident host must remain. Standalone tools/tests and unused vendor sources are not game DLL members. Changes to those owners use their own build/reload route. Do not describe the contract as “every repository `.cpp` updates live” unless the owner manifest and proof explicitly cover that file category.
+
+### Execution order and proof ownership (2026-11-12)
+
+- **Stage 0 (agent, no build):** canonical manifest, add/remove/rename discovery, reverse header dependents, coherent-revision check, unknown/duplicate-owner rejection.
+- **Phase 0 audit (agent, many batches):** 733 rows remain `NOT_SEMANTICALLY_REVIEWED`; 14 have partial batch evidence. Record the seven required fields and a source-cited disposition per row. `UNRESOLVED` blocks cutover.
+- **Stage 1 (agent writes; root dev-loop owner builds):** versioned resident-host C ABI, result-returning quiesce/shutdown, EXE-host loader, generation validation.
+- **Stage 2 (audit-driven):** move durable state into resident records; files with unresolved ownership stay in their old target.
+- **Stage 3 (agent writes; owner builds):** generation barrier (entry refcount, callback/job registries, drain/join, resource release, partial-init cleanup).
+- **Stage 4 (agent writes; owner builds):** background whole-game candidate builder and save coordinator driven by the manifest.
+- **Probe proof (root dev-loop owner or human, validation only):** loader/barrier works in one process; the probe is reverted before cutover.
+- **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
+- **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
+
+Current measured status: 745 `.cpp` rows at manifest revision `8b8d95b80794876cbaea320a6fd9a0a866305db1b78eb37f7d9ad3015428e3f7`; 657 rows are active in their owner build. The canonical owner map resolves all 745 `.cpp` rows: game 584, resident 23, bootstrap 3, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (584 game sources) but its link still fails with 554 undefined / 300 unique resident/vendored symbols; no usable `game.dll` exists yet. The chosen design keeps the resident host in the EXE.
+
+Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 39 state-review rows, 182 resident-adapter-required rows, 297 runtime-proof rows, 26 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
+
+Resident-service seam (400 sources call at least one): `Debug::log*` 195, `StructuredLogger` 163, `Terminal` 100, `TerminalState` 87, `WeaponRegistry` 52, `DebugVis` 48, `GuiLayoutManager` 42, `ModuleHost` 37, `Perf` 35, `PhysicalEntitySystem` 30, `GamemodeRegistry` 25, `MapConfigRegistry` 25, `AuthSystem` 22, `gpMpContext` 21, `serverGamemodeState` 20, `VehicleSystem` 17, `SizeScalingConfig` 16, `NpcDifficultyConfig` 15, `MovementJsonConfig` 13, `AnalyticsManager` 10, `BehaviorProfileRegistry` 9, `VehicleConfigRegistry` 7. Logging, terminal state, and GUI layout are the dominant seams, so logging/perf/config/registry/terminal/GUI host services are the first ABI capabilities to cover; a file either calls that service through the host table or stays resident with a thin bridge.
+
+### Later multi-DLL design — defer until one DLL is proven
+
+Do not split the initial migration. First prove one `game.dll` can be built from the full eligible game-source set, safely activated, rolled back, and preserve resident state. Splitting now would create more module boundaries before the ABI, lifetime barrier, and whole-game ownership manifest have been exercised.
+
+When measured compile/link time, independent ownership, or failure-isolation needs justify a split, make multiple DLLs managed modules under the same resident host:
+
+- Give each module a stable module ID, ABI/version and structure sizes, code hash, state-schema version, declared capabilities, and explicit dependency list in one manifest.
+- Keep dependencies acyclic and load/activate them in topological order. Cross-module calls use versioned function tables or resident-host services and stable handles; no C++ object ownership, STL container, exception, allocator, or private-generation pointer crosses a module boundary.
+- Treat a dependent module set as one compatible generation. Validate that all required module IDs, ABI versions, capabilities, and dependency hashes agree before activation; reject partial or mixed generations.
+- Stop new calls, unregister callbacks, block submissions, drain/join work, and wait for in-flight calls per module before unload. If modules share callbacks/resources/state, unload or activate that dependency group atomically.
+- Preserve independent rollback generations for the module set. If any member fails validation or its first-call health check, keep or restore the previously active compatible set.
+- Split only after profiling shows a useful reduction in save-to-live latency or a concrete ownership/isolation benefit. Track per-module compile, link, validation, activation, dependency fan-out, and rollback costs; avoid one DLL per source.
+
+The target remains one cold, minimal bootstrap/resident host plus hot game behavior. A true platform/device/loader or incompatible public-ABI change can still require a deliberate host boundary build; keep that list explicit and shrink it only when a stable resident service replaces the mechanism.
+
+### Pre-cutover stages 0-4 (one all-files cutover)
+
+The ownership change is one reviewed cutover. These stages prepare it with current ownership unchanged, so the EXE keeps running exactly as today until Stage 5. None of these stages may claim runtime proof before the root dev-loop owner or human runs the exact process.
+
+#### Stage 0 - canonical manifest and dependency discovery
+
+- `config/source-owners.json`: exactly one owner per source (`game`, `resident`, `bootstrap`, `launcher`, `tool`, `test`, `vendor`, `module:<name>`); explicit overrides carry reasons; unknown or duplicate ownership is an error.
+- `devscripts/source_manifest.py` with `--write`, `--check`, `--diff`, and `--dependents`: owner resolution (module > override > ordered rules), coherent revision, add/remove/rename detection, reverse header dependents.
+- Coherent revision = hash of the sorted `{path: sha256}` set plus build-config hashes. Never build a partially saved or mixed tree.
+- `devscripts/cpp-source-inventory.py` consumes the resolver and reports `owner_category`, `owner_reason`, and unresolved rows.
+- Acceptance: every repository `.cpp`, the EXE C inputs, the linked archive, and the resource input have one owner; deterministic revision; seeded unknown/duplicate cases fail; no `src/` change and no build.
+
+#### Obsolete-code removal (allowed over time)
+
+The project is client/server-only. Code that exists only for a removed local-only/single-process architecture is obsolete and should be deleted over time, not preserved for compatibility.
+
+Allowed without a separate classification pass when it is obvious:
+
+- zero callers, zero includes, zero build references, and zero config/terminal/asset references;
+- the behavior is unused or already owned elsewhere.
+
+Rules:
+
+- Delete in a focused change; do not bundle an unrelated cleanup.
+- Update the owning manifest/build target and re-enumerate.
+- Record the deletion in the changelog.
+- If it is not obvious, leave it and write a note; do not guess-delete.
+- Packet IDs are tombstones: removal never reuses an ID.
+- Preserve unrelated user changes and existing lane data.
+
+#### Stage 1 - versioned resident-host C ABI
+
+- Shared header `src/host/abi/game-host-abi.h`: ABI version and structure sizes; plain data, stable handles, result-returning `quiesce`/`shutdown`; host service table for the seam (entity/world access, config, logging, render, network, audio, files, time, jobs).
+- New services are reached through one generic versioned capability lookup (`get_capability(id, version)` returning a plain-data struct with `version`/`structSize`), not by adding a field per service.
+- Structured logging crosses the boundary as a bounded UTF-8 JSON string (`kMaxLogPayloadBytes`). Typed event structs are a deferred optimization, adopted only if measured logging cost justifies them.
+- Resident loader `src/host/host-loader.h` in the EXE validates version/size/hash, runs partial-initialization cleanup, and keeps the old generation on any failure.
+- Resident runtime `src/host/host-runtime.h/.cpp` owns the loader, barrier, and host services. It is idle unless `MIMITA_GAME_PROBE=1`.
+- The existing `GameAPI` path stays until the new path is proven. This is a deliberate cold boundary.
+- Scaffold status (2026-11-12): headers and the host runtime exist; the runtime is opt-in and has not been compiled by an agent.
+
+#### Stage 2 - resident state ownership (audit-driven)
+
+- Generic resident record store with entity/type identity, schema version, stable handle, migration/default hook, and direct access (no per-tick reflection).
+- Durable state moves out of DLL globals/statics per reviewed audit row; files with unresolved ownership stay in their old target and block the cutover.
+- Acceptance: probe state survives a swap; failed migration keeps old state and old code active.
+
+#### Stage 3 - generation barrier
+
+- `src/host/host-barrier.h`: entry refcount; generation-stamped callback registry with bulk unregister; job/task registry with cancel/drain/join; resource release under the required context; explicit `QUIESCED`/`BUSY`/`ERROR`; guaranteed partial-initialization cleanup.
+- Detached workers are replaced by a resident executor or generation lease.
+- Acceptance: quiesce refuses while in-flight > 0; no callback, job, function pointer, or return address can enter the old generation after unload.
+- Scaffold status (2026-11-12): header exists and is not yet called by the EXE.
+
+**Mandatory generation rules (no per-file runtime proof needed when these hold):**
+
+- No raw `std::thread`, `std::async`, detached worker, or `CreateThread` in a `game` row; all async goes through `CAP_JOBS` and is generation-stamped.
+- No raw callback registration; callbacks use generation tokens through `CAP_CALLBACKS` and are unregistered on quiesce.
+- No generation-owned GL/audio/socket/file handle that outlives a call; use `CAP_RESOURCES` so the host can release it under the required context.
+- `quiesce()` reports `BUSY` until entries, callbacks, jobs, and resources are zero.
+- If anything remains, unload is refused: the old generation stays active, the loader emits an Important/Error `game.generation.unload-refused` event naming the blocking owner/category, and no silent `FreeLibrary` occurs.
+- Partial candidate initialization must have a cleanup path.
+- A static gate rejects banned raw patterns in `game` rows; a row that bypasses the barrier is a defect, not an unproven row.
+
+#### Stage 4 - background whole-game builder and coordinator
+
+- `devscripts/game_build_worker.py` compiles the manifest's `game` sources, links an immutable `game-g<N>.dll`, verifies source coherence before and after, and publishes `build/game/current.json`.
+- `devscripts/live.py` watches sources and headers, debounces/coalesces saves, pins one coherent revision through `devscripts/source_manifest.py`, spawns the worker in the background, and publishes `build/game/ready.json` for safe-point activation.
+- Unknown ownership stops with a diagnostic; compile failure keeps the active generation.
+- Acceptance: one coherent revision per build; add/remove/rename and header changes rebuild the right translation units; no compiler invocation from the manifest tool.
+- Diagnostic status (2026-11-12): all 584 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the bridges it fails with 300 unique, with `StructuredLogger`, `MimitaNet::nowMs`, and `recordCrashBreadcrumb` at 0 and 0 duplicate definitions; `ModuleHost` is 76, audio core is 0, effects is 0, and total undefined is 554. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
+
+Foundation batch status (2026-11-12): the host ABI now declares `CAP_ENTITY`,
+`CAP_RENDER`, `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES`. The resident host
+has a real entity adapter path for server players/NPCs, inbound
+`TransportMessageV1` delivery through `on_event(kEventTransportMessage)`, a
+server transport adapter, generation job/callback/resource leases, and a render
+command-stream skeleton. The probe generation links with the new game-side
+bridges and logs a `PACKET_SERVER_COMMAND` policy decision (`admincmds`/
+`player_list`) using the player snapshot from `CAP_ENTITY`; exact `admincmds` is
+now authoritative in the probe. The host was rebuilt through the dev loop. A real server/client run
+(`20261112_215614`) proved inbound delivery and player state parity for
+`admincmds`: the game decided `accepted=1` and the resident handler also
+accepted with `admincmds=1 (host)`. A first authority attempt reported
+`ack=1` from the host but the client did not observe the result. A second attempt
+used a host-owned `TransportResponseV1` envelope and the resident server sent a
+valid 264-byte `PACKET_SERVER_COMMAND_RESULT` to the exact inbound endpoint
+(`sent=true`, magic/version/type/tick verified). The client logged
+`network.server-command.result`; exact `admincmds` is now authoritative in the
+probe, including the enabled/disabled host status cases. No
+same-PID swap, compile-failure, rollback, or state-continuity proof was run. The symbol worklist is
+`devscripts/game_link_worklist.py` and
+`docs/handoffs/game-dll-undefined-worklist-20261112.md`.
+
+#### What is left by gate (2026-11-12)
+
+| Gate | Current | Needed |
+|---|---:|---|
+| Whole-game link | 554 undefined / 300 unique | 0 undefined |
+| Live activation | probe swap works | full-game swap + rollback |
+| State continuity | same process/connection in probe | resident records + formal same-PID probe |
+| Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
+| Render/world | ABI skeleton | `CAP_RENDER`/`CAP_WORLD` + GLAD path |
+| Static gate | 235 violations | 0 |
+| Cutover | not started | 584 game sources moved |
+| Runtime campaign | not started | add/remove/edit/rollback proof |
+
+#### Command response envelope (2026-11-12)
+
+The host owns the response endpoint; the game owns the response bytes.
+`TransportDispatchV1` carries an inbound message and a bounded
+`TransportResponseV1`. This avoids exposing `SOCKET`/`sockaddr_in` and avoids
+depending on a cached player address.
+
+Current status: the envelope is implemented and the server sends a valid
+264-byte `PACKET_SERVER_COMMAND_RESULT` to the exact inbound source endpoint. The
+client receives it and logs `network.server-command.result`. Exact `admincmds`
+is now authoritative in the probe; the resident handler does not send a second
+result for that command. Other command arguments and packet families remain
+resident.
+
+#### Live activation (2026-11-12)
+
+`HostRuntime::poll()` reads `MIMITA_GAME_READY` or `build/game/ready.json`. When a
+new `generation`/`dll` is ready, it:
+
+1. quiesces the barrier and waits up to 2 seconds;
+2. loads and validates the candidate while the old generation is still loaded;
+3. quiesces and shuts down the old generation;
+4. commits the candidate and starts the new generation;
+5. keeps the old generation if quiesce or load fails.
+
+Probe evidence (`20261112_225639`): the same server PID `25812` and client PID
+`5688` started on `generation-20`, activated `generation-21` after the ready
+file appeared, and continued running without an EXE restart. Both processes
+logged `game.generation.activated`. A later `admincmds` still produced the
+game-owned response and client result. This is probe-only live activation, not
+the full game cutover. Formal state continuity, failed-load fallback, rollback,
+and callbacks-preserving quiesce remain to be proved.
+
+#### Deferred cleanup: legacy `Debug::log` facade
+
+`Debug::log*` already forwards to `StructuredLogger`; it is an API cleanup, not
+a second log sink. It is not part of the live-activation critical path.
+
+- Do not add new `Debug::log*` call sites.
+- Resident/bootstrap call sites must be migrated before the all-files cutover
+  because `debug-log.cpp` is game-owned.
+- Remove the remaining game-side call sites over time; delete
+  `debug-log.h/.cpp` when the count reaches zero.
+- `logAuto`'s `"WARNING"`/`"ERROR"` string parsing needs manual classification.
+- Add a static gate rule when the facade is removed.
+
+#### Long-term agent build path: dev-loop `game-dll` request (Option C, not implemented)
+
+The standing agent path is a dev-loop request, not a blanket build override:
+
+- The dev-loop owns the game-DLL build queue, lock, and status.
+- Agents may request `game-dll` and poll progress; they never invoke a compiler or the EXE builder.
+- The request builds only `game.dll`/probe outputs under `build/game`, using the persistent object cache, parallel jobs, and live progress.
+- One game-DLL worker runs at a time. EXE builds and runtime launches remain owner-only.
+- This is not implemented yet. Until it is, a session may use the narrow game-DLL worker only under an explicit human build-authority exception, recorded in the changelog.
+
+#### Temporary validation probe
+
+The probe is the NPC target-selection decision in `simulateSharedNpcs` (`src/network/server-npcs.cpp`). It is validation-only and is reverted before the Stage 5 cutover; it is not a partial migration and does not change the final owner set.
+
+- Input/output: `src/host/abi/npc-target-probe-abi.h` (`NpcTargetDecisionV1`, event `720`, up to 64 plain candidates).
+- Probe generation: `src/game/probe/npc-target-probe-module.cpp` exports `GetMimitaGameModuleV1` and runs `src/npc/npc-targeting.cpp`.
+- Build set: `config/probe/npc-target.json`; build with `python devscripts/game_build_worker.py --sources-file config/probe/npc-target.json --out build/probe/npc-target`.
+- Host: `src/host/host-runtime.cpp` loads the candidate only when `MIMITA_GAME_PROBE=1` and `MIMITA_GAME_DLL` point at it.
+- Parity-only: the host logs `npc.target.probe` with the inline target, the probe target, `match`, candidate count, and generation. The inline result stays authoritative until parity is proven.
+
+
+#### Stage 5 - single all-files cutover (gated)
+
+- Requires: no unresolved eligible rows, a proven barrier, and the probe proof.
+- Add every eligible `game` source to `game.dll` and remove it from prior targets in the same change; retain documented resident/bootstrap/tool/test/vendor exceptions.
+- Re-enumerate link inputs and verify one owner per source. Keep one `game.dll` unless measured link time or ownership isolation justifies a split.
+
+
+### Phase 0 information-sufficiency gate
+
+This gate defines when the project stops gathering information and starts changing code. It is deliberately measurable.
+
+**Passes and outputs**
+
+- **Pass A — runtime quiesce plan:** every `RUNTIME_PROOF_REQUIRED` row is classified as `TRANSIENT_CANDIDATE` or `OWNED_PERSISTENT`, with its owner/stop/join/release path and barrier rule. Output: `docs/handoffs/cpp-runtime-quiesce-plan-20261112.md`.
+- **Pass B — state-owner decisions:** every `STATIC_STATE_REVIEW` row has a per-symbol decision: immutable constant, generation cache, durable resident record, external resource, or callback/job target. Output: `docs/handoffs/cpp-state-owner-decisions-20261112.md`.
+- **Pass C — capability map:** every `RESIDENT_ADAPTER_REQUIRED` row maps to a capability operation or an explicit resident bridge. Output: `docs/handoffs/cpp-capability-map-20261112.md` and the seed `HostCapabilitiesV1` table.
+- **Packet catalog:** every packet ID, field schema, encode/decode site, handler, owner, schema hash, and error/timeout/reconnect path. Output: `docs/handoffs/cpp-packet-catalog-20261112.md`.
+- **Render command inventory:** every draw primitive, GL state, shader, and resource lifetime that `CAP_RENDER` must cover. Output: `docs/handoffs/cpp-render-command-inventory-20261112.md`.
+- **World-query inventory:** every query shape/site and the data `CAP_WORLD` must expose. Output: `docs/handoffs/cpp-world-query-inventory-20261112.md`.
+- **Static gate rules:** the banned raw patterns (thread, callback, GL/socket/file handle) that make per-file runtime proof unnecessary. Implemented in `config/game-static-gate.json` and `devscripts/game_static_gate.py`; report `docs/handoffs/cpp-static-gate-20261112.md`.
+- **Baseline measurements (owner-run):** current EXE build time, candidate `game.dll` link time, and a baseline journal.
+
+**Definition of "enough information"**
+
+All of these are true:
+
+1. `STATIC_CLOSABLE_CANDIDATE = 0` and `UNRESOLVED = 0`.
+2. Every row has an owner category, dependencies, state owner, async/resource owner, and a disposition.
+3. Every state-review row has a per-symbol decision.
+4. Every adapter row maps to a capability operation or a resident bridge.
+5. Every runtime row maps to a barrier rule; no row depends on a per-file runtime test. The static gate rules and baseline are recorded; driving the gate to 0 is code-phase work, not an information-gate condition.
+6. The packet catalog, render command inventory, and world-query inventory are complete.
+7. One canonical manifest has exactly one owner per source.
+8. The owner has a baseline build/run and a measured candidate-link time.
+
+When these are true, stop auditing and start code changes. New unknowns found later are handled as new rows, not a reason to reopen the whole audit.
+
+**Per-file runtime proof = 0**
+
+The mandatory generation rules in Stage 3 make the barrier the proof mechanism. A file does not need its own runtime test; it must use `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES`. The barrier campaign proves the categories once: stop entries, unregister callbacks, cancel/drain/join jobs, in-flight zero, release GPU/audio/net under context, and keep the old generation on failure.
+
+**Preserving state is efficient**
+
+Resident records are the live state; game code accesses them by handle. A code-only swap copies nothing. Migration happens only when a schema changes, not on every reload. Reflection is not used on the hot path. Transient UI state may be preserved in resident UI records or reset; resetting is cheaper and acceptable where specified.
+
+**When code changes begin**
+
+After the gate: install the mandatory barrier rules and generic capabilities once, convert adapters in capability batches, move state per Pass B, run the small pre-flight probe, perform the single ownership cutover, then run one category-level runtime campaign and rollback.
+
+Before the gate, do not change source ownership and do not claim runtime proof.
+
+**Code-phase exit and pre-cutover gate**
+
+Code changes start after the information gate. The pre-cutover gate requires:
+
+- the static gate reports 0 violations across `game` sources;
+- the barrier category proofs pass;
+- one manifest has exactly one owner per source;
+- obsolete-code removals and folds are recorded;
+- one runtime campaign with rollback passes in the same process.
+
+### Silent and long-running work
+
+Agents and tools must make long work observable; a silent process is not proof of a hang.
+
+Before starting a long or potentially silent operation, state:
+
+- what it does and the expected phases;
+- the expected scale/duration (minutes, not a promise);
+- where progress is written (a machine-readable file and a log);
+- how to distinguish running from stuck;
+- the exact command and the watch path.
+
+Standard watch paths:
+
+- game DLL build: `build/game/progress.json` and `build/game/progress.log` (`[SKIP]` / `[CXX ]` lines);
+- fast triage: `build/audit-triage-progress.json`;
+- full inventory: flushed stdout phase lines; a dedicated `build/inventory-progress.json` is planned, not implemented;
+- dev loop: `python devscripts/dev-loop.py --status`, `.dev/current-run.json`, and each instance's `events.jsonl`;
+- EXE build: `build/progress.json` and the build log.
+
+Do not kill a process that appears silent until checking its progress file, log tail, CPU, and command line. Silence while a tool scans files or writes a large artifact is common.
+
+Routine ownership/triage refresh uses the fast manifest scan (`audit_triage.py --from-manifest`). The full inventory is the audit-evidence snapshot and is not required for every change. Tools must flush progress lines and write the machine-readable progress file.
+
+The dedicated server, client, and command path must be runnable entirely from the terminal. Terminal commands are the primary control surface; the GUI is optional. New controls should be exposed as terminal commands unless they genuinely require the GUI.
+
+### Phase 1 — Resident-host/game boundary and NPC vertical proof
+
+- Install the resident state store (in the EXE host), versioned component records, stable game ABI, generation validation, safe call/job quiescence, and rollback path.
+- Move one complete NPC decision/update path into the pilot `game.dll` target. Keep the same NPC identities, positions, health, world, and connected session in resident-owned state.
 - Save a change to NPC movement code. Build and activate it without relinking the EXE or restarting the process. Confirm that the NPC behavior changes and the pre-existing NPC/world state remains.
 - Record the candidate generation and the relevant before/after NPC, movement, frame-time, and server-tick evidence in the exact running process journal.
 
 **Exit evidence:** real same-process activation, state continuity, compile error keeps the old version active, and rollback restores the prior behavior without losing world state.
 
-### Phase 2 — Default whole-game DLL ownership and scale the one-command workflow
+### Phase 2 — One whole-game source-ownership cutover
 
-- Change build ownership so ordinary game implementation `.cpp` files are routed to `game.dll` by default; retain only the minimal bootstrap and generic resident runtime implementation in their stable targets.
-- Make the source inventory/catalog, build scripts, dependency scanner, and watcher agree on one owner per file. Preserve existing module code during transition; merge it into the pilot target or keep it explicitly catalogued until migration is verified.
-- Generalize the pilot watcher/coordinator to every game-owned source. Use background incremental compilation and immutable candidate generations; do not make the game thread compile synchronously.
-- Measure single-`.cpp`, shared-header, and large-link edits. Keep one `game.dll` while timings meet agreed targets; split only when measurements show the large link is the bottleneck.
+- Complete the semantic trace for every eligible game translation unit and linked game dependency before changing ownership. Every source needs a reviewed persistent-state owner, callback/job quiescence path, external-resource lifetime, ABI crossing, and unload decision.
+- Prepare one canonical manifest assigning every eligible game implementation source exactly once to `game.dll`. Resolve alternate CMake, focused-DLL, and subsystem claims in that same manifest. Retain explicit bootstrap, resident host, platform/device, tool, test/demo, and unrelated vendor exceptions.
+- Prove the loader and NPC behavior as acceptance probes before ownership cutover. The NPC probe validates state continuity and rollback; it does not make NPC-only migration the destination.
+- Change all eligible game-source ownership in one reviewed cutover: add them to `game.dll` and remove them from prior EXE/subsystem targets together. Preparatory loader/host work may happen beforehand while current ownership remains intact; do not leave a long-lived partial source migration.
+- Generalize the incremental coordinator to the complete manifest. Compile affected objects in the background, link immutable generations, validate, and activate only after generation-owned callbacks/jobs are quiescent.
+- Measure single-source, shared-header, and whole-DLL link times. Keep one DLL unless measurement justifies a split.
 
-**Exit evidence:** every active implementation source is classified, ordinary saved game-source edits build only the affected game objects plus a new DLL link, and no EXE relink or restart occurs.
+**Exit evidence:** the complete manifest has one owner per eligible source; the whole game runs from the active `game.dll`; representative edits across ownership groups activate without EXE relink or process restart; and state continuity, fallback, rollback, and journal evidence pass.
 
 ### Phase 3 — Use the live loop to restore performance
 
@@ -268,9 +886,13 @@ For every trial, report:
 
 Do not use `Start-Sleep` as a build-completion detector. The coordinator should notify on completion and expose a machine-readable state/event stream.
 
-## 6. Current source status (2026-11-11)
+## 6. Current source status (2026-11-12)
 
-Source inspection on 2026-11-11 found 594 `src/**/*.cpp` files. The existing `devscripts/module_ownership.py` audit assigns 12 sources to subsystem modules and 582 to the EXE. `build_game_dll.py` builds only `src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`; `HotReloadSystem` watches that focused source list and invokes its build synchronously. The current `GameMemory`/`GameAPI` supports a small effect/debug feature, not a complete game/runtime boundary. No whole-game `game.dll` or persistent-state `runtime.dll` implementation was verified.
+The refreshed source map enumerated all 733 repository `.cpp` files. Of 596 `src/` translation units, 583 are currently compiled into the EXE and 12 are built as subsystem DLLs; the remaining probe module `src/game/probe/npc-target-probe-module.cpp` is intentionally outside the EXE until its validation run. `build.py` also compiles 20 Recast C++ files into the EXE. That is **603 directly compiled EXE C++ files**, not 616. The EXE also compiles 22 C files (GLAD and libjuice), links `libmanifold.a`, and embeds `mimita.rc` resources. A saved, dated 2026-09-30 Ninja manifest lists 18 Manifold `.cpp` files, but does not prove the current archive source provenance. The other repository `.cpp` files are outside the reviewed game source/link manifests. See the [per-file CSV](../../handoffs/cpp-source-inventory.csv), [full JSON](../../handoffs/cpp-source-inventory.json), and [EXE link-input inventory](../../handoffs/mimita-exe-link-inputs.md). This completes file enumeration, not semantic lifetime review.
+
+The current `build_game_dll.py` target compiles only `src/effects/effect-part.cpp` and `src/hot-reload/quick-hit-debug-visual.cpp`, both also assigned to the EXE. `CMakeLists.txt` separately declares a six-source DLL target; the canonical `build.py` does not use that target. `HotReloadSystem` watches the focused list and invokes its build synchronously. The current `GameMemory`/`GameAPI` supports a small effect/debug feature, not a complete game/resident-host boundary. No whole-game `game.dll` or persistent-state resident-host implementation was verified.
+
+This map is a complete file enumeration and static triage pass, not a complete semantic safety audit. Compiler depfile freshness is unknown; static/global, callback, and job matches need ownership/capture/shutdown review before any source is unloaded. The report explicitly marks the remaining evidence gaps.
 
 The repository also has a subsystem `ModuleHost` and catalog. These are existing migration assets, not evidence that all `.cpp` files are hot. During the transition, keep current module builds working until their sources and behavior have been proven in the `game.dll` path. Do not bulk-reassign files in the catalog and claim they are reloadable without a successful runtime proof.
 
@@ -282,7 +904,7 @@ Do not claim the target is implemented until the relevant running-game evidence 
 2. The same NPC IDs, positions, health, world, client/server session, and editor documents survive activation.
 3. The changed NPC behavior is observed in play and in the correct process's `events.jsonl`; a generation-loaded event alone is insufficient.
 4. A compile error, ABI mismatch, failed schema migration, and runtime regression each leave the last-known-good generation and state usable; rollback is observed in the same process.
-5. The source inventory assigns every active implementation file exactly once to bootstrap/runtime/game ownership; a saved ordinary game `.cpp` is detected automatically.
+5. The source inventory assigns every active implementation file exactly once to bootstrap/resident-host/game ownership; a saved ordinary game `.cpp` is detected automatically.
 6. Latency evidence includes build stages and generation identity; no fixed sleep is needed.
 7. The 240 FPS frame-budget and 60 Hz server-tick goals are measured under stated workload and hardware, separately from code-reload success.
 8. Multiplayer activation is coordinated across trusted connected clients; incompatible clients are held on the prior generation or safely disconnected, never silently divergent.
@@ -292,7 +914,7 @@ A build proves compilation/linking. An activation event proves code was selected
 
 ## 8. Historical and implementation-specific notes
 
-The remaining sections document the existing subsystem-module implementation, past module proofs, inventories, and JSON hot reload. They remain useful evidence. Where they describe subsystem DLLs as the final target, an EXE-owned kernel, or map-editor-first migration order, the architecture and phases above supersede that older target. Do not treat an old module activation or dated inventory as proof of the new `runtime.dll` + whole-game `game.dll` design.
+The remaining sections document the existing subsystem-module implementation, past module proofs, inventories, and JSON hot reload. They remain useful evidence. Where they describe subsystem DLLs as the final target, an EXE-owned kernel, or map-editor-first migration order, the architecture and phases above supersede that older target. Do not treat an old module activation or dated inventory as proof of the new resident-host + whole-game `game.dll` design.
 # Existing subsystem-module implementation and dated evidence
 
 > **Status:** The material below records the earlier subsystem-module design and implementation evidence. It is retained so existing code ownership and successful module proofs are not lost. The current desired architecture, phase order, and acceptance rules are in sections 1–7 above and take precedence wherever the text below describes modules or an EXE-owned kernel as the final target.
@@ -351,15 +973,11 @@ non-reloadable mechanism changes.
 
 ## Cold-build policy
 
-Cold EXE builds are a boundary, not the normal workflow. They are reserved for
-process lifetime, device access, transport, packet schema, document storage,
-loaders, and public module ABI/capability changes. Gameplay and tool behavior
-belongs in modules.
+Cold EXE builds are reserved for the resident mechanism itself: process lifetime, the loader/barrier, OS/device/driver access, the transport mechanism (sockets, ICE/UDP, framing, encryption, channel and reliability machinery), document storage, and the public capability table. These are cold because they are process-wide or ABI-defining, not because behavior is unimportant.
 
-A module source, module-private header, or data/config edit must not relink the
-EXE. The working goal is "effectively never" for behavior work, not a literal
-promise of zero for clean machine builds. Warm boundary builds use ccache and
-object caching and target seconds; clean release/install builds remain slower.
+Packet schema, packet IDs, encode/decode, handlers, session/reconnect/error behavior, render primitives, draw policy, world-query composition, gameplay, GUI, audio policy, and tool behavior are hot. They live in `game.dll` and change without relinking the EXE as long as they use the existing generic capabilities.
+
+A game/module source, module-private header, or data/config edit must not relink the EXE. The working goal is "effectively never" for behavior work, not a literal promise of zero for clean machine builds. Warm boundary builds use ccache and object caching and target seconds; clean release/install builds remain slower.
 
 The long-term path to fewer boundaries is a generic, versioned, data-driven
 event/behavior IR: new gameplay mechanisms should use existing host
@@ -370,22 +988,26 @@ mechanisms. See
 and
 [`self-contained-workspace.md`](../../architecture/live-development/self-contained-workspace.md).
 
-### Cold boundaries are the current phase, not permanent
+### Cold-build escalation and debt
 
-The cold list above is the boundary for the current phase, not a permanent
-classification. Physics/collision query infrastructure, loaders, document
-storage, transport, device access, packet schema, and the public ABI are cold
-now because they need stable process-wide ownership, lifetime control, and
-authoritative safety validation. The long-term direction is that even those
-mechanisms become hot behind versioned capabilities or the generic
-event/behavior IR. Physics and collision policy in particular are intended
-eventual hot candidates.
+The default is hot. A cold build is a debt, not a normal tool.
 
-That migration is explicitly out of scope for current work. Do not delay
-behavior extraction or hold back a live fix because a mechanism is "cold
-forever." Whenever such a mechanism does move later, it obeys the same rule as
-everything else: install the generic host seam once with one intentional
-boundary build, then keep later changes module-only.
+If an edit appears to require a cold build:
+
+1. Stop and write a prominent note: which owner/mechanism is cold, which file cannot be reached hot, and which capability or generic seam is missing.
+2. Do not treat the cold build as the fix. Design the hot-capable seam first.
+3. It is acceptable for this to take days with no gameplay testing; designing the generic capability is the work.
+4. Record the occurrence with the exact source, why it was cold, the smallest hot-boundary change, and the build result.
+5. Only the root dev-loop owner/human decides to run the one-time boundary build.
+6. Every cold occurrence must name the capability that would retire it. The cold list must shrink over time; a new permanent cold boundary needs the same review as a new capability.
+
+### Cold core and hot targets
+
+The permanent cold core is the resident host, loader, barrier, OS/device/driver interface, transport mechanism, document storage, and the public capability table. These define process lifetime or the ABI; they cannot unload themselves.
+
+Everything above that core is a hot target: networking behavior and packet schema, render primitives and draw policy, world-query composition, physics/collision policy, gameplay, GUI, audio policy, and tools. A mechanism moves from cold to hot by installing one generic capability once. After that install, new uses are `game.dll` changes only.
+
+Do not delay behavior extraction because a mechanism is "cold forever." Whenever a mechanism moves, it obeys the same rule as everything else: one intentional host boundary build for the generic seam, then module-only changes.
 
 ## Hot subsystem target: networking and NPC (2026-11-09)
 
@@ -393,15 +1015,15 @@ The target is not "some policy callbacks are hot." Entire behavior subsystems
 are hot. The host exposes bounded inputs and capabilities; the module owns the
 subsystem state machine and returns decisions/actions.
 
-### Networking
+### Networking (hot, including server error paths)
 
-`network-policy` owns map-sync, reconnect, session-health, snapshot, spawn
-authority, and combat-validation decisions. The host owns sockets, ICE/UDP
-transport, packet wire structs, encode/decode/framing, map loading, and fixed
-tick scheduling. A reconnect accept carries the authoritative map id (with a
-preserve-previous-map fallback) so map-sync can re-arm without an EXE restart.
-New networking behavior must use the existing event/action schemas; a new packet
-schema or transport mechanism is a deliberate cold boundary.
+Networking is hot and reloadable as one subsystem, not just "some policy callbacks." The resident host owns the transport mechanism: sockets, ICE/UDP, framing, encryption, channel and reliability machinery, and the opaque payload envelope. `game.dll` owns the packet catalog, packet IDs, field schema, encode/decode, handlers, map-sync, reconnect, session-health, snapshot, spawn authority, combat-validation, and outage/error behavior.
+
+Adding, changing, or removing a packet is a `game.dll` change. The host routes `{channel, typeId, payload bytes}` without parsing the payload. Packet IDs are stable and never reused within a live session. The candidate announces its schema hash and generation identity; incompatible peers are held on the prior generation or disconnected, never silently divergent. Transport security and framing remain resident.
+
+Because a wrong packet or reconnect path can corrupt a session, networking changes must show journal evidence for the real error path — drop, reorder, timeout, reconnect, and server error — not only the happy path. A clean build or a successful connect is insufficient evidence.
+
+The concrete capability shape is `src/host/abi/transport-capability.h`; the staged T0-T5 plan is `docs/handoffs/cap-transport-design-20261112.md`. T0 installs the capability (ABI, host runtime, resident client adapter; compiled); T1 moves `PACKET_SERVER_COMMAND` first because the dedicated server, client, and command path must be runnable entirely from the terminal, with GUI optional.
 
 ### NPC perception and behavior
 
@@ -413,9 +1035,7 @@ only bounded line-of-sight/ray queries; the module decides when to ask and how
 to gate the result. Editing perception, sensing cadence policy, targeting, or
 navigation choice must not relink the EXE.
 
-The ideal cold list is therefore only process/device/transport/packet-schema/
-document/loader/public-ABI changes. Everything else is a hot subsystem module
-with versioned plain-data inputs, module-owned state, and host validation.
+The ideal cold list is therefore only process lifetime, loader/barrier, device/driver/backend, transport mechanism, document storage, and the public capability table. Packet schema, render primitives, world-query composition, physics/collision policy, and all other behavior are hot subsystem code with versioned plain-data inputs, module-owned state, and host validation.
 
 ## Legacy module target: module and kernel responsibilities
 
@@ -550,12 +1170,10 @@ and only an explicit `shared_with_host` migration entry may temporarily keep a
 module source in the EXE. Module compilation uses a per-module `optimize`
 value (default `-O2`) so hot policy is not compiled slower than the host.
 
-Agents never invoke a builder. The lane dev-loop is the only EXE builder and
-the lane game's `ModuleHost` is the only module builder. Agents use isolated
-mode 2 lanes and read status/journals while the dev-loop auto-detects saved
-edits. A repository-local scheduler allows one EXE build and two module builds
-across the checkout's lanes; all writable state stays under the repository's
-gitignored .dev root. See
+As of 2026-11-11 18:41 EST, Mode 2 agent lanes are deferred. All work uses
+the canonical root checkout and root dev-loop; do not create or start lane
+workers. Existing lane data remains parked and preserved. The root dev-loop is
+the build authority. See
 [`../dev-loop/agent-lanes-build-authority.md`](../dev-loop/agent-lanes-build-authority.md).
 
 The live repair slice adds bounded collision and networking decisions without

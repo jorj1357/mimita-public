@@ -25,9 +25,9 @@ isolated workflow and are superseded for normal work by this section and
 
 ## Rule
 
-The repository root is the workspace root. Agents must be able to do all normal
-editing, building, running, testing, and evidence collection without requesting
-write access outside it.
+The repository root is the workspace root. Agents do normal editing and
+evidence collection here; the root dev-loop owns builds and runs. No normal
+workflow needs write access outside the repository.
 
 Writable state lives under:
 
@@ -55,7 +55,10 @@ External paths are read-only dependencies only: the installed compiler
 toolchain, GLFW, Blender, GPU/audio drivers, and OS services. They are not
 agent write targets.
 
-## Shared host and sparse lanes (2026-11-11)
+## Historical shared-host and sparse-lane proposal (not current workflow)
+
+The following proposal is retained for reference. It does not authorize lane
+creation or use under the current Mode 1 policy.
 
 Feature lanes do not need a full duplicate checkout. The approved reuse model:
 
@@ -78,7 +81,7 @@ generations remain lane-local.
 Only the lane land/publish path may write the shared host and module store.
 Game processes and lane module workers must never write the shared store.
 
-## Agent commands
+## Historical lane commands — do not run for normal work
 
 Agents use only the lane dev-loop:
 

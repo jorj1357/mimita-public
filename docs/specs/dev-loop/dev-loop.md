@@ -332,28 +332,29 @@ across machines.
 ### Build authority and agent lanes
 
 The dev-loop is the only EXE builder. The running game's `ModuleHost` is the
-only module builder. Agents never invoke `build.py`, `module-build-worker.py`,
-a build request, or a compiler directly; they ensure the lane dev-loop is
-running and read status/journals. The authoritative workflow is
+only module builder for module-owned sources. Agents never invoke `build.py`,
+`module-build-worker.py`, a build request, or a compiler directly; they use the
+root dev-loop's status and control interface. The authoritative workflow is
 [`agent-lanes-build-authority.md`](agent-lanes-build-authority.md).
 
-Mode 2 isolated lanes are the required agent workflow. Each lane lives under
-`<coordinator-repo>/.dev/agent-lanes/<lane-id>/` and owns its build, run, and
-journal state. The lane dev-loop auto-detects edits; agents have no build
-command.
+Mode 1 shared checkout is the active workflow. Mode 2 lanes are retired for
+normal work. Do not create or start lanes; preserve existing lane files while
+their edits are reviewed. Only the root dev-loop should watch and build the
+shared checkout.
 
-The repository-local scheduler uses named Windows synchronization objects, not
-files outside the repository, to permit one active EXE build and two module
-builds across lanes. Additional EXE build requests wait for the single EXE slot
-rather than compiling concurrently. Attempt records, wait details, caches, and
-temporary files stay under the coordinator repository's ignored `.dev/` tree.
-Builds coalesce newer saves into the next generation, use one compiler job per
-logical processor, run with high process priority on Windows, and wait if free
-physical memory is below the configured threshold. A build failure leaves the
-previous artifact or module generation active. Only a human may use
-`MIMITA_BUILD_OVERRIDE=1` for an explicit emergency build.
+The EXE scheduler lock remains active in Mode 1. It ensures one EXE build at a
+time and protects shared build outputs; it is a safety guard, not a build
+request. The root dev-loop watches compiler inputs, debounces saved changes,
+and coalesces edits into one build generation.
 
-**Implementation status:** the lane manager creates worktrees only under
+On daemon startup, an existing artifact is marked unverified but does not
+queue a build by itself. A saved compiler-input change queues an incremental
+build; an explicit build or launch request also queues validation before the
+artifact is used. If no valid artifact exists, the initial build is queued so
+the loop has something it can launch. This keeps a stale artifact from being
+silently launched while avoiding a compile solely because the daemon restarted.
+
+**Historical lane implementation:** the lane manager creates worktrees only under
 `.dev/agent-lanes/`, the scheduler defaults to `.dev/build-scheduler/`, the
 room-code handoff uses `.dev/tmp/<lane-id>/`, and the shared cache is
 `<coordinator>/.dev/ccache/`. `devscripts/path_containment.py` rejects paths,
@@ -2775,7 +2776,7 @@ that lane's executable and journal for behavior evidence.
 ### Mode 3: save-triggered compile and safe live activation (future direction)
 
 The goal is for saving a file (for example, Ctrl+S) to start a debounced,
-background check for that agent's lane. Unsaved keystrokes do not start a
+background check for the shared checkout. Unsaved keystrokes do not start a
 compiler. The system determines affected translation units, compiles them,
 links the affected replaceable module, reports errors to the owning lane, and
 keeps accepting edits while a check runs. If inputs change during a check, it
@@ -2795,25 +2796,18 @@ C++ file live-reloadable or eliminate the final integrated stable build.
 
 ### Commands and integration
 
-Mode 1 is a human fallback. Mode 2 is the agent target after repository-local
-lane support is implemented. Mode 3 commands are not available yet.
+Mode 1 is the active workflow for agents and the human coordinator. Mode 2 is
+retired for normal work. Mode 3 is a future live-activation direction; it is
+not a selectable command.
 
 ```text
-python devscripts/agent-workflow.py --mode 1 build
-python devscripts/agent-workflow.py --mode 1 run 1
-python devscripts/agent-workflow.py --mode 1 status
-python devscripts/agent-lane.py create <lane-id>
-python devscripts/agent-lane.py ensure <lane-id>
-python devscripts/agent-lane.py run <lane-id> --launch-mode <id>
-python devscripts/agent-lane.py check <lane-id>
-python devscripts/agent-lane.py status <lane-id>
-python devscripts/agent-lane.py cleanup <lane-id>
+python devscripts/dev-loop.py --status
+python devscripts/dev-loop.py --ensure-running
 ```
 
-At the end, one integrator reviews selected agent commits, combines them on an
-integration branch, validates that combined source, and publishes the stable
-executable. This final build contains the reviewed combined revision; individual
-lane artifacts and journals remain available for diagnosis.
+Existing lane-management commands and promotion procedures below are
+historical. Do not use them for normal work or delete their worktrees as a
+shortcut; preserve their edits until they are reviewed and parked or integrated.
 
 ## Historical: independent agent worktree lanes (not active)
 

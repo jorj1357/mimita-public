@@ -1,0 +1,1749 @@
+# Static audit triage (2026-11-12)
+
+**Status:** heuristic triage, not semantic closure. Absence of a lexical hit is a
+lead, not proof that a source is safe to unload. Every `STATIC_CLOSABLE_CANDIDATE`
+still needs a confirmation read of its declarations, call graph, and resources.
+
+- Source: `manifest-fast` (`build\source-manifest.json`)
+- Machine table: `docs\handoffs\cpp-audit-static-triage-20261112.csv`
+- Rows: 745
+
+## Classification counts
+
+| Class | Rows | Meaning |
+|---|---:|---|
+| STATIC_CLOSED | 66 | confirmation read closed; see batch record |
+| STATIC_CLOSABLE_CANDIDATE | 0 | no lexical hit; confirmation read still required |
+| STATIC_STATE_REVIEW | 39 | mutable static/extern state; read and assign owner |
+| RESIDENT_ADAPTER_REQUIRED | 182 | calls a resident service or holds thread_local host state |
+| RUNTIME_PROOF_REQUIRED | 297 | threads/jobs/callbacks/resources/network state |
+| RESIDENT_HOST | 26 | host/bootstrap/loader/device/transport; not game.dll |
+| NON_GAME | 135 | vendor/tool/test/launcher/module; explicit exception |
+| UNRESOLVED | 0 | unknown owner; blocking |
+
+## Confirmed static closures
+
+- `external/recastnavigation/Detour/Source/DetourCommon.cpp` - vendored Detour algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Detour/Source/DetourNavMesh.cpp` - vendored Detour algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Detour/Source/DetourNavMeshQuery.cpp` - vendored Detour algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Detour/Source/DetourNode.cpp` - vendored Detour algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/DetourTileCache/Source/DetourTileCacheBuilder.cpp` - vendored Detour tile-cache algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/Recast.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/RecastArea.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/RecastFilter.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/RecastLayers.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/RecastMeshDetail.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `external/recastnavigation/Recast/Source/RecastRegion.cpp` - vendored Recast algorithm; static helpers only, no host service/thread/resource
+- `src/actor/actor-intent.cpp` - pure ActorIntent->InputState adapter over caller values; no state
+- `src/analytics/analytics-events.cpp` - immutable constexpr event table; no mutable state/async/resource
+- `src/combat/area-effect.cpp` - pure area-effect value/geometry helpers; no global/async/resource
+- `src/combat/attack-timeline.cpp` - pure per-instance attack phase timeline; no global/async/resource
+- `src/combat/spyknife-damage.cpp` - pure damage evaluation over caller-owned weapon/impact values
+- `src/devtools/command-search.cpp` - pure fuzzy-match helper over caller strings; no state
+- `src/entities/aim-fov.cpp` - pure FOV blend/easing/application over caller values; no state
+- `src/entities/animation-rotation.cpp` - pure rotation encoding and SLERP math; no state
+- `src/fister/sim/FisterSim.cpp` - pure fister simulation math over caller-owned state; no global/async/resource
+- `src/fister/sim/Pose.cpp` - pure pose math over caller-owned state; no global/async/resource
+- `src/game/audio-bridge-module.cpp` - CAP_AUDIO bridge; generation-scoped capability pointer; no device/voice ownership
+- `src/game/effects-bridge-module.cpp` - CAP_EFFECTS bridge; generation-scoped capability pointer; host owns the effect pool
+- `src/game/entity-bridge-module.cpp` - CAP_ENTITY bridge; bounded snapshots and stable handles only; no state ownership
+- `src/game/host-compat-bridge-module.cpp` - pure nowMs and CAP_LOG crash-breadcrumb bridge; no persistent state/resource
+- `src/game/host-log-bridge-module.cpp` - CAP_LOG bridge; generation-scoped capability pointers; no persistent state/resource
+- `src/game/lifetime-bridge-module.cpp` - CAP_JOBS/CAP_CALLBACKS/CAP_RESOURCES bridge; generation leases only
+- `src/game/module-host-bridge-module.cpp` - partial CAP_MODULES bridge; generation-scoped capability pointer; no module state ownership
+- `src/game/objective-state.cpp` - pure objective-state helpers over caller values; no global/async/resource
+- `src/game/probe/npc-target-probe-module.cpp` - validation-only probe module; no persistent state/resource
+- `src/game/render-bridge-module.cpp` - CAP_RENDER bridge; bounded command stream only; no device ownership
+- `src/game/transport-bridge-module.cpp` - CAP_TRANSPORT bridge; generation-scoped capability pointer; no socket/session ownership
+- `src/gamemode/action-graph.cpp` - pure manifest-to-action scheduling queries; no global/async/resource
+- `src/gamemode/disaster-runtime.cpp` - pure deterministic disaster selection/rules; no global/async/resource
+- `src/gamemode/payload-runtime.cpp` - pure deterministic payload runtime over caller-owned runtime data; no global/async/resource
+- `src/gui/hud/chat-history.cpp` - per-instance ring buffer methods; no global/async/resource; transient UI state
+- `src/gui/hud/ui-tick-clock.cpp` - per-instance fixed-step UI clock; no global/async/resource; transient UI state
+- `src/map/map-catalog.cpp` - pure filesystem catalog scan; no persistent handle or service
+- `src/map/map-loader-gltf-builder.cpp` - empty builder translation unit; no code, state, async, or resource
+- `src/map/map-loader-mesh.cpp` - pure triangle-normal generation over caller vertex data
+- `src/network/avatar-transfer.cpp` - pure avatar transfer encoding helpers over caller values
+- `src/network/badconn/badconn-blackout.cpp` - pure blackout state machine over caller state
+- `src/network/badconn/badconn-latency.cpp` - bounded latency queue helpers over caller simulator state
+- `src/network/badconn/badconn-loss.cpp` - pure per-packet loss/burst roll over caller RNG/state
+- `src/network/badconn/badconn-reorder.cpp` - pure per-packet reorder roll over caller RNG/state
+- `src/network/chat-rate-limiter.cpp` - per-instance token-bucket state machine; no global/async/resource
+- `src/network/connection-health.cpp` - pure connection-health state machine over caller timestamps; no state
+- `src/network/net_mode.cpp` - pure launch-mode parsing; no global/async/resource
+- `src/network/projectile-terminal-dedupe.cpp` - per-instance bounded tombstone set; no global/async/resource
+- `src/npc/npc-movement-context.cpp` - pure enum/string helpers; no state/callback/thread/resource
+- `src/npc/npc-movement-policy.cpp` - pure JSON policy schema/query helpers; no state/callback/thread/resource
+- `src/npc/npc-nav-request.cpp` - pure request-to-goal and segment classification; no state
+- `src/npc/npc-navigation-settings.cpp` - pure JSON schema parse/clamp; no state/callback/thread/resource
+- `src/npc/npc-surface.cpp` - pure surface/capability naming and normal classification; no state
+- `src/npc/npc-targeting.cpp` - pure policy; no state/callback/thread/resource; callers are game-owned
+- `src/persistence/persistence-level.cpp` - pure XP-to-level math; no state/async/resource
+- `src/persistence/persistence-rewards.cpp` - immutable const reward defaults; no mutable state/async/resource
+- `src/physics/mesh-mass-properties.cpp` - pure mesh volume/moment integrator; no state/callback/thread/resource
+- `src/physics/movement/actor-triangle-spike.cpp` - pure triangle-spike diagnostics math over caller values
+- `src/replay/replay-factory-search.cpp` - transient filesystem replay scan; handles are per-call, no persistent resource
+- `src/replay/replay-io.cpp` - transient replay file read/write helpers; handles are per-call
+- `src/tiny_obj_loader_declare.cpp` - header-library implementation TU; no host service or global target
+- `src/tinygltf_declare.cpp` - header-library implementation TU; no host service or global target
+- `src/utils/stb_image_impl.cpp` - header-library implementation TU; no host service or global target
+- `src/video/frame-pacer.cpp` - per-instance frame pacing math; no global/async/resource
+- `src/vip/vip-name-render.cpp` - pure VIP name/visual value helpers; no global/async/resource
+
+## STATIC_CLOSABLE_CANDIDATE rows
+
+These are the rows most likely to close with one focused read: no thread, job,
+callback, GL/audio/network/file/OS, main, or mutable-static hit.
+
+## STATIC_STATE_REVIEW rows
+
+- `external/recastnavigation/Detour/Source/DetourAlloc.cpp` - mutable static candidates=2
+- `external/recastnavigation/Detour/Source/DetourAssert.cpp` - mutable static candidates=1
+- `external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp` - mutable static candidates=1
+- `external/recastnavigation/DetourTileCache/Source/DetourTileCache.cpp` - global/extern keyword mentions=1
+- `external/recastnavigation/Recast/Source/RecastAlloc.cpp` - mutable static candidates=2
+- `external/recastnavigation/Recast/Source/RecastAssert.cpp` - mutable static candidates=1
+- `external/recastnavigation/Recast/Source/RecastContour.cpp` - global/extern keyword mentions=17
+- `external/recastnavigation/Recast/Source/RecastMesh.cpp` - global/extern keyword mentions=21
+- `external/recastnavigation/Recast/Source/RecastRasterization.cpp` - global/extern keyword mentions=6
+- `src/camera.cpp` - mutable static candidates=1
+- `src/combat/death-system-bodies.cpp` - mutable static candidates=1
+- `src/combat/pellet-pattern.cpp` - global/extern keyword mentions=2
+- `src/combat/weapon-execution.cpp` - global/extern keyword mentions=5
+- `src/combat/weapon-fire.cpp` - global/extern keyword mentions=3
+- `src/competitive/competitive-match.cpp` - file-scope globals=2
+- `src/debug/debug-visuals-render.cpp` - file-scope globals=2
+- `src/debug/entity-visibility.cpp` - file-scope globals=2
+- `src/debug/transform-debug.cpp` - mutable static candidates=1
+- `src/devtools/dev-commands.cpp` - mutable static candidates=1
+- `src/effects/zombie-tower-effects.cpp` - mutable static candidates=1
+- `src/fister/sim/Ragdoll.cpp` - global/extern keyword mentions=1
+- `src/gamemode/capability-registry.cpp` - mutable static candidates=1
+- `src/gui/gui-coord.cpp` - mutable static candidates=1
+- `src/gui/hud/match-timer.cpp` - mutable static candidates=1
+- `src/gui/menus/menu-avatar-preview-debug.cpp` - global/extern keyword mentions=6
+- `src/gui/ui-tooltip.cpp` - mutable static candidates=5
+- `src/impact/boolean-mesh.cpp` - file-scope globals=3
+- `src/impact/destructible-geometry.cpp` - file-scope globals=1
+- `src/impact/destructible-mesh-loader.cpp` - file-scope globals=3
+- `src/map/map-loader-gltf.cpp` - mutable static candidates=1
+- `src/network/badconn/badconn-registry.cpp` - global/extern keyword mentions=1
+- `src/network/server-contact.cpp` - mutable static candidates=2
+- `src/npc/npc-nav-graph.cpp` - file-scope globals=2
+- `src/physics/movement/physics-collision-glb-sweep.cpp` - global/extern keyword mentions=2
+- `src/physics/movement/physics-collision-stress.cpp` - global/extern keyword mentions=6
+- `src/replay/replay.cpp` - file-scope globals=3
+- `src/ui/hitmarker.cpp` - file-scope globals=1
+- `src/website/api-client.cpp` - global/extern keyword mentions=5
+- `src/world/world.cpp` - global/extern keyword mentions=2
+
+## RESIDENT_ADAPTER_REQUIRED rows
+
+- `src/actor/player-ai.cpp` - resident services: StructuredLogger, Terminal, TerminalState, WeaponRegistry
+- `src/audio/audio-acoustics.cpp` - thread_local host state
+- `src/audio/audio-commands.cpp` - resident services: Terminal
+- `src/audio/music-commands.cpp` - resident services: DebugLog, Terminal
+- `src/auth/auth-controller.cpp` - resident services: AuthSystem, DebugLog
+- `src/avatar/avatar-picker.cpp` - resident services: CharacterRegistry
+- `src/camera/camera-commands.cpp` - resident services: Terminal, TerminalState
+- `src/combat/actor-preset-weapons.cpp` - resident services: WeaponRegistry
+- `src/combat/client-collision-world-view.cpp` - thread_local host state (services: PhysicalEntitySystem)
+- `src/combat/explosion-fx.cpp` - resident services: StructuredLogger, WeaponRegistry
+- `src/combat/grenade-registry.cpp` - resident services: DebugLog, StructuredLogger, WeaponRegistry
+- `src/combat/projectile-simulation.cpp` - thread_local host state
+- `src/combat/shot-profiler.cpp` - global ShotProfiler* gShotProfiler pointer
+- `src/combat/weapon-attachment.cpp` - thread_local host state (services: SizeScalingConfig)
+- `src/combat/weapon-config.cpp` - resident services: Terminal
+- `src/combat/weapon-contact-local.cpp` - resident services: WeaponRegistry
+- `src/combat/weapon-data.cpp` - resident services: DebugLog, StructuredLogger, WeaponRegistry
+- `src/combat/weapon-fire-effects.cpp` - resident services: DebugLog, SizeScalingConfig, StructuredLogger, Terminal
+- `src/combat/weapon-fire-hit.cpp` - resident services: DebugLog, Perf
+- `src/combat/weapon-fire-raycast.cpp` - resident services: DebugLog
+- `src/combat/weapon-godball-physics.cpp` - resident services: DebugVis
+- `src/combat/weapon-godball.cpp` - host Player/Camera/NpcSystem references
+- `src/combat/weapon-grenade-launcher.cpp` - resident services: DebugLog, SizeScalingConfig, StructuredLogger
+- `src/combat/weapon-hafs.cpp` - resident services: DebugLog
+- `src/combat/weapon-hit.cpp` - resident services: DebugLog
+- `src/combat/weapon-manager.cpp` - resident services: Terminal, WeaponRegistry
+- `src/combat/weapon-quick-hit.cpp` - resident services: DebugLog, DebugVis, HotReloadSystem
+- `src/combat/weapon-registry.cpp` - resident services: WeaponRegistry
+- `src/combat/weapon-rocket-launcher.cpp` - resident services: DebugLog, DebugVis, SizeScalingConfig, StructuredLogger
+- `src/combat/weapon-swordsword.cpp` - resident services: DebugLog
+- `src/combat/weapon-system-equip.cpp` - resident services: DebugLog, WeaponRegistry
+- `src/competitive/competitive-commands.cpp` - resident services: Terminal
+- `src/crosshair/crosshair-commands.cpp` - resident services: Terminal
+- `src/crosshair/crosshair-render.cpp` - resident services: StructuredLogger
+- `src/debug/debug-log.cpp` - resident services: DebugLog, StructuredLogger
+- `src/debug/transform-debug-commands.cpp` - resident services: Terminal
+- `src/devtools/dev-npc-selection.cpp` - resident services: DebugVis
+- `src/devtools/dev-overlay-commands.cpp` - resident services: DebugLog, Terminal, TerminalState
+- `src/devtools/dev-teleport.cpp` - resident services: DebugLog
+- `src/devtools/npc-spawn-commands.cpp` - resident services: TerminalState
+- `src/devtools/scenario-commands.cpp` - resident services: StructuredLogger, Terminal, TerminalState
+- `src/devtools/terminal-builtins.cpp` - resident services: Terminal
+- `src/devtools/terminal-render.cpp` - implements the resident Terminal service render path
+- `src/effects/effect-part-blood.cpp` - resident services: DebugLog, StructuredLogger
+- `src/effects/effect-part-debris.cpp` - resident services: SizeScalingConfig
+- `src/effects/effect-part-particles.cpp` - resident services: DebugLog
+- `src/effects/effect-part-system.cpp` - resident services: DebugLog, HotReloadSystem
+- `src/effects/effect-part.cpp` - resident services: DebugLog, SizeScalingConfig, StructuredLogger, WeaponRegistry
+- `src/effects/hit-effects-render.cpp` - resident services: DebugVis
+- `src/effects/hit-effects-spawn.cpp` - resident services: DebugLog, StructuredLogger
+- `src/effects/hit-effects.cpp` - resident services: DebugLog, Perf, WeaponRegistry
+- `src/effects/hitfx-commands.cpp` - resident services: DebugLog, StructuredLogger, Terminal
+- `src/effects/rain-system.cpp` - resident services: DebugVis
+- `src/engine/engine-frame.cpp` - delegates to the resident Renderer/device
+- `src/engine/engine-tick-audio.cpp` - resident services: Perf, TerminalState
+- `src/engine/engine-tick-combat.cpp` - resident services: DebugLog, Perf, PhysicalEntitySystem, StructuredLogger, Terminal, TerminalState
+- `src/engine/engine-tick-state.cpp` - resident services: AuthSystem, DebugLog, StructuredLogger, Terminal, TerminalState
+- `src/engine/engine-tick-ui-game-hud.cpp` - resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, StructuredLogger, TerminalState, WeaponRegistry
+- `src/engine/engine-tick-ui-hud.cpp` - thread_local host state (services: TerminalState)
+- `src/engine/engine-tick-ui-overlays.cpp` - resident services: DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, Perf, StructuredLogger, TerminalState
+- `src/engine/engine-tick-ui.cpp` - thread_local host state (services: DebugLog, DebugVis, Perf, TerminalState)
+- `src/entities/aim-commands.cpp` - resident services: Terminal
+- `src/entities/player-animation.cpp` - resident services: DebugLog, GamemodeRegistry, StructuredLogger, WeaponRegistry
+- `src/entities/player.cpp` - resident services: DebugLog, StructuredLogger
+- `src/fister/fister-port.cpp` - resident services: DebugLog, TerminalState
+- `src/game/bomb-tag-state.cpp` - resident services: TerminalState
+- `src/game/duel-state.cpp` - resident services: DebugLog
+- `src/game/gamemode-manager.cpp` - resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, TerminalState
+- `src/game/spawn-override.cpp` - resident services: DebugLog
+- `src/gamemode/arena-ball.cpp` - resident services: PhysicalEntitySystem, StructuredLogger
+- `src/gamemode/gamemode-runtime-resolver.cpp` - resident services: DebugLog
+- `src/gamemode/map-edit-applier.cpp` - resident services: MapConfigRegistry
+- `src/gui/gui-editor-commands.cpp` - resident services: GuiLayoutManager, Terminal
+- `src/gui/gui-editor-tools.cpp` - resident services: GuiLayoutManager
+- `src/gui/hud/chat-bubble.cpp` - thread_local host state (services: DebugVis, GuiLayoutManager)
+- `src/gui/hud/match-leaderboard.cpp` - resident services: GuiLayoutManager
+- `src/gui/hud/player-nameplates.cpp` - resident services: DebugLog, DebugVis, StructuredLogger, TerminalState
+- `src/impact/impact-system.cpp` - resident services: DebugLog, Perf, PhysicalEntitySystem, StructuredLogger
+- `src/interaction/interaction-commands.cpp` - resident services: Terminal, TerminalState
+- `src/interaction/world-interaction-runtime.cpp` - resident services: MapConfigRegistry, StructuredLogger, Terminal, TerminalState
+- `src/killfeed/killfeed.cpp` - resident services: DebugLog, TerminalState, WeaponRegistry
+- `src/map/map-glb-authored.cpp` - resident services: StructuredLogger
+- `src/map/map-loader-collision.cpp` - resident services: StructuredLogger
+- `src/map/map-loader-gltf-accessors.cpp` - Debug::logAuto GLB logging service
+- `src/map/map-loader-gltf-verts.cpp` - Debug::logAuto GLB logging service
+- `src/map/map-static-union.cpp` - resident services: StructuredLogger
+- `src/mapeditor/map-editor-commands.cpp` - resident services: MapConfigRegistry, ModuleHost, StructuredLogger, Terminal, TerminalState
+- `src/mapeditor/world-edit-commands.cpp` - resident services: MapConfigRegistry, StructuredLogger, Terminal
+- `src/network/actor-lifecycle.cpp` - resident services: DebugLog
+- `src/network/community-match-client.cpp` - resident services: AuthSystem, DebugLog, GamemodeRegistry, MovementJsonConfig, StructuredLogger, TerminalState
+- `src/network/coordinator-client.cpp` - resident services: DebugLog
+- `src/network/movement-validation.cpp` - thread_local host state (services: ModuleHost)
+- `src/network/remote-entity-lifecycle.cpp` - takes Player& host state
+- `src/network/server-infinite-collision.cpp` - resident services: MapConfigRegistry, ModuleHost, StructuredLogger
+- `src/network/server-world-destruction.cpp` - resident services: GamemodeRegistry, PhysicalEntitySystem, StructuredLogger, serverGamemodeState
+- `src/notifications/notification-commands.cpp` - resident services: Terminal
+- `src/npc/npc-combat.cpp` - thread_local host state (services: DebugLog, ModuleHost, NpcDifficultyConfig, StructuredLogger, WeaponRegistry)
+- `src/npc/npc-navigation.cpp` - thread_local host state (services: NpcDifficultyConfig)
+- `src/npc/npc-navigator.cpp` - thread_local host state (services: DebugLog, MovementJsonConfig, NpcDifficultyConfig, Perf)
+- `src/npc/npc-perception.cpp` - ModuleHost perception calls (services: ModuleHost)
+- `src/npc/npc-spawn.cpp` - resident services: DebugLog, NpcDifficultyConfig, Perf, WeaponRegistry
+- `src/npc/npc-state-machine.cpp` - ModuleHost hold-pursuit calls (services: ModuleHost)
+- `src/npc/npc-states.cpp` - NpcDifficultyConfig::instance config owner (services: NpcDifficultyConfig)
+- `src/npc/npc-traversal.cpp` - ModuleHost policy calls + MovementJsonConfig::instance (services: DebugLog, ModuleHost, MovementJsonConfig)
+- `src/npc/npc-utility-bridge.cpp` - ModuleHost behavior calls (services: ModuleHost)
+- `src/npc/npc-world-query.cpp` - thread_local const World* host pointer
+- `src/npc/npc.cpp` - thread_local host state (services: BehaviorProfileRegistry, DebugLog, DebugVis, ModuleHost, NpcDifficultyConfig, Perf, StructuredLogger, WeaponRegistry)
+- `src/npc/recast-navigation.cpp` - resident services: ModuleHost, Perf, StructuredLogger
+- `src/npc/team-brain.cpp` - StructuredLogger host logging calls (services: StructuredLogger)
+- `src/perf/perf-allocator.cpp` - global operator new/delete and allocation counters must stay resident
+- `src/perf/perf-commands.cpp` - resident services: Perf, StructuredLogger, Terminal
+- `src/perf/perf-overlay.cpp` - resident services: DebugLog, Perf
+- `src/perf/perf-spike.cpp` - thread_local host state (services: DebugLog, Perf, StructuredLogger)
+- `src/persistence/persistence-commands.cpp` - resident services: PersistenceQueue
+- `src/physics/constraints/constraint-commands.cpp` - resident services: ConstraintSystem, PhysicalEntitySystem, StructuredLogger, Terminal, TerminalState
+- `src/physics/constraints/constraint-debug.cpp` - resident services: ConstraintSystem, DebugVis, PhysicalEntitySystem
+- `src/physics/constraints/constraint-system.cpp` - resident services: ConstraintSystem, PhysicalEntitySystem
+- `src/physics/movement/actor-collision-mesh.cpp` - resident services: WeaponRegistry
+- `src/physics/movement/actor-final-pose.cpp` - thread_local host state (services: ModuleHost)
+- `src/physics/movement/actor-pair-collision.cpp` - thread_local host state (services: ModuleHost, StructuredLogger)
+- `src/physics/movement/actor-triangle-solver.cpp` - thread_local host state (services: ModuleHost, PhysicalEntitySystem, StructuredLogger)
+- `src/physics/movement/movement-conversion.cpp` - Player<->MovementState conversion over host state (services: MovementJsonConfig, SizeScalingConfig)
+- `src/physics/movement/movement-step.cpp` - resident services: StructuredLogger
+- `src/physics/movement/physics-collision-block.cpp` - resident services: DebugLog
+- `src/physics/movement/physics-collision-body.cpp` - resident services: DebugLog
+- `src/physics/movement/physics-collision-core.cpp` - thread_local host state (services: DebugLog, DebugVis, ModuleHost, StructuredLogger)
+- `src/physics/movement/physics-collision-dispatch.cpp` - thread_local host state (services: DebugLog, DebugVis, Perf, StructuredLogger)
+- `src/physics/movement/physics-collision-glb-body.cpp` - resident services: DebugLog
+- `src/physics/movement/physics-collision-glb-contact.cpp` - resident services: DebugLog
+- `src/physics/movement/physics-collision-glb-main.cpp` - resident services: DebugLog, DebugVis, Perf, StructuredLogger
+- `src/physics/movement/physics-collision-glb-safety.cpp` - mutates Player + World query + Debug logging (services: DebugLog)
+- `src/physics/movement/physics-collision-glb-setup.cpp` - resident services: DebugLog, Perf
+- `src/physics/movement/physics-collision-glb-sweep-slide.cpp` - resident services: DebugLog, DebugVis
+- `src/physics/movement/physics-collision-mesh.cpp` - thread_local host state (services: StructuredLogger)
+- `src/physics/movement/physics-collision.cpp` - thread_local host state (services: DebugLog)
+- `src/physics/movement/physics-dash.cpp` - resident services: DebugLog
+- `src/physics/movement/physics-down-dash.cpp` - mutates Player host state + movement config helper
+- `src/physics/movement/physics-freeze.cpp` - mutates Player host state + movement config helper
+- `src/physics/movement/physics-friction.cpp` - mutates Player host state + Debug logging + physics config (services: DebugLog)
+- `src/physics/movement/physics-gravity.cpp` - mutates Player host state + Debug logging + physics config (services: DebugLog)
+- `src/physics/movement/physics-ground-return.cpp` - mutates Player host state + Debug logging + physics config (services: DebugLog)
+- `src/physics/movement/physics-jump.cpp` - mutates Player host state + SizeScalingConfig + Debug logging (services: DebugLog, SizeScalingConfig)
+- `src/physics/movement/physics-scratch.cpp` - thread_local host state
+- `src/physics/movement/physics-walk.cpp` - mutates Player host state + SizeScalingConfig + Debug logging (services: DebugLog, SizeScalingConfig)
+- `src/physics/physical-body.cpp` - thread_local host state
+- `src/physics/ray-utils.cpp` - const World& reference; needs a plain-span or resident-caller adapter
+- `src/physics/runtime-objects-commands.cpp` - resident services: Terminal, VehicleSystem
+- `src/physics/runtime-objects.cpp` - resident services: ConstraintSystem, PhysicalEntitySystem, StructuredLogger, VehicleSystem
+- `src/pobjects/persistent-physics.cpp` - resident services: DebugLog, DebugVis, StructuredLogger, WeaponRegistry
+- `src/procedural/procedural-world-client.cpp` - resident services: DebugVis, PhysicalEntitySystem
+- `src/ragdoll/ragdoll-commands.cpp` - resident services: Terminal, TerminalState
+- `src/ragdoll/ragdoll-mode.cpp` - resident services: DebugLog, DebugVis, StructuredLogger
+- `src/render/dynamic-light-commands.cpp` - resident services: Terminal
+- `src/render/dynamic-light.cpp` - resident services: DebugLog
+- `src/render/lighting-commands.cpp` - resident services: Terminal
+- `src/render/postfx-commands.cpp` - resident services: Terminal
+- `src/render/world-box-mesh.cpp` - resident services: ModuleHost
+- `src/replay/replay-camera-commands.cpp` - resident services: Terminal, TerminalState
+- `src/replay/replay-commands-playback.cpp` - resident services: Terminal, TerminalState
+- `src/replay/replay-player-interp.cpp` - resident services: DebugLog
+- `src/replay/replay-recorder-clips.cpp` - Debug::warn replay logging service
+- `src/replay/replay-recorder-events.cpp` - resident services: DebugLog, Perf
+- `src/shadow/shadow-commands.cpp` - resident services: DebugLog, Terminal
+- `src/sim/simulate-tick.cpp` - thread_local host state (services: ActorCollisionConfig, MapConfigRegistry, Perf, StructuredLogger, TerminalState, VehicleSystem, WeaponRegistry)
+- `src/terminal/admin-commands.cpp` - resident services: MultiplayerContextGlobal, Terminal, TerminalState
+- `src/terminal/auth-commands.cpp` - resident services: AuthSystem, Terminal
+- `src/terminal/badconn-commands.cpp` - resident services: Terminal
+- `src/terminal/crate-commands.cpp` - resident services: PhysicalEntitySystem, Terminal, TerminalState
+- `src/terminal/duel-commands.cpp` - resident services: Terminal, TerminalState
+- `src/terminal/editor-commands.cpp` - resident services: Terminal, TerminalState
+- `src/terminal/movement-commands.cpp` - resident services: MovementJsonConfig, Terminal, TerminalState
+- `src/terminal/terminal-config-commands.cpp` - resident services: Terminal
+- `src/terminal/terminal-debug-toggles.cpp` - resident services: Terminal
+- `src/terminal/terminal-help-commands.cpp` - resident services: Terminal
+- `src/terminal/vip-commands.cpp` - resident services: AuthSystem, Terminal, TerminalState
+- `src/vehicles/vehicle-audio.cpp` - resident services: StructuredLogger
+- `src/vehicles/vehicle-commands.cpp` - resident services: PhysicalEntitySystem, StructuredLogger, Terminal, TerminalState, VehicleConfigRegistry, VehicleSystem
+- `src/vehicles/vehicle-hud.cpp` - resident services: PhysicalEntitySystem, StructuredLogger, VehicleConfigRegistry, VehicleSystem
+- `src/vehicles/vehicle-render.cpp` - resident services: PhysicalEntitySystem, VehicleConfigRegistry, VehicleSystem
+- `src/vehicles/vehicle-system.cpp` - thread_local host state (services: DebugLog, PhysicalEntitySystem, StructuredLogger, TerminalState, VehicleConfigRegistry, VehicleSystem)
+- `src/video/video-commands.cpp` - resident services: StructuredLogger, Terminal, TerminalState
+- `src/worldgen/worldgen-commands.cpp` - resident services: MapConfigRegistry, StructuredLogger, Terminal
+
+## RUNTIME_PROOF_REQUIRED rows
+
+- `src/analytics/analytics-config.cpp` - resource hits=file
+- `src/analytics/analytics-consent.cpp` - resource hits=gl
+- `src/analytics/analytics-events-impl.cpp` - resource hits=file
+- `src/analytics/analytics-manager.cpp` - resource hits=gl,file,os
+- `src/analytics/analytics-uploader.cpp` - known handoff blocker; thread/job hits=1
+- `src/audio/hitmarker-audio.cpp` - resource hits=file
+- `src/audio/music-manager-widget.cpp` - resource hits=gl
+- `src/auth/auth-popup.cpp` - resource hits=gl,os
+- `src/auth/auth-system.cpp` - resource hits=os
+- `src/auth/auth-token.cpp` - resource hits=file
+- `src/avatar/avatar-atlas.cpp` - known handoff blocker; thread/job hits=1; callback hits=1; resource hits=gl,file
+- `src/avatar/avatar-autosave.cpp` - callback hits=1; resource hits=file
+- `src/avatar/avatar-commands.cpp` - resource hits=gl,file
+- `src/avatar/avatar-drop-target.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-animation.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-colors.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-cosmetics.cpp` - resource hits=gl,file
+- `src/avatar/avatar-editor-dropdown.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-face.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-helpers.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-image.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-library.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-outfits.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-parts.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-popups.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-presets.cpp` - resource hits=gl
+- `src/avatar/avatar-editor-scroll.cpp` - resource hits=gl
+- `src/avatar/avatar-editor.cpp` - resource hits=gl,file
+- `src/avatar/avatar-fileops.cpp` - resource hits=file
+- `src/avatar/avatar.cpp` - resource hits=gl,file
+- `src/avatar/character-manifest.cpp` - resource hits=file
+- `src/avatar/character-registry.cpp` - resource hits=file
+- `src/avatar/cosmetic-system.cpp` - resource hits=gl,file
+- `src/combat/death-system.cpp` - resource hits=file
+- `src/combat/melee-client.cpp` - network context
+- `src/combat/melee-rules-config.cpp` - resource hits=file
+- `src/combat/projectile-render.cpp` - resource hits=gl
+- `src/combat/revolver-system.cpp` - resource hits=gl; network context
+- `src/combat/weapon-audio.cpp` - network context
+- `src/combat/weapon-collision-config.cpp` - resource hits=file
+- `src/combat/weapon-fire-damage.cpp` - network context
+- `src/combat/weapon-godball-movement.cpp` - resource hits=file; network context
+- `src/combat/weapon-json-config.cpp` - resource hits=file
+- `src/combat/weapon-melee-config.cpp` - resource hits=file
+- `src/combat/weapon-model-cache.cpp` - known handoff blocker; thread/job hits=1; resource hits=gl
+- `src/combat/weapon-runtime.cpp` - resource hits=file
+- `src/combat/weapon-spyknife.cpp` - resource hits=file; network context
+- `src/combat/weapon-system.cpp` - network context
+- `src/combat/weapon-viewmodel.cpp` - resource hits=gl; network context
+- `src/competitive/competitive-result.cpp` - resource hits=gl
+- `src/competitive/competitive-ui.cpp` - resource hits=gl
+- `src/competitive/competitive.cpp` - resource hits=file
+- `src/config/actor-collision-config.cpp` - resource hits=file
+- `src/config/camera-config.cpp` - resource hits=file
+- `src/config/collision-config.cpp` - resource hits=file
+- `src/config/collision-lod-config.cpp` - resource hits=file
+- `src/config/gameplay-config.cpp` - resource hits=file
+- `src/config/impact-decals-config.cpp` - resource hits=file
+- `src/config/killfeed-config.cpp` - resource hits=file
+- `src/config/material-config.cpp` - resource hits=file
+- `src/config/movement-config.cpp` - resource hits=file
+- `src/config/networking-config.cpp` - resource hits=file
+- `src/config/player-settings.cpp` - resource hits=file
+- `src/config/player-visuals-config.cpp` - resource hits=file
+- `src/config/ragdoll-death-config.cpp` - resource hits=file
+- `src/config/settings-backup.cpp` - resource hits=file
+- `src/config/size-scaling-config.cpp` - resource hits=file
+- `src/config/spatial-audio-config.cpp` - resource hits=file
+- `src/config/spawn-velocity-config.cpp` - resource hits=file
+- `src/config/weapon-hitfx-config.cpp` - resource hits=file
+- `src/config/weapon-tracers-config.cpp` - resource hits=file
+- `src/crosshair/crosshair-config.cpp` - resource hits=file
+- `src/debug/debug-diag-commands.cpp` - resource hits=gl,file
+- `src/debug/debug-diag.cpp` - resource hits=gl
+- `src/debug/debug-visuals-config.cpp` - resource hits=file
+- `src/debug/debug-visuals-labels.cpp` - resource hits=gl
+- `src/debug/debug-visuals-lines.cpp` - resource hits=gl
+- `src/debug/debug-visuals-scene.cpp` - resource hits=gl; network context
+- `src/debug/debug-visuals-tris.cpp` - resource hits=gl
+- `src/debug/debug-visuals.cpp` - resource hits=gl
+- `src/debug/gl-debug.cpp` - resource hits=gl
+- `src/debug/npckillfeed-log.cpp` - resource hits=file
+- `src/debug/validate-assets.cpp` - resource hits=file
+- `src/devtools/account-config.cpp` - resource hits=file
+- `src/devtools/dev-config.cpp` - resource hits=file
+- `src/devtools/dev-log-commands.cpp` - resource hits=file,os
+- `src/devtools/dev-overlay.cpp` - resource hits=gl
+- `src/devtools/scenario-player.cpp` - resource hits=file
+- `src/devtools/scenario-recorder.cpp` - thread/job hits=1; resource hits=file; network context
+- `src/devtools/scenario-server-playback.cpp` - resource hits=file
+- `src/devtools/scenario-server-recorder.cpp` - resource hits=file
+- `src/devtools/scenario-tracks.cpp` - resource hits=file
+- `src/devtools/terminal-input.cpp` - resource hits=file
+- `src/devtools/terminal.cpp` - callback hits=5; resource hits=gl,file
+- `src/duel/duel-history.cpp` - resource hits=file
+- `src/duel/duel-ui.cpp` - resource hits=gl
+- `src/effects/effect-part-render.cpp` - resource hits=gl
+- `src/effects/hit-effects-config.cpp` - resource hits=file
+- `src/effects/muzzle-flash-config.cpp` - resource hits=file
+- `src/engine/engine-init.cpp` - resource hits=gl
+- `src/engine/engine-tick-camera.cpp` - callback hits=1; resource hits=gl; network context
+- `src/engine/engine-tick-net.cpp` - network context
+- `src/engine/engine-tick-render.cpp` - resource hits=gl
+- `src/engine/engine-tick-replay.cpp` - known handoff blocker; thread/job hits=1; resource hits=file,os
+- `src/engine/engine-tick-setup.cpp` - resource hits=file; network context
+- `src/engine/engine-tick-ui-replay-hud.cpp` - resource hits=gl
+- `src/engine/engine-tick.cpp` - callback hits=2; resource hits=file,os
+- `src/entities/actor-body.cpp` - resource hits=file
+- `src/entities/aimbody-config.cpp` - resource hits=file
+- `src/entities/player-animation-config.cpp` - resource hits=file
+- `src/entities/player-avatar-animations.cpp` - resource hits=file
+- `src/entities/player-config.cpp` - resource hits=file
+- `src/entities/player-loader.cpp` - known handoff blocker; thread/job hits=1; callback hits=1; resource hits=gl,file
+- `src/entities/player-render-mesh.cpp` - resource hits=gl
+- `src/entities/player-render.cpp` - resource hits=gl
+- `src/game/bomb-tag-config.cpp` - resource hits=gl
+- `src/game/duel.cpp` - resource hits=gl
+- `src/game/game-cli.cpp` - resource hits=gl,file,os
+- `src/game/spawn-utils.cpp` - resource hits=file
+- `src/gamemode/gamemode-map-pool.cpp` - resource hits=file
+- `src/gamemode/gamemode.cpp` - resource hits=file
+- `src/gamemode/map-config.cpp` - resource hits=file
+- `src/gamemode/match-roles.cpp` - resource hits=file
+- `src/gamemode/mode-pack-registry.cpp` - resource hits=file
+- `src/gamemode/monster-pools.cpp` - resource hits=file
+- `src/gui/font-stuff/font-loader.cpp` - resource hits=gl,file
+- `src/gui/gui-bindings.cpp` - resource hits=gl
+- `src/gui/gui-editor-overlay.cpp` - resource hits=gl
+- `src/gui/gui-editor-preview.cpp` - resource hits=gl
+- `src/gui/gui-editor-select.cpp` - resource hits=gl
+- `src/gui/gui-editor.cpp` - resource hits=gl
+- `src/gui/gui-element-render.cpp` - resource hits=gl
+- `src/gui/gui-layout.cpp` - callback hits=2; resource hits=file
+- `src/gui/gui-main.cpp` - resource hits=gl,net,file,os
+- `src/gui/gui-media.cpp` - resource hits=gl,file
+- `src/gui/hud/chat-window.cpp` - callback hits=1; resource hits=gl; network context
+- `src/gui/hud/healthbar-config.cpp` - resource hits=file
+- `src/gui/hud/reward-popup.cpp` - resource hits=file
+- `src/gui/menus/account-panel.cpp` - resource hits=gl
+- `src/gui/menus/debug-menu.cpp` - resource hits=gl
+- `src/gui/menus/duel-config-menu.cpp` - callback hits=1; resource hits=gl
+- `src/gui/menus/help-menu.cpp` - resource hits=gl
+- `src/gui/menus/login-menu.cpp` - resource hits=gl,os
+- `src/gui/menus/main-menu.cpp` - resource hits=gl,file,os
+- `src/gui/menus/menu-avatar-preview.cpp` - resource hits=gl,file
+- `src/gui/menus/online-menu.cpp` - resource hits=gl
+- `src/gui/menus/pause-menu.cpp` - resource hits=gl,os
+- `src/gui/menus/play-menu.cpp` - resource hits=gl
+- `src/gui/menus/practice-menu.cpp` - resource hits=gl
+- `src/gui/menus/sandbox-map-menu.cpp` - resource hits=gl
+- `src/gui/menus/server-info-menu.cpp` - resource hits=gl
+- `src/gui/menus/settings-menu.cpp` - resource hits=gl
+- `src/gui/menus/sign-in-menu.cpp` - resource hits=gl
+- `src/gui/password-popup.cpp` - resource hits=gl
+- `src/gui/ui-system-buttons.cpp` - resource hits=gl
+- `src/gui/ui-system-layout.cpp` - resource hits=gl
+- `src/gui/ui-system-render.cpp` - resource hits=gl
+- `src/gui/ui-system.cpp` - resource hits=gl
+- `src/gui/ui-text-input.cpp` - resource hits=gl
+- `src/impact/destructible-async-cut.cpp` - thread/job hits=2
+- `src/impact/destructible-render.cpp` - resource hits=gl
+- `src/impact/destructible-world-config.cpp` - resource hits=file
+- `src/input/input-commands-bind.cpp` - resource hits=file
+- `src/input/input-commands.cpp` - callback hits=10; resource hits=gl
+- `src/input/input-poll.cpp` - resource hits=gl
+- `src/input/mouse-lock.cpp` - resource hits=gl
+- `src/input/scenario-input.cpp` - resource hits=gl
+- `src/interaction/interaction-system.cpp` - resource hits=gl
+- `src/leaderboard/leaderboard-ui.cpp` - resource hits=gl
+- `src/map/map-authored-geometry.cpp` - resource hits=gl,file
+- `src/map/map-loader-gltf-extract.cpp` - resource hits=gl
+- `src/map/map-loader-gltf-mesh.cpp` - resource hits=gl
+- `src/map/map-loader-gltf-nodes.cpp` - resource hits=gl
+- `src/map/map-loader-gltf-prims.cpp` - resource hits=gl
+- `src/map/map-loader-material.cpp` - resource hits=gl
+- `src/map/map_loader.cpp` - resource hits=gl
+- `src/map/map_render.cpp` - resource hits=gl
+- `src/map/texture.cpp` - resource hits=gl
+- `src/map/texture_manager.cpp` - resource hits=gl
+- `src/mapeditor/map-editor-config.cpp` - resource hits=file
+- `src/mapeditor/map-editor-projects.cpp` - resource hits=file
+- `src/mapeditor/map-editor.cpp` - resource hits=gl
+- `src/network/avatar-network-client.cpp` - resource hits=file; network context
+- `src/network/badconn/badconn-config.cpp` - resource hits=file
+- `src/network/badconn/badconn.cpp` - network context
+- `src/network/client.cpp` - resource hits=gl,net; network context
+- `src/network/community-server-config.cpp` - resource hits=file
+- `src/network/confirmed-damage-presentation.cpp` - network context
+- `src/network/disagreement-visuals.cpp` - resource hits=file
+- `src/network/multiplayer-chat.cpp` - network context
+- `src/network/multiplayer-context.cpp` - resource hits=file; network context
+- `src/network/multiplayer-interpolation.cpp` - network context
+- `src/network/multiplayer-packets.cpp` - thread/job hits=2; resource hits=net; network context
+- `src/network/multiplayer-physical-entities.cpp` - network context
+- `src/network/multiplayer-projectiles.cpp` - network context
+- `src/network/multiplayer-reconcile.cpp` - network context
+- `src/network/multiplayer-shots.cpp` - network context
+- `src/network/multiplayer-tick.cpp` - resource hits=net; network context
+- `src/network/network-weapons.cpp` - network context
+- `src/network/packets.cpp` - network context
+- `src/network/physical-entity-replication.cpp` - resource hits=net; network context
+- `src/network/reconnect-visuals.cpp` - network context
+- `src/network/reliable-gameplay-events.cpp` - resource hits=net; network context
+- `src/network/server-attack.cpp` - resource hits=net; network context
+- `src/network/server-avatar-network.cpp` - resource hits=net
+- `src/network/server-body-template.cpp` - resource hits=file
+- `src/network/server-browser.cpp` - known handoff blocker; thread/job hits=1; resource hits=net; network context
+- `src/network/server-damage.cpp` - resource hits=net; network context
+- `src/network/server-gamemode.cpp` - resource hits=net; network context
+- `src/network/server-melee-actions.cpp` - resource hits=net; network context
+- `src/network/server-npcs.cpp` - resource hits=net; network context
+- `src/network/server-packet-chat.cpp` - resource hits=net,file; network context
+- `src/network/server-packet-handlers.cpp` - resource hits=net; network context
+- `src/network/server-packets.cpp` - resource hits=net; network context
+- `src/network/server-physical-contact-actors.cpp` - resource hits=net,file; network context
+- `src/network/server-physical-contact.cpp` - resource hits=net
+- `src/network/server-players.cpp` - resource hits=net; network context
+- `src/network/server-presets.cpp` - resource hits=file
+- `src/network/server-projectiles.cpp` - resource hits=net; network context
+- `src/network/server-world.cpp` - callback hits=1; resource hits=file
+- `src/network/snapshot-chunks.cpp` - network context
+- `src/network/udp-echo.cpp` - resource hits=net,file; network context
+- `src/network/vehicle-networking.cpp` - callback hits=1; resource hits=net; network context
+- `src/network/weapon-runtime-reconciliation.cpp` - network context
+- `src/notifications/notifications.cpp` - callback hits=6; resource hits=gl,file,os
+- `src/npc/npc-avatar.cpp` - resource hits=file
+- `src/npc/npc-behavior.cpp` - resource hits=file
+- `src/npc/npc-difficulty-config.cpp` - resource hits=file
+- `src/perf/perf-frame.cpp` - thread/job hits=2
+- `src/perf/perf-gpu.cpp` - resource hits=gl
+- `src/perf/perf-visualize.cpp` - resource hits=file
+- `src/perf/perf.cpp` - resource hits=file
+- `src/persistence/persistence-emit.cpp` - resource hits=net; network context
+- `src/physics/physical-entity.cpp` - callback hits=7; resource hits=gl
+- `src/physics/physics-debug-movement.cpp` - resource hits=gl
+- `src/physics/physics-mini.cpp` - resource hits=gl
+- `src/procedural/infinite-world-runtime.cpp` - resource hits=file; network context
+- `src/procedural/procedural-world.cpp` - resource hits=net,file
+- `src/profile/local-profile-system.cpp` - resource hits=file
+- `src/ragdoll/ragdoll-mode-config.cpp` - resource hits=file
+- `src/render/dynamic-light-config.cpp` - resource hits=file
+- `src/render/lighting-config.cpp` - resource hits=file
+- `src/render/post-fx.cpp` - resource hits=gl,file
+- `src/render/procedural-cylinder.cpp` - resource hits=gl
+- `src/render/render-player.cpp` - resource hits=gl,file
+- `src/render/render-world-mesh.cpp` - resource hits=gl
+- `src/render/render-world-shadow.cpp` - resource hits=gl
+- `src/render/render-world-sky.cpp` - resource hits=gl
+- `src/render/render-world.cpp` - resource hits=gl
+- `src/render/skybox.cpp` - resource hits=gl,file
+- `src/replay/replay-camera.cpp` - resource hits=file
+- `src/replay/replay-capture-commands.cpp` - resource hits=file
+- `src/replay/replay-commands-export.cpp` - resource hits=file,os
+- `src/replay/replay-editor-commands.cpp` - resource hits=file
+- `src/replay/replay-editor.cpp` - resource hits=audio,file
+- `src/replay/replay-export-ffmpeg.cpp` - thread/job hits=2; resource hits=audio,file,os
+- `src/replay/replay-export-json.cpp` - known handoff blocker; thread/job hits=1; resource hits=file,os
+- `src/replay/replay-export-mf.cpp` - thread/job hits=2; resource hits=file
+- `src/replay/replay-export-subprocess.cpp` - resource hits=file
+- `src/replay/replay-export-target.cpp` - resource hits=gl
+- `src/replay/replay-export.cpp` - known handoff blocker; thread/job hits=1; resource hits=gl,file,os
+- `src/replay/replay-factory-clips.cpp` - thread/job hits=1; resource hits=file
+- `src/replay/replay-factory.cpp` - resource hits=file
+- `src/replay/replay-io-save.cpp` - resource hits=file
+- `src/replay/replay-player-load.cpp` - resource hits=file
+- `src/replay/replay-player.cpp` - resource hits=file
+- `src/replay/replay-recorder.cpp` - resource hits=file
+- `src/shadow/shadow-config.cpp` - resource hits=file
+- `src/shadow/shadow-render.cpp` - resource hits=gl,file
+- `src/terminal/actor-commands.cpp` - resource hits=file
+- `src/terminal/debug-commands.cpp` - resource hits=file
+- `src/terminal/map-entity-commands.cpp` - resource hits=file
+- `src/terminal/network-commands.cpp` - resource hits=file; network context
+- `src/terminal/npc-commands.cpp` - resource hits=file; network context
+- `src/terminal/object-commands.cpp` - resource hits=file
+- `src/terminal/player-commands.cpp` - network context
+- `src/terminal/procedural-world-commands.cpp` - network context
+- `src/terminal/replay-commands.cpp` - resource hits=file
+- `src/terminal/terminal-cursor-commands.cpp` - resource hits=gl
+- `src/terminal/weapon-bench-commands.cpp` - resource hits=file
+- `src/terminal/weapon-commands.cpp` - resource hits=file; network context
+- `src/utils/pak-file.cpp` - resource hits=file
+- `src/utils/path_utils.cpp` - resource hits=file
+- `src/utils/tips.cpp` - resource hits=file
+- `src/vehicles/vehicle-config.cpp` - resource hits=file
+- `src/video/outro-ffmpeg.cpp` - resource hits=file
+- `src/video/outro.cpp` - resource hits=file
+- `src/video/video-settings.cpp` - resource hits=file
+- `src/void-death/void-death-commands.cpp` - resource hits=file
+- `src/void-death/void-death.cpp` - resource hits=file
+- `src/world/streamed-world-layer.cpp` - resource hits=gl
+- `src/world/texture-store.cpp` - resource hits=gl,file
+- `src/world/world-gltf-loader.cpp` - callback hits=1; resource hits=file
+- `src/worldgen/worldgen-library.cpp` - resource hits=file
+- `src/worldproject/world-edit-session.cpp` - callback hits=2
+- `src/worldproject/world-project-sha256.cpp` - resource hits=file
+- `src/worldproject/world-project-store.cpp` - resource hits=file
+
+## Resident service dependency map
+
+Services a game source calls directly. Each one needs a host-service
+adapter (or the source stays resident with a thin bridge) before the
+all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-20261112.json`.
+
+### DebugLog (195)
+
+- `src/audio/audio.cpp`
+- `src/audio/hitmarker-audio.cpp`
+- `src/audio/music-commands.cpp`
+- `src/audio/music-manager.cpp`
+- `src/auth/auth-controller.cpp`
+- `src/auth/auth-system.cpp`
+- `src/avatar/avatar-atlas.cpp`
+- `src/avatar/avatar-autosave.cpp`
+- `src/combat/death-system.cpp`
+- `src/combat/grenade-registry.cpp`
+- `src/combat/revolver-system.cpp`
+- `src/combat/weapon-audio.cpp`
+- `src/combat/weapon-collision-config.cpp`
+- `src/combat/weapon-data.cpp`
+- `src/combat/weapon-fire-damage.cpp`
+- `src/combat/weapon-fire-effects.cpp`
+- `src/combat/weapon-fire-hit.cpp`
+- `src/combat/weapon-fire-raycast.cpp`
+- `src/combat/weapon-grenade-launcher.cpp`
+- `src/combat/weapon-hafs.cpp`
+- `src/combat/weapon-hit.cpp`
+- `src/combat/weapon-json-config.cpp`
+- `src/combat/weapon-melee-config.cpp`
+- `src/combat/weapon-model-cache.cpp`
+- `src/combat/weapon-quick-hit.cpp`
+- `src/combat/weapon-rocket-launcher.cpp`
+- `src/combat/weapon-runtime.cpp`
+- `src/combat/weapon-spyknife.cpp`
+- `src/combat/weapon-swordsword.cpp`
+- `src/combat/weapon-system-equip.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/combat/weapon-viewmodel.cpp`
+- `src/config/actor-collision-config.cpp`
+- `src/config/camera-config.cpp`
+- `src/config/collision-config.cpp`
+- `src/config/killfeed-config.cpp`
+- `src/config/material-config.cpp`
+- `src/config/player-visuals-config.cpp`
+- `src/config/ragdoll-death-config.cpp`
+- `src/config/settings-backup.cpp`
+- `src/config/spawn-velocity-config.cpp`
+- `src/config/weapon-tracers-config.cpp`
+- `src/debug/debug-log.cpp`
+- `src/debug/structured-log.cpp`
+- `src/devtools/dev-overlay-commands.cpp`
+- `src/devtools/dev-teleport.cpp`
+- `src/duel/duel-history.cpp`
+- `src/duel/duel-queue.cpp`
+- `src/effects/effect-part-blood.cpp`
+- `src/effects/effect-part-particles.cpp`
+- `src/effects/effect-part-render.cpp`
+- `src/effects/effect-part-system.cpp`
+- `src/effects/effect-part.cpp`
+- `src/effects/hit-effects-config.cpp`
+- `src/effects/hit-effects-spawn.cpp`
+- `src/effects/hit-effects.cpp`
+- `src/effects/hitfx-commands.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-state.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui.cpp`
+- `src/engine/engine-tick.cpp`
+- `src/entities/aimbody-config.cpp`
+- `src/entities/player-animation.cpp`
+- `src/entities/player-loader.cpp`
+- `src/entities/player-render.cpp`
+- `src/entities/player.cpp`
+- `src/fister/fister-port.cpp`
+- `src/game/duel-state.cpp`
+- `src/game/duel.cpp`
+- `src/game/game-cli.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/game/spawn-override.cpp`
+- `src/game/spawn-utils.cpp`
+- `src/gamemode/gamemode-runtime-resolver.cpp`
+- `src/gamemode/match-roles.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/hud/chat-window.cpp`
+- `src/gui/hud/player-nameplates.cpp`
+- `src/gui/hud/reward-popup.cpp`
+- `src/gui/menus/login-menu.cpp`
+- `src/gui/menus/main-menu.cpp`
+- `src/gui/menus/menu-avatar-preview.cpp`
+- `src/gui/menus/pause-menu.cpp`
+- `src/gui/menus/settings-menu.cpp`
+- `src/gui/ui-system.cpp`
+- `src/gui/ui-text-input.cpp`
+- `src/impact/destructible-world-config.cpp`
+- `src/impact/impact-system.cpp`
+- `src/killfeed/killfeed.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/map/map-loader-material.cpp`
+- `src/map/map_loader.cpp`
+- `src/network/actor-lifecycle.cpp`
+- `src/network/avatar-network-client.cpp`
+- `src/network/badconn/badconn.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/community-server-config.cpp`
+- `src/network/coordinator-client.cpp`
+- `src/network/ice/ice-agent.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/network/multiplayer-packets.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/network/multiplayer-reconcile.cpp`
+- `src/network/multiplayer-shots.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/network/reliable-gameplay-events.cpp`
+- `src/network/server-attack.cpp`
+- `src/network/server-avatar-network.cpp`
+- `src/network/server-browser.cpp`
+- `src/network/server-damage.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-packet-handlers.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-physical-contact.cpp`
+- `src/network/server-players.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/weapon-runtime-reconciliation.cpp`
+- `src/notifications/notifications.cpp`
+- `src/npc/npc-combat.cpp`
+- `src/npc/npc-difficulty-config.cpp`
+- `src/npc/npc-navigator.cpp`
+- `src/npc/npc-spawn.cpp`
+- `src/npc/npc-traversal.cpp`
+- `src/npc/npc.cpp`
+- `src/perf/perf-frame.cpp`
+- `src/perf/perf-gpu.cpp`
+- `src/perf/perf-overlay.cpp`
+- `src/perf/perf-spike.cpp`
+- `src/perf/perf-visualize.cpp`
+- `src/perf/perf.cpp`
+- `src/persistence/persistence-emit.cpp`
+- `src/physics/movement/physics-collision-block.cpp`
+- `src/physics/movement/physics-collision-body.cpp`
+- `src/physics/movement/physics-collision-core.cpp`
+- `src/physics/movement/physics-collision-dispatch.cpp`
+- `src/physics/movement/physics-collision-glb-body.cpp`
+- `src/physics/movement/physics-collision-glb-contact.cpp`
+- `src/physics/movement/physics-collision-glb-main.cpp`
+- `src/physics/movement/physics-collision-glb-safety.cpp`
+- `src/physics/movement/physics-collision-glb-setup.cpp`
+- `src/physics/movement/physics-collision-glb-sweep-slide.cpp`
+- `src/physics/movement/physics-collision.cpp`
+- `src/physics/movement/physics-dash.cpp`
+- `src/physics/movement/physics-friction.cpp`
+- `src/physics/movement/physics-gravity.cpp`
+- `src/physics/movement/physics-ground-return.cpp`
+- `src/physics/movement/physics-jump.cpp`
+- `src/physics/movement/physics-walk.cpp`
+- `src/physics/physics-mini.cpp`
+- `src/pobjects/persistent-physics.cpp`
+- `src/procedural/procedural-world.cpp`
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/render/dynamic-light-config.cpp`
+- `src/render/dynamic-light.cpp`
+- `src/render/post-fx.cpp`
+- `src/render/render-player.cpp`
+- `src/render/render-world-mesh.cpp`
+- `src/render/skybox.cpp`
+- `src/renderer/renderer.cpp`
+- `src/replay/replay-camera.cpp`
+- `src/replay/replay-capture-commands.cpp`
+- `src/replay/replay-commands-export.cpp`
+- `src/replay/replay-editor-commands.cpp`
+- `src/replay/replay-editor.cpp`
+- `src/replay/replay-export-ffmpeg.cpp`
+- `src/replay/replay-export-json.cpp`
+- `src/replay/replay-export-mf.cpp`
+- `src/replay/replay-export.cpp`
+- `src/replay/replay-factory-clips.cpp`
+- `src/replay/replay-factory-worker.cpp`
+- `src/replay/replay-io-save.cpp`
+- `src/replay/replay-player-interp.cpp`
+- `src/replay/replay-player-load.cpp`
+- `src/replay/replay-player.cpp`
+- `src/replay/replay-recorder-events.cpp`
+- `src/replay/replay-recorder.cpp`
+- `src/shadow/shadow-commands.cpp`
+- `src/terminal/player-commands.cpp`
+- `src/terminal/weapon-commands.cpp`
+- `src/utils/tips.cpp`
+- `src/vehicles/vehicle-config.cpp`
+- `src/vehicles/vehicle-system.cpp`
+- `src/video/outro-ffmpeg.cpp`
+- `src/video/outro.cpp`
+- `src/void-death/void-death.cpp`
+- `src/world/texture-store.cpp`
+- `src/world/world-gltf-loader.cpp`
+
+### StructuredLogger (163)
+
+- `src/actor/player-ai.cpp`
+- `src/audio/audio.cpp`
+- `src/audio/music-manager.cpp`
+- `src/avatar/avatar-atlas.cpp`
+- `src/avatar/avatar.cpp`
+- `src/combat/death-system.cpp`
+- `src/combat/explosion-fx.cpp`
+- `src/combat/grenade-registry.cpp`
+- `src/combat/melee-client.cpp`
+- `src/combat/weapon-collision-config.cpp`
+- `src/combat/weapon-data.cpp`
+- `src/combat/weapon-fire-damage.cpp`
+- `src/combat/weapon-fire-effects.cpp`
+- `src/combat/weapon-grenade-launcher.cpp`
+- `src/combat/weapon-json-config.cpp`
+- `src/combat/weapon-melee-config.cpp`
+- `src/combat/weapon-rocket-launcher.cpp`
+- `src/config/actor-collision-config.cpp`
+- `src/config/collision-config.cpp`
+- `src/config/impact-decals-config.cpp`
+- `src/config/player-visuals-config.cpp`
+- `src/config/settings-backup.cpp`
+- `src/crosshair/crosshair-render.cpp`
+- `src/debug/debug-log.cpp`
+- `src/debug/structured-log.cpp`
+- `src/devtools/dev-log-commands.cpp`
+- `src/devtools/scenario-commands.cpp`
+- `src/devtools/scenario-player.cpp`
+- `src/devtools/scenario-recorder.cpp`
+- `src/devtools/scenario-server-playback.cpp`
+- `src/devtools/scenario-server-recorder.cpp`
+- `src/devtools/terminal.cpp`
+- `src/effects/effect-part-blood.cpp`
+- `src/effects/effect-part-render.cpp`
+- `src/effects/effect-part.cpp`
+- `src/effects/hit-effects-spawn.cpp`
+- `src/effects/hitfx-commands.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-state.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/engine/engine-tick.cpp`
+- `src/entities/player-animation-config.cpp`
+- `src/entities/player-animation.cpp`
+- `src/entities/player-avatar-animations.cpp`
+- `src/entities/player-loader.cpp`
+- `src/entities/player-render.cpp`
+- `src/entities/player.cpp`
+- `src/game/game-cli.cpp`
+- `src/game/host-compat-bridge-module.cpp`
+- `src/game/host-log-bridge-module.cpp`
+- `src/gamemode/arena-ball.cpp`
+- `src/gamemode/gamemode.cpp`
+- `src/gamemode/map-config.cpp`
+- `src/gui/gui-layout.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/hud/chat-window.cpp`
+- `src/gui/hud/player-nameplates.cpp`
+- `src/gui/menus/pause-menu.cpp`
+- `src/gui/ui-system-buttons.cpp`
+- `src/gui/ui-system.cpp`
+- `src/host/host-runtime.cpp`
+- `src/hot-reload/module-host.cpp`
+- `src/impact/destructible-async-cut.cpp`
+- `src/impact/impact-system.cpp`
+- `src/input/input-poll.cpp`
+- `src/input/mouse-lock.cpp`
+- `src/interaction/interaction-system.cpp`
+- `src/interaction/world-interaction-runtime.cpp`
+- `src/main-init.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/map/map-authored-geometry.cpp`
+- `src/map/map-glb-authored.cpp`
+- `src/map/map-loader-collision.cpp`
+- `src/map/map-static-union.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/mapeditor/map-editor-config.cpp`
+- `src/mapeditor/map-editor-projects.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/mapeditor/world-edit-commands.cpp`
+- `src/network/avatar-network-client.cpp`
+- `src/network/client.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/confirmed-damage-presentation.cpp`
+- `src/network/disagreement-visuals.cpp`
+- `src/network/ice/ice-agent.cpp`
+- `src/network/multiplayer-context.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/network/multiplayer-packets.cpp`
+- `src/network/multiplayer-physical-entities.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/network/multiplayer-reconcile.cpp`
+- `src/network/multiplayer-shots.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/network/server-attack.cpp`
+- `src/network/server-avatar-network.cpp`
+- `src/network/server-browser.cpp`
+- `src/network/server-damage.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-ice.cpp`
+- `src/network/server-infinite-collision.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-packet-handlers.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-physical-contact-actors.cpp`
+- `src/network/server-players.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/server-world-destruction.cpp`
+- `src/network/server-world.cpp`
+- `src/network/server.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/notifications/notifications.cpp`
+- `src/npc/npc-avatar.cpp`
+- `src/npc/npc-combat.cpp`
+- `src/npc/npc.cpp`
+- `src/npc/recast-navigation.cpp`
+- `src/npc/team-brain.cpp`
+- `src/perf/perf-commands.cpp`
+- `src/perf/perf-frame.cpp`
+- `src/perf/perf-spike.cpp`
+- `src/perf/perf.cpp`
+- `src/physics/constraints/constraint-commands.cpp`
+- `src/physics/movement/actor-pair-collision.cpp`
+- `src/physics/movement/actor-triangle-solver.cpp`
+- `src/physics/movement/movement-step.cpp`
+- `src/physics/movement/physics-collision-core.cpp`
+- `src/physics/movement/physics-collision-dispatch.cpp`
+- `src/physics/movement/physics-collision-glb-main.cpp`
+- `src/physics/movement/physics-collision-mesh.cpp`
+- `src/physics/physical-entity.cpp`
+- `src/physics/physics-mini.cpp`
+- `src/physics/runtime-objects.cpp`
+- `src/pobjects/persistent-physics.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/render/render-player.cpp`
+- `src/render/render-world-mesh.cpp`
+- `src/render/render-world.cpp`
+- `src/render/skybox.cpp`
+- `src/renderer/renderer.cpp`
+- `src/replay/replay-export-ffmpeg.cpp`
+- `src/sim/simulate-tick.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/player-commands.cpp`
+- `src/terminal/weapon-commands.cpp`
+- `src/vehicles/vehicle-audio.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/vehicles/vehicle-config.cpp`
+- `src/vehicles/vehicle-hud.cpp`
+- `src/vehicles/vehicle-system.cpp`
+- `src/video/video-commands.cpp`
+- `src/world/streamed-world-layer.cpp`
+- `src/world/world-gltf-loader.cpp`
+- `src/worldgen/worldgen-commands.cpp`
+- `src/worldgen/worldgen-library.cpp`
+
+### Terminal (100)
+
+- `src/actor/player-ai.cpp`
+- `src/analytics/analytics-manager.cpp`
+- `src/audio/audio-commands.cpp`
+- `src/audio/hitmarker-audio.cpp`
+- `src/audio/music-commands.cpp`
+- `src/avatar/avatar-atlas.cpp`
+- `src/avatar/avatar-commands.cpp`
+- `src/avatar/avatar-editor-helpers.cpp`
+- `src/avatar/avatar-editor.cpp`
+- `src/avatar/avatar-fileops.cpp`
+- `src/avatar/avatar.cpp`
+- `src/camera/camera-commands.cpp`
+- `src/combat/revolver-system.cpp`
+- `src/combat/weapon-config.cpp`
+- `src/combat/weapon-fire-effects.cpp`
+- `src/combat/weapon-godball-movement.cpp`
+- `src/combat/weapon-manager.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/competitive/competitive-commands.cpp`
+- `src/crosshair/crosshair-commands.cpp`
+- `src/debug/debug-diag-commands.cpp`
+- `src/debug/transform-debug-commands.cpp`
+- `src/devtools/dev-log-commands.cpp`
+- `src/devtools/dev-overlay-commands.cpp`
+- `src/devtools/scenario-commands.cpp`
+- `src/devtools/scenario-player.cpp`
+- `src/devtools/scenario-recorder.cpp`
+- `src/devtools/terminal-builtins.cpp`
+- `src/devtools/terminal.cpp`
+- `src/effects/hitfx-commands.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-state.cpp`
+- `src/engine/engine-tick-ui-replay-hud.cpp`
+- `src/engine/engine-tick.cpp`
+- `src/entities/aim-commands.cpp`
+- `src/gui/gui-editor-commands.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/menus/pause-menu.cpp`
+- `src/hot-reload/module-host.cpp`
+- `src/input/input-commands.cpp`
+- `src/interaction/interaction-commands.cpp`
+- `src/interaction/world-interaction-runtime.cpp`
+- `src/leaderboard/leaderboard-ui.cpp`
+- `src/main-init.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/mapeditor/map-editor-projects.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/mapeditor/world-edit-commands.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/notifications/notification-commands.cpp`
+- `src/perf/perf-commands.cpp`
+- `src/physics/constraints/constraint-commands.cpp`
+- `src/physics/runtime-objects-commands.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/ragdoll/ragdoll-commands.cpp`
+- `src/render/dynamic-light-commands.cpp`
+- `src/render/lighting-commands.cpp`
+- `src/render/postfx-commands.cpp`
+- `src/render/render-world.cpp`
+- `src/replay/replay-camera-commands.cpp`
+- `src/replay/replay-capture-commands.cpp`
+- `src/replay/replay-commands-export.cpp`
+- `src/replay/replay-commands-playback.cpp`
+- `src/replay/replay-editor-commands.cpp`
+- `src/replay/replay-export-mf.cpp`
+- `src/replay/replay-export.cpp`
+- `src/shadow/shadow-commands.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/admin-commands.cpp`
+- `src/terminal/auth-commands.cpp`
+- `src/terminal/badconn-commands.cpp`
+- `src/terminal/crate-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/duel-commands.cpp`
+- `src/terminal/editor-commands.cpp`
+- `src/terminal/map-entity-commands.cpp`
+- `src/terminal/movement-commands.cpp`
+- `src/terminal/network-commands.cpp`
+- `src/terminal/npc-commands.cpp`
+- `src/terminal/object-commands.cpp`
+- `src/terminal/player-commands.cpp`
+- `src/terminal/procedural-world-commands.cpp`
+- `src/terminal/replay-commands.cpp`
+- `src/terminal/terminal-config-commands.cpp`
+- `src/terminal/terminal-cursor-commands.cpp`
+- `src/terminal/terminal-debug-toggles.cpp`
+- `src/terminal/terminal-help-commands.cpp`
+- `src/terminal/vip-commands.cpp`
+- `src/terminal/weapon-bench-commands.cpp`
+- `src/terminal/weapon-commands.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/video/outro.cpp`
+- `src/video/video-commands.cpp`
+- `src/void-death/void-death-commands.cpp`
+- `src/worldgen/worldgen-commands.cpp`
+
+### TerminalState (87)
+
+- `src/actor/player-ai.cpp`
+- `src/camera/camera-commands.cpp`
+- `src/combat/death-system.cpp`
+- `src/combat/melee-client.cpp`
+- `src/debug/debug-diag-commands.cpp`
+- `src/debug/debug-diag.cpp`
+- `src/devtools/dev-overlay-commands.cpp`
+- `src/devtools/npc-spawn-commands.cpp`
+- `src/devtools/scenario-commands.cpp`
+- `src/devtools/scenario-player.cpp`
+- `src/devtools/scenario-recorder.cpp`
+- `src/devtools/terminal.cpp`
+- `src/duel/duel-queue.cpp`
+- `src/duel/duel-ui.cpp`
+- `src/engine/engine-tick-audio.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-state.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui-hud.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/engine/engine-tick-ui-replay-hud.cpp`
+- `src/engine/engine-tick-ui.cpp`
+- `src/engine/engine-tick.cpp`
+- `src/fister/fister-port.cpp`
+- `src/game/bomb-tag-state.cpp`
+- `src/game/game-cli.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/hud/chat-window.cpp`
+- `src/gui/hud/player-nameplates.cpp`
+- `src/gui/menus/pause-menu.cpp`
+- `src/input/input-poll.cpp`
+- `src/interaction/interaction-commands.cpp`
+- `src/interaction/interaction-system.cpp`
+- `src/interaction/world-interaction-runtime.cpp`
+- `src/killfeed/killfeed.cpp`
+- `src/main-init.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/confirmed-damage-presentation.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/network/multiplayer-shots.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/physics/constraints/constraint-commands.cpp`
+- `src/physics/physics-mini.cpp`
+- `src/ragdoll/ragdoll-commands.cpp`
+- `src/render/render-player.cpp`
+- `src/render/render-world.cpp`
+- `src/replay/replay-camera-commands.cpp`
+- `src/replay/replay-capture-commands.cpp`
+- `src/replay/replay-commands-export.cpp`
+- `src/replay/replay-commands-playback.cpp`
+- `src/replay/replay-editor-commands.cpp`
+- `src/replay/replay-editor.cpp`
+- `src/replay/replay-export-ffmpeg.cpp`
+- `src/replay/replay-export-json.cpp`
+- `src/replay/replay-export-subprocess.cpp`
+- `src/replay/replay-export.cpp`
+- `src/sim/simulate-tick.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/admin-commands.cpp`
+- `src/terminal/crate-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/duel-commands.cpp`
+- `src/terminal/editor-commands.cpp`
+- `src/terminal/map-entity-commands.cpp`
+- `src/terminal/movement-commands.cpp`
+- `src/terminal/network-commands.cpp`
+- `src/terminal/npc-commands.cpp`
+- `src/terminal/object-commands.cpp`
+- `src/terminal/player-commands.cpp`
+- `src/terminal/procedural-world-commands.cpp`
+- `src/terminal/vip-commands.cpp`
+- `src/terminal/weapon-bench-commands.cpp`
+- `src/terminal/weapon-commands.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/vehicles/vehicle-system.cpp`
+- `src/video/video-commands.cpp`
+
+### WeaponRegistry (52)
+
+- `src/actor/player-ai.cpp`
+- `src/combat/actor-preset-weapons.cpp`
+- `src/combat/explosion-fx.cpp`
+- `src/combat/grenade-registry.cpp`
+- `src/combat/melee-client.cpp`
+- `src/combat/projectile-render.cpp`
+- `src/combat/weapon-collision-config.cpp`
+- `src/combat/weapon-contact-local.cpp`
+- `src/combat/weapon-data.cpp`
+- `src/combat/weapon-json-config.cpp`
+- `src/combat/weapon-manager.cpp`
+- `src/combat/weapon-model-cache.cpp`
+- `src/combat/weapon-registry.cpp`
+- `src/combat/weapon-runtime.cpp`
+- `src/combat/weapon-system-equip.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/devtools/scenario-recorder.cpp`
+- `src/effects/effect-part.cpp`
+- `src/effects/hit-effects.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/entities/player-animation.cpp`
+- `src/killfeed/killfeed.cpp`
+- `src/network/confirmed-damage-presentation.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/network/multiplayer-shots.cpp`
+- `src/network/network-weapons.cpp`
+- `src/network/server-attack.cpp`
+- `src/network/server-damage.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-packet-handlers.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-physical-contact-actors.cpp`
+- `src/network/server-physical-contact.cpp`
+- `src/network/server-players.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/server.cpp`
+- `src/network/weapon-runtime-reconciliation.cpp`
+- `src/npc/npc-combat.cpp`
+- `src/npc/npc-spawn.cpp`
+- `src/npc/npc.cpp`
+- `src/physics/movement/actor-collision-mesh.cpp`
+- `src/pobjects/persistent-physics.cpp`
+- `src/sim/simulate-tick.cpp`
+- `src/terminal/weapon-bench-commands.cpp`
+- `src/terminal/weapon-commands.cpp`
+
+### DebugVis (48)
+
+- `src/combat/melee-client.cpp`
+- `src/combat/projectile-render.cpp`
+- `src/combat/revolver-system.cpp`
+- `src/combat/weapon-godball-physics.cpp`
+- `src/combat/weapon-quick-hit.cpp`
+- `src/combat/weapon-rocket-launcher.cpp`
+- `src/combat/weapon-spyknife.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/combat/weapon-viewmodel.cpp`
+- `src/debug/debug-diag.cpp`
+- `src/debug/debug-visuals-config.cpp`
+- `src/debug/debug-visuals-lines.cpp`
+- `src/debug/debug-visuals-scene.cpp`
+- `src/debug/debug-visuals.cpp`
+- `src/devtools/dev-npc-selection.cpp`
+- `src/duel/duel-ui.cpp`
+- `src/effects/effect-part-render.cpp`
+- `src/effects/hit-effects-render.cpp`
+- `src/effects/rain-system.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/engine/engine-tick-ui.cpp`
+- `src/entities/player-render.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/gui/hud/chat-bubble.cpp`
+- `src/gui/hud/player-nameplates.cpp`
+- `src/interaction/interaction-system.cpp`
+- `src/main-init.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/client.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/npc/npc.cpp`
+- `src/physics/constraints/constraint-debug.cpp`
+- `src/physics/movement/physics-collision-core.cpp`
+- `src/physics/movement/physics-collision-dispatch.cpp`
+- `src/physics/movement/physics-collision-glb-main.cpp`
+- `src/physics/movement/physics-collision-glb-sweep-slide.cpp`
+- `src/pobjects/persistent-physics.cpp`
+- `src/procedural/procedural-world-client.cpp`
+- `src/ragdoll/ragdoll-mode.cpp`
+- `src/render/render-player.cpp`
+- `src/render/render-world-mesh.cpp`
+- `src/render/render-world.cpp`
+- `src/terminal/debug-commands.cpp`
+
+### GuiLayoutManager (42)
+
+- `src/audio/music-manager-widget.cpp`
+- `src/avatar/avatar-editor-helpers.cpp`
+- `src/competitive/competitive-result.cpp`
+- `src/competitive/competitive-ui.cpp`
+- `src/duel/duel-ui.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/engine/engine-tick-ui-replay-hud.cpp`
+- `src/game/bomb-tag-config.cpp`
+- `src/game/duel.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/gui/gui-editor-commands.cpp`
+- `src/gui/gui-editor-overlay.cpp`
+- `src/gui/gui-editor-preview.cpp`
+- `src/gui/gui-editor-select.cpp`
+- `src/gui/gui-editor-tools.cpp`
+- `src/gui/gui-editor.cpp`
+- `src/gui/gui-layout.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/hud/chat-bubble.cpp`
+- `src/gui/hud/chat-window.cpp`
+- `src/gui/hud/match-leaderboard.cpp`
+- `src/gui/menus/account-panel.cpp`
+- `src/gui/menus/debug-menu.cpp`
+- `src/gui/menus/duel-config-menu.cpp`
+- `src/gui/menus/help-menu.cpp`
+- `src/gui/menus/login-menu.cpp`
+- `src/gui/menus/main-menu.cpp`
+- `src/gui/menus/online-menu.cpp`
+- `src/gui/menus/pause-menu.cpp`
+- `src/gui/menus/play-menu.cpp`
+- `src/gui/menus/practice-menu.cpp`
+- `src/gui/menus/sandbox-map-menu.cpp`
+- `src/gui/menus/server-info-menu.cpp`
+- `src/gui/menus/settings-menu.cpp`
+- `src/gui/menus/sign-in-menu.cpp`
+- `src/gui/password-popup.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/client.cpp`
+- `src/notifications/notifications.cpp`
+
+### ModuleHost (39)
+
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/entities/player-render.cpp`
+- `src/game/module-host-bridge-module.cpp`
+- `src/host/host-runtime.cpp`
+- `src/hot-reload/module-host.cpp`
+- `src/main.cpp`
+- `src/map/map-authored-geometry.cpp`
+- `src/map/map-loader-gltf-nodes.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/movement-validation.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/network/multiplayer-packets.cpp`
+- `src/network/multiplayer-reconcile.cpp`
+- `src/network/server-attack.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-infinite-collision.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-world.cpp`
+- `src/network/server.cpp`
+- `src/npc/npc-combat.cpp`
+- `src/npc/npc-perception.cpp`
+- `src/npc/npc-state-machine.cpp`
+- `src/npc/npc-traversal.cpp`
+- `src/npc/npc-utility-bridge.cpp`
+- `src/npc/npc.cpp`
+- `src/npc/recast-navigation.cpp`
+- `src/physics/movement/actor-final-pose.cpp`
+- `src/physics/movement/actor-pair-collision.cpp`
+- `src/physics/movement/actor-triangle-solver.cpp`
+- `src/physics/movement/physics-collision-core.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/render/render-player.cpp`
+- `src/render/render-world.cpp`
+- `src/render/world-box-mesh.cpp`
+- `src/world/streamed-world-layer.cpp`
+
+### Perf (35)
+
+- `src/audio/audio.cpp`
+- `src/combat/weapon-fire-hit.cpp`
+- `src/effects/hit-effects.cpp`
+- `src/engine/engine-tick-audio.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/engine/engine-tick-net.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-replay.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/engine/engine-tick-ui.cpp`
+- `src/engine/engine-tick.cpp`
+- `src/impact/impact-system.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-npcs.cpp`
+- `src/npc/npc-navigator.cpp`
+- `src/npc/npc-spawn.cpp`
+- `src/npc/npc.cpp`
+- `src/npc/recast-navigation.cpp`
+- `src/perf/perf-commands.cpp`
+- `src/perf/perf-frame.cpp`
+- `src/perf/perf-overlay.cpp`
+- `src/perf/perf-spike.cpp`
+- `src/perf/perf-visualize.cpp`
+- `src/perf/perf.cpp`
+- `src/physics/movement/physics-collision-dispatch.cpp`
+- `src/physics/movement/physics-collision-glb-main.cpp`
+- `src/physics/movement/physics-collision-glb-setup.cpp`
+- `src/physics/physics-mini.cpp`
+- `src/render/render-world-mesh.cpp`
+- `src/render/render-world-shadow.cpp`
+- `src/replay/replay-recorder-events.cpp`
+- `src/replay/replay-recorder.cpp`
+- `src/shadow/shadow-render.cpp`
+- `src/sim/simulate-tick.cpp`
+
+### PhysicalEntitySystem (30)
+
+- `src/combat/client-collision-world-view.cpp`
+- `src/engine/engine-tick-combat.cpp`
+- `src/gamemode/arena-ball.cpp`
+- `src/impact/destructible-async-cut.cpp`
+- `src/impact/destructible-render.cpp`
+- `src/impact/destructible-selftest.cpp`
+- `src/impact/impact-system.cpp`
+- `src/network/destruction-replication-selftest.cpp`
+- `src/network/multiplayer-physical-entities.cpp`
+- `src/network/multiplayer-projectiles.cpp`
+- `src/network/physical-entity-replication.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/server-world-destruction.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/physics/constraints/constraint-commands.cpp`
+- `src/physics/constraints/constraint-debug.cpp`
+- `src/physics/constraints/constraint-system.cpp`
+- `src/physics/movement/actor-triangle-solver.cpp`
+- `src/physics/physical-entity.cpp`
+- `src/physics/runtime-objects.cpp`
+- `src/procedural/procedural-world-client.cpp`
+- `src/terminal/crate-commands.cpp`
+- `src/terminal/object-commands.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/vehicles/vehicle-hud.cpp`
+- `src/vehicles/vehicle-render.cpp`
+- `src/vehicles/vehicle-system.cpp`
+
+### GamemodeRegistry (25)
+
+- `src/combat/melee-client.cpp`
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-render.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-ui-game-hud.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/entities/player-animation.cpp`
+- `src/game/game-cli.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/gamemode/gamemode.cpp`
+- `src/gamemode/map-config.cpp`
+- `src/main-systems.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/network/server-damage.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-world-destruction.cpp`
+- `src/network/server.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/render/render-world-mesh.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+
+### MapConfigRegistry (25)
+
+- `src/debug/debug-visuals-scene.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/engine/engine-tick-ui-overlays.cpp`
+- `src/game/gamemode-manager.cpp`
+- `src/gamemode/map-config.cpp`
+- `src/gamemode/map-edit-applier.cpp`
+- `src/hot-reload/module-host.cpp`
+- `src/interaction/world-interaction-runtime.cpp`
+- `src/map/map-authored-geometry.cpp`
+- `src/mapeditor/map-editor-commands.cpp`
+- `src/mapeditor/map-editor-projects.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/mapeditor/world-edit-commands.cpp`
+- `src/network/multiplayer-context.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-infinite-collision.cpp`
+- `src/network/server.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/render/render-world.cpp`
+- `src/sim/simulate-tick.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/map-entity-commands.cpp`
+- `src/world/streamed-world-layer.cpp`
+- `src/worldgen/worldgen-commands.cpp`
+
+### AuthSystem (22)
+
+- `src/auth/auth-controller.cpp`
+- `src/auth/auth-popup.cpp`
+- `src/auth/auth-system.cpp`
+- `src/competitive/competitive-ui.cpp`
+- `src/competitive/competitive.cpp`
+- `src/duel/duel-queue.cpp`
+- `src/duel/duel-ui.cpp`
+- `src/engine/engine-tick-state.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/menus/account-panel.cpp`
+- `src/gui/menus/main-menu.cpp`
+- `src/gui/menus/menu-avatar-preview.cpp`
+- `src/gui/menus/play-menu.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/multiplayer-tick.cpp`
+- `src/network/server.cpp`
+- `src/terminal/auth-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/network-commands.cpp`
+- `src/terminal/vip-commands.cpp`
+
+### MultiplayerContextGlobal (21)
+
+- `src/combat/death-system.cpp`
+- `src/combat/revolver-system.cpp`
+- `src/combat/weapon-audio.cpp`
+- `src/combat/weapon-fire-damage.cpp`
+- `src/combat/weapon-godball-movement.cpp`
+- `src/combat/weapon-spyknife.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/debug/debug-visuals-scene.cpp`
+- `src/devtools/terminal.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/main-init.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/network/multiplayer-interpolation.cpp`
+- `src/physics/physics-mini.cpp`
+- `src/procedural/infinite-world-runtime.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/admin-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/npc-commands.cpp`
+- `src/terminal/procedural-world-commands.cpp`
+
+### serverGamemodeState (20)
+
+- `src/devtools/scenario-server-playback.cpp`
+- `src/devtools/scenario-server-recorder.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/server-attack.cpp`
+- `src/network/server-avatar-network.cpp`
+- `src/network/server-damage.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-packets.cpp`
+- `src/network/server-players.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/server-world-destruction.cpp`
+- `src/network/server.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/procedural/procedural-world.cpp`
+- `src/terminal/actor-commands.cpp`
+- `src/terminal/debug-commands.cpp`
+- `src/terminal/map-entity-commands.cpp`
+
+### VehicleSystem (17)
+
+- `src/engine/engine-tick-camera.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/input/input-poll.cpp`
+- `src/main-systems.cpp`
+- `src/mapeditor/map-editor.cpp`
+- `src/network/multiplayer-physical-entities.cpp`
+- `src/network/multiplayer-reconcile.cpp`
+- `src/network/server-players.cpp`
+- `src/network/server.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/physics/runtime-objects-commands.cpp`
+- `src/physics/runtime-objects.cpp`
+- `src/sim/simulate-tick.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/vehicles/vehicle-hud.cpp`
+- `src/vehicles/vehicle-render.cpp`
+- `src/vehicles/vehicle-system.cpp`
+
+### SizeScalingConfig (16)
+
+- `src/audio/audio.cpp`
+- `src/combat/weapon-attachment.cpp`
+- `src/combat/weapon-audio.cpp`
+- `src/combat/weapon-fire-effects.cpp`
+- `src/combat/weapon-grenade-launcher.cpp`
+- `src/combat/weapon-rocket-launcher.cpp`
+- `src/combat/weapon-viewmodel.cpp`
+- `src/config/size-scaling-config.cpp`
+- `src/effects/effect-part-debris.cpp`
+- `src/effects/effect-part.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/main-systems.cpp`
+- `src/physics/movement/movement-conversion.cpp`
+- `src/physics/movement/physics-jump.cpp`
+- `src/physics/movement/physics-walk.cpp`
+- `src/terminal/player-commands.cpp`
+
+### NpcDifficultyConfig (15)
+
+- `src/engine/engine-tick-setup.cpp`
+- `src/game/game-cli.cpp`
+- `src/main-systems.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server-packet-chat.cpp`
+- `src/network/server-projectiles.cpp`
+- `src/network/server.cpp`
+- `src/npc/npc-combat.cpp`
+- `src/npc/npc-difficulty-config.cpp`
+- `src/npc/npc-navigation.cpp`
+- `src/npc/npc-navigator.cpp`
+- `src/npc/npc-spawn.cpp`
+- `src/npc/npc-states.cpp`
+- `src/npc/npc.cpp`
+- `src/terminal/npc-commands.cpp`
+
+### MovementJsonConfig (13)
+
+- `src/config/movement-config.cpp`
+- `src/debug/debug-visuals-scene.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/gamemode/match-roles.cpp`
+- `src/main-systems.cpp`
+- `src/network/community-match-client.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server.cpp`
+- `src/npc/npc-difficulty-config.cpp`
+- `src/npc/npc-navigator.cpp`
+- `src/npc/npc-traversal.cpp`
+- `src/physics/movement/movement-conversion.cpp`
+- `src/terminal/movement-commands.cpp`
+
+### AnalyticsManager (10)
+
+- `src/analytics/analytics-manager.cpp`
+- `src/combat/weapon-system.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/gui/gui-main.cpp`
+- `src/gui/menus/settings-menu.cpp`
+- `src/main-init.cpp`
+- `src/main-systems.cpp`
+- `src/main.cpp`
+- `src/profile/local-profile-system.cpp`
+- `src/world/world-gltf-loader.cpp`
+
+### BehaviorProfileRegistry (9)
+
+- `src/engine/engine-tick-setup.cpp`
+- `src/game/game-cli.cpp`
+- `src/main-systems.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server-melee-actions.cpp`
+- `src/network/server-npcs.cpp`
+- `src/network/server.cpp`
+- `src/npc/npc-behavior.cpp`
+- `src/npc/npc.cpp`
+
+### VehicleConfigRegistry (7)
+
+- `src/mapeditor/map-editor.cpp`
+- `src/network/vehicle-networking.cpp`
+- `src/vehicles/vehicle-commands.cpp`
+- `src/vehicles/vehicle-config.cpp`
+- `src/vehicles/vehicle-hud.cpp`
+- `src/vehicles/vehicle-render.cpp`
+- `src/vehicles/vehicle-system.cpp`
+
+### HotReloadSystem (6)
+
+- `src/combat/weapon-quick-hit.cpp`
+- `src/devtools/terminal.cpp`
+- `src/effects/effect-part-system.cpp`
+- `src/engine/engine-tick-setup.cpp`
+- `src/hot-reload/hot-reload-system.cpp`
+- `src/main.cpp`
+
+### LogManager (6)
+
+- `src/debug/log-manager.cpp`
+- `src/debug/structured-log.cpp`
+- `src/devtools/dev-log-commands.cpp`
+- `src/main-init.cpp`
+- `src/main.cpp`
+- `src/terminal/weapon-bench-commands.cpp`
+
+### CharacterRegistry (5)
+
+- `src/avatar/avatar-atlas.cpp`
+- `src/avatar/avatar-commands.cpp`
+- `src/avatar/avatar-picker.cpp`
+- `src/avatar/character-registry.cpp`
+- `src/entities/player-loader.cpp`
+
+### ConstraintSystem (5)
+
+- `src/physics/constraints/constraint-commands.cpp`
+- `src/physics/constraints/constraint-debug.cpp`
+- `src/physics/constraints/constraint-system.cpp`
+- `src/physics/physical-entity.cpp`
+- `src/physics/runtime-objects.cpp`
+
+### PersistenceQueue (5)
+
+- `src/network/server-gamemode.cpp`
+- `src/network/server.cpp`
+- `src/persistence/persistence-commands.cpp`
+- `src/persistence/persistence-emit.cpp`
+- `src/persistence/persistence-queue.cpp`
+
+### ActorCollisionConfig (4)
+
+- `src/config/actor-collision-config.cpp`
+- `src/debug/debug-visuals-scene.cpp`
+- `src/network/server-npcs.cpp`
+- `src/sim/simulate-tick.cpp`
+
+### LocalProfileSystem (4)
+
+- `src/gui/menus/sign-in-menu.cpp`
+- `src/main-init.cpp`
+- `src/main.cpp`
+- `src/profile/local-profile-system.cpp`
+
+## Limits
+
+- A regex hit is a lead. It can be a false positive (a comment or a dead branch).
+- A missing hit can be a false negative (macros, indirect calls, generated code).
+- Static triage cannot prove stop/join, resource release, or no re-entry after unload.
+- Compiler depfile freshness is still unknown; the inventory does not invoke a compiler.

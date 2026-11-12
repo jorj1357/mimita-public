@@ -2636,6 +2636,19 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             return;
         const uint8_t packetType =
             reinterpret_cast<const PacketHeader*>(rp.bytes.data())->type;
+        if (packetType == PACKET_SERVER_COMMAND_RESULT) {
+            const auto* header = reinterpret_cast<const PacketHeader*>(
+                rp.bytes.data());
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.server-command.result-packet", "receive",
+                "client received a server command result packet", ctx.tick,
+                {{"bytes", rp.bytes.size()},
+                 {"header_tick", header->tick},
+                 {"header_player", header->playerId},
+                 {"transport", ctx.transport ? "active" : "raw-udp"}},
+                __FILE__, __LINE__, __func__);
+        }
         const auto packetStart = std::chrono::steady_clock::now();
         memcpy(buffer, rp.bytes.data(), rp.bytes.size());
         processPacket((int)rp.bytes.size());

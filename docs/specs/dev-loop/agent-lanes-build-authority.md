@@ -1,8 +1,6 @@
 // 2026-11-08
 /* purpose
-* define mandatory isolated agent lanes and single-owner build authority
-* keep every agent's edits, executable, modules, runs, and journals separate
-* prevent multiple agents from compiling the same machine at once
+* record the historical isolated-lane design and the current shared-checkout build authority
 * this file DOES NOT define gameplay behavior or the module ABI
 * this file DOES NOT permit agents to invoke build.py or module workers
 */
@@ -13,10 +11,10 @@
 
 For normal agent development, the user has selected one shared checkout:
 `C:\mimita-v9`, its current branch, the root dev-loop, and the same EXE.
-Mode 2 lanes and additional worktrees/branches are not the active workflow.
-Do not create, enter, build, or clean up a lane unless the user explicitly
-asks to resume lane work. Existing lane directories and their edits are
-preserved; this policy change does not delete or merge them.
+Mode 2 lanes are deferred as of 2026-11-11 18:41 EST. Do not create, enter,
+build, sync, promote, or clean up a lane. The lane command entry points reject
+mutating actions. Existing lane worktrees, branches, and edits are parked and
+preserved; do not delete or merge them as part of this policy change.
 
 Agents may edit and inspect the shared checkout, but must not run build scripts
 or direct compiler commands. The existing root dev-loop remains the only live
@@ -24,8 +22,9 @@ build/run authority. Use its status and control interface, and serialize shared
 source edits so two agents do not overwrite each other. This policy changes
 where work happens; it does not itself make EXE-owned C++ hot-reloadable.
 
-The detailed mode 2 procedure below is retained as historical/reference
-documentation and is superseded by this current policy for ordinary work.
+The detailed Mode 2 procedure below is retained as historical/reference
+documentation and is superseded by this policy. Resume it only after the user
+changes the project policy and the CLI guard is deliberately revised.
 
 **Implementation status (2026-11-09):** the repository-local paths are enforced.
 `devscripts/agent-lane.py` places worktrees under `.dev/agent-lanes/`,
@@ -36,7 +35,14 @@ metadata, symlinks, junctions, schedulers, and caches that resolve outside the
 coordinator repository. The focused containment checks live in
 `devscripts/quality/test_path_containment.py`.
 
-## 1. The rule
+## Historical Mode 2 design — not current instructions
+
+The remaining sections document the former lane workflow only. The current
+Mode 1 policy above controls: agents share the root checkout and only its
+dev-loop may build or run. Do not use the lane commands below unless the user
+explicitly resumes lane work.
+
+## 1. Historical lane build rule
 
 An agent edits and observes. It never builds.
 
@@ -81,7 +87,7 @@ Direct compiler or `ccache` invocation is also forbidden. The supported build
 entry points are the dev-loop's internal worker and `ModuleHost`'s module
 worker.
 
-## 1.1 One shared host EXE, shared modules, and auto-land (2026-11-11 policy)
+## 1.1 Historical shared-host and auto-land proposal
 
 The approved direction is one canonical host EXE plus a shared module store,
 not one EXE per lane. A lane still owns its editable source/config and its
@@ -140,7 +146,7 @@ not implemented yet. The intended behavior is: after landing, run a bounded
 smoke through the shared host; if it fails, restore the previous stable host and
 module pointers and report the failure.
 
-## 2. Why mode 2 is the target for parallel agent work
+## 2. Historical rationale for mode 2
 
 Mode 1 uses one shared checkout. Four agents editing that checkout interfere
 with each other's files, build generations, artifacts, module generations,
@@ -171,7 +177,7 @@ worktrees; otherwise every new lane becomes an unnecessary full cold build.
 Mode 1 remains available for the human coordinator as a fallback. It is not an
 agent workflow.
 
-## 3. Build scheduling without external files
+## 3. Historical mode 2 build scheduling design
 
 Use these named Windows mutexes for build-slot ownership; do not create a
 scheduler directory or coordination file outside the project:

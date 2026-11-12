@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "description": "Canonical source-owner map for the whole-game hot-reload cutover. Exactly one owner per source. Owners: game (eligible ordinary game implementation, the only set that becomes replaceable in one game.dll), resident (stable host/loader/device/transport/logging/worker mechanism that must not unload), bootstrap (process entry and orchestration), module:<name> (existing subsystem ModuleV1 DLL), launcher, tool, test, vendor. This map does not change build ownership; build.py keeps using config/modules/modules.json until the reviewed cutover.",
+  "precedence": [
+    "module catalog: config/modules/modules.json sources are always module:<name>",
+    "explicit overrides in this file",
+    "ordered rules below; the first matching include rule wins"
+  ],
+  "rules": [
+    {
+      "owner": "bootstrap",
+      "reason": "process entry and orchestration; must stay resident",
+      "include": [
+        "src/main.cpp",
+        "src/main-init.cpp",
+        "src/main-systems.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "resident host ABI, loader, state store, and generation barrier",
+      "include": [
+        "src/host/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "loader, module host, and focused game-DLL host mechanism",
+      "include": [
+        "src/hot-reload/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "process-wide logging, crash handling, and diagnostics sinks",
+      "include": [
+        "src/debug/log-manager.cpp",
+        "src/debug/structured-log.cpp",
+        "src/debug/crash-handler.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "window, GL context, and device lifetime",
+      "include": [
+        "src/renderer/renderer.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "audio device engine and decode worker lifetime",
+      "include": [
+        "src/audio/audio.cpp",
+        "src/audio/music-manager.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "socket, ICE, per-session server loop, and authored-world rebuild worker",
+      "include": [
+        "src/network/net_common.cpp",
+        "src/network/server.cpp",
+        "src/network/server-ice.cpp",
+        "src/network/server-authored-rebuild.cpp",
+        "src/network/ice/ice-agent.cpp",
+        "src/network/ice/ice-server.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "process-memory persistence worker and rehost state",
+      "include": [
+        "src/persistence/persistence-queue.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "matchmaking poll thread and session state",
+      "include": [
+        "src/duel/duel-queue.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "file-watch worker service",
+      "include": [
+        "src/utils/json-file-watch.cpp"
+      ]
+    },
+    {
+      "owner": "resident",
+      "reason": "replay save worker executor",
+      "include": [
+        "src/replay/replay-factory-worker.cpp"
+      ]
+    },
+    {
+      "owner": "test",
+      "reason": "self-test translation units compiled into the EXE; explicit test exception, not game.dll",
+      "include": [
+        "src/impact/destructible-selftest.cpp",
+        "src/network/destruction-replication-selftest.cpp",
+        "src/network/ice/ice-test.cpp",
+        "src/network/test-events.cpp",
+        "src/worldproject/world-edit-session-selftest.cpp",
+        "src/worldproject/world-project-selftest.cpp"
+      ]
+    },
+    {
+      "owner": "game",
+      "reason": "ordinary game implementation default; replaceable in one game.dll",
+      "include": [
+        "src/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "launcher",
+      "reason": "standalone launcher process",
+      "include": [
+        "launcher/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "test",
+      "reason": "repository test translation units",
+      "include": [
+        "tests/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "tool",
+      "reason": "standalone development tool",
+      "include": [
+        "tools/**/*.cpp"
+      ]
+    },
+    {
+      "owner": "test",
+      "reason": "vendored test translation units",
+      "include": [
+        "external/**/test/**/*.cpp",
+        "external/**/tests/**/*.cpp",
+        "external/**/Tests/**/*.cpp",
+        "external/**/*_test.cpp"
+      ]
+    },
+    {
+      "owner": "game",
+      "reason": "Recast/Detour navigation implementation compiled into the game build",
+      "include": [
+        "external/recastnavigation/Detour/Source/*.cpp",
+        "external/recastnavigation/DetourTileCache/Source/*.cpp",
+        "external/recastnavigation/Recast/Source/*.cpp"
+      ]
+    },
+    {
+      "owner": "vendor",
+      "reason": "unused or binary-only vendored C++ source; not in the canonical game build",
+      "include": [
+        "external/**/*.cpp",
+        "include/**/*.cpp"
+      ]
+    }
+  ],
+  "overrides": [],
+  "link_inputs": {
+    "resident_c": [
+      {
+        "path": "src/glad.c",
+        "owner": "resident",
+        "reason": "GL entry-point dispatch must stay loaded with the context"
+      },
+      {
+        "path": "external/libjuice/src/*.c",
+        "owner": "resident",
+        "reason": "ICE/UDP transport implementation; callback threads must outlive game generations"
+      }
+    ],
+    "resources": [
+      {
+        "path": "mimita.rc",
+        "owner": "resident",
+        "reason": "process resources and version metadata"
+      }
+    ],
+    "archives": [
+      {
+        "path": "external/manifold-prebuilt/lib/libmanifold.a",
+        "owner": "vendor",
+        "reason": "prebuilt archive linked into the EXE; source provenance unresolved, so it is not treated as a reloadable source set"
+      }
+    ]
+  }
+}

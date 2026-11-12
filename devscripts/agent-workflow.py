@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Agent entry point: mandatory isolated lane (mode 2); mode 1 is fallback.
+"""Agent entry point for the canonical shared-checkout dev-loop (Mode 1).
 
-Agents never build. The lane dev-loop auto-detects edits and builds. An agent
-only ensures the lane dev-loop is running and reads status/journals.
+Mode 2 lane creation and startup are deferred as of 2026-11-11 18:41 EST.
 """
 
 from __future__ import annotations
@@ -17,21 +16,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("1", "2"), default="2",
-                        help="2 uses an isolated agent lane (default); 1 is a coordinator fallback")
+    parser.add_argument("--mode", choices=("1",), default="1",
+                        help="Mode 1 uses the canonical shared checkout")
     parser.add_argument("action", choices=("ensure", "build", "run", "status", "check",
                                              "create", "cleanup", "promote", "list"))
     parser.add_argument("args", nargs=argparse.REMAINDER)
     options = parser.parse_args()
-    if options.mode == "2":
-        return subprocess.call([sys.executable, str(ROOT / "devscripts" / "agent-lane.py"),
-                                options.action, *options.args], cwd=ROOT)
-
     if options.action in {"create", "cleanup", "promote", "check", "list"}:
-        parser.error(f"{options.action} is available in mode 2; mode 1 preserves the shared dev-loop workflow")
+        parser.error(f"{options.action} is deferred with Mode 2; use the canonical root dev-loop")
     if options.action == "build":
-        print("[AGENT WORKFLOW] agents must not build. Use mode 2 lane `ensure` "
-              "and `status`; the lane dev-loop builds automatically.", file=sys.stderr)
+        print("[AGENT WORKFLOW] agents must not build. Use the canonical root dev-loop status.", file=sys.stderr)
         return 2
     if options.action == "ensure":
         command = [sys.executable, str(ROOT / "devscripts" / "dev-loop.py"),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create and operate isolated MiMITA agent worktree lanes.
+"""Historical Mode 2 lane manager; mutating actions are currently disabled.
 
 Run lane-management commands from the coordinator checkout. Each lane has its
 own Git worktree, dev-loop daemon/state, build outputs, executable artifacts,
@@ -666,6 +666,12 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.action not in {"status", "list"}:
+        print("[AGENT LANE] Mode 2 is deferred as of 2026-11-11 18:41 EST. "
+              "No new lane, daemon, build, sync, or cleanup action is allowed. "
+              "Existing lane data is preserved; use the canonical root dev-loop.",
+              file=sys.stderr)
+        return 2
     try:
         return int(args.func(args))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:

@@ -25,14 +25,18 @@ deployment.
 - Build authority and machine scheduling: `build_authority.py` guards the EXE
   and module builders so only the dev-loop/game may compile; `build_scheduler.py`
   enforces one EXE build and two module builds machine-wide; `module_ownership.py`
-  is the single module/EXE source-ownership map. Agents use isolated lanes via
-  `agent-lane.py` and never invoke a builder. See
+  is the single module/EXE source-ownership map. Mode 2 lanes are deferred as
+  of 2026-11-11 18:41 EST; lane mutations are disabled and existing data is
+  preserved. Use the canonical root dev-loop. See
   [agent lanes and build authority](../docs/specs/dev-loop/agent-lanes-build-authority.md).
 - Scenario data and examples: `scenarios/`, including `matrix/` and
   `user/`; scenario execution and reports: `scenario-analyze.py` and
   `scenario_replay_report.py`.
 - Quality and evidence: `quality/`, `perf-watch.py`, and
   `perf-evidence.py`.
+- Whole-game hot-reload evidence: `source_manifest.py`, `game_build_worker.py`,
+  `game_link_worklist.py`, `audit_triage.py`, `audit_passes.py`, and
+  `game_static_gate.py`.
 - Configuration and content validation: `jsonc.py`, `config_selftest.py`,
   `animation_json_check.py`, `gamemode_json_sync.py`, and
   `weapon_json_sync.py`.

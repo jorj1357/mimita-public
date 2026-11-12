@@ -52,6 +52,7 @@ from devscripts.path_containment import (
     resolve_coordinator_root,
     resolve_within,
 )
+from devscripts.process_identity import pid_alive as _process_pid_alive
 
 COORDINATOR_ROOT = resolve_coordinator_root(ROOT)
 os.environ["MIMITA_COORDINATOR_ROOT"] = str(COORDINATOR_ROOT)
@@ -136,7 +137,8 @@ from dev_loop.state import read_json, write_json
 def script_sha256(path: Path) -> str:
     try:
         digest = hashlib.sha256()
-        sources = ([path, *sorted((ROOT / "devscripts" / "dev_loop").glob("*.py"),
+        sources = ([path, ROOT / "devscripts" / "process_identity.py",
+                    *sorted((ROOT / "devscripts" / "dev_loop").glob("*.py"),
                                   key=lambda source: source.name)]
                    if path.resolve() == DEV_LOOP_SCRIPT.resolve() else [path])
         for source in sources:
@@ -620,7 +622,8 @@ def existing_dev_loop_pids() -> list[int]:
         result = run_hidden(
             [
                 "powershell", "-NoProfile", "-Command",
-                "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" "
+                "Get-CimInstance Win32_Process "
+                "| Where-Object { $_.Name -match '^pythonw?\\.exe$' } "
                 "| ForEach-Object { \"$($_.ProcessId)`t$($_.CommandLine)\" }",
             ],
             capture_output=True,
@@ -789,8 +792,15 @@ def acquire_dev_loop_lock() -> int:
         try:
             owner = LOCK_PATH.read_text(encoding="ascii").strip() or owner
             owner_pid = int(owner)
-            os.kill(owner_pid, 0)
         except (OSError, ValueError):
+            raise SystemExit(
+                f"[DEV] cannot verify the owner of {LOCK_PATH}; preserving it"
+            )
+        if pid_alive(owner_pid):
+            raise SystemExit(
+                f"[DEV] dev-loop already running for this checkout (PID {owner_pid})"
+            )
+        else:
             try:
                 LOCK_PATH.unlink()
             except OSError as error:
@@ -798,9 +808,6 @@ def acquire_dev_loop_lock() -> int:
                     f"[DEV] another dev-loop owns {LOCK_PATH}: {error}"
                 ) from error
             return acquire_dev_loop_lock()
-        raise SystemExit(
-            f"[DEV] dev-loop already running for this checkout (PID {owner_pid})"
-        )
     os.write(descriptor, str(os.getpid()).encode("ascii"))
     os.close(descriptor)
     return os.getpid()
@@ -1170,16 +1177,20 @@ class DevLoop:
             or self.latest_build_folder
         ) if self.latest_build_folder else None
         self.latest_generation = 0
-        # A disk-restored artifact is usable, but it has not been proven
-        # against this loop's current source snapshot yet. The initial build
-        # must validate the current tree before the artifact can be launched.
+        # A disk-restored artifact is not proven against this loop's current
+        # source snapshot. Keep it marked stale and wait for a source change or
+        # explicit build/launch request instead of compiling just because the
+        # daemon started. Launch requests below queue validation before use.
         self.latest_stale = self.latest_build is not None
-        self.build_pending = True
-        self.build_status = "pending"
+        self.build_pending = self.latest_build is None
+        self.build_status = "published_stale" if self.latest_stale else "pending"
         self.active_build_generation: int | None = None
         self.active_build_started_utc: str | None = None
         self.active_build_started_monotonic: float | None = None
-        self.active_build_detail = "waiting for build worker"
+        self.active_build_detail = (
+            "waiting for initial build" if self.latest_build is None else
+            "idle; waiting for a source change or explicit build/launch request"
+        )
         self.active_build_phase = ""
         self.active_build_progress: dict = {}
         self.build_output_tail: deque[str] = deque(maxlen=10)
@@ -1198,9 +1209,9 @@ class DevLoop:
         self.launch_after_build = False
         self.shutting_down = False
         self.last_message = (
-            f"restored published build {self.latest_build}; validating current source"
+            f"restored published build {self.latest_build}; source not yet validated; idle"
             if self.latest_build is not None
-            else "starting; no published build found"
+            else "starting; no published build found; initial build queued"
         )
         self.last_status_line = None
         self.last_state_save_monotonic = 0.0
@@ -2342,10 +2353,12 @@ class DevLoop:
                     self.launch_mode = selected
                 self.override_map = str(request.get("map", "") or "").strip()
                 self.override_weapon_set = str(request.get("weapon_set", "") or "").strip()
-                if self.latest_build is None:
+                if self.latest_build is None or self.latest_stale:
                     self.launch_after_build = True
                     self._queue_build_if_needed()
-                    self.last_message = f"AI launch waiting for first successful build, mode {self.launch_mode_id}"
+                    self.last_message = (
+                        f"AI launch waiting for source validation/build, mode {self.launch_mode_id}"
+                    )
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
@@ -2369,10 +2382,10 @@ class DevLoop:
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("build_queued")
             elif action == "build-or-launch":
-                if self.latest_build is None:
+                if self.latest_build is None or self.latest_stale:
                     self.launch_after_build = True
                     self._queue_build_if_needed()
-                    self.last_message = "dashboard launch waiting for first successful build"
+                    self.last_message = "dashboard launch waiting for source validation/build"
                     self.record_control_event(request, "accepted", self.last_message)
                     self.save_state("launch_waiting_for_build")
                 else:
@@ -2423,6 +2436,13 @@ class DevLoop:
                     self.last_message = "server is already running"
                     self.record_control_event(request, "rejected", self.last_message)
                     self.save_state("request_rejected")
+                    continue
+                if self.latest_build is None or self.latest_stale:
+                    self.launch_after_build = True
+                    self._queue_build_if_needed()
+                    self.last_message = "server start waiting for source validation/build"
+                    self.record_control_event(request, "accepted", self.last_message)
+                    self.save_state("launch_waiting_for_build")
                     continue
                 launched = self.launch_for_control_request(request)
                 self.record_control_event(
@@ -2513,6 +2533,13 @@ class DevLoop:
             elif action == "restart-instance":
                 iid = str(request.get("instance_id", "") or "")
                 if iid == "server-01":
+                    if self.latest_build is None or self.latest_stale:
+                        self.launch_after_build = True
+                        self._queue_build_if_needed()
+                        self.last_message = "server restart waiting for source validation/build"
+                        self.record_control_event(request, "accepted", self.last_message)
+                        self.save_state("launch_waiting_for_build")
+                        continue
                     restarted = self.launch_for_control_request(request)
                 else:
                     restarted = self.restart_client_instance(iid)
@@ -5044,27 +5071,7 @@ def run_scenario_file(args: argparse.Namespace, scenario_override: dict | None =
 
 def pid_alive(pid: int) -> bool:
     """Cross-platform liveness that never signals the target process."""
-    if not pid or pid <= 0:
-        return False
-    if os.name == "nt":
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(0x1000 | 0x00100000, False, int(pid))
-        if not handle:
-            return False
-        try:
-            code = ctypes.c_ulong()
-            if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
-                return code.value == 259  # STILL_ACTIVE
-            return False
-        finally:
-            kernel32.CloseHandle(handle)
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+    return _process_pid_alive(pid)
 
 
 def _lock_pid(path: Path) -> int:

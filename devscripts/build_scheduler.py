@@ -16,11 +16,13 @@ import time
 from pathlib import Path
 
 try:
+    from devscripts.process_identity import pid_alive as _process_pid_alive
     from devscripts.path_containment import (
         resolve_coordinator_root,
         resolve_within,
     )
 except ModuleNotFoundError:
+    from process_identity import pid_alive as _process_pid_alive
     from path_containment import resolve_coordinator_root, resolve_within
 
 SLOT_LIMITS = {"exe": 1, "module": 2}
@@ -41,22 +43,7 @@ def _now_utc() -> str:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if os.name != "nt":
-        try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            return False
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(0x00100000, False, pid)
-    if not handle:
-        return False
-    try:
-        return kernel32.WaitForSingleObject(handle, 0) == 258
-    finally:
-        kernel32.CloseHandle(handle)
+    return _process_pid_alive(pid)
 
 
 def available_memory_bytes() -> int | None:

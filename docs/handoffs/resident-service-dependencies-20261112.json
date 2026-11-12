@@ -1,0 +1,2918 @@
+{
+  "paths": {
+    "src/actor/player-ai.cpp": [
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/analytics/analytics-manager.cpp": [
+      "AnalyticsManager",
+      "Terminal"
+    ],
+    "src/audio/audio-commands.cpp": [
+      "Terminal"
+    ],
+    "src/audio/audio.cpp": [
+      "DebugLog",
+      "Perf",
+      "SizeScalingConfig",
+      "StructuredLogger"
+    ],
+    "src/audio/hitmarker-audio.cpp": [
+      "DebugLog",
+      "Terminal"
+    ],
+    "src/audio/music-commands.cpp": [
+      "DebugLog",
+      "Terminal"
+    ],
+    "src/audio/music-manager-widget.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/audio/music-manager.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/auth/auth-controller.cpp": [
+      "AuthSystem",
+      "DebugLog"
+    ],
+    "src/auth/auth-popup.cpp": [
+      "AuthSystem"
+    ],
+    "src/auth/auth-system.cpp": [
+      "AuthSystem",
+      "DebugLog"
+    ],
+    "src/avatar/avatar-atlas.cpp": [
+      "CharacterRegistry",
+      "DebugLog",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/avatar/avatar-autosave.cpp": [
+      "DebugLog"
+    ],
+    "src/avatar/avatar-commands.cpp": [
+      "CharacterRegistry",
+      "Terminal"
+    ],
+    "src/avatar/avatar-editor-helpers.cpp": [
+      "GuiLayoutManager",
+      "Terminal"
+    ],
+    "src/avatar/avatar-editor.cpp": [
+      "Terminal"
+    ],
+    "src/avatar/avatar-fileops.cpp": [
+      "Terminal"
+    ],
+    "src/avatar/avatar-picker.cpp": [
+      "CharacterRegistry"
+    ],
+    "src/avatar/avatar.cpp": [
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/avatar/character-registry.cpp": [
+      "CharacterRegistry"
+    ],
+    "src/camera/camera-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/combat/actor-preset-weapons.cpp": [
+      "WeaponRegistry"
+    ],
+    "src/combat/client-collision-world-view.cpp": [
+      "PhysicalEntitySystem"
+    ],
+    "src/combat/death-system.cpp": [
+      "DebugLog",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/combat/explosion-fx.cpp": [
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/combat/grenade-registry.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/combat/melee-client.cpp": [
+      "DebugVis",
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/combat/projectile-render.cpp": [
+      "DebugVis",
+      "WeaponRegistry"
+    ],
+    "src/combat/revolver-system.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "MultiplayerContextGlobal",
+      "Terminal"
+    ],
+    "src/combat/weapon-attachment.cpp": [
+      "SizeScalingConfig"
+    ],
+    "src/combat/weapon-audio.cpp": [
+      "DebugLog",
+      "MultiplayerContextGlobal",
+      "SizeScalingConfig"
+    ],
+    "src/combat/weapon-collision-config.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-config.cpp": [
+      "Terminal"
+    ],
+    "src/combat/weapon-contact-local.cpp": [
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-data.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-fire-damage.cpp": [
+      "DebugLog",
+      "MultiplayerContextGlobal",
+      "StructuredLogger"
+    ],
+    "src/combat/weapon-fire-effects.cpp": [
+      "DebugLog",
+      "SizeScalingConfig",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/combat/weapon-fire-hit.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/combat/weapon-fire-raycast.cpp": [
+      "DebugLog"
+    ],
+    "src/combat/weapon-godball-movement.cpp": [
+      "MultiplayerContextGlobal",
+      "Terminal"
+    ],
+    "src/combat/weapon-godball-physics.cpp": [
+      "DebugVis"
+    ],
+    "src/combat/weapon-grenade-launcher.cpp": [
+      "DebugLog",
+      "SizeScalingConfig",
+      "StructuredLogger"
+    ],
+    "src/combat/weapon-hafs.cpp": [
+      "DebugLog"
+    ],
+    "src/combat/weapon-hit.cpp": [
+      "DebugLog"
+    ],
+    "src/combat/weapon-json-config.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-manager.cpp": [
+      "Terminal",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-melee-config.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/combat/weapon-model-cache.cpp": [
+      "DebugLog",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-quick-hit.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "HotReloadSystem"
+    ],
+    "src/combat/weapon-registry.cpp": [
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-rocket-launcher.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "SizeScalingConfig",
+      "StructuredLogger"
+    ],
+    "src/combat/weapon-runtime.cpp": [
+      "DebugLog",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-spyknife.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "MultiplayerContextGlobal"
+    ],
+    "src/combat/weapon-swordsword.cpp": [
+      "DebugLog"
+    ],
+    "src/combat/weapon-system-equip.cpp": [
+      "DebugLog",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-system.cpp": [
+      "AnalyticsManager",
+      "DebugLog",
+      "DebugVis",
+      "MultiplayerContextGlobal",
+      "Terminal",
+      "WeaponRegistry"
+    ],
+    "src/combat/weapon-viewmodel.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "SizeScalingConfig"
+    ],
+    "src/competitive/competitive-commands.cpp": [
+      "Terminal"
+    ],
+    "src/competitive/competitive-result.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/competitive/competitive-ui.cpp": [
+      "AuthSystem",
+      "GuiLayoutManager"
+    ],
+    "src/competitive/competitive.cpp": [
+      "AuthSystem"
+    ],
+    "src/config/actor-collision-config.cpp": [
+      "ActorCollisionConfig",
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/config/camera-config.cpp": [
+      "DebugLog"
+    ],
+    "src/config/collision-config.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/config/impact-decals-config.cpp": [
+      "StructuredLogger"
+    ],
+    "src/config/killfeed-config.cpp": [
+      "DebugLog"
+    ],
+    "src/config/material-config.cpp": [
+      "DebugLog"
+    ],
+    "src/config/movement-config.cpp": [
+      "MovementJsonConfig"
+    ],
+    "src/config/player-visuals-config.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/config/ragdoll-death-config.cpp": [
+      "DebugLog"
+    ],
+    "src/config/settings-backup.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/config/size-scaling-config.cpp": [
+      "SizeScalingConfig"
+    ],
+    "src/config/spawn-velocity-config.cpp": [
+      "DebugLog"
+    ],
+    "src/config/weapon-tracers-config.cpp": [
+      "DebugLog"
+    ],
+    "src/crosshair/crosshair-commands.cpp": [
+      "Terminal"
+    ],
+    "src/crosshair/crosshair-render.cpp": [
+      "StructuredLogger"
+    ],
+    "src/debug/debug-diag-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/debug/debug-diag.cpp": [
+      "DebugVis",
+      "TerminalState"
+    ],
+    "src/debug/debug-log.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/debug/debug-visuals-config.cpp": [
+      "DebugVis"
+    ],
+    "src/debug/debug-visuals-lines.cpp": [
+      "DebugVis"
+    ],
+    "src/debug/debug-visuals-scene.cpp": [
+      "ActorCollisionConfig",
+      "DebugVis",
+      "MapConfigRegistry",
+      "MovementJsonConfig",
+      "MultiplayerContextGlobal"
+    ],
+    "src/debug/debug-visuals.cpp": [
+      "DebugVis"
+    ],
+    "src/debug/log-manager.cpp": [
+      "LogManager"
+    ],
+    "src/debug/structured-log.cpp": [
+      "DebugLog",
+      "LogManager",
+      "StructuredLogger"
+    ],
+    "src/debug/transform-debug-commands.cpp": [
+      "Terminal"
+    ],
+    "src/devtools/dev-log-commands.cpp": [
+      "LogManager",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/devtools/dev-npc-selection.cpp": [
+      "DebugVis"
+    ],
+    "src/devtools/dev-overlay-commands.cpp": [
+      "DebugLog",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/devtools/dev-teleport.cpp": [
+      "DebugLog"
+    ],
+    "src/devtools/npc-spawn-commands.cpp": [
+      "TerminalState"
+    ],
+    "src/devtools/scenario-commands.cpp": [
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/devtools/scenario-player.cpp": [
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/devtools/scenario-recorder.cpp": [
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/devtools/scenario-server-playback.cpp": [
+      "StructuredLogger",
+      "serverGamemodeState"
+    ],
+    "src/devtools/scenario-server-recorder.cpp": [
+      "StructuredLogger",
+      "serverGamemodeState"
+    ],
+    "src/devtools/terminal-builtins.cpp": [
+      "Terminal"
+    ],
+    "src/devtools/terminal.cpp": [
+      "HotReloadSystem",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/duel/duel-history.cpp": [
+      "DebugLog"
+    ],
+    "src/duel/duel-queue.cpp": [
+      "AuthSystem",
+      "DebugLog",
+      "TerminalState"
+    ],
+    "src/duel/duel-ui.cpp": [
+      "AuthSystem",
+      "DebugVis",
+      "GuiLayoutManager",
+      "TerminalState"
+    ],
+    "src/effects/effect-part-blood.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/effects/effect-part-debris.cpp": [
+      "SizeScalingConfig"
+    ],
+    "src/effects/effect-part-particles.cpp": [
+      "DebugLog"
+    ],
+    "src/effects/effect-part-render.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "StructuredLogger"
+    ],
+    "src/effects/effect-part-system.cpp": [
+      "DebugLog",
+      "HotReloadSystem"
+    ],
+    "src/effects/effect-part.cpp": [
+      "DebugLog",
+      "SizeScalingConfig",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/effects/hit-effects-config.cpp": [
+      "DebugLog"
+    ],
+    "src/effects/hit-effects-render.cpp": [
+      "DebugVis"
+    ],
+    "src/effects/hit-effects-spawn.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/effects/hit-effects.cpp": [
+      "DebugLog",
+      "Perf",
+      "WeaponRegistry"
+    ],
+    "src/effects/hitfx-commands.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/effects/rain-system.cpp": [
+      "DebugVis"
+    ],
+    "src/engine/engine-tick-audio.cpp": [
+      "Perf",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-camera.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "VehicleSystem",
+      "WeaponRegistry"
+    ],
+    "src/engine/engine-tick-combat.cpp": [
+      "DebugLog",
+      "Perf",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-net.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "Perf",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/engine/engine-tick-render.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GamemodeRegistry",
+      "Perf",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/engine/engine-tick-replay.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GuiLayoutManager",
+      "ModuleHost",
+      "Perf",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-setup.cpp": [
+      "AnalyticsManager",
+      "BehaviorProfileRegistry",
+      "DebugVis",
+      "GamemodeRegistry",
+      "GuiLayoutManager",
+      "HotReloadSystem",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "MovementJsonConfig",
+      "MultiplayerContextGlobal",
+      "NpcDifficultyConfig",
+      "Perf",
+      "SizeScalingConfig",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "VehicleSystem"
+    ],
+    "src/engine/engine-tick-state.cpp": [
+      "AuthSystem",
+      "DebugLog",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-ui-game-hud.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GamemodeRegistry",
+      "GuiLayoutManager",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/engine/engine-tick-ui-hud.cpp": [
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-ui-overlays.cpp": [
+      "DebugVis",
+      "GamemodeRegistry",
+      "GuiLayoutManager",
+      "MapConfigRegistry",
+      "Perf",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-ui-replay-hud.cpp": [
+      "GuiLayoutManager",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick-ui.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "Perf",
+      "TerminalState"
+    ],
+    "src/engine/engine-tick.cpp": [
+      "DebugLog",
+      "Perf",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/entities/aim-commands.cpp": [
+      "Terminal"
+    ],
+    "src/entities/aimbody-config.cpp": [
+      "DebugLog"
+    ],
+    "src/entities/player-animation-config.cpp": [
+      "StructuredLogger"
+    ],
+    "src/entities/player-animation.cpp": [
+      "DebugLog",
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/entities/player-avatar-animations.cpp": [
+      "StructuredLogger"
+    ],
+    "src/entities/player-loader.cpp": [
+      "CharacterRegistry",
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/entities/player-render.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/entities/player.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/fister/fister-port.cpp": [
+      "DebugLog",
+      "TerminalState"
+    ],
+    "src/game/bomb-tag-config.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/game/bomb-tag-state.cpp": [
+      "TerminalState"
+    ],
+    "src/game/duel-state.cpp": [
+      "DebugLog"
+    ],
+    "src/game/duel.cpp": [
+      "DebugLog",
+      "GuiLayoutManager"
+    ],
+    "src/game/game-cli.cpp": [
+      "BehaviorProfileRegistry",
+      "DebugLog",
+      "GamemodeRegistry",
+      "NpcDifficultyConfig",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/game/gamemode-manager.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GamemodeRegistry",
+      "GuiLayoutManager",
+      "MapConfigRegistry",
+      "TerminalState"
+    ],
+    "src/game/host-compat-bridge-module.cpp": [
+      "StructuredLogger"
+    ],
+    "src/game/host-log-bridge-module.cpp": [
+      "StructuredLogger"
+    ],
+    "src/game/module-host-bridge-module.cpp": [
+      "ModuleHost"
+    ],
+    "src/game/spawn-override.cpp": [
+      "DebugLog"
+    ],
+    "src/game/spawn-utils.cpp": [
+      "DebugLog"
+    ],
+    "src/gamemode/arena-ball.cpp": [
+      "PhysicalEntitySystem",
+      "StructuredLogger"
+    ],
+    "src/gamemode/gamemode-runtime-resolver.cpp": [
+      "DebugLog"
+    ],
+    "src/gamemode/gamemode.cpp": [
+      "GamemodeRegistry",
+      "StructuredLogger"
+    ],
+    "src/gamemode/map-config.cpp": [
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "StructuredLogger"
+    ],
+    "src/gamemode/map-edit-applier.cpp": [
+      "MapConfigRegistry"
+    ],
+    "src/gamemode/match-roles.cpp": [
+      "DebugLog",
+      "MovementJsonConfig"
+    ],
+    "src/gui/gui-editor-commands.cpp": [
+      "GuiLayoutManager",
+      "Terminal"
+    ],
+    "src/gui/gui-editor-overlay.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/gui-editor-preview.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/gui-editor-select.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/gui-editor-tools.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/gui-editor.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/gui-layout.cpp": [
+      "GuiLayoutManager",
+      "StructuredLogger"
+    ],
+    "src/gui/gui-main.cpp": [
+      "AnalyticsManager",
+      "AuthSystem",
+      "DebugLog",
+      "GuiLayoutManager",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/gui/hud/chat-bubble.cpp": [
+      "DebugVis",
+      "GuiLayoutManager"
+    ],
+    "src/gui/hud/chat-window.cpp": [
+      "DebugLog",
+      "GuiLayoutManager",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/gui/hud/match-leaderboard.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/hud/player-nameplates.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/gui/hud/reward-popup.cpp": [
+      "DebugLog"
+    ],
+    "src/gui/menus/account-panel.cpp": [
+      "AuthSystem",
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/debug-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/duel-config-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/help-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/login-menu.cpp": [
+      "DebugLog",
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/main-menu.cpp": [
+      "AuthSystem",
+      "DebugLog",
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/menu-avatar-preview.cpp": [
+      "AuthSystem",
+      "DebugLog"
+    ],
+    "src/gui/menus/online-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/pause-menu.cpp": [
+      "DebugLog",
+      "GuiLayoutManager",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/gui/menus/play-menu.cpp": [
+      "AuthSystem",
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/practice-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/sandbox-map-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/server-info-menu.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/settings-menu.cpp": [
+      "AnalyticsManager",
+      "DebugLog",
+      "GuiLayoutManager"
+    ],
+    "src/gui/menus/sign-in-menu.cpp": [
+      "GuiLayoutManager",
+      "LocalProfileSystem"
+    ],
+    "src/gui/password-popup.cpp": [
+      "GuiLayoutManager"
+    ],
+    "src/gui/ui-system-buttons.cpp": [
+      "StructuredLogger"
+    ],
+    "src/gui/ui-system.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/gui/ui-text-input.cpp": [
+      "DebugLog"
+    ],
+    "src/host/host-runtime.cpp": [
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/hot-reload/hot-reload-system.cpp": [
+      "HotReloadSystem"
+    ],
+    "src/hot-reload/module-host.cpp": [
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/impact/destructible-async-cut.cpp": [
+      "PhysicalEntitySystem",
+      "StructuredLogger"
+    ],
+    "src/impact/destructible-render.cpp": [
+      "PhysicalEntitySystem"
+    ],
+    "src/impact/destructible-selftest.cpp": [
+      "PhysicalEntitySystem"
+    ],
+    "src/impact/destructible-world-config.cpp": [
+      "DebugLog"
+    ],
+    "src/impact/impact-system.cpp": [
+      "DebugLog",
+      "Perf",
+      "PhysicalEntitySystem",
+      "StructuredLogger"
+    ],
+    "src/input/input-commands.cpp": [
+      "Terminal"
+    ],
+    "src/input/input-poll.cpp": [
+      "StructuredLogger",
+      "TerminalState",
+      "VehicleSystem"
+    ],
+    "src/input/mouse-lock.cpp": [
+      "StructuredLogger"
+    ],
+    "src/interaction/interaction-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/interaction/interaction-system.cpp": [
+      "DebugVis",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/interaction/world-interaction-runtime.cpp": [
+      "MapConfigRegistry",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/killfeed/killfeed.cpp": [
+      "DebugLog",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/leaderboard/leaderboard-ui.cpp": [
+      "Terminal"
+    ],
+    "src/main-init.cpp": [
+      "AnalyticsManager",
+      "DebugVis",
+      "LocalProfileSystem",
+      "LogManager",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/main-systems.cpp": [
+      "AnalyticsManager",
+      "AuthSystem",
+      "BehaviorProfileRegistry",
+      "DebugLog",
+      "GamemodeRegistry",
+      "MovementJsonConfig",
+      "MultiplayerContextGlobal",
+      "NpcDifficultyConfig",
+      "SizeScalingConfig",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "VehicleSystem"
+    ],
+    "src/main.cpp": [
+      "AnalyticsManager",
+      "AuthSystem",
+      "DebugLog",
+      "HotReloadSystem",
+      "LocalProfileSystem",
+      "LogManager",
+      "ModuleHost",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/map/map-authored-geometry.cpp": [
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/map/map-glb-authored.cpp": [
+      "StructuredLogger"
+    ],
+    "src/map/map-loader-collision.cpp": [
+      "StructuredLogger"
+    ],
+    "src/map/map-loader-gltf-nodes.cpp": [
+      "ModuleHost"
+    ],
+    "src/map/map-loader-material.cpp": [
+      "DebugLog"
+    ],
+    "src/map/map-static-union.cpp": [
+      "StructuredLogger"
+    ],
+    "src/map/map_loader.cpp": [
+      "DebugLog"
+    ],
+    "src/mapeditor/map-editor-commands.cpp": [
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/mapeditor/map-editor-config.cpp": [
+      "StructuredLogger"
+    ],
+    "src/mapeditor/map-editor-projects.cpp": [
+      "MapConfigRegistry",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/mapeditor/map-editor.cpp": [
+      "DebugVis",
+      "GuiLayoutManager",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "VehicleConfigRegistry",
+      "VehicleSystem",
+      "serverGamemodeState"
+    ],
+    "src/mapeditor/world-edit-commands.cpp": [
+      "MapConfigRegistry",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/network/actor-lifecycle.cpp": [
+      "DebugLog"
+    ],
+    "src/network/avatar-network-client.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/network/badconn/badconn.cpp": [
+      "DebugLog"
+    ],
+    "src/network/client.cpp": [
+      "DebugVis",
+      "GuiLayoutManager",
+      "StructuredLogger"
+    ],
+    "src/network/community-match-client.cpp": [
+      "AuthSystem",
+      "DebugLog",
+      "GamemodeRegistry",
+      "MovementJsonConfig",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/network/community-server-config.cpp": [
+      "DebugLog"
+    ],
+    "src/network/confirmed-damage-presentation.cpp": [
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/network/coordinator-client.cpp": [
+      "DebugLog"
+    ],
+    "src/network/destruction-replication-selftest.cpp": [
+      "PhysicalEntitySystem"
+    ],
+    "src/network/disagreement-visuals.cpp": [
+      "StructuredLogger"
+    ],
+    "src/network/ice/ice-agent.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/network/movement-validation.cpp": [
+      "ModuleHost"
+    ],
+    "src/network/multiplayer-context.cpp": [
+      "MapConfigRegistry",
+      "StructuredLogger"
+    ],
+    "src/network/multiplayer-interpolation.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/network/multiplayer-packets.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/network/multiplayer-physical-entities.cpp": [
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "VehicleSystem"
+    ],
+    "src/network/multiplayer-projectiles.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/network/multiplayer-reconcile.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "StructuredLogger",
+      "VehicleSystem"
+    ],
+    "src/network/multiplayer-shots.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/network/multiplayer-tick.cpp": [
+      "AuthSystem",
+      "DebugLog",
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/network/network-weapons.cpp": [
+      "WeaponRegistry"
+    ],
+    "src/network/physical-entity-replication.cpp": [
+      "PhysicalEntitySystem"
+    ],
+    "src/network/reliable-gameplay-events.cpp": [
+      "DebugLog"
+    ],
+    "src/network/server-attack.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-avatar-network.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "serverGamemodeState"
+    ],
+    "src/network/server-browser.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/network/server-damage.cpp": [
+      "DebugLog",
+      "GamemodeRegistry",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-gamemode.cpp": [
+      "BehaviorProfileRegistry",
+      "DebugLog",
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "Perf",
+      "PersistenceQueue",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-ice.cpp": [
+      "StructuredLogger"
+    ],
+    "src/network/server-infinite-collision.cpp": [
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/network/server-melee-actions.cpp": [
+      "BehaviorProfileRegistry",
+      "DebugLog",
+      "GamemodeRegistry",
+      "MovementJsonConfig",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-npcs.cpp": [
+      "ActorCollisionConfig",
+      "BehaviorProfileRegistry",
+      "GamemodeRegistry",
+      "ModuleHost",
+      "NpcDifficultyConfig",
+      "Perf",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-packet-chat.cpp": [
+      "DebugLog",
+      "GamemodeRegistry",
+      "NpcDifficultyConfig",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-packet-handlers.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/network/server-packets.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-physical-contact-actors.cpp": [
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/network/server-physical-contact.cpp": [
+      "DebugLog",
+      "WeaponRegistry"
+    ],
+    "src/network/server-players.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "VehicleSystem",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-projectiles.cpp": [
+      "DebugLog",
+      "NpcDifficultyConfig",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/server-world-destruction.cpp": [
+      "GamemodeRegistry",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "serverGamemodeState"
+    ],
+    "src/network/server-world.cpp": [
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/network/server.cpp": [
+      "AuthSystem",
+      "BehaviorProfileRegistry",
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "MovementJsonConfig",
+      "NpcDifficultyConfig",
+      "PersistenceQueue",
+      "StructuredLogger",
+      "VehicleSystem",
+      "WeaponRegistry",
+      "serverGamemodeState"
+    ],
+    "src/network/vehicle-networking.cpp": [
+      "MapConfigRegistry",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "VehicleConfigRegistry",
+      "VehicleSystem",
+      "serverGamemodeState"
+    ],
+    "src/network/weapon-runtime-reconciliation.cpp": [
+      "DebugLog",
+      "WeaponRegistry"
+    ],
+    "src/notifications/notification-commands.cpp": [
+      "Terminal"
+    ],
+    "src/notifications/notifications.cpp": [
+      "DebugLog",
+      "GuiLayoutManager",
+      "StructuredLogger"
+    ],
+    "src/npc/npc-avatar.cpp": [
+      "StructuredLogger"
+    ],
+    "src/npc/npc-behavior.cpp": [
+      "BehaviorProfileRegistry"
+    ],
+    "src/npc/npc-combat.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "NpcDifficultyConfig",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/npc/npc-difficulty-config.cpp": [
+      "DebugLog",
+      "MovementJsonConfig",
+      "NpcDifficultyConfig"
+    ],
+    "src/npc/npc-navigation.cpp": [
+      "NpcDifficultyConfig"
+    ],
+    "src/npc/npc-navigator.cpp": [
+      "DebugLog",
+      "MovementJsonConfig",
+      "NpcDifficultyConfig",
+      "Perf"
+    ],
+    "src/npc/npc-perception.cpp": [
+      "ModuleHost"
+    ],
+    "src/npc/npc-spawn.cpp": [
+      "DebugLog",
+      "NpcDifficultyConfig",
+      "Perf",
+      "WeaponRegistry"
+    ],
+    "src/npc/npc-state-machine.cpp": [
+      "ModuleHost"
+    ],
+    "src/npc/npc-states.cpp": [
+      "NpcDifficultyConfig"
+    ],
+    "src/npc/npc-traversal.cpp": [
+      "DebugLog",
+      "ModuleHost",
+      "MovementJsonConfig"
+    ],
+    "src/npc/npc-utility-bridge.cpp": [
+      "ModuleHost"
+    ],
+    "src/npc/npc.cpp": [
+      "BehaviorProfileRegistry",
+      "DebugLog",
+      "DebugVis",
+      "ModuleHost",
+      "NpcDifficultyConfig",
+      "Perf",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/npc/recast-navigation.cpp": [
+      "ModuleHost",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/npc/team-brain.cpp": [
+      "StructuredLogger"
+    ],
+    "src/perf/perf-commands.cpp": [
+      "Perf",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/perf/perf-frame.cpp": [
+      "DebugLog",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/perf/perf-gpu.cpp": [
+      "DebugLog"
+    ],
+    "src/perf/perf-overlay.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/perf/perf-spike.cpp": [
+      "DebugLog",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/perf/perf-visualize.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/perf/perf.cpp": [
+      "DebugLog",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/persistence/persistence-commands.cpp": [
+      "PersistenceQueue"
+    ],
+    "src/persistence/persistence-emit.cpp": [
+      "DebugLog",
+      "PersistenceQueue"
+    ],
+    "src/persistence/persistence-queue.cpp": [
+      "PersistenceQueue"
+    ],
+    "src/physics/constraints/constraint-commands.cpp": [
+      "ConstraintSystem",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/physics/constraints/constraint-debug.cpp": [
+      "ConstraintSystem",
+      "DebugVis",
+      "PhysicalEntitySystem"
+    ],
+    "src/physics/constraints/constraint-system.cpp": [
+      "ConstraintSystem",
+      "PhysicalEntitySystem"
+    ],
+    "src/physics/movement/actor-collision-mesh.cpp": [
+      "WeaponRegistry"
+    ],
+    "src/physics/movement/actor-final-pose.cpp": [
+      "ModuleHost"
+    ],
+    "src/physics/movement/actor-pair-collision.cpp": [
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/physics/movement/actor-triangle-solver.cpp": [
+      "ModuleHost",
+      "PhysicalEntitySystem",
+      "StructuredLogger"
+    ],
+    "src/physics/movement/movement-conversion.cpp": [
+      "MovementJsonConfig",
+      "SizeScalingConfig"
+    ],
+    "src/physics/movement/movement-step.cpp": [
+      "StructuredLogger"
+    ],
+    "src/physics/movement/physics-collision-block.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-collision-body.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-collision-core.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/physics/movement/physics-collision-dispatch.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/physics/movement/physics-collision-glb-body.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-collision-glb-contact.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-collision-glb-main.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/physics/movement/physics-collision-glb-safety.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-collision-glb-setup.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/physics/movement/physics-collision-glb-sweep-slide.cpp": [
+      "DebugLog",
+      "DebugVis"
+    ],
+    "src/physics/movement/physics-collision-mesh.cpp": [
+      "StructuredLogger"
+    ],
+    "src/physics/movement/physics-collision.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-dash.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-friction.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-gravity.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-ground-return.cpp": [
+      "DebugLog"
+    ],
+    "src/physics/movement/physics-jump.cpp": [
+      "DebugLog",
+      "SizeScalingConfig"
+    ],
+    "src/physics/movement/physics-walk.cpp": [
+      "DebugLog",
+      "SizeScalingConfig"
+    ],
+    "src/physics/physical-entity.cpp": [
+      "ConstraintSystem",
+      "PhysicalEntitySystem",
+      "StructuredLogger"
+    ],
+    "src/physics/physics-mini.cpp": [
+      "DebugLog",
+      "MultiplayerContextGlobal",
+      "Perf",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/physics/runtime-objects-commands.cpp": [
+      "Terminal",
+      "VehicleSystem"
+    ],
+    "src/physics/runtime-objects.cpp": [
+      "ConstraintSystem",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "VehicleSystem"
+    ],
+    "src/pobjects/persistent-physics.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "StructuredLogger",
+      "WeaponRegistry"
+    ],
+    "src/procedural/infinite-world-runtime.cpp": [
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/procedural/procedural-world-client.cpp": [
+      "DebugVis",
+      "PhysicalEntitySystem"
+    ],
+    "src/procedural/procedural-world.cpp": [
+      "DebugLog",
+      "serverGamemodeState"
+    ],
+    "src/profile/local-profile-system.cpp": [
+      "AnalyticsManager",
+      "LocalProfileSystem"
+    ],
+    "src/ragdoll/ragdoll-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/ragdoll/ragdoll-mode.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "StructuredLogger"
+    ],
+    "src/render/dynamic-light-commands.cpp": [
+      "Terminal"
+    ],
+    "src/render/dynamic-light-config.cpp": [
+      "DebugLog"
+    ],
+    "src/render/dynamic-light.cpp": [
+      "DebugLog"
+    ],
+    "src/render/lighting-commands.cpp": [
+      "Terminal"
+    ],
+    "src/render/post-fx.cpp": [
+      "DebugLog"
+    ],
+    "src/render/postfx-commands.cpp": [
+      "Terminal"
+    ],
+    "src/render/render-player.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "ModuleHost",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/render/render-world-mesh.cpp": [
+      "DebugLog",
+      "DebugVis",
+      "GamemodeRegistry",
+      "Perf",
+      "StructuredLogger"
+    ],
+    "src/render/render-world-shadow.cpp": [
+      "Perf"
+    ],
+    "src/render/render-world.cpp": [
+      "DebugVis",
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/render/skybox.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/render/world-box-mesh.cpp": [
+      "ModuleHost"
+    ],
+    "src/renderer/renderer.cpp": [
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/replay/replay-camera-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-camera.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-capture-commands.cpp": [
+      "DebugLog",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-commands-export.cpp": [
+      "DebugLog",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-commands-playback.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-editor-commands.cpp": [
+      "DebugLog",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-editor.cpp": [
+      "DebugLog",
+      "TerminalState"
+    ],
+    "src/replay/replay-export-ffmpeg.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "TerminalState"
+    ],
+    "src/replay/replay-export-json.cpp": [
+      "DebugLog",
+      "TerminalState"
+    ],
+    "src/replay/replay-export-mf.cpp": [
+      "DebugLog",
+      "Terminal"
+    ],
+    "src/replay/replay-export-subprocess.cpp": [
+      "TerminalState"
+    ],
+    "src/replay/replay-export.cpp": [
+      "DebugLog",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/replay/replay-factory-clips.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-factory-worker.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-io-save.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-player-interp.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-player-load.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-player.cpp": [
+      "DebugLog"
+    ],
+    "src/replay/replay-recorder-events.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/replay/replay-recorder.cpp": [
+      "DebugLog",
+      "Perf"
+    ],
+    "src/shadow/shadow-commands.cpp": [
+      "DebugLog",
+      "Terminal"
+    ],
+    "src/shadow/shadow-render.cpp": [
+      "Perf"
+    ],
+    "src/sim/simulate-tick.cpp": [
+      "ActorCollisionConfig",
+      "MapConfigRegistry",
+      "Perf",
+      "StructuredLogger",
+      "TerminalState",
+      "VehicleSystem",
+      "WeaponRegistry"
+    ],
+    "src/terminal/actor-commands.cpp": [
+      "GamemodeRegistry",
+      "MultiplayerContextGlobal",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "serverGamemodeState"
+    ],
+    "src/terminal/admin-commands.cpp": [
+      "MultiplayerContextGlobal",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/auth-commands.cpp": [
+      "AuthSystem",
+      "Terminal"
+    ],
+    "src/terminal/badconn-commands.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/crate-commands.cpp": [
+      "PhysicalEntitySystem",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/debug-commands.cpp": [
+      "AuthSystem",
+      "DebugVis",
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "MultiplayerContextGlobal",
+      "Terminal",
+      "TerminalState",
+      "serverGamemodeState"
+    ],
+    "src/terminal/duel-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/editor-commands.cpp": [
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/map-entity-commands.cpp": [
+      "MapConfigRegistry",
+      "Terminal",
+      "TerminalState",
+      "serverGamemodeState"
+    ],
+    "src/terminal/movement-commands.cpp": [
+      "MovementJsonConfig",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/network-commands.cpp": [
+      "AuthSystem",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/npc-commands.cpp": [
+      "MultiplayerContextGlobal",
+      "NpcDifficultyConfig",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/object-commands.cpp": [
+      "PhysicalEntitySystem",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/player-commands.cpp": [
+      "DebugLog",
+      "SizeScalingConfig",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/procedural-world-commands.cpp": [
+      "MultiplayerContextGlobal",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/replay-commands.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/terminal-config-commands.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/terminal-cursor-commands.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/terminal-debug-toggles.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/terminal-help-commands.cpp": [
+      "Terminal"
+    ],
+    "src/terminal/vip-commands.cpp": [
+      "AuthSystem",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/terminal/weapon-bench-commands.cpp": [
+      "LogManager",
+      "Terminal",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/terminal/weapon-commands.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "WeaponRegistry"
+    ],
+    "src/utils/tips.cpp": [
+      "DebugLog"
+    ],
+    "src/vehicles/vehicle-audio.cpp": [
+      "StructuredLogger"
+    ],
+    "src/vehicles/vehicle-commands.cpp": [
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState",
+      "VehicleConfigRegistry",
+      "VehicleSystem"
+    ],
+    "src/vehicles/vehicle-config.cpp": [
+      "DebugLog",
+      "StructuredLogger",
+      "VehicleConfigRegistry"
+    ],
+    "src/vehicles/vehicle-hud.cpp": [
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "VehicleConfigRegistry",
+      "VehicleSystem"
+    ],
+    "src/vehicles/vehicle-render.cpp": [
+      "PhysicalEntitySystem",
+      "VehicleConfigRegistry",
+      "VehicleSystem"
+    ],
+    "src/vehicles/vehicle-system.cpp": [
+      "DebugLog",
+      "PhysicalEntitySystem",
+      "StructuredLogger",
+      "TerminalState",
+      "VehicleConfigRegistry",
+      "VehicleSystem"
+    ],
+    "src/video/outro-ffmpeg.cpp": [
+      "DebugLog"
+    ],
+    "src/video/outro.cpp": [
+      "DebugLog",
+      "Terminal"
+    ],
+    "src/video/video-commands.cpp": [
+      "StructuredLogger",
+      "Terminal",
+      "TerminalState"
+    ],
+    "src/void-death/void-death-commands.cpp": [
+      "Terminal"
+    ],
+    "src/void-death/void-death.cpp": [
+      "DebugLog"
+    ],
+    "src/world/streamed-world-layer.cpp": [
+      "MapConfigRegistry",
+      "ModuleHost",
+      "StructuredLogger"
+    ],
+    "src/world/texture-store.cpp": [
+      "DebugLog"
+    ],
+    "src/world/world-gltf-loader.cpp": [
+      "AnalyticsManager",
+      "DebugLog",
+      "StructuredLogger"
+    ],
+    "src/worldgen/worldgen-commands.cpp": [
+      "MapConfigRegistry",
+      "StructuredLogger",
+      "Terminal"
+    ],
+    "src/worldgen/worldgen-library.cpp": [
+      "StructuredLogger"
+    ]
+  },
+  "services": {
+    "ActorCollisionConfig": [
+      "src/config/actor-collision-config.cpp",
+      "src/debug/debug-visuals-scene.cpp",
+      "src/network/server-npcs.cpp",
+      "src/sim/simulate-tick.cpp"
+    ],
+    "AnalyticsManager": [
+      "src/analytics/analytics-manager.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/menus/settings-menu.cpp",
+      "src/main-init.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/profile/local-profile-system.cpp",
+      "src/world/world-gltf-loader.cpp"
+    ],
+    "AuthSystem": [
+      "src/auth/auth-controller.cpp",
+      "src/auth/auth-popup.cpp",
+      "src/auth/auth-system.cpp",
+      "src/competitive/competitive-ui.cpp",
+      "src/competitive/competitive.cpp",
+      "src/duel/duel-queue.cpp",
+      "src/duel/duel-ui.cpp",
+      "src/engine/engine-tick-state.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/menus/account-panel.cpp",
+      "src/gui/menus/main-menu.cpp",
+      "src/gui/menus/menu-avatar-preview.cpp",
+      "src/gui/menus/play-menu.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/network/server.cpp",
+      "src/terminal/auth-commands.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/network-commands.cpp",
+      "src/terminal/vip-commands.cpp"
+    ],
+    "BehaviorProfileRegistry": [
+      "src/engine/engine-tick-setup.cpp",
+      "src/game/game-cli.cpp",
+      "src/main-systems.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server.cpp",
+      "src/npc/npc-behavior.cpp",
+      "src/npc/npc.cpp"
+    ],
+    "CharacterRegistry": [
+      "src/avatar/avatar-atlas.cpp",
+      "src/avatar/avatar-commands.cpp",
+      "src/avatar/avatar-picker.cpp",
+      "src/avatar/character-registry.cpp",
+      "src/entities/player-loader.cpp"
+    ],
+    "ConstraintSystem": [
+      "src/physics/constraints/constraint-commands.cpp",
+      "src/physics/constraints/constraint-debug.cpp",
+      "src/physics/constraints/constraint-system.cpp",
+      "src/physics/physical-entity.cpp",
+      "src/physics/runtime-objects.cpp"
+    ],
+    "DebugLog": [
+      "src/audio/audio.cpp",
+      "src/audio/hitmarker-audio.cpp",
+      "src/audio/music-commands.cpp",
+      "src/audio/music-manager.cpp",
+      "src/auth/auth-controller.cpp",
+      "src/auth/auth-system.cpp",
+      "src/avatar/avatar-atlas.cpp",
+      "src/avatar/avatar-autosave.cpp",
+      "src/combat/death-system.cpp",
+      "src/combat/grenade-registry.cpp",
+      "src/combat/revolver-system.cpp",
+      "src/combat/weapon-audio.cpp",
+      "src/combat/weapon-collision-config.cpp",
+      "src/combat/weapon-data.cpp",
+      "src/combat/weapon-fire-damage.cpp",
+      "src/combat/weapon-fire-effects.cpp",
+      "src/combat/weapon-fire-hit.cpp",
+      "src/combat/weapon-fire-raycast.cpp",
+      "src/combat/weapon-grenade-launcher.cpp",
+      "src/combat/weapon-hafs.cpp",
+      "src/combat/weapon-hit.cpp",
+      "src/combat/weapon-json-config.cpp",
+      "src/combat/weapon-melee-config.cpp",
+      "src/combat/weapon-model-cache.cpp",
+      "src/combat/weapon-quick-hit.cpp",
+      "src/combat/weapon-rocket-launcher.cpp",
+      "src/combat/weapon-runtime.cpp",
+      "src/combat/weapon-spyknife.cpp",
+      "src/combat/weapon-swordsword.cpp",
+      "src/combat/weapon-system-equip.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/combat/weapon-viewmodel.cpp",
+      "src/config/actor-collision-config.cpp",
+      "src/config/camera-config.cpp",
+      "src/config/collision-config.cpp",
+      "src/config/killfeed-config.cpp",
+      "src/config/material-config.cpp",
+      "src/config/player-visuals-config.cpp",
+      "src/config/ragdoll-death-config.cpp",
+      "src/config/settings-backup.cpp",
+      "src/config/spawn-velocity-config.cpp",
+      "src/config/weapon-tracers-config.cpp",
+      "src/debug/debug-log.cpp",
+      "src/debug/structured-log.cpp",
+      "src/devtools/dev-overlay-commands.cpp",
+      "src/devtools/dev-teleport.cpp",
+      "src/duel/duel-history.cpp",
+      "src/duel/duel-queue.cpp",
+      "src/effects/effect-part-blood.cpp",
+      "src/effects/effect-part-particles.cpp",
+      "src/effects/effect-part-render.cpp",
+      "src/effects/effect-part-system.cpp",
+      "src/effects/effect-part.cpp",
+      "src/effects/hit-effects-config.cpp",
+      "src/effects/hit-effects-spawn.cpp",
+      "src/effects/hit-effects.cpp",
+      "src/effects/hitfx-commands.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-state.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui.cpp",
+      "src/engine/engine-tick.cpp",
+      "src/entities/aimbody-config.cpp",
+      "src/entities/player-animation.cpp",
+      "src/entities/player-loader.cpp",
+      "src/entities/player-render.cpp",
+      "src/entities/player.cpp",
+      "src/fister/fister-port.cpp",
+      "src/game/duel-state.cpp",
+      "src/game/duel.cpp",
+      "src/game/game-cli.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/game/spawn-override.cpp",
+      "src/game/spawn-utils.cpp",
+      "src/gamemode/gamemode-runtime-resolver.cpp",
+      "src/gamemode/match-roles.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/hud/chat-window.cpp",
+      "src/gui/hud/player-nameplates.cpp",
+      "src/gui/hud/reward-popup.cpp",
+      "src/gui/menus/login-menu.cpp",
+      "src/gui/menus/main-menu.cpp",
+      "src/gui/menus/menu-avatar-preview.cpp",
+      "src/gui/menus/pause-menu.cpp",
+      "src/gui/menus/settings-menu.cpp",
+      "src/gui/ui-system.cpp",
+      "src/gui/ui-text-input.cpp",
+      "src/impact/destructible-world-config.cpp",
+      "src/impact/impact-system.cpp",
+      "src/killfeed/killfeed.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/map/map-loader-material.cpp",
+      "src/map/map_loader.cpp",
+      "src/network/actor-lifecycle.cpp",
+      "src/network/avatar-network-client.cpp",
+      "src/network/badconn/badconn.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/community-server-config.cpp",
+      "src/network/coordinator-client.cpp",
+      "src/network/ice/ice-agent.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/network/multiplayer-packets.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/network/multiplayer-reconcile.cpp",
+      "src/network/multiplayer-shots.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/network/reliable-gameplay-events.cpp",
+      "src/network/server-attack.cpp",
+      "src/network/server-avatar-network.cpp",
+      "src/network/server-browser.cpp",
+      "src/network/server-damage.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-packet-handlers.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-physical-contact.cpp",
+      "src/network/server-players.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/weapon-runtime-reconciliation.cpp",
+      "src/notifications/notifications.cpp",
+      "src/npc/npc-combat.cpp",
+      "src/npc/npc-difficulty-config.cpp",
+      "src/npc/npc-navigator.cpp",
+      "src/npc/npc-spawn.cpp",
+      "src/npc/npc-traversal.cpp",
+      "src/npc/npc.cpp",
+      "src/perf/perf-frame.cpp",
+      "src/perf/perf-gpu.cpp",
+      "src/perf/perf-overlay.cpp",
+      "src/perf/perf-spike.cpp",
+      "src/perf/perf-visualize.cpp",
+      "src/perf/perf.cpp",
+      "src/persistence/persistence-emit.cpp",
+      "src/physics/movement/physics-collision-block.cpp",
+      "src/physics/movement/physics-collision-body.cpp",
+      "src/physics/movement/physics-collision-core.cpp",
+      "src/physics/movement/physics-collision-dispatch.cpp",
+      "src/physics/movement/physics-collision-glb-body.cpp",
+      "src/physics/movement/physics-collision-glb-contact.cpp",
+      "src/physics/movement/physics-collision-glb-main.cpp",
+      "src/physics/movement/physics-collision-glb-safety.cpp",
+      "src/physics/movement/physics-collision-glb-setup.cpp",
+      "src/physics/movement/physics-collision-glb-sweep-slide.cpp",
+      "src/physics/movement/physics-collision.cpp",
+      "src/physics/movement/physics-dash.cpp",
+      "src/physics/movement/physics-friction.cpp",
+      "src/physics/movement/physics-gravity.cpp",
+      "src/physics/movement/physics-ground-return.cpp",
+      "src/physics/movement/physics-jump.cpp",
+      "src/physics/movement/physics-walk.cpp",
+      "src/physics/physics-mini.cpp",
+      "src/pobjects/persistent-physics.cpp",
+      "src/procedural/procedural-world.cpp",
+      "src/ragdoll/ragdoll-mode.cpp",
+      "src/render/dynamic-light-config.cpp",
+      "src/render/dynamic-light.cpp",
+      "src/render/post-fx.cpp",
+      "src/render/render-player.cpp",
+      "src/render/render-world-mesh.cpp",
+      "src/render/skybox.cpp",
+      "src/renderer/renderer.cpp",
+      "src/replay/replay-camera.cpp",
+      "src/replay/replay-capture-commands.cpp",
+      "src/replay/replay-commands-export.cpp",
+      "src/replay/replay-editor-commands.cpp",
+      "src/replay/replay-editor.cpp",
+      "src/replay/replay-export-ffmpeg.cpp",
+      "src/replay/replay-export-json.cpp",
+      "src/replay/replay-export-mf.cpp",
+      "src/replay/replay-export.cpp",
+      "src/replay/replay-factory-clips.cpp",
+      "src/replay/replay-factory-worker.cpp",
+      "src/replay/replay-io-save.cpp",
+      "src/replay/replay-player-interp.cpp",
+      "src/replay/replay-player-load.cpp",
+      "src/replay/replay-player.cpp",
+      "src/replay/replay-recorder-events.cpp",
+      "src/replay/replay-recorder.cpp",
+      "src/shadow/shadow-commands.cpp",
+      "src/terminal/player-commands.cpp",
+      "src/terminal/weapon-commands.cpp",
+      "src/utils/tips.cpp",
+      "src/vehicles/vehicle-config.cpp",
+      "src/vehicles/vehicle-system.cpp",
+      "src/video/outro-ffmpeg.cpp",
+      "src/video/outro.cpp",
+      "src/void-death/void-death.cpp",
+      "src/world/texture-store.cpp",
+      "src/world/world-gltf-loader.cpp"
+    ],
+    "DebugVis": [
+      "src/combat/melee-client.cpp",
+      "src/combat/projectile-render.cpp",
+      "src/combat/revolver-system.cpp",
+      "src/combat/weapon-godball-physics.cpp",
+      "src/combat/weapon-quick-hit.cpp",
+      "src/combat/weapon-rocket-launcher.cpp",
+      "src/combat/weapon-spyknife.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/combat/weapon-viewmodel.cpp",
+      "src/debug/debug-diag.cpp",
+      "src/debug/debug-visuals-config.cpp",
+      "src/debug/debug-visuals-lines.cpp",
+      "src/debug/debug-visuals-scene.cpp",
+      "src/debug/debug-visuals.cpp",
+      "src/devtools/dev-npc-selection.cpp",
+      "src/duel/duel-ui.cpp",
+      "src/effects/effect-part-render.cpp",
+      "src/effects/hit-effects-render.cpp",
+      "src/effects/rain-system.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick-ui.cpp",
+      "src/entities/player-render.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/gui/hud/chat-bubble.cpp",
+      "src/gui/hud/player-nameplates.cpp",
+      "src/interaction/interaction-system.cpp",
+      "src/main-init.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/client.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/npc/npc.cpp",
+      "src/physics/constraints/constraint-debug.cpp",
+      "src/physics/movement/physics-collision-core.cpp",
+      "src/physics/movement/physics-collision-dispatch.cpp",
+      "src/physics/movement/physics-collision-glb-main.cpp",
+      "src/physics/movement/physics-collision-glb-sweep-slide.cpp",
+      "src/pobjects/persistent-physics.cpp",
+      "src/procedural/procedural-world-client.cpp",
+      "src/ragdoll/ragdoll-mode.cpp",
+      "src/render/render-player.cpp",
+      "src/render/render-world-mesh.cpp",
+      "src/render/render-world.cpp",
+      "src/terminal/debug-commands.cpp"
+    ],
+    "GamemodeRegistry": [
+      "src/combat/melee-client.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/entities/player-animation.cpp",
+      "src/game/game-cli.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/gamemode/gamemode.cpp",
+      "src/gamemode/map-config.cpp",
+      "src/main-systems.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/network/server-damage.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-world-destruction.cpp",
+      "src/network/server.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/render/render-world-mesh.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/debug-commands.cpp"
+    ],
+    "GuiLayoutManager": [
+      "src/audio/music-manager-widget.cpp",
+      "src/avatar/avatar-editor-helpers.cpp",
+      "src/competitive/competitive-result.cpp",
+      "src/competitive/competitive-ui.cpp",
+      "src/duel/duel-ui.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick-ui-replay-hud.cpp",
+      "src/game/bomb-tag-config.cpp",
+      "src/game/duel.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/gui/gui-editor-commands.cpp",
+      "src/gui/gui-editor-overlay.cpp",
+      "src/gui/gui-editor-preview.cpp",
+      "src/gui/gui-editor-select.cpp",
+      "src/gui/gui-editor-tools.cpp",
+      "src/gui/gui-editor.cpp",
+      "src/gui/gui-layout.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/hud/chat-bubble.cpp",
+      "src/gui/hud/chat-window.cpp",
+      "src/gui/hud/match-leaderboard.cpp",
+      "src/gui/menus/account-panel.cpp",
+      "src/gui/menus/debug-menu.cpp",
+      "src/gui/menus/duel-config-menu.cpp",
+      "src/gui/menus/help-menu.cpp",
+      "src/gui/menus/login-menu.cpp",
+      "src/gui/menus/main-menu.cpp",
+      "src/gui/menus/online-menu.cpp",
+      "src/gui/menus/pause-menu.cpp",
+      "src/gui/menus/play-menu.cpp",
+      "src/gui/menus/practice-menu.cpp",
+      "src/gui/menus/sandbox-map-menu.cpp",
+      "src/gui/menus/server-info-menu.cpp",
+      "src/gui/menus/settings-menu.cpp",
+      "src/gui/menus/sign-in-menu.cpp",
+      "src/gui/password-popup.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/client.cpp",
+      "src/notifications/notifications.cpp"
+    ],
+    "HotReloadSystem": [
+      "src/combat/weapon-quick-hit.cpp",
+      "src/devtools/terminal.cpp",
+      "src/effects/effect-part-system.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/hot-reload/hot-reload-system.cpp",
+      "src/main.cpp"
+    ],
+    "LocalProfileSystem": [
+      "src/gui/menus/sign-in-menu.cpp",
+      "src/main-init.cpp",
+      "src/main.cpp",
+      "src/profile/local-profile-system.cpp"
+    ],
+    "LogManager": [
+      "src/debug/log-manager.cpp",
+      "src/debug/structured-log.cpp",
+      "src/devtools/dev-log-commands.cpp",
+      "src/main-init.cpp",
+      "src/main.cpp",
+      "src/terminal/weapon-bench-commands.cpp"
+    ],
+    "MapConfigRegistry": [
+      "src/debug/debug-visuals-scene.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/gamemode/map-config.cpp",
+      "src/gamemode/map-edit-applier.cpp",
+      "src/hot-reload/module-host.cpp",
+      "src/interaction/world-interaction-runtime.cpp",
+      "src/map/map-authored-geometry.cpp",
+      "src/mapeditor/map-editor-commands.cpp",
+      "src/mapeditor/map-editor-projects.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/mapeditor/world-edit-commands.cpp",
+      "src/network/multiplayer-context.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-infinite-collision.cpp",
+      "src/network/server.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/render/render-world.cpp",
+      "src/sim/simulate-tick.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/map-entity-commands.cpp",
+      "src/world/streamed-world-layer.cpp",
+      "src/worldgen/worldgen-commands.cpp"
+    ],
+    "ModuleHost": [
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/entities/player-render.cpp",
+      "src/game/module-host-bridge-module.cpp",
+      "src/host/host-runtime.cpp",
+      "src/hot-reload/module-host.cpp",
+      "src/main.cpp",
+      "src/map/map-authored-geometry.cpp",
+      "src/map/map-loader-gltf-nodes.cpp",
+      "src/mapeditor/map-editor-commands.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/movement-validation.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/network/multiplayer-packets.cpp",
+      "src/network/multiplayer-reconcile.cpp",
+      "src/network/server-attack.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-infinite-collision.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-world.cpp",
+      "src/network/server.cpp",
+      "src/npc/npc-combat.cpp",
+      "src/npc/npc-perception.cpp",
+      "src/npc/npc-state-machine.cpp",
+      "src/npc/npc-traversal.cpp",
+      "src/npc/npc-utility-bridge.cpp",
+      "src/npc/npc.cpp",
+      "src/npc/recast-navigation.cpp",
+      "src/physics/movement/actor-final-pose.cpp",
+      "src/physics/movement/actor-pair-collision.cpp",
+      "src/physics/movement/actor-triangle-solver.cpp",
+      "src/physics/movement/physics-collision-core.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/render/render-player.cpp",
+      "src/render/render-world.cpp",
+      "src/render/world-box-mesh.cpp",
+      "src/world/streamed-world-layer.cpp"
+    ],
+    "MovementJsonConfig": [
+      "src/config/movement-config.cpp",
+      "src/debug/debug-visuals-scene.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/gamemode/match-roles.cpp",
+      "src/main-systems.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server.cpp",
+      "src/npc/npc-difficulty-config.cpp",
+      "src/npc/npc-navigator.cpp",
+      "src/npc/npc-traversal.cpp",
+      "src/physics/movement/movement-conversion.cpp",
+      "src/terminal/movement-commands.cpp"
+    ],
+    "MultiplayerContextGlobal": [
+      "src/combat/death-system.cpp",
+      "src/combat/revolver-system.cpp",
+      "src/combat/weapon-audio.cpp",
+      "src/combat/weapon-fire-damage.cpp",
+      "src/combat/weapon-godball-movement.cpp",
+      "src/combat/weapon-spyknife.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/debug/debug-visuals-scene.cpp",
+      "src/devtools/terminal.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/main-init.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/physics/physics-mini.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/admin-commands.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/npc-commands.cpp",
+      "src/terminal/procedural-world-commands.cpp"
+    ],
+    "NpcDifficultyConfig": [
+      "src/engine/engine-tick-setup.cpp",
+      "src/game/game-cli.cpp",
+      "src/main-systems.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/server.cpp",
+      "src/npc/npc-combat.cpp",
+      "src/npc/npc-difficulty-config.cpp",
+      "src/npc/npc-navigation.cpp",
+      "src/npc/npc-navigator.cpp",
+      "src/npc/npc-spawn.cpp",
+      "src/npc/npc-states.cpp",
+      "src/npc/npc.cpp",
+      "src/terminal/npc-commands.cpp"
+    ],
+    "Perf": [
+      "src/audio/audio.cpp",
+      "src/combat/weapon-fire-hit.cpp",
+      "src/effects/hit-effects.cpp",
+      "src/engine/engine-tick-audio.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick-ui.cpp",
+      "src/engine/engine-tick.cpp",
+      "src/impact/impact-system.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-npcs.cpp",
+      "src/npc/npc-navigator.cpp",
+      "src/npc/npc-spawn.cpp",
+      "src/npc/npc.cpp",
+      "src/npc/recast-navigation.cpp",
+      "src/perf/perf-commands.cpp",
+      "src/perf/perf-frame.cpp",
+      "src/perf/perf-overlay.cpp",
+      "src/perf/perf-spike.cpp",
+      "src/perf/perf-visualize.cpp",
+      "src/perf/perf.cpp",
+      "src/physics/movement/physics-collision-dispatch.cpp",
+      "src/physics/movement/physics-collision-glb-main.cpp",
+      "src/physics/movement/physics-collision-glb-setup.cpp",
+      "src/physics/physics-mini.cpp",
+      "src/render/render-world-mesh.cpp",
+      "src/render/render-world-shadow.cpp",
+      "src/replay/replay-recorder-events.cpp",
+      "src/replay/replay-recorder.cpp",
+      "src/shadow/shadow-render.cpp",
+      "src/sim/simulate-tick.cpp"
+    ],
+    "PersistenceQueue": [
+      "src/network/server-gamemode.cpp",
+      "src/network/server.cpp",
+      "src/persistence/persistence-commands.cpp",
+      "src/persistence/persistence-emit.cpp",
+      "src/persistence/persistence-queue.cpp"
+    ],
+    "PhysicalEntitySystem": [
+      "src/combat/client-collision-world-view.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/gamemode/arena-ball.cpp",
+      "src/impact/destructible-async-cut.cpp",
+      "src/impact/destructible-render.cpp",
+      "src/impact/destructible-selftest.cpp",
+      "src/impact/impact-system.cpp",
+      "src/network/destruction-replication-selftest.cpp",
+      "src/network/multiplayer-physical-entities.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/network/physical-entity-replication.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/server-world-destruction.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/physics/constraints/constraint-commands.cpp",
+      "src/physics/constraints/constraint-debug.cpp",
+      "src/physics/constraints/constraint-system.cpp",
+      "src/physics/movement/actor-triangle-solver.cpp",
+      "src/physics/physical-entity.cpp",
+      "src/physics/runtime-objects.cpp",
+      "src/procedural/procedural-world-client.cpp",
+      "src/terminal/crate-commands.cpp",
+      "src/terminal/object-commands.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/vehicles/vehicle-hud.cpp",
+      "src/vehicles/vehicle-render.cpp",
+      "src/vehicles/vehicle-system.cpp"
+    ],
+    "SizeScalingConfig": [
+      "src/audio/audio.cpp",
+      "src/combat/weapon-attachment.cpp",
+      "src/combat/weapon-audio.cpp",
+      "src/combat/weapon-fire-effects.cpp",
+      "src/combat/weapon-grenade-launcher.cpp",
+      "src/combat/weapon-rocket-launcher.cpp",
+      "src/combat/weapon-viewmodel.cpp",
+      "src/config/size-scaling-config.cpp",
+      "src/effects/effect-part-debris.cpp",
+      "src/effects/effect-part.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/main-systems.cpp",
+      "src/physics/movement/movement-conversion.cpp",
+      "src/physics/movement/physics-jump.cpp",
+      "src/physics/movement/physics-walk.cpp",
+      "src/terminal/player-commands.cpp"
+    ],
+    "StructuredLogger": [
+      "src/actor/player-ai.cpp",
+      "src/audio/audio.cpp",
+      "src/audio/music-manager.cpp",
+      "src/avatar/avatar-atlas.cpp",
+      "src/avatar/avatar.cpp",
+      "src/combat/death-system.cpp",
+      "src/combat/explosion-fx.cpp",
+      "src/combat/grenade-registry.cpp",
+      "src/combat/melee-client.cpp",
+      "src/combat/weapon-collision-config.cpp",
+      "src/combat/weapon-data.cpp",
+      "src/combat/weapon-fire-damage.cpp",
+      "src/combat/weapon-fire-effects.cpp",
+      "src/combat/weapon-grenade-launcher.cpp",
+      "src/combat/weapon-json-config.cpp",
+      "src/combat/weapon-melee-config.cpp",
+      "src/combat/weapon-rocket-launcher.cpp",
+      "src/config/actor-collision-config.cpp",
+      "src/config/collision-config.cpp",
+      "src/config/impact-decals-config.cpp",
+      "src/config/player-visuals-config.cpp",
+      "src/config/settings-backup.cpp",
+      "src/crosshair/crosshair-render.cpp",
+      "src/debug/debug-log.cpp",
+      "src/debug/structured-log.cpp",
+      "src/devtools/dev-log-commands.cpp",
+      "src/devtools/scenario-commands.cpp",
+      "src/devtools/scenario-player.cpp",
+      "src/devtools/scenario-recorder.cpp",
+      "src/devtools/scenario-server-playback.cpp",
+      "src/devtools/scenario-server-recorder.cpp",
+      "src/devtools/terminal.cpp",
+      "src/effects/effect-part-blood.cpp",
+      "src/effects/effect-part-render.cpp",
+      "src/effects/effect-part.cpp",
+      "src/effects/hit-effects-spawn.cpp",
+      "src/effects/hitfx-commands.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-state.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick.cpp",
+      "src/entities/player-animation-config.cpp",
+      "src/entities/player-animation.cpp",
+      "src/entities/player-avatar-animations.cpp",
+      "src/entities/player-loader.cpp",
+      "src/entities/player-render.cpp",
+      "src/entities/player.cpp",
+      "src/game/game-cli.cpp",
+      "src/game/host-compat-bridge-module.cpp",
+      "src/game/host-log-bridge-module.cpp",
+      "src/gamemode/arena-ball.cpp",
+      "src/gamemode/gamemode.cpp",
+      "src/gamemode/map-config.cpp",
+      "src/gui/gui-layout.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/hud/chat-window.cpp",
+      "src/gui/hud/player-nameplates.cpp",
+      "src/gui/menus/pause-menu.cpp",
+      "src/gui/ui-system-buttons.cpp",
+      "src/gui/ui-system.cpp",
+      "src/host/host-runtime.cpp",
+      "src/hot-reload/module-host.cpp",
+      "src/impact/destructible-async-cut.cpp",
+      "src/impact/impact-system.cpp",
+      "src/input/input-poll.cpp",
+      "src/input/mouse-lock.cpp",
+      "src/interaction/interaction-system.cpp",
+      "src/interaction/world-interaction-runtime.cpp",
+      "src/main-init.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/map/map-authored-geometry.cpp",
+      "src/map/map-glb-authored.cpp",
+      "src/map/map-loader-collision.cpp",
+      "src/map/map-static-union.cpp",
+      "src/mapeditor/map-editor-commands.cpp",
+      "src/mapeditor/map-editor-config.cpp",
+      "src/mapeditor/map-editor-projects.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/mapeditor/world-edit-commands.cpp",
+      "src/network/avatar-network-client.cpp",
+      "src/network/client.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/confirmed-damage-presentation.cpp",
+      "src/network/disagreement-visuals.cpp",
+      "src/network/ice/ice-agent.cpp",
+      "src/network/multiplayer-context.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/network/multiplayer-packets.cpp",
+      "src/network/multiplayer-physical-entities.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/network/multiplayer-reconcile.cpp",
+      "src/network/multiplayer-shots.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/network/server-attack.cpp",
+      "src/network/server-avatar-network.cpp",
+      "src/network/server-browser.cpp",
+      "src/network/server-damage.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-ice.cpp",
+      "src/network/server-infinite-collision.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-packet-handlers.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-physical-contact-actors.cpp",
+      "src/network/server-players.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/server-world-destruction.cpp",
+      "src/network/server-world.cpp",
+      "src/network/server.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/notifications/notifications.cpp",
+      "src/npc/npc-avatar.cpp",
+      "src/npc/npc-combat.cpp",
+      "src/npc/npc.cpp",
+      "src/npc/recast-navigation.cpp",
+      "src/npc/team-brain.cpp",
+      "src/perf/perf-commands.cpp",
+      "src/perf/perf-frame.cpp",
+      "src/perf/perf-spike.cpp",
+      "src/perf/perf.cpp",
+      "src/physics/constraints/constraint-commands.cpp",
+      "src/physics/movement/actor-pair-collision.cpp",
+      "src/physics/movement/actor-triangle-solver.cpp",
+      "src/physics/movement/movement-step.cpp",
+      "src/physics/movement/physics-collision-core.cpp",
+      "src/physics/movement/physics-collision-dispatch.cpp",
+      "src/physics/movement/physics-collision-glb-main.cpp",
+      "src/physics/movement/physics-collision-mesh.cpp",
+      "src/physics/physical-entity.cpp",
+      "src/physics/physics-mini.cpp",
+      "src/physics/runtime-objects.cpp",
+      "src/pobjects/persistent-physics.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/ragdoll/ragdoll-mode.cpp",
+      "src/render/render-player.cpp",
+      "src/render/render-world-mesh.cpp",
+      "src/render/render-world.cpp",
+      "src/render/skybox.cpp",
+      "src/renderer/renderer.cpp",
+      "src/replay/replay-export-ffmpeg.cpp",
+      "src/sim/simulate-tick.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/player-commands.cpp",
+      "src/terminal/weapon-commands.cpp",
+      "src/vehicles/vehicle-audio.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/vehicles/vehicle-config.cpp",
+      "src/vehicles/vehicle-hud.cpp",
+      "src/vehicles/vehicle-system.cpp",
+      "src/video/video-commands.cpp",
+      "src/world/streamed-world-layer.cpp",
+      "src/world/world-gltf-loader.cpp",
+      "src/worldgen/worldgen-commands.cpp",
+      "src/worldgen/worldgen-library.cpp"
+    ],
+    "Terminal": [
+      "src/actor/player-ai.cpp",
+      "src/analytics/analytics-manager.cpp",
+      "src/audio/audio-commands.cpp",
+      "src/audio/hitmarker-audio.cpp",
+      "src/audio/music-commands.cpp",
+      "src/avatar/avatar-atlas.cpp",
+      "src/avatar/avatar-commands.cpp",
+      "src/avatar/avatar-editor-helpers.cpp",
+      "src/avatar/avatar-editor.cpp",
+      "src/avatar/avatar-fileops.cpp",
+      "src/avatar/avatar.cpp",
+      "src/camera/camera-commands.cpp",
+      "src/combat/revolver-system.cpp",
+      "src/combat/weapon-config.cpp",
+      "src/combat/weapon-fire-effects.cpp",
+      "src/combat/weapon-godball-movement.cpp",
+      "src/combat/weapon-manager.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/competitive/competitive-commands.cpp",
+      "src/crosshair/crosshair-commands.cpp",
+      "src/debug/debug-diag-commands.cpp",
+      "src/debug/transform-debug-commands.cpp",
+      "src/devtools/dev-log-commands.cpp",
+      "src/devtools/dev-overlay-commands.cpp",
+      "src/devtools/scenario-commands.cpp",
+      "src/devtools/scenario-player.cpp",
+      "src/devtools/scenario-recorder.cpp",
+      "src/devtools/terminal-builtins.cpp",
+      "src/devtools/terminal.cpp",
+      "src/effects/hitfx-commands.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-state.cpp",
+      "src/engine/engine-tick-ui-replay-hud.cpp",
+      "src/engine/engine-tick.cpp",
+      "src/entities/aim-commands.cpp",
+      "src/gui/gui-editor-commands.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/menus/pause-menu.cpp",
+      "src/hot-reload/module-host.cpp",
+      "src/input/input-commands.cpp",
+      "src/interaction/interaction-commands.cpp",
+      "src/interaction/world-interaction-runtime.cpp",
+      "src/leaderboard/leaderboard-ui.cpp",
+      "src/main-init.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/mapeditor/map-editor-commands.cpp",
+      "src/mapeditor/map-editor-projects.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/mapeditor/world-edit-commands.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/notifications/notification-commands.cpp",
+      "src/perf/perf-commands.cpp",
+      "src/physics/constraints/constraint-commands.cpp",
+      "src/physics/runtime-objects-commands.cpp",
+      "src/procedural/infinite-world-runtime.cpp",
+      "src/ragdoll/ragdoll-commands.cpp",
+      "src/render/dynamic-light-commands.cpp",
+      "src/render/lighting-commands.cpp",
+      "src/render/postfx-commands.cpp",
+      "src/render/render-world.cpp",
+      "src/replay/replay-camera-commands.cpp",
+      "src/replay/replay-capture-commands.cpp",
+      "src/replay/replay-commands-export.cpp",
+      "src/replay/replay-commands-playback.cpp",
+      "src/replay/replay-editor-commands.cpp",
+      "src/replay/replay-export-mf.cpp",
+      "src/replay/replay-export.cpp",
+      "src/shadow/shadow-commands.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/admin-commands.cpp",
+      "src/terminal/auth-commands.cpp",
+      "src/terminal/badconn-commands.cpp",
+      "src/terminal/crate-commands.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/duel-commands.cpp",
+      "src/terminal/editor-commands.cpp",
+      "src/terminal/map-entity-commands.cpp",
+      "src/terminal/movement-commands.cpp",
+      "src/terminal/network-commands.cpp",
+      "src/terminal/npc-commands.cpp",
+      "src/terminal/object-commands.cpp",
+      "src/terminal/player-commands.cpp",
+      "src/terminal/procedural-world-commands.cpp",
+      "src/terminal/replay-commands.cpp",
+      "src/terminal/terminal-config-commands.cpp",
+      "src/terminal/terminal-cursor-commands.cpp",
+      "src/terminal/terminal-debug-toggles.cpp",
+      "src/terminal/terminal-help-commands.cpp",
+      "src/terminal/vip-commands.cpp",
+      "src/terminal/weapon-bench-commands.cpp",
+      "src/terminal/weapon-commands.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/video/outro.cpp",
+      "src/video/video-commands.cpp",
+      "src/void-death/void-death-commands.cpp",
+      "src/worldgen/worldgen-commands.cpp"
+    ],
+    "TerminalState": [
+      "src/actor/player-ai.cpp",
+      "src/camera/camera-commands.cpp",
+      "src/combat/death-system.cpp",
+      "src/combat/melee-client.cpp",
+      "src/debug/debug-diag-commands.cpp",
+      "src/debug/debug-diag.cpp",
+      "src/devtools/dev-overlay-commands.cpp",
+      "src/devtools/npc-spawn-commands.cpp",
+      "src/devtools/scenario-commands.cpp",
+      "src/devtools/scenario-player.cpp",
+      "src/devtools/scenario-recorder.cpp",
+      "src/devtools/terminal.cpp",
+      "src/duel/duel-queue.cpp",
+      "src/duel/duel-ui.cpp",
+      "src/engine/engine-tick-audio.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-combat.cpp",
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-replay.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/engine/engine-tick-state.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/engine/engine-tick-ui-hud.cpp",
+      "src/engine/engine-tick-ui-overlays.cpp",
+      "src/engine/engine-tick-ui-replay-hud.cpp",
+      "src/engine/engine-tick-ui.cpp",
+      "src/engine/engine-tick.cpp",
+      "src/fister/fister-port.cpp",
+      "src/game/bomb-tag-state.cpp",
+      "src/game/game-cli.cpp",
+      "src/game/gamemode-manager.cpp",
+      "src/gui/gui-main.cpp",
+      "src/gui/hud/chat-window.cpp",
+      "src/gui/hud/player-nameplates.cpp",
+      "src/gui/menus/pause-menu.cpp",
+      "src/input/input-poll.cpp",
+      "src/interaction/interaction-commands.cpp",
+      "src/interaction/interaction-system.cpp",
+      "src/interaction/world-interaction-runtime.cpp",
+      "src/killfeed/killfeed.cpp",
+      "src/main-init.cpp",
+      "src/main-systems.cpp",
+      "src/main.cpp",
+      "src/mapeditor/map-editor-commands.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/community-match-client.cpp",
+      "src/network/confirmed-damage-presentation.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/network/multiplayer-shots.cpp",
+      "src/network/multiplayer-tick.cpp",
+      "src/physics/constraints/constraint-commands.cpp",
+      "src/physics/physics-mini.cpp",
+      "src/ragdoll/ragdoll-commands.cpp",
+      "src/render/render-player.cpp",
+      "src/render/render-world.cpp",
+      "src/replay/replay-camera-commands.cpp",
+      "src/replay/replay-capture-commands.cpp",
+      "src/replay/replay-commands-export.cpp",
+      "src/replay/replay-commands-playback.cpp",
+      "src/replay/replay-editor-commands.cpp",
+      "src/replay/replay-editor.cpp",
+      "src/replay/replay-export-ffmpeg.cpp",
+      "src/replay/replay-export-json.cpp",
+      "src/replay/replay-export-subprocess.cpp",
+      "src/replay/replay-export.cpp",
+      "src/sim/simulate-tick.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/admin-commands.cpp",
+      "src/terminal/crate-commands.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/duel-commands.cpp",
+      "src/terminal/editor-commands.cpp",
+      "src/terminal/map-entity-commands.cpp",
+      "src/terminal/movement-commands.cpp",
+      "src/terminal/network-commands.cpp",
+      "src/terminal/npc-commands.cpp",
+      "src/terminal/object-commands.cpp",
+      "src/terminal/player-commands.cpp",
+      "src/terminal/procedural-world-commands.cpp",
+      "src/terminal/vip-commands.cpp",
+      "src/terminal/weapon-bench-commands.cpp",
+      "src/terminal/weapon-commands.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/vehicles/vehicle-system.cpp",
+      "src/video/video-commands.cpp"
+    ],
+    "VehicleConfigRegistry": [
+      "src/mapeditor/map-editor.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/vehicles/vehicle-config.cpp",
+      "src/vehicles/vehicle-hud.cpp",
+      "src/vehicles/vehicle-render.cpp",
+      "src/vehicles/vehicle-system.cpp"
+    ],
+    "VehicleSystem": [
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-setup.cpp",
+      "src/input/input-poll.cpp",
+      "src/main-systems.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/multiplayer-physical-entities.cpp",
+      "src/network/multiplayer-reconcile.cpp",
+      "src/network/server-players.cpp",
+      "src/network/server.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/physics/runtime-objects-commands.cpp",
+      "src/physics/runtime-objects.cpp",
+      "src/sim/simulate-tick.cpp",
+      "src/vehicles/vehicle-commands.cpp",
+      "src/vehicles/vehicle-hud.cpp",
+      "src/vehicles/vehicle-render.cpp",
+      "src/vehicles/vehicle-system.cpp"
+    ],
+    "WeaponRegistry": [
+      "src/actor/player-ai.cpp",
+      "src/combat/actor-preset-weapons.cpp",
+      "src/combat/explosion-fx.cpp",
+      "src/combat/grenade-registry.cpp",
+      "src/combat/melee-client.cpp",
+      "src/combat/projectile-render.cpp",
+      "src/combat/weapon-collision-config.cpp",
+      "src/combat/weapon-contact-local.cpp",
+      "src/combat/weapon-data.cpp",
+      "src/combat/weapon-json-config.cpp",
+      "src/combat/weapon-manager.cpp",
+      "src/combat/weapon-model-cache.cpp",
+      "src/combat/weapon-registry.cpp",
+      "src/combat/weapon-runtime.cpp",
+      "src/combat/weapon-system-equip.cpp",
+      "src/combat/weapon-system.cpp",
+      "src/devtools/scenario-recorder.cpp",
+      "src/effects/effect-part.cpp",
+      "src/effects/hit-effects.cpp",
+      "src/engine/engine-tick-camera.cpp",
+      "src/engine/engine-tick-net.cpp",
+      "src/engine/engine-tick-render.cpp",
+      "src/engine/engine-tick-ui-game-hud.cpp",
+      "src/entities/player-animation.cpp",
+      "src/killfeed/killfeed.cpp",
+      "src/network/confirmed-damage-presentation.cpp",
+      "src/network/multiplayer-interpolation.cpp",
+      "src/network/multiplayer-projectiles.cpp",
+      "src/network/multiplayer-shots.cpp",
+      "src/network/network-weapons.cpp",
+      "src/network/server-attack.cpp",
+      "src/network/server-damage.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-packet-handlers.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-physical-contact-actors.cpp",
+      "src/network/server-physical-contact.cpp",
+      "src/network/server-players.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/server.cpp",
+      "src/network/weapon-runtime-reconciliation.cpp",
+      "src/npc/npc-combat.cpp",
+      "src/npc/npc-spawn.cpp",
+      "src/npc/npc.cpp",
+      "src/physics/movement/actor-collision-mesh.cpp",
+      "src/pobjects/persistent-physics.cpp",
+      "src/sim/simulate-tick.cpp",
+      "src/terminal/weapon-bench-commands.cpp",
+      "src/terminal/weapon-commands.cpp"
+    ],
+    "serverGamemodeState": [
+      "src/devtools/scenario-server-playback.cpp",
+      "src/devtools/scenario-server-recorder.cpp",
+      "src/mapeditor/map-editor.cpp",
+      "src/network/server-attack.cpp",
+      "src/network/server-avatar-network.cpp",
+      "src/network/server-damage.cpp",
+      "src/network/server-gamemode.cpp",
+      "src/network/server-melee-actions.cpp",
+      "src/network/server-npcs.cpp",
+      "src/network/server-packet-chat.cpp",
+      "src/network/server-packets.cpp",
+      "src/network/server-players.cpp",
+      "src/network/server-projectiles.cpp",
+      "src/network/server-world-destruction.cpp",
+      "src/network/server.cpp",
+      "src/network/vehicle-networking.cpp",
+      "src/procedural/procedural-world.cpp",
+      "src/terminal/actor-commands.cpp",
+      "src/terminal/debug-commands.cpp",
+      "src/terminal/map-entity-commands.cpp"
+    ]
+  }
+}

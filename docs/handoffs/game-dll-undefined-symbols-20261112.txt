@@ -1,0 +1,389 @@
+AudioManager::debug() const
+AudioManager::instance()
+AudioManager::play(AudioEvent const&)
+AudioManager::setDebug(bool)
+AudioManager::stopAll()
+AudioManager::stopOwner(unsigned int)
+DuelQueue::countdownActive() const
+DuelQueue::countdownLeft() const
+DuelQueue::defaultProfileId[abi:cxx11]()
+DuelQueue::instance()
+DuelQueue::onDuelEnemySpawn(MimitaNet::DuelEnemySpawnPacket const&)
+DuelQueue::onDuelState(MimitaNet::DuelStatePacket const&)
+DuelQueue::onMapChange(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, unsigned int)
+DuelQueue::requestRematchNow()
+DuelQueue::requestRematchWith(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+DuelQueue::returnToQueue()
+DuelQueue::startQueue(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)
+DuelQueue::stopQueue()
+DuelQueue::update(float)
+EffectPartSystem::collectAlive(EffectPartSystem::PartSnapshot*, int, float) const
+EffectPartSystem::destroyOwner(unsigned int)
+EffectPartSystem::drainPendingWorldHits(int)
+EffectPartSystem::pushSurfaceDecal(SurfaceDecal const&, int, char const*, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+EffectPartSystem::queueWorldHit(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+EffectPartSystem::spawn(EffectPart const&)
+EffectPartSystem::spawnBodyContactSpark(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float)
+EffectPartSystem::spawnBulletImpact(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float, float, float)
+EffectPartSystem::spawnDamageImpactSphere(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+EffectPartSystem::spawnDash(glm::vec<3, float, (glm::qualifier)0>, float)
+EffectPartSystem::spawnDeathEllipsoid(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float, float, float, float)
+EffectPartSystem::spawnDownDash(glm::vec<3, float, (glm::qualifier)0>)
+EffectPartSystem::spawnEntityImpact(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)
+EffectPartSystem::spawnExplosionMark(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>)
+EffectPartSystem::spawnFootstep(glm::vec<3, float, (glm::qualifier)0>, float)
+EffectPartSystem::spawnFreeze(glm::vec<3, float, (glm::qualifier)0>, float)
+EffectPartSystem::spawnFreezeTrail(glm::vec<3, float, (glm::qualifier)0>)
+EffectPartSystem::spawnImpactSphereTick(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float)
+EffectPartSystem::spawnImpactSphereTickCfg(glm::vec<3, float, (glm::qualifier)0>)
+EffectPartSystem::spawnMuzzleFlash(glm::vec<3, float, (glm::qualifier)0>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool, bool)
+EffectPartSystem::spawnTracer(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+EffectPartSystem::spawnWorldCracks(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0> const&, float, float, float)
+EffectPartSystem::spawnWorldImpact(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>, float, glm::vec<3, float, (glm::qualifier)0>, float)
+HotReloadSystem::gameAPI() const
+HotReloadSystem::gameMemory()
+HotReloadSystem::instance()
+HotReloadSystem::loaded() const
+HotReloadSystem::reloadGameDLLIfChanged()
+IceAgent::IceAgent()
+IceAgent::candidates() const
+IceAgent::gatherCandidates()
+IceAgent::initialize(IceConfiguration const&)
+IceAgent::localSdp[abi:cxx11]() const
+IceAgent::logSelectedPath()
+IceAgent::pollEvents(std::vector<IceEvent, std::allocator<IceEvent> >&)
+IceAgent::send(void const*, unsigned long long)
+IceAgent::setRemoteDescription(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+IceAgent::shutdown()
+IceAgent::state() const
+IceAgent::tick()
+IceAgent::~IceAgent()
+JsonFileWatch::JsonFileWatch(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >, std::chrono::duration<long long, std::ratio<1ll, 1000ll> >)
+JsonFileWatch::consumeDirty()
+JsonFileWatch::~JsonFileWatch()
+LogManager::fileCount() const
+LogManager::flush()
+LogManager::instance()
+MimitaImpact::destructibleSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)
+MimitaImpact::destructionStressSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)
+MimitaNet::AuthoredWorldRebuildWorker::cancelAndWait()
+MimitaNet::AuthoredWorldRebuildWorker::instance()
+MimitaNet::AuthoredWorldRebuildWorker::retire(std::shared_ptr<MimitaNet::AuthoredRebuildResult>)
+MimitaNet::AuthoredWorldRebuildWorker::submit(MimitaNet::AuthoredRebuildRequest)
+MimitaNet::AuthoredWorldRebuildWorker::tryTakeResult()
+MimitaNet::ListenServerState::~ListenServerState()
+MimitaNet::addressToString[abi:cxx11](sockaddr_in const&)
+MimitaNet::destructionReplicationSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)
+MimitaNet::disableUdpConnReset(unsigned long long)
+MimitaNet::gServerHostPlayerId
+MimitaNet::initServerIceListener(MimitaNet::ListenServerState&)
+MimitaNet::isServerHost()
+MimitaNet::mapIdsReferToSameMap(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+MimitaNet::netShutdown()
+MimitaNet::netStartup()
+MimitaNet::normalizeMapId(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+MimitaNet::nowMs()
+MimitaNet::parseAddress(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, sockaddr_in&, bool)
+MimitaNet::serverGameOverrides()
+MimitaNet::serverSendToPlayer(unsigned long long, MimitaNet::ServerPlayer const&, void const*, unsigned long long)
+MimitaNet::setNonBlocking(unsigned long long)
+MimitaNet::startListenServer(MimitaNet::ListenServerState&, unsigned short, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, MimitaNet::ServerLaunchSettings const*)
+MimitaNet::stopListenServer(MimitaNet::ListenServerState&)
+MimitaNet::tickListenServer(MimitaNet::ListenServerState&, float)
+MimitaWorldProject::worldEditSessionSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+MimitaWorldProject::worldProjectStoreSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+ModuleHost::activeGeneration(char const*) const
+ModuleHost::beginFixedTick()
+ModuleHost::chunkCollisionBuild(mimita_chunk_collision::BuildChunkV1*)
+ModuleHost::collisionActorPairPolicy(mimita_collision_policy::ActorPairPolicyV1*)
+ModuleHost::collisionContactPolicy(mimita_collision_policy::ContactPolicyV1*)
+ModuleHost::collisionFinalPosePolicy(mimita_collision_policy::FinalPosePolicyV1*)
+ModuleHost::collisionSolveActorWorld(mimita_collision_policy::ActorWorldSolveV1*)
+ModuleHost::collisionSolveContacts(mimita_collision_policy::ContactSolveV1*)
+ModuleHost::collisionSurfacePolicy(mimita_collision_policy::SurfacePolicyV1*)
+ModuleHost::endFixedTick()
+ModuleHost::instance()
+ModuleHost::invokeEvent(unsigned int, void*, unsigned int, unsigned long long)
+ModuleHost::mapEditorAddChunk(char const*, char*, unsigned int)
+ModuleHost::mapEditorAddChunkPart(char const*, char*, unsigned int)
+ModuleHost::mapEditorAddConnector(char const*)
+ModuleHost::mapEditorComputeDragDelta(mimita_map_editor::DragMathV1 const*, float*)
+ModuleHost::mapEditorEvaluateConnectorPair(char const*, char const*, char const*, char const*, float*, char*, unsigned int)
+ModuleHost::mapEditorExecuteCommand(char const*, char const*)
+ModuleHost::mapEditorLoaded() const
+ModuleHost::mapEditorMapCursor(mimita_map_editor::EditorInputV1*)
+ModuleHost::mapEditorPickGizmoAxis(mimita_map_editor::GizmoPickV1 const*, int*)
+ModuleHost::mapEditorPreviewConnections(char*, unsigned int)
+ModuleHost::mapEditorResolveClick(mimita_map_editor::EditorClickV1*)
+ModuleHost::mapEditorSetSelectedPosition(float const*)
+ModuleHost::mapGeometryNodePolicy(mimita_map_geometry::NodePolicyV1*)
+ModuleHost::mapGeometryObjectPlan(mimita_map_geometry::ObjectPlanV1*)
+ModuleHost::mapGeometrySignature(char const*, unsigned int, unsigned long long*)
+ModuleHost::moduleLoaded(char const*) const
+ModuleHost::navigationPolicy(mimita_navigation_policy::NavigationPolicyV1*)
+ModuleHost::networkCombatValidationPolicy(mimita_network_policy::CombatValidationPolicyV1*)
+ModuleHost::networkHitClaimPolicy(mimita_network_policy::HitClaimPolicyV1*)
+ModuleHost::networkInterpolationPolicy(mimita_network_policy::InterpolationPolicyV1*)
+ModuleHost::networkMapSyncPolicy(mimita_network_policy::MapSyncPolicyV1*)
+ModuleHost::networkMovementCorrection(mimita_network_policy::MovementCorrectionPolicyV1*)
+ModuleHost::networkMovementValidationPolicy(mimita_network_policy::MovementValidationPolicyV1*)
+ModuleHost::networkReconcilePolicy(mimita_network_policy::ReconcilePolicyV1*)
+ModuleHost::networkReconnectPolicy(mimita_network_policy::ReconnectPolicyV1*)
+ModuleHost::networkSessionHealthPolicy(mimita_network_policy::SessionHealthPolicyV1*)
+ModuleHost::networkSnapshotPolicy(mimita_network_policy::SnapshotPolicyV1*)
+ModuleHost::npcActorState(mimita_npc_behavior::ActorStateV1*)
+ModuleHost::npcAimPolicy(mimita_npc_behavior::AimPolicyV1*)
+ModuleHost::npcAttackIntent(mimita_npc_behavior::AttackIntentV1*)
+ModuleHost::npcBehaviorAction(mimita_npc_behavior::ActionV1*)
+ModuleHost::npcBehaviorDashChoice(unsigned int, unsigned int, float)
+ModuleHost::npcBehaviorDecision(mimita_npc_behavior::DecisionV1*)
+ModuleHost::npcBehaviorHoldPursuit(unsigned int, unsigned int)
+ModuleHost::npcBehaviorLoaded() const
+ModuleHost::npcBehaviorSelfTest(mimita_npc_behavior::SelfTestV1*)
+ModuleHost::npcDashDecision(mimita_npc_behavior::DashDecisionV1*)
+ModuleHost::npcFireGate(mimita_npc_behavior::FireGateV1*)
+ModuleHost::npcGoalScore(mimita_npc_behavior::GoalScoreV1*)
+ModuleHost::npcGrenadeDecision(mimita_npc_behavior::GrenadeDecisionV1*)
+ModuleHost::npcPayloadRole(mimita_npc_behavior::PayloadRoleV1*)
+ModuleHost::npcPerceptionLoaded() const
+ModuleHost::npcPerceptionStep(mimita_npc_perception::PerceptionRequestV1*)
+ModuleHost::npcStateTiming(mimita_npc_behavior::StateTimingV1*)
+ModuleHost::npcTargetSelect(mimita_npc_behavior::TargetSelectV1*)
+ModuleHost::npcTargetingPolicy(mimita_npc_behavior::TargetingPolicyV1*)
+ModuleHost::npcWeaponChoice(mimita_npc_behavior::WeaponChoiceV1*)
+ModuleHost::poll()
+ModuleHost::startup()
+ModuleHost::worldRenderingAnalyzeFaces(float const*, float const*, mimita_world_rendering::FaceAuditV1*, unsigned int)
+ModuleHost::worldRenderingBuildBox(mimita_world_rendering::BoxMeshV1*)
+ModuleHost::worldgenResolve(mimita_worldgen::ResolveV1*)
+MusicManager::applyVolume()
+MusicManager::currentTrackInfo[abi:cxx11]() const
+MusicManager::enterGameMode()
+MusicManager::enterMenuMode()
+MusicManager::instance()
+MusicManager::isPlaying() const
+MusicManager::muted() const
+MusicManager::pause()
+MusicManager::playModeTrack(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+MusicManager::playbackSpeed() const
+MusicManager::previous()
+MusicManager::reload()
+MusicManager::resume()
+MusicManager::setMuted(bool)
+MusicManager::setPersonalMusicOverride(bool)
+MusicManager::setPlaybackSpeed(float)
+MusicManager::setPlaylistMode(MusicManager::PlaylistMode)
+MusicManager::setVolume(float)
+MusicManager::skip()
+MusicManager::stop()
+MusicManager::stopModeTrack()
+MusicManager::update(float)
+MusicManager::volume() const
+PersistenceQueue::enqueueKill(PersistenceKillEvent const&)
+PersistenceQueue::enqueueMatchResult(PersistenceMatchEvent const&)
+PersistenceQueue::instance()
+PersistenceQueue::observePlayer(unsigned int, unsigned long long, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, bool)
+PersistenceQueue::queueDepth() const
+PersistenceQueue::sessionId[abi:cxx11]() const
+PersistenceQueue::takeNotices()
+PersistenceQueue::tick()
+PersistenceQueue::totalDuplicates() const
+PersistenceQueue::totalRetries() const
+PersistenceQueue::totalSent() const
+Renderer::Renderer(int, int, char const*)
+Renderer::applyVideoMode(int, int, FullscreenMode)
+Renderer::beginFrame()
+Renderer::endFrame()
+Renderer::reloadWorldShaderIfChanged()
+Renderer::setVSync(bool)
+Renderer::shouldClose()
+Renderer::shutdown()
+ReplaySaveWorker::enqueue(std::function<void ()>)
+ReplaySaveWorker::queueDepth() const
+StructuredLogger::beginScenarioCapture()
+StructuredLogger::endScenarioCapture()
+StructuredLogger::flushEvents()
+StructuredLogger::init()
+StructuredLogger::instance()
+StructuredLogger::ioStats(bool)
+StructuredLogger::pinCurrentRun(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int)
+StructuredLogger::pollConfig()
+StructuredLogger::shouldLog(StructuredCategory, StructuredLevel) const
+StructuredLogger::shutdown()
+StructuredLogger::tick()
+StructuredLogger::tryWriteEvent(StructuredCategory, StructuredLevel, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, nlohmann::json_abi_v3_12_0::basic_json<std::map, std::vector, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, bool, long long, unsigned long long, double, std::allocator, nlohmann::json_abi_v3_12_0::adl_serializer, std::vector<unsigned char, std::allocator<unsigned char> >, void> const&, char const*, int, char const*)
+StructuredLogger::write(StructuredLogger::Entry const&)
+StructuredLogger::writeEvent(StructuredCategory, StructuredLevel, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, nlohmann::json_abi_v3_12_0::basic_json<std::map, std::vector, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, bool, long long, unsigned long long, double, std::allocator, nlohmann::json_abi_v3_12_0::adl_serializer, std::vector<unsigned char, std::allocator<unsigned char> >, void> const&, char const*, int, char const*)
+StructuredLogger::writeEventChecked(StructuredCategory, StructuredLevel, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, nlohmann::json_abi_v3_12_0::basic_json<std::map, std::vector, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, bool, long long, unsigned long long, double, std::allocator, nlohmann::json_abi_v3_12_0::adl_serializer, std::vector<unsigned char, std::allocator<unsigned char> >, void> const&, char const*, int, char const*)
+StructuredLogger::writeFormatted(StructuredCategory, StructuredLevel, char const*, int, char const*, char const*, ...)
+StructuredLogger::writeVFormatted(StructuredCategory, StructuredLevel, char const*, int, char const*, char const*, char*)
+analyzeAudioBuffer(std::vector<float, std::allocator<float> > const&, unsigned int, unsigned short, unsigned int, unsigned int)
+analyzeAudioBuffer(std::vector<short, std::allocator<short> > const&, unsigned int, unsigned short, unsigned int, unsigned int)
+audioListenerForward()
+audioListenerPosition()
+audioOwnerKey(unsigned int, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+audioUpdate(float)
+captureThreadStackTrace(unsigned int, char*, unsigned long long)
+computeImpactAudio(float, float, float, float&, float&)
+crosshairRightExtent(float)
+decodeAudioToPCM(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<short, std::allocator<short> >&, unsigned int&, unsigned int&, unsigned int, unsigned int)
+drawCrosshair(float, float, float, bool)
+drawCrosshairPreview(float, float, float)
+dryFireFeedbackFade(unsigned long long, int)
+gDuelManager
+gFramePacer
+gGamemodeManager
+gMainmenuDebug
+gNetDebugEntities
+gNetPresentationDebug
+gReplayCinematicMode
+gReplayExportRenderMode
+gRoomCodeShow
+gameUpdateQuickHitDebugVisual(GameMemory*, GameQuickHitDebugVisualState*)
+getAudioFileDuration(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+getGlobalDuck()
+getReplayMusicPreviewDuration()
+gladLoadGLLoader
+glad_glActiveTexture
+glad_glAttachShader
+glad_glBindBuffer
+glad_glBindFramebuffer
+glad_glBindRenderbuffer
+glad_glBindTexture
+glad_glBindVertexArray
+glad_glBlendFunc
+glad_glBlendFuncSeparate
+glad_glBlitFramebuffer
+glad_glBufferData
+glad_glCheckFramebufferStatus
+glad_glClear
+glad_glClearColor
+glad_glCompileShader
+glad_glCreateProgram
+glad_glCreateShader
+glad_glCullFace
+glad_glDeleteBuffers
+glad_glDeleteFramebuffers
+glad_glDeleteProgram
+glad_glDeleteRenderbuffers
+glad_glDeleteShader
+glad_glDeleteTextures
+glad_glDeleteVertexArrays
+glad_glDepthFunc
+glad_glDepthMask
+glad_glDisable
+glad_glDisableVertexAttribArray
+glad_glDrawArrays
+glad_glDrawArraysInstanced
+glad_glDrawBuffer
+glad_glEnable
+glad_glEnableVertexAttribArray
+glad_glFramebufferRenderbuffer
+glad_glFramebufferTexture2D
+glad_glGenBuffers
+glad_glGenFramebuffers
+glad_glGenQueries
+glad_glGenRenderbuffers
+glad_glGenTextures
+glad_glGenVertexArrays
+glad_glGenerateMipmap
+glad_glGetBooleanv
+glad_glGetError
+glad_glGetFloatv
+glad_glGetIntegerv
+glad_glGetProgramInfoLog
+glad_glGetProgramiv
+glad_glGetQueryObjectui64v
+glad_glGetQueryObjectuiv
+glad_glGetShaderInfoLog
+glad_glGetShaderiv
+glad_glGetStringi
+glad_glGetTexLevelParameteriv
+glad_glGetUniformLocation
+glad_glGetUniformiv
+glad_glIsEnabled
+glad_glLineWidth
+glad_glLinkProgram
+glad_glPixelStorei
+glad_glPolygonMode
+glad_glQueryCounter
+glad_glReadBuffer
+glad_glReadPixels
+glad_glRenderbufferStorage
+glad_glScissor
+glad_glShaderSource
+glad_glTexImage2D
+glad_glTexParameterf
+glad_glTexParameterfv
+glad_glTexParameteri
+glad_glTexSubImage2D
+glad_glUniform1f
+glad_glUniform1fv
+glad_glUniform1i
+glad_glUniform2f
+glad_glUniform2fv
+glad_glUniform3f
+glad_glUniform3fv
+glad_glUniform4f
+glad_glUniformMatrix4fv
+glad_glUseProgram
+glad_glVertexAttribDivisor
+glad_glVertexAttribPointer
+glad_glViewport
+gpActiveGameMode[abi:cxx11]
+gpActiveMapPath[abi:cxx11]
+gpCamera
+gpChatHistory
+gpCommandBinds[abi:cxx11]
+gpDeathPosition
+gpDuelConfig
+gpEditorMode
+gpFreecamEnabled
+gpGameState
+gpMpContext
+gpNpcSystem
+gpPlayer
+gpReplayActorModels[abi:cxx11]
+gpReplayBrowser
+gpReplayCameraMgr
+gpReplayChatStates[abi:cxx11]
+gpReplayClipsCache[abi:cxx11]
+gpReplayFactory
+gpReplayPlayer
+gpReplayRecorder
+gpReplayTimeline
+gpReplayWeaponModels[abi:cxx11]
+gpSelectedEditorObject
+gpWeapons
+gpWorld
+gpWorldLoaded
+installCrashHandler()
+isReplayMusicPreviewPlaying()
+logAudioAnalysis(StructuredCategory, StructuredLevel, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, AudioBufferAnalysis const&)
+mimita::host::HostRuntime::instance()
+mimita::host::HostRuntime::probeNpcTargetSelect(mimita::host::NpcTargetDecisionV1*)
+pauseReplayMusicPreview()
+playAirJumpSound()
+playEventSound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)
+playMenuClick()
+playMenuHover()
+playReplayMusicPreview(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)
+playSound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float)
+playSoundPitched(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, float, float)
+playWorldSound(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, glm::vec<3, float, (glm::qualifier)0>, float, float, float, AudioCategory)
+playWorldSoundOwned(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, glm::vec<3, float, (glm::qualifier)0>, float, float, float, unsigned int, bool, AudioCategory)
+recordCrashBreadcrumb(char const*, char const*, ...)
+resolveSoundPath(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)
+resumeReplayMusicPreview()
+runIceConnect(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, IceTestOptions const&)
+seekReplayMusicPreview(float)
+setAudioListener(glm::vec<3, float, (glm::qualifier)0>, glm::vec<3, float, (glm::qualifier)0>)
+setAudioSpatialWorld(World const*)
+setCrashHandlerTestMode(bool)
+setGlobalDuck(float)
+setReplayMusicPreviewSpeed(float)
+setReplayMusicPreviewVolume(float)
+stopReplayMusicPreview()
+structuredLogRotationSelfTest(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >*)
+triggerDryFireFeedback(unsigned long long, char const*, char const*)
+updateCrosshairDynamic(float, float, bool, bool, bool)

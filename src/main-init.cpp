@@ -1,5 +1,6 @@
 #include "main-init.h"
 #include "main-systems.h"
+#include "host/host-runtime.h"
 #include "gui/ui-system-internal.h"
 #include "gui/gui-bindings.h"
 #include "gui/hud/chat-window.h"
@@ -180,6 +181,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     
     StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
+    mimita::host::HostRuntime::instance().startFromEnvironment();
 
     printf("[LOG] Console output enabled\n");
     printf("[LOG] File logging enabled\n");

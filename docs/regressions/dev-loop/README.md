@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 25
+Entries: 26
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -193,3 +193,10 @@ correction in the detail file.
 - Status: FIXED — dashboard status and lane list refreshed live after adding the missing import.
 - Summary: The coordinator's lane-status collector called `re.fullmatch` without importing `re`. Its refresh handler displayed the exception while the UI remained on “Connecting to the build/runtime service…”.
 - Detail: [dashboard-status-refresh-REG-2026-11-09.md](dashboard-status-refresh-REG-2026-11-09.md)
+
+## Entry 26 — Incremental game-DLL builds recompiled every source
+
+- Recorded: 2026-11-12
+- Status: FIXED (source/build) — no-change builds now skip all 575 sources; runtime proof is not applicable to this build-system fix.
+- Summary: The whole-game DLL worker treated `-MP` phony targets and Windows drive letters in `.d` files as missing dependencies, and its object cache was scoped to one generation. Every build recompiled all 575 sources. The parser now matches `build.py::source_changed`, the cache is persistent, and a no-change run prints 575 `[SKIP]` lines with zero compiles.
+- Detail: [incremental-recompile-REG-2026-11-12.md](incremental-recompile-REG-2026-11-12.md)

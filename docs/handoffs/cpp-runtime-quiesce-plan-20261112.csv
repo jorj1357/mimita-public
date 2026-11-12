@@ -1,0 +1,298 @@
+path,owner,line_count,categories,barrier_rule,review_state,signals
+src/analytics/analytics-config.cpp,game,89,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/analytics/analytics-consent.cpp,game,75,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/analytics/analytics-events-impl.cpp,game,187,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/analytics/analytics-manager.cpp,game,333,"gpu-resource,file-io,os-resource",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,file,os"
+src/analytics/analytics-uploader.cpp,game,157,"async-worker,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,known handoff blocker; thread/job hits=1
+src/audio/hitmarker-audio.cpp,game,224,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/audio/music-manager-widget.cpp,game,220,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/auth/auth-popup.cpp,game,515,"gpu-resource,os-resource",CAP_RESOURCES: release with the context current; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,os"
+src/auth/auth-system.cpp,game,469,os-resource,CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,resource hits=os
+src/auth/auth-token.cpp,game,403,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/avatar/avatar-atlas.cpp,game,1032,"async-worker,callback,gpu-resource,file-io,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,"known handoff blocker; thread/job hits=1; callback hits=1; resource hits=gl,file"
+src/avatar/avatar-autosave.cpp,game,247,"callback,file-io",CAP_CALLBACKS: generation token; unregister before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,callback hits=1; resource hits=file
+src/avatar/avatar-commands.cpp,game,468,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/avatar/avatar-drop-target.cpp,game,185,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-animation.cpp,game,125,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-colors.cpp,game,50,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-cosmetics.cpp,game,420,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/avatar/avatar-editor-dropdown.cpp,game,110,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-face.cpp,game,366,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-helpers.cpp,game,253,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-image.cpp,game,200,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-library.cpp,game,115,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-outfits.cpp,game,103,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-parts.cpp,game,98,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-popups.cpp,game,141,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-presets.cpp,game,81,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor-scroll.cpp,game,37,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/avatar/avatar-editor.cpp,game,431,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/avatar/avatar-fileops.cpp,game,252,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/avatar/avatar.cpp,game,1462,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/avatar/character-manifest.cpp,game,108,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/avatar/character-registry.cpp,game,116,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/avatar/cosmetic-system.cpp,game,283,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/combat/death-system.cpp,game,477,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/melee-client.cpp,game,1450,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/combat/melee-rules-config.cpp,game,231,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/projectile-render.cpp,game,483,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/combat/revolver-system.cpp,game,436,"gpu-resource,network-context",CAP_RESOURCES: release with the context current; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=gl; network context
+src/combat/weapon-audio.cpp,game,117,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/combat/weapon-collision-config.cpp,game,660,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/weapon-fire-damage.cpp,game,884,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/combat/weapon-godball-movement.cpp,game,723,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/combat/weapon-json-config.cpp,game,928,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/weapon-melee-config.cpp,game,676,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/weapon-model-cache.cpp,game,216,"async-worker,gpu-resource,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_RESOURCES: release with the context current; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,known handoff blocker; thread/job hits=1; resource hits=gl
+src/combat/weapon-runtime.cpp,game,196,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/combat/weapon-spyknife.cpp,game,650,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/combat/weapon-system.cpp,game,1502,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/combat/weapon-viewmodel.cpp,game,624,"gpu-resource,network-context",CAP_RESOURCES: release with the context current; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=gl; network context
+src/competitive/competitive-result.cpp,game,149,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/competitive/competitive-ui.cpp,game,103,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/competitive/competitive.cpp,game,253,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/actor-collision-config.cpp,game,402,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/camera-config.cpp,game,218,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/collision-config.cpp,game,282,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/collision-lod-config.cpp,game,111,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/gameplay-config.cpp,game,181,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/impact-decals-config.cpp,game,325,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/killfeed-config.cpp,game,122,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/material-config.cpp,game,157,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/movement-config.cpp,game,723,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/networking-config.cpp,game,802,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/player-settings.cpp,game,134,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/player-visuals-config.cpp,game,388,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/ragdoll-death-config.cpp,game,122,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/settings-backup.cpp,game,145,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/size-scaling-config.cpp,game,123,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/spatial-audio-config.cpp,game,599,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/spawn-velocity-config.cpp,game,186,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/weapon-hitfx-config.cpp,game,401,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/config/weapon-tracers-config.cpp,game,143,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/crosshair/crosshair-config.cpp,game,130,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/debug/debug-diag-commands.cpp,game,414,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/debug/debug-diag.cpp,game,184,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/debug-visuals-config.cpp,game,47,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/debug/debug-visuals-labels.cpp,game,158,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/debug-visuals-lines.cpp,game,631,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/debug-visuals-scene.cpp,game,598,"gpu-resource,network-context",CAP_RESOURCES: release with the context current; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=gl; network context
+src/debug/debug-visuals-tris.cpp,game,114,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/debug-visuals.cpp,game,200,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/gl-debug.cpp,game,102,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/debug/npckillfeed-log.cpp,game,71,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/debug/validate-assets.cpp,game,138,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/account-config.cpp,game,308,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/dev-config.cpp,game,146,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/dev-log-commands.cpp,game,194,"file-io,os-resource",static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=file,os"
+src/devtools/dev-overlay.cpp,game,67,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/devtools/scenario-player.cpp,game,927,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/scenario-recorder.cpp,game,1115,"async-worker,file-io,network-context",CAP_JOBS: submit only; cancel/drain/join before unload; static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,thread/job hits=1; resource hits=file; network context
+src/devtools/scenario-server-playback.cpp,game,827,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/scenario-server-recorder.cpp,game,1152,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/scenario-tracks.cpp,game,697,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/terminal-input.cpp,game,322,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/devtools/terminal.cpp,game,1026,"callback,gpu-resource,file-io",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"callback hits=5; resource hits=gl,file"
+src/duel/duel-history.cpp,game,112,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/duel/duel-ui.cpp,game,306,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/effects/effect-part-render.cpp,game,1018,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/effects/hit-effects-config.cpp,game,668,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/effects/muzzle-flash-config.cpp,game,79,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/engine/engine-init.cpp,game,65,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/engine/engine-tick-camera.cpp,game,1570,"callback,gpu-resource,network-context",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,callback hits=1; resource hits=gl; network context
+src/engine/engine-tick-net.cpp,game,1375,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/engine/engine-tick-render.cpp,game,1184,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/engine/engine-tick-replay.cpp,game,1055,"async-worker,file-io,os-resource,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,"known handoff blocker; thread/job hits=1; resource hits=file,os"
+src/engine/engine-tick-setup.cpp,game,310,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/engine/engine-tick-ui-replay-hud.cpp,game,423,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/engine/engine-tick.cpp,game,463,"callback,file-io,os-resource",CAP_CALLBACKS: generation token; unregister before unload; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"callback hits=2; resource hits=file,os"
+src/entities/actor-body.cpp,game,169,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/entities/aimbody-config.cpp,game,323,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/entities/player-animation-config.cpp,game,327,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/entities/player-avatar-animations.cpp,game,491,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/entities/player-config.cpp,game,182,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/entities/player-loader.cpp,game,1520,"async-worker,callback,gpu-resource,file-io,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,"known handoff blocker; thread/job hits=1; callback hits=1; resource hits=gl,file"
+src/entities/player-render-mesh.cpp,game,512,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/entities/player-render.cpp,game,795,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/game/bomb-tag-config.cpp,game,93,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/game/duel.cpp,game,500,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/game/game-cli.cpp,game,3320,"gpu-resource,file-io,os-resource",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,file,os"
+src/game/spawn-utils.cpp,game,356,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/gamemode-map-pool.cpp,game,104,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/gamemode.cpp,game,1118,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/map-config.cpp,game,2186,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/match-roles.cpp,game,672,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/mode-pack-registry.cpp,game,315,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gamemode/monster-pools.cpp,game,83,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gui/font-stuff/font-loader.cpp,game,327,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/gui/gui-bindings.cpp,game,165,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-editor-overlay.cpp,game,185,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-editor-preview.cpp,game,462,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-editor-select.cpp,game,408,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-editor.cpp,game,83,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-element-render.cpp,game,400,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/gui-layout.cpp,game,694,"callback,file-io",CAP_CALLBACKS: generation token; unregister before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,callback hits=2; resource hits=file
+src/gui/gui-main.cpp,game,1838,"gpu-resource,network-resource,file-io,os-resource",CAP_RESOURCES: release with the context current; CAP_TRANSPORT: close/drain; session owner quiesce; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,net,file,os"
+src/gui/gui-media.cpp,game,156,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/gui/hud/chat-window.cpp,game,601,"callback,gpu-resource,network-context",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,callback hits=1; resource hits=gl; network context
+src/gui/hud/healthbar-config.cpp,game,166,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gui/hud/reward-popup.cpp,game,197,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/gui/menus/account-panel.cpp,game,160,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/debug-menu.cpp,game,40,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/duel-config-menu.cpp,game,93,"callback,gpu-resource",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,callback hits=1; resource hits=gl
+src/gui/menus/help-menu.cpp,game,59,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/login-menu.cpp,game,204,"gpu-resource,os-resource",CAP_RESOURCES: release with the context current; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,os"
+src/gui/menus/main-menu.cpp,game,234,"gpu-resource,file-io,os-resource",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,file,os"
+src/gui/menus/menu-avatar-preview.cpp,game,394,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/gui/menus/online-menu.cpp,game,562,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/pause-menu.cpp,game,282,"gpu-resource,os-resource",CAP_RESOURCES: release with the context current; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=gl,os"
+src/gui/menus/play-menu.cpp,game,89,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/practice-menu.cpp,game,39,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/sandbox-map-menu.cpp,game,141,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/server-info-menu.cpp,game,142,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/settings-menu.cpp,game,459,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/menus/sign-in-menu.cpp,game,130,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/password-popup.cpp,game,138,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/ui-system-buttons.cpp,game,366,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/ui-system-layout.cpp,game,75,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/ui-system-render.cpp,game,533,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/ui-system.cpp,game,279,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/gui/ui-text-input.cpp,game,545,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/impact/destructible-async-cut.cpp,game,206,async-worker,CAP_JOBS: submit only; cancel/drain/join before unload,OWNED_PERSISTENT,thread/job hits=2
+src/impact/destructible-render.cpp,game,154,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/impact/destructible-world-config.cpp,game,228,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/input/input-commands-bind.cpp,game,154,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/input/input-commands.cpp,game,473,"callback,gpu-resource",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,callback hits=10; resource hits=gl
+src/input/input-poll.cpp,game,568,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/input/mouse-lock.cpp,game,56,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/input/scenario-input.cpp,game,73,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/interaction/interaction-system.cpp,game,483,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/leaderboard/leaderboard-ui.cpp,game,140,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map-authored-geometry.cpp,game,1611,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/map/map-loader-gltf-extract.cpp,game,252,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map-loader-gltf-mesh.cpp,game,29,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map-loader-gltf-nodes.cpp,game,261,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map-loader-gltf-prims.cpp,game,258,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map-loader-material.cpp,game,297,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map_loader.cpp,game,506,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/map_render.cpp,game,67,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/texture.cpp,game,87,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/map/texture_manager.cpp,game,62,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/mapeditor/map-editor-config.cpp,game,154,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/mapeditor/map-editor-projects.cpp,game,334,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/mapeditor/map-editor.cpp,game,5146,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/network/avatar-network-client.cpp,game,464,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/network/badconn/badconn-config.cpp,game,410,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/network/badconn/badconn.cpp,game,458,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/client.cpp,game,497,"gpu-resource,network-resource,network-context",CAP_RESOURCES: release with the context current; CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,"resource hits=gl,net; network context"
+src/network/community-server-config.cpp,game,228,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/network/confirmed-damage-presentation.cpp,game,262,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/disagreement-visuals.cpp,game,573,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/network/multiplayer-chat.cpp,game,18,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-context.cpp,game,129,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/network/multiplayer-interpolation.cpp,game,2510,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-packets.cpp,game,2309,"async-worker,network-resource,network-context",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,thread/job hits=2; resource hits=net; network context
+src/network/multiplayer-physical-entities.cpp,game,339,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-projectiles.cpp,game,2762,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-reconcile.cpp,game,514,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-shots.cpp,game,928,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/multiplayer-tick.cpp,game,3286,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/network-weapons.cpp,game,202,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/packets.cpp,game,22,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/physical-entity-replication.cpp,game,244,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/reconnect-visuals.cpp,game,197,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/reliable-gameplay-events.cpp,game,388,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-attack.cpp,game,1594,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-avatar-network.cpp,game,333,network-resource,CAP_TRANSPORT: close/drain; session owner quiesce,OWNED_PERSISTENT,resource hits=net
+src/network/server-body-template.cpp,game,307,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/network/server-browser.cpp,game,225,"async-worker,network-resource,network-context,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,known handoff blocker; thread/job hits=1; resource hits=net; network context
+src/network/server-damage.cpp,game,663,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-gamemode.cpp,game,10894,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-melee-actions.cpp,game,1398,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-npcs.cpp,game,3087,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-packet-chat.cpp,game,1628,"network-resource,file-io,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,"resource hits=net,file; network context"
+src/network/server-packet-handlers.cpp,game,1857,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-packets.cpp,game,3442,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-physical-contact-actors.cpp,game,973,"network-resource,file-io,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,"resource hits=net,file; network context"
+src/network/server-physical-contact.cpp,game,636,network-resource,CAP_TRANSPORT: close/drain; session owner quiesce,OWNED_PERSISTENT,resource hits=net
+src/network/server-players.cpp,game,2280,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-presets.cpp,game,95,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/network/server-projectiles.cpp,game,2187,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/network/server-world.cpp,game,577,"callback,file-io",CAP_CALLBACKS: generation token; unregister before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,callback hits=1; resource hits=file
+src/network/snapshot-chunks.cpp,game,639,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/network/udp-echo.cpp,game,177,"network-resource,file-io,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,"resource hits=net,file; network context"
+src/network/vehicle-networking.cpp,game,1175,"callback,network-resource,network-context",CAP_CALLBACKS: generation token; unregister before unload; CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,callback hits=1; resource hits=net; network context
+src/network/weapon-runtime-reconciliation.cpp,game,239,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/notifications/notifications.cpp,game,1031,"callback,gpu-resource,file-io,os-resource",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"callback hits=6; resource hits=gl,file,os"
+src/npc/npc-avatar.cpp,game,198,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/npc/npc-behavior.cpp,game,721,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/npc/npc-difficulty-config.cpp,game,411,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/perf/perf-frame.cpp,game,968,async-worker,CAP_JOBS: submit only; cancel/drain/join before unload,OWNED_PERSISTENT,thread/job hits=2
+src/perf/perf-gpu.cpp,game,170,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/perf/perf-visualize.cpp,game,184,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/perf/perf.cpp,game,1710,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/persistence/persistence-emit.cpp,game,179,"network-resource,network-context",CAP_TRANSPORT: close/drain; session owner quiesce; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=net; network context
+src/physics/physical-entity.cpp,game,2338,"callback,gpu-resource",CAP_CALLBACKS: generation token; unregister before unload; CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,callback hits=7; resource hits=gl
+src/physics/physics-debug-movement.cpp,game,61,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/physics/physics-mini.cpp,game,564,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/procedural/infinite-world-runtime.cpp,game,1898,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/procedural/procedural-world.cpp,game,837,"network-resource,file-io",CAP_TRANSPORT: close/drain; session owner quiesce; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=net,file"
+src/profile/local-profile-system.cpp,game,114,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/ragdoll/ragdoll-mode-config.cpp,game,369,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/render/dynamic-light-config.cpp,game,160,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/render/lighting-config.cpp,game,135,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/render/post-fx.cpp,game,671,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/render/procedural-cylinder.cpp,game,216,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/render/render-player.cpp,game,1191,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/render/render-world-mesh.cpp,game,508,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/render/render-world-shadow.cpp,game,71,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/render/render-world-sky.cpp,game,102,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/render/render-world.cpp,game,489,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/render/skybox.cpp,game,439,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/replay/replay-camera.cpp,game,200,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-capture-commands.cpp,game,311,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-commands-export.cpp,game,597,"file-io,os-resource",static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"resource hits=file,os"
+src/replay/replay-editor-commands.cpp,game,1728,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-editor.cpp,game,1031,"audio-resource,file-io",resident audio owner; stop voice/engine before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=audio,file"
+src/replay/replay-export-ffmpeg.cpp,game,824,"async-worker,audio-resource,file-io,os-resource",CAP_JOBS: submit only; cancel/drain/join before unload; resident audio owner; stop voice/engine before unload; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle,OWNED_PERSISTENT,"thread/job hits=2; resource hits=audio,file,os"
+src/replay/replay-export-json.cpp,game,511,"async-worker,file-io,os-resource,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,"known handoff blocker; thread/job hits=1; resource hits=file,os"
+src/replay/replay-export-mf.cpp,game,1255,"async-worker,file-io",CAP_JOBS: submit only; cancel/drain/join before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,thread/job hits=2; resource hits=file
+src/replay/replay-export-subprocess.cpp,game,472,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-export-target.cpp,game,69,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/replay/replay-export.cpp,game,715,"async-worker,gpu-resource,file-io,os-resource,known-blocker",CAP_JOBS: submit only; cancel/drain/join before unload; CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource; CAP_RESOURCES or resident owner; close handle; explicit owner quiesce plan; may stay resident,OWNED_PERSISTENT,"known handoff blocker; thread/job hits=1; resource hits=gl,file,os"
+src/replay/replay-factory-clips.cpp,game,202,"async-worker,file-io",CAP_JOBS: submit only; cancel/drain/join before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,thread/job hits=1; resource hits=file
+src/replay/replay-factory.cpp,game,199,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-io-save.cpp,game,229,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-player-load.cpp,game,253,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-player.cpp,game,372,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/replay/replay-recorder.cpp,game,635,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/shadow/shadow-config.cpp,game,106,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/shadow/shadow-render.cpp,game,462,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/terminal/actor-commands.cpp,game,401,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/debug-commands.cpp,game,944,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/map-entity-commands.cpp,game,267,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/network-commands.cpp,game,1249,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/terminal/npc-commands.cpp,game,219,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/terminal/object-commands.cpp,game,214,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/player-commands.cpp,game,643,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/terminal/procedural-world-commands.cpp,game,142,network-context,CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,network context
+src/terminal/replay-commands.cpp,game,430,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/terminal-cursor-commands.cpp,game,40,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/terminal/weapon-bench-commands.cpp,game,420,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/terminal/weapon-commands.cpp,game,1666,"file-io,network-context",static check: transient per-call handles; no retained resource; CAP_TRANSPORT/CAP_SESSION: bounded payloads; drain before unload,OWNED_PERSISTENT,resource hits=file; network context
+src/utils/pak-file.cpp,game,188,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/utils/path_utils.cpp,game,273,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/utils/tips.cpp,game,103,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/vehicles/vehicle-config.cpp,game,724,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/video/outro-ffmpeg.cpp,game,328,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/video/outro.cpp,game,304,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/video/video-settings.cpp,game,193,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/void-death/void-death-commands.cpp,game,65,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/void-death/void-death.cpp,game,107,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/world/streamed-world-layer.cpp,game,1150,gpu-resource,CAP_RESOURCES: release with the context current,OWNED_PERSISTENT,resource hits=gl
+src/world/texture-store.cpp,game,65,"gpu-resource,file-io",CAP_RESOURCES: release with the context current; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,"resource hits=gl,file"
+src/world/world-gltf-loader.cpp,game,515,"callback,file-io",CAP_CALLBACKS: generation token; unregister before unload; static check: transient per-call handles; no retained resource,OWNED_PERSISTENT,callback hits=1; resource hits=file
+src/worldgen/worldgen-library.cpp,game,650,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/worldproject/world-edit-session.cpp,game,488,callback,CAP_CALLBACKS: generation token; unregister before unload,OWNED_PERSISTENT,callback hits=2
+src/worldproject/world-project-sha256.cpp,game,181,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file
+src/worldproject/world-project-store.cpp,game,1005,file-io,static check: transient per-call handles; no retained resource,TRANSIENT_CANDIDATE,resource hits=file

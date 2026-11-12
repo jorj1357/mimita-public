@@ -1,0 +1,146 @@
+path,line,symbol,kind,scope,decision,state,reason,snippet
+external/recastnavigation/Detour/Source/DetourAlloc.cpp,27,dtFreeDefault,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static void dtFreeDefault(void *ptr)
+external/recastnavigation/Detour/Source/DetourAlloc.cpp,32,sAllocFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide allocator hook; caller-set,static dtAllocFunc* sAllocFunc = dtAllocDefault;
+external/recastnavigation/Detour/Source/DetourAlloc.cpp,33,sFreeFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide allocator hook; caller-set,static dtFreeFunc* sFreeFunc = dtFreeDefault;
+external/recastnavigation/Detour/Source/DetourAssert.cpp,23,sAssertFailFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide assert hook; caller-set,static dtAssertFailFunc* sAssertFailFunc = 0;
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,30,MESH_NULL_IDX,STATIC_VARIABLE,file,FREEZE_IN_GAME_DLL,CONFIRMED,sentinel constant,static unsigned short MESH_NULL_IDX = 0xffff;
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,40,compareItemX,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int compareItemX(const void* va, const void* vb)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,51,compareItemY,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int compareItemY(const void* va, const void* vb)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,62,compareItemZ,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int compareItemZ(const void* va, const void* vb)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,73,calcExtends,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void calcExtends(BVItem* items, const int /*nitems*/, const int imin, const int imax,"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,113,subdivide,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void subdivide(BVItem* items, int nitems, int imin, int imax, int& curNode, dtBVNode* nodes)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,171,createBVTree,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int createBVTree(dtNavMeshCreateParams* params, dtBVNode* nodes, int /*nnodes*/)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,243,classifyOffMeshPoint,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static unsigned char classifyOffMeshPoint(const float* pt, const float* bmin, const float* bmax)"
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,245,XP,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const unsigned char XP = 1<<0;
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,246,ZP,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const unsigned char ZP = 1<<1;
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,247,XM,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const unsigned char XM = 1<<2;
+external/recastnavigation/Detour/Source/DetourNavMeshBuilder.cpp,248,ZM,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const unsigned char ZM = 1<<3;
+external/recastnavigation/DetourTileCache/Source/DetourTileCache.cpp,26,contains,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool contains(const dtCompressedTileRef* a, const int n, const dtCompressedTileRef v)"
+external/recastnavigation/Recast/Source/RecastAlloc.cpp,21,rcAllocDefault,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void* rcAllocDefault(size_t size, rcAllocHint)"
+external/recastnavigation/Recast/Source/RecastAlloc.cpp,26,rcFreeDefault,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static void rcFreeDefault(void *ptr)
+external/recastnavigation/Recast/Source/RecastAlloc.cpp,31,sRecastAllocFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide allocator hook; caller-set,static rcAllocFunc* sRecastAllocFunc = rcAllocDefault;
+external/recastnavigation/Recast/Source/RecastAlloc.cpp,32,sRecastFreeFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide allocator hook; caller-set,static rcFreeFunc* sRecastFreeFunc = rcFreeDefault;
+external/recastnavigation/Recast/Source/RecastAssert.cpp,21,sRecastAssertFailFunc,STATIC_VARIABLE,file,RESIDENT_OWNER,CONFIRMED,process-wide assert hook; caller-set,static rcAssertFailFunc* sRecastAssertFailFunc = 0;
+external/recastnavigation/Recast/Source/RecastContour.cpp,28,getCornerHeight,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int getCornerHeight(int x, int y, int i, int dir,"
+external/recastnavigation/Recast/Source/RecastContour.cpp,103,walkContour,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void walkContour(int x, int y, int i,"
+external/recastnavigation/Recast/Source/RecastContour.cpp,186,distancePtSeg,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static float distancePtSeg(const int x, const int z,"
+external/recastnavigation/Recast/Source/RecastContour.cpp,209,simplifyContour,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void simplifyContour(rcTempVector<int>& points, rcTempVector<int>& simplified,"
+external/recastnavigation/Recast/Source/RecastContour.cpp,453,calcAreaOfPolygon2D,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int calcAreaOfPolygon2D(const int* verts, const int nverts)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,495,intersectProp,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool intersectProp(const int* a, const int* b, const int* c, const int* d)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,507,between,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool between(const int* a, const int* b, const int* c)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,519,intersect,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool intersect(const int* a, const int* b, const int* c, const int* d)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,530,vequal,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool vequal(const int* a, const int* b)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,535,intersectSegContour,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool intersectSegContour(const int* d0, const int* d1, int i, int n, const int* verts)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,555,inCone,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool	inCone(int i, int n, const int* verts, const int* pj)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,570,removeDegenerateSegments,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static void removeDegenerateSegments(rcTempVector<int>& simplified)
+external/recastnavigation/Recast/Source/RecastContour.cpp,596,mergeContours,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool mergeContours(rcContour& ca, rcContour& cb, int ia, int ib)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,660,findLeftMostVertex,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void findLeftMostVertex(rcContour* contour, int* minx, int* minz, int* leftmost)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,678,compareHoles,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int compareHoles(const void* va, const void* vb)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,700,compareDiagDist,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int compareDiagDist(const void* va, const void* vb)"
+external/recastnavigation/Recast/Source/RecastContour.cpp,712,mergeRegionHoles,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void mergeRegionHoles(rcContext* ctx, rcContourRegion& region)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,33,buildMeshAdjacency,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool buildMeshAdjacency(unsigned short* polys, const int npolys,"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,125,VERTEX_BUCKET_COUNT,IMMUTABLE,file,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const int VERTEX_BUCKET_COUNT = (1<<12);
+external/recastnavigation/Recast/Source/RecastMesh.cpp,136,addVertex,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static unsigned short addVertex(unsigned short x, unsigned short y, unsigned short z,"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,191,intersectProp,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool intersectProp(const int* a, const int* b, const int* c, const int* d)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,203,between,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool between(const int* a, const int* b, const int* c)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,215,intersect,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool intersect(const int* a, const int* b, const int* c, const int* d)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,227,vequal,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool vequal(const int* a, const int* b)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,234,diagonalie,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool diagonalie(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,261,inCone,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool	inCone(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,278,diagonal,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool diagonal(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,284,diagonalieLoose,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool diagonalieLoose(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,309,inConeLoose,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool	inConeLoose(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,324,diagonalLoose,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool diagonalLoose(int i, int j, int n, const int* verts, int* indices)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,330,triangulate,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int triangulate(int n, const int* verts, int* indices, int* tris)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,444,countPolyVerts,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int countPolyVerts(const unsigned short* p, const int nvp)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,458,getPolyMergeValue,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int getPolyMergeValue(unsigned short* pa, unsigned short* pb,"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,522,mergePolyVerts,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void mergePolyVerts(unsigned short* pa, unsigned short* pb, int ea, int eb,"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,542,pushFront,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void pushFront(int v, int* arr, int& an)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,549,pushBack,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void pushBack(int v, int* arr, int& an)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,555,canRemoveVertex,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool canRemoveVertex(rcContext* ctx, rcPolyMesh& mesh, const unsigned short rem)"
+external/recastnavigation/Recast/Source/RecastMesh.cpp,655,removeVertex,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool removeVertex(rcContext* ctx, rcPolyMesh& mesh, const unsigned short rem, const int maxTris)"
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,31,overlapBounds,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool overlapBounds(const float* aMin, const float* aMax, const float* bMin, const float* bMax)"
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,44,allocSpan,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static rcSpan* allocSpan(rcHeightfield& heightfield)
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,84,freeSpan,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void freeSpan(rcHeightfield& heightfield, rcSpan* span)"
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,105,addSpan,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool addSpan(rcHeightfield& heightfield,"
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,232,dividePoly,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void dividePoly(const float* inVerts, int inVertsCount,"
+external/recastnavigation/Recast/Source/RecastRasterization.cpp,313,rasterizeTri,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool rasterizeTri(const float* v0, const float* v1, const float* v2,"
+src/camera.cpp,147,logTimer,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,transient debug throttle,static float logTimer = 0.0f;
+src/combat/death-system-bodies.cpp,15,gRenderer,EXTERN,file,ADAPTER_INVENTORY,CONFIRMED,host renderer service,extern Renderer* gRenderer;
+src/combat/pellet-pattern.cpp,21,nextSpreadRand,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static uint32_t nextSpreadRand(uint32_t& state)
+src/combat/pellet-pattern.cpp,27,spreadUnit,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static float spreadUnit(uint32_t& state)
+src/combat/weapon-execution.cpp,20,finiteVec3,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static bool finiteVec3(const glm::vec3& v)
+src/combat/weapon-execution.cpp,25,safeNormalize,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static glm::vec3 safeNormalize(const glm::vec3& v, const glm::vec3& fallback)"
+src/combat/weapon-execution.cpp,32,closestPointOnSegment,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static glm::vec3 closestPointOnSegment(const glm::vec3& a,"
+src/combat/weapon-execution.cpp,44,rayAabb,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool rayAabb(const glm::vec3& origin,"
+src/combat/weapon-execution.cpp,76,sweptPointSphere,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static bool sweptPointSphere(const glm::vec3& previous,"
+src/competitive/competitive-match.cpp,9,gCompetitiveMatchActive,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,match/session state,bool gCompetitiveMatchActive = false;
+src/competitive/competitive-match.cpp,10,gCompetitiveOpponentMmr,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,match/session state,int gCompetitiveOpponentMmr = 5000;
+src/debug/debug-visuals-render.cpp,17,gTriVerts,EXTERN,file,ADAPTER_INVENTORY,CONFIRMED,debug draw buffer -> CAP_DEBUG_VIS,extern std::vector<DebugTriVertex> gTriVerts;
+src/debug/debug-visuals-render.cpp,18,gOverlayTriVerts,EXTERN,file,ADAPTER_INVENTORY,CONFIRMED,debug draw buffer -> CAP_DEBUG_VIS,extern std::vector<DebugTriVertex> gOverlayTriVerts;
+src/debug/debug-visuals-render.cpp,19,gSolidTriVerts,EXTERN,file,ADAPTER_INVENTORY,CONFIRMED,debug draw buffer -> CAP_DEBUG_VIS,extern std::vector<DebugTriVertex> gSolidTriVerts;
+src/debug/debug-visuals-render.cpp,22,gCameraWorldOverlay,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,transient overlay state,glm::vec4 gCameraWorldOverlay{0.0f};
+src/debug/debug-visuals-render.cpp,23,gCameraHudOverlay,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,transient overlay state,glm::vec4 gCameraHudOverlay{0.0f};
+src/debug/debug-visuals-render.cpp,159,emitFilledSphere,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void emitFilledSphere(std::vector<DebugTriVertex>& out,"
+src/debug/debug-visuals-render.cpp,211,impactBasis,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void impactBasis(const glm::vec3& direction, const char* localAxis,"
+src/debug/debug-visuals-render.cpp,414,drawCrosshairRect,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void drawCrosshairRect(const Camera& camera, glm::vec3 center,"
+src/debug/entity-visibility.cpp,15,gMaster,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,debug visibility setting,bool gMaster = false;
+src/debug/entity-visibility.cpp,16,gCategories,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,debug visibility settings,"std::array<bool, static_cast<std::size_t>(Category::Count)> gCategories{{"
+src/debug/transform-debug.cpp,7,dbg,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,debug state; reset on activation,static TransformDebug dbg;
+src/devtools/dev-commands.cpp,5,sInstance,STATIC_VARIABLE,function,RESIDENT_OWNER,CONFIRMED,command registry; resident tool service,static DevCommandRegistry sInstance;
+src/effects/zombie-tower-effects.cpp,5,effects,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,effect state; reset on activation,static ZombieTowerEffects effects;
+src/fister/sim/Ragdoll.cpp,91,links,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const Link links[] = {
+src/game/probe/npc-target-probe-module.cpp,139,api,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const mimita::host::GameModuleV1 api = mimita::host::makeApi();
+src/gamemode/capability-registry.cpp,15,registry,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,capability catalog; reload from data,static CapabilityRegistry registry;
+src/gui/gui-coord.cpp,6,sys,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,coordinate config; reload from data,static GuiCoordinateSystem sys;
+src/gui/hud/match-timer.cpp,17,timer,STATIC_VARIABLE,function,RESIDENT_OWNER,CONFIRMED,match timer must survive a swap,static MatchTimer timer;
+src/gui/menus/menu-avatar-preview-debug.cpp,8,readV3,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void readV3(const json& o, const char* k, glm::vec3& v)"
+src/gui/menus/menu-avatar-preview-debug.cpp,141,printSec,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void printSec(const char* prefix, const char* key, float v, float p)"
+src/gui/menus/menu-avatar-preview-debug.cpp,146,printSec,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void printSec(const char* prefix, const char* key, bool v, bool p)"
+src/gui/menus/menu-avatar-preview-debug.cpp,151,printSec,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void printSec(const char* prefix, const char* key, const std::string& v, const std::string& p)"
+src/gui/menus/menu-avatar-preview-debug.cpp,156,printSec3,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void printSec3(const char* prefix, const char* key, const glm::vec3& v, const glm::vec3& p)"
+src/gui/menus/menu-avatar-preview-debug.cpp,162,printChanges,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void printChanges(const MenuCharacterPreviewConfig& c, const MenuCharacterPreviewConfig& p)"
+src/gui/ui-tooltip.cpp,11,gTooltipMap,STATIC_VARIABLE,file,GENERATION_SCOPED_RESET,CONFIRMED,UI asset cache; reset and reload,"static std::unordered_map<std::string, std::string> gTooltipMap;"
+src/gui/ui-tooltip.cpp,12,gLastHovered,STATIC_VARIABLE,file,GENERATION_SCOPED_RESET,CONFIRMED,transient hover state,static std::string gLastHovered;
+src/gui/ui-tooltip.cpp,13,gHoverStart,STATIC_VARIABLE,file,GENERATION_SCOPED_RESET,CONFIRMED,transient hover timer,static double gHoverStart = 0.0;
+src/gui/ui-tooltip.cpp,14,gFadingText,STATIC_VARIABLE,file,GENERATION_SCOPED_RESET,CONFIRMED,transient fade state,static std::string gFadingText;
+src/gui/ui-tooltip.cpp,15,gFadeStart,STATIC_VARIABLE,file,GENERATION_SCOPED_RESET,CONFIRMED,transient fade timer,static double gFadeStart = 0.0;
+src/impact/boolean-mesh.cpp,328,gSessionMutex,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,guards resident sessions,std::mutex gSessionMutex;
+src/impact/boolean-mesh.cpp,329,gSessions,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,live boolean sessions keyed by stable id,"std::unordered_map<uint64_t, BooleanSession> gSessions;"
+src/impact/boolean-mesh.cpp,330,gSessionClock,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,session id clock; resident with sessions,uint64_t gSessionClock = 0;
+src/impact/destructible-geometry.cpp,39,capsuleDistance,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static float capsuleDistance(glm::vec3 p, const BooleanCutter& cutter)"
+src/impact/destructible-geometry.cpp,146,gNextSessionId,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,session id clock,uint64_t gNextSessionId = 1;
+src/impact/destructible-geometry.cpp,293,system,STATIC_VARIABLE,function,RESIDENT_OWNER,CONFIRMED,destructible world geometry owner,static DestructibleGeometrySystem system;
+src/impact/destructible-mesh-loader.cpp,189,gCacheMutex,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,guards resettable cache,std::mutex gCacheMutex;
+src/impact/destructible-mesh-loader.cpp,190,gCache,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,parsed mesh cache; first access rebuilds,"std::unordered_map<std::string, DestructibleMeshLoad> gCache;"
+src/impact/destructible-mesh-loader.cpp,193,gModelCache,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,parsed GLB cache; first access rebuilds,"std::unordered_map<std::string, std::shared_ptr<tinygltf::Model>> gModelCache;"
+src/map/map-loader-gltf.cpp,21,gTextures,EXTERN,file,ADAPTER_INVENTORY,CONFIRMED,host texture store -> CAP_RESOURCES,extern TextureStore gTextures;
+src/network/badconn/badconn-registry.cpp,34,handlers,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,static const std::vector<BadConnImpairmentHandler> handlers = {
+src/network/server-contact.cpp,303,seen,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,bounded dedupe cache,static std::unordered_set<uint64_t> seen;
+src/network/server-contact.cpp,304,order,STATIC_VARIABLE,function,GENERATION_SCOPED_RESET,CONFIRMED,bounded dedupe cache,static std::deque<uint64_t> order;
+src/npc/npc-nav-graph.cpp,23,gMeshMinZ,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,derived from world; recompute on activation,float gMeshMinZ = 0.0f;
+src/npc/npc-nav-graph.cpp,24,gMeshMaxZ,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,derived from world; recompute on activation,float gMeshMaxZ = 0.0f;
+src/npc/npc-nav-graph.cpp,106,graph,STATIC_VARIABLE,function,RESIDENT_OWNER,CONFIRMED,nav graph; validates against current world,static NpcNavGraph graph;
+src/npc/npc-nav-graph.cpp,226,DX,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,"static const int DX[8] = {1,-1,0,0, 1,1,-1,-1};"
+src/npc/npc-nav-graph.cpp,227,DY,IMMUTABLE,function,FREEZE_IN_GAME_DLL,CONFIRMED,const/constexpr value,"static const int DY[8] = {0,0,1,-1, 1,-1,1,-1};"
+src/physics/movement/physics-collision-glb-sweep.cpp,60,pointSegmentDistanceSq,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static float pointSegmentDistanceSq(glm::vec3 p, glm::vec3 a, glm::vec3 b)"
+src/physics/movement/physics-collision-glb-sweep.cpp,101,sweepSpherePoint,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static bool sweepSpherePoint(
+src/physics/movement/physics-collision-stress.cpp,16,addStressTriangle,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void addStressTriangle(World& world, glm::vec3 a, glm::vec3 b, glm::vec3 c)"
+src/physics/movement/physics-collision-stress.cpp,30,addStressQuad,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void addStressQuad(World& world, glm::vec3 a, glm::vec3 b, glm::vec3 c, glm::vec3 d)"
+src/physics/movement/physics-collision-stress.cpp,36,addStressFloor,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static void addStressFloor(World& world)
+src/physics/movement/physics-collision-stress.cpp,45,addStressWedge,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void addStressWedge(World& world, float degrees)"
+src/physics/movement/physics-collision-stress.cpp,65,addStressCone,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static void addStressCone(World& world)
+src/physics/movement/physics-collision-stress.cpp,93,runCollisionStressCase,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static CollisionStressResult runCollisionStressCase(const std::string& caseName)
+src/replay/replay.cpp,8,gActiveReplayRecorder,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,active capture must survive a code swap,ReplayRecorder* gActiveReplayRecorder = nullptr;
+src/replay/replay.cpp,9,gReplayCaptureEnabled,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,capture policy must survive a code swap,bool gReplayCaptureEnabled = true;
+src/replay/replay.cpp,10,gReplayFactoryNotifyFn,FILE_GLOBAL,file,RESIDENT_OWNER,CONFIRMED,callback target; host-owned registration,ReplayFactoryNotifyFn gReplayFactoryNotifyFn = nullptr;
+src/ui/hitmarker.cpp,18,gHitmarkerTimer,FILE_GLOBAL,file,GENERATION_SCOPED_RESET,CONFIRMED,transient UI timer,float gHitmarkerTimer = 0.0f;
+src/ui/hitmarker.cpp,20,hitmarkerDuration,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static float hitmarkerDuration()
+src/ui/hitmarker.cpp,25,hitmarkerSize,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static float hitmarkerSize()
+src/website/api-client.cpp,308,parseUserInfo,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void parseUserInfo(GameUserInfo& info, const json& u)"
+src/website/api-client.cpp,336,jsonInt,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static int jsonInt(const json& j, const std::string& key, int fallback)"
+src/website/api-client.cpp,345,jsonLong,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static long long jsonLong(const json& j, const std::string& key, long long fallback)"
+src/website/api-client.cpp,354,jsonFloat,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static float jsonFloat(const json& j, const std::string& key, float fallback)"
+src/website/api-client.cpp,363,parseStats,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static void parseStats(GameStats& stats, const json& s)"
+src/world/world.cpp,30,chunkCoord,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,"static glm::ivec3 chunkCoord(const glm::vec3& p, float size)"
+src/world/world.cpp,40,eulerXYZDegToMat3,STATIC_FUNCTION,file,NO_STATE,CONFIRMED,static helper; no persistent state,static glm::mat3 eulerXYZDegToMat3(const glm::vec3& deg)

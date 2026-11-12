@@ -11,6 +11,9 @@
 #include "network/multiplayer-context.h"
 #include "network/community-match-client.h"
 #include "network/packets.h"
+#if defined(MIMITA_GAME_DLL)
+#include "game/transport-bridge-module.h"
+#endif
 #include "network/connection-health.h"
 #include "network/simulation-constants.h"
 #include "network/udp-transport.h"
@@ -832,6 +835,13 @@ void mpSendServerCommand(MultiplayerContext& ctx, const std::string& command)
         printf("[CLIENT PROCEDURAL TELEPORT BEGIN] playerId=%u startEpoch=%u\n",
                ctx.localPlayerId, (unsigned)ctx.proceduralTeleportStartEpoch);
     }
+
+#if defined(MIMITA_GAME_DLL)
+    if (mimita::game::sendServerCommand(command.data(), command.size())) {
+        printf("[NET SERVER COMMAND SEND] cmd=\"%s\" via=host\n", command.c_str());
+        return;
+    }
+#endif
 
     ServerCommandPacket packet{};
     packet.header.type = PACKET_SERVER_COMMAND;

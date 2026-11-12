@@ -27,6 +27,8 @@
 #include "npc/recast-navigation.h"
 #include "npc/npc-targeting.h"
 #include "hot-reload/module-host.h"
+#include "host/host-runtime.h"
+#include "host/abi/npc-target-probe-abi.h"
 #include "modules/api/npc-behavior-api.h"
 
 #include "debug/structured-log.h"
@@ -1887,6 +1889,77 @@ void simulateSharedNpcs(SOCKET sock,
     const bool playersOnly = targeting.mode == NpcTargetingMode::Player;
     const bool considerPlayers = npcTargetingIncludesPlayers(targeting);
     const bool allowNpcTargets = npcTargetingIncludesNpcs(targeting);
+
+    // Validation-only probe: ask the active game generation for the same target
+    // decision and log parity. The inline result stays authoritative.
+    auto probeTargetSelection = [&](const Npc& self, int selfTeam, uint32_t inlineTarget) {
+        if (!mimita::host::HostRuntime::instance().probeEnabled()) {
+            return;
+        }
+        // The scored behavior-profile path is module-owned and already uses a
+        // different policy. The probe validates the legacy policy path only.
+        if (self.behavior.active) {
+            return;
+        }
+        mimita::host::NpcTargetDecisionV1 decision{};
+        decision.structSize = sizeof(decision);
+        decision.version = mimita::host::kNpcTargetProbeVersion;
+        decision.actorId = self.id;
+        decision.myTeam = selfTeam;
+        decision.mode = static_cast<std::int32_t>(targeting.mode);
+        decision.includePlayers = targeting.includePlayers ? 1 : 0;
+        decision.includeNpcs = targeting.includeNpcs ? 1 : 0;
+        decision.tick = tick;
+        decision.currentTargetId = inlineTarget;
+        auto addCandidate = [&](uint32_t id, int team, bool isNpc, bool dead,
+                                const glm::vec3& worldPos) {
+            if (decision.candidateCount >= mimita::host::kNpcTargetMaxCandidates) {
+                return;
+            }
+            auto& candidate = decision.candidates[decision.candidateCount++];
+            candidate.id = id;
+            candidate.team = team;
+            candidate.isNpc = isNpc ? 1 : 0;
+            candidate.dead = dead ? 1 : 0;
+            const glm::vec3 relative = worldPos - self.body.pos;
+            candidate.relativePosition[0] = relative.x;
+            candidate.relativePosition[1] = relative.y;
+            candidate.relativePosition[2] = relative.z;
+        };
+        if (considerPlayers) {
+            for (auto& kv : players) {
+                const ServerPlayer& player = kv.second;
+                addCandidate(player.id, playerTeamOf(player), false,
+                             player.dead || player.downed || player.connectionStale,
+                             player.pos);
+            }
+        }
+        if (allowNpcTargets) {
+            for (Npc& other : npcSystem.all()) {
+                if (&other == &self) {
+                    continue;
+                }
+                addCandidate(other.id, npcTeamOf(other), true,
+                             other.body.dead || other.body.currentHp <= 0,
+                             other.body.pos);
+            }
+        }
+        auto& runtime = mimita::host::HostRuntime::instance();
+        const bool handled = runtime.probeNpcTargetSelect(&decision);
+        const bool match = handled && decision.outTargetId == inlineTarget;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.target.probe", std::to_string(self.id),
+            handled ? (match ? "match" : "mismatch") : "not_handled", tick,
+            nlohmann::json{{"actor", self.id},
+                           {"inline_target", inlineTarget},
+                           {"probe_target", handled ? decision.outTargetId : 0u},
+                           {"match", match},
+                           {"candidates", decision.candidateCount},
+                           {"generation", runtime.activeGeneration()}},
+            __FILE__, __LINE__, __FUNCTION__);
+    };
+
     const bool freezeWaveBanner = serverGamemodeState().npcWaves
         && serverGamemodeState().waveBannerVisible
         && npcDifficulty.freezeDuringWaveBanner;
@@ -2235,6 +2308,7 @@ void simulateSharedNpcs(SOCKET sock,
                 n.cachedServerTargetTeam = npcTeamOf(*nearestNpc);
                 n.cachedServerTargetName = nearestNpc->body.username;
             }
+            probeTargetSelection(n, myTeam, n.serverTargetId);
         }
         if (n.serverTargetId != prevTarget)
         {

@@ -47,6 +47,10 @@
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
 #include "hot-reload/module-host.h"
+#include "host/host-runtime.h"
+#include "host/host-server-entity-adapter.h"
+#include "host/host-server-transport-adapter.h"
+#include "host/abi/transport-capability.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
 #include "audio/audio.h"
@@ -74,6 +78,103 @@ MimitaNet::ListenServerState* getListenServerState();
 namespace MimitaNet {
 
 namespace {
+
+static bool deliverInboundToProbe(
+    const TransportReceiveEvent& event,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    uint32_t serverTick,
+    mimita::host::TransportDispatchV1* dispatch) {
+    auto& runtime = mimita::host::HostRuntime::instance();
+    if (!dispatch || !runtime.probeEnabled() || !event.payload ||
+        event.payloadBytes <= 0) {
+        return false;
+    }
+
+    *dispatch = mimita::host::TransportDispatchV1{};
+    dispatch->structSize =
+        static_cast<std::uint32_t>(sizeof(mimita::host::TransportDispatchV1));
+    dispatch->version = mimita::host::kTransportCapabilityVersion;
+    dispatch->serverTick = serverTick;
+    dispatch->message.structSize =
+        static_cast<std::uint32_t>(sizeof(mimita::host::TransportMessageV1));
+    dispatch->message.version = mimita::host::kTransportCapabilityVersion;
+    dispatch->message.session = 0;
+    dispatch->message.peer = event.connectionId.value;
+    dispatch->message.typeId = 0;
+    dispatch->message.payload = event.payload;
+    dispatch->message.payloadSize = static_cast<std::uint32_t>(event.payloadBytes);
+    dispatch->message.receivedAtMs = event.receivedAtMs;
+
+    if (dispatch->message.payloadSize >= sizeof(PacketHeader)) {
+        const auto* header =
+            reinterpret_cast<const PacketHeader*>(dispatch->message.payload);
+        auto it = players.find(header->playerId);
+        if (it != players.end()) {
+            it->second.addr = event.remoteEndpoint;
+        }
+    }
+    return runtime.dispatchInbound(dispatch);
+}
+
+static void sendProbeResponse(
+    SOCKET sock, const sockaddr_in& from,
+    std::unordered_map<uint32_t, ServerPlayer>& players,
+    const mimita::host::TransportDispatchV1& dispatch) {
+    if (dispatch.response.payloadSize == 0) {
+        return;
+    }
+    bool usedTransport = false;
+    bool sent = false;
+    uint32_t playerId = 0;
+    if (dispatch.message.payloadSize >= sizeof(PacketHeader)) {
+        const auto* header =
+            reinterpret_cast<const PacketHeader*>(dispatch.message.payload);
+        playerId = header->playerId;
+        auto it = players.find(playerId);
+        if (it != players.end() && it->second.transport) {
+            usedTransport = true;
+            sent = it->second.transport->send(
+                dispatch.response.payload, dispatch.response.payloadSize);
+        }
+    }
+    if (!sent) {
+        const int result = sendto(
+            sock, reinterpret_cast<const char*>(dispatch.response.payload),
+            static_cast<int>(dispatch.response.payloadSize), 0,
+            reinterpret_cast<const sockaddr*>(&from), sizeof(from));
+        sent = result == static_cast<int>(dispatch.response.payloadSize);
+    }
+    uint32_t headerMagic = 0;
+    uint32_t headerVersion = 0;
+    uint32_t headerType = 0;
+    uint32_t headerTick = 0;
+    uint32_t headerPlayer = 0;
+    if (dispatch.response.payloadSize >= sizeof(PacketHeader)) {
+        const auto* header =
+            reinterpret_cast<const PacketHeader*>(dispatch.response.payload);
+        headerMagic = header->magic;
+        headerVersion = header->version;
+        headerType = header->type;
+        headerTick = header->tick;
+        headerPlayer = header->playerId;
+    }
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Network, StructuredLevel::Important,
+        "probe.transport.response-sent", "probe-response",
+        "resident server sent the game-owned response payload",
+        dispatch.serverTick,
+        {{"bytes", dispatch.response.payloadSize},
+         {"type", dispatch.response.typeId},
+         {"sent", sent},
+         {"transport", usedTransport},
+         {"player_id", playerId},
+         {"magic", headerMagic},
+         {"version", headerVersion},
+         {"header_type", headerType},
+         {"header_tick", headerTick},
+         {"header_player", headerPlayer}},
+        __FILE__, __LINE__, __func__);
+}
 
 // Reused by the authoritative tick loops; the NPC system keeps its own copy
 // with retained capacity, so rebuilding the projectile hazard view allocates
@@ -454,6 +555,7 @@ int runServer(const LaunchOptions& options)
     VehicleSystem::instance().registerFixedTick();
 
     ::StructuredLogger::instance().init();
+    mimita::host::HostRuntime::instance().startFromEnvironment();
     auto logStartupStage = [&](const char* stage, const char* result,
                                const char* reason, double elapsedMs = 0.0,
                                nlohmann::json extra = nlohmann::json::object()) {
@@ -728,6 +830,37 @@ int runServer(const LaunchOptions& options)
     std::unordered_map<uint32_t, ServerPlayer> players;
     std::unordered_map<uint32_t, ServerNpc> npcs;
     std::unordered_map<uint32_t, ServerProjectile> projectiles;
+    if (mimita::host::HostRuntime::instance().probeEnabled()) {
+        auto& entityAdapter = mimita::host::HostServerEntityAdapter::instance();
+        entityAdapter.bindPlayers(&players);
+        entityAdapter.bindNpcs(&npcs);
+        mimita::host::HostRuntime::instance().setEntityAdapter(
+            entityAdapter.adapter(), entityAdapter.owner());
+
+        auto& transportAdapter =
+            mimita::host::HostServerTransportAdapter::instance();
+        transportAdapter.bindPlayers(&players);
+        transportAdapter.setSender(
+            [sock, &players](std::uint32_t playerId, const void* data,
+                             std::size_t size) {
+                auto it = players.find(playerId);
+                if (it == players.end() || !data || size == 0) {
+                    return false;
+                }
+                if (it->second.addr.sin_port != 0) {
+                    return sendto(sock, static_cast<const char*>(data),
+                                  static_cast<int>(size), 0,
+                                  reinterpret_cast<const sockaddr*>(&it->second.addr),
+                                  sizeof(it->second.addr)) == static_cast<int>(size);
+                }
+                if (it->second.transport) {
+                    return it->second.transport->send(data, size);
+                }
+                return false;
+            });
+        mimita::host::HostRuntime::instance().setTransportAdapter(
+            transportAdapter.adapter(), transportAdapter.owner());
+    }
     uint32_t nextPlayerId = 1;
     uint32_t nextEntityId = 1000;
     uint32_t nextProjectileId = 1;
@@ -956,6 +1089,7 @@ int runServer(const LaunchOptions& options)
     while (true)
     {
         ModuleHost::instance().poll();
+        mimita::host::HostRuntime::instance().poll();
         auto loopStart = std::chrono::steady_clock::now();
         bool registrationReady = false;
         bool registrationOk = false;
@@ -1140,6 +1274,11 @@ int runServer(const LaunchOptions& options)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            mimita::host::TransportDispatchV1 probeDispatch{};
+            if (deliverInboundToProbe(event, players, tick, &probeDispatch)) {
+                sendProbeResponse(sock, from, players, probeDispatch);
+                continue;
+            }
             processServerPacket(sock, event, players, npcs, projectiles,
                                 nextPlayerId, nextEntityId, nextProjectileId,
                                 world, tick, totalPacketsIn, totalPacketsOut,
@@ -1546,12 +1685,15 @@ int runServer(const LaunchOptions& options)
     PersistenceQueue::instance().flushBlocking();
     shutdownIceCoordinatorPoller();
     logServerExit(0, serverExitReason, serverCode, tick);
+    mimita::host::HostRuntime::instance().shutdown();
     ::StructuredLogger::instance().shutdown();
     if (!serverCode.empty())
     {
         printf("%s [SERVER] deregistering room %s\n", serverTimestamp(), serverCode.c_str());
         coordinatorIceDone(serverCode);
     }
+    mimita::host::HostRuntime::instance().clearEntityAdapter();
+    mimita::host::HostRuntime::instance().clearTransportAdapter();
     closesocket(sock);
     netShutdown();
     printf("%s [SERVER] shutdown complete\n", serverTimestamp());
@@ -1686,6 +1828,36 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     state.totalPacketsOut = 0;
     state.startTimeMs = nowMs();
     state.accumulator = 0.0f;
+    if (mimita::host::HostRuntime::instance().probeEnabled()) {
+        auto& entityAdapter = mimita::host::HostServerEntityAdapter::instance();
+        entityAdapter.bindPlayers(&state.players);
+        entityAdapter.bindNpcs(&state.npcs);
+        mimita::host::HostRuntime::instance().setEntityAdapter(
+            entityAdapter.adapter(), entityAdapter.owner());
+
+        auto& transportAdapter =
+            mimita::host::HostServerTransportAdapter::instance();
+        transportAdapter.bindPlayers(&state.players);
+        transportAdapter.setSender(
+            [&state](std::uint32_t playerId, const void* data, std::size_t size) {
+                auto it = state.players.find(playerId);
+                if (it == state.players.end() || !data || size == 0) {
+                    return false;
+                }
+                if (it->second.addr.sin_port != 0) {
+                    return sendto(state.sock, static_cast<const char*>(data),
+                                  static_cast<int>(size), 0,
+                                  reinterpret_cast<const sockaddr*>(&it->second.addr),
+                                  sizeof(it->second.addr)) == static_cast<int>(size);
+                }
+                if (it->second.transport) {
+                    return it->second.transport->send(data, size);
+                }
+                return false;
+            });
+        mimita::host::HostRuntime::instance().setTransportAdapter(
+            transportAdapter.adapter(), transportAdapter.owner());
+    }
     if (settings)
     {
         state.serverName = settings->serverName;
@@ -1830,6 +2002,8 @@ void stopListenServer(ListenServerState& state)
     closesocket(state.sock);
     state.sock = INVALID_SOCKET;
     state.active = false;
+    mimita::host::HostRuntime::instance().clearEntityAdapter();
+    mimita::host::HostRuntime::instance().clearTransportAdapter();
     netShutdown();
 }
 
@@ -1885,6 +2059,12 @@ static void simulateOneServerTick(ListenServerState& state)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            mimita::host::TransportDispatchV1 probeDispatch{};
+            if (deliverInboundToProbe(event, state.players, state.tick,
+                                      &probeDispatch)) {
+                sendProbeResponse(state.sock, from, state.players, probeDispatch);
+                continue;
+            }
             processServerPacket(state.sock, event, state.players, state.npcs,
                                 state.projectiles, state.nextPlayerId,
                                 state.nextEntityId, state.nextProjectileId,

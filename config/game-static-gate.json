@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "description": "Static gate for game-owned sources. A game source that matches a banned raw pattern must use a host capability instead. This is what makes per-file runtime proof unnecessary: the barrier owns the lifetime, and bypasses are build defects.",
+  "banned": {
+    "raw_thread": {
+      "pattern": "\\bstd::thread\\b|\\bstd::async\\b|\\bCreateThread\\b|\\b_beginthread\\b|\\.detach\\s*\\(",
+      "capability": "CAP_JOBS",
+      "reason": "generation-stamped jobs; cancel/drain/join on quiesce"
+    },
+    "raw_gl_resource": {
+      "pattern": "\\bglGen\\w+\\s*\\(|\\bglDelete\\w+\\s*\\(",
+      "capability": "CAP_RESOURCES",
+      "reason": "generation-owned GPU resources; release under the current context"
+    },
+    "raw_socket": {
+      "pattern": "\\bsocket\\s*\\(|\\bWSAStartup\\b|\\bclosesocket\\s*\\(",
+      "capability": "CAP_TRANSPORT",
+      "reason": "transport mechanism is resident; game code uses opaque payloads"
+    },
+    "raw_file_handle": {
+      "pattern": "\\bfopen\\s*\\(|\\bCreateFileW?\\b",
+      "capability": "CAP_RESOURCES",
+      "reason": "persistent file handles need a host owner; per-call RAII is fine"
+    }
+  },
+  "allowed": [
+    {
+      "path": "src/game/probe/npc-target-probe-module.cpp",
+      "reason": "validation-only probe generation; reverted before cutover"
+    }
+  ]
+}

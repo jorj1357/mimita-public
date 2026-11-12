@@ -18,6 +18,8 @@
 #include <random>
 #include <memory>
 #include "engine/engine.h"
+#include "host/host-runtime.h"
+#include "host/host-transport-adapter.h"
 #include "world/world.h"
 #include "world/world-loader.h"
 #include "world/world-gltf-loader.h"
@@ -763,6 +765,10 @@ void gameInitSubsystems(Engine& engine)
     gpWorldLoaded = &worldLoaded;
     gpDuelConfig = &gDuelConfig;
     gpMpContext = &mpContext;
+    mimita::host::HostTransportAdapter::instance().bind(&mpContext);
+    mimita::host::HostRuntime::instance().setTransportAdapter(
+        mimita::host::HostTransportAdapter::instance().adapter(),
+        mimita::host::HostTransportAdapter::instance().owner());
 
     registerPlayerCommands();
     registerMovementCommands();

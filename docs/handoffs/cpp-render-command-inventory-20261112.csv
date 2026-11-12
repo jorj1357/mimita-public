@@ -1,0 +1,747 @@
+path,line,kind,snippet
+src/avatar/avatar-atlas.cpp,48,texture_alloc,"glDeleteTextures(1, &atlasTexture);"
+src/avatar/avatar-atlas.cpp,451,texture_alloc,"glDeleteTextures(1, &mAtlasTexture);"
+src/avatar/avatar-atlas.cpp,455,texture_alloc,"glGenTextures(1, &mAtlasTexture);"
+src/avatar/avatar-atlas.cpp,457,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,458,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,459,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);"
+src/avatar/avatar-atlas.cpp,460,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);"
+src/avatar/avatar-atlas.cpp,462,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());"
+src/avatar/avatar-atlas.cpp,512,texture_alloc,"glDeleteTextures(1, &mAtlasTexture);"
+src/avatar/avatar-atlas.cpp,516,texture_alloc,"glGenTextures(1, &mAtlasTexture);"
+src/avatar/avatar-atlas.cpp,518,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,519,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,520,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);"
+src/avatar/avatar-atlas.cpp,521,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);"
+src/avatar/avatar-atlas.cpp,523,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, mPendingAtlas->pixels.data());"
+src/avatar/avatar-atlas.cpp,860,texture_alloc,"glDeleteTextures(1, &inst.atlasTexture);"
+src/avatar/avatar-atlas.cpp,864,texture_alloc,"glGenTextures(1, &inst.atlasTexture);"
+src/avatar/avatar-atlas.cpp,866,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,867,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/avatar/avatar-atlas.cpp,868,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);"
+src/avatar/avatar-atlas.cpp,869,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);"
+src/avatar/avatar-atlas.cpp,871,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());"
+src/avatar/avatar-editor.cpp,133,state,glEnable(GL_SCISSOR_TEST);
+src/avatar/avatar-editor.cpp,134,state,"glScissor((int)screenClip.x, (int)(UISys::gFbH - screenClip.y - screenClip.h),"
+src/avatar/avatar-editor.cpp,149,state,glDisable(GL_SCISSOR_TEST);
+src/avatar/avatar.cpp,1410,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);"
+src/avatar/cosmetic-system.cpp,233,state,glEnable(GL_BLEND);
+src/avatar/cosmetic-system.cpp,234,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/avatar/cosmetic-system.cpp,242,vao_alloc,"glGenVertexArrays(1, &cosmeticVAO);"
+src/avatar/cosmetic-system.cpp,247,buffer_alloc,"glGenBuffers(1, &cosmeticVBO);"
+src/avatar/cosmetic-system.cpp,249,vao_alloc,glBindVertexArray(cosmeticVAO);
+src/avatar/cosmetic-system.cpp,251,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW);"
+src/avatar/cosmetic-system.cpp,263,vao_alloc,glBindVertexArray(cosmeticVAO);
+src/avatar/cosmetic-system.cpp,269,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/avatar/cosmetic-system.cpp,272,vao_alloc,glBindVertexArray(0);
+src/avatar/cosmetic-system.cpp,279,state,glEnable(GL_BLEND);
+src/avatar/cosmetic-system.cpp,281,state,glDisable(GL_BLEND);
+src/avatar/cosmetic-system.cpp,282,state,"glBlendFunc(blendSrcWas, blendDstWas);"
+src/combat/projectile-render.cpp,48,vao_alloc,"glGenVertexArrays(1, &cached.vao);"
+src/combat/projectile-render.cpp,49,buffer_alloc,"glGenBuffers(1, &cached.vbo);"
+src/combat/projectile-render.cpp,50,vao_alloc,glBindVertexArray(cached.vao);
+src/combat/projectile-render.cpp,52,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/combat/projectile-render.cpp,64,vao_alloc,glBindVertexArray(0);
+src/combat/projectile-render.cpp,105,shader,glUseProgram(shader);
+src/combat/projectile-render.cpp,114,state,glEnable(GL_DEPTH_TEST);
+src/combat/projectile-render.cpp,115,state,glDepthMask(GL_TRUE);
+src/combat/projectile-render.cpp,117,vao_alloc,glBindVertexArray(model.vao);
+src/combat/projectile-render.cpp,121,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/combat/projectile-render.cpp,123,vao_alloc,glBindVertexArray(0);
+src/combat/projectile-render.cpp,332,vao_alloc,"glGenVertexArrays(1, &mesh.vao);"
+src/combat/projectile-render.cpp,333,buffer_alloc,"glGenBuffers(1, &mesh.vbo);"
+src/combat/projectile-render.cpp,334,vao_alloc,glBindVertexArray(mesh.vao);
+src/combat/projectile-render.cpp,336,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STATIC_DRAW);"
+src/combat/projectile-render.cpp,343,vao_alloc,glBindVertexArray(0);
+src/combat/projectile-render.cpp,365,shader,glUseProgram(shader);
+src/combat/projectile-render.cpp,376,vao_alloc,glBindVertexArray(mesh.vao);
+src/combat/projectile-render.cpp,377,draw,"glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);"
+src/combat/projectile-render.cpp,378,vao_alloc,glBindVertexArray(0);
+src/combat/projectile-render.cpp,445,state,glDisable(GL_BLEND);
+src/combat/projectile-render.cpp,446,state,glDepthMask(GL_TRUE);
+src/combat/projectile-render.cpp,461,state,if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+src/combat/projectile-render.cpp,462,state,glDepthMask(depthWriteWas);
+src/combat/projectile-render.cpp,479,buffer_alloc,"if (m.vbo) glDeleteBuffers(1, &m.vbo);"
+src/combat/projectile-render.cpp,480,vao_alloc,"if (m.vao) glDeleteVertexArrays(1, &m.vao);"
+src/combat/revolver-system.cpp,140,vao_alloc,"glGenVertexArrays(1, &mVao);"
+src/combat/revolver-system.cpp,141,buffer_alloc,"glGenBuffers(1, &mVbo);"
+src/combat/revolver-system.cpp,142,vao_alloc,glBindVertexArray(mVao);
+src/combat/revolver-system.cpp,144,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, mHeldMesh.verts.size() * sizeof(Vertex), mHeldMesh.verts.data(), GL_STATIC_DRAW);"
+src/combat/revolver-system.cpp,151,vao_alloc,glBindVertexArray(0);
+src/combat/revolver-system.cpp,216,shader,glUseProgram(shader);
+src/combat/revolver-system.cpp,223,vao_alloc,glBindVertexArray(mVao);
+src/combat/revolver-system.cpp,226,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/combat/revolver-system.cpp,229,vao_alloc,glBindVertexArray(0);
+src/combat/weapon-model-cache.cpp,41,texture_alloc,"glGenTextures(1, &tex);"
+src/combat/weapon-model-cache.cpp,51,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,"
+src/combat/weapon-model-cache.cpp,53,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);"
+src/combat/weapon-model-cache.cpp,54,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);"
+src/combat/weapon-model-cache.cpp,55,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);"
+src/combat/weapon-model-cache.cpp,56,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/combat/weapon-model-cache.cpp,183,vao_alloc,"glGenVertexArrays(1, &asset->vao);"
+src/combat/weapon-model-cache.cpp,184,buffer_alloc,"glGenBuffers(1, &asset->vbo);"
+src/combat/weapon-model-cache.cpp,185,vao_alloc,glBindVertexArray(asset->vao);
+src/combat/weapon-model-cache.cpp,187,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, asset->mesh.verts.size() * sizeof(Vertex),"
+src/combat/weapon-model-cache.cpp,195,vao_alloc,glBindVertexArray(0);
+src/combat/weapon-viewmodel.cpp,602,shader,glUseProgram(shader);
+src/combat/weapon-viewmodel.cpp,617,vao_alloc,glBindVertexArray(vao);
+src/combat/weapon-viewmodel.cpp,620,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/combat/weapon-viewmodel.cpp,623,vao_alloc,glBindVertexArray(0);
+src/debug/debug-diag-commands.cpp,83,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, pf.fboId());"
+src/debug/debug-diag-commands.cpp,85,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/debug/debug-diag-commands.cpp,107,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, pf.fboId());"
+src/debug/debug-diag-commands.cpp,118,texture_alloc,"glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());"
+src/debug/debug-diag-commands.cpp,119,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/debug/debug-visuals-lines.cpp,59,shader,glUseProgram(gRenderer->shaderProgram);
+src/debug/debug-visuals-lines.cpp,83,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &gLineVao));"
+src/debug/debug-visuals-lines.cpp,84,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &gLineVbo));"
+src/debug/debug-visuals-lines.cpp,88,state,MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+src/debug/debug-visuals-lines.cpp,90,shader,MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+src/debug/debug-visuals-lines.cpp,125,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(gLineVao));
+src/debug/debug-visuals-lines.cpp,128,buffer_alloc,MIMITA_GL_CALL(glBufferData(
+src/debug/debug-visuals-lines.cpp,162,draw,"MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size()));"
+src/debug/debug-visuals-lines.cpp,164,state,MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+src/debug/debug-visuals-lines.cpp,573,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &gWeaponLineVao));"
+src/debug/debug-visuals-lines.cpp,574,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &gWeaponLineVbo));"
+src/debug/debug-visuals-lines.cpp,578,state,MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+src/debug/debug-visuals-lines.cpp,580,shader,MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+src/debug/debug-visuals-lines.cpp,602,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(gWeaponLineVao));
+src/debug/debug-visuals-lines.cpp,605,buffer_alloc,MIMITA_GL_CALL(glBufferData(
+src/debug/debug-visuals-lines.cpp,624,draw,"MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gWeaponLineVerts.size()));"
+src/debug/debug-visuals-lines.cpp,626,state,MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+src/debug/debug-visuals-scene.cpp,521,shader,glUseProgram(gRenderer->shaderProgram);
+src/debug/debug-visuals-tris.cpp,49,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &vao));"
+src/debug/debug-visuals-tris.cpp,50,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &vbo));"
+src/debug/debug-visuals-tris.cpp,55,state,MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+src/debug/debug-visuals-tris.cpp,57,state,MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+src/debug/debug-visuals-tris.cpp,58,state,MIMITA_GL_CALL(glDepthMask(depthWrite ? GL_TRUE : GL_FALSE));
+src/debug/debug-visuals-tris.cpp,59,state,MIMITA_GL_CALL(glEnable(GL_BLEND));
+src/debug/debug-visuals-tris.cpp,60,state,"MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));"
+src/debug/debug-visuals-tris.cpp,62,shader,MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+src/debug/debug-visuals-tris.cpp,73,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(vao));
+src/debug/debug-visuals-tris.cpp,75,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(DebugTriVertex), verts.data(), GL_DYNAMIC_DRAW));"
+src/debug/debug-visuals-tris.cpp,84,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size()));"
+src/debug/debug-visuals-tris.cpp,87,state,MIMITA_GL_CALL(glDepthMask(GL_TRUE));
+src/effects/effect-part-render.cpp,65,vao_alloc,"glGenVertexArrays(1, &cached.vao);"
+src/effects/effect-part-render.cpp,66,buffer_alloc,"glGenBuffers(1, &cached.vbo);"
+src/effects/effect-part-render.cpp,67,vao_alloc,glBindVertexArray(cached.vao);
+src/effects/effect-part-render.cpp,69,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/effects/effect-part-render.cpp,81,vao_alloc,glBindVertexArray(0);
+src/effects/effect-part-render.cpp,109,shader,glUseProgram(shader);
+src/effects/effect-part-render.cpp,117,state,glEnable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,118,state,glDepthMask(GL_TRUE);
+src/effects/effect-part-render.cpp,120,vao_alloc,glBindVertexArray(model.vao);
+src/effects/effect-part-render.cpp,124,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/effects/effect-part-render.cpp,126,vao_alloc,glBindVertexArray(0);
+src/effects/effect-part-render.cpp,139,vao_alloc,"glGenVertexArrays(1, &vao);"
+src/effects/effect-part-render.cpp,140,buffer_alloc,"glGenBuffers(1, &vbo);"
+src/effects/effect-part-render.cpp,153,state,glEnable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,154,state,glDepthMask(GL_FALSE);
+src/effects/effect-part-render.cpp,155,state,glEnable(GL_BLEND);
+src/effects/effect-part-render.cpp,156,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/effects/effect-part-render.cpp,157,state,glDisable(GL_CULL_FACE);
+src/effects/effect-part-render.cpp,158,shader,glUseProgram(shader);
+src/effects/effect-part-render.cpp,171,vao_alloc,glBindVertexArray(vao);
+src/effects/effect-part-render.cpp,173,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(TexturedParticleVertex), vertices.data(), GL_DYNAMIC_DRAW);"
+src/effects/effect-part-render.cpp,182,draw,"glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertices.size());"
+src/effects/effect-part-render.cpp,184,state,glDepthMask(GL_TRUE);
+src/effects/effect-part-render.cpp,186,state,glEnable(GL_CULL_FACE);
+src/effects/effect-part-render.cpp,605,state,glEnable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,607,state,glDisable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,609,state,glDepthMask(GL_TRUE);
+src/effects/effect-part-render.cpp,611,state,glDepthMask(GL_FALSE);
+src/effects/effect-part-render.cpp,665,state,glDepthMask(GL_TRUE);
+src/effects/effect-part-render.cpp,667,state,glDepthMask(GL_FALSE);
+src/effects/effect-part-render.cpp,669,state,glEnable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,671,state,glDisable(GL_DEPTH_TEST);
+src/effects/effect-part-render.cpp,996,state,"if (depthMode != ""always_on_top"") glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);"
+src/effects/effect-part-render.cpp,997,state,"glDepthMask(depthMode == ""normal"" ? GL_TRUE : GL_FALSE);"
+src/effects/effect-part-render.cpp,1015,state,if (depthMaskWasOn) glDepthMask(GL_TRUE); else glDepthMask(GL_FALSE);
+src/effects/effect-part-render.cpp,1016,state,if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,376,vao_alloc,"glGenVertexArrays(1, &impactVao);"
+src/engine/engine-tick-render.cpp,377,buffer_alloc,"glGenBuffers(1, &impactVbo);"
+src/engine/engine-tick-render.cpp,378,vao_alloc,glBindVertexArray(impactVao);
+src/engine/engine-tick-render.cpp,380,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);"
+src/engine/engine-tick-render.cpp,385,state,glDisable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,386,shader,glUseProgram(shader);
+src/engine/engine-tick-render.cpp,393,vao_alloc,glBindVertexArray(impactVao);
+src/engine/engine-tick-render.cpp,394,draw,"glDrawArrays(GL_TRIANGLES, 0, 3);"
+src/engine/engine-tick-render.cpp,395,state,glEnable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,406,vao_alloc,"glGenVertexArrays(1, &vao);"
+src/engine/engine-tick-render.cpp,407,buffer_alloc,"glGenBuffers(1, &vbo);"
+src/engine/engine-tick-render.cpp,408,vao_alloc,glBindVertexArray(vao);
+src/engine/engine-tick-render.cpp,410,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);"
+src/engine/engine-tick-render.cpp,415,state,glDisable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,416,state,glEnable(GL_BLEND);
+src/engine/engine-tick-render.cpp,417,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/engine/engine-tick-render.cpp,418,shader,glUseProgram(shader);
+src/engine/engine-tick-render.cpp,426,vao_alloc,glBindVertexArray(vao);
+src/engine/engine-tick-render.cpp,427,draw,"glDrawArrays(GL_TRIANGLES, 0, 3);"
+src/engine/engine-tick-render.cpp,428,state,glDisable(GL_BLEND);
+src/engine/engine-tick-render.cpp,429,state,glEnable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,519,state,"glViewport(0, 0, engine.renderer->width, engine.renderer->height);"
+src/engine/engine-tick-render.cpp,973,vao_alloc,"glGenVertexArrays(1, &aftermathVao);"
+src/engine/engine-tick-render.cpp,974,buffer_alloc,"glGenBuffers(1, &aftermathVbo);"
+src/engine/engine-tick-render.cpp,975,vao_alloc,glBindVertexArray(aftermathVao);
+src/engine/engine-tick-render.cpp,977,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);"
+src/engine/engine-tick-render.cpp,982,state,glDisable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,983,shader,glUseProgram(shader);
+src/engine/engine-tick-render.cpp,990,vao_alloc,glBindVertexArray(aftermathVao);
+src/engine/engine-tick-render.cpp,991,draw,"glDrawArrays(GL_TRIANGLES, 0, 3);"
+src/engine/engine-tick-render.cpp,994,state,glEnable(GL_DEPTH_TEST);
+src/engine/engine-tick-render.cpp,1009,vao_alloc,glBindVertexArray(0);
+src/entities/player-loader.cpp,123,texture_alloc,"glGenTextures(1, &tex);"
+src/entities/player-loader.cpp,126,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);"
+src/entities/player-loader.cpp,127,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);"
+src/entities/player-loader.cpp,128,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);"
+src/entities/player-loader.cpp,129,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);"
+src/entities/player-loader.cpp,130,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);"
+src/entities/player-loader.cpp,1368,texture_alloc,"glGenTextures(1, &tex);"
+src/entities/player-loader.cpp,1378,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,"
+src/entities/player-loader.cpp,1380,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);"
+src/entities/player-loader.cpp,1381,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);"
+src/entities/player-loader.cpp,1382,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);"
+src/entities/player-loader.cpp,1383,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/entities/player-render-mesh.cpp,229,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1,&capsuleVAO));"
+src/entities/player-render-mesh.cpp,230,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1,&capsuleVBO));"
+src/entities/player-render-mesh.cpp,232,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
+src/entities/player-render-mesh.cpp,235,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER,"
+src/entities/player-render-mesh.cpp,267,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
+src/entities/player-render-mesh.cpp,272,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.partVaos[partIndex]));"
+src/entities/player-render-mesh.cpp,274,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &uploads.partVbos[partIndex]));"
+src/entities/player-render-mesh.cpp,276,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
+src/entities/player-render-mesh.cpp,278,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));"
+src/entities/player-render-mesh.cpp,293,vao_alloc,"if (!bodyPartVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAO));"
+src/entities/player-render-mesh.cpp,294,buffer_alloc,"if (!bodyPartVBO) MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBO));"
+src/entities/player-render-mesh.cpp,296,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
+src/entities/player-render-mesh.cpp,298,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW));"
+src/entities/player-render-mesh.cpp,314,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
+src/entities/player-render-mesh.cpp,319,vao_alloc,"if (!uploads.renderVao) MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.renderVao));"
+src/entities/player-render-mesh.cpp,320,buffer_alloc,"if (!uploads.renderVbo) MIMITA_GL_CALL(glGenBuffers(1, &uploads.renderVbo));"
+src/entities/player-render-mesh.cpp,322,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
+src/entities/player-render-mesh.cpp,324,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));"
+src/entities/player-render-mesh.cpp,394,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.combinedVao));"
+src/entities/player-render-mesh.cpp,396,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &uploads.combinedVbo));"
+src/entities/player-render-mesh.cpp,398,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(uploads.combinedVao));
+src/entities/player-render-mesh.cpp,400,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(MergedBodyVertex),"
+src/entities/player-render-mesh.cpp,479,vao_alloc,glBindVertexArray(uploads.combinedVao);
+src/entities/player-render-mesh.cpp,495,state,glEnable(GL_CULL_FACE);
+src/entities/player-render-mesh.cpp,496,state,glCullFace(GL_FRONT);
+src/entities/player-render-mesh.cpp,498,state,glDisable(GL_CULL_FACE);
+src/entities/player-render-mesh.cpp,502,draw,"glDrawArrays(GL_TRIANGLES, 0, uploads.combinedVertexCount);"
+src/entities/player-render-mesh.cpp,507,draw,"glDrawArrays(GL_TRIANGLES, batch.first, batch.count);"
+src/entities/player-render.cpp,282,shader,MIMITA_GL_CALL(glUseProgram(shader));
+src/entities/player-render.cpp,358,state,glDisable(GL_BLEND);
+src/entities/player-render.cpp,360,state,glDisable(GL_BLEND);
+src/entities/player-render.cpp,362,state,glEnable(GL_BLEND);
+src/entities/player-render.cpp,363,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/entities/player-render.cpp,475,state,glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,477,state,glEnable(GL_CULL_FACE);
+src/entities/player-render.cpp,478,state,glCullFace(GL_BACK);
+src/entities/player-render.cpp,482,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));"
+src/entities/player-render.cpp,486,state,if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
+src/entities/player-render.cpp,487,state,else glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,488,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));"
+src/entities/player-render.cpp,576,state,if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
+src/entities/player-render.cpp,577,state,else glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,578,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));"
+src/entities/player-render.cpp,586,state,glEnable(GL_CULL_FACE);
+src/entities/player-render.cpp,587,state,glCullFace(cullModeWas);
+src/entities/player-render.cpp,589,state,glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,594,state,glEnable(GL_BLEND);
+src/entities/player-render.cpp,596,state,glDisable(GL_BLEND);
+src/entities/player-render.cpp,633,shader,MIMITA_GL_CALL(glUseProgram(shader));
+src/entities/player-render.cpp,659,state,glEnable(GL_CULL_FACE);
+src/entities/player-render.cpp,660,state,glCullFace(GL_FRONT);
+src/entities/player-render.cpp,663,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(meshVao));
+src/entities/player-render.cpp,667,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));"
+src/entities/player-render.cpp,673,state,glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,690,shader,MIMITA_GL_CALL(glUseProgram(shader));
+src/entities/player-render.cpp,711,state,glEnable(GL_CULL_FACE);
+src/entities/player-render.cpp,712,state,glCullFace(GL_FRONT);
+src/entities/player-render.cpp,717,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
+src/entities/player-render.cpp,718,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));"
+src/entities/player-render.cpp,722,state,glDisable(GL_CULL_FACE);
+src/entities/player-render.cpp,733,shader,glUseProgram(shadowShader);
+src/entities/player-render.cpp,759,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/entities/player-render.cpp,761,shader,glUseProgram(0);
+src/entities/player-render.cpp,777,vao_alloc,glBindVertexArray(meshVao);
+src/entities/player-render.cpp,779,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/entities/player-render.cpp,781,shader,glUseProgram(0);
+src/entities/player-render.cpp,792,vao_alloc,glBindVertexArray(capsuleVAO);
+src/entities/player-render.cpp,793,draw,"glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount);"
+src/entities/player-render.cpp,794,shader,glUseProgram(0);
+src/game/game-cli.cpp,2905,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, tgt.fbo);"
+src/game/game-cli.cpp,2906,state,"glViewport(0, 0, tgt.width, tgt.height);"
+src/game/game-cli.cpp,2910,framebuffer,"glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);"
+src/game/game-cli.cpp,2912,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/gui/font-stuff/font-loader.cpp,94,texture_alloc,"MIMITA_GL_CALL(glGenTextures(1, &tex));"
+src/gui/font-stuff/font-loader.cpp,103,texture_alloc,"MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));"
+src/gui/font-stuff/font-loader.cpp,104,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));"
+src/gui/font-stuff/font-loader.cpp,105,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));"
+src/gui/font-stuff/font-loader.cpp,106,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));"
+src/gui/font-stuff/font-loader.cpp,107,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));"
+src/gui/font-stuff/font-loader.cpp,139,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1,&guiVAO));"
+src/gui/font-stuff/font-loader.cpp,140,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1,&guiVBO));"
+src/gui/font-stuff/font-loader.cpp,144,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(guiVAO));
+src/gui/font-stuff/font-loader.cpp,147,buffer_alloc,MIMITA_GL_CALL(glBufferData(
+src/gui/gui-main.cpp,121,shader,glUseProgram(shader);
+src/gui/gui-main.cpp,1751,state,"glViewport((int)vpX, (int)vpY, (int)vpW, (int)vpH);"
+src/gui/gui-main.cpp,1752,state,glEnable(GL_DEPTH_TEST);
+src/gui/gui-main.cpp,1781,state,if (!depthWasEnabled) glDisable(GL_DEPTH_TEST);
+src/gui/gui-main.cpp,1782,state,"glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);"
+src/gui/gui-media.cpp,39,texture_alloc,"glGenTextures(1, &tex);"
+src/gui/gui-media.cpp,41,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/gui/gui-media.cpp,42,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/gui/gui-media.cpp,43,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/gui/gui-media.cpp,44,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/gui/gui-media.cpp,45,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);"
+src/gui/gui-media.cpp,79,texture_alloc,"if (t) glDeleteTextures(1, &t);"
+src/gui/gui-media.cpp,152,texture_alloc,"if (t) glDeleteTextures(1, &t);"
+src/gui/menus/menu-avatar-preview.cpp,370,state,"glViewport(vpX, vpY, vpW, vpH);"
+src/gui/menus/menu-avatar-preview.cpp,371,state,glEnable(GL_SCISSOR_TEST);
+src/gui/menus/menu-avatar-preview.cpp,372,state,"glScissor(vpX, vpY, vpW, vpH);"
+src/gui/menus/menu-avatar-preview.cpp,373,state,glEnable(GL_DEPTH_TEST);
+src/gui/menus/menu-avatar-preview.cpp,387,state,if (!depthEn) glDisable(GL_DEPTH_TEST);
+src/gui/menus/menu-avatar-preview.cpp,388,state,"if (!scissorEn) glDisable(GL_SCISSOR_TEST); else glScissor(prevScissor[0], prevScissor[1], prevScissor[2], prevScissor[3]);"
+src/gui/menus/menu-avatar-preview.cpp,389,state,"glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);"
+src/gui/ui-system-buttons.cpp,252,state,glEnable(GL_SCISSOR_TEST);
+src/gui/ui-system-buttons.cpp,253,state,"glScissor((int)area.x, (int)(UISys::gFbH - area.y - area.h),"
+src/gui/ui-system-buttons.cpp,279,state,glDisable(GL_SCISSOR_TEST);
+src/gui/ui-system-buttons.cpp,304,state,glEnable(GL_SCISSOR_TEST);
+src/gui/ui-system-buttons.cpp,305,state,"glScissor((int)fbArea.x, (int)(UISys::gFbH - fbArea.y - fbArea.h),"
+src/gui/ui-system-buttons.cpp,334,state,glDisable(GL_SCISSOR_TEST);
+src/gui/ui-system-render.cpp,89,shader,GLuint s = glCreateShader(type);
+src/gui/ui-system-render.cpp,93,shader,"MIMITA_GL_CALL(glShaderSource(s, 1, &src, nullptr));"
+src/gui/ui-system-render.cpp,94,shader,MIMITA_GL_CALL(glCompileShader(s));
+src/gui/ui-system-render.cpp,150,shader,gProgram = glCreateProgram();
+src/gui/ui-system-render.cpp,156,shader,MIMITA_GL_CALL(glLinkProgram(gProgram));
+src/gui/ui-system-render.cpp,176,vao_alloc,"MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));"
+src/gui/ui-system-render.cpp,177,buffer_alloc,"MIMITA_GL_CALL(glGenBuffers(1, &gVbo));"
+src/gui/ui-system-render.cpp,178,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(gVao));
+src/gui/ui-system-render.cpp,180,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(UIVertex) * 1024, nullptr, GL_DYNAMIC_DRAW));"
+src/gui/ui-system-render.cpp,206,shader,MIMITA_GL_CALL(glUseProgram(gProgram));
+src/gui/ui-system-render.cpp,207,state,MIMITA_GL_CALL(glEnable(GL_BLEND));
+src/gui/ui-system-render.cpp,208,state,"MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));"
+src/gui/ui-system-render.cpp,213,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(gVao));
+src/gui/ui-system-render.cpp,220,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, imageVertices.size() * sizeof(UIVertex), imageVertices.data(), GL_DYNAMIC_DRAW));"
+src/gui/ui-system-render.cpp,221,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));"
+src/gui/ui-system-render.cpp,230,shader,MIMITA_GL_CALL(glUseProgram(gProgram));
+src/gui/ui-system-render.cpp,244,vao_alloc,MIMITA_GL_CALL(glBindVertexArray(gVao));
+src/gui/ui-system-render.cpp,246,buffer_alloc,"MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, gBatchVertices.size() * sizeof(UIVertex), gBatchVertices.data(), GL_DYNAMIC_DRAW));"
+src/gui/ui-system-render.cpp,247,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(gBatchVertices.size())));"
+src/gui/ui-system.cpp,126,state,"MIMITA_GL_CALL(glViewport(0, 0, gFbW, gFbH));"
+src/gui/ui-system.cpp,127,state,MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+src/gui/ui-system.cpp,128,state,MIMITA_GL_CALL(glEnable(GL_BLEND));
+src/gui/ui-system.cpp,129,state,"MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));"
+src/gui/ui-system.cpp,130,state,MIMITA_GL_CALL(glDisable(GL_CULL_FACE));
+src/gui/ui-system.cpp,133,shader,MIMITA_GL_CALL(glUseProgram(gProgram));
+src/gui/ui-system.cpp,256,shader,MIMITA_GL_CALL(glUseProgram(0));
+src/gui/ui-system.cpp,257,state,MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+src/gui/ui-text-input.cpp,389,state,glEnable(GL_SCISSOR_TEST);
+src/gui/ui-text-input.cpp,394,state,"glScissor(fbX, fbY, std::max(0, fbW), std::max(0, fbH));"
+src/gui/ui-text-input.cpp,464,state,glDisable(GL_SCISSOR_TEST);
+src/gui/ui-text-input.cpp,466,state,"glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);"
+src/impact/destructible-render.cpp,55,buffer_alloc,"if (pair.second.vbo) glDeleteBuffers(1, &pair.second.vbo);"
+src/impact/destructible-render.cpp,56,vao_alloc,"if (pair.second.vao) glDeleteVertexArrays(1, &pair.second.vao);"
+src/impact/destructible-render.cpp,70,buffer_alloc,"if (it->second.vbo) glDeleteBuffers(1, &it->second.vbo);"
+src/impact/destructible-render.cpp,71,vao_alloc,"if (it->second.vao) glDeleteVertexArrays(1, &it->second.vao);"
+src/impact/destructible-render.cpp,83,shader,glUseProgram(gRenderer->shaderProgram);
+src/impact/destructible-render.cpp,113,state,glEnable(GL_DEPTH_TEST);
+src/impact/destructible-render.cpp,114,state,glDepthMask(GL_TRUE);
+src/impact/destructible-render.cpp,118,state,glEnable(GL_CULL_FACE);
+src/impact/destructible-render.cpp,119,state,glCullFace(GL_BACK);
+src/impact/destructible-render.cpp,124,vao_alloc,"glGenVertexArrays(1, &gpu.vao);"
+src/impact/destructible-render.cpp,125,buffer_alloc,"glGenBuffers(1, &gpu.vbo);"
+src/impact/destructible-render.cpp,127,vao_alloc,glBindVertexArray(gpu.vao);
+src/impact/destructible-render.cpp,135,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/impact/destructible-render.cpp,147,draw,"glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertexCount);"
+src/impact/destructible-render.cpp,150,state,glDisable(GL_CULL_FACE);
+src/impact/destructible-render.cpp,151,state,glCullFace(cullModeWas);
+src/impact/destructible-render.cpp,152,vao_alloc,glBindVertexArray(0);
+src/main-systems.cpp,627,state,glEnable(GL_BLEND);
+src/main-systems.cpp,628,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/main-systems.cpp,629,state,glEnable(GL_DEPTH_TEST);
+src/main-systems.cpp,631,state,"printf(""[MAIN] after glEnable and glBlendFunc()\n"");"
+src/map/map-loader-material.cpp,123,texture_alloc,"MIMITA_GL_CALL(glGenTextures(1, &tex));"
+src/map/map-loader-material.cpp,142,texture_alloc,MIMITA_GL_CALL(glTexImage2D(
+src/map/map-loader-material.cpp,154,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));"
+src/map/map-loader-material.cpp,155,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));"
+src/map/map-loader-material.cpp,157,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));"
+src/map/map-loader-material.cpp,159,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));"
+src/map/map-loader-material.cpp,171,texture_alloc,"MIMITA_GL_CALL(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, useAniso));"
+src/map/map-loader-material.cpp,255,texture_alloc,"glGenTextures(1, &tex);"
+src/map/map-loader-material.cpp,264,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);"
+src/map/map-loader-material.cpp,265,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);"
+src/map/map-loader-material.cpp,266,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);"
+src/map/map-loader-material.cpp,267,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/map/map-loader-material.cpp,268,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/map/map_loader.cpp,500,texture_alloc,glDeleteTextures(
+src/map/map_render.cpp,18,vao_alloc,"//     glGenVertexArrays(1, &vao);"
+src/map/map_render.cpp,19,buffer_alloc,"//     glGenBuffers(1, &vbo);"
+src/map/map_render.cpp,20,vao_alloc,//     glBindVertexArray(vao);
+src/map/map_render.cpp,22,buffer_alloc,"//     glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW);"
+src/map/map_render.cpp,31,vao_alloc,//     glBindVertexArray(0);
+src/map/map_render.cpp,36,vao_alloc,// //     glBindVertexArray(vao);
+src/map/map_render.cpp,43,draw,"// //     glDrawArrays(GL_TRIANGLES, 0, vertexCount);"
+src/map/map_render.cpp,46,vao_alloc,// //     glBindVertexArray(0);
+src/map/map_render.cpp,57,vao_alloc,//         glBindVertexArray(chunk.vao);
+src/map/map_render.cpp,58,draw,"//         glDrawArrays(GL_TRIANGLES, 0, chunk.vertCount);"
+src/map/map_render.cpp,61,vao_alloc,//     // glBindVertexArray(vao);
+src/map/map_render.cpp,64,draw,"//     // glDrawArrays(GL_TRIANGLES, 0, vertexCount);"
+src/map/map_render.cpp,66,vao_alloc,//     // glBindVertexArray(0);
+src/map/texture.cpp,38,texture_alloc,"MIMITA_GL_CALL(glGenTextures(1, &fallback));"
+src/map/texture.cpp,40,texture_alloc,"MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));"
+src/map/texture.cpp,41,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));"
+src/map/texture.cpp,42,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));"
+src/map/texture.cpp,43,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));"
+src/map/texture.cpp,44,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));"
+src/map/texture.cpp,64,texture_alloc,"MIMITA_GL_CALL(glGenTextures(1, &tex));"
+src/map/texture.cpp,72,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));"
+src/map/texture.cpp,73,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));"
+src/map/texture.cpp,74,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));"
+src/map/texture.cpp,75,texture_alloc,"MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));"
+src/map/texture.cpp,79,texture_alloc,"MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));"
+src/network/client.cpp,128,state,glEnable(GL_BLEND);
+src/network/client.cpp,129,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/network/client.cpp,130,state,glEnable(GL_DEPTH_TEST);
+src/notifications/notifications.cpp,800,state,glEnable(GL_SCISSOR_TEST);
+src/notifications/notifications.cpp,801,state,"glScissor((int)sx, (int)((float)UISys::gFbH - sy - clipH),"
+src/notifications/notifications.cpp,848,state,glDisable(GL_SCISSOR_TEST);
+src/notifications/notifications.cpp,850,state,"glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);"
+src/physics/physical-entity.cpp,1433,vao_alloc,"glGenVertexArrays(1, &gPhysicalBoxVao);"
+src/physics/physical-entity.cpp,1434,buffer_alloc,"glGenBuffers(1, &gPhysicalBoxVbo);"
+src/physics/physical-entity.cpp,1436,shader,glUseProgram(gRenderer->shaderProgram);
+src/physics/physical-entity.cpp,1463,state,glEnable(GL_DEPTH_TEST);
+src/physics/physical-entity.cpp,1464,state,glDepthMask(GL_TRUE);
+src/physics/physical-entity.cpp,1468,state,glEnable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1469,state,glCullFace(GL_BACK);
+src/physics/physical-entity.cpp,1470,vao_alloc,glBindVertexArray(gPhysicalBoxVao);
+src/physics/physical-entity.cpp,1472,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(),"
+src/physics/physical-entity.cpp,1483,draw,"glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());"
+src/physics/physical-entity.cpp,1485,state,glDisable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1486,state,glCullFace(cullModeWas);
+src/physics/physical-entity.cpp,1487,vao_alloc,glBindVertexArray(0);
+src/physics/physical-entity.cpp,1527,vao_alloc,"glGenVertexArrays(1, &gPhysicalSphereVao);"
+src/physics/physical-entity.cpp,1528,buffer_alloc,"glGenBuffers(1, &gPhysicalSphereVbo);"
+src/physics/physical-entity.cpp,1529,vao_alloc,glBindVertexArray(gPhysicalSphereVao);
+src/physics/physical-entity.cpp,1531,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/physics/physical-entity.cpp,1543,vao_alloc,glBindVertexArray(0);
+src/physics/physical-entity.cpp,1561,shader,glUseProgram(gRenderer->shaderProgram);
+src/physics/physical-entity.cpp,1571,state,glEnable(GL_DEPTH_TEST);
+src/physics/physical-entity.cpp,1572,state,glDepthMask(GL_TRUE);
+src/physics/physical-entity.cpp,1576,state,glEnable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1577,state,glCullFace(GL_BACK);
+src/physics/physical-entity.cpp,1578,vao_alloc,glBindVertexArray(gPhysicalSphereVao);
+src/physics/physical-entity.cpp,1579,draw,"glDrawArrays(GL_TRIANGLES, 0, gPhysicalSphereVertexCount);"
+src/physics/physical-entity.cpp,1581,state,glDisable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1582,state,glCullFace(cullModeWas);
+src/physics/physical-entity.cpp,1583,vao_alloc,glBindVertexArray(0);
+src/physics/physical-entity.cpp,1625,vao_alloc,"glGenVertexArrays(1, &cached.vao);"
+src/physics/physical-entity.cpp,1626,buffer_alloc,"glGenBuffers(1, &cached.vbo);"
+src/physics/physical-entity.cpp,1627,vao_alloc,glBindVertexArray(cached.vao);
+src/physics/physical-entity.cpp,1629,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/physics/physical-entity.cpp,1641,vao_alloc,glBindVertexArray(0);
+src/physics/physical-entity.cpp,1671,shader,glUseProgram(gRenderer->shaderProgram);
+src/physics/physical-entity.cpp,1683,state,glEnable(GL_DEPTH_TEST);
+src/physics/physical-entity.cpp,1684,state,glDepthMask(GL_TRUE);
+src/physics/physical-entity.cpp,1688,state,glEnable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1689,state,glCullFace(GL_BACK);
+src/physics/physical-entity.cpp,1691,vao_alloc,glBindVertexArray(cached.vao);
+src/physics/physical-entity.cpp,1697,state,glDisable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1698,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/physics/physical-entity.cpp,1700,state,glEnable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1702,vao_alloc,glBindVertexArray(0);
+src/physics/physical-entity.cpp,1704,state,glDisable(GL_CULL_FACE);
+src/physics/physical-entity.cpp,1705,state,glCullFace(cullModeWas);
+src/render/post-fx.cpp,132,vao_alloc,"glGenVertexArrays(1, &vao);"
+src/render/post-fx.cpp,133,buffer_alloc,"glGenBuffers(1, &vbo);"
+src/render/post-fx.cpp,134,vao_alloc,glBindVertexArray(vao);
+src/render/post-fx.cpp,136,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);"
+src/render/post-fx.cpp,141,vao_alloc,glBindVertexArray(0);
+src/render/post-fx.cpp,162,shader,"glShaderSource(shader, 1, srcs, nullptr);"
+src/render/post-fx.cpp,163,shader,glCompileShader(shader);
+src/render/post-fx.cpp,184,shader,GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+src/render/post-fx.cpp,185,shader,GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+src/render/post-fx.cpp,193,shader,GLuint prog = glCreateProgram();
+src/render/post-fx.cpp,196,shader,glLinkProgram(prog);
+src/render/post-fx.cpp,247,framebuffer,"glDeleteFramebuffers(1, &mFbo);"
+src/render/post-fx.cpp,248,texture_alloc,"glDeleteTextures(1, &mColorTex);"
+src/render/post-fx.cpp,254,texture_alloc,"glGenTextures(1, &mColorTex);"
+src/render/post-fx.cpp,256,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);"
+src/render/post-fx.cpp,257,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/render/post-fx.cpp,258,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/render/post-fx.cpp,259,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/render/post-fx.cpp,260,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/render/post-fx.cpp,262,framebuffer,"glGenFramebuffers(1, &mFbo);"
+src/render/post-fx.cpp,263,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, mFbo);"
+src/render/post-fx.cpp,267,framebuffer,"glGenRenderbuffers(1, &depthRb);"
+src/render/post-fx.cpp,268,framebuffer,"glBindRenderbuffer(GL_RENDERBUFFER, depthRb);"
+src/render/post-fx.cpp,276,framebuffer,"glDeleteFramebuffers(1, &mFbo);"
+src/render/post-fx.cpp,277,texture_alloc,"glDeleteTextures(1, &mColorTex);"
+src/render/post-fx.cpp,283,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/render/post-fx.cpp,294,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/render/post-fx.cpp,301,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/render/post-fx.cpp,303,state,"glViewport(0, 0, gRenderer->width, gRenderer->height);"
+src/render/post-fx.cpp,306,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, mFbo);"
+src/render/post-fx.cpp,307,state,"glViewport(0, 0, mFboW, mFboH);"
+src/render/post-fx.cpp,317,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/render/post-fx.cpp,377,vao_alloc,glBindVertexArray(vao);
+src/render/post-fx.cpp,378,draw,"glDrawArrays(GL_TRIANGLES, 0, 6);"
+src/render/post-fx.cpp,379,vao_alloc,glBindVertexArray(0);
+src/render/post-fx.cpp,422,state,"glViewport(0, 0, gRenderer->width, gRenderer->height);"
+src/render/post-fx.cpp,426,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/render/post-fx.cpp,428,state,"glViewport(0, 0, gRenderer->width, gRenderer->height);"
+src/render/post-fx.cpp,429,state,glDisable(GL_DEPTH_TEST);
+src/render/post-fx.cpp,432,shader,glUseProgram(mPostShader);
+src/render/procedural-cylinder.cpp,146,vao_alloc,"glGenVertexArrays(1, &mesh.vao);"
+src/render/procedural-cylinder.cpp,147,buffer_alloc,"glGenBuffers(1, &mesh.vbo);"
+src/render/procedural-cylinder.cpp,148,vao_alloc,glBindVertexArray(mesh.vao);
+src/render/procedural-cylinder.cpp,150,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(),"
+src/render/procedural-cylinder.cpp,161,vao_alloc,glBindVertexArray(0);
+src/render/procedural-cylinder.cpp,181,shader,glUseProgram(shader);
+src/render/procedural-cylinder.cpp,199,state,glDisable(GL_CULL_FACE);
+src/render/procedural-cylinder.cpp,203,vao_alloc,glBindVertexArray(mesh.vao);
+src/render/procedural-cylinder.cpp,204,draw,"glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);"
+src/render/procedural-cylinder.cpp,205,vao_alloc,glBindVertexArray(0);
+src/render/procedural-cylinder.cpp,209,state,glEnable(GL_CULL_FACE);
+src/render/procedural-cylinder.cpp,210,state,glCullFace(cullModeWas);
+src/render/procedural-cylinder.cpp,214,state,glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,768,state,glEnable(GL_BLEND);
+src/render/render-player.cpp,769,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/render/render-player.cpp,801,state,if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+src/render/render-player.cpp,924,state,glEnable(GL_BLEND);
+src/render/render-player.cpp,925,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/render/render-player.cpp,926,state,if (outline->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
+src/render/render-player.cpp,927,state,glDepthMask(GL_FALSE);
+src/render/render-player.cpp,929,state,glEnable(GL_CULL_FACE);
+src/render/render-player.cpp,930,state,glCullFace(GL_FRONT);
+src/render/render-player.cpp,938,state,glDepthMask(GL_TRUE);
+src/render/render-player.cpp,939,state,glDepthFunc(depthFuncWas);
+src/render/render-player.cpp,940,state,if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
+src/render/render-player.cpp,941,state,else glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,942,state,if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+src/render/render-player.cpp,943,state,if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+src/render/render-player.cpp,964,state,if (capsule->visibleThroughWalls || !capsule->depthTest) glDisable(GL_DEPTH_TEST);
+src/render/render-player.cpp,965,state,else glEnable(GL_DEPTH_TEST);
+src/render/render-player.cpp,967,state,glEnable(GL_CULL_FACE);
+src/render/render-player.cpp,968,state,glCullFace(capsule->frontFaceCull && capsule->backFaceCull ? GL_FRONT_AND_BACK
+src/render/render-player.cpp,970,state,} else glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,971,state,glDepthMask(capsule->depthWrite ? GL_TRUE : GL_FALSE);
+src/render/render-player.cpp,979,state,glDepthMask(depthWriteWas);
+src/render/render-player.cpp,980,state,if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
+src/render/render-player.cpp,981,state,else glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,982,state,if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+src/render/render-player.cpp,1031,state,if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
+src/render/render-player.cpp,1032,state,glDepthMask(GL_FALSE);
+src/render/render-player.cpp,1041,state,glDepthMask(GL_TRUE);
+src/render/render-player.cpp,1042,state,if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+src/render/render-player.cpp,1109,buffer_alloc,"if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }"
+src/render/render-player.cpp,1109,vao_alloc,"if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }"
+src/render/render-player.cpp,1127,shader,glUseProgram(gRenderer->shaderProgram);
+src/render/render-player.cpp,1135,state,glEnable(GL_DEPTH_TEST);
+src/render/render-player.cpp,1136,state,glEnable(GL_BLEND);
+src/render/render-player.cpp,1137,state,glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,1138,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/render/render-player.cpp,1139,state,glDepthMask(GL_FALSE);
+src/render/render-player.cpp,1140,vao_alloc,glBindVertexArray(vao);
+src/render/render-player.cpp,1142,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, gTrailBatch.size() * sizeof(TrailVertex),"
+src/render/render-player.cpp,1150,draw,"glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTrailBatch.size());"
+src/render/render-player.cpp,1165,vao_alloc,glBindVertexArray((GLuint)oldVao);
+src/render/render-player.cpp,1170,state,glDepthMask(depthWriteWas);
+src/render/render-player.cpp,1171,state,if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+src/render/render-player.cpp,1172,state,if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+src/render/render-player.cpp,1173,state,if (cullWas) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+src/render/render-player.cpp,1174,shader,glUseProgram((GLuint)oldProgram);
+src/render/render-world-mesh.cpp,86,vao_alloc,"glGenVertexArrays(1, &gVao);"
+src/render/render-world-mesh.cpp,87,buffer_alloc,"glGenBuffers(1, &gVbo);"
+src/render/render-world-mesh.cpp,90,vao_alloc,glBindVertexArray(gVao);
+src/render/render-world-mesh.cpp,92,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/render/render-world-mesh.cpp,105,vao_alloc,glBindVertexArray(0);
+src/render/render-world-mesh.cpp,307,state,glDisable(GL_CULL_FACE);
+src/render/render-world-mesh.cpp,310,state,glEnable(GL_CULL_FACE);
+src/render/render-world-mesh.cpp,311,state,glCullFace(GL_BACK);
+src/render/render-world-mesh.cpp,315,shader,MIMITA_GL_CALL(glUseProgram(shader));
+src/render/render-world-mesh.cpp,328,vao_alloc,glBindVertexArray(gVao);
+src/render/render-world-mesh.cpp,415,state,glDisable(GL_CULL_FACE);
+src/render/render-world-mesh.cpp,425,draw,"MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count));"
+src/render/render-world-mesh.cpp,452,state,glEnable(GL_CULL_FACE);
+src/render/render-world-shadow.cpp,46,shader,glUseProgram(shadowShader);
+src/render/render-world-shadow.cpp,53,vao_alloc,glBindVertexArray(gVao);
+src/render/render-world-shadow.cpp,54,state,glEnable(GL_DEPTH_TEST);
+src/render/render-world-shadow.cpp,55,state,glDepthFunc(GL_LESS);
+src/render/render-world-shadow.cpp,56,state,glDepthMask(GL_TRUE);
+src/render/render-world-shadow.cpp,57,state,glDisable(GL_BLEND);
+src/render/render-world-shadow.cpp,58,state,glEnable(GL_CULL_FACE);
+src/render/render-world-shadow.cpp,59,state,glCullFace(GL_BACK);
+src/render/render-world-shadow.cpp,66,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/render/render-world-shadow.cpp,69,vao_alloc,glBindVertexArray(0);
+src/render/render-world-shadow.cpp,70,shader,glUseProgram(0);
+src/render/render-world-sky.cpp,42,vao_alloc,"glGenVertexArrays(1, &gSkyVao);"
+src/render/render-world-sky.cpp,43,buffer_alloc,"glGenBuffers(1, &gSkyVbo);"
+src/render/render-world-sky.cpp,46,vao_alloc,glBindVertexArray(gSkyVao);
+src/render/render-world-sky.cpp,48,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/render/render-world-sky.cpp,61,vao_alloc,glBindVertexArray(0);
+src/render/render-world-sky.cpp,77,shader,glUseProgram(shader);
+src/render/render-world-sky.cpp,79,state,glDisable(GL_DEPTH_TEST);
+src/render/render-world-sky.cpp,91,vao_alloc,glBindVertexArray(gSkyVao);
+src/render/render-world-sky.cpp,96,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);"
+src/render/render-world-sky.cpp,98,vao_alloc,glBindVertexArray(0);
+src/render/render-world-sky.cpp,99,shader,glUseProgram(0);
+src/render/render-world-sky.cpp,101,state,glEnable(GL_DEPTH_TEST);
+src/render/render-world.cpp,70,state,glEnable(GL_BLEND);
+src/render/render-world.cpp,71,state,"glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);"
+src/render/render-world.cpp,80,state,if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+src/render/render-world.cpp,105,vao_alloc,glBindVertexArray(0);
+src/render/render-world.cpp,106,shader,MIMITA_GL_CALL(glUseProgram(0));
+src/render/skybox.cpp,71,shader,GLuint shader = glCreateShader(type);
+src/render/skybox.cpp,73,shader,"glShaderSource(shader, 1, &srcPtr, nullptr);"
+src/render/skybox.cpp,74,shader,glCompileShader(shader);
+src/render/skybox.cpp,94,shader,GLuint prog = glCreateProgram();
+src/render/skybox.cpp,97,shader,glLinkProgram(prog);
+src/render/skybox.cpp,130,texture_alloc,"if (mCubemapTex) { glDeleteTextures(1, &mCubemapTex); mCubemapTex = 0; }"
+src/render/skybox.cpp,134,vao_alloc,"if (mVAO) { glDeleteVertexArrays(1, &mVAO); mVAO = 0; }"
+src/render/skybox.cpp,135,buffer_alloc,"if (mVBO) { glDeleteBuffers(1, &mVBO); mVBO = 0; }"
+src/render/skybox.cpp,139,vao_alloc,"glGenVertexArrays(1, &mVAO);"
+src/render/skybox.cpp,140,buffer_alloc,"glGenBuffers(1, &mVBO);"
+src/render/skybox.cpp,141,vao_alloc,glBindVertexArray(mVAO);
+src/render/skybox.cpp,143,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(gCubeVerts), gCubeVerts, GL_STATIC_DRAW);"
+src/render/skybox.cpp,146,vao_alloc,glBindVertexArray(0);
+src/render/skybox.cpp,261,texture_alloc,"glGenTextures(1, &tex);"
+src/render/skybox.cpp,270,texture_alloc,"glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);"
+src/render/skybox.cpp,278,texture_alloc,"glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);"
+src/render/skybox.cpp,282,texture_alloc,"glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);"
+src/render/skybox.cpp,288,texture_alloc,"glDeleteTextures(1, &tex);"
+src/render/skybox.cpp,295,texture_alloc,"glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/render/skybox.cpp,296,texture_alloc,"glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/render/skybox.cpp,297,texture_alloc,"glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/render/skybox.cpp,298,texture_alloc,"glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/render/skybox.cpp,299,texture_alloc,"glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);"
+src/render/skybox.cpp,405,state,glDisable(GL_CULL_FACE);
+src/render/skybox.cpp,407,state,glDepthFunc(GL_LEQUAL);
+src/render/skybox.cpp,410,state,glDepthMask(GL_FALSE);
+src/render/skybox.cpp,412,shader,glUseProgram(mShader);
+src/render/skybox.cpp,413,vao_alloc,glBindVertexArray(mVAO);
+src/render/skybox.cpp,427,draw,"glDrawArrays(GL_TRIANGLES, 0, 36);"
+src/render/skybox.cpp,430,vao_alloc,glBindVertexArray(0);
+src/render/skybox.cpp,431,shader,glUseProgram(0);
+src/render/skybox.cpp,434,state,glDepthFunc(prevDepthFunc);
+src/render/skybox.cpp,435,state,glDepthMask(prevDepthMask);
+src/render/skybox.cpp,436,state,if (prevCullEnabled) glEnable(GL_CULL_FACE);
+src/render/skybox.cpp,437,state,else glDisable(GL_CULL_FACE);
+src/render/skybox.cpp,438,state,glCullFace(prevCullFaceMode);
+src/renderer/renderer.cpp,98,shader,GLuint shader = glCreateShader(type);
+src/renderer/renderer.cpp,102,shader,"MIMITA_GL_CALL(glShaderSource(shader, 1, &src, nullptr));"
+src/renderer/renderer.cpp,103,shader,MIMITA_GL_CALL(glCompileShader(shader));
+src/renderer/renderer.cpp,144,shader,GLuint program = glCreateProgram();
+src/renderer/renderer.cpp,154,shader,MIMITA_GL_CALL(glLinkProgram(program));
+src/renderer/renderer.cpp,261,state,MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+src/renderer/renderer.cpp,480,state,"MIMITA_GL_CALL(glViewport(0, 0, width, height));"
+src/replay/replay-export-target.cpp,23,framebuffer,"glGenFramebuffers(1, &gTarget.fbo);"
+src/replay/replay-export-target.cpp,24,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, gTarget.fbo);"
+src/replay/replay-export-target.cpp,26,texture_alloc,"glGenTextures(1, &gTarget.colorTex);"
+src/replay/replay-export-target.cpp,28,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,"
+src/replay/replay-export-target.cpp,30,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/replay/replay-export-target.cpp,31,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/replay/replay-export-target.cpp,32,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);"
+src/replay/replay-export-target.cpp,33,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);"
+src/replay/replay-export-target.cpp,37,framebuffer,"glGenRenderbuffers(1, &gTarget.depthRbo);"
+src/replay/replay-export-target.cpp,38,framebuffer,"glBindRenderbuffer(GL_RENDERBUFFER, gTarget.depthRbo);"
+src/replay/replay-export-target.cpp,44,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/replay/replay-export-target.cpp,46,framebuffer,"glBindRenderbuffer(GL_RENDERBUFFER, 0);"
+src/replay/replay-export-target.cpp,58,framebuffer,"glDeleteFramebuffers(1, &gTarget.fbo);"
+src/replay/replay-export-target.cpp,60,texture_alloc,"glDeleteTextures(1, &gTarget.colorTex);"
+src/replay/replay-export.cpp,368,framebuffer,"glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);"
+src/replay/replay-export.cpp,369,framebuffer,"glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tgt.fbo);"
+src/replay/replay-export.cpp,374,framebuffer,"glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);"
+src/replay/replay-export.cpp,397,framebuffer,"glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);"
+src/replay/replay-export.cpp,400,framebuffer,"glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);"
+src/shadow/shadow-render.cpp,79,vao_alloc,"glGenVertexArrays(1, &gSphereVao);"
+src/shadow/shadow-render.cpp,80,buffer_alloc,"glGenBuffers(1, &gSphereVbo);"
+src/shadow/shadow-render.cpp,81,vao_alloc,glBindVertexArray(gSphereVao);
+src/shadow/shadow-render.cpp,83,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, triangles.size() * sizeof(glm::vec3), triangles.data(), GL_STATIC_DRAW);"
+src/shadow/shadow-render.cpp,86,vao_alloc,glBindVertexArray(0);
+src/shadow/shadow-render.cpp,94,shader,"glShaderSource(shader, 1, &src, nullptr);"
+src/shadow/shadow-render.cpp,95,shader,glCompileShader(shader);
+src/shadow/shadow-render.cpp,107,shader,GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+src/shadow/shadow-render.cpp,108,shader,GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+src/shadow/shadow-render.cpp,115,shader,GLuint prog = glCreateProgram();
+src/shadow/shadow-render.cpp,118,shader,glLinkProgram(prog);
+src/shadow/shadow-render.cpp,184,framebuffer,"glDeleteFramebuffers(1, &gShadowFbo);"
+src/shadow/shadow-render.cpp,185,texture_alloc,"glDeleteTextures(1, &gShadowDepthTex);"
+src/shadow/shadow-render.cpp,190,texture_alloc,"glGenTextures(1, &gShadowDepthTex);"
+src/shadow/shadow-render.cpp,192,texture_alloc,"glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, mapSize, mapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);"
+src/shadow/shadow-render.cpp,193,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);"
+src/shadow/shadow-render.cpp,194,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);"
+src/shadow/shadow-render.cpp,195,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);"
+src/shadow/shadow-render.cpp,196,texture_alloc,"glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);"
+src/shadow/shadow-render.cpp,198,texture_alloc,"glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);"
+src/shadow/shadow-render.cpp,200,framebuffer,"glGenFramebuffers(1, &gShadowFbo);"
+src/shadow/shadow-render.cpp,201,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, gShadowFbo);"
+src/shadow/shadow-render.cpp,203,draw,glDrawBuffer(GL_NONE);
+src/shadow/shadow-render.cpp,209,framebuffer,"glDeleteFramebuffers(1, &gShadowFbo);"
+src/shadow/shadow-render.cpp,210,texture_alloc,"glDeleteTextures(1, &gShadowDepthTex);"
+src/shadow/shadow-render.cpp,215,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/shadow/shadow-render.cpp,244,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, gShadowFbo);"
+src/shadow/shadow-render.cpp,245,state,"glViewport(0, 0, mapSize, mapSize);"
+src/shadow/shadow-render.cpp,247,state,glEnable(GL_DEPTH_TEST);
+src/shadow/shadow-render.cpp,248,state,glDepthFunc(GL_LESS);
+src/shadow/shadow-render.cpp,249,state,glDepthMask(GL_TRUE);
+src/shadow/shadow-render.cpp,250,state,glDisable(GL_BLEND);
+src/shadow/shadow-render.cpp,251,state,glEnable(GL_CULL_FACE);
+src/shadow/shadow-render.cpp,252,state,glCullFace(GL_BACK);
+src/shadow/shadow-render.cpp,274,framebuffer,"glBindFramebuffer(GL_FRAMEBUFFER, 0);"
+src/shadow/shadow-render.cpp,296,shader,glUseProgram(shadowShader);
+src/shadow/shadow-render.cpp,298,shader,if (loc < 0) { glUseProgram(0); return; }
+src/shadow/shadow-render.cpp,299,vao_alloc,glBindVertexArray(gSphereVao);
+src/shadow/shadow-render.cpp,317,draw,"glDrawArrays(GL_TRIANGLES, 0, gSphereVertCount);"
+src/shadow/shadow-render.cpp,320,vao_alloc,glBindVertexArray(0);
+src/shadow/shadow-render.cpp,321,shader,glUseProgram(0);
+src/shadow/shadow-render.cpp,328,shader,glUseProgram(shadowShader);
+src/shadow/shadow-render.cpp,330,shader,if (loc < 0) { glUseProgram(0); return; }
+src/shadow/shadow-render.cpp,331,vao_alloc,glBindVertexArray(gSphereVao);
+src/shadow/shadow-render.cpp,348,draw,"glDrawArrays(GL_TRIANGLES, 0, gSphereVertCount);"
+src/shadow/shadow-render.cpp,351,vao_alloc,glBindVertexArray(0);
+src/shadow/shadow-render.cpp,352,shader,glUseProgram(0);
+src/shadow/shadow-render.cpp,417,state,glDisable(GL_DEPTH_TEST);
+src/shadow/shadow-render.cpp,418,state,glEnable(GL_CULL_FACE);
+src/shadow/shadow-render.cpp,434,vao_alloc,"glGenVertexArrays(1, &vao);"
+src/shadow/shadow-render.cpp,435,buffer_alloc,"glGenBuffers(1, &vbo);"
+src/shadow/shadow-render.cpp,438,vao_alloc,glBindVertexArray(vao);
+src/shadow/shadow-render.cpp,440,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);"
+src/shadow/shadow-render.cpp,446,shader,glUseProgram(shader);
+src/shadow/shadow-render.cpp,459,draw,"glDrawArrays(GL_TRIANGLES, 0, 6);"
+src/shadow/shadow-render.cpp,460,vao_alloc,glBindVertexArray(0);
+src/shadow/shadow-render.cpp,461,shader,glUseProgram(0);
+src/world/streamed-world-layer.cpp,307,vao_alloc,"if (record.vao) glDeleteVertexArrays(1, &record.vao);"
+src/world/streamed-world-layer.cpp,308,buffer_alloc,"if (record.vbo) glDeleteBuffers(1, &record.vbo);"
+src/world/streamed-world-layer.cpp,327,vao_alloc,"if (templateData.vao) glDeleteVertexArrays(1, &templateData.vao);"
+src/world/streamed-world-layer.cpp,328,buffer_alloc,"if (templateData.vbo) glDeleteBuffers(1, &templateData.vbo);"
+src/world/streamed-world-layer.cpp,329,buffer_alloc,"if (templateData.instanceVbo) glDeleteBuffers(1, &templateData.instanceVbo);"
+src/world/streamed-world-layer.cpp,689,vao_alloc,"if (templateData.vao == 0) glGenVertexArrays(1, &templateData.vao);"
+src/world/streamed-world-layer.cpp,690,buffer_alloc,"if (templateData.vbo == 0) glGenBuffers(1, &templateData.vbo);"
+src/world/streamed-world-layer.cpp,691,vao_alloc,glBindVertexArray(templateData.vao);
+src/world/streamed-world-layer.cpp,693,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/world/streamed-world-layer.cpp,708,buffer_alloc,"if (templateData.instanceVbo == 0) glGenBuffers(1, &templateData.instanceVbo);"
+src/world/streamed-world-layer.cpp,716,vao_alloc,glBindVertexArray(0);
+src/world/streamed-world-layer.cpp,722,buffer_alloc,"if (templateData.instanceVbo == 0) glGenBuffers(1, &templateData.instanceVbo);"
+src/world/streamed-world-layer.cpp,724,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/world/streamed-world-layer.cpp,743,buffer_alloc,"if (record.vbo == 0) glGenBuffers(1, &record.vbo);"
+src/world/streamed-world-layer.cpp,745,buffer_alloc,"glBufferData(GL_ARRAY_BUFFER,"
+src/world/streamed-world-layer.cpp,772,vao_alloc,"if (record.vao) glDeleteVertexArrays(1, &record.vao);"
+src/world/streamed-world-layer.cpp,773,buffer_alloc,"if (record.vbo) glDeleteBuffers(1, &record.vbo);"
+src/world/streamed-world-layer.cpp,811,vao_alloc,"glGenVertexArrays(1, &vao);"
+src/world/streamed-world-layer.cpp,812,vao_alloc,glBindVertexArray(vao);
+src/world/streamed-world-layer.cpp,823,vao_alloc,glBindVertexArray(0);
+src/world/streamed-world-layer.cpp,1009,vao_alloc,"if (record.vao) glDeleteVertexArrays(1, &record.vao);"
+src/world/streamed-world-layer.cpp,1010,buffer_alloc,"if (record.vbo) glDeleteBuffers(1, &record.vbo);"
+src/world/streamed-world-layer.cpp,1098,shader,glUseProgram(gRenderer->shaderProgram);
+src/world/streamed-world-layer.cpp,1109,state,glEnable(GL_DEPTH_TEST);
+src/world/streamed-world-layer.cpp,1110,state,glDepthMask(GL_TRUE);
+src/world/streamed-world-layer.cpp,1120,vao_alloc,glBindVertexArray(templateData.vao);
+src/world/streamed-world-layer.cpp,1123,draw,"glDrawArraysInstanced(GL_TRIANGLES, (GLint)batch.first,"
+src/world/streamed-world-layer.cpp,1135,vao_alloc,glBindVertexArray(record.vao);
+src/world/streamed-world-layer.cpp,1138,draw,"glDrawArrays(GL_TRIANGLES, (GLint)batch.first,"
+src/world/streamed-world-layer.cpp,1148,vao_alloc,glBindVertexArray(0);
+src/world/streamed-world-layer.cpp,1149,shader,glUseProgram(0);
+src/world/texture-store.cpp,61,texture_alloc,"glDeleteTextures(1, &it->second);"
