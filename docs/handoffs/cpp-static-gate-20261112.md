@@ -4,9 +4,9 @@
 must use a resident capability instead. This is not a semantic review and not
 runtime evidence.
 
-- Game sources scanned: 584
-- Violations: 235
-- Files with violations: 62
+- Game sources scanned: 598
+- Violations: 232
+- Files with violations: 61
 
 ## Rule counts
 
@@ -15,7 +15,7 @@ runtime evidence.
 | raw_thread | CAP_JOBS | 26 |
 | raw_gl_resource | CAP_RESOURCES | 158 |
 | raw_socket | CAP_TRANSPORT | 20 |
-| raw_file_handle | CAP_RESOURCES | 31 |
+| raw_file_handle | CAP_RESOURCES | 28 |
 
 ## Files
 
@@ -91,19 +91,16 @@ runtime evidence.
 | `src/entities/player-render-mesh.cpp` | raw_gl_resource | 320 | `if (!uploads.renderVbo) MIMITA_GL_CALL(glGenBuffers(1, &uploads.renderVbo));` |
 | `src/entities/player-render-mesh.cpp` | raw_gl_resource | 394 | `MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.combinedVao));` |
 | `src/entities/player-render-mesh.cpp` | raw_gl_resource | 396 | `MIMITA_GL_CALL(glGenBuffers(1, &uploads.combinedVbo));` |
-| `src/game/game-cli.cpp` | raw_file_handle | 3160 | `FILE* rawFile = fopen(rawPath.string().c_str(), "wb");` |
-| `src/game/game-cli.cpp` | raw_file_handle | 3198 | `FILE* batFile = fopen(batPath.string().c_str(), "w");` |
-| `src/game/game-cli.cpp` | raw_file_handle | 3237 | `FILE* report = fopen(reportPath.c_str(), "w");` |
 | `src/game/spawn-utils.cpp` | raw_file_handle | 24 | `gSpawnDebugFile = fopen("logs/map_spawn_debug.txt", "a");` |
 | `src/gui/font-stuff/font-loader.cpp` | raw_gl_resource | 94 | `MIMITA_GL_CALL(glGenTextures(1, &tex));` |
 | `src/gui/font-stuff/font-loader.cpp` | raw_gl_resource | 139 | `MIMITA_GL_CALL(glGenVertexArrays(1,&guiVAO));` |
 | `src/gui/font-stuff/font-loader.cpp` | raw_gl_resource | 140 | `MIMITA_GL_CALL(glGenBuffers(1,&guiVBO));` |
 | `src/gui/font-stuff/font-loader.cpp` | raw_file_handle | 179 | `FILE* f = fopen(path, "rb");` |
-| `src/gui/gui-main.cpp` | raw_socket | 304 | `SOCKET socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);` |
-| `src/gui/gui-main.cpp` | raw_socket | 328 | `closesocket(socketHandle);` |
-| `src/gui/gui-main.cpp` | raw_file_handle | 369 | `FILE* clearFile = fopen(roomFilePath.c_str(), "w");` |
-| `src/gui/gui-main.cpp` | raw_file_handle | 720 | `FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");` |
-| `src/gui/gui-main.cpp` | raw_file_handle | 969 | `FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");` |
+| `src/gui/gui-main.cpp` | raw_socket | 314 | `SOCKET socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);` |
+| `src/gui/gui-main.cpp` | raw_socket | 338 | `closesocket(socketHandle);` |
+| `src/gui/gui-main.cpp` | raw_file_handle | 379 | `FILE* clearFile = fopen(roomFilePath.c_str(), "w");` |
+| `src/gui/gui-main.cpp` | raw_file_handle | 730 | `FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");` |
+| `src/gui/gui-main.cpp` | raw_file_handle | 979 | `FILE* f = fopen(gPendingServerRoomFilePath.c_str(), "r");` |
 | `src/gui/gui-media.cpp` | raw_gl_resource | 39 | `glGenTextures(1, &tex);` |
 | `src/gui/gui-media.cpp` | raw_gl_resource | 79 | `if (t) glDeleteTextures(1, &t);` |
 | `src/gui/gui-media.cpp` | raw_file_handle | 93 | `FILE* f = fopen(path, "rb");` |

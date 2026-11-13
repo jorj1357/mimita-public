@@ -14,6 +14,7 @@
 #include <cstring>
 #include "engine/engine.h"
 #include <cstdio>
+#include "game/render-device-bridge-module.h"
 #include "renderer/renderer.h"
 
 // ---- GLOBAL ENGINE STATE ----
@@ -23,11 +24,15 @@ Renderer* gRenderer = nullptr;
 
 void Engine::init(int w, int h, const char* title)
 {
-    static Renderer r(w, h, title);
-    renderer = &r;
-    gRenderer = &r;
+#ifdef MIMITA_GAME_DLL
+    renderer = mimita::game::acquireHostRenderer(w, h, title);
+#else
+    static Renderer residentRenderer(w, h, title);
+    renderer = &residentRenderer;
+#endif
+    gRenderer = renderer;
 
-    if (!renderer->window) {
+    if (!renderer || !renderer->window) {
         printf("[ENGINE] Renderer failed to init\n");
         return;
     }

@@ -78,4 +78,5 @@ private:
     int mRelayCount = 0;
     bool mInitialized = false;
     bool mForceRelay = false;
+    void* mHostHandle = nullptr;
 };

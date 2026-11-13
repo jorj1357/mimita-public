@@ -20,7 +20,7 @@
 #include "host/abi/game-host-abi.h"
 #include "host/abi/npc-target-probe-abi.h"
 #include "game/entity-bridge-module.h"
-#include "game/transport-bridge-module.h"
+#include "game/server-command-dispatch.h"
 #include "host/abi/transport-capability.h"
 #include "network/packets.h"
 #include "npc/npc-targeting.h"
@@ -31,6 +31,9 @@ void initializeHostTransport(const mimita::host::HostServicesV1* services);
 void initializeHostModules(const mimita::host::HostServicesV1* services);
 void initializeHostAudio(const mimita::host::HostServicesV1* services);
 void initializeHostEffects(const mimita::host::HostServicesV1* services);
+void initializeHostDuel(const mimita::host::HostServicesV1* services);
+void initializeHostPersistence(const mimita::host::HostServicesV1* services);
+void initializeHostJobsWatch(const mimita::host::HostServicesV1* services);
 void initializeHostLifetime(const mimita::host::HostServicesV1* services);
 void initializeHostRender(const mimita::host::HostServicesV1* services);
 }
@@ -51,6 +54,9 @@ HostResult probeInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostModules(services);
     mimita::game::initializeHostAudio(services);
     mimita::game::initializeHostEffects(services);
+    mimita::game::initializeHostDuel(services);
+    mimita::game::initializeHostPersistence(services);
+    mimita::game::initializeHostJobsWatch(services);
     mimita::game::initializeHostEntity(services);
     mimita::game::initializeHostLifetime(services);
     mimita::game::initializeHostRender(services);
@@ -88,212 +94,12 @@ HostResult probeEvent(std::uint32_t eventId, void* payload, std::size_t payloadS
             dispatch->structSize != sizeof(TransportDispatchV1)) {
             return HostResult::InvalidArgument;
         }
-        const TransportMessageV1& message = dispatch->message;
-        if (!message.payload || message.payloadSize == 0 ||
-            message.payloadSize < sizeof(MimitaNet::PacketHeader)) {
-            return HostResult::NotFound;
-        }
-        const auto* header =
-            reinterpret_cast<const MimitaNet::PacketHeader*>(message.payload);
-        if (header->type != MimitaNet::PACKET_SERVER_COMMAND ||
-            message.payloadSize < sizeof(MimitaNet::ServerCommandPacket)) {
-            return HostResult::NotFound;
-        }
-
-        const auto* packet =
-            reinterpret_cast<const MimitaNet::ServerCommandPacket*>(
-                message.payload);
-        char command[128] = {};
-        std::strncpy(command, packet->commandText, sizeof(command) - 1);
-
-        mimita::host::EntitySnapshotV1 player{};
-        player.structSize = static_cast<std::uint32_t>(sizeof(player));
-        const auto handle = mimita::host::makeEntityHandle(
-            mimita::host::EntityKind::Player, header->playerId);
-        const auto read = mimita::game::readHostEntity(handle, &player);
-        const bool hasPlayer = read == mimita::host::HostResult::Ok;
-        const bool isHost =
-            hasPlayer &&
-            (player.playerFlags &
-             static_cast<std::uint32_t>(mimita::host::PlayerFlag::Host)) != 0;
-        const bool enabled =
-            hasPlayer &&
-            ((player.playerFlags &
-              static_cast<std::uint32_t>(
-                  mimita::host::PlayerFlag::AdminEnabled)) != 0);
-        const bool granted =
-            hasPlayer &&
-            ((player.playerFlags &
-              static_cast<std::uint32_t>(
-                  mimita::host::PlayerFlag::AdminGranted)) != 0);
-        const bool admin = hasPlayer && (isHost ? enabled : (granted && enabled));
-
-        bool gameAccepted = false;
-        char gameStatus[128] = "probe: policy not migrated";
-        bool authoritative = false;
-        const std::string textCommand(command);
-        if (textCommand == "admincmds") {
-            gameAccepted = isHost || granted;
-            authoritative = hasPlayer;
-            if (isHost) {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              enabled ? "admincmds=1 (host)"
-                                      : "admincmds=0 (host)");
-            } else if (hasPlayer) {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              enabled ? "admincmds=1 (granted)"
-                                      : "admincmds=0 (granted)");
-            } else {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              "rejected: no admin grant for this session");
-            }
-        } else if (textCommand.rfind("admincmds ", 0) == 0) {
-            gameAccepted = admin;
-            std::snprintf(gameStatus, sizeof(gameStatus), "%s",
-                          admin ? "probe: admincmds argument allowed"
-                                : "probe: no admin grant");
-        } else if (textCommand == "player_list") {
-            gameAccepted = admin;
-            std::snprintf(gameStatus, sizeof(gameStatus), "%s",
-                          admin ? "probe: player_list allowed"
-                                : "probe: no admin access");
-        }
-
-        if (gServices && gServices->log) {
-            char text[512] = {};
-            std::snprintf(text, sizeof(text),
-                          "game.transport.dispatch type=%u bytes=%u "
-                          "player=%u command=%s accepted=%d authoritative=%d "
-                          "status=%s",
-                          header->type, message.payloadSize, header->playerId,
-                          command, gameAccepted ? 1 : 0, authoritative ? 1 : 0,
-                          gameStatus);
-            gServices->log(gServices->hostUserData, 1, text);
-        }
-
-        if (!authoritative) {
-            return HostResult::NotFound;
-        }
-
-        MimitaNet::ServerCommandResultPacket result{};
-        result.header.type = MimitaNet::PACKET_SERVER_COMMAND_RESULT;
-        result.header.tick = dispatch->serverTick;
-        result.header.playerId = header->playerId;
-        result.accepted = gameAccepted ? 1 : 0;
-        std::memset(result.statusText, 0, sizeof(result.statusText));
-        std::strncpy(result.statusText, gameStatus, sizeof(result.statusText) - 1);
-        std::memcpy(dispatch->response.payload, &result, sizeof(result));
-        dispatch->response.typeId = MimitaNet::PACKET_SERVER_COMMAND_RESULT;
-        dispatch->response.flags = 0;
-        dispatch->response.payloadSize = sizeof(result);
+        const bool handledCommand =
+            mimita::game::dispatchServerCommand(dispatch, gServices);
         if (handled) {
-            *handled = 1;
+            *handled = handledCommand ? 1 : 0;
         }
-        return HostResult::Ok;
-    }
-    if (eventId == kEventTransportMessage) {
-        if (!payload || payloadSize < sizeof(TransportMessageV1)) {
-            return HostResult::InvalidArgument;
-        }
-        auto* message = static_cast<TransportMessageV1*>(payload);
-        if (!message->payload || message->payloadSize == 0) {
-            return HostResult::InvalidArgument;
-        }
-        if (message->payloadSize < sizeof(MimitaNet::PacketHeader)) {
-            return HostResult::NotFound;
-        }
-        const auto* header =
-            reinterpret_cast<const MimitaNet::PacketHeader*>(message->payload);
-        if (header->type != MimitaNet::PACKET_SERVER_COMMAND ||
-            message->payloadSize < sizeof(MimitaNet::ServerCommandPacket)) {
-            return HostResult::NotFound;
-        }
-
-        const auto* packet =
-            reinterpret_cast<const MimitaNet::ServerCommandPacket*>(
-                message->payload);
-        char command[128] = {};
-        std::strncpy(command, packet->commandText, sizeof(command) - 1);
-
-        mimita::host::EntitySnapshotV1 player{};
-        player.structSize = static_cast<std::uint32_t>(sizeof(player));
-        const auto handle = mimita::host::makeEntityHandle(
-            mimita::host::EntityKind::Player, header->playerId);
-        const auto read = mimita::game::readHostEntity(handle, &player);
-        const bool hasPlayer = read == mimita::host::HostResult::Ok;
-        const bool isHost =
-            hasPlayer &&
-            (player.playerFlags &
-             static_cast<std::uint32_t>(mimita::host::PlayerFlag::Host)) != 0;
-        const bool admin =
-            hasPlayer &&
-            ((player.playerFlags &
-              static_cast<std::uint32_t>(
-                  mimita::host::PlayerFlag::AdminGranted)) != 0 ||
-             ((player.playerFlags &
-               static_cast<std::uint32_t>(
-                   mimita::host::PlayerFlag::AdminEnabled)) != 0));
-
-        bool gameAccepted = false;
-        char gameStatus[128] = "probe: policy not migrated";
-        bool authoritative = false;
-        const std::string textCommand(command);
-        if (textCommand == "admincmds") {
-            gameAccepted = admin;
-            // Parity only: the resident handler remains authoritative until
-            // the CAP_TRANSPORT ack path is proven end-to-end on the client.
-            authoritative = false;
-            const bool enabled =
-                hasPlayer &&
-                ((player.playerFlags &
-                  static_cast<std::uint32_t>(
-                      mimita::host::PlayerFlag::AdminEnabled)) != 0);
-            if (isHost) {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              enabled ? "admincmds=1 (host)"
-                                      : "admincmds=0 (host)");
-            } else if (hasPlayer) {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              enabled ? "admincmds=1 (granted)"
-                                      : "admincmds=0 (granted)");
-            } else {
-                std::snprintf(gameStatus, sizeof(gameStatus),
-                              "rejected: no admin grant for this session");
-            }
-        } else if (textCommand.rfind("admincmds ", 0) == 0) {
-            gameAccepted = admin;
-            std::snprintf(gameStatus, sizeof(gameStatus), "%s",
-                          admin ? "probe: admincmds argument allowed"
-                                : "probe: no admin grant");
-        } else if (textCommand == "player_list") {
-            gameAccepted = admin;
-            std::snprintf(gameStatus, sizeof(gameStatus), "%s",
-                          admin ? "probe: player_list allowed"
-                                : "probe: no admin access");
-        }
-
-        bool ackSent = false;
-        if (authoritative) {
-            ackSent = mimita::game::sendServerCommandResult(
-                header->playerId, gameAccepted ? 1 : 0, gameStatus);
-        }
-        if (gServices && gServices->log) {
-            char text[512] = {};
-            std::snprintf(text, sizeof(text),
-                          "game.transport.inbound type=%u bytes=%u "
-                          "player=%u command=%s accepted=%d ack=%d status=%s",
-                          header->type, message->payloadSize, header->playerId,
-                          command, gameAccepted ? 1 : 0, ackSent ? 1 : 0,
-                          gameStatus);
-            gServices->log(gServices->hostUserData, 1, text);
-        }
-        if (authoritative) {
-            if (handled) {
-                *handled = 1;
-            }
-            return HostResult::Ok;
-        }
-        return HostResult::NotFound;
+        return handledCommand ? HostResult::Ok : HostResult::NotFound;
     }
     if (eventId != kEventNpcTargetSelect) {
         return HostResult::NotFound;

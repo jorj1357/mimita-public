@@ -6,7 +6,7 @@ still needs a confirmation read of its declarations, call graph, and resources.
 
 - Source: `manifest-fast` (`build\source-manifest.json`)
 - Machine table: `docs\handoffs\cpp-audit-static-triage-20261112.csv`
-- Rows: 745
+- Rows: 751
 
 ## Classification counts
 
@@ -14,10 +14,10 @@ still needs a confirmation read of its declarations, call graph, and resources.
 |---|---:|---|
 | STATIC_CLOSED | 66 | confirmation read closed; see batch record |
 | STATIC_CLOSABLE_CANDIDATE | 0 | no lexical hit; confirmation read still required |
-| STATIC_STATE_REVIEW | 39 | mutable static/extern state; read and assign owner |
-| RESIDENT_ADAPTER_REQUIRED | 182 | calls a resident service or holds thread_local host state |
-| RUNTIME_PROOF_REQUIRED | 297 | threads/jobs/callbacks/resources/network state |
-| RESIDENT_HOST | 26 | host/bootstrap/loader/device/transport; not game.dll |
+| STATIC_STATE_REVIEW | 41 | mutable static/extern state; read and assign owner |
+| RESIDENT_ADAPTER_REQUIRED | 183 | calls a resident service or holds thread_local host state |
+| RUNTIME_PROOF_REQUIRED | 299 | threads/jobs/callbacks/resources/network state |
+| RESIDENT_HOST | 27 | host/bootstrap/loader/device/transport; not game.dll |
 | NON_GAME | 135 | vendor/tool/test/launcher/module; explicit exception |
 | UNRESOLVED | 0 | unknown owner; blocking |
 
@@ -118,6 +118,8 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/devtools/dev-commands.cpp` - mutable static candidates=1
 - `src/effects/zombie-tower-effects.cpp` - mutable static candidates=1
 - `src/fister/sim/Ragdoll.cpp` - global/extern keyword mentions=1
+- `src/game/game-module.cpp` - global/extern keyword mentions=2
+- `src/game/json-watch-bridge-module.cpp` - file-scope globals=2
 - `src/gamemode/capability-registry.cpp` - mutable static candidates=1
 - `src/gui/gui-coord.cpp` - mutable static candidates=1
 - `src/gui/hud/match-timer.cpp` - mutable static candidates=1
@@ -165,7 +167,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/combat/weapon-hafs.cpp` - resident services: DebugLog
 - `src/combat/weapon-hit.cpp` - resident services: DebugLog
 - `src/combat/weapon-manager.cpp` - resident services: Terminal, WeaponRegistry
-- `src/combat/weapon-quick-hit.cpp` - resident services: DebugLog, DebugVis, HotReloadSystem
+- `src/combat/weapon-quick-hit.cpp` - resident services: DebugLog, DebugVis
 - `src/combat/weapon-registry.cpp` - resident services: WeaponRegistry
 - `src/combat/weapon-rocket-launcher.cpp` - resident services: DebugLog, DebugVis, SizeScalingConfig, StructuredLogger
 - `src/combat/weapon-swordsword.cpp` - resident services: DebugLog
@@ -185,7 +187,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/effects/effect-part-blood.cpp` - resident services: DebugLog, StructuredLogger
 - `src/effects/effect-part-debris.cpp` - resident services: SizeScalingConfig
 - `src/effects/effect-part-particles.cpp` - resident services: DebugLog
-- `src/effects/effect-part-system.cpp` - resident services: DebugLog, HotReloadSystem
+- `src/effects/effect-part-system.cpp` - resident services: DebugLog
 - `src/effects/effect-part.cpp` - resident services: DebugLog, SizeScalingConfig, StructuredLogger, WeaponRegistry
 - `src/effects/hit-effects-render.cpp` - resident services: DebugVis
 - `src/effects/hit-effects-spawn.cpp` - resident services: DebugLog, StructuredLogger
@@ -207,6 +209,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/game/bomb-tag-state.cpp` - resident services: TerminalState
 - `src/game/duel-state.cpp` - resident services: DebugLog
 - `src/game/gamemode-manager.cpp` - resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, TerminalState
+- `src/game/persistence-bridge-module.cpp` - resident services: PersistenceQueue
 - `src/game/spawn-override.cpp` - resident services: DebugLog
 - `src/gamemode/arena-ball.cpp` - resident services: PhysicalEntitySystem, StructuredLogger
 - `src/gamemode/gamemode-runtime-resolver.cpp` - resident services: DebugLog
@@ -440,8 +443,10 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/entities/player-render-mesh.cpp` - resource hits=gl
 - `src/entities/player-render.cpp` - resource hits=gl
 - `src/game/bomb-tag-config.cpp` - resource hits=gl
+- `src/game/duel-bridge-module.cpp` - network context
 - `src/game/duel.cpp` - resource hits=gl
-- `src/game/game-cli.cpp` - resource hits=gl,file,os
+- `src/game/network-compat-bridge-module.cpp` - resource hits=net
+- `src/game/server-command-dispatch-module.cpp` - network context
 - `src/game/spawn-utils.cpp` - resource hits=file
 - `src/gamemode/gamemode-map-pool.cpp` - resource hits=file
 - `src/gamemode/gamemode.cpp` - resource hits=file
@@ -826,7 +831,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/world/texture-store.cpp`
 - `src/world/world-gltf-loader.cpp`
 
-### StructuredLogger (163)
+### StructuredLogger (164)
 
 - `src/actor/player-ai.cpp`
 - `src/audio/audio.cpp`
@@ -980,6 +985,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/sim/simulate-tick.cpp`
 - `src/terminal/actor-commands.cpp`
 - `src/terminal/player-commands.cpp`
+- `src/terminal/weapon-bench-commands.cpp`
 - `src/terminal/weapon-commands.cpp`
 - `src/vehicles/vehicle-audio.cpp`
 - `src/vehicles/vehicle-commands.cpp`
@@ -992,7 +998,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/worldgen/worldgen-commands.cpp`
 - `src/worldgen/worldgen-library.cpp`
 
-### Terminal (100)
+### Terminal (99)
 
 - `src/actor/player-ai.cpp`
 - `src/analytics/analytics-manager.cpp`
@@ -1027,7 +1033,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/engine/engine-tick-camera.cpp`
 - `src/engine/engine-tick-combat.cpp`
 - `src/engine/engine-tick-replay.cpp`
-- `src/engine/engine-tick-setup.cpp`
 - `src/engine/engine-tick-state.cpp`
 - `src/engine/engine-tick-ui-replay-hud.cpp`
 - `src/engine/engine-tick.cpp`
@@ -1675,6 +1680,16 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/npc/npc-behavior.cpp`
 - `src/npc/npc.cpp`
 
+### PersistenceQueue (7)
+
+- `src/game/persistence-bridge-module.cpp`
+- `src/host/host-runtime.cpp`
+- `src/network/server-gamemode.cpp`
+- `src/network/server.cpp`
+- `src/persistence/persistence-commands.cpp`
+- `src/persistence/persistence-emit.cpp`
+- `src/persistence/persistence-queue.cpp`
+
 ### VehicleConfigRegistry (7)
 
 - `src/mapeditor/map-editor.cpp`
@@ -1684,24 +1699,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/vehicles/vehicle-hud.cpp`
 - `src/vehicles/vehicle-render.cpp`
 - `src/vehicles/vehicle-system.cpp`
-
-### HotReloadSystem (6)
-
-- `src/combat/weapon-quick-hit.cpp`
-- `src/devtools/terminal.cpp`
-- `src/effects/effect-part-system.cpp`
-- `src/engine/engine-tick-setup.cpp`
-- `src/hot-reload/hot-reload-system.cpp`
-- `src/main.cpp`
-
-### LogManager (6)
-
-- `src/debug/log-manager.cpp`
-- `src/debug/structured-log.cpp`
-- `src/devtools/dev-log-commands.cpp`
-- `src/main-init.cpp`
-- `src/main.cpp`
-- `src/terminal/weapon-bench-commands.cpp`
 
 ### CharacterRegistry (5)
 
@@ -1719,14 +1716,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/physics/physical-entity.cpp`
 - `src/physics/runtime-objects.cpp`
 
-### PersistenceQueue (5)
-
-- `src/network/server-gamemode.cpp`
-- `src/network/server.cpp`
-- `src/persistence/persistence-commands.cpp`
-- `src/persistence/persistence-emit.cpp`
-- `src/persistence/persistence-queue.cpp`
-
 ### ActorCollisionConfig (4)
 
 - `src/config/actor-collision-config.cpp`
@@ -1740,6 +1729,18 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/main-init.cpp`
 - `src/main.cpp`
 - `src/profile/local-profile-system.cpp`
+
+### LogManager (4)
+
+- `src/debug/log-manager.cpp`
+- `src/debug/structured-log.cpp`
+- `src/main-init.cpp`
+- `src/main.cpp`
+
+### HotReloadSystem (2)
+
+- `src/hot-reload/hot-reload-system.cpp`
+- `src/main.cpp`
 
 ## Limits
 

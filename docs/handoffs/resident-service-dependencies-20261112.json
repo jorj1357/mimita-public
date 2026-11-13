@@ -199,8 +199,7 @@
     ],
     "src/combat/weapon-quick-hit.cpp": [
       "DebugLog",
-      "DebugVis",
-      "HotReloadSystem"
+      "DebugVis"
     ],
     "src/combat/weapon-registry.cpp": [
       "WeaponRegistry"
@@ -343,7 +342,6 @@
       "Terminal"
     ],
     "src/devtools/dev-log-commands.cpp": [
-      "LogManager",
       "StructuredLogger",
       "Terminal"
     ],
@@ -389,7 +387,6 @@
       "Terminal"
     ],
     "src/devtools/terminal.cpp": [
-      "HotReloadSystem",
       "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal",
@@ -425,8 +422,7 @@
       "StructuredLogger"
     ],
     "src/effects/effect-part-system.cpp": [
-      "DebugLog",
-      "HotReloadSystem"
+      "DebugLog"
     ],
     "src/effects/effect-part.cpp": [
       "DebugLog",
@@ -512,7 +508,6 @@
       "DebugVis",
       "GamemodeRegistry",
       "GuiLayoutManager",
-      "HotReloadSystem",
       "MapConfigRegistry",
       "ModuleHost",
       "MovementJsonConfig",
@@ -521,7 +516,6 @@
       "Perf",
       "SizeScalingConfig",
       "StructuredLogger",
-      "Terminal",
       "TerminalState",
       "VehicleSystem"
     ],
@@ -645,6 +639,9 @@
     ],
     "src/game/module-host-bridge-module.cpp": [
       "ModuleHost"
+    ],
+    "src/game/persistence-bridge-module.cpp": [
+      "PersistenceQueue"
     ],
     "src/game/spawn-override.cpp": [
       "DebugLog"
@@ -802,6 +799,7 @@
     ],
     "src/host/host-runtime.cpp": [
       "ModuleHost",
+      "PersistenceQueue",
       "StructuredLogger"
     ],
     "src/hot-reload/hot-reload-system.cpp": [
@@ -1739,7 +1737,7 @@
       "TerminalState"
     ],
     "src/terminal/weapon-bench-commands.cpp": [
-      "LogManager",
+      "StructuredLogger",
       "Terminal",
       "TerminalState",
       "WeaponRegistry"
@@ -2216,10 +2214,6 @@
       "src/notifications/notifications.cpp"
     ],
     "HotReloadSystem": [
-      "src/combat/weapon-quick-hit.cpp",
-      "src/devtools/terminal.cpp",
-      "src/effects/effect-part-system.cpp",
-      "src/engine/engine-tick-setup.cpp",
       "src/hot-reload/hot-reload-system.cpp",
       "src/main.cpp"
     ],
@@ -2232,10 +2226,8 @@
     "LogManager": [
       "src/debug/log-manager.cpp",
       "src/debug/structured-log.cpp",
-      "src/devtools/dev-log-commands.cpp",
       "src/main-init.cpp",
-      "src/main.cpp",
-      "src/terminal/weapon-bench-commands.cpp"
+      "src/main.cpp"
     ],
     "MapConfigRegistry": [
       "src/debug/debug-visuals-scene.cpp",
@@ -2398,6 +2390,8 @@
       "src/sim/simulate-tick.cpp"
     ],
     "PersistenceQueue": [
+      "src/game/persistence-bridge-module.cpp",
+      "src/host/host-runtime.cpp",
       "src/network/server-gamemode.cpp",
       "src/network/server.cpp",
       "src/persistence/persistence-commands.cpp",
@@ -2607,6 +2601,7 @@
       "src/sim/simulate-tick.cpp",
       "src/terminal/actor-commands.cpp",
       "src/terminal/player-commands.cpp",
+      "src/terminal/weapon-bench-commands.cpp",
       "src/terminal/weapon-commands.cpp",
       "src/vehicles/vehicle-audio.cpp",
       "src/vehicles/vehicle-commands.cpp",
@@ -2653,7 +2648,6 @@
       "src/engine/engine-tick-camera.cpp",
       "src/engine/engine-tick-combat.cpp",
       "src/engine/engine-tick-replay.cpp",
-      "src/engine/engine-tick-setup.cpp",
       "src/engine/engine-tick-state.cpp",
       "src/engine/engine-tick-ui-replay-hud.cpp",
       "src/engine/engine-tick.cpp",

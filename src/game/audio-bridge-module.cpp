@@ -223,6 +223,154 @@ std::string MusicManager::currentTrackInfo() const {
     return std::string(info);
 }
 
+bool invokeText(mimita::host::AudioOp op, const std::string& text, float f0 = 0.0f,
+                float f1 = 0.0f, std::uint32_t u0 = 0) {
+    mimita::host::AudioTextPayload payload{};
+    mimita::game::copyName(payload.text, sizeof(payload.text), text);
+    payload.f0 = f0;
+    payload.f1 = f1;
+    payload.u0 = u0;
+    return mimita::game::invoke(op, &payload, sizeof(payload), nullptr, 0);
+}
+
+std::string receiveString(mimita::host::AudioOp op) {
+    char text[512]{};
+    mimita::game::invoke(op, nullptr, 0, text, sizeof(text));
+    return std::string(text);
+}
+
+unsigned int audioOwnerKey(unsigned int actorId, const std::string& channel) {
+    mimita::host::AudioTextPayload payload{};
+    mimita::game::copyName(payload.text, sizeof(payload.text), channel);
+    payload.u0 = actorId;
+    std::uint32_t key = 0;
+    mimita::game::invoke(mimita::host::AudioOp::AudioOwnerKey, &payload,
+                         sizeof(payload), &key, sizeof(key));
+    return key;
+}
+
+void playSound(const std::string& name, float volume) {
+    invokeText(mimita::host::AudioOp::PlaySound, name, volume);
+}
+
+void playEventSound(const std::string& name, float volume) {
+    invokeText(mimita::host::AudioOp::PlayEventSound, name, volume);
+}
+
+void playSoundPitched(const std::string& name, float volume, float pitch) {
+    invokeText(mimita::host::AudioOp::PlaySoundPitched, name, volume, pitch);
+}
+
+void audioUpdate(float dt) {
+    mimita::game::sendScalar(mimita::host::AudioOp::AudioUpdate, dt);
+}
+
+void setGlobalDuck(float duck) {
+    mimita::game::sendScalar(mimita::host::AudioOp::SetGlobalDuck, duck);
+}
+
+float getGlobalDuck() {
+    return mimita::game::receiveScalar<float>(mimita::host::AudioOp::GetGlobalDuck);
+}
+
+glm::vec3 audioListenerForward() {
+    float forward[3]{};
+    mimita::game::invoke(mimita::host::AudioOp::AudioListenerForward, nullptr, 0, forward,
+           sizeof(forward));
+    return glm::vec3(forward[0], forward[1], forward[2]);
+}
+
+void setAudioListener(glm::vec3 position, glm::vec3 forward) {
+    mimita::host::AudioVec3PairPayload payload{};
+    payload.a[0] = position.x;
+    payload.a[1] = position.y;
+    payload.a[2] = position.z;
+    payload.b[0] = forward.x;
+    payload.b[1] = forward.y;
+    payload.b[2] = forward.z;
+    mimita::game::invoke(mimita::host::AudioOp::SetAudioListener, &payload, sizeof(payload),
+           nullptr, 0);
+}
+
+std::string resolveSoundPath(const std::string& name) {
+    mimita::host::AudioTextPayload payload{};
+    mimita::game::copyName(payload.text, sizeof(payload.text), name);
+    char output[512]{};
+    mimita::game::invoke(mimita::host::AudioOp::ResolveSoundPath, &payload, sizeof(payload),
+           output, sizeof(output));
+    return std::string(output);
+}
+
+float getAudioFileDuration(const std::string& path) {
+    mimita::host::AudioTextPayload payload{};
+    mimita::game::copyName(payload.text, sizeof(payload.text), path);
+    float duration = 0.0f;
+    mimita::game::invoke(mimita::host::AudioOp::GetAudioFileDuration, &payload, sizeof(payload),
+           &duration, sizeof(duration));
+    return duration;
+}
+
+bool playReplayMusicPreview(const std::string& path, float volume) {
+    mimita::host::AudioTextPayload payload{};
+    mimita::game::copyName(payload.text, sizeof(payload.text), path);
+    payload.f0 = volume;
+    std::int32_t ok = 0;
+    mimita::game::invoke(mimita::host::AudioOp::PlayReplayMusicPreview, &payload, sizeof(payload),
+           &ok, sizeof(ok));
+    return ok != 0;
+}
+
+void stopReplayMusicPreview() {
+    mimita::game::invoke(mimita::host::AudioOp::StopReplayMusicPreview, nullptr, 0, nullptr, 0);
+}
+
+void pauseReplayMusicPreview() {
+    mimita::game::invoke(mimita::host::AudioOp::PauseReplayMusicPreview, nullptr, 0, nullptr, 0);
+}
+
+void resumeReplayMusicPreview() {
+    mimita::game::invoke(mimita::host::AudioOp::ResumeReplayMusicPreview, nullptr, 0, nullptr, 0);
+}
+
+bool seekReplayMusicPreview(float seconds) {
+    std::int32_t ok = 0;
+    mimita::game::invoke(mimita::host::AudioOp::SeekReplayMusicPreview, &seconds,
+           sizeof(seconds), &ok, sizeof(ok));
+    return ok != 0;
+}
+
+bool isReplayMusicPreviewPlaying() {
+    std::int32_t playing = 0;
+    mimita::game::invoke(mimita::host::AudioOp::IsReplayMusicPreviewPlaying, nullptr, 0,
+           &playing, sizeof(playing));
+    return playing != 0;
+}
+
+float getReplayMusicPreviewDuration() {
+    return mimita::game::receiveScalar<float>(
+        mimita::host::AudioOp::GetReplayMusicPreviewDuration);
+}
+
+void setReplayMusicPreviewSpeed(float speed) {
+    mimita::game::sendScalar(mimita::host::AudioOp::SetReplayMusicPreviewSpeed, speed);
+}
+
+void setReplayMusicPreviewVolume(float volume) {
+    mimita::game::sendScalar(mimita::host::AudioOp::SetReplayMusicPreviewVolume, volume);
+}
+
+void playAirJumpSound() {
+    mimita::game::invoke(mimita::host::AudioOp::PlayAirJumpSound, nullptr, 0, nullptr, 0);
+}
+
+void playMenuClick() {
+    mimita::game::invoke(mimita::host::AudioOp::PlayMenuClick, nullptr, 0, nullptr, 0);
+}
+
+void playMenuHover() {
+    mimita::game::invoke(mimita::host::AudioOp::PlayMenuHover, nullptr, 0, nullptr, 0);
+}
+
 void playWorldSound(const std::string& name, glm::vec3 pos, float volume,
                     float pitch, float maxDistance, AudioCategory category) {
     mimita::host::WorldSoundPayload payload{};
@@ -274,4 +422,34 @@ void computeImpactAudio(float baseVolume, float distance, float severity,
                          sizeof(payload), result, sizeof(result));
     outVolume = result[0];
     outPitch = result[1];
+}
+
+
+void setAudioSpatialWorld(const World* world) {
+    const World* value = world;
+    mimita::game::invoke(mimita::host::AudioOp::SetAudioSpatialWorld, &value,
+                         sizeof(value), nullptr, 0);
+}
+
+bool decodeAudioToPCM(const std::string& path, std::vector<std::int16_t>& outPCM,
+                      std::uint32_t& outSampleRate, std::uint32_t& outChannels,
+                      std::uint32_t targetSampleRate, std::uint32_t targetChannels) {
+    mimita::host::AudioDecodeRequest request{};
+    mimita::game::copyName(request.path, sizeof(request.path), path);
+    request.targetSampleRate = targetSampleRate;
+    request.targetChannels = targetChannels;
+    mimita::host::AudioDecodeResult result{};
+    if (!mimita::game::invoke(mimita::host::AudioOp::DecodeAudioToPCM, &request,
+                              sizeof(request), &result, sizeof(result))) {
+        return false;
+    }
+    outSampleRate = result.sampleRate;
+    outChannels = result.channels;
+    outPCM.resize(result.sampleCount);
+    if (outPCM.empty()) return true;
+    request.capacitySamples = result.sampleCount;
+    request.out = outPCM.data();
+    return mimita::game::invoke(mimita::host::AudioOp::DecodeAudioToPCM, &request,
+                                sizeof(request), &result, sizeof(result)) &&
+           result.ok != 0;
 }

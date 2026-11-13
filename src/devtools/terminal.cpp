@@ -30,7 +30,6 @@
 #include "debug/structured-log.h"
 #include "devtools/scenario-recorder.h"
 #include "network/multiplayer-context.h"
-#include "hot-reload/hot-reload-system.h"
 
 namespace {
 
@@ -171,7 +170,6 @@ void printVersionInfo()
     const std::string exePath = currentExecutablePath();
     const std::string eventsPath = StructuredLogger::instance().eventsPath();
     const std::string runId = StructuredLogger::instance().runId();
-    const uint32_t hotGeneration = HotReloadSystem::instance().gameMemory().reloadCount;
 
     const char* roleEnv = std::getenv("MIMITA_PROCESS_ROLE");
     const std::string processRole = roleEnv && *roleEnv ? roleEnv : "client";
@@ -187,9 +185,6 @@ void printVersionInfo()
     terminal.addLog("[VERSIONINFO] client_tick=" + std::to_string(ticks.clientTick) +
                     " server_tick=" + std::to_string(ticks.serverTick) +
                     " server_tick_source=" + ticks.serverTickSource);
-    terminal.addLog("[VERSIONINFO] hot_dll_loaded=" +
-                    std::string(HotReloadSystem::instance().loaded() ? "yes" : "no") +
-                    " hot_generation=" + std::to_string(hotGeneration));
     terminal.addLog("[VERSIONINFO] room=" +
                     (gpMpContext && !gpMpContext->currentRoomCode.empty()
                         ? gpMpContext->currentRoomCode : "(none)") +
@@ -213,8 +208,8 @@ void printVersionInfo()
             {"client_tick", ticks.clientTick},
             {"server_tick", ticks.serverTick},
             {"server_tick_source", ticks.serverTickSource},
-            {"hot_dll_loaded", HotReloadSystem::instance().loaded()},
-            {"hot_generation", hotGeneration}
+            {"hot_dll_loaded", false},
+            {"hot_generation", 0}
         },
         __FILE__, __LINE__, __FUNCTION__);
 }

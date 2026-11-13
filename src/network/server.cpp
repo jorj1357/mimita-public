@@ -520,6 +520,16 @@ std::string gamemodeDefaultMap(const std::string& communityModeId)
 std::string gServerHostPlayerName;
 uint32_t gServerHostPlayerId = 0;
 
+uint32_t serverHostPlayerId()
+{
+    return gServerHostPlayerId;
+}
+
+void setServerHostPlayerId(uint32_t playerId)
+{
+    gServerHostPlayerId = playerId;
+}
+
 ServerGameOverrides& serverGameOverrides()
 {
     return gServerOverrides;

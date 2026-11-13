@@ -76,10 +76,14 @@ void initializeHostEffects(const mimita::host::HostServicesV1* services) {
 
 }  // namespace mimita::game
 
+#ifdef MIMITA_PROBE_BRIDGE
+// The whole-game DLL includes effect-part-system.cpp, which owns instance().
+// The probe source set needs this bridge's instance().
 EffectPartSystem& EffectPartSystem::instance() {
     static EffectPartSystem system;
     return system;
 }
+#endif
 
 EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
     std::uintptr_t pointer = 0;

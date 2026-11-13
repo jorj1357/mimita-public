@@ -1,5 +1,6 @@
 #include "engine/engine-tick-setup.h"
 #include <filesystem>
+#include "game/global-bridge-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
@@ -45,7 +46,6 @@
 #include "map/map-authored-geometry.h"
 #include "interaction/world-interaction-runtime.h"
 #include "procedural/infinite-world-runtime.h"
-#include "hot-reload/hot-reload-system.h"
 #include "hot-reload/module-host.h"
 #include "mapeditor/map-editor-config.h"
 #include "vehicles/vehicle-system.h"
@@ -92,12 +92,16 @@ static void loadHotReloadConfig()
 
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
+    static bool hostGlobalsSynced = false;
+    if (!hostGlobalsSynced) {
+        mimita::game::syncHostGlobals();
+        hostGlobalsSynced = true;
+    }
     { MIMITA_PERF_SCOPE("Setup::HotReloadDLL");
       static auto nextDllPoll = std::chrono::steady_clock::now();
       const auto dllNow = std::chrono::steady_clock::now();
       if (sHotReloadEnabled && dllNow >= nextDllPoll) {
           nextDllPoll = dllNow + HOT_RELOAD_POLL_INTERVAL;
-          HotReloadSystem::instance().reloadGameDLLIfChanged();
           ModuleHost::instance().poll();
           if (engine.renderer)
               engine.renderer->reloadWorldShaderIfChanged();
@@ -293,16 +297,6 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 
     { MIMITA_PERF_SCOPE("Setup::DynamicLights"); DynamicLightManager::instance().update(dt); }
     worldPassRan = false;
-
-    {
-        static uint32_t lastReloadCount = 0;
-        uint32_t currentCount = HotReloadSystem::instance().gameMemory().reloadCount;
-        if (currentCount != lastReloadCount) {
-            printf("[AVATAR UI] Hot reload re-register complete (count=%u)\n", currentCount);
-            Terminal::instance().addLog("[AVATAR UI] Hot reload re-register complete");
-            lastReloadCount = currentCount;
-        }
-    }
 
     { MIMITA_PERF_SCOPE("Setup::Debug");
       DebugVis::update();

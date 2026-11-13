@@ -35,6 +35,14 @@ enum class HostCapabilityId : std::uint32_t {
     Jobs = 8,
     Callbacks = 9,
     Resources = 10,
+    Gamemode = 11,
+    Persistence = 12,
+    Globals = 13,
+    RenderDevice = 14,
+    Diagnostics = 15,
+    Ice = 16,
+    TransportSession = 17,
+    AuthoredRebuild = 18,
 };
 
 // Stable entity identity. The low bits are generation-specific; the host owns

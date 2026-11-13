@@ -1,68 +1,84 @@
 # Live generation activation (2026-11-12)
 
-**Status:** probe-only live activation works in the same server/client processes.
-No EXE restart, no cutover, no formal state-continuity proof.
+**Status:** probe-only live activation, failed-candidate fallback, rollback, and
+same-process state continuity are proved. No whole-game cutover.
 
 ## Implementation
 
 - `HostRuntime::poll()` reads `MIMITA_GAME_READY` or `build/game/ready.json`.
-- A ready file must contain `status:"ready"`, `generation`, and `dll`.
-- The host throttles polling to 250 ms.
+- Ready files must contain `status:"ready"`, `generation`, and `dll`.
+- Polling is throttled to 250 ms.
 - On a new generation:
-  1. `barrier_.beginQuiesce(QuiesceMode::Swap)`
-  2. `barrier_.finishQuiesce(2000)`
-  3. `loader_.loadCandidate(...)` while the old generation is still loaded
-  4. old `quiesce(Swap)` and `shutdown()`
-  5. `loader_.commit(...)`
-  6. `barrier_.beginGeneration(newGeneration)`
-- On quiesce failure or candidate rejection, the old generation is restarted in
-  the barrier.
-- The ready generation overrides the module's local `generation` field so a
-  probe module with a hardcoded version does not swap repeatedly.
+  1. quiesce the barrier (2 second budget);
+  2. load and validate the candidate while the old generation is still loaded;
+  3. quiesce and shut down the old generation;
+  4. commit the candidate and start the new generation;
+  5. on missing/rejected candidate, keep the old generation active.
+- Failed generation/dll pairs are retried after 5 seconds instead of every
+  250 ms.
+- The ready manifest generation overrides the module's local `generation` field
+  so probe modules with a hardcoded value do not swap repeatedly.
 - `main.cpp` polls in the client loop; `server.cpp` polls in the dedicated
   server loop.
 
-## Runtime evidence
+## Evidence
 
-Run: `C:\mimita-v9\logs\2026-11-12\20261112_225639`
+Run: `C:\mimita-v9\logs\2026-11-12\20261112_230534`
 
-```text
-server PID 25812, client PID 5688
-start: game.host.probe.started dll=generation-21/game-g21.dll
-ready: build/probe/npc-target/ready.json generation=21
-server: game.generation.activated generation=21 old_generation=1
-client: game.generation.activated generation=21 old_generation=1
-same server/client PIDs continued
-```
-
-A later `admincmds` after the swap produced:
+Same server PID `22784` and client PID `11324` throughout.
 
 ```text
-server: probe.transport.response-sent bytes=264 type=54 sent=true
-client: network.server-command.result-packet transport=active
-client: network.server-command.result accepted=true status=admincmds=1 (host)
+before:          generation-20, player pos [117.363, 35.213, 312.492]
+invalid ready:   game.generation.activate-failed generation=99 missing.dll
+after-failed:    still running; admincmds accepted; pos [117.363, 35.210, 312.474]
+valid ready:     game.generation.activated generation=21 old_generation=1
+after-swap:      admincmds accepted; pos [117.362, 35.205, 312.475]
+rollback ready:  game.generation.activated generation=20 old_generation=21
+after-rollback:  admincmds accepted; pos [117.361, 35.200, 312.422]
 ```
 
-That proves the game-owned command response still works after a live generation
-swap.
+Client command results after the failed candidate, after the swap, and after the
+rollback:
+
+```json
+{"event":"network.server-command.result","accepted":true,
+ "status":"admincmds=1 (host)"}
+```
+
+The small position changes are normal idle/physics movement; the player, server
+tick, connection, and process identities continued. This is same-process state
+continuity evidence, not a formal migration proof.
+
+## What is proved
+
+- live probe generation swap without EXE restart
+- same server/client PIDs across the swap
+- missing candidate keeps the old generation active
+- failed compile does not publish a new current/ready generation
+- rollback from generation 21 to 20
+- exact `admincmds` authority works before, during, and after the swap
+- player position/tick continuity across all swaps
+
+## Failed compile fallback
+
+A temporary source set added `build/tmp/broken-probe.cpp` with `#error`. The
+worker exited 1, but `build/probe/npc-target/current.json` and `ready.json`
+hashes were unchanged, the host stayed on the old generation, and a subsequent
+`admincmds` still produced the client result. The temporary files were removed.
 
 ## What is not proved
 
-- Full whole-game DLL swap (the probe is 10 sources).
-- Formal resident-state continuity beyond same process/connection.
-- Failed-load fallback and rollback evidence.
-- Compile-failure fallback evidence.
-- Callback preservation when quiesce fails; the current barrier clears
-  callbacks during `beginQuiesce`.
-- State migration on schema change.
-- Cutover or EXE-as-host-only.
+- whole-game 584-source DLL swap
+- schema migration on component changes
+- adding/removing source files through the live coordinator
+- cutover or EXE-as-host-only
 
 ## Next
 
-1. Prove failed candidate load keeps the old generation and resumes calls.
-2. Prove deliberate rollback to the previous generation.
-3. Preserve/rebuild callbacks on failed quiesce.
-4. Test same process with a real player position/health/entity state before and
-   after swap.
-5. Connect `live.py` builds to `ready.json` for the real whole-game DLL.
-6. Then the single all-files cutover.
+1. Connect `live.py` to real whole-game builds and the production ready path.
+2. Add failed **compile** fallback evidence to the coordinator-driven path; the
+   direct worker test already proves a failed compile does not publish current/
+   ready.
+3. Add runtime failure-path evidence for callback preservation/resume; the standalone barrier test already proves `Busy -> resume -> callback`.
+4. Prove add/remove/header edit through the live coordinator.
+5. Then link families, static gate 0, and the single all-files cutover.

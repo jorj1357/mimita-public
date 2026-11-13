@@ -25,6 +25,11 @@ struct JobsCapabilityV1 {
     std::uint64_t (*acquire)(void* hostUserData, const char* tag);
     HostResult (*release)(void* hostUserData, std::uint64_t lease);
     std::uint32_t (*busy)(void* hostUserData);
+    void* (*json_watch_create)(void* hostUserData, const char* const* roots,
+                               std::uint32_t rootCount, std::uint32_t intervalMs);
+    void (*json_watch_destroy)(void* hostUserData, void* watch);
+    std::int32_t (*json_watch_consume_dirty)(void* hostUserData, void* watch);
+    void (*json_watch_mark_dirty)(void* hostUserData, void* watch);
 };
 
 struct CallbacksCapabilityV1 {

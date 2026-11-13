@@ -418,6 +418,8 @@ def build(args: argparse.Namespace) -> int:
     ]
     if args.pch:
         base_flags += ["-include", "pch.h"]
+    if args.sources_file:
+        base_flags.append("-DMIMITA_PROBE_BRIDGE")
 
     flags_hash = flags_identity(cxx, base_flags, args.build_mode, args.pch)
     object_dir = out_root / "objects" / flags_hash
@@ -432,6 +434,12 @@ def build(args: argparse.Namespace) -> int:
     print(f"[GAME BUILD] revision={manifest.get('revision')} sources={len(sources)} "
           f"jobs={jobs} priority={args.priority} cache={object_dir.relative_to(ROOT)} "
           f"seeded={seeded}", flush=True)
+
+    # The probe module is a separate validation export. The whole-game DLL uses
+    # src/game/game-module.cpp as its GameModuleV1 entry point.
+    if not args.sources_file:
+        sources = [s for s in sources
+                   if s.get("path") != "src/game/probe/npc-target-probe-module.cpp"]
 
     entries: list[tuple[dict, Path, Path]] = []
     objects: list[Path] = []
@@ -453,6 +461,31 @@ def build(args: argparse.Namespace) -> int:
 
     compile_start = time.monotonic()
     progress.set(phase="compile", pending=len(work))
+
+    # Transitional diagnostic link input: the game DLL calls GLAD directly
+    # today. Build the resident C dispatcher into the candidate so the whole-game
+    # link can be measured; this is not a cutover-safe render boundary and is
+    # replaced by CAP_RENDER before cutover.
+    vendor_objects: list[Path] = []
+    vendor_dir = out_root / "vendor"
+    vendor_dir.mkdir(parents=True, exist_ok=True)
+    glad_source = ROOT / "src" / "glad.c"
+    glad_object = vendor_dir / "glad.o"
+    if glad_source.is_file() and (
+            not glad_object.is_file() or
+            glad_source.stat().st_mtime > glad_object.stat().st_mtime):
+        progress.log("[VENDOR] compiling src/glad.c for diagnostic link")
+        result = run_tool(
+            ["gcc", "-O2", "-g", "-c", str(glad_source), "-o", str(glad_object),
+             f"-I{ROOT / 'include'}", f"-I{ROOT / 'src'}"],
+            cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True)
+        if result.returncode != 0:
+            progress.log(result.stdout or "glad compile failed")
+            progress.finish("vendor_compile_failed", phase="vendor_compile_failed")
+            return 1
+    if glad_object.is_file():
+        vendor_objects.append(glad_object)
 
     def compile_one(item: dict, obj: Path, dep: Path) -> tuple[str, dict, float, str]:
         if stop_event.is_set():
@@ -501,6 +534,7 @@ def build(args: argparse.Namespace) -> int:
     progress.set(phase="link", compile_s=compile_seconds)
     response = generation_dir / "link.rsp"
     link_lines = [path.as_posix() for path in objects]
+    link_lines.extend(path.as_posix() for path in vendor_objects)
     link_lines.append((ROOT / "external/manifold-prebuilt/lib/libmanifold.a").as_posix())
     link_lines.append(f"-L{Path(glfw_lib_dir).as_posix()}")
     link_lines.extend(LINK_LIBS)

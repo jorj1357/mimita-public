@@ -165,9 +165,21 @@ public:
         std::lock_guard<std::mutex> lock(mMutex);
         mAccepting.store(false, std::memory_order_release);
         mQuiescing.store(true, std::memory_order_release);
-        mCallbacks.clear();
+        // Keep callbacks registered until a successful commit. If quiesce
+        // fails, resumeGeneration() makes the old generation usable again.
         mPending.clear();
         mJobCv.notify_all();
+    }
+
+    // Resume the current generation after a failed quiesce/load. Callbacks that
+    // were registered before beginQuiesce remain valid.
+    void resumeGeneration() {
+        std::lock_guard<std::mutex> lock(mMutex);
+        if (mStop) {
+            return;
+        }
+        mAccepting.store(true, std::memory_order_release);
+        mQuiescing.store(false, std::memory_order_release);
     }
 
     // Ok only when no call, callback, or job can still enter the generation.
@@ -203,6 +215,7 @@ public:
         finishQuiesce(0);
         {
             std::lock_guard<std::mutex> lock(mMutex);
+            mCallbacks.clear();
             mStop = true;
             mAccepting.store(false, std::memory_order_release);
             mJobCv.notify_all();

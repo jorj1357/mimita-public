@@ -13,7 +13,7 @@
 #include "combat/weapon-registry.h"
 #include "combat/weapon-fire.h"
 #include "config.h"
-#include "debug/log-manager.h"
+#include "debug/structured-log.h"
 #include "debug/debug-log.h"
 
 static void logPathNotice(const char* label, const std::string& path)
@@ -98,7 +98,7 @@ static void runWeaponBench(const WeaponDefinition* def, int shotCount)
     printf("Min:    %.3f ms\n", minMs);
     printf("Max:    %.3f ms\n", maxMs);
     printf("\n");
-    printf("Run log:\n%s\n", LogManager::instance().path().c_str());
+    printf("Run log:\n%s\n", StructuredLogger::instance().eventsPath().c_str());
     printf("\n");
     printf("Weapon bench log:\n%s\n", benchFile.c_str());
     printf("Ctrl+Click either path above to open it.\n");
@@ -181,7 +181,7 @@ static void runWeaponBenchCompare()
     for (const auto& r : results)
         printf("  %s: %.3f ms\n", r.first.c_str(), r.second);
     printf("\n");
-    printf("Run log:\n%s\n", LogManager::instance().path().c_str());
+    printf("Run log:\n%s\n", StructuredLogger::instance().eventsPath().c_str());
     printf("Weapon bench log:\n%s\n", benchFile.c_str());
     printf("Ctrl+Click either path above to open it.\n");
     printf("==================================================\n");
@@ -321,7 +321,7 @@ static void runWeaponCompareProfile()
 
     printf("\n");
     printf("Open the run log and jump to \"SHOT PROFILE\" to see per-shot breakdown:\n");
-    printf("%s\n", LogManager::instance().path().c_str());
+    printf("%s\n", StructuredLogger::instance().eventsPath().c_str());
     printf("==================================================\n");
 
     Terminal::instance().addLog("[BENCH] Weapon comparison profile complete");
@@ -339,7 +339,7 @@ void registerWeaponBenchCommands()
             else
                 DebugConfig::WEAPON_PERF_SHOTS = args[0] != "0";
             printf("[BENCH] weapon_perf_shots=%d\n", (int)DebugConfig::WEAPON_PERF_SHOTS);
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             Terminal::instance().addLog(std::string("[BENCH] weapon_perf_shots=") +
                 (DebugConfig::WEAPON_PERF_SHOTS ? "ON" : "OFF"));
         }
@@ -361,7 +361,7 @@ void registerWeaponBenchCommands()
                 Terminal::instance().addLog(std::string("[BENCH] Unknown weapon: ") + args[0]);
                 return;
             }
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             runWeaponBench(def, shots);
         }
     });
@@ -375,7 +375,7 @@ void registerWeaponBenchCommands()
             if (!args.empty()) shots = std::max(1, std::atoi(args[0].c_str()));
             const WeaponDefinition* def = WeaponRegistry::instance().get("shotgun");
             if (!def) { Terminal::instance().addLog("[BENCH] Shotgun not found"); return; }
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             runWeaponBench(def, shots);
         }
     });
@@ -389,7 +389,7 @@ void registerWeaponBenchCommands()
             if (!args.empty()) shots = std::max(1, std::atoi(args[0].c_str()));
             const WeaponDefinition* def = WeaponRegistry::instance().get("aa12");
             if (!def) { Terminal::instance().addLog("[BENCH] AA12 not found"); return; }
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             runWeaponBench(def, shots);
         }
     });
@@ -399,7 +399,7 @@ void registerWeaponBenchCommands()
         "Benchmark all multi-pellet weapons and compare",
         "weapon_bench_compare",
         [](const std::vector<std::string>&) {
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             runWeaponBenchCompare();
         }
     });
@@ -409,7 +409,7 @@ void registerWeaponBenchCommands()
         "Profile Revolver(20), Shotgun(20), AA12(50) and compare averages",
         "weapon_compare_profile",
         [](const std::vector<std::string>&) {
-            printf("Logging to: %s\n", LogManager::instance().path().c_str());
+            printf("Logging to: %s\n", StructuredLogger::instance().eventsPath().c_str());
             printf("\nNote: Enable weapon_perf_shots 1 for per-shot SHOT PROFILE breakdown.\n");
             printf("The comparison below shows only average times.\n");
             printf("For deep breakdown, fire each weapon individually with weapon_perf_shots 1.\n");

@@ -9,7 +9,6 @@
 #include <shellapi.h>
 #include <nlohmann/json.hpp>
 #include "devtools/terminal.h"
-#include "debug/log-manager.h"
 #include "debug/structured-log.h"
 
 void registerDevLogCommands()
@@ -17,13 +16,9 @@ void registerDevLogCommands()
     Terminal::instance().registerCommand({
         "log_info", "Print current log file info", "log_info",
         [](const std::vector<std::string>&) {
-            auto& lm = LogManager::instance();
-            char buf[512];
-            snprintf(buf, sizeof(buf), "Current Log:\n%s\n\nLog Count:\n%d\nMax Logs:\n30",
-                     lm.path().c_str(), lm.fileCount());
-            Terminal::instance().addLog(buf);
-            printf("[LOG INFO] Current: %s\n", lm.path().c_str());
-            printf("[LOG INFO] Count: %d / 30\n", lm.fileCount());
+            const std::string path = StructuredLogger::instance().eventsPath();
+            Terminal::instance().addLog("[LOG INFO] Current: " + path);
+            printf("[LOG INFO] Current: %s\n", path.c_str());
         }
     });
 
@@ -179,7 +174,7 @@ void registerDevLogCommands()
     Terminal::instance().registerCommand({
         "log_flush", "Force flush log to disk", "log_flush",
         [](const std::vector<std::string>&) {
-            LogManager::instance().flush();
+            StructuredLogger::instance().flushEvents();
             printf("[LOG] flushed\n");
         }
     });

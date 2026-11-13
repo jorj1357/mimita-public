@@ -52,21 +52,21 @@ resident. No same-PID swap and no cutover.
 - `docs/handoffs/game-dll-undefined-worklist-20261112.md`
 - `docs/handoffs/game-dll-undefined-worklist-20261112.csv`
 
-Current worklist: 554 refs / 300 unique.
+Current worklist: 104 refs / 78 unique (after the diagnostic GLAD object, audio-helper bridge, and legacy HotReload removal).
 
 ## Evidence
 
-- Probe build: `build/probe/npc-target/generation-21/game-g21.dll`; 10 explicit
+- Probe build: `build/probe/npc-target/generation-35/game-g35.dll`; 10 explicit
   probe sources; 0 failures. Runtime parity used generation 16.
 - Whole-game build: 584 game sources; 0 compile failures; link fails with
-  554 undefined / 300 unique, unchanged because the foundation adds capability
+  104 undefined / 78 unique after the diagnostic GLAD/audio/HotReload pass; the foundation itself adds capability
   definitions rather than retiring a symbol family yet.
 - `host-runtime.cpp` compiled standalone, exit 0.
 - `host-server-entity-adapter.cpp` compiled standalone, exit 0.
 - `host-server-transport-adapter.cpp` compiled standalone, exit 0.
 - `src/network/server.cpp` passed `-fsyntax-only`, exit 0.
-- Manifest: 745 total / 584 game / 23 resident; revision
-  `8b8d95b80794876cbaea320a6fd9a0a866305db1b78eb37f7d9ad3015428e3f7`.
+- Manifest: 747 total / 586 game / 23 resident; revision
+  `bb1f2d422623b1cfa9201938beb0d28b5ad1fa669ddb0446433267162d237338`.
 - Static triage: 66 closed, 0 candidates, 39 state, 182 adapter, 297
   runtime-proof, 26 resident-host, 135 non-game, 0 unresolved.
 

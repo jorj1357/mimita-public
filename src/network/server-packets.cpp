@@ -83,19 +83,19 @@ void logJoinStage(const char* stage, const char* result, const char* reason,
 // host access.
 void assignHostFlag(ServerPlayer& player, bool existingId)
 {
-    const uint32_t previousHostId = gServerHostPlayerId;
-    if (existingId && player.isHost && gServerHostPlayerId == 0)
-        gServerHostPlayerId = player.id;
-    if (!existingId && gServerHostPlayerId == 0)
-        gServerHostPlayerId = player.id;
-    player.isHost = gServerHostPlayerId == player.id;
+    const uint32_t previousHostId = serverHostPlayerId();
+    if (existingId && player.isHost && serverHostPlayerId() == 0)
+        setServerHostPlayerId(player.id);
+    if (!existingId && serverHostPlayerId() == 0)
+        setServerHostPlayerId(player.id);
+    player.isHost = serverHostPlayerId() == player.id;
     if (player.isHost && !player.adminCommandsInitialized)
         player.adminCommandsEnabled = true;
     player.adminCommandsInitialized = true;
-    if (previousHostId != gServerHostPlayerId)
+    if (previousHostId != serverHostPlayerId())
     {
         printf("%s [SERVER HOST OWNER] playerId=%u name=\"%s\" reason=first-accepted-session\n",
-               serverTimestamp(), gServerHostPlayerId, player.name.c_str());
+               serverTimestamp(), serverHostPlayerId(), player.name.c_str());
     }
 }
 

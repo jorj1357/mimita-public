@@ -51,12 +51,12 @@ Missing symbols by family:
 | other | 144 |
 | audio services (`AudioManager`/`MusicManager`) | 142 |
 | effect system (`EffectPartSystem`) | 94 |
-| GLAD (vendored C) | 87 |
+| GLAD (vendored C) | 0 (transitional object linked) |
 | audio helpers (`playWorldSound`, `computeImpactAudio`, listener) | 74 |
 | ICE transport (`IceAgent`) | 59 |
 | duel queue (`DuelQueue`) | 43 |
 | process globals (`gpWorld`, `gpNpcSystem`, `gpMpContext`, …) | 36 |
-| `HotReloadSystem` | 18 |
+| `HotReloadSystem` | 0 (legacy calls removed) |
 | `LogManager` | 10 |
 | `Renderer` (device) | 9 |
 
@@ -120,10 +120,10 @@ standalone to verify it. A no-change relink after the compat bridge skipped all 
 sources (0 compiled, 15.2 s link).
 
 The compat bridge then added game-side `MimitaNet::nowMs` and `recordCrashBreadcrumb`, reducing
-undefined references to **554 / 300 unique**. `nowMs` and `recordCrashBreadcrumb` are 0.
+undefined references to **104 / 78 unique**. `nowMs` and `recordCrashBreadcrumb` are 0.
 
 Remaining top families: `ModuleHost` 76, audio 216, `MimitaNet` 95, effects 94,
-GLAD 87, ICE 59, duel 43, process globals 36, `LogManager` 10, `HotReloadSystem` 18,
+GLAD 0, ICE 59, duel 43, process globals 36, `LogManager` 10, `HotReloadSystem` 0,
 `Renderer` 9.
 
 ## Next worklist (ordered by reference count)

@@ -1,3 +1,55 @@
+2026 11 12 1816
+
+"yes do that next stuff much as u can  , as well as tell whats next, as well as explain how close we are to that goal or drem or reality like, npc behavior is off , ic an edit npc behavior cpp, save live, load live, ai sees events and changes again based on that, load live, npc behaivor is better . im snagging on corners, ask ai to fix, it fixes live, i real time stop snagging on corners. weapon recoil fields in json dont work, ai adds fields live, updates live, its working live as i i intended. visuals arent so nice looking, ask ai to add anti aliasing, it adds it liev, i see the pixelized stuff get smooth live. as well as 4d geometry live i can add, packts and networkign all networking related things are hot reloadable, changing rendering backend or adding nrew one live eventually is hot reloadable, cahngign operaitng systems can happen with the same game running e.g. put mimita on a usb stick, it is put into windows pc, linux, mac, android, ios, ps2/3/4/5, xbox, smart tv, etc, and u can play it live, and u can hot reload on any of those live, and play/meet with anuone else on any of those platforms live too , and do live collaboration , acorss not jsut the game but  planned future things like DAW, viedo editor, replay eidotr, live coding together, live note mamangement together, etc, and all stored data is distributed so no central server is needed so it can persist past me  so i dont ahve to maintain it and it just works and can be saved locally like it becomes a super powerful replacement for tools that are typicall closed source  and not easy to fix or maek ebtter, now u can maek them better live and use them to do things too live, etc   - add this stuff to hot reload spec this is what i want to  do " - jorj1357
+
+deepseek v4.1 flash
+"1. Failed compile fallback — make the coordinator leave the old generation active when the candidate build fails, with journal evidence.
+2. Real live.py whole-game integration — drive build/game/ready.json from the whole-game build.
+3. Add/remove/header edit proof through the coordinator.
+4. Player-list authority — needs a bounded player-list query.
+5. Map/team/spawn/gamemode slices.
+6. Link families — GLAD, ModuleHost, MimitaNet, ICE, duel, globals, audio helpers.
+7. CAP_WORLD/CAP_RENDER and packet-handler migration.
+8. Static gate 235 → 0, then the single all-files cutover and campaign."
+
+> **Status 2026-11-12:** item 1 (failed compile fallback) is proved: a forced
+> broken probe compile exited 1, left `current.json`/`ready.json` unchanged, and
+> the host stayed on the old generation; `admincmds` still worked. Items 2-8
+> remain open; item 2 is partially wired because the host already polls
+> `build/game/ready.json`. Link pass update: the whole-game candidate now links
+> at generation 51 with **0 undefined / 0 unique** and 0 duplicate definitions
+> (`build/game/generation-51/game-g51.dll`, export
+> `GetMimitaGameModuleV1`). GLAD is 0 via a transitional diagnostic
+> `src/glad.c` object; audio, globals, Renderer lifecycle, replay jobs, ICE,
+> listen-server session, and authored-rebuild references are 0. CAP_RENDER must
+> replace the transitional GLAD object before cutover.
+
+> **Closeness to the dream (2026-11-13):** the **mechanism** is now proven on
+> a small probe; the **coverage** is still early.
+>
+> - Local live C++: probe `game.dll` can be built, activated, rolled back, and
+>   keep the same process, connection, player, and position/tick continuity.
+>   Exact `admincmds` is the first authoritative hot command.
+> - Production coverage: **0% of ordinary game code runs from `game.dll` in
+>   production today**. All 598 game sources still run in the EXE. The whole-game
+>   candidate compiles and links with **0 undefined / 0 unique** symbols, but it
+>   has not been loaded as the full runtime. Static gate: **232 violations / 61
+>   files**.
+> - Networking: the opaque envelope and command response work; most packet
+>   handlers are still resident.
+> - Rendering: `CAP_RENDER` is a command-stream skeleton; a resident
+>   `RenderDevice` lifecycle capability now owns the Renderer instance, but GLAD
+>   and the draw path are not cut over.
+> - World/state: player/NPC command snapshots exist; full world, projectiles,
+>   gamemode, physics, and migration do not.
+> - New backends, other operating systems/platforms, distributed persistence,
+>   live collaboration, DAW/video/editor/notes: **not started**.
+>
+> The next gates are whole-game link, compile-failure fallback, coordinator-driven
+> add/remove/header edits, full packet-handler migration, `CAP_WORLD`/`CAP_RENDER`,
+> static gate 0, and the single all-files cutover. The dream is real, but the
+> current proof is a narrow vertical slice, not the full game yet.
+
 2026 11 12 1008 jorj
 
 the end goal i think here is
@@ -5,14 +57,14 @@ the end goal i think here is
 edit any cpp file => ctrl + s => it changes live
 
 because i want to get rid of as much waiting as possible, and as much closing/opening the exe as possible
-becasue this is emergent from the deeper desire to  shrink teh time betewen idea and reality as much as possible thta i want to do with this code wise 
+becasue this is emergent from the deeper desire to  shrink teh time betewen idea and reality as much as possible thta i want to do with this code wise
 
-so the way i curently understand it to be done, is,  
+so the way i curently understand it to be done, is,
 all cpp files no longer build into .exe, the build into a .dll
 
 game.dll
 
-the game.dll is reloaded live, adn the .exe is 
+the game.dll is reloaded live, adn the .exe is
 not small in size like megabtes, but
 like, in what it does
 small in teh amount of times it needs to be closed and opened again
@@ -27,15 +79,15 @@ new rendering backend, e.g. vulkan metal directx instead of opengl
 new dimeional geometry, 4 dimensions. 3.5 dimesions, fractal rooms
 rooms bigger on the inside than the outside
 
-adding portals live would be amazing , no exe restart needed 
+adding portals live would be amazing , no exe restart needed
 adding competely new things like ray tracing, realisitc graphics
-new primitives, adding cones, elongated spheres, arbitrary geometry e.g. points => lines => faces, things all made of triangles ideally 
+new primitives, adding cones, elongated spheres, arbitrary geometry e.g. points => lines => faces, things all made of triangles ideally
 
 anything like that, that u might want to do, whether its game engine related collisions etc, networking, rendering, supporting a new OS/platform, porting to browser, making mobile port, console port, chromebook port from 2ombie suggested, etc
 all should be doable live without the exe having to close
 
-the exe is simply a mirror of the code , and a mirror cahnges live, 
-mirror does not need to break and be put back together to update the mirrors visuals 
+the exe is simply a mirror of the code , and a mirror cahnges live,
+mirror does not need to break and be put back together to update the mirrors visuals
 
 > **Current target and literal limits (2026-11-12):**
 >
@@ -258,17 +310,16 @@ Rules:
 The remaining work is organized by **capability family**, not by file. One bridge
 can retire every source in a family:
 
-| Family | Remaining refs (2026-11-12) |
+| Family | Remaining unique symbols (2026-11-13) |
 |---|---:|
-| `ModuleHost` | 219 |
-| audio (`AudioManager`/`MusicManager`/helpers) | 216 |
-| `MimitaNet` (transport/session) | 95 |
-| effects (`EffectPartSystem`) | 94 |
-| GLAD (vendored C) | 87 |
-| ICE (`IceAgent`) | 59 |
-| duel queue | 43 |
-| process globals (`gpWorld`, …) | 36 |
-| HotReloadSystem / LogManager / Renderer | 37 |
+| process globals (`gpWorld`, …) | 0 |
+| `MimitaNet` (remaining) | 0 |
+| ICE (`IceAgent`) | 0 |
+| Renderer | 0 |
+| audio helpers | 0 |
+| other | 0 |
+| replay save jobs | 0 |
+| ModuleHost / duel / persistence / JSON jobs / LogManager / self-tests / crash / crosshair / direct host / effects / GLAD / HotReload | 0 |
 
 This is why the work is "little steps": each step is a family, not a file. A full
 family bridge is preferred; a partial bridge is allowed when a family is large or
@@ -544,10 +595,10 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 745 `.cpp` rows at manifest revision `8b8d95b80794876cbaea320a6fd9a0a866305db1b78eb37f7d9ad3015428e3f7`; 657 rows are active in their owner build. The canonical owner map resolves all 745 `.cpp` rows: game 584, resident 23, bootstrap 3, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (584 game sources) but its link still fails with 554 undefined / 300 unique resident/vendored symbols; no usable `game.dll` exists yet. The chosen design keeps the resident host in the EXE.
+Current measured status: 760 `.cpp` rows at manifest revision `317b312698c34b2af9934dcfbd19031f375d74ff885295c7680305f49416a42d`; 672 rows are active in their owner build. The canonical owner map resolves all 760 `.cpp` rows: game 598, resident 23, bootstrap 4, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (598 game sources) and links at generation 51 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists, but it has not been loaded or cut over. The chosen design keeps the resident host in the EXE.
 
-Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 39 state-review rows, 182 resident-adapter-required rows, 297 runtime-proof rows, 26 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
+Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
 Resident-service seam (400 sources call at least one): `Debug::log*` 195, `StructuredLogger` 163, `Terminal` 100, `TerminalState` 87, `WeaponRegistry` 52, `DebugVis` 48, `GuiLayoutManager` 42, `ModuleHost` 37, `Perf` 35, `PhysicalEntitySystem` 30, `GamemodeRegistry` 25, `MapConfigRegistry` 25, `AuthSystem` 22, `gpMpContext` 21, `serverGamemodeState` 20, `VehicleSystem` 17, `SizeScalingConfig` 16, `NpcDifficultyConfig` 15, `MovementJsonConfig` 13, `AnalyticsManager` 10, `BehaviorProfileRegistry` 9, `VehicleConfigRegistry` 7. Logging, terminal state, and GUI layout are the dominant seams, so logging/perf/config/registry/terminal/GUI host services are the first ABI capabilities to cover; a file either calls that service through the host table or stays resident with a thin bridge.
 
@@ -635,7 +686,7 @@ Rules:
 - `devscripts/live.py` watches sources and headers, debounces/coalesces saves, pins one coherent revision through `devscripts/source_manifest.py`, spawns the worker in the background, and publishes `build/game/ready.json` for safe-point activation.
 - Unknown ownership stops with a diagnostic; compile failure keeps the active generation.
 - Acceptance: one coherent revision per build; add/remove/rename and header changes rebuild the right translation units; no compiler invocation from the manifest tool.
-- Diagnostic status (2026-11-12): all 584 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the bridges it fails with 300 unique, with `StructuredLogger`, `MimitaNet::nowMs`, and `recordCrashBreadcrumb` at 0 and 0 duplicate definitions; `ModuleHost` is 76, audio core is 0, effects is 0, and total undefined is 554. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
+- Diagnostic status (2026-11-13): all 598 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges + whole-game entry/dispatch) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the global/replay/audio/RenderDevice/diagnostics/ICE/TransportSession/AuthoredRebuild bridges it links at generation 51 with 0 undefined / 0 unique and 0 duplicate definitions; all previously listed families are 0. A transitional `src/glad.c` object is linked only for the diagnostic DLL; CAP_RENDER remains the cutover-safe replacement. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
 
 Foundation batch status (2026-11-12): the host ABI now declares `CAP_ENTITY`,
 `CAP_RENDER`, `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES`. The resident host
@@ -663,9 +714,9 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | 554 undefined / 300 unique | 0 undefined |
-| Live activation | probe swap works | full-game swap + rollback |
-| State continuity | same process/connection in probe | resident records + formal same-PID probe |
+| Whole-game link | **0 undefined / 0 unique** (generation 51) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved | full-game swap + coordinator |
+| State continuity | position/tick continuity in probe | resident records + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
 | Render/world | ABI skeleton | `CAP_RENDER`/`CAP_WORLD` + GLAD path |
 | Static gate | 235 violations | 0 |
@@ -697,13 +748,27 @@ new `generation`/`dll` is ready, it:
 4. commits the candidate and starts the new generation;
 5. keeps the old generation if quiesce or load fails.
 
-Probe evidence (`20261112_225639`): the same server PID `25812` and client PID
-`5688` started on `generation-20`, activated `generation-21` after the ready
-file appeared, and continued running without an EXE restart. Both processes
-logged `game.generation.activated`. A later `admincmds` still produced the
-game-owned response and client result. This is probe-only live activation, not
-the full game cutover. Formal state continuity, failed-load fallback, rollback,
-and callbacks-preserving quiesce remain to be proved.
+Probe evidence (`20261112_230534`): the same server PID `22784` and client PID
+`11324` started on `generation-20`, rejected a missing `generation-99` candidate
+while staying alive, activated `generation-21`, then rolled back to
+`generation-20`. Exact `admincmds` produced the game-owned client result before,
+after the failed candidate, after the swap, and after the rollback. Player
+position and server tick continued within normal idle/physics movement. This is
+probe-only live activation, not the full game cutover. The barrier now preserves
+callbacks through a failed quiesce and can resume the old generation; a standalone
+barrier test proved `Busy -> resume -> callback` works. A forced probe compile
+failure left `current.json`/`ready.json` unchanged and the host stayed on the old
+generation. Whole-game swap, schema migration, add/remove/header-edit through the
+coordinator, and cutover remain to be proved.
+
+#### Whole-game entry point (2026-11-13)
+
+The whole-game source set now has its own `src/game/game-module.cpp` export,
+separate from the probe export. It initializes the resident capability bridges
+and handles `kEventTransportDispatch` through the shared
+`server-command-dispatch-module.cpp`. The probe module is excluded from the whole-game
+source set. Full engine tick/render orchestration remains the next migration
+step; the entry point currently makes the DLL loadable and event-capable.
 
 #### Deferred cleanup: legacy `Debug::log` facade
 

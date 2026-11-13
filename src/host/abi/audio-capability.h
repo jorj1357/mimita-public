@@ -45,6 +45,31 @@ enum class AudioOp : std::uint32_t {
     PlayWorldSoundOwned = 28,
     AudioListenerPosition = 29,
     ComputeImpactAudio = 30,
+    AudioOwnerKey = 31,
+    PlaySound = 32,
+    PlayEventSound = 33,
+    PlaySoundPitched = 34,
+    AudioUpdate = 35,
+    SetGlobalDuck = 36,
+    GetGlobalDuck = 37,
+    AudioListenerForward = 38,
+    SetAudioListener = 39,
+    ResolveSoundPath = 40,
+    GetAudioFileDuration = 41,
+    PlayReplayMusicPreview = 42,
+    StopReplayMusicPreview = 43,
+    PauseReplayMusicPreview = 44,
+    ResumeReplayMusicPreview = 45,
+    SeekReplayMusicPreview = 46,
+    IsReplayMusicPreviewPlaying = 47,
+    SetReplayMusicPreviewSpeed = 48,
+    SetReplayMusicPreviewVolume = 49,
+    PlayAirJumpSound = 50,
+    PlayMenuClick = 51,
+    PlayMenuHover = 52,
+    GetReplayMusicPreviewDuration = 53,
+    SetAudioSpatialWorld = 54,
+    DecodeAudioToPCM = 55,
 };
 
 struct AudioEventPayload {
@@ -59,6 +84,18 @@ struct AudioEventPayload {
     float startSeconds;
     float endSeconds;
     std::int32_t retrigger;
+};
+
+struct AudioTextPayload {
+    char text[512];
+    float f0;
+    float f1;
+    std::uint32_t u0;
+};
+
+struct AudioVec3PairPayload {
+    float a[3];
+    float b[3];
 };
 
 struct WorldSoundPayload {
@@ -78,6 +115,21 @@ struct ImpactAudioPayload {
     float severity;
     float outVolume;
     float outPitch;
+};
+
+struct AudioDecodeRequest {
+    char path[512];
+    std::uint32_t targetSampleRate;
+    std::uint32_t targetChannels;
+    std::uint32_t capacitySamples;
+    std::int16_t* out;
+};
+
+struct AudioDecodeResult {
+    std::uint32_t sampleRate;
+    std::uint32_t channels;
+    std::uint32_t sampleCount;
+    std::int32_t ok;
 };
 
 struct AudioCapabilityV1 {

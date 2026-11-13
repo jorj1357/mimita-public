@@ -806,7 +806,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         Debug::warn(Debug::Category::Networking,
             "%s [SERVER COMMAND REJECT] playerId=%u name=\"%s\" cmd=\"%s\" reason=no-admin-access hostPlayerId=%u isHost=%d granted=%d\n",
             serverTimestamp(), it->second.id, it->second.name.c_str(),
-            commandStr.c_str(), gServerHostPlayerId,
+            commandStr.c_str(), serverHostPlayerId(),
             (int)it->second.isHost, (int)it->second.adminCommandsGranted);
         ack(false, "rejected: no admin access");
         return;

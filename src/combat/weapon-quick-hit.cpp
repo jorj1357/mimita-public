@@ -20,7 +20,7 @@
 #include "world/world.h"
 #include "physics/physics-types.h"
 #include "debug/debug-visuals.h"
-#include "hot-reload/hot-reload-system.h"
+#include "hot-reload/game-api.h"
 
 #include <algorithm>
 #include <cmath>
@@ -207,11 +207,6 @@ void WeaponQuickHit::update(QuickHitState& state, const WeaponDefinition& def,
         visual.color[2] = qhCp(def, "debugHitboxColorB", 1.0f);
         visual.color[3] = qhCp(def, "debugHitboxAlpha", 0.85f);
         visual.enabled = 1;
-
-        const GameAPI* api = HotReloadSystem::instance().gameAPI();
-        if (api && api->updateQuickHitDebugVisual)
-            api->updateQuickHitDebugVisual(
-                &HotReloadSystem::instance().gameMemory(), &visual);
 
         if (visual.enabled) {
             const glm::vec4 color(visual.color[0], visual.color[1],

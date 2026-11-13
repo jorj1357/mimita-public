@@ -9,6 +9,7 @@
 */
 
 #include "gui-main.h"
+#include "game/transport-session-bridge-module.h"
 #include "menus/main-menu.h"
 #include "menus/menu-avatar-preview.h"
 #include "menus/play-menu.h"
@@ -166,7 +167,16 @@ BombTagConfigResult gPendingBombTagConfig{};
 BombTagConfigResult getPendingBombTagConfig() { return gPendingBombTagConfig; }
 void clearPendingBombTagConfig() { gPendingBombTagConfig = BombTagConfigResult{}; }
 static bool gServerRunning = false;
+#ifdef MIMITA_GAME_DLL
+static MimitaNet::ListenServerState& listenServerState() {
+    static MimitaNet::ListenServerState* state = nullptr;
+    if (!state) state = mimita::game::hostListenServerState();
+    return *state;
+}
+#define gListenServer listenServerState()
+#else
 static MimitaNet::ListenServerState gListenServer;
+#endif
 static MimitaNet::ServerLaunchSettings gServerLaunchSettings;
 static bool gServerWeaponSetAuto = true;
 static char gServerAddress[64] = "127.0.0.1:1357";

@@ -125,6 +125,8 @@ extern std::string gServerHostPlayerName;
 // Stable server-session owner. Names can change between launcher/auth/join
 // paths, so they must never decide host authority.
 extern uint32_t gServerHostPlayerId;
+uint32_t serverHostPlayerId();
+void setServerHostPlayerId(uint32_t playerId);
 // True when this process is the server host: dedicated (--server) or running a
 // listen server. Terminal commands gate on this.
 bool isServerHost();

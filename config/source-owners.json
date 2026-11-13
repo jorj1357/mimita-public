@@ -162,7 +162,13 @@
       ]
     }
   ],
-  "overrides": [],
+  "overrides": [
+    {
+      "path": "src/game/game-cli.cpp",
+      "owner": "bootstrap",
+      "reason": "CLI/self-test launch surface owned by process bootstrap, not game.dll"
+    }
+  ],
   "link_inputs": {
     "resident_c": [
       {

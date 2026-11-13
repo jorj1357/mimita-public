@@ -88,4 +88,30 @@ bool sendServerCommandResult(std::uint32_t playerId, std::int32_t accepted,
            mimita::host::TransportResult::Ok;
 }
 
+bool sendToPlayer(std::uint32_t playerId, std::uint32_t typeId,
+                  const void* data, std::size_t size) {
+    if (!gTransport || !gTransport->send_to_player || !data || size == 0) {
+        return false;
+    }
+    return gTransport->send_to_player(
+               gHostData, playerId, typeId, 0,
+               static_cast<const std::uint8_t*>(data),
+               static_cast<std::uint32_t>(size)) ==
+           mimita::host::TransportResult::Ok;
+}
+
+bool sessionIsServerHost() {
+    if (!gTransport || !gTransport->session_state) {
+        return false;
+    }
+    mimita::host::SessionStateV1 state{};
+    state.structSize = static_cast<std::uint32_t>(sizeof(state));
+    state.version = mimita::host::kTransportCapabilityVersion;
+    if (gTransport->session_state(gHostData, &state) !=
+        mimita::host::TransportResult::Ok) {
+        return false;
+    }
+    return state.role == 1 || state.role == 2;
+}
+
 }  // namespace mimita::game
