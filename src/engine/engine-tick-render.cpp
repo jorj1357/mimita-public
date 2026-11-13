@@ -8,6 +8,8 @@
 * Does NOT own menus, terminal rendering, or UI input.
 */
 #include "engine/engine-tick-render.h"
+#include "game/resident-state-module.h"
+#include "game/gl-resource-bridge-module.h"
 #include "engine/engine-tick-camera.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -79,9 +81,6 @@
 #include "video/frame-pacer.h"
 
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gNetPresentationDebug;
-extern bool gNetDebugEntities;
 
 // Cinematic impact frame state for replay export
 struct KillImpactFrame {
@@ -373,8 +372,8 @@ static void renderReplayActors(
         static GLuint impactVao = 0, impactVbo = 0;
         if (!impactVao) {
             float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-            glGenVertexArrays(1, &impactVao);
-            glGenBuffers(1, &impactVbo);
+            impactVao = mimita::game::genVertexArray();
+            impactVbo = mimita::game::genBuffer();
             glBindVertexArray(impactVao);
             glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
             glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
@@ -403,8 +402,8 @@ static void drawScreenOverlay(Engine& engine, const glm::vec4& color)
     static GLuint vao = 0, vbo = 0;
     if (!vao) {
         float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &vbo);
+        vao = mimita::game::genVertexArray();
+        vbo = mimita::game::genBuffer();
         glBindVertexArray(vao);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
@@ -542,12 +541,12 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                    (int)getReplayExportJob().state);
         }
     }
-    gReplayExportRenderMode = isReplayExportActive();
+    mimita::game::replayExportRenderModeRef() = isReplayExportActive();
 
     if (gReplayExportVerbose && isExporting)
         Debug::logThrottled(Debug::Category::Replay, "replay-export-ui-world", 1.0f,
             "[replay-export-ui] frame=%u world pass begin renderMode=%d viewport=%dx%d\n",
-            getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode,
+            getReplayExportJob().capturedTicks, (int)mimita::game::replayExportRenderModeRef(),
             engine.renderer->width, engine.renderer->height);
     if (replayRenderActive) {
         gReplayPlayer.pollPoseInvariant();
@@ -801,7 +800,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     // shared WeaponViewModel transform from being overwritten by remote players.
     diagRenderStage(4);
 
-    if (gNetPresentationDebug && mpContext.active)
+    if (mimita::game::netPresentationDebugRef() && mpContext.active)
     {
         float debugY = 120.0f;
         for (const auto& kv : mpContext.remotePlayers)
@@ -863,7 +862,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         }
     }
 
-    if (gNetDebugEntities && mpContext.active)
+    if (mimita::game::netDebugEntitiesRef() && mpContext.active)
     {
         float debugY = 120.0f;
         auto drawEntityLine = [&](const char* label, uint32_t id,
@@ -970,8 +969,8 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             static GLuint aftermathVao = 0, aftermathVbo = 0;
             if (!aftermathVao) {
                 float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
-                glGenVertexArrays(1, &aftermathVao);
-                glGenBuffers(1, &aftermathVbo);
+                aftermathVao = mimita::game::genVertexArray();
+                aftermathVbo = mimita::game::genBuffer();
                 glBindVertexArray(aftermathVao);
                 glBindBuffer(GL_ARRAY_BUFFER, aftermathVbo);
                 glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);

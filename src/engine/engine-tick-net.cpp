@@ -9,6 +9,7 @@
 */
 
 #include "engine/engine-tick-net.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "actor/player-ai.h"
@@ -1067,9 +1068,9 @@ void engineTickNet(Engine& engine, float dt)
                                 {"weapon", weaponId},
                                 {"spawned", tracer != nullptr},
                                 {"camera_distance_to_origin",
-                                 glm::length(muzzle - gpCamera->pos)},
+                                 glm::length(muzzle - mimita::game::cameraPtr()->pos)},
                                 {"camera_distance_to_hit",
-                                 glm::length(event.hit - gpCamera->pos)},
+                                 glm::length(event.hit - mimita::game::cameraPtr()->pos)},
                                 {"beam_length", glm::length(beamEnd - muzzle)},
                                 {"effect_flags", event.effectFlags}},
                             __FILE__, __LINE__, __FUNCTION__);

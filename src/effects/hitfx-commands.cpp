@@ -1,4 +1,5 @@
 #include "effects/hitfx-commands.h"
+#include "game/resident-state-module.h"
 #include "effects/hit-effects.h"
 #include "effects/effect-part.h"
 #include "config/impact-decals-config.h"
@@ -9,8 +10,6 @@
 #include "entities/player.h"
 #include "camera.h"
 
-extern Player* gpPlayer;
-extern Camera* gpCamera;
 
 void registerHitFxCommands()
 {
@@ -72,10 +71,10 @@ void registerHitFxCommands()
             glm::vec3 hitPoint;
             glm::vec3 hitDir(0.0f, 0.0f, 1.0f);
             glm::vec3 hitNormal(0.0f, 0.0f, 1.0f);
-            if (gpPlayer && gpCamera) {
-                hitPoint = gpPlayer->pos + gpCamera->front * 3.0f;
-                hitDir = gpCamera->front;
-                hitNormal = -gpCamera->front;
+            if (mimita::game::playerPtr() && mimita::game::cameraPtr()) {
+                hitPoint = mimita::game::playerPtr()->pos + mimita::game::cameraPtr()->front * 3.0f;
+                hitDir = mimita::game::cameraPtr()->front;
+                hitNormal = -mimita::game::cameraPtr()->front;
             } else {
                 hitPoint = glm::vec3(0.0f, 0.0f, 5.0f);
             }
@@ -233,14 +232,14 @@ void registerHitFxCommands()
         "dashfx_test", "Spawn dash burst at player feet",
         "dashfx_test",
         [](const std::vector<std::string>&) {
-            if (!gpPlayer) {
+            if (!mimita::game::playerPtr()) {
                 Terminal::instance().addLog("[DASHFX] no player");
                 return;
             }
             glm::vec3 dir(1.0f, 0.0f, 0.0f);
-            if (glm::length(gpPlayer->vel) > 0.001f)
-                dir = glm::normalize(glm::vec3(gpPlayer->vel.x, gpPlayer->vel.y, 0.0f));
-            HitEffects::spawnMovementDashBurst(gpPlayer->pos, dir, glm::length(gpPlayer->vel));
+            if (glm::length(mimita::game::playerPtr()->vel) > 0.001f)
+                dir = glm::normalize(glm::vec3(mimita::game::playerPtr()->vel.x, mimita::game::playerPtr()->vel.y, 0.0f));
+            HitEffects::spawnMovementDashBurst(mimita::game::playerPtr()->pos, dir, glm::length(mimita::game::playerPtr()->vel));
             Terminal::instance().addLog("[DASHFX] test burst spawned");
         }
     });
@@ -311,7 +310,7 @@ void registerHitFxCommands()
         "deathfx_ellipsoid_test", "Spawn test death ellipsoid at player",
         "deathfx_ellipsoid_test",
         [](const std::vector<std::string>&) {
-            if (!gpPlayer) {
+            if (!mimita::game::playerPtr()) {
                 Terminal::instance().addLog("[DEATHFX] no player");
                 return;
             }
@@ -320,11 +319,11 @@ void registerHitFxCommands()
                 Terminal::instance().addLog("[DEATHFX] ellipsoid disabled");
                 return;
             }
-            Camera* cam = gpCamera;
+            Camera* cam = mimita::game::cameraPtr();
             glm::vec3 dir = cam ? cam->front : glm::vec3(1.0f, 0.0f, 0.0f);
             EffectPartSystem::instance().spawnDeathEllipsoid(
-                gpPlayer->pos, dir,
-                deCfg.length, deCfg.radius, deCfg.lifetime, gpPlayer->sizeScale);
+                mimita::game::playerPtr()->pos, dir,
+                deCfg.length, deCfg.radius, deCfg.lifetime, mimita::game::playerPtr()->sizeScale);
             Terminal::instance().addLog("[DEATHFX] test ellipsoid spawned");
         }
     });

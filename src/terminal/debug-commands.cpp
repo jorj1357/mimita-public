@@ -9,6 +9,7 @@
 */
 
 #include <cstdio>
+#include "game/resident-state-module.h"
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -49,12 +50,12 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTARTNOW] Invalid mode number"); return; }
             const auto& mode = cfg.modes()[(size_t)index];
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
                 MimitaNet::serverCommunityStartMatch(true, mode.id);
                 Terminal::instance().addLog("[MODESTARTNOW] started " + mode.id + " at countdown");
-            } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "modestartnow " + std::to_string(index + 1));
+            } else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "modestartnow " + std::to_string(index + 1));
                 Terminal::instance().addLog("[MODESTARTNOW] sent to server");
             } else Terminal::instance().addLog("[MODESTARTNOW] HOST ONLY");
         }
@@ -78,12 +79,12 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)cfg.modes().size()) { Terminal::instance().addLog("[MODESTART] Invalid mode number"); return; }
             const auto& mode = cfg.modes()[(size_t)index];
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode(mode.id);
                 MimitaNet::serverCommunityStartMatch(false, mode.id);
                 Terminal::instance().addLog("[MODESTART] started " + mode.id + " (" + mode.name + ")");
-            } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "modestart " + std::to_string(index + 1));
+            } else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "modestart " + std::to_string(index + 1));
                 Terminal::instance().addLog("[MODESTART] sent to server");
             } else {
                 Terminal::instance().addLog("[MODESTART] HOST ONLY");
@@ -93,12 +94,12 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "startssbm", "Start and join an SSBM room, or switch the connected room to SSBM.", "startssbm",
         [](const std::vector<std::string>&) {
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode("ssbm");
                 MimitaNet::serverCommunityStartMatch(false, "ssbm");
                 Terminal::instance().addLog("[STARTSSBM] started SSBM");
-            } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "startssbm");
+            } else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "startssbm");
                 Terminal::instance().addLog("[STARTSSBM] requested SSBM from the connected server; waiting for its authoritative result");
             } else {
                 MimitaNet::ServerPreset preset;
@@ -137,12 +138,12 @@ void registerDebugCommands()
         "Start and join a Fun Counter Strike room, or switch the connected room to Fun Counter Strike.",
         "startfuncounterstrike",
         [](const std::vector<std::string>&) {
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverCommunitySetMode("funcounterstrike");
                 MimitaNet::serverCommunityStartMatch(false, "funcounterstrike");
                 Terminal::instance().addLog("[STARTFUNCOUNTERSTRIKE] started Fun Counter Strike");
-            } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "start funcounterstrike");
+            } else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "start funcounterstrike");
                 Terminal::instance().addLog(
                     "[STARTFUNCOUNTERSTRIKE] requested Fun Counter Strike from the connected server; "
                     "waiting for its authoritative result");
@@ -186,8 +187,8 @@ void registerDebugCommands()
         "meleeattack", "Start a Captain Falcon Melee action by id; host only.", "meleeattack [actionId]",
         [](const std::vector<std::string>& args) {
             const std::string actionId = args.empty() ? std::string("a_ground_punch") : args[0];
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "meleeattack " + actionId);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "meleeattack " + actionId);
                 Terminal::instance().addLog("[MELEEATTACK] sent to server: " + actionId);
             } else {
                 Terminal::instance().addLog("[MELEEATTACK] requires a server connection");
@@ -197,11 +198,11 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "juggernaut_skip", "Force the current Juggernaut round to draw; host only.", "juggernaut_skip",
         [](const std::vector<std::string>&) {
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 MimitaNet::serverGamemodeRequestJuggernautSkip();
                 Terminal::instance().addLog("[JUGGERNAUT_SKIP] host requested a draw; actors will respawn for the next 3-2-1");
-            } else if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "juggernaut_skip");
+            } else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "juggernaut_skip");
                 Terminal::instance().addLog("[JUGGERNAUT_SKIP] sent as a skip vote request; voting is not enabled yet");
             } else {
                 Terminal::instance().addLog("[JUGGERNAUT_SKIP] HOST ONLY");
@@ -220,8 +221,8 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "team_list", "List the active gamemode's teams in JSON order", "team_list",
         [](const std::vector<std::string>&) {
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "team_list");
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "team_list");
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[TEAM_LIST] " + MimitaNet::serverActiveTeamList());
             else Terminal::instance().addLog("[TEAM_LIST] not connected");
@@ -233,8 +234,8 @@ void registerDebugCommands()
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: team_pick <number>"); return; }
             const std::string command = "team_pick " + args[0];
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
             else Terminal::instance().addLog("[TEAM_PICK] not connected");
@@ -252,8 +253,8 @@ void registerDebugCommands()
             }
             const std::string command =
                 "team_assign " + args[0] + " " + args[1];
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
             else
                 Terminal::instance().addLog(
                     "[TEAM_ASSIGN] host must be connected to its server session");
@@ -265,8 +266,8 @@ void registerDebugCommands()
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: change_team <number>"); return; }
             const std::string command = "team_pick " + args[0];
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
             else Terminal::instance().addLog("[TEAM_PICK] not connected");
@@ -278,8 +279,8 @@ void registerDebugCommands()
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[TEAM_PICK] Usage: team_change <number>"); return; }
             const std::string command = "team_pick " + args[0];
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[TEAM_PICK] host must be connected to its server session");
             else Terminal::instance().addLog("[TEAM_PICK] not connected");
@@ -309,8 +310,8 @@ void registerDebugCommands()
                 return;
             }
             const std::string command = "zt_team " + args[0];
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
             else if (MimitaNet::isServerHost())
                 Terminal::instance().addLog("[ZT_TEAM] host must be connected to its server session");
             else Terminal::instance().addLog("[ZT_TEAM] not connected");
@@ -453,8 +454,8 @@ void registerDebugCommands()
         [](const std::vector<std::string>& args) {
             const std::string target = args.empty() ? "self" : args[0];
             const std::string command = "objective_give " + target;
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
                 Terminal::instance().addLog("[OBJECTIVE] sent " + command);
                 return;
             }
@@ -549,8 +550,8 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "respawn_all", "Respawn every server player and NPC", "respawn_all",
         [](const std::vector<std::string>&) {
-            if (::gpMpContext && ::gpMpContext->active)
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "respawn_all");
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "respawn_all");
             else Terminal::instance().addLog("[RESPAWN_ALL] not connected");
         }
     });
@@ -562,9 +563,9 @@ void registerDebugCommands()
             const int index = std::atoi(args[0].c_str()) - 1;
             if (index < 0 || index >= (int)catalog.maps.size()) { Terminal::instance().addLog("[MAPCHANGE] Invalid map number"); return; }
             const std::string mapId = std::filesystem::path(catalog.maps[(size_t)index].assetPath).stem().string();
-            if (!(::gpMpContext && ::gpMpContext->active) &&
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) &&
                 MimitaNet::isServerHost()) MimitaNet::serverGamemodeRequestMapChange(mapId);
-            else if (::gpMpContext && ::gpMpContext->active) MimitaNet::mpSendServerCommand(*::gpMpContext, "mapchange " + std::to_string(index + 1));
+            else if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "mapchange " + std::to_string(index + 1));
             else { Terminal::instance().addLog("[MAPCHANGE] HOST ONLY"); return; }
             Terminal::instance().addLog("[MAPCHANGE] requested " + mapId);
         }
@@ -703,17 +704,17 @@ void registerDebugCommands()
     Terminal::instance().registerCommand({
         "forcedash", "Force the dash pose on/off for testing", "forcedash <0|1>",
         [](const std::vector<std::string>& args) {
-            if (!gpPlayer) {
+            if (!mimita::game::playerPtr()) {
                 Terminal::instance().addLog("[ERROR] no player");
                 return;
             }
             if (args.empty()) {
-                gpPlayer->forceDashPose = !gpPlayer->forceDashPose;
+                mimita::game::playerPtr()->forceDashPose = !mimita::game::playerPtr()->forceDashPose;
             } else {
-                gpPlayer->forceDashPose = args[0] != "0";
+                mimita::game::playerPtr()->forceDashPose = args[0] != "0";
             }
             Terminal::instance().addLog(
-                std::string("[DEBUG] forcedash=") + (gpPlayer->forceDashPose ? "1" : "0"));
+                std::string("[DEBUG] forcedash=") + (mimita::game::playerPtr()->forceDashPose ? "1" : "0"));
         },
         "2026-06-28", CommandCategory::Debug
     });
@@ -742,8 +743,8 @@ void registerDebugCommands()
 
             if (args[0] == "default" || args[0] == "reset") {
                 DevOverrides::playerHealthOverrideEnabled = false;
-                if (::gpMpContext && ::gpMpContext->active)
-                    MimitaNet::mpSendServerCommand(*::gpMpContext, "healthme default");
+                if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
+                    MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "healthme default");
                 Debug::warn(Debug::Category::General,
                     "\n==================================\n"
                     "Player Health Override Disabled\n"
@@ -768,13 +769,13 @@ void registerDebugCommands()
             // In a networked session the server owns health and respawn.
             // Keep the local value responsive, then send the self-only command
             // through the authoritative server path.
-            if (::gpMpContext && ::gpMpContext->active)
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
             {
                 DevOverrides::playerHealthOverrideEnabled = true;
                 DevOverrides::playerHealthOverrideValue = value;
                 player.maxHp = value;
                 player.currentHp = value;
-                MimitaNet::mpSendServerCommand(*::gpMpContext,
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(),
                     "healthme " + std::to_string(value));
                 Terminal::instance().addLog(std::string("[HEALTHME] Sent self-only HP override to server: ") +
                                              std::to_string(value));
@@ -831,17 +832,17 @@ void registerDebugCommands()
             // In-process server (dedicated --server or local listen server):
             // apply the override directly. Otherwise send the command to the
             // server, which applies it only if the sender is the host.
-            if (!(::gpMpContext && ::gpMpContext->active) &&
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) &&
                 MimitaNet::isServerHost())
             {
                 DevOverrides::healthOverrideEnabled = !isReset;
                 DevOverrides::healthOverrideValue = value;
                 MimitaNet::serverGameOverrides().maxHpOverride = isReset ? 0 : value;
-                if (gpPlayer && !gpPlayer->dead)
+                if (mimita::game::playerPtr() && !mimita::game::playerPtr()->dead)
                 {
                     const int effectiveMax = (isReset || value <= 0) ? 100 : value;
-                    gpPlayer->maxHp = effectiveMax;
-                    gpPlayer->currentHp = effectiveMax;
+                    mimita::game::playerPtr()->maxHp = effectiveMax;
+                    mimita::game::playerPtr()->currentHp = effectiveMax;
                 }
                 Terminal::instance().addLog(isReset
                     ? "[HEALTHALL] Override disabled. Future spawns use normal HP (100)."
@@ -849,9 +850,9 @@ void registerDebugCommands()
                 return;
             }
 
-            if (::gpMpContext && ::gpMpContext->active)
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
             {
-                MimitaNet::mpSendServerCommand(*::gpMpContext,
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(),
                     isReset ? "healthall default"
                             : "healthall " + std::to_string(value));
                 Terminal::instance().addLog("[HEALTHALL] Sent to server (host only).");
@@ -874,7 +875,7 @@ void registerDebugCommands()
             }
             const std::string mapId = args[0];
 
-            if (!(::gpMpContext && ::gpMpContext->active) &&
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) &&
                 MimitaNet::isServerHost())
             {
                 MimitaNet::serverGamemodeRequestMapChange(mapId);
@@ -882,9 +883,9 @@ void registerDebugCommands()
                 return;
             }
 
-            if (::gpMpContext && ::gpMpContext->active)
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
             {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "changemap " + mapId);
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "changemap " + mapId);
                 Terminal::instance().addLog("[CHANGEMAP] Sent to server (host only).");
                 return;
             }

@@ -8,6 +8,7 @@
 * Does NOT own menu UI rendered outside gameplay.
 */
 #include "engine/engine-tick-ui.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -66,8 +67,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;
 
 void engineTickUI(Engine& engine, float dt, bool worldPassRan)
 {
@@ -153,7 +152,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     if (gReplayPlayer.isPlaying())
         Perf::state().replayMemoryMb = (double)gReplayPlayer.totalTicks() * sizeof(ReplaySceneFrame) / (1024.0 * 1024.0);
 
-    if (gReplayExportRenderMode && gReplayExportVerbose) {
+    if (mimita::game::replayExportRenderModeRef() && gReplayExportVerbose) {
         uiDrawText("EXPORT HUD PASS", 16.0f, uiScreenH() - 28.0f, 0.34f,
                    {1.0f, 0.2f, 0.8f, 1.0f});
     }
@@ -163,7 +162,7 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
         Debug::logThrottled(Debug::Category::Replay, "replay-export-ui-hud", 1.0f,
             "[replay-export-ui] frame=%u hud rendered chat=1 killfeed=1 "
             "crosshair=1 healthbars=1 replayInfo=1 renderMode=%d\n",
-            getReplayExportJob().capturedTicks, (int)gReplayExportRenderMode);
+            getReplayExportJob().capturedTicks, (int)mimita::game::replayExportRenderModeRef());
     }
     MapEditor::instance().tick(dt);
     MapEditor::instance().renderUI(engine.window());

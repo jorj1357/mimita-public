@@ -9,6 +9,7 @@
 */
 
 #include "engine/engine-tick-combat.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
@@ -65,7 +66,6 @@
 
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
-extern bool gReplayCinematicMode;
 
 // ── Client fixed-step prediction accumulator ─────────────────────────
 // Runs input consumption, projectile prediction, and cooldowns at 60 Hz
@@ -635,9 +635,9 @@ void engineTickCombat(Engine& engine, float dt)
         static bool lPrev = false;
         bool lDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
         if (lDown && !lPrev) {
-            gReplayCinematicMode = !gReplayCinematicMode;
-            printf("[CINEMATIC] %s\n", gReplayCinematicMode ? "Enabled" : "Disabled");
-            Terminal::instance().addLog(std::string("[CINEMATIC] ") + (gReplayCinematicMode ? "Enabled" : "Disabled"));
+            mimita::game::replayCinematicModeRef() = !mimita::game::replayCinematicModeRef();
+            printf("[CINEMATIC] %s\n", mimita::game::replayCinematicModeRef() ? "Enabled" : "Disabled");
+            Terminal::instance().addLog(std::string("[CINEMATIC] ") + (mimita::game::replayCinematicModeRef() ? "Enabled" : "Disabled"));
         }
         lPrev = lDown;
     }

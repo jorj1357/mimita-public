@@ -18,6 +18,10 @@ namespace mimita::host {
 
 using ServerSendFn =
     std::function<bool(std::uint32_t playerId, const void* data, std::size_t size)>;
+using ServerEndpointSendFn =
+    std::function<bool(std::uint32_t addressNetworkOrder,
+                       std::uint16_t portNetworkOrder, const void* data,
+                       std::size_t size)>;
 
 class HostServerTransportAdapter {
 public:
@@ -25,6 +29,10 @@ public:
 
     void bindPlayers(std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>* players);
     void setSender(ServerSendFn sender);
+    void setEndpointSender(ServerEndpointSendFn sender);
+    void noteInbound(std::uint64_t peer, std::uint32_t addressNetworkOrder,
+                     std::uint16_t portNetworkOrder);
+    void clearInbound();
     void clear();
 
     const TransportAdapterV1* adapter() const { return &adapter_; }
@@ -38,9 +46,18 @@ private:
     static bool broadcast(void* owner, const void* data, std::size_t size);
     static bool sessionState(void* owner, SessionStateV1* out);
     static std::uint32_t peerCount(void* owner);
+    static bool sendToEndpoint(void* owner, std::uint32_t addressNetworkOrder,
+                               std::uint16_t portNetworkOrder, const void* data,
+                               std::size_t size);
+    static bool sendToPeer(void* owner, std::uint64_t peer, const void* data,
+                           std::size_t size);
 
     std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>* players_ = nullptr;
     ServerSendFn sender_;
+    ServerEndpointSendFn endpointSender_;
+    std::uint64_t inboundPeer_ = 0;
+    std::uint32_t inboundAddress_ = 0;
+    std::uint16_t inboundPort_ = 0;
     TransportAdapterV1 adapter_{};
 };
 

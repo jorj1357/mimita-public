@@ -569,11 +569,7 @@ static bool sendToSourceOrPlayer(SOCKET sock,
         return serverSendToPlayer(sock, *player, data, size);
     if (transport && transport->get())
         return (*transport)->send(data, size);
-    if (sock == INVALID_SOCKET)
-        return false;
-    int sent = sendto(sock, (const char*)data, (int)size, 0,
-                      (sockaddr*)&from, sizeof(from));
-    return sent != SOCKET_ERROR;
+    return serverSendToEndpoint(sock, from, data, size);
 }
 
 static void bindPlayerConnection(ServerPlayer& player,
@@ -2763,19 +2759,10 @@ void broadcastVipStyleEvent(SOCKET sock,
 
     for (const auto& kv : players)
     {
-        bool ok = false;
-        if (kv.second.transport)
-            ok = kv.second.transport->send(&packet, sizeof(packet));
-        else
-        {
-            int bytesSent = sendto(
-                sock, (const char*)&packet, sizeof(packet), 0,
-                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-            ok = (bytesSent != SOCKET_ERROR);
-            if (!ok)
-                printf("%s [NET TX ERROR] broadcastVipStyleEvent failed id=%u error=%d\n",
-                       serverTimestamp(), kv.first, WSAGetLastError());
-        }
+        const bool ok = serverSendToPlayer(sock, kv.second, &packet, sizeof(packet));
+        if (!ok)
+            printf("%s [NET TX ERROR] broadcastVipStyleEvent failed id=%u error=%d\n",
+                   serverTimestamp(), kv.first, WSAGetLastError());
         ++totalPacketsOut;
     }
 }
@@ -2945,16 +2932,8 @@ void buildAndSendSnapshot(SOCKET sock,
 
     const auto sendPayload = [&](const std::vector<uint8_t>& payload,
                                  const ServerPlayer& sp) {
-        bool sent = false;
-        if (sp.transport)
-            sent = sp.transport->send(payload.data(), payload.size());
-        if (!sent)
-        {
-            const int bytesSent = sendto(
-                sock, (const char*)payload.data(), (int)payload.size(), 0,
-                (sockaddr*)&sp.addr, sizeof(sp.addr));
-            sent = bytesSent != SOCKET_ERROR;
-        }
+        const bool sent =
+            serverSendToPlayer(sock, sp, payload.data(), payload.size());
         if (sent)
             ++totalPacketsOut;
     };
@@ -3042,19 +3021,10 @@ void sendDisagreementToAll(SOCKET sock,
 
     for (const auto& kv : players)
     {
-        bool ok = false;
-        if (kv.second.transport)
-            ok = kv.second.transport->send(&packet, sizeof(packet));
-        else
-        {
-            int bytesSent = sendto(
-                sock, (const char*)&packet, sizeof(packet), 0,
-                (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
-            ok = (bytesSent != SOCKET_ERROR);
-            if (!ok)
-                printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
-                       serverTimestamp(), kv.first, WSAGetLastError());
-        }
+        const bool ok = serverSendToPlayer(sock, kv.second, &packet, sizeof(packet));
+        if (!ok)
+            printf("%s [NET TX ERROR] sendDisagreementToAll failed id=%u error=%d\n",
+                   serverTimestamp(), kv.first, WSAGetLastError());
         ++totalPacketsOut;
     }
 
@@ -3094,11 +3064,7 @@ void tickDisagreementRetransmit(SOCKET sock,
 
         for (const auto& kv : players)
         {
-            if (kv.second.transport)
-                kv.second.transport->send(&pd.packet, sizeof(pd.packet));
-            else
-                sendto(sock, (const char*)&pd.packet, sizeof(pd.packet), 0,
-                       (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+            serverSendToPlayer(sock, kv.second, &pd.packet, sizeof(pd.packet));
             ++totalPacketsOut;
         }
 
@@ -3421,11 +3387,7 @@ void handleSpawnAck(SOCKET sock, const char* buffer, int bytes,
     act.spawnGeneration = p.spawnGeneration;
     act.transformEpoch = p.transformEpoch;
     act.serverTick = tick;
-    if (p.transport)
-        p.transport->send(&act, sizeof(act));
-    else
-        sendto(sock, (const char*)&act, sizeof(act), 0,
-               (sockaddr*)&p.addr, sizeof(p.addr));
+    serverSendToPlayer(sock, p, &act, sizeof(act));
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
         "server.actor.spawn_activated.sent", std::to_string(p.id),

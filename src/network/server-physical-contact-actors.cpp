@@ -235,12 +235,7 @@ static void broadcastWeaponClash(
     event.clashFlags = clashFlags;
     for (auto& entry : players) {
         ServerPlayer& p = entry.second;
-        if (p.transport) {
-            p.transport->send(&event, sizeof(event));
-        } else {
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&p.addr, sizeof(p.addr));
-        }
+        serverSendToPlayer(sock, p, &event, sizeof(event));
         ++packets;
     }
 }

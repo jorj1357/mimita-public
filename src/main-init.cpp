@@ -182,15 +182,16 @@ void gameInit(int argc, char** argv, Engine& engine)
     StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
     mimita::host::HostRuntime::instance().startFromEnvironment();
-
     printf("[LOG] Console output enabled\n");
     printf("[LOG] File logging enabled\n");
     printf("[LOG] Active log path: %s\n", LogManager::instance().path().c_str());
     printf("[LOG] Mirroring console -> file\n");
 
-    printf("[MAIN] before engine.init\n");
-    engine.init(1024, 768, "mimita.exe");
-    printf("[MAIN] after engine.init\n");
+    if (!engine.renderer) {
+        printf("[MAIN] before engine.init\n");
+        engine.init(1024, 768, "mimita.exe");
+        printf("[MAIN] after engine.init\n");
+    }
 
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 

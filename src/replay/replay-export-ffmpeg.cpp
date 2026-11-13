@@ -8,6 +8,7 @@
 * Ships FFmpeg visibly as tools/ffmpeg.exe (never embedded in mimita.exe).
 */
 #include "replay/replay-export.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <atomic>
@@ -48,7 +49,7 @@ extern ReplayExportJob gJob;
 static std::atomic<bool> gOutroDone{false};
 static std::atomic<bool> gOutroSucceeded{false};
 static bool gOutroActive = false;
-static std::thread gOutroThread;
+static mimita::game::HostWorker gOutroThread;
 
 struct ReplayExportAudioConfig {
     float audioVolumeMultiplier = 0.8f;
@@ -724,7 +725,7 @@ void pollReplayFfmpegEncode()
 #ifdef _WIN32
     if (gOutroActive) {
         if (!gOutroDone.load(std::memory_order_acquire)) return;
-        if (gOutroThread.joinable()) gOutroThread.join();
+        gOutroThread.release();
         gOutroActive = false;
         const bool outroOk = gOutroSucceeded.load(std::memory_order_acquire);
         if (!outroOk) {
@@ -794,7 +795,7 @@ void pollReplayFfmpegEncode()
     gOutroDone.store(false, std::memory_order_release);
     gOutroSucceeded.store(false, std::memory_order_release);
     gOutroActive = true;
-    gOutroThread = std::thread([output, outroW, outroH, outroAudio]() {
+    gOutroThread.start([output, outroW, outroH, outroAudio]() {
         const bool appended = appendOutroToFinishedMp4(output.c_str(), outroW, outroH, outroAudio);
         if (!appended) {
             Debug::warn(Debug::Category::Replay,
@@ -802,14 +803,14 @@ void pollReplayFfmpegEncode()
         }
         gOutroSucceeded.store(appended, std::memory_order_release);
         gOutroDone.store(true, std::memory_order_release);
-    });
+    }, "replay-ffmpeg-outro");
 #endif
 }
 
 void cancelReplayFfmpegEncode()
 {
 #ifdef _WIN32
-    if (gOutroThread.joinable()) gOutroThread.join();
+    gOutroThread.release();
     gOutroActive = false;
     if (gJob.ffmpegProcess) {
         TerminateProcess((HANDLE)gJob.ffmpegProcess, 1);

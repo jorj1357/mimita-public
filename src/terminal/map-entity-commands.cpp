@@ -1,4 +1,5 @@
 #include "terminal/map-entity-commands.h"
+#include "game/resident-state-module.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -22,8 +23,8 @@ std::string activeMapId()
 {
     const std::string& serverMap = MimitaNet::serverGamemodeState().mapId;
     if (!serverMap.empty()) return serverMap;
-    if (gpActiveMapPath && !gpActiveMapPath->empty())
-        return std::filesystem::path(*gpActiveMapPath).stem().string();
+    if (!ACTIVE_MAP_PATH.empty())
+        return std::filesystem::path(ACTIVE_MAP_PATH).stem().string();
     return "zombietower1";
 }
 
@@ -49,21 +50,21 @@ glm::vec3 placement()
     // camera aim hits (up to a bounded distance). Falls back to five world units
     // in front of the player camera when the world is unavailable or the ray
     // hits nothing, preserving the original behavior.
-    if (gpCamera) {
-        const glm::vec3 fallback = gpCamera->pos + gpCamera->front * 5.0f;
-        if (gpWorld) {
+    if (mimita::game::cameraPtr()) {
+        const glm::vec3 fallback = mimita::game::cameraPtr()->pos + mimita::game::cameraPtr()->front * 5.0f;
+        if (mimita::game::worldPtr()) {
             const float maxDist = 200.0f;
             float hitDist = maxDist;
             glm::vec3 hitNormal(0.0f), hitPoint(0.0f);
-            if (sweptSphereTraverseGridCells(THE_WORLD, gpCamera->pos,
-                                             gpCamera->front, maxDist, 0.05f,
+            if (sweptSphereTraverseGridCells(THE_WORLD, mimita::game::cameraPtr()->pos,
+                                             mimita::game::cameraPtr()->front, maxDist, 0.05f,
                                              hitDist, hitNormal, hitPoint))
                 return hitPoint;
         }
         return fallback;
     }
-    if (gpPlayer)
-        return gpPlayer->pos + glm::vec3(0.0f, 0.0f, 5.0f);
+    if (mimita::game::playerPtr())
+        return mimita::game::playerPtr()->pos + glm::vec3(0.0f, 0.0f, 5.0f);
     return glm::vec3(0.0f);
 }
 

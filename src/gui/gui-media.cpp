@@ -4,6 +4,7 @@
 // Each file should expose one main concept — this file exposes GUIMedia.
 
 #include "gui-media.h"
+#include "game/gl-resource-bridge-module.h"
 #include "map/texture.h"
 #include "stb_image.h"
 
@@ -35,8 +36,7 @@ static bool fileChanged(const std::string& path, std::filesystem::file_time_type
 }
 
 static GLuint uploadFrame(const unsigned char* data, int w, int h) {
-    GLuint tex;
-    glGenTextures(1, &tex);
+    GLuint tex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -76,7 +76,7 @@ const GifCache* loadGif(const char* path) {
         if (!ec && wt != it->second.fileWriteTime) {
             // File changed — release old textures and reload
             for (GLuint t : it->second.frames) {
-                if (t) glDeleteTextures(1, &t);
+                if (t) mimita::game::deleteTexture(t);
             }
             gGifCache.erase(it);
         } else {
@@ -149,7 +149,7 @@ void updateAllGifs(float dt) {
 void clearMediaCache() {
     for (auto& pair : gGifCache) {
         for (GLuint t : pair.second.frames) {
-            if (t) glDeleteTextures(1, &t);
+            if (t) mimita::game::deleteTexture(t);
         }
     }
     gGifCache.clear();

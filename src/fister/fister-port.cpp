@@ -1,4 +1,5 @@
 #include "fister/fister-port.h"
+#include "game/resident-state-module.h"
 
 #include "fister/sim/FisterSim.h"
 #include "entities/player.h"
@@ -105,7 +106,7 @@ namespace FisterPort
     bool tick(Player& player, const World& world, const InputState& input, float dt)
     {
         (void)world;
-        if (&player != gpPlayer)
+        if (&player != mimita::game::playerPtr())
             return false;
 
         const bool toggleDown = input.fisterTogglePressed;

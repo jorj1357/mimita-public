@@ -8,6 +8,7 @@
 */
 
 #include "physics/physical-entity.h"
+#include "game/gl-resource-bridge-module.h"
 #include "physics/constraints/constraint-system.h"
 
 #include <algorithm>
@@ -1430,8 +1431,8 @@ void drawTexturedPhysicalBox(const Camera& camera, const PhysicalEntity& e)
 
     if (!gPhysicalBoxVao)
     {
-        glGenVertexArrays(1, &gPhysicalBoxVao);
-        glGenBuffers(1, &gPhysicalBoxVbo);
+        gPhysicalBoxVao = mimita::game::genVertexArray();
+        gPhysicalBoxVbo = mimita::game::genBuffer();
     }
     glUseProgram(gRenderer->shaderProgram);
     const glm::mat4 view = camera.getView();
@@ -1524,8 +1525,8 @@ void drawTexturedPhysicalSphere(const Camera& camera, const PhysicalEntity& e)
                 push(a); push(b); push(c);
                 push(a); push(c); push(d);
             }
-        glGenVertexArrays(1, &gPhysicalSphereVao);
-        glGenBuffers(1, &gPhysicalSphereVbo);
+        gPhysicalSphereVao = mimita::game::genVertexArray();
+        gPhysicalSphereVbo = mimita::game::genBuffer();
         glBindVertexArray(gPhysicalSphereVao);
         glBindBuffer(GL_ARRAY_BUFFER, gPhysicalSphereVbo);
         glBufferData(GL_ARRAY_BUFFER,
@@ -1622,8 +1623,8 @@ CachedPropMesh& propMeshFor(const std::string& path)
         cached.boundsMax.z <= cached.boundsMin.z)
         return cached;
 
-    glGenVertexArrays(1, &cached.vao);
-    glGenBuffers(1, &cached.vbo);
+    cached.vao = mimita::game::genVertexArray();
+    cached.vbo = mimita::game::genBuffer();
     glBindVertexArray(cached.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
     glBufferData(GL_ARRAY_BUFFER,

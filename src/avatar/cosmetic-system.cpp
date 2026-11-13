@@ -1,4 +1,5 @@
 #include "cosmetic-system.h"
+#include "game/gl-resource-bridge-module.h"
 #include "avatar.h"
 #include "entities/player.h"
 #include "map/map_loader.h"
@@ -239,12 +240,12 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         static const Mesh* lastMesh = nullptr;
 
         if (!cosmeticVAO)
-            glGenVertexArrays(1, &cosmeticVAO);
+            cosmeticVAO = mimita::game::genVertexArray();
 
         if (&mesh != lastMesh)
         {
             if (!cosmeticVBO)
-                glGenBuffers(1, &cosmeticVBO);
+                cosmeticVBO = mimita::game::genBuffer();
 
             glBindVertexArray(cosmeticVAO);
             glBindBuffer(GL_ARRAY_BUFFER, cosmeticVBO);

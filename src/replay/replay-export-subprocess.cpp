@@ -8,6 +8,7 @@
 * Does NOT choose which HUD elements the centralized UI pass renders.
 */
 #include "replay/replay-export-subprocess.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <string>
@@ -26,6 +27,7 @@
 #include "game/version.h"
 #include "replay/replay.h"
 #include "replay/replay-export.h"
+#include "game/file-bridge-module.h"
 #include "replay/replay-export-target.h"
 #include "replay/replay-editor.h"
 #include "debug/debug-log.h"
@@ -33,7 +35,6 @@
 #include "render/post-fx.h"
 #include "combat/weapon-model-cache.h"
 
-extern bool WORLD_LOADED;
 extern ReplayExportJob gJob;
 
 static bool waitForReplayWeaponModels(const ReplayClip& clip)
@@ -247,8 +248,8 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     // Always own the world state to block the default-map fallback
     // in engine-tick-state.cpp:160 (GAME_PLAYING && !WORLD_LOADED triggers it).
     WORLD_LOADED = true;
-    if (gpActiveMapPath) {
-        *gpActiveMapPath = tempClip.mapPath;
+    {
+        ACTIVE_MAP_PATH = tempClip.mapPath;
         Debug::warn(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] world state: WORLD_LOADED=1 activeMapPath='%s'\n",
             tempClip.mapPath.c_str());
@@ -256,7 +257,7 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
 
     // Set GAME_PLAYING AFTER map state is fully resolved so the render
     // pipeline does not start until the world is ready.
-    if (gpGameState) *gpGameState = GAME_PLAYING;
+    if (mimita::game::gameStatePtr()) *mimita::game::gameStatePtr() = GAME_PLAYING;
 
     // ── 3. Setup editor (camera keyframes if present) ─────────────────
     Debug::warn(Debug::Category::Replay,
@@ -313,7 +314,7 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] creating raw temp file\n");
     gJob.rawTempPath = (fs::path("replays") / "exports" / "_tmp" / "subprocess_raw.rgb").string();
-    gJob.rawFile = fopen(gJob.rawTempPath.c_str(), "wb");
+    gJob.rawFile = mimita::game::openFileWrite(gJob.rawTempPath.c_str());
     if (!gJob.rawFile) {
         Debug::error(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS] FAILED: cannot create raw file %s (errno=%d)\n",
@@ -347,24 +348,24 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
     // initialization.  The replay scene frame is the authoritative camera
     // source for recorded export mode, so seed the live camera before the
     // first engine tick/capture.
-    if (gpCamera) {
+    if (mimita::game::cameraPtr()) {
         if (const ReplaySceneFrame* sf = REPLAY_PLAYER.currentSceneFrame()) {
-            gpCamera->pos = sf->camera.position;
-            gpCamera->pitch = sf->camera.rotation.x;
-            gpCamera->yaw = sf->camera.rotation.z;
-            gpCamera->fov = sf->camera.fov;
-            gpCamera->updateVectors();
+            mimita::game::cameraPtr()->pos = sf->camera.position;
+            mimita::game::cameraPtr()->pitch = sf->camera.rotation.x;
+            mimita::game::cameraPtr()->yaw = sf->camera.rotation.z;
+            mimita::game::cameraPtr()->fov = sf->camera.fov;
+            mimita::game::cameraPtr()->updateVectors();
             Debug::warn(Debug::Category::Replay,
                 "[EXPORT-SUBPROCESS] camera seeded from tick=%d pos=(%.2f %.2f %.2f) yaw=%.2f pitch=%.2f\n",
-                sf->tick, gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z,
-                gpCamera->yaw, gpCamera->pitch);
+                sf->tick, mimita::game::cameraPtr()->pos.x, mimita::game::cameraPtr()->pos.y, mimita::game::cameraPtr()->pos.z,
+                mimita::game::cameraPtr()->yaw, mimita::game::cameraPtr()->pitch);
         } else {
             Debug::error(Debug::Category::Replay,
                 "[EXPORT-SUBPROCESS] camera seed skipped: replay has no scene frame\n");
         }
     } else {
         Debug::error(Debug::Category::Replay,
-            "[EXPORT-SUBPROCESS] camera seed skipped: gpCamera is null\n");
+            "[EXPORT-SUBPROCESS] camera seed skipped: mimita::game::cameraPtr() is null\n");
     }
     Debug::warn(Debug::Category::Replay,
         "[EXPORT-SUBPROCESS] playback started: isPlaying=%d currentTick=%u totalTicks=%u\n",
@@ -468,5 +469,8 @@ void runExportSubprocess(Engine& engine, const char* clipPath, const char* outpu
 
     // ── 8. Cleanup ────────────────────────────────────────────────────
     replayExportTargetDestroy();
-    if (gJob.rawFile) { fclose(gJob.rawFile); gJob.rawFile = nullptr; }
+    if (gJob.rawFile) {
+        mimita::game::closeFileHandle(gJob.rawFile);
+        gJob.rawFile = 0;
+    }
 }

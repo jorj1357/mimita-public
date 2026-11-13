@@ -1,4 +1,5 @@
 #include "combat/weapon-audio.h"
+#include "game/resident-state-module.h"
 // 07 31 2026, 14 50
 /* purpose
 * Sends and receives shot and pellet-blast packets, and reconstructs shot visuals.
@@ -494,11 +495,11 @@ void mpProcessNpcDamageEventPacket(MultiplayerContext& ctx, const NpcDamageEvent
         // Killing an NPC heals the local killer to full health. Reward
         // presentation is independent of the Player pointer because the
         // authoritative network event is sufficient to identify the killer.
-        if (isLocalShooter && gpPlayer)
+        if (isLocalShooter && mimita::game::playerPtr())
         {
-            DeathSystem::instance().healKillerToFull(*gpPlayer, shooterName);
+            DeathSystem::instance().healKillerToFull(*mimita::game::playerPtr(), shooterName);
             printf("[NET KILL HEAL] shooter=%u npc=%u health=%d\n",
-                   event->shooterPlayerId, event->npcEntityId, gpPlayer->currentHp);
+                   event->shooterPlayerId, event->npcEntityId, mimita::game::playerPtr()->currentHp);
         }
         // The reliable damage event is the one death-sound owner. Prediction
         // and the generic DeathSystem must not play a second copy here.

@@ -6,6 +6,7 @@
 * Does NOT render viewmodels or run the fixed-step simulation tick.
 */
 #include "effect-part.h"
+#include "game/gl-resource-bridge-module.h"
 #include "renderer/renderer.h"
 #include "camera.h"
 #include "debug/debug-visuals.h"
@@ -62,8 +63,8 @@ EffectModelMesh& effectModelFor(const std::string& path)
     cached.mesh = loadGLB(path, false);
     if (cached.mesh.verts.empty())
         return cached;
-    glGenVertexArrays(1, &cached.vao);
-    glGenBuffers(1, &cached.vbo);
+    cached.vao = mimita::game::genVertexArray();
+    cached.vbo = mimita::game::genBuffer();
     glBindVertexArray(cached.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
     glBufferData(GL_ARRAY_BUFFER,
@@ -136,8 +137,8 @@ void drawTexturedHitParticles(const Camera& camera,
     static GLuint vao = 0;
     static GLuint vbo = 0;
     if (!vao) {
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &vbo);
+        vao = mimita::game::genVertexArray();
+        vbo = mimita::game::genBuffer();
     }
 
     const GLuint texture = gTextures.getPath(texturePath);

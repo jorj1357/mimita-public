@@ -9,6 +9,7 @@
 */
 
 #include "player.h"
+#include "game/resident-state-module.h"
 #include "combat/weapon-runtime.h"
 
 #include <algorithm>
@@ -29,8 +30,6 @@
 #include "entities/player-avatar-animations.h"
 #include "physics/config.h"
 
-extern Player* gpPlayer;
-extern Camera* gpCamera;
 
 // =====================================================
 // Player
@@ -453,7 +452,7 @@ void Player::takeDamage(int damage, const glm::vec3& knockbackDir, float knockba
 
     applyHitFlinch(actualDamage, damageOrigin, glm::normalize(
         glm::length(knockbackDir) > 0.001f ? knockbackDir : glm::vec3(0.0f, 0.0f, 1.0f)));
-    if (this == gpPlayer)
+    if (this == mimita::game::playerPtr())
         EffectPartSystem::instance().spawnClientBloodFeedback(actualDamage, knockbackForce);
 
     // Direct and network-confirmed damage share the same camera presentation owner.
@@ -498,7 +497,7 @@ void Player::applyHitFlinch(int damage, const glm::vec3& damageOrigin,
                             const glm::vec3& incomingDirection)
 {
     (void)damageOrigin;
-    if (this != gpPlayer || !gpCamera || damage <= 0 ||
+    if (this != mimita::game::playerPtr() || !mimita::game::cameraPtr() || damage <= 0 ||
         !CamConfig::instance().hitFlinchEnabled())
         return;
 
@@ -508,14 +507,14 @@ void Player::applyHitFlinch(int damage, const glm::vec3& damageOrigin,
     const float strength = flinch.hitFlinchLow +
         (flinch.hitFlinchHigh - flinch.hitFlinchLow) * damageT;
     const glm::vec3 incoming = glm::length(incomingDirection) > 0.001f
-        ? glm::normalize(incomingDirection) : -gpCamera->front;
-    const float lateral = glm::dot(incoming, gpCamera->right);
-    const float vertical = glm::dot(incoming, gpCamera->up);
+        ? glm::normalize(incomingDirection) : -mimita::game::cameraPtr()->front;
+    const float lateral = glm::dot(incoming, mimita::game::cameraPtr()->right);
+    const float vertical = glm::dot(incoming, mimita::game::cameraPtr()->up);
     const float pitchSign = std::abs(vertical) > 0.35f
         ? vertical : 0.35f;
     const float pitch = pitchSign * std::abs(flinch.hitFlinchPitch) * strength;
     const float yaw = lateral * std::abs(flinch.hitFlinchYaw) * strength;
-    gpCamera->addPunch(pitch, yaw);
+    mimita::game::cameraPtr()->addPunch(pitch, yaw);
     Debug::log(Debug::Category::General,
         "[HIT FLINCH] damage=%d incoming=(%.2f %.2f %.2f) lateral=%.2f vertical=%.2f pitch=%.2f yaw=%.2f\n",
         damage, incoming.x, incoming.y, incoming.z, lateral, vertical, pitch, yaw);

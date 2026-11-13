@@ -1,4 +1,5 @@
 #include "gui/ui-system.h"
+#include "game/gl-resource-bridge-module.h"
 #include "gui/ui-system-internal.h"
 
 #include <algorithm>
@@ -154,8 +155,8 @@ void ensureProgram()
     MIMITA_GL_CALL(glAttachShader(gProgram, vert));
     MIMITA_GL_CALL(glAttachShader(gProgram, frag));
     MIMITA_GL_CALL(glLinkProgram(gProgram));
-    MIMITA_GL_CALL(glDeleteShader(vert));
-    MIMITA_GL_CALL(glDeleteShader(frag));
+    mimita::game::deleteShader(vert);
+    mimita::game::deleteShader(frag);
 
     GLint ok = 0;
     MIMITA_GL_CALL(glGetProgramiv(gProgram, GL_LINK_STATUS, &ok));
@@ -173,8 +174,8 @@ void ensureProgram()
     gTexLoc = -1;
     gImageTexLoc = glGetUniformLocation(gProgram, "uImageTex");
 
-    MIMITA_GL_CALL(glGenVertexArrays(1, &gVao));
-    MIMITA_GL_CALL(glGenBuffers(1, &gVbo));
+    gVao = mimita::game::genVertexArray();
+    gVbo = mimita::game::genBuffer();
     MIMITA_GL_CALL(glBindVertexArray(gVao));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
     MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(UIVertex) * 1024, nullptr, GL_DYNAMIC_DRAW));

@@ -1,5 +1,7 @@
 #include "engine/engine-tick-replay.h"
 #include "engine/engine.h"
+#include "engine/fixed-tick-clock.h"
+#include "game/job-bridge-module.h"
 #include "entities/player-avatar-animations.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
@@ -58,7 +60,7 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 
-constexpr double SIM_DT = 1.0 / 60.0;
+constexpr double SIM_DT = FixedTickClock::TICK_DT;
 
 // Maximum fixed simulation ticks that may be caught up in a single rendered
 // frame after a stall. Bounding this prevents a long presentation stall
@@ -111,7 +113,7 @@ void engineTickReplay(Engine& engine, float dt)
         simContextInitialized = true;
     }
 
-    static double simAccumulator = 0.0;
+    static FixedTickClock simClock;
     static ReplayTestState replayTest;
 
     // Final kill clip creation (immediately, no 5-second wait)
@@ -233,14 +235,12 @@ void engineTickReplay(Engine& engine, float dt)
     // Cap the accumulated backlog so a stall can never queue more than
     // gSimMaxCatchupTicks of simulation time; excess real time is dropped so
     // the game snaps back to live rather than spiraling through catch-up.
-    simAccumulator = std::min(
-        simAccumulator + (double)dt,
-        (double)std::max(gSimMaxCatchupTicks, 1) * SIM_DT);
+    simClock.advance((double)dt, gSimMaxCatchupTicks);
 
     { Perf::ScopedTimer _t("Simulation");
     int simTicksRun = 0;
     ModuleHost::instance().beginFixedTick();
-    while (simAccumulator >= SIM_DT && simTicksRun < gSimMaxCatchupTicks) {
+    while (simClock.due() && simTicksRun < gSimMaxCatchupTicks) {
         InputFrame tickFrame;
         const bool scenarioPlaybackActive = ScenarioPlayer::instance().active();
 
@@ -1002,7 +1002,7 @@ void engineTickReplay(Engine& engine, float dt)
                         const std::string command =
                             "python devscripts/replay-validation-runner.py "
                             "--replay \"" + absolutePath + "\"";
-                        std::thread([command, absolutePath]() {
+                        mimita::game::runDetached([command, absolutePath]() {
                             printf(
                                 "[REPLAY TEST] Starting validation for %s\n",
                                 absolutePath.c_str());
@@ -1011,7 +1011,7 @@ void engineTickReplay(Engine& engine, float dt)
                             printf(
                                 "[REPLAY TEST] Validation process exit=%d\n",
                                 result);
-                        }).detach();
+                        }, "replay-validation");
                         Terminal::instance().addLog(
                             "[REPLAY TEST] Replay exported; "
                             "headless validation started");
@@ -1025,7 +1025,7 @@ void engineTickReplay(Engine& engine, float dt)
             }
         }
 
-        simAccumulator -= SIM_DT;
+        simClock.consume();
         simTicksRun++;
     }
     ModuleHost::instance().endFixedTick();
@@ -1034,7 +1034,7 @@ void engineTickReplay(Engine& engine, float dt)
     // Presentation-only interpolation between the last two fixed animation
     // samples. Gameplay (collision, damage, hitboxes) still uses the fixed-tick
     // authoritative transform.
-    setAnimationRenderAlpha((float)(simAccumulator / SIM_DT));
+    setAnimationRenderAlpha((float)simClock.alpha());
 
     // Config polling — once per rendered frame, not per simulation tick.
     // These do filesystem stat() calls; running them inside the catch-up loop

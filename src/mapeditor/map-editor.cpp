@@ -1,5 +1,6 @@
 // 2026-10-23
 #include "mapeditor/map-editor.h"
+#include "game/resident-state-module.h"
 #include "mapeditor/map-editor-projects.h"
 #include "mapeditor/map-editor-config.h"
 
@@ -64,8 +65,8 @@ std::string activeMapId()
 {
     const std::string& serverMap = MimitaNet::serverGamemodeState().mapId;
     if (!serverMap.empty()) return serverMap;
-    if (gpActiveMapPath && !gpActiveMapPath->empty())
-        return mapIdFromAssetPath(*gpActiveMapPath);
+    if (!ACTIVE_MAP_PATH.empty())
+        return mapIdFromAssetPath(ACTIVE_MAP_PATH);
     return "zombietower1";
 }
 
@@ -200,7 +201,7 @@ bool MapEditor::setActive(bool enabled)
             notify("enter a game before using the map editor");
             return false;
         }
-        if (!gpWorld || !WORLD_LOADED) {
+        if (!mimita::game::worldPtr() || !WORLD_LOADED) {
             notify("world is not loaded");
             return false;
         }
@@ -340,9 +341,9 @@ const PayloadRoutePoint* MapEditor::routeFor(const EditorObjectRef& ref) const
 
 MapGLBObject* MapEditor::mapObjectFor(const EditorObjectRef& ref) const
 {
-    if (ref.kind != EditorObjectKind::MapGLBObject || !gpWorld)
+    if (ref.kind != EditorObjectKind::MapGLBObject || !mimita::game::worldPtr())
         return nullptr;
-    for (MapGLBObject& object : gpWorld->mesh.objects)
+    for (MapGLBObject& object : mimita::game::worldPtr()->mesh.objects)
         if (object.id == ref.id)
             return &object;
     return nullptr;
@@ -456,13 +457,13 @@ void MapEditor::removeChunkPreview()
         return;
     StreamedWorldLayer::instance().removeChunk(mChunkPreviewKey);
     mChunkPreviewKey = 0;
-    if (gpWorld)
-        StreamedWorldLayer::instance().flushCollision(*gpWorld);
+    if (mimita::game::worldPtr())
+        StreamedWorldLayer::instance().flushCollision(*mimita::game::worldPtr());
 }
 
 void MapEditor::installChunkPreview()
 {
-    if (!mChunkPreviewValid || !gpWorld)
+    if (!mChunkPreviewValid || !mimita::game::worldPtr())
         return;
     removeChunkPreview();
     {
@@ -479,7 +480,7 @@ void MapEditor::installChunkPreview()
             glm::translate(glm::mat4(1.0f), mChunkPreviewOrigin);
         StreamedWorldLayer::instance().addChunk(mChunkPreviewKey, chunk,
                                                 transform);
-        StreamedWorldLayer::instance().flushCollision(*gpWorld);
+        StreamedWorldLayer::instance().flushCollision(*mimita::game::worldPtr());
         StructuredLogger::instance().writeEvent(
             StructuredCategory::World, StructuredLevel::Important,
             "map-editor.chunk-preview.installed", chunk.id,
@@ -611,14 +612,14 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
     }
     if (ref.kind == EditorObjectKind::MapGLBObject) {
         MapGLBObject* object = mapObjectFor(ref);
-        if (!object || !gpWorld) return;
+        if (!object || !mimita::game::worldPtr()) return;
         const glm::vec3 oldPosition(object->transform[3]);
         const glm::vec3 delta = position - oldPosition;
         if (glm::dot(delta, delta) <= 1e-10f) return;
         const size_t last = std::min(object->vertexFirst + object->vertexCount,
-                                     gpWorld->mesh.verts.size());
+                                     mimita::game::worldPtr()->mesh.verts.size());
         for (size_t i = object->vertexFirst; i < last; ++i)
-            gpWorld->mesh.verts[i].pos += delta;
+            mimita::game::worldPtr()->mesh.verts[i].pos += delta;
         object->transform[3] += glm::vec4(delta, 0.0f);
         object->boundsMin += delta;
         object->boundsMax += delta;
@@ -666,9 +667,9 @@ void MapEditor::setObjectPosition(const EditorObjectRef& ref, const glm::vec3& p
 
 void MapEditor::syncGLBOverridesFromWorld()
 {
-    if (!gpWorld) return;
+    if (!mimita::game::worldPtr()) return;
     auto& reg = MapConfigRegistry::instance();
-    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+    for (const MapGLBObject& object : mimita::game::worldPtr()->mesh.objects) {
         const glm::vec3 current(object.transform[3]);
         if (glm::length(current - object.basePosition) <= 0.0001f)
             reg.removeGLBObjectOverride(object.id);
@@ -679,12 +680,12 @@ void MapEditor::syncGLBOverridesFromWorld()
 
 void MapEditor::applyGLBOverridesToWorld()
 {
-    if (!gpWorld) return;
+    if (!mimita::game::worldPtr()) return;
     bool changed = false;
     AABB oldBounds;
     oldBounds.min = glm::vec3(std::numeric_limits<float>::max());
     oldBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
-    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+    for (const MapGLBObject& object : mimita::game::worldPtr()->mesh.objects) {
         glm::vec3 target = object.basePosition;
         for (const MapGLBObjectOverride& override :
              MapConfigRegistry::instance().glbObjects()) {
@@ -700,16 +701,16 @@ void MapEditor::applyGLBOverridesToWorld()
         oldBounds.max = glm::max(oldBounds.max, object.boundsMax);
     }
     if (!changed) return;
-    applyGLBObjectOverrides(*gpWorld, MapConfigRegistry::instance().glbObjects());
+    applyGLBObjectOverrides(*mimita::game::worldPtr(), MapConfigRegistry::instance().glbObjects());
     AABB newBounds;
     newBounds.min = glm::vec3(std::numeric_limits<float>::max());
     newBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
-    for (const MapGLBObject& object : gpWorld->mesh.objects) {
+    for (const MapGLBObject& object : mimita::game::worldPtr()->mesh.objects) {
         newBounds.min = glm::min(newBounds.min, object.boundsMin);
         newBounds.max = glm::max(newBounds.max, object.boundsMax);
     }
     const bool collisionUpdated =
-        updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
+        updateCollisionForMovedObject(*mimita::game::worldPtr(), oldBounds, newBounds);
     mGeometryDirty = false;
     mCollisionDirty = !collisionUpdated;
 }
@@ -920,8 +921,8 @@ bool MapEditor::pickAtCursor(EditorObjectRef& out, float& outDistance) const
             found = true;
         }
     }
-    if (gpWorld) {
-        for (const auto& object : gpWorld->mesh.objects) {
+    if (mimita::game::worldPtr()) {
+        for (const auto& object : mimita::game::worldPtr()->mesh.objects) {
             float distance = 0.0f;
             if (rayAABB(origin, direction, object.boundsMin, object.boundsMax,
                         distance) && distance < best) {
@@ -1068,18 +1069,18 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
 
 glm::vec3 MapEditor::nearestWorldVertex(const glm::vec3& nearPoint, float maxDistance) const
 {
-    if (!gpWorld) return nearPoint;
+    if (!mimita::game::worldPtr()) return nearPoint;
     AABB query;
     query.min = nearPoint - glm::vec3(maxDistance);
     query.max = nearPoint + glm::vec3(maxDistance);
     static thread_local std::vector<int> candidates;
     candidates.clear();
-    appendChunkTrianglesForAABB(*gpWorld, query, 0.0f, candidates, "map-editor-snap");
+    appendChunkTrianglesForAABB(*mimita::game::worldPtr(), query, 0.0f, candidates, "map-editor-snap");
     float best = maxDistance;
     glm::vec3 bestVertex = nearPoint;
     for (int index : candidates) {
-        if (index < 0 || index >= (int)gpWorld->collisionMesh.triangles.size()) continue;
-        const CollisionTriangle& tri = gpWorld->collisionMesh.triangles[index];
+        if (index < 0 || index >= (int)mimita::game::worldPtr()->collisionMesh.triangles.size()) continue;
+        const CollisionTriangle& tri = mimita::game::worldPtr()->collisionMesh.triangles[index];
         const glm::vec3 verts[3] = {tri.a, tri.b, tri.c};
         for (const glm::vec3& vertex : verts) {
             const float distance = glm::length(vertex - nearPoint);
@@ -1307,7 +1308,7 @@ void MapEditor::endDrag(bool commit)
     bool movedGLB = false;
     movedOldBounds.min = movedNewBounds.min = glm::vec3(std::numeric_limits<float>::max());
     movedOldBounds.max = movedNewBounds.max = glm::vec3(std::numeric_limits<float>::lowest());
-    if (moved && commit && gpWorld) {
+    if (moved && commit && mimita::game::worldPtr()) {
         for (size_t i = 0; i < mDrag.refs.size() && i < mDrag.originalPositions.size(); ++i) {
             const EditorObjectRef& ref = mDrag.refs[i];
             if (ref.kind != EditorObjectKind::MapGLBObject) continue;
@@ -1325,7 +1326,7 @@ void MapEditor::endDrag(bool commit)
     mDrag = DragState{};
     if (moved && commit) {
         if (movedGLB)
-            updateCollisionForMovedObject(*gpWorld, movedOldBounds, movedNewBounds);
+            updateCollisionForMovedObject(*mimita::game::worldPtr(), movedOldBounds, movedNewBounds);
         if (selectionHasBlocks()) {
             rebuildAuthoredRenderGeometry();
             mCollisionDirty = true;
@@ -1808,8 +1809,8 @@ void MapEditor::collectEditorObjects(std::vector<EditorObjectRef>& out) const
         if (matches(route.id + " " + route.name + " route"))
             out.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
     }
-    if (gpWorld) {
-        for (const auto& object : gpWorld->mesh.objects) {
+    if (mimita::game::worldPtr()) {
+        for (const auto& object : mimita::game::worldPtr()->mesh.objects) {
             if (matches(object.id + " " + object.name + " glb"))
                 out.push_back({EditorObjectKind::MapGLBObject, object.id});
         }
@@ -2696,7 +2697,7 @@ bool MapEditor::autosave()
 
 void MapEditor::flushCollisionNow()
 {
-    if (!mCollisionDirty || !gpWorld) return;
+    if (!mCollisionDirty || !mimita::game::worldPtr()) return;
     rebuildGeometry();
     notify("collision rebuilt");
 }
@@ -3110,8 +3111,8 @@ void MapEditor::selectAllEdit()
         mSelection.push_back({EditorObjectKind::BombSite, site.id});
     for (const auto& route : MapConfigRegistry::instance().current().payload.route)
         mSelection.push_back({EditorObjectKind::PayloadRoutePoint, route.id});
-    if (gpWorld)
-        for (const auto& object : gpWorld->mesh.objects)
+    if (mimita::game::worldPtr())
+        for (const auto& object : mimita::game::worldPtr()->mesh.objects)
             mSelection.push_back({EditorObjectKind::MapGLBObject, object.id});
     for (const auto& chunk : MapConfigRegistry::instance().current().chunks)
         if (chunk.enabled)
@@ -3267,22 +3268,22 @@ bool MapEditor::reload()
 
 void MapEditor::rebuildGeometry()
 {
-    if (!gpWorld) return;
+    if (!mimita::game::worldPtr()) return;
     AuthoredGeometryOptions options;
     options.rebuildCollision = true;
     options.staticFaceRemoval = true;
-    applyAuthoredMapGeometry(*gpWorld, mapId(), options);
+    applyAuthoredMapGeometry(*mimita::game::worldPtr(), mapId(), options);
     mGeometryDirty = false;
     mCollisionDirty = false;
 }
 
 void MapEditor::rebuildAuthoredRenderGeometry()
 {
-    if (!gpWorld) return;
+    if (!mimita::game::worldPtr()) return;
     AuthoredGeometryOptions options;
     options.rebuildCollision = false;
     options.staticFaceRemoval = false;
-    applyAuthoredMapGeometry(*gpWorld, mapId(), options);
+    applyAuthoredMapGeometry(*mimita::game::worldPtr(), mapId(), options);
     mGeometryDirty = false;
 }
 
@@ -4263,17 +4264,17 @@ bool MapEditor::moduleApplyPrimaryPosition(const glm::vec3& position)
 
 unsigned int MapEditor::moduleWorldObjectCount() const
 {
-    if (!gpWorld || !WORLD_LOADED)
+    if (!mimita::game::worldPtr() || !WORLD_LOADED)
         return 0;
-    return static_cast<unsigned int>(gpWorld->mesh.objects.size());
+    return static_cast<unsigned int>(mimita::game::worldPtr()->mesh.objects.size());
 }
 
 bool MapEditor::moduleWorldObjectAt(unsigned int index,
                                     MapEditorWorldObjectView& out) const
 {
-    if (!gpWorld || !WORLD_LOADED || index >= gpWorld->mesh.objects.size())
+    if (!mimita::game::worldPtr() || !WORLD_LOADED || index >= mimita::game::worldPtr()->mesh.objects.size())
         return false;
-    const MapGLBObject& object = gpWorld->mesh.objects[index];
+    const MapGLBObject& object = mimita::game::worldPtr()->mesh.objects[index];
     std::snprintf(out.id, sizeof(out.id), "%s", object.id.c_str());
     std::snprintf(out.name, sizeof(out.name), "%s", object.name.c_str());
     out.nodeIndex = object.nodeIndex;
@@ -4292,10 +4293,10 @@ bool MapEditor::moduleWorldObjectAt(unsigned int index,
 
 bool MapEditor::moduleMapBounds(glm::vec3& outMin, glm::vec3& outMax) const
 {
-    if (!gpWorld || !WORLD_LOADED)
+    if (!mimita::game::worldPtr() || !WORLD_LOADED)
         return false;
-    outMin = gpWorld->collisionMesh.boundsMin;
-    outMax = gpWorld->collisionMesh.boundsMax;
+    outMin = mimita::game::worldPtr()->collisionMesh.boundsMin;
+    outMax = mimita::game::worldPtr()->collisionMesh.boundsMax;
     return true;
 }
 
@@ -4339,7 +4340,7 @@ bool MapEditor::setSelectedPosition(const glm::vec3& position)
 
 void MapEditor::nudgeSelection(const glm::vec3& delta)
 {
-    if (mSelection.empty() || !gpWorld) {
+    if (mSelection.empty() || !mimita::game::worldPtr()) {
         notify("select an object first");
         return;
     }
@@ -4371,7 +4372,7 @@ void MapEditor::nudgeSelection(const glm::vec3& delta)
     }
     if (movedGLB) {
         const bool collisionUpdated =
-            updateCollisionForMovedObject(*gpWorld, oldBounds, newBounds);
+            updateCollisionForMovedObject(*mimita::game::worldPtr(), oldBounds, newBounds);
         mCollisionDirty = !collisionUpdated;
     }
     if (movedBlocks) {
@@ -4514,8 +4515,8 @@ void MapEditor::renderWorld(Camera& camera)
         }
     }
 
-    if (gpWorld) {
-        for (const auto& object : gpWorld->mesh.objects) {
+    if (mimita::game::worldPtr()) {
+        for (const auto& object : mimita::game::worldPtr()->mesh.objects) {
             const bool selected = isSelected({EditorObjectKind::MapGLBObject, object.id});
             const bool hovered = mHoverValid && mHover.kind == EditorObjectKind::MapGLBObject &&
                                  mHover.id == object.id;
@@ -4737,7 +4738,7 @@ void MapEditor::renderUI(GLFWwindow* window)
         mSelection.size(), MapConfigRegistry::instance().current().blocks.size(),
         MapConfigRegistry::instance().current().payload.route.size(),
         MapConfigRegistry::instance().current().entities.size(),
-        gpWorld ? gpWorld->mesh.objects.size() : 0);
+        mimita::game::worldPtr() ? mimita::game::worldPtr()->mesh.objects.size() : 0);
     const UIRect summaryRect = rectOf(
         "map-editor.summary", {26.0f, 52.0f, 0.0f, 0.0f});
     uiDrawText(line, summaryRect.x, summaryRect.y,

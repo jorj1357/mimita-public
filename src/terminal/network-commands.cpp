@@ -1,4 +1,5 @@
 #include <cstdio>
+#include "game/resident-state-module.h"
 #include <cstdlib>
 #include <cmath>
 #include <cctype>
@@ -23,8 +24,6 @@
 #include "gui/gui-main.h"
 #include "auth/auth-system.h"
 
-extern bool gNetPresentationDebug;
-extern bool gRoomCodeShow;
 
 namespace {
 
@@ -668,12 +667,12 @@ void registerNetworkCommands()
         "net_debug_presentation", "Toggle remote player presentation debug overlay", "net_debug_presentation [0|1]",
         [](const std::vector<std::string>& args) {
             if (args.empty()) {
-                gNetPresentationDebug = !gNetPresentationDebug;
+                mimita::game::netPresentationDebugRef() = !mimita::game::netPresentationDebugRef();
             } else {
-                gNetPresentationDebug = args[0] == "1";
+                mimita::game::netPresentationDebugRef() = args[0] == "1";
             }
-            printf("[NET PRESENTATION DEBUG] %s\n", gNetPresentationDebug ? "ON" : "OFF");
-            Terminal::instance().addLog(gNetPresentationDebug
+            printf("[NET PRESENTATION DEBUG] %s\n", mimita::game::netPresentationDebugRef() ? "ON" : "OFF");
+            Terminal::instance().addLog(mimita::game::netPresentationDebugRef()
                 ? "[NET] Presentation debug ON"
                 : "[NET] Presentation debug OFF");
         }
@@ -817,11 +816,11 @@ void registerNetworkCommands()
         "roomcodeshow 0|1",
         [](const std::vector<std::string>& args) {
             if (args.size() == 1 && args[0] == "0") {
-                gRoomCodeShow = false;
+                mimita::game::roomCodeShowRef() = false;
                 printf("[ROOM CODE] HUD hidden\n");
                 Terminal::instance().addLog("[ROOM CODE] HUD hidden");
             } else if (args.size() == 1 && args[0] == "1") {
-                gRoomCodeShow = true;
+                mimita::game::roomCodeShowRef() = true;
                 printf("[ROOM CODE] HUD shown\n");
                 Terminal::instance().addLog("[ROOM CODE] HUD shown");
             } else {
@@ -1143,11 +1142,11 @@ void registerNetworkCommands()
                 Terminal::instance().addLog(buf);
             }
 
-            if (mp.hasLocalServerPosition && gpPlayer)
+            if (mp.hasLocalServerPosition && mimita::game::playerPtr())
             {
                 snprintf(buf, sizeof(buf),
                     "[NETSTATS] simDivergence=%.2fm (predicted vs server_sim)",
-                    glm::length(gpPlayer->pos - mp.localServerPosition));
+                    glm::length(mimita::game::playerPtr()->pos - mp.localServerPosition));
                 Terminal::instance().addLog(buf);
             }
 

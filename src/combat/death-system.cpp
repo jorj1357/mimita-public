@@ -1,4 +1,5 @@
 #include "combat/death-system.h"
+#include "game/resident-state-module.h"
 #include "combat/weapon-runtime.h"
 #include "config/ragdoll-death-config.h"
 #include "config/spawn-velocity-config.h"
@@ -136,7 +137,7 @@ bool DeathSystem::kill(
     // player.pos back to the last simulated pose on the next tick and drag the
     // respawn onto the death spot instead of the authoritative spawn. The
     // transform is preserved so the captured momentum and the corpse stay put.
-    if (&victim == gpPlayer && RagdollModeSystem::instance().isActive()) {
+    if (&victim == mimita::game::playerPtr() && RagdollModeSystem::instance().isActive()) {
         RagdollModeSystem::instance().deactivate(victim, /*movePlayerToBody=*/false);
         victim.ragdollModeActive = false;
     }
@@ -190,13 +191,13 @@ bool DeathSystem::kill(
         }
         if (!killerName.empty() && killerName != "unknown")
         {
-            if (gpPlayer && killerName == gpPlayer->username)
+            if (mimita::game::playerPtr() && killerName == mimita::game::playerPtr()->username)
             {
-                healKillerToFull(*gpPlayer, killerName);
+                healKillerToFull(*mimita::game::playerPtr(), killerName);
             }
-            else if (gpNpcSystem)
+            else if (mimita::game::npcSystemPtr())
             {
-                for (Npc& npc : gpNpcSystem->all())
+                for (Npc& npc : mimita::game::npcSystemPtr()->all())
                 {
                     if (npc.body.username == killerName)
                     {
@@ -250,7 +251,7 @@ bool DeathSystem::kill(
             ? gActiveReplayRecorder->currentTick() : 0;
         // In a networked session the server's authoritative KillEventPacket is
         // the single killfeed source; presenting here too would duplicate it.
-        if (!(gpMpContext && gpMpContext->active))
+        if (!(mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active))
         {
             KillfeedManager::instance().onKill(
                 effectiveKiller, victimName, weaponName, false, eventTick);
@@ -355,12 +356,9 @@ void DeathSystem::respawn(Player& actor, const std::string& actorId, const World
     actor.updateModelWorldTransforms();
     emitLifecycleEvent("respawn", actor, actorId, actorId);
 
-    FILE* debugFile = fopen("logs/map_spawn_debug.txt", "a");
-    if (debugFile) {
-        fprintf(debugFile, "Player spawned spawn_index=%d position=(%.3f %.3f %.3f)\n",
-                spawnIndex, actor.pos.x, actor.pos.y, actor.pos.z);
-        fclose(debugFile);
-    }
+    Debug::log(Debug::Category::General,
+               "[SPAWN] player spawn_index=%d position=(%.3f %.3f %.3f)\n",
+               spawnIndex, actor.pos.x, actor.pos.y, actor.pos.z);
 
     if (DebugConfig::DEBUG_DEATH_TIMELINE || DebugConfig::DEBUG_DEATH_PERF)
         Debug::log(Debug::Category::Ragdoll, "[DEATH PERF] respawn() total=%.3fms actor=%s\n",
@@ -421,7 +419,7 @@ void DeathSystem::update(
         // Any live networked session owns respawn. Sandbox included: the
         // server already publishes an authoritative new life, and a second
         // local respawn makes death state race the server generation.
-        const bool networkedSession = gpMpContext && gpMpContext->active;
+        const bool networkedSession = mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active;
 
         bool shouldRespawn =
             !duelModeActive && !networkDuelActive && !networkedSession;
@@ -454,7 +452,7 @@ void DeathSystem::update(
             gDuelManager.enabled() && gDuelManager.phase() != DuelPhase::Off;
         bool networkDuelActive = DuelQueue::instance().inDuel() ||
             MimitaNet::CommunityMatchClient::instance().active();
-        const bool networkedSession = gpMpContext && gpMpContext->active;
+        const bool networkedSession = mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active;
 
         bool shouldRespawn =
             !duelModeActive && !networkDuelActive && !networkedSession;

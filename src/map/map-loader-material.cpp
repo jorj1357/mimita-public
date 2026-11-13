@@ -1,4 +1,5 @@
 #include "map-loader-material.h"
+#include "game/gl-resource-bridge-module.h"
 #include "map_loader.h"
 #include "tinygltf/tiny_gltf.h"
 
@@ -120,10 +121,10 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::s
 
     GLuint tex = 0;
     MIMITA_GL_CLEAR_STAGE("uploadGLBImage");
-    MIMITA_GL_CALL(glGenTextures(1, &tex));
+    tex = mimita::game::genTexture();
     if (!tex)
     {
-        GLB_LOG("[GLB TEXTURE WARNING] glGenTextures returned 0 for image %d\n", imageIndex);
+        GLB_LOG("[GLB TEXTURE WARNING] texture create returned 0 for image %d\n", imageIndex);
         return 0;
     }
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
@@ -158,7 +159,7 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::s
 
     MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
 
-    MIMITA_GL_CALL(glGenerateMipmap(GL_TEXTURE_2D));
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     Debug::log(Debug::Category::GLB, "[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
 
     if (GLDebug::extensionSupported("GL_EXT_texture_filter_anisotropic"))
@@ -252,7 +253,7 @@ void processGLBMaterials(
                        i, mat.name.c_str(), r, g, b, a);
 
                 GLuint tex = 0;
-                glGenTextures(1, &tex);
+                tex = mimita::game::genTexture();
                 if (tex)
                 {
                     glBindTexture(GL_TEXTURE_2D, tex);

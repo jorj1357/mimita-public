@@ -6,6 +6,7 @@
 * Does NOT own export job state, encode backends, or the main render loop.
 */
 #include "replay/replay-export-target.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <glad/glad.h>
 
@@ -20,10 +21,10 @@ bool replayExportTargetInit(int w, int h)
     gTarget.width = w;
     gTarget.height = h;
 
-    glGenFramebuffers(1, &gTarget.fbo);
+    gTarget.fbo = mimita::game::genFramebuffer();
     glBindFramebuffer(GL_FRAMEBUFFER, gTarget.fbo);
 
-    glGenTextures(1, &gTarget.colorTex);
+    gTarget.colorTex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, gTarget.colorTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,
                  GL_UNSIGNED_BYTE, nullptr);
@@ -34,7 +35,7 @@ bool replayExportTargetInit(int w, int h)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                            GL_TEXTURE_2D, gTarget.colorTex, 0);
 
-    glGenRenderbuffers(1, &gTarget.depthRbo);
+    gTarget.depthRbo = mimita::game::genRenderbuffer();
     glBindRenderbuffer(GL_RENDERBUFFER, gTarget.depthRbo);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
@@ -55,11 +56,11 @@ bool replayExportTargetInit(int w, int h)
 void replayExportTargetDestroy()
 {
     if (gTarget.fbo)
-        glDeleteFramebuffers(1, &gTarget.fbo);
+        mimita::game::deleteFramebuffer(gTarget.fbo);
     if (gTarget.colorTex)
-        glDeleteTextures(1, &gTarget.colorTex);
+        mimita::game::deleteTexture(gTarget.colorTex);
     if (gTarget.depthRbo)
-        glDeleteRenderbuffers(1, &gTarget.depthRbo);
+        mimita::game::deleteRenderbuffer(gTarget.depthRbo);
     gTarget = ReplayExportTarget{};
 }
 

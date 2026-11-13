@@ -1,4 +1,5 @@
 #include "devtools/scenario-recorder.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <chrono>
@@ -6,6 +7,8 @@
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <future>
+#include <memory>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -1060,14 +1063,15 @@ void ScenarioRecorder::poll()
             mMergeFuture = {};
         const std::string clientPath = mPath;
         const std::string serverPath = mServerPath;
-        mMergeFuture = std::async(
-            std::launch::async,
-            [clientPath, serverPath]() {
+        auto promise = std::make_shared<std::promise<std::pair<bool, std::string>>>();
+        mMergeFuture = promise->get_future();
+        mimita::game::runDetached(
+            [clientPath, serverPath, promise]() {
                 std::string error;
                 const bool ok = ScenarioTracks::mergeClientAndServer(
                     clientPath, serverPath, clientPath, &error);
-                return std::make_pair(ok, error);
-            });
+                promise->set_value(std::make_pair(ok, error));
+            }, "scenario-merge");
         mMergeInFlight = true;
         return;
     }

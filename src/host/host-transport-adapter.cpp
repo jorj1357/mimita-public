@@ -24,6 +24,8 @@ HostTransportAdapter::HostTransportAdapter() {
     adapter_.broadcast = &HostTransportAdapter::broadcast;
     adapter_.session_state = &HostTransportAdapter::sessionState;
     adapter_.peer_count = &HostTransportAdapter::peerCount;
+    adapter_.send_to_endpoint = nullptr;
+    adapter_.send_to_peer = nullptr;
 }
 
 void HostTransportAdapter::bind(MimitaNet::MultiplayerContext* context) {

@@ -9,6 +9,7 @@
 */
 
 #include "engine/engine-tick-ui.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -82,8 +83,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;extern bool gRoomCodeShow;
 
 void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
 {
@@ -109,7 +108,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     GuiLayout& hudLayout = GuiLayoutManager::instance().getLayout("config/gui/hud.json");
 
     if (gDuelManager.phase() == DuelPhase::MatchEnd &&
-        (!gReplayExportRenderMode || ReplayExportUI::showDuelDebug()))
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showDuelDebug()))
     {
         const char* stateName = "None";
         switch (gDuelManager.endState()) {
@@ -210,7 +209,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     }
 
     if (mpContext.active && mpContext.showPlayerList &&
-        (!gReplayExportRenderMode || ReplayExportUI::showPlayerList()))
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showPlayerList()))
     {
         GuiLayout& tabLayout =
             GuiLayoutManager::instance().getLayout("config/gui/tab-leaderboard.json");
@@ -550,18 +549,18 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         }
     }
 
-    if (!gReplayExportRenderMode || ReplayExportUI::showReplayBrowser())
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showReplayBrowser())
         gReplayBrowser.draw();
 
     if (replayPlaybackActive &&
-        (!gReplayExportRenderMode || ReplayExportUI::showReplayTimeline())) {
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showReplayTimeline())) {
         if (const ReplaySceneFrame* rFrame = gReplayPlayer.currentSceneFrame()) {
             gReplayTimeline.draw(gReplayPlayer.currentTick(), gReplayPlayer.totalTicks());
         }
     }
 
     if (isReplayExportActive() &&
-        (!gReplayExportRenderMode || ReplayExportUI::showExportProgress()))
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showExportProgress()))
     {
         float ex = uiScreenW() * 0.5f - 200.0f;
         float ey = uiScreenH() * 0.7f;
@@ -575,7 +574,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                    {0.3f, 1.0f, 0.3f, 1.0f}, "export-progress");
     }
 
-    if (!gReplayExportRenderMode) {
+    if (!mimita::game::replayExportRenderModeRef()) {
         {
             static bool exportPopupShown = false;
             const ReplayExportJob& job = getReplayExportJob();
@@ -597,7 +596,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     NotificationSystem::instance().render(true);
     RewardPopupSystem::instance().render();
     // Mouse lock indicator removed — belongs in ESC/Help menu.
-    if (gFramePacer.showFPS() && (!gReplayExportRenderMode || ReplayExportUI::showFps()))
+    if (gFramePacer.showFPS() && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showFps()))
     {
         const GuiElement* fpsEl = hudLayout.get("fpsText");
         float fx = fpsEl ? fpsEl->x : 12.0f;
@@ -614,14 +613,14 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             uiDrawText(gFramePacer.debugText(), uiScaleX(fx), uiScaleY(dy), dScale, dCol);
         }
     }
-    if (PostFX::instance().debugEnabled && (!gReplayExportRenderMode || ReplayExportUI::showPostFxDebug()))
+    if (PostFX::instance().debugEnabled && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showPostFxDebug()))
     {
         const char* txt = PostFX::instance().debugText();
         if (txt && txt[0])
             uiDrawText(txt, uiScreenW() - 380.0f, 12.0f, 0.28f,
                        {1.0f, 0.8f, 0.2f, 1.0f});
     }
-    if (ShadowConfig::instance().data().debugDrawShadowFrustum && (!gReplayExportRenderMode || ReplayExportUI::showShadowDebug()))
+    if (ShadowConfig::instance().data().debugDrawShadowFrustum && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showShadowDebug()))
     {
         const auto& sd = ShadowConfig::instance().data();
         char buf[512];
@@ -639,16 +638,16 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
                    {1.0f, 0.9f, 0.4f, 1.0f});
     }
 
-    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay())
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showPerfOverlay())
         Perf::renderOverlay();
-    if (!gReplayExportRenderMode || ReplayExportUI::showPerfOverlay())
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showPerfOverlay())
         uiRenderFrameDebugOverlay(engine.window(), "PLAYING", worldPassRan);
 
     if (isHealthbarDebugEnabled())
         drawHealthbarDebugOverlay(camera);
 
     // ── Room code HUD ───────────────────────────────────────────
-    if (gRoomCodeShow && !gReplayCinematicMode)
+    if (mimita::game::roomCodeShowRef() && !mimita::game::replayCinematicModeRef())
     {
         const std::string& code = mpContext.currentRoomCode;
         if (!code.empty())
@@ -680,7 +679,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
     }
 
     // ── Duels queue + PvP match HUD ────────────────────────────────
-    if (!gReplayExportRenderMode && gameState == GAME_PLAYING)
+    if (!mimita::game::replayExportRenderModeRef() && gameState == GAME_PLAYING)
     {
         // ── FFA/TDM intermission + countdown HUD ──────────────────
         {

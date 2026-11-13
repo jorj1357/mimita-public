@@ -8,6 +8,8 @@
 * Does NOT append branded outros for the Windows backend.
 */
 #include "replay/replay-export.h"
+#include "game/file-bridge-module.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <atomic>
@@ -463,14 +465,14 @@ void updateReplayExport()
         for (int y = 0; y < h; ++y)
             std::memcpy(&flipped[y * w * 3], &pixels[(h - 1 - y) * w * 3], w * 3);
         const size_t expectedBytes = pixelBytes;
-        size_t written = fwrite(flipped, 1, expectedBytes, gJob.rawFile);
+        const bool written = mimita::game::writeFileHandle(
+            gJob.rawFile, flipped, static_cast<std::uint32_t>(expectedBytes));
         gExportFrameTimings.copyMs += (replayExportNowSec() - tCopy0) * 1000.0;
-        if (written != expectedBytes) {
-            int fwErr = ferror(gJob.rawFile);
-            EXPORTTRACE_CRASH("Frame %u: fwrite FAILED (wrote %zu/%zu) ferror=%d",
-                              frameNum, written, expectedBytes, fwErr);
-            fclose(gJob.rawFile);
-            gJob.rawFile = nullptr;
+        if (!written) {
+            EXPORTTRACE_CRASH("Frame %u: raw file write FAILED (expected=%zu)",
+                              frameNum, expectedBytes);
+            mimita::game::closeFileHandle(gJob.rawFile);
+            gJob.rawFile = 0;
             finishReplayExport(false, "Raw file write failed during frame capture.");
             return;
         }
@@ -541,9 +543,8 @@ void updateReplayExport()
         }
 
         // Flush and close raw file
-        fflush(gJob.rawFile);
-        fclose(gJob.rawFile);
-        gJob.rawFile = nullptr;
+        mimita::game::closeFileHandle(gJob.rawFile);
+        gJob.rawFile = 0;
 
         // [G] Verify file size after close
         {
@@ -704,12 +705,12 @@ void openLastReplayExport()
 #ifdef _WIN32
     std::string args = "/select,\"" + gLastSuccessfulExportPath + "\"";
     std::string path = gLastSuccessfulExportPath;
-    std::thread([args, path]() {
+    mimita::game::runDetached([args, path]() {
         HINSTANCE result = ShellExecuteA(nullptr, "open", "explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
         if ((INT_PTR)result <= 32) {
             copyTextToClipboard(path);
             gExplorerLaunchFailed.store(true, std::memory_order_release);
         }
-    }).detach();
+    }, "replay-show-in-explorer");
 #endif
 }

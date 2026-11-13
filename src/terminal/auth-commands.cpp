@@ -9,6 +9,7 @@
 */
 
 #include "terminal/auth-commands.h"
+#include "game/resident-state-module.h"
 
 #include "auth/auth-controller.h"
 #include "auth/auth-system.h"
@@ -20,7 +21,6 @@
 #include <string>
 #include <vector>
 
-extern Player* gpPlayer;
 
 namespace {
 
@@ -100,8 +100,8 @@ void doSigninPassword(const std::string& password)
         AuthSystem::instance().finishAuth(login.accessToken, &info, false);
         term.addLog("[AUTH] New account bootstrap unavailable; using login account data.");
     }
-    if (gpPlayer)
-        gpPlayer->username = AuthSystem::instance().displayName();
+    if (mimita::game::playerPtr())
+        mimita::game::playerPtr()->username = AuthSystem::instance().displayName();
 
     const AuthUser& user = AuthSystem::instance().user();
     term.addLog("[AUTH] Signed in as " + user.username);
@@ -126,8 +126,8 @@ void confirmSignout(bool yes)
 
     AuthController::instance().signOut();
     AuthSystem::instance().logout();
-    if (gpPlayer)
-        gpPlayer->username = AuthSystem::instance().displayName();
+    if (mimita::game::playerPtr())
+        mimita::game::playerPtr()->username = AuthSystem::instance().displayName();
     clearPendingSignin();
     term.addLog("[AUTH] Signed out.");
 }

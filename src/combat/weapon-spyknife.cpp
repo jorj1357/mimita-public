@@ -9,6 +9,7 @@
 */
 
 #include "weapon-spyknife.h"
+#include "game/resident-state-module.h"
 #include "weapon-types.h"
 #include "weapon-audio.h"
 #include "weapon-execution.h"
@@ -29,7 +30,6 @@
 #include "network/multiplayer-context.h"
 #include "network/packets.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 #include <algorithm>
 #include <cmath>
@@ -58,29 +58,8 @@ static glm::vec3 skCpVec3(const WeaponDefinition& def, const char* prefix, glm::
 
 // ── Debug logging ─────────────────────────────────────────────
 
-static FILE* gSpyknifeLogFile = nullptr;
-
-static void openSpyknifeLog()
-{
-    if (gSpyknifeLogFile) return;
-    SYSTEMTIME st;
-    GetLocalTime(&st);
-    char dateDir[64];
-    snprintf(dateDir, sizeof(dateDir), "logs/%02d-%02d-%04d", st.wMonth, st.wDay, st.wYear);
-    CreateDirectoryA("logs", NULL);
-    CreateDirectoryA(dateDir, NULL);
-
-    char path[256];
-    snprintf(path, sizeof(path), "%s/SpyKnife_log_%02d%02d%02d.txt",
-             dateDir, st.wHour, st.wMinute, st.wSecond);
-    gSpyknifeLogFile = fopen(path, "w");
-    if (gSpyknifeLogFile)
-        Debug::warn(Debug::Category::Weapons, "[SPYKNIFE_DBG] Log opened: %s\n", path);
-}
-
 static void spyknifeLog(const char* fmt, ...)
 {
-    openSpyknifeLog();
     Debug::warn(Debug::Category::Weapons, "[SPYKNIFE_DBG] ");
     va_list args;
     va_start(args, fmt);
@@ -88,10 +67,6 @@ static void spyknifeLog(const char* fmt, ...)
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     Debug::warn(Debug::Category::Weapons, "%s\n", buf);
-    if (gSpyknifeLogFile) {
-        fprintf(gSpyknifeLogFile, "[SPYKNIFE_DBG] %s\n", buf);
-        fflush(gSpyknifeLogFile);
-    }
 }
 
 // ── Blade OBB position and orientation (from weapon model transform) ──
@@ -271,8 +246,8 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     // Remote NPC health remains server-owned.  The local damage number,
     // effects, and temporary impulse are prediction; the queued contact is
     // what can change authoritative health.
-    if (gpMpContext && gpMpContext->connected && gpMpContext->localPlayerId)
-        MimitaNet::mpApplyPredictedDamage(*gpMpContext, targetId, roundedDamage, true);
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->connected && mimita::game::mpContextPtr()->localPlayerId)
+        MimitaNet::mpApplyPredictedDamage(*mimita::game::mpContextPtr(), targetId, roundedDamage, true);
     Debug::log(Debug::Category::NpcCombat,
         "[SPYKNIFE CLIENT NPC DAMAGE] attacker=%s npc=%u damage=%d hpBefore=%d hpAfter=%d",
         owner.username.c_str(), targetId, roundedDamage, hpBefore, target.currentHp);
@@ -315,11 +290,11 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
     // Contact history must use the server-tick domain.  ctx.tick is a
     // per-network-update counter and can run far ahead of the 60 Hz server;
     // use the same target-specific rendered-tick mapping as other attacks.
-    if (gpMpContext) {
-        const uint32_t newestServerTick = gpMpContext->latestServerTick != 0
-            ? gpMpContext->latestServerTick : gpMpContext->latestLocalSnapshotTick;
+    if (mimita::game::mpContextPtr()) {
+        const uint32_t newestServerTick = mimita::game::mpContextPtr()->latestServerTick != 0
+            ? mimita::game::mpContextPtr()->latestServerTick : mimita::game::mpContextPtr()->latestLocalSnapshotTick;
         const uint32_t renderedContactTick = MimitaNet::mpFireRenderTickForTarget(
-            *gpMpContext, targetId, newestServerTick);
+            *mimita::game::mpContextPtr(), targetId, newestServerTick);
         // The render clock can be ahead of the newest server snapshot.  Never
         // send a future historical claim: the server cannot rewind to a pose it
         // has not simulated yet, so clamp to the newest usable server tick.
@@ -341,7 +316,7 @@ static int applySpyKnifeRemoteHit(SpyKnifeState& state, const WeaponDefinition& 
 
 static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMaxContacts)
 {
-    if (!gpMpContext || !gpMpContext->connected || !gpMpContext->localPlayerId)
+    if (!mimita::game::mpContextPtr() || !mimita::game::mpContextPtr()->connected || !mimita::game::mpContextPtr()->localPlayerId)
         return;
 
     while (!state.pendingRemoteHits.empty()) {
@@ -351,10 +326,10 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
         // detection stays at 60 Hz while transmission stays at the configured
         // melee request rate.
         batch.header.type = MimitaNet::PACKET_NPC_DAMAGE_REQUEST;
-        batch.header.tick = gpMpContext->tick;
-        batch.header.playerId = gpMpContext->localPlayerId;
-        batch.attackerId = gpMpContext->localPlayerId;
-        batch.attackerSpawnGeneration = gpMpContext->lastKnownSpawnGeneration;
+        batch.header.tick = mimita::game::mpContextPtr()->tick;
+        batch.header.playerId = mimita::game::mpContextPtr()->localPlayerId;
+        batch.attackerId = mimita::game::mpContextPtr()->localPlayerId;
+        batch.attackerSpawnGeneration = mimita::game::mpContextPtr()->lastKnownSpawnGeneration;
         const size_t count = std::min({
             static_cast<size_t>(MimitaNet::SPYKNIFE_CONTACT_BATCH_MAX),
             configuredMaxContacts,
@@ -391,7 +366,7 @@ static void flushSpyKnifeContactBatch(SpyKnifeState& state, size_t configuredMax
             (unsigned)batch.contactCount,
             batch.contactCount ? batch.contacts[0].contactId : 0u,
             batch.contactCount ? batch.contacts[0].contactTick : 0u);
-        const bool sent = MimitaNet::mpSendPacket(*gpMpContext, &batch, sizeof(batch));
+        const bool sent = MimitaNet::mpSendPacket(*mimita::game::mpContextPtr(), &batch, sizeof(batch));
         Debug::warn(Debug::Category::Weapons,
             "[SPYKNIFE_NET] SEND_RESULT sent=%d type=%u bytes=%zu pendingAfter=%zu",
             (int)sent, (unsigned)batch.header.type, sizeof(batch),

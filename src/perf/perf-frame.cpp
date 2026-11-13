@@ -6,6 +6,7 @@
 #include "debug/structured-log.h"
 #include "debug/crash-handler.h"
 #include "config.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <array>
@@ -80,7 +81,7 @@ std::atomic<bool> gResourceWatchdogStop{false};
 std::atomic<uint32_t> gResourceWatchdogMainThreadId{0};
 std::atomic<uint32_t> gLastCompletedFrameNumber{0};
 std::atomic<uint64_t> gLastCompletedFrameNanoseconds{0};
-std::thread gResourceWatchdogThread;
+mimita::game::HostWorker gResourceWatchdogThread;
 
 uint64_t steadyNowNanoseconds()
 {
@@ -179,13 +180,13 @@ void resourceWatchdogMain()
 
 void startResourceWatchdog(uint32_t mainThreadId)
 {
-    if (gResourceWatchdogThread.joinable())
+    if (gResourceWatchdogThread.active())
         return;
     gResourceWatchdogMainThreadId.store(mainThreadId, std::memory_order_relaxed);
     gLastCompletedFrameNanoseconds.store(steadyNowNanoseconds(),
                                          std::memory_order_relaxed);
     gResourceWatchdogStop.store(false, std::memory_order_relaxed);
-    gResourceWatchdogThread = std::thread(resourceWatchdogMain);
+    gResourceWatchdogThread.start([] { resourceWatchdogMain(); }, "perf-watchdog");
 }
 
 uint64_t currentThreadCpu100ns(bool& available)
@@ -645,8 +646,7 @@ void perfStartResourceWatchdog(uint32_t mainThreadId)
 void perfStopResourceWatchdog()
 {
     gResourceWatchdogStop.store(true, std::memory_order_relaxed);
-    if (gResourceWatchdogThread.joinable())
-        gResourceWatchdogThread.join();
+    gResourceWatchdogThread.release();
 }
 
 // ── Capture current frame ───────────────────────────────────

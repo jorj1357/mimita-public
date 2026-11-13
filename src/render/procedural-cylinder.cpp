@@ -1,6 +1,7 @@
 // 2026-10-27
 
 #include "render/procedural-cylinder.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -143,8 +144,8 @@ const TexturedCylinderMesh& getTexturedCylinderMesh(float radius,
 
     TexturedCylinderMesh mesh;
     mesh.vertexCount = static_cast<int>(verts.size());
-    glGenVertexArrays(1, &mesh.vao);
-    glGenBuffers(1, &mesh.vbo);
+    mesh.vao = mimita::game::genVertexArray();
+    mesh.vbo = mimita::game::genBuffer();
     glBindVertexArray(mesh.vao);
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
     glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(),

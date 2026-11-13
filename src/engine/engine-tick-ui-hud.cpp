@@ -1,4 +1,5 @@
 #include "engine/engine-tick-ui.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -52,8 +53,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;
 
 void engineTickUIHUD(Engine& engine, float dt)
 {
@@ -62,9 +61,9 @@ void engineTickUIHUD(Engine& engine, float dt)
 
     KillfeedManager& kf = KillfeedManager::instance();
 
-    if (gpReplayPlayer && gpReplayPlayer->isPlaying()) {
+    if (mimita::game::replayPlayerPtr() && mimita::game::replayPlayerPtr()->isPlaying()) {
         static thread_local std::vector<ReplayKillfeedEvent> killEvents;
-        gpReplayPlayer->takeTriggeredKillfeedEvents(killEvents);
+        mimita::game::replayPlayerPtr()->takeTriggeredKillfeedEvents(killEvents);
         for (const ReplayKillfeedEvent& ev : killEvents) {
             kf.onKill(ev.killerName.empty() ? ev.killerId : ev.killerName,
                       ev.victimName.empty() ? ev.victimId : ev.victimName,

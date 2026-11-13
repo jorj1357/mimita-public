@@ -11,6 +11,7 @@
 // #pragma message("COMPILING physics-mini.cpp")
 
 #include <algorithm>
+#include "game/resident-state-module.h"
 #include <chrono>
 #include <cmath>
 #include "input/input-commands.h"
@@ -203,7 +204,7 @@ static void physicsMainUpdate_Internal(
     // movement from the networked buttons and remains authoritative.
     // Dedicated/headless server simulation has no client multiplayer context.
     // Never dereference the optional global through MP_CONTEXT on that path.
-    if (gpMpContext && gpMpContext->active && gpMpContext->flyEnabled)
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active && mimita::game::mpContextPtr()->flyEnabled)
     {
         // pollInput() has already converted WASD into camera-relative world
         // X/Y movement. Do not rotate it by camForward a second time.

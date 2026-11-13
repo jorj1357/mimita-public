@@ -1,4 +1,5 @@
 #include "render-world.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -83,8 +84,8 @@ void uploadMeshIfNeeded(const World& world)
 
     MIMITA_PERF_SCOPE("Rendering::World::MeshUpload");
     if (!gVao) {
-        glGenVertexArrays(1, &gVao);
-        glGenBuffers(1, &gVbo);
+        gVao = mimita::game::genVertexArray();
+        gVbo = mimita::game::genBuffer();
     }
 
     glBindVertexArray(gVao);

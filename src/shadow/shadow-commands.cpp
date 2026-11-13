@@ -1,4 +1,5 @@
 #include "shadow-commands.h"
+#include "game/resident-state-module.h"
 #include "shadow-config.h"
 #include "shadow-render.h"
 
@@ -10,8 +11,6 @@
 #include "npc/npc.h"
 #include "debug/debug-log.h"
 
-extern Player* gpPlayer;
-extern NpcSystem* gpNpcSystem;
 
 void registerShadowCommands()
 {
@@ -127,10 +126,10 @@ void registerShadowCommands()
                 "  effect bursts:         %zu active (%d submitted)\n"
                 "  particles:             %zu active (%u alive in pool)",
                 d.enabled ? "YES" : "NO (disabled)",
-                d.playersCastShadows && gpPlayer ? "YES" : (gpPlayer ? "NO (disabled)" : "NO (no player)"),
-                gpPlayer ? "" : "",
-                d.npcsCastShadows && gpNpcSystem && !gpNpcSystem->all().empty() ? "YES" : "NO",
-                gpNpcSystem ? gpNpcSystem->all().size() : (size_t)0,
+                d.playersCastShadows && mimita::game::playerPtr() ? "YES" : (mimita::game::playerPtr() ? "NO (disabled)" : "NO (no player)"),
+                mimita::game::playerPtr() ? "" : "",
+                d.npcsCastShadows && mimita::game::npcSystemPtr() && !mimita::game::npcSystemPtr()->all().empty() ? "YES" : "NO",
+                mimita::game::npcSystemPtr() ? mimita::game::npcSystemPtr()->all().size() : (size_t)0,
                 (size_t)bursts, (size_t)bursts,
                 (size_t)parts, parts);
             Terminal::instance().addLog(buf);
@@ -143,13 +142,13 @@ void registerShadowCommands()
         "shadow_debug_local_player",
         [](const std::vector<std::string>&) {
             const auto& d = ShadowConfig::instance().data();
-            int found = gpPlayer ? 1 : 0;
+            int found = mimita::game::playerPtr() ? 1 : 0;
             int castsShadow = found && d.playersCastShadows ? 1 : 0;
             int submitted = castsShadow ? 1 : 0;
             int meshCount = 0;
             if (found) {
-                meshCount = (int)gpPlayer->physicalBody.partMeshes.size();
-                if (meshCount == 0 && !gpPlayer->renderMesh.verts.empty())
+                meshCount = (int)mimita::game::playerPtr()->physicalBody.partMeshes.size();
+                if (meshCount == 0 && !mimita::game::playerPtr()->renderMesh.verts.empty())
                     meshCount = 1;
             }
             Debug::log(Debug::Category::Render,
@@ -168,7 +167,7 @@ void registerShadowCommands()
                 "shadowMeshCount=%d\n"
                 "reason=%s",
                 found, castsShadow, submitted, meshCount,
-                !found ? "gpPlayer is null (not assigned in main)" :
+                !found ? "mimita::game::playerPtr() is null (not assigned in main)" :
                 !castsShadow ? "playersCastShadows disabled in config" :
                 "OK");
             Terminal::instance().addLog(buf);

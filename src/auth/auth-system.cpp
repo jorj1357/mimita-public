@@ -9,6 +9,7 @@
 */
 
 #include "auth/auth-system.h"
+#include "game/resident-state-module.h"
 #include "auth/auth-token.h"
 #include "website/api-client.h"
 #include "debug/debug-log.h"
@@ -18,7 +19,6 @@
 #include <shellapi.h>
 #include "entities/player.h"
 
-extern Player* gpPlayer;
 
 AuthSystem& AuthSystem::instance()
 {
@@ -127,11 +127,11 @@ void AuthSystem::validateStoredToken()
 void AuthSystem::applyUserInfo(const GameUserInfo& info)
 {
     applyInfo(mUser, info);
-    if (gpPlayer)
+    if (mimita::game::playerPtr())
     {
-        gpPlayer->username = displayName();
-        gpPlayer->vipAppearance = info.vipAppearance;
-        gpPlayer->vipStyleDetail = info.vipStyleDetail;
+        mimita::game::playerPtr()->username = displayName();
+        mimita::game::playerPtr()->vipAppearance = info.vipAppearance;
+        mimita::game::playerPtr()->vipStyleDetail = info.vipStyleDetail;
     }
     storeProfileCache({
         info.id, info.username, info.displayName, info.avatarUrl,
@@ -150,11 +150,11 @@ void AuthSystem::applyBootstrap(const std::string& token, const GameBootstrap& b
     mUser.titles = bootstrap.titles;
     mUser.loadout = bootstrap.loadout;
     mState = AuthState::Authenticated;
-    if (gpPlayer)
+    if (mimita::game::playerPtr())
     {
-        gpPlayer->username = displayName();
-        gpPlayer->vipAppearance = mUser.vipAppearance;
-        gpPlayer->vipStyleDetail = mUser.vipStyleDetail;
+        mimita::game::playerPtr()->username = displayName();
+        mimita::game::playerPtr()->vipAppearance = mUser.vipAppearance;
+        mimita::game::playerPtr()->vipStyleDetail = mUser.vipStyleDetail;
     }
     cacheAndFinish(mUser);
     Debug::warn(Debug::Category::Auth,
@@ -352,11 +352,11 @@ void AuthSystem::finishAuth(const std::string& token, const GameUserInfo* userIn
 
     if (loggedIn)
     {
-        if (gpPlayer)
+        if (mimita::game::playerPtr())
         {
-            gpPlayer->username = displayName();
-            gpPlayer->vipAppearance = mUser.vipAppearance;
-            gpPlayer->vipStyleDetail = mUser.vipStyleDetail;
+            mimita::game::playerPtr()->username = displayName();
+            mimita::game::playerPtr()->vipAppearance = mUser.vipAppearance;
+            mimita::game::playerPtr()->vipStyleDetail = mUser.vipStyleDetail;
         }
         Debug::warn(Debug::Category::Auth, "current username=%s logged in=1\n",
                displayName().c_str());
@@ -374,8 +374,8 @@ void AuthSystem::logout()
     mUser = {};
     mUser.sessionToken.clear();
     mGuestName = generateGuestName();
-    if (gpPlayer)
-        gpPlayer->username = displayName();
+    if (mimita::game::playerPtr())
+        mimita::game::playerPtr()->username = displayName();
     Debug::warn(Debug::Category::Auth, "logged out\n");
 }
 
@@ -388,8 +388,8 @@ void AuthSystem::clearSession()
     mState = AuthState::NeedsLogin;
     mUser = {};
     mGuestName = generateGuestName();
-    if (gpPlayer)
-        gpPlayer->username = displayName();
+    if (mimita::game::playerPtr())
+        mimita::game::playerPtr()->username = displayName();
     Debug::warn(Debug::Category::Auth, "session cleared\n");
 }
 

@@ -9,6 +9,7 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "game/resident-state-module.h"
 #include "network/net_common.h"
 #include "network/simulation-constants.h"
 #include "network/remote-entity-lifecycle.h"
@@ -45,11 +46,9 @@
 // Shared online-mode context pointer (defined in main.cpp), used by the
 // predicted kill-heal rollback inside clearPredictedDeath so the HP restore and
 // the disagreement effect land on the exact same tick.
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 // Client render world (defined in main.cpp, set at map load). Used by the
 // remote-body geometry safety clamp in updateRenderedReplica.
-extern World* gpWorld;
 
 namespace MimitaNet {
 
@@ -435,12 +434,12 @@ void clearPredictedDeath(Player& player, const glm::vec3& at,
     // disagreement effect appears, so the HP restore is never a silent desync.
     // Force the disagreement visual on whenever a pending predicted kill-heal
     // for this entity is being rolled back.
-    if (gpMpContext && gpMpContext->active &&
-        gpMpContext->predictedKillHealPending &&
-        gpMpContext->predictedKillHealTargetEntityId == entityId)
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active &&
+        mimita::game::mpContextPtr()->predictedKillHealPending &&
+        mimita::game::mpContextPtr()->predictedKillHealTargetEntityId == entityId)
     {
         showDisagreement = true;
-        mpRollbackPredictedKillHeal(*gpMpContext, entityId);
+        mpRollbackPredictedKillHeal(*mimita::game::mpContextPtr(), entityId);
     }
 
     player.dead = false;
@@ -900,16 +899,16 @@ void mpApplyPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId, bool n
 {
     // Only one pending predicted heal at a time; the first unresolved kill owns
     // it until it is confirmed or rolled back.
-    if (!gpPlayer || entityId == 0 || ctx.predictedKillHealPending)
+    if (!mimita::game::playerPtr() || entityId == 0 || ctx.predictedKillHealPending)
         return;
     ctx.predictedKillHealPending = true;
     ctx.predictedKillHealTargetEntityId = entityId;
     ctx.predictedKillHealTargetIsNpc = npc;
-    ctx.predictedKillHealBeforeHp = gpPlayer->currentHp;
-    DeathSystem::instance().healKillerToFull(*gpPlayer, gpPlayer->username);
+    ctx.predictedKillHealBeforeHp = mimita::game::playerPtr()->currentHp;
+    DeathSystem::instance().healKillerToFull(*mimita::game::playerPtr(), mimita::game::playerPtr()->username);
     Debug::log(Debug::Category::Networking,
         "[NET PREDICTED KILL HEAL] target=%u npc=%d before=%d hp=%d\n",
-        entityId, (int)npc, ctx.predictedKillHealBeforeHp, gpPlayer->currentHp);
+        entityId, (int)npc, ctx.predictedKillHealBeforeHp, mimita::game::playerPtr()->currentHp);
 }
 
 void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
@@ -921,7 +920,7 @@ void mpConfirmPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
     ctx.predictedKillHealPending = false;
     Debug::log(Debug::Category::Networking,
         "[NET PREDICTED KILL HEAL CONFIRMED] target=%u hp=%d\n",
-        entityId, gpPlayer ? gpPlayer->currentHp : -1);
+        entityId, mimita::game::playerPtr() ? mimita::game::playerPtr()->currentHp : -1);
 }
 
 void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
@@ -931,12 +930,12 @@ void mpRollbackPredictedKillHeal(MultiplayerContext& ctx, uint32_t entityId)
     if (entityId != ctx.predictedKillHealTargetEntityId)
         return;
     ctx.predictedKillHealPending = false;
-    if (gpPlayer)
+    if (mimita::game::playerPtr())
     {
-        gpPlayer->currentHp = ctx.predictedKillHealBeforeHp;
+        mimita::game::playerPtr()->currentHp = ctx.predictedKillHealBeforeHp;
         Debug::log(Debug::Category::Networking,
             "[NET PREDICTED KILL HEAL ROLLBACK] target=%u hp=%d\n",
-            entityId, gpPlayer->currentHp);
+            entityId, mimita::game::playerPtr()->currentHp);
     }
 }
 
@@ -1495,8 +1494,8 @@ void updateRenderedReplica(
     // Final render-safety clamp: the rendered remote body may never intersect
     // world geometry, regardless of filter mode, loss pattern, or extrapolation
     // drift. Runs after every path that writes player.pos above.
-    if (gpWorld)
-        resolveRemoteBodyAgainstGeometry(player, interpolation, *gpWorld);
+    if (mimita::game::worldPtr())
+        resolveRemoteBodyAgainstGeometry(player, interpolation, *mimita::game::worldPtr());
 
     player.vel = render.velocity;
     int authoritativeRenderHealth = render.health;
@@ -2396,22 +2395,22 @@ void mpUpdateRemoteEntities(MultiplayerContext& ctx, float dt)
                 NetworkingConfig::instance().data().remoteMotionSmoothing.renderFilter.c_str());
             msg += buf;
 
-            if (gpPlayer && ctx.hasLocalServerPosition)
+            if (mimita::game::playerPtr() && ctx.hasLocalServerPosition)
             {
-                const glm::vec3 corr = ctx.localServerPosition - gpPlayer->pos;
+                const glm::vec3 corr = ctx.localServerPosition - mimita::game::playerPtr()->pos;
                 const float err = glm::length(corr);
                 const MovementValidationConfig mvCfg;
                 snprintf(buf, sizeof(buf),
                     " | local me=(%.2f,%.2f,%.2f) srv=(%.2f,%.2f,%.2f) "
                     "d=%.3fm class=%s hpMe=%d hpSrv=%d hpDelta=%d "
                     "hasSrv=%d reconciled=%d teleportAck=%d resync=%d",
-                    gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z,
+                    mimita::game::playerPtr()->pos.x, mimita::game::playerPtr()->pos.y, mimita::game::playerPtr()->pos.z,
                     ctx.localServerPosition.x, ctx.localServerPosition.y,
                     ctx.localServerPosition.z, err,
                     movementCorrectionClassName(
                         classifyMovementCorrection(err, mvCfg)),
-                    gpPlayer->currentHp, ctx.localServerHealth,
-                    gpPlayer->currentHp - ctx.localServerHealth,
+                    mimita::game::playerPtr()->currentHp, ctx.localServerHealth,
+                    mimita::game::playerPtr()->currentHp - ctx.localServerHealth,
                     (int)ctx.hasLocalServerPosition,
                     (int)ctx.localPlayerReconciled,
                     (int)ctx.awaitingTeleportAck,

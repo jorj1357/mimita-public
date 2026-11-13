@@ -7,6 +7,7 @@
 */
 
 #include "impact/destructible-render.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <cstddef>
 #include <unordered_map>
@@ -52,8 +53,8 @@ GpuEntityMesh& gpuMeshFor(uint32_t entityId)
     {
         for (auto& pair : gEntityMeshes)
         {
-            if (pair.second.vbo) glDeleteBuffers(1, &pair.second.vbo);
-            if (pair.second.vao) glDeleteVertexArrays(1, &pair.second.vao);
+            if (pair.second.vbo) mimita::game::deleteBuffer(pair.second.vbo);
+            if (pair.second.vao) mimita::game::deleteVertexArray(pair.second.vao);
         }
         gEntityMeshes.clear();
     }
@@ -67,8 +68,8 @@ void releaseGeneratedEntityMesh(unsigned int entityId)
     auto it = gEntityMeshes.find(entityId);
     if (it == gEntityMeshes.end())
         return;
-    if (it->second.vbo) glDeleteBuffers(1, &it->second.vbo);
-    if (it->second.vao) glDeleteVertexArrays(1, &it->second.vao);
+    if (it->second.vbo) mimita::game::deleteBuffer(it->second.vbo);
+    if (it->second.vao) mimita::game::deleteVertexArray(it->second.vao);
     gEntityMeshes.erase(it);
 }
 
@@ -121,8 +122,8 @@ bool drawGeneratedEntityMesh(const PhysicalEntity& entity, const Camera& camera)
     GpuEntityMesh& gpu = gpuMeshFor(entity.id);
     if (!gpu.vao)
     {
-        glGenVertexArrays(1, &gpu.vao);
-        glGenBuffers(1, &gpu.vbo);
+        gpu.vao = mimita::game::genVertexArray();
+        gpu.vbo = mimita::game::genBuffer();
     }
     glBindVertexArray(gpu.vao);
     glBindBuffer(GL_ARRAY_BUFFER, gpu.vbo);

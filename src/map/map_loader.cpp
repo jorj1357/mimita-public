@@ -12,6 +12,7 @@
 // stylized gameplay shader: position, normal, UV, and one base-color texture.
 
 #include "map_common.h"
+#include "game/gl-resource-bridge-module.h"
 #include "map_loader.h"
 #include "map-loader-mesh.h"
 #include "map-loader-material.h"
@@ -497,9 +498,8 @@ void releaseMeshGLResources(Mesh& mesh)
 {
     if (!mesh.ownedTextures.empty())
     {
-        glDeleteTextures(
-            (GLsizei)mesh.ownedTextures.size(),
-            mesh.ownedTextures.data());
+        for (GLuint texture : mesh.ownedTextures)
+            if (texture) mimita::game::deleteTexture(texture);
         GLB_LOG("[GLB] released owned textures=%zu\n", mesh.ownedTextures.size());
     }
     mesh.ownedTextures.clear();

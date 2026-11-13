@@ -128,7 +128,7 @@ struct ReplayExportJob {
     // Encoding
     std::string ffmpegPath;
     std::string rawTempPath;
-    FILE* rawFile = nullptr;
+    std::uint64_t rawFile = 0;
     MfMp4Writer* mfWriter = nullptr;
     bool restoreLiveOnFinish = false;
     bool clipExport = false;

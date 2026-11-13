@@ -960,12 +960,7 @@ static void broadcastNpcFiring(SOCKET sock,
             // Broadcast to ALL players (NPC has no "shooter client" to skip)
             for (const auto& pe : players)
             {
-                if (pe.second.transport)
-                    pe.second.transport->send(&spawn, sizeof(spawn));
-                else
-                    sendto(sock, (const char*)&spawn, sizeof(spawn), 0,
-                           (sockaddr*)&pe.second.addr,
-                           sizeof(pe.second.addr));
+                serverSendToPlayer(sock, pe.second, &spawn, sizeof(spawn));
                 ++totalPacketsOut;
             }
 
@@ -1034,12 +1029,7 @@ static void broadcastNpcFiring(SOCKET sock,
 
             for (const auto& pe : players)
             {
-                if (pe.second.transport)
-                    pe.second.transport->send(&blast, sizeof(blast));
-                else
-                    sendto(sock, (const char*)&blast, sizeof(blast), 0,
-                           (sockaddr*)&pe.second.addr,
-                           sizeof(pe.second.addr));
+                serverSendToPlayer(sock, pe.second, &blast, sizeof(blast));
                 ++totalPacketsOut;
             }
 
@@ -1081,12 +1071,7 @@ static void broadcastNpcFiring(SOCKET sock,
 
         for (const auto& pe : players)
         {
-            if (pe.second.transport)
-                pe.second.transport->send(&ev, sizeof(ev));
-            else
-                sendto(sock, (const char*)&ev, sizeof(ev), 0,
-                       (sockaddr*)&pe.second.addr,
-                       sizeof(pe.second.addr));
+            serverSendToPlayer(sock, pe.second, &ev, sizeof(ev));
             ++totalPacketsOut;
         }
 

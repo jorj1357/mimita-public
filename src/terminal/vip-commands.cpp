@@ -9,6 +9,7 @@
 */
 
 #include "terminal/vip-commands.h"
+#include "game/resident-state-module.h"
 
 #include "auth/auth-system.h"
 #include "debug/debug-log.h"
@@ -54,8 +55,8 @@ void vipStatus()
     Terminal& term = Terminal::instance();
     term.addLog("[VIP] account=" + (user.username.empty() ? std::string("guest") : user.username));
     logAppearance("[VIP] appearance", user.vipAppearance);
-    if (gpPlayer)
-        logAppearance("[VIP] local-player", gpPlayer->vipAppearance);
+    if (mimita::game::playerPtr())
+        logAppearance("[VIP] local-player", mimita::game::playerPtr()->vipAppearance);
 }
 
 } // namespace
@@ -75,7 +76,7 @@ void registerVipCommands()
         "viptest", "Preview a local VIP tier appearance", "viptest <off|vip|super_vip|ultra_vip>",
         [](const std::vector<std::string>& args) {
             Terminal& term = Terminal::instance();
-            if (!gpPlayer)
+            if (!mimita::game::playerPtr())
             {
                 term.addLog("[VIP] no local player is available");
                 return;
@@ -88,7 +89,7 @@ void registerVipCommands()
 
             const std::string tierArg = args[0] == "off" ? "free" : args[0];
             const uint8_t tier = MimitaVip::tierFromString(tierArg);
-            gpPlayer->vipAppearance = MimitaVip::tierDefaultAppearance(tier);
+            mimita::game::playerPtr()->vipAppearance = MimitaVip::tierDefaultAppearance(tier);
 
             MimitaVip::VipStyleDetail detail;
             if (tier == MimitaVip::VIP_TIER_VIP)
@@ -122,11 +123,11 @@ void registerVipCommands()
                 };
                 detail.solidColor = detail.colors[0];
             }
-            gpPlayer->vipStyleDetail = detail;
+            mimita::game::playerPtr()->vipStyleDetail = detail;
             Debug::warn(Debug::Category::Vip,
                 "[VIP TEST] local preview tier=%s\n",
-                MimitaVip::tierToString(gpPlayer->vipAppearance.tier));
-            logAppearance("[VIP] preview", gpPlayer->vipAppearance);
+                MimitaVip::tierToString(mimita::game::playerPtr()->vipAppearance.tier));
+            logAppearance("[VIP] preview", mimita::game::playerPtr()->vipAppearance);
             term.addLog("[VIP] preview is local-only and does not grant online VIP");
         },
         "08 05 2026",

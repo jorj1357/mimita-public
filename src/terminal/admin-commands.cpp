@@ -5,6 +5,7 @@
 * Does NOT own grants, visibility, or host-command execution.
 */
 #include "terminal/admin-commands.h"
+#include "game/resident-state-module.h"
 
 #include <string>
 #include <vector>
@@ -17,9 +18,9 @@ namespace {
 
 bool sendServerAdminCommand(const std::string& command, const char* label)
 {
-    if (::gpMpContext && ::gpMpContext->active)
+    if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
     {
-        MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+        MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
         Terminal::instance().addLog(std::string("[") + label + "] sent to server");
         return true;
     }

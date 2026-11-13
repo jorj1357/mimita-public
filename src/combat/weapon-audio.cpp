@@ -1,4 +1,5 @@
 #include "weapon-audio.h"
+#include "game/resident-state-module.h"
 #include "weapon-types.h"
 #include "combat/weapon-execution.h"
 #include "audio/audio.h"
@@ -8,7 +9,6 @@
 #include <cstdio>
 #include "debug/debug-log.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponAudio {
 
@@ -36,8 +36,8 @@ void playShootSound(const WeaponDefinition& def, const glm::vec3& position,
     float rndVolume = 1.0f + ((rand() % 20001 - 10000) / 10000.0f) * volRange;
     Debug::log(Debug::Category::Audio, "[WEAPON AUDIO] weapon=%s event=shoot path=%s pitch=%.3f volume=%.3f\n",
                def.id.c_str(), def.soundShoot.c_str(), rndPitch * sPitch, rndVolume * sVol);
-    if (actorId == 0 && gpMpContext && gpMpContext->active)
-        actorId = gpMpContext->localPlayerId;
+    if (actorId == 0 && mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
+        actorId = mimita::game::mpContextPtr()->localPlayerId;
     const unsigned int ownerId = def.soundRetrigger
         ? audioOwnerKey(actorId, def.id)
         : 0u;

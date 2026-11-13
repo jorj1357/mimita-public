@@ -1,5 +1,6 @@
 // 2026-11-05
 #include "world/streamed-world-layer.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <array>
@@ -304,8 +305,8 @@ StreamedWorldLayer::~StreamedWorldLayer()
 void StreamedWorldLayer::clear()
 {
     for (const ChunkRecord& record : mChunks) {
-        if (record.vao) glDeleteVertexArrays(1, &record.vao);
-        if (record.vbo) glDeleteBuffers(1, &record.vbo);
+        if (record.vao) mimita::game::deleteVertexArray(record.vao);
+        if (record.vbo) mimita::game::deleteBuffer(record.vbo);
     }
     mChunks.clear();
     mCollisionDirty = true;
@@ -324,9 +325,9 @@ void StreamedWorldLayer::clear()
     mCollisionRadiusM = 0.0f;
     mCoarseColliders.clear();
     for (Template& templateData : mTemplates) {
-        if (templateData.vao) glDeleteVertexArrays(1, &templateData.vao);
-        if (templateData.vbo) glDeleteBuffers(1, &templateData.vbo);
-        if (templateData.instanceVbo) glDeleteBuffers(1, &templateData.instanceVbo);
+        if (templateData.vao) mimita::game::deleteVertexArray(templateData.vao);
+        if (templateData.vbo) mimita::game::deleteBuffer(templateData.vbo);
+        if (templateData.instanceVbo) mimita::game::deleteBuffer(templateData.instanceVbo);
     }
     mTemplates.clear();
 }
@@ -686,8 +687,8 @@ void StreamedWorldLayer::rebuildTemplateFromChunk(
 
 void StreamedWorldLayer::uploadTemplate(Template& templateData)
 {
-    if (templateData.vao == 0) glGenVertexArrays(1, &templateData.vao);
-    if (templateData.vbo == 0) glGenBuffers(1, &templateData.vbo);
+    if (templateData.vao == 0) templateData.vao = mimita::game::genVertexArray();
+    if (templateData.vbo == 0) templateData.vbo = mimita::game::genBuffer();
     glBindVertexArray(templateData.vao);
     glBindBuffer(GL_ARRAY_BUFFER, templateData.vbo);
     glBufferData(GL_ARRAY_BUFFER,
@@ -705,7 +706,7 @@ void StreamedWorldLayer::uploadTemplate(Template& templateData)
                           (void*)offsetof(Vertex, normal));
 
     // Instance matrix attributes (locations 9..12) with divisor 1.
-    if (templateData.instanceVbo == 0) glGenBuffers(1, &templateData.instanceVbo);
+    if (templateData.instanceVbo == 0) templateData.instanceVbo = mimita::game::genBuffer();
     glBindBuffer(GL_ARRAY_BUFFER, templateData.instanceVbo);
     for (int i = 0; i < 4; ++i) {
         glEnableVertexAttribArray(9 + i);
@@ -719,7 +720,7 @@ void StreamedWorldLayer::uploadTemplate(Template& templateData)
 
 void StreamedWorldLayer::uploadInstanceBuffer(Template& templateData)
 {
-    if (templateData.instanceVbo == 0) glGenBuffers(1, &templateData.instanceVbo);
+    if (templateData.instanceVbo == 0) templateData.instanceVbo = mimita::game::genBuffer();
     glBindBuffer(GL_ARRAY_BUFFER, templateData.instanceVbo);
     glBufferData(GL_ARRAY_BUFFER,
                  (GLsizeiptr)(templateData.instances.size() * sizeof(glm::mat4)),
@@ -740,7 +741,7 @@ void StreamedWorldLayer::rebuildRecordVbo(ChunkRecord& record,
         copy.pos = glm::vec3(record.transform * glm::vec4(v.pos, 1.0f));
         worldVerts.push_back(copy);
     }
-    if (record.vbo == 0) glGenBuffers(1, &record.vbo);
+    if (record.vbo == 0) record.vbo = mimita::game::genBuffer();
     glBindBuffer(GL_ARRAY_BUFFER, record.vbo);
     glBufferData(GL_ARRAY_BUFFER,
                  (GLsizeiptr)(worldVerts.size() * sizeof(Vertex)),
@@ -769,8 +770,8 @@ void StreamedWorldLayer::setInstancing(bool enabled)
     size_t rebuilt = 0;
     if (mInstancing) {
         for (ChunkRecord& record : mChunks) {
-            if (record.vao) glDeleteVertexArrays(1, &record.vao);
-            if (record.vbo) glDeleteBuffers(1, &record.vbo);
+            if (record.vao) mimita::game::deleteVertexArray(record.vao);
+            if (record.vbo) mimita::game::deleteBuffer(record.vbo);
             record.vao = 0;
             record.vbo = 0;
             record.batches.clear();
@@ -808,7 +809,7 @@ void StreamedWorldLayer::setInstancing(bool enabled)
 GLuint StreamedWorldLayer::makeChunkVao(GLuint vbo, GLuint /*instanceVbo*/)
 {
     GLuint vao = 0;
-    glGenVertexArrays(1, &vao);
+    vao = mimita::game::genVertexArray();
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glEnableVertexAttribArray(0);
@@ -1006,8 +1007,8 @@ void StreamedWorldLayer::removeChunk(uint64_t key)
         mCollisionDirty = true;
 
         if (!mInstancing) {
-            if (record.vao) glDeleteVertexArrays(1, &record.vao);
-            if (record.vbo) glDeleteBuffers(1, &record.vbo);
+            if (record.vao) mimita::game::deleteVertexArray(record.vao);
+            if (record.vbo) mimita::game::deleteBuffer(record.vbo);
         } else {
             Template* templateData = findRecordTemplate(record);
             if (templateData) {

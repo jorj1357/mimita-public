@@ -18,6 +18,7 @@ Call them once at startup.
 
 #include "font-glyph.h"
 #include "font-loader.h"
+#include "game/gl-resource-bridge-module.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -91,7 +92,7 @@ static GLuint loadFontAtlasPage(const char* path, int pageId)
 
     GLuint tex = 0;
     MIMITA_GL_CLEAR_STAGE("loadFontAtlasPage");
-    MIMITA_GL_CALL(glGenTextures(1, &tex));
+    tex = mimita::game::genTexture();
     if (!tex)
     {
         stbi_image_free(data);
@@ -136,8 +137,8 @@ void fontInit()
     // we must have this stuff below 
     // or else it just draws nothing
     MIMITA_GL_CLEAR_STAGE("fontInit");
-    MIMITA_GL_CALL(glGenVertexArrays(1,&guiVAO));
-    MIMITA_GL_CALL(glGenBuffers(1,&guiVBO));
+    guiVAO = mimita::game::genVertexArray();
+    guiVBO = mimita::game::genBuffer();
 
     // mar 14 2026 this is in font-loader (this file) and gui-label
     // not good? 

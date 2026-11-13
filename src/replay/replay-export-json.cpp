@@ -8,6 +8,8 @@
 * Does NOT register replay commands or gameplay key bindings.
 */
 #include "replay/replay-export.h"
+#include "game/file-bridge-module.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <chrono>
@@ -413,8 +415,8 @@ void cancelReplayExport()
     }
     if (gJob.state == ReplayExportJob::Capturing && gJob.rawFile)
     {
-        fclose(gJob.rawFile);
-        gJob.rawFile = nullptr;
+        mimita::game::closeFileHandle(gJob.rawFile);
+        gJob.rawFile = 0;
     }
     if (!gJob.rawTempPath.empty()) {
         std::error_code ec;
@@ -430,9 +432,9 @@ void openReplayFolder()
 {
     std::string path = "replays\\exports";
     std::string cmd = "explorer.exe \"" + path + "\"";
-    std::thread([cmd]() {
+    mimita::game::runDetached([cmd]() {
         std::system(cmd.c_str());
-    }).detach();
+    }, "replay-open-folder");
     Debug::log(Debug::Category::Replay, "[REPLAY] Opened replays folder");
 }
 

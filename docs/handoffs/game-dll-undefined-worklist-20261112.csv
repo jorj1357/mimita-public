@@ -1,1 +1,34 @@
 symbol,refs,family,signature,strategy
+LogManager::instance(),1,LogManager,scalar,typed-family-bridge
+gAiLaunchMode,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gNetDebugEntities,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gUnlockCursorOnLaunch,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpActiveGameMode[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpActiveMapPath[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpBindPrev,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpCamera,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpChatHistory,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpCommandBinds[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpDeathPosition,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpDuelConfig,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpEditorMode,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpFreecamEnabled,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpGameState,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpMpContext,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpNpcSystem,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpPlayer,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayActorModels[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayBrowser,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayCameraMgr,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayChatStates[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayClipsCache[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayFactory,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayPlayer,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayRecorder,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayTimeline,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpReplayWeaponModels[abi:cxx11],1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWeapons,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWorld,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+gpWorldLoaded,1,process globals,scalar,CAP_ENTITY/CAP_WORLD handle
+ReplaySaveWorker::ReplaySaveWorker(),1,replay save jobs,scalar,CAP_JOBS lease
+ReplaySaveWorker::~ReplaySaveWorker(),1,replay save jobs,scalar,CAP_JOBS lease

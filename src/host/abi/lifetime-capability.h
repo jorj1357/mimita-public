@@ -30,6 +30,20 @@ struct JobsCapabilityV1 {
     void (*json_watch_destroy)(void* hostUserData, void* watch);
     std::int32_t (*json_watch_consume_dirty)(void* hostUserData, void* watch);
     void (*json_watch_mark_dirty)(void* hostUserData, void* watch);
+
+    // Runs a game-provided job on a resident executor. The host owns the
+    // thread; the job lease is held until invoke+destroy complete.
+    void (*submit)(void* hostUserData, void* job,
+                   void (*invoke)(void* job), void (*destroy)(void* job),
+                   const char* tag);
+
+    // Joinable resident worker. start returns a handle; wait blocks until the
+    // worker function has returned; release drops the completed handle.
+    std::uint64_t (*start_worker)(void* hostUserData, void* job,
+                                  void (*invoke)(void* job),
+                                  void (*destroy)(void* job), const char* tag);
+    void (*wait_worker)(void* hostUserData, std::uint64_t handle);
+    void (*release_worker)(void* hostUserData, std::uint64_t handle);
 };
 
 struct CallbacksCapabilityV1 {

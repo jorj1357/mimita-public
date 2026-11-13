@@ -18,7 +18,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kTransportCapabilityVersion = 1u;
+inline constexpr std::uint32_t kTransportCapabilityVersion = 3u;
 inline constexpr std::uint32_t kEventTransportMessage = 721u;
 inline constexpr std::uint32_t kEventTransportDispatch = 722u;
 inline constexpr std::uint32_t kTransportMaxPayloadBytes = 64u * 1024u;
@@ -71,6 +71,8 @@ struct TransportMessageV1 {
     std::uint32_t payloadSize;
     const std::uint8_t* payload;
     std::uint64_t receivedAtMs;
+    std::uint32_t serverTick;
+    std::uint32_t reserved;
 };
 
 // Host-owned response envelope. The game writes only the bytes and type id;
@@ -159,6 +161,18 @@ struct TransportCapabilityV1 {
     TransportResult (*peer_state)(void* hostUserData, PeerHandle peer,
                                   PeerStateV1* out);
     std::uint32_t (*peer_count)(void* hostUserData);
+
+    // Reply to an endpoint that has not authenticated as a player yet. The
+    // address and port are plain network-order integers, never a sockaddr_in or
+    // SOCKET. The resident host maps the endpoint to its socket/transport.
+    TransportResult (*send_to_endpoint)(void* hostUserData,
+                                        std::uint32_t addressNetworkOrder,
+                                        std::uint16_t portNetworkOrder,
+                                        TransportChannel channel,
+                                        std::uint32_t typeId,
+                                        std::uint32_t flags,
+                                        const std::uint8_t* payload,
+                                        std::uint32_t payloadSize);
 };
 
 }  // namespace mimita::host

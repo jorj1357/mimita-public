@@ -8,6 +8,7 @@
 * Does not measure or alter gameplay, replay, physics, or frame pacing.
 */
 #include "perf/perf-gpu.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <array>
 #include <cstdio>
@@ -47,9 +48,9 @@ void ensureQueries(Frame& frame)
 {
     for (Region& region : frame.regions) {
         if (!region.begin)
-            glGenQueries(1, &region.begin);
+            region.begin = mimita::game::genQuery();
         if (!region.end)
-            glGenQueries(1, &region.end);
+            region.end = mimita::game::genQuery();
     }
 }
 }

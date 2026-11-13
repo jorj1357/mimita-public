@@ -21,6 +21,7 @@
 #include "network/net_mode.h"
 
 #include "network/net_common.h"
+#include "game/socket-bridge-module.h"
 #include "network/packets.h"
 #include "network/movement-validation.h"
 #include "engine/engine.h"
@@ -74,14 +75,14 @@ int runClient(const LaunchOptions& options)
     if (!netStartup())
         return 1;
 
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET sock = static_cast<SOCKET>(mimita::game::openUdpSocket());
     if (sock == INVALID_SOCKET)
     {
         printf("[CLIENT] socket failed error=%d\n", WSAGetLastError());
         netShutdown();
         return 1;
     }
-    setNonBlocking(sock);
+    mimita::game::setSocketNonBlocking(sock);
     printf("[CLIENT SOCKET] created sock=%d\n", (int)sock);
 
     {
@@ -89,16 +90,15 @@ int runClient(const LaunchOptions& options)
         clientBind.sin_family = AF_INET;
         clientBind.sin_addr.s_addr = htonl(INADDR_ANY);
         clientBind.sin_port = htons(0);
-        if (bind(sock, (sockaddr*)&clientBind, sizeof(clientBind)) == SOCKET_ERROR)
+        if (!mimita::game::bindSocket(sock, &clientBind))
         {
             printf("[CLIENT] FATAL: bind() port=0 failed error=%d\n", WSAGetLastError());
-            closesocket(sock);
+            mimita::game::closeSocket(sock);
             netShutdown();
             return 1;
         }
         sockaddr_in actual{};
-        int actualLen = sizeof(actual);
-        if (getsockname(sock, (sockaddr*)&actual, &actualLen) == 0)
+        if (mimita::game::getSocketLocalAddress(sock, &actual))
             printf("[CLIENT SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
     }
 
@@ -106,7 +106,7 @@ int runClient(const LaunchOptions& options)
     if (!parseAddress(options.connect, serverAddr))
     {
         printf("[CLIENT] invalid --connect address: %s\n", options.connect.c_str());
-        closesocket(sock);
+        mimita::game::closeSocket(sock);
         netShutdown();
         return 1;
     }
@@ -115,7 +115,7 @@ int runClient(const LaunchOptions& options)
     engine.init(1024, 768, ("mimita.exe multiplayer - " + options.name).c_str());
     if (!engine.window())
     {
-        closesocket(sock);
+        mimita::game::closeSocket(sock);
         netShutdown();
         return 1;
     }
@@ -170,7 +170,7 @@ int runClient(const LaunchOptions& options)
             hello.header.tick = clientTick;
             copyName(hello.name, options.name);
             std::memset(hello.avatarName, 0, sizeof(hello.avatarName));
-            sendto(sock, (const char*)&hello, sizeof(hello), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+            mimita::game::sendToSocket(sock, &hello, sizeof(hello), &serverAddr);
             ++packetsSent;
             lastHelloMs = currentMs;
             printf("[CLIENT] hello sent to %s\n", options.connect.c_str());
@@ -180,23 +180,13 @@ int runClient(const LaunchOptions& options)
         for (;;)
         {
             sockaddr_in from{};
-            int fromLen = sizeof(from);
-            int bytes = recvfrom(sock, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromLen);
-            if (bytes <= 0)
-            {
-                int wsaErr = WSAGetLastError();
-                if (wsaErr != WSAEWOULDBLOCK)
-                {
-                    sockaddr_in localEp{};
-                    int localEpLen = sizeof(localEp);
-                    std::string localStr = "(unknown)";
-                    if (getsockname(sock, (sockaddr*)&localEp, &localEpLen) == 0)
-                        localStr = addressToString(localEp);
-                    printf("[CLIENT RX ERROR] sock=%d error=%d server=%s local=%s\n",
-                           (int)sock, wsaErr, options.connect.c_str(), localStr.c_str());
-                }
+            std::uint32_t bytes = 0;
+            bool wouldBlock = false;
+            if (!mimita::game::recvFromSocket(sock, buffer, sizeof(buffer), &from,
+                                              &bytes, &wouldBlock)) {
                 break;
             }
+            if (wouldBlock || bytes == 0) break;
             ++packetsReceived;
 
             PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
@@ -219,8 +209,7 @@ int runClient(const LaunchOptions& options)
                 ready.assignedPlayerId = localPlayerId;
                 copyMapId(ready.mapId,
                           welcome->mapId[0] ? std::string(welcome->mapId) : clientMap);
-                sendto(sock, (const char*)&ready, sizeof(ready), 0,
-                       (sockaddr*)&serverAddr, sizeof(serverAddr));
+                mimita::game::sendToSocket(sock, &ready, sizeof(ready), &serverAddr);
                 ++packetsSent;
             }
             else if (header->type == PACKET_PLAYER_RESPAWNED &&
@@ -241,8 +230,7 @@ int runClient(const LaunchOptions& options)
                     evAck.header.playerId = localPlayerId;
                     evAck.eventId = spawn->eventId;
                     evAck.eventSessionId = spawn->eventSessionId;
-                    sendto(sock, (const char*)&evAck, sizeof(evAck), 0,
-                           (sockaddr*)&serverAddr, sizeof(serverAddr));
+                    mimita::game::sendToSocket(sock, &evAck, sizeof(evAck), &serverAddr);
                     ++packetsSent;
                 }
 
@@ -252,8 +240,7 @@ int runClient(const LaunchOptions& options)
                 ack.header.transformEpoch = transformEpoch;
                 ack.spawnGeneration = spawnGeneration;
                 ack.transformEpoch = transformEpoch;
-                sendto(sock, (const char*)&ack, sizeof(ack), 0,
-                       (sockaddr*)&serverAddr, sizeof(serverAddr));
+                mimita::game::sendToSocket(sock, &ack, sizeof(ack), &serverAddr);
                 ++packetsSent;
             }
             else if (header->type == PACKET_SNAPSHOT && bytes >= (int)sizeof(SnapshotPacket))
@@ -414,7 +401,7 @@ int runClient(const LaunchOptions& options)
             }
             in.movementFlags = movementFlags;
             in.attackPressed = glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS ? 1 : 0;
-            sendto(sock, (const char*)&in, sizeof(in), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+            mimita::game::sendToSocket(sock, &in, sizeof(in), &serverAddr);
             ++packetsSent;
         }
 
@@ -483,12 +470,12 @@ int runClient(const LaunchOptions& options)
         bye.header.type = PACKET_DISCONNECT;
         bye.header.playerId = localPlayerId;
         bye.header.tick = clientTick;
-        sendto(sock, (const char*)&bye, sizeof(bye), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+        mimita::game::sendToSocket(sock, &bye, sizeof(bye), &serverAddr);
     }
 
     ::StructuredLogger::instance().shutdown();
     engine.shutdown();
-    closesocket(sock);
+    mimita::game::closeSocket(sock);
     netShutdown();
     printf("[CLIENT] shutdown complete\n");
     return 0;

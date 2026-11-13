@@ -9,6 +9,7 @@
 */
 
 #include "killfeed.h"
+#include "game/resident-state-module.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -211,14 +212,14 @@ void KillfeedManager::update(float dt)
 void KillfeedManager::render()
 {
     if (mModeEnabledOverride && !mModeEnabled &&
-        !(gpReplayPlayer && gpReplayPlayer->isPlaying()))
+        !(mimita::game::replayPlayerPtr() && mimita::game::replayPlayerPtr()->isPlaying()))
         return;
     if (mEntries.empty())
         return;
 
-    const bool isReplay = gpReplayPlayer && gpReplayPlayer->isPlaying();
+    const bool isReplay = mimita::game::replayPlayerPtr() && mimita::game::replayPlayerPtr()->isPlaying();
     const uint32_t currentTick = isReplay
-        ? gpReplayPlayer->currentTick()
+        ? mimita::game::replayPlayerPtr()->currentTick()
         : (gActiveReplayRecorder ? gActiveReplayRecorder->currentTick() : 0);
 
     float y = ENTRY_Y_OFFSET;
@@ -305,7 +306,7 @@ void KillfeedManager::render()
 
 void KillfeedManager::appendChatMessage(const KillfeedEntry& entry) const
 {
-    if (!gpChatHistory) return;
+    if (!mimita::game::chatHistoryPtr()) return;
     ChatHistoryEntry chat;
     chat.senderType = ChatSenderType::Server;
     chat.senderName = "SYSTEM";
@@ -315,7 +316,7 @@ void KillfeedManager::appendChatMessage(const KillfeedEntry& entry) const
     const auto& cfg = KillfeedConfig::instance().data();
     if (cfg.showTick && entry.eventTick != 0)
         chat.text = "[" + cfg.tickPrefix + " " + std::to_string(entry.eventTick) + "] " + chat.text;
-    gpChatHistory->append(chat);
+    mimita::game::chatHistoryPtr()->append(chat);
     noteChatActivity();
     Debug::log(Debug::Category::Chat,
                "[KILLFEED CHAT] killer=%s victim=%s verb=%s weapon=%s\n",

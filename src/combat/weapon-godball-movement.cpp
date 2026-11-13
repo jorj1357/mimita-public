@@ -1,4 +1,5 @@
 #include "weapon-godball.h"
+#include "game/resident-state-module.h"
 #include "weapon-audio.h"
 #include "weapon-types.h"
 #include "weapon-execution.h"
@@ -31,62 +32,11 @@
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
 
-// ── Godball debug file logger ──────────────────────────────────
-FILE* gGodballLogFile = nullptr;
-bool gGodballLogOpened = false;
-
-void openGodballLog()
-{
-    if (gGodballLogOpened) return;
-    gGodballLogOpened = true;
-
-    auto now = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(now);
-    std::tm local{};
-#ifdef _WIN32
-    localtime_s(&local, &t);
-#else
-    localtime_r(&t, &local);
-#endif
-    char dateBuf[16], timeBuf[16];
-    std::strftime(dateBuf, sizeof(dateBuf), "%m-%d-%Y", &local);
-    std::strftime(timeBuf, sizeof(timeBuf), "%H%M%S", &local);
-
-    std::string dir = "logs/" + std::string(dateBuf);
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-
-    std::string path = dir + "/Weapons_log_" + std::string(timeBuf) + ".txt";
-    gGodballLogFile = fopen(path.c_str(), "w");
-    if (gGodballLogFile) {
-        fprintf(gGodballLogFile, "==================================================\n");
-        fprintf(gGodballLogFile, " GODBALL NPC DAMAGE LOG\n");
-        fprintf(gGodballLogFile, " Start: %s\n", std::string(timeBuf).c_str());
-        fprintf(gGodballLogFile, " File: %s\n", path.c_str());
-        fprintf(gGodballLogFile, "==================================================\n\n");
-        fflush(gGodballLogFile);
-    }
-    Debug::warn(Debug::Category::Weapons, "[GODBALL_DBG] Log opened: %s\n", path.c_str());
-}
-
-void closeGodballLog()
-{
-    if (gGodballLogFile) {
-        fprintf(gGodballLogFile, "\n==================================================\n");
-        fprintf(gGodballLogFile, " LOG CLOSED\n");
-        fprintf(gGodballLogFile, "==================================================\n");
-        fclose(gGodballLogFile);
-        gGodballLogFile = nullptr;
-    }
-}
-
 void godballLog(const char* fmt, ...)
 {
-    openGodballLog();
     Debug::warn(Debug::Category::Weapons, "[GODBALL_DBG] ");
     va_list args;
     va_start(args, fmt);
@@ -94,15 +44,11 @@ void godballLog(const char* fmt, ...)
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
     Debug::warn(Debug::Category::Weapons, "%s\n", buf);
-    if (gGodballLogFile) {
-        fprintf(gGodballLogFile, "[GODBALL_DBG] %s\n", buf);
-        fflush(gGodballLogFile);
-    }
 }
 
 bool serverAuthHits()
 {
-    if (!gpMpContext || !gpMpContext->active) return false;
+    if (!mimita::game::mpContextPtr() || !mimita::game::mpContextPtr()->active) return false;
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 
@@ -663,9 +609,9 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 const uint64_t nowMsVal = static_cast<uint64_t>(
                     std::chrono::duration_cast<std::chrono::milliseconds>(
                         std::chrono::steady_clock::now().time_since_epoch()).count());
-                gpMpContext->predictedNpcHitMs[npcId] = nowMsVal;
-                gpMpContext->predictedNpcDamage[npcId] = rounded;
-                MimitaNet::mpApplyPredictedDamage(*gpMpContext, npcId, rounded, true);
+                mimita::game::mpContextPtr()->predictedNpcHitMs[npcId] = nowMsVal;
+                mimita::game::mpContextPtr()->predictedNpcDamage[npcId] = rounded;
+                MimitaNet::mpApplyPredictedDamage(*mimita::game::mpContextPtr(), npcId, rounded, true);
                 godballLog("CLIENT_PREDICTED_HP targetNpc=%u hpBefore=%d hpAfter=%d damage=%d",
                            npcId, hpBeforePrediction, remote.currentHp, rounded);
 
@@ -679,12 +625,12 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 // Send hit claim to server
                 MimitaNet::GodballHitClaimPacket claim{};
                 claim.header.type = MimitaNet::PACKET_GODBALL_HIT_CLAIM;
-                claim.header.tick = gpMpContext->tick;
-                claim.header.playerId = gpMpContext->localPlayerId;
-                claim.attackerId = gpMpContext->localPlayerId;
+                claim.header.tick = mimita::game::mpContextPtr()->tick;
+                claim.header.playerId = mimita::game::mpContextPtr()->localPlayerId;
+                claim.attackerId = mimita::game::mpContextPtr()->localPlayerId;
                 claim.targetId = npcId;
                 claim.contactSerial = 0;
-                claim.simulationTick = gpMpContext->tick;
+                claim.simulationTick = mimita::game::mpContextPtr()->tick;
                 claim.damage = (float)rounded;
                 claim.ballSpeed = ballSpeed;
                 claim.hitX = hitPt.x;
@@ -693,7 +639,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                 claim.normalX = hitNm.x;
                 claim.normalY = hitNm.y;
                 claim.normalZ = hitNm.z;
-                claim.spawnGeneration = gpMpContext->lastKnownSpawnGeneration;
+                claim.spawnGeneration = mimita::game::mpContextPtr()->lastKnownSpawnGeneration;
                 godballLog("CLIENT_CLAIM_SENT attacker=%u targetNpc=%u damage=%.1f "
                            "ballSpeed=%.2f simulationTick=%u spawnGeneration=%u "
                            "contactSerial=%u hit=(%.2f,%.2f,%.2f) normal=(%.2f,%.2f,%.2f)",
@@ -703,7 +649,7 @@ void checkOverlaps(GodballPhysics& phys, const WeaponDefinition& def,
                            claim.hitX, claim.hitY, claim.hitZ,
                            claim.normalX, claim.normalY, claim.normalZ);
                 const bool claimSent = MimitaNet::mpSendPacket(
-                    *gpMpContext, &claim, sizeof(claim));
+                    *mimita::game::mpContextPtr(), &claim, sizeof(claim));
                 godballLog("CLIENT_CLAIM_RESULT targetNpc=%u damage=%d sent=%d",
                            claim.targetId, rounded, (int)claimSent);
 

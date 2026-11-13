@@ -458,12 +458,7 @@ void handleShotRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
 
     for (const auto& playerEntry : players)
     {
-        if (playerEntry.second.transport)
-            playerEntry.second.transport->send(&event, sizeof(event));
-        else
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&playerEntry.second.addr,
-                   sizeof(playerEntry.second.addr));
+        serverSendToPlayer(sock, playerEntry.second, &event, sizeof(event));
         ++totalPacketsOut;
     }
 }
@@ -479,8 +474,7 @@ void handlePing(SOCKET sock, const sockaddr_in& from, const char* buffer, int by
     if (authenticatedPlayer)
         serverSendToPlayer(sock, *authenticatedPlayer, &pong, sizeof(pong));
     else
-        sendto(sock, (const char*)&pong, sizeof(pong), 0,
-               (sockaddr*)&from, sizeof(from));
+        serverSendToEndpoint(sock, from, &pong, sizeof(pong));
 }
 
 // ── Pellet blast request handler ─────────────────────────────────────
@@ -820,11 +814,7 @@ void handlePelletBlastRequest(SOCKET sock, const sockaddr_in& from, const char* 
 
     for (const auto& kv : players)
     {
-        if (kv.second.transport)
-            kv.second.transport->send(&event, sizeof(event));
-        else
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        serverSendToPlayer(sock, kv.second, &event, sizeof(event));
         ++totalPacketsOut;
     }
 
@@ -858,11 +848,7 @@ void handleGodballState(SOCKET sock,
     p.godballActive = pkt->active != 0;
     for (auto& kv : players) {
         if (kv.first == pkt->ownerPlayerId) continue;
-        if (kv.second.transport)
-            kv.second.transport->send(buffer, bytes);
-        else
-            sendto(sock, (const char*)buffer, bytes, 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        serverSendToPlayer(sock, kv.second, buffer, bytes);
     }
 }
 
@@ -916,11 +902,7 @@ void handleRagdollState(SOCKET sock,
 
     for (auto& kv : players) {
         if (kv.first == ownerId) continue;
-        if (kv.second.transport)
-            kv.second.transport->send(buffer, bytes);
-        else
-            sendto(sock, (const char*)buffer, bytes, 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        serverSendToPlayer(sock, kv.second, buffer, bytes);
     }
 }
 

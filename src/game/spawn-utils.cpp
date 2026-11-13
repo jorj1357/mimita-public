@@ -17,20 +17,7 @@
 #include <cmath>
 #include <limits>
 
-static FILE* gSpawnDebugFile = nullptr;
-static void spawnDebugOpen()
-{
-    if (!gSpawnDebugFile)
-        gSpawnDebugFile = fopen("logs/map_spawn_debug.txt", "a");
-}
-static void spawnDebugClose()
-{
-    if (gSpawnDebugFile) {
-        fclose(gSpawnDebugFile);
-        gSpawnDebugFile = nullptr;
-    }
-}
-#define SPAWNLOG(...) do { spawnDebugOpen(); if (gSpawnDebugFile) { fprintf(gSpawnDebugFile, __VA_ARGS__); fflush(gSpawnDebugFile); } } while(0)
+#define SPAWNLOG(...) Debug::log(Debug::Category::NpcMovement, __VA_ARGS__)
 
 
 namespace {

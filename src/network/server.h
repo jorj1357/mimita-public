@@ -1730,6 +1730,7 @@ void tickServerIceTransports(SOCKET sock,
                              ServerPacketStats* stats = nullptr,
                              DisagreementRetransmitState* retransmitState = nullptr);
 bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player, const void* data, size_t size);
+bool serverSendToEndpoint(SOCKET sock, const sockaddr_in& to, const void* data, size_t size);
 uint32_t serverReliableEventSessionId();
 uint32_t nextReliableGameplayEventId();
 uint32_t reliableGameplayEventSessionForPlayer(ServerPlayer& player);

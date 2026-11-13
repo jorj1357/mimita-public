@@ -1,4 +1,5 @@
 #include "analytics/analytics-uploader.h"
+#include "game/job-bridge-module.h"
 
 #include <cstdio>
 #include <string>
@@ -146,7 +147,7 @@ void AnalyticsUploader::flush(const std::string& endpoint, bool blocking)
     if (blocking)
         send();
     else
-        std::thread(std::move(send)).detach();
+        mimita::game::runDetached(std::move(send), "analytics-upload");
 }
 
 bool AnalyticsUploader::postJson(const std::string& endpoint, const nlohmann::json& body)

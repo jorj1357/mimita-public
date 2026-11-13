@@ -10,6 +10,7 @@
  */
 
 #include "render-player.h"
+#include "game/gl-resource-bridge-module.h"
 #include "entities/player.h"
 
 #include <chrono>
@@ -1106,7 +1107,7 @@ void drawPlayerTrailBatch(const Camera& cam)
         return;
 
     static GLuint vao = 0, vbo = 0;
-    if (!vao) { glGenVertexArrays(1, &vao); glGenBuffers(1, &vbo); }
+    if (!vao) { vao = mimita::game::genVertexArray(); vbo = mimita::game::genBuffer(); }
     GLint oldVao = 0, oldBuffer = 0, oldProgram = 0;
     GLint oldUseColor = 0;
     GLint oldBlendSrcRgb = GL_ONE, oldBlendDstRgb = GL_ZERO;

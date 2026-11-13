@@ -8,6 +8,7 @@
 // dont include stb image implementation here? i dont know -jorj 
 
 #include <glad/glad.h>
+#include "game/gl-resource-bridge-module.h"
 /*
 dont use this
 #include <GL/glew.h>   // or <GL/gl.h> if using raw OpenGL
@@ -35,7 +36,7 @@ static GLuint makeFallbackTexture()
     };
 
     MIMITA_GL_CLEAR_STAGE("makeFallbackTexture");
-    MIMITA_GL_CALL(glGenTextures(1, &fallback));
+    fallback = mimita::game::genTexture();
     MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, fallback));
     MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
     MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
@@ -61,7 +62,7 @@ GLuint loadTexture(const char* path) {
 
     GLuint tex;
     MIMITA_GL_CLEAR_STAGE("loadTexture");
-    MIMITA_GL_CALL(glGenTextures(1, &tex));
+    tex = mimita::game::genTexture();
     if (!tex)
     {
         stbi_image_free(data);
@@ -77,7 +78,7 @@ GLuint loadTexture(const char* path) {
     printf("[TEXTURE] Uploading to GPU tex=%u size=%dx%d channels=%d\n", tex, w, h, n);
     MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
     MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));
-    MIMITA_GL_CALL(glGenerateMipmap(GL_TEXTURE_2D));
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
 
     stbi_image_free(data);

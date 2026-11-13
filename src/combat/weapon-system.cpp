@@ -11,6 +11,7 @@
 */
 
 #include "weapon-system.h"
+#include "game/resident-state-module.h"
 #include "physics/movement/physics-collision.h"
 #include "weapon-audio.h"
 #include "weapon-data.h"
@@ -59,13 +60,12 @@ bool gWeaponCollisionVisualsProbes = false;
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
 
 bool serverAuthHits()
 {
-    if (!gpMpContext || !gpMpContext->active) return false;
+    if (!mimita::game::mpContextPtr() || !mimita::game::mpContextPtr()->active) return false;
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 

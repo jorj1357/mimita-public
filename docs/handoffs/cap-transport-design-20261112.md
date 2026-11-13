@@ -76,6 +76,13 @@ The dedicated server, client, and command path must be runnable entirely from th
 
 Move `PACKET_PING` as the second small packet. Prove latency/keepalive and reconnect-adjacent behavior.
 
+**Status 2026-11-13 (Agent B, source only):** inbound ping now crosses
+`on_event(721)` as an opaque `TransportMessageV1`. The game validates the packet
+and answers the same peer through `CAP_TRANSPORT::send(peer)`; the server adapter
+resolves the peer to an authenticated player transport or the current inbound
+endpoint (`send_to_peer`). `lastHeardMs` is preserved. Build/runtime proof is
+A-owned.
+
 ### T3 — join / reconnect / error paths
 
 Move `PACKET_JOIN_REQUEST` / `JOIN_ACCEPT` / `JOIN_REJECT`, `RECONNECT_*`, timeout, and disconnect policy. These are critical; they require drop/timeout/reconnect journal evidence.

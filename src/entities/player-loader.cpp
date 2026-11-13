@@ -1,4 +1,6 @@
 #include "player.h"
+#include "game/gl-resource-bridge-module.h"
+#include "game/job-bridge-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -120,7 +122,7 @@ unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& a
 static GLuint getOpaqueWhiteTexture() {
     static GLuint tex = 0;
     if (tex) return tex;
-    glGenTextures(1, &tex);
+    tex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, tex);
     unsigned char white[] = {255, 255, 255, 255};
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
@@ -1353,8 +1355,7 @@ void Player::requestModelLoad(const std::string& filepath)
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
 
-    std::thread t(modelLoadThreadFunc, raw);
-    t.detach();
+    mimita::game::runDetached([raw] { modelLoadThreadFunc(raw); }, "player-model-load");
 }
 
 static GLuint uploadPlayerTexture(const tinygltf::Image& image)
@@ -1365,7 +1366,7 @@ static GLuint uploadPlayerTexture(const tinygltf::Image& image)
         return 0;
 
     GLuint tex = 0;
-    glGenTextures(1, &tex);
+    tex = mimita::game::genTexture();
     if (!tex) return 0;
     glBindTexture(GL_TEXTURE_2D, tex);
 
@@ -1381,7 +1382,7 @@ static GLuint uploadPlayerTexture(const tinygltf::Image& image)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     return tex;

@@ -13,4 +13,9 @@ namespace mimita::game {
 bool dispatchServerCommand(mimita::host::TransportDispatchV1* dispatch,
                            const mimita::host::HostServicesV1* services);
 
+// Small inbound packets delivered through on_event(kEventTransportMessage).
+// The game answers the same peer through CAP_TRANSPORT.
+bool dispatchPingMessage(const mimita::host::TransportMessageV1* message,
+                         const mimita::host::HostServicesV1* services);
+
 }  // namespace mimita::game

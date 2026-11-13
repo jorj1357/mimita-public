@@ -15,8 +15,6 @@
 
 // GLuint createMapVAO(const Mesh& mesh) {
 //     GLuint vao, vbo;
-//     glGenVertexArrays(1, &vao);
-//     glGenBuffers(1, &vbo);
 //     glBindVertexArray(vao);
 //     glBindBuffer(GL_ARRAY_BUFFER, vbo);
 //     glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW);

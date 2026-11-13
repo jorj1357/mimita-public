@@ -1,4 +1,5 @@
 #include "avatar.h"
+#include "game/resident-state-module.h"
 #include "avatar-autosave.h"
 
 #include <algorithm>
@@ -1385,13 +1386,12 @@ void AvatarSystem::pollHotReload() {
     Terminal::instance().addLog("[AVATAR] Hot reload detected for: " + mAvatarName);
     loadAvatar(mAvatarName);
 
-    extern Player* gpPlayer;
-    if (gpPlayer) {
+    if (mimita::game::playerPtr()) {
         printf("[AVATAR HR] Calling applyToPlayer...\n");
-        applyToPlayer(*gpPlayer, true);
+        applyToPlayer(*mimita::game::playerPtr(), true);
         printf("[AVATAR HR] applyToPlayer done\n");
     } else {
-        printf("[AVATAR HR] gpPlayer is null\n");
+        printf("[AVATAR HR] mimita::game::playerPtr() is null\n");
     }
 
     // ── UV atlas PNG hot reload ──────────────────────────────────────

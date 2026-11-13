@@ -10,6 +10,7 @@
 
 #include "network/udp-echo.h"
 #include "network/net_common.h"
+#include "game/socket-bridge-module.h"
 #include "network/packets.h"
 
 #include <cstdio>
@@ -43,8 +44,7 @@ std::string currentDirectory()
 sockaddr_in actualSocketAddress(SOCKET sock, const sockaddr_in& fallback)
 {
     sockaddr_in actual = fallback;
-    int actualLen = sizeof(actual);
-    if (getsockname(sock, (sockaddr*)&actual, &actualLen) != 0)
+    if (!mimita::game::getSocketLocalAddress(sock, &actual))
         actual = fallback;
     return actual;
 }
@@ -57,11 +57,11 @@ int runUdpEchoServer(const LaunchOptions& options)
 
     if (!netStartup())
     {
-        printf("[UDP ECHO FATAL] stage=startup error=WSAStartup\n");
+        printf("[UDP ECHO FATAL] stage=startup error=WSA-init\n");
         return 1;
     }
 
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET sock = static_cast<SOCKET>(mimita::game::openUdpSocket());
     if (sock == INVALID_SOCKET)
     {
         printf("[UDP ECHO FATAL] stage=socket error=%d\n", WSAGetLastError());
@@ -69,10 +69,8 @@ int runUdpEchoServer(const LaunchOptions& options)
         return 1;
     }
 
-    int reuseAddr = 1;
-    const bool reuseOk = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
-        (const char*)&reuseAddr, sizeof(reuseAddr)) != SOCKET_ERROR;
-    const bool nonBlockingOk = setNonBlocking(sock);
+    const bool reuseOk = mimita::game::setSocketReuse(sock, true);
+    const bool nonBlockingOk = mimita::game::setSocketNonBlocking(sock);
 
     const std::string requested = options.bindExplicit ? options.bind : "127.0.0.1:0";
     sockaddr_in bindAddr{};
@@ -80,7 +78,7 @@ int runUdpEchoServer(const LaunchOptions& options)
     {
         printf("[UDP ECHO FATAL] stage=parse-bind requested=%s family=AF_INET\n",
                requested.c_str());
-        closesocket(sock);
+        mimita::game::closeSocket(sock);
         netShutdown();
         return 1;
     }
@@ -92,11 +90,11 @@ int runUdpEchoServer(const LaunchOptions& options)
            processPath().c_str(), currentDirectory().c_str(), requested.c_str(),
            (int)reuseOk, (int)nonBlockingOk, timeoutSecs);
 
-    if (bind(sock, (sockaddr*)&bindAddr, sizeof(bindAddr)) == SOCKET_ERROR)
+    if (!mimita::game::bindSocket(sock, &bindAddr))
     {
         printf("[UDP ECHO FATAL] stage=bind requested=%s error=%d\n",
                requested.c_str(), WSAGetLastError());
-        closesocket(sock);
+        mimita::game::closeSocket(sock);
         netShutdown();
         return 1;
     }
@@ -119,21 +117,17 @@ int runUdpEchoServer(const LaunchOptions& options)
     {
         char buffer[2048];
         sockaddr_in from{};
-        int fromLen = sizeof(from);
+        std::uint32_t bytes = 0;
+        bool wouldBlock = false;
         ++recvAttempts;
-        int bytes = recvfrom(sock, buffer, sizeof(buffer), 0,
-                             (sockaddr*)&from, &fromLen);
-        if (bytes <= 0)
-        {
-            int err = WSAGetLastError();
-            if (err == WSAEWOULDBLOCK)
-                ++recvWouldBlock;
-            else
-            {
-                ++recvErrors;
-                printf("[UDP ECHO RX ERROR] error=%d local=%s\n",
-                       err, addressToString(actual).c_str());
-            }
+        if (!mimita::game::recvFromSocket(sock, buffer, sizeof(buffer), &from,
+                                          &bytes, &wouldBlock)) {
+            ++recvErrors;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            continue;
+        }
+        if (wouldBlock || bytes == 0) {
+            ++recvWouldBlock;
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
         }
@@ -143,19 +137,17 @@ int runUdpEchoServer(const LaunchOptions& options)
         const std::string source = addressToString(from);
         printf("[UDP ECHO RX] source=%s bytes=%d\n", source.c_str(), bytes);
 
-        int sent = sendto(sock, buffer, bytes, 0, (sockaddr*)&from, sizeof(from));
-        if (sent == SOCKET_ERROR)
+        if (!mimita::game::sendToSocket(sock, buffer, bytes, &from))
         {
             ++sendErrors;
-            printf("[UDP ECHO TX ERROR] dest=%s bytes=%d error=%d\n",
-                   source.c_str(), bytes, WSAGetLastError());
+            printf("[UDP ECHO TX ERROR] dest=%s bytes=%u\n", source.c_str(), bytes);
             continue;
         }
 
         ++packetsSent;
-        bytesSent += (uint64_t)sent;
-        printf("[UDP ECHO TX] dest=%s bytes=%d sent=%d\n",
-               source.c_str(), bytes, sent);
+        bytesSent += (uint64_t)bytes;
+        printf("[UDP ECHO TX] dest=%s bytes=%u sent=%u\n",
+               source.c_str(), bytes, bytes);
     }
 
     printf("[UDP ECHO SUMMARY] packetsReceived=%llu bytesReceived=%llu packetsSent=%llu "
@@ -169,7 +161,7 @@ int runUdpEchoServer(const LaunchOptions& options)
            (unsigned long long)recvErrors,
            (unsigned long long)sendErrors);
 
-    closesocket(sock);
+    mimita::game::closeSocket(sock);
     netShutdown();
     return packetsReceived > 0 && packetsSent > 0 && sendErrors == 0 ? 0 : 2;
 }

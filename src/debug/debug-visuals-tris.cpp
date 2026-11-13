@@ -1,4 +1,5 @@
 #include "debug/debug-visuals.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <cstdio>
 #include <cmath>
@@ -46,8 +47,8 @@ static void flushTriBuffer(const Camera& camera,
 
     if (!vao)
     {
-        MIMITA_GL_CALL(glGenVertexArrays(1, &vao));
-        MIMITA_GL_CALL(glGenBuffers(1, &vbo));
+        vao = mimita::game::genVertexArray();
+        vbo = mimita::game::genBuffer();
     }
 
     MIMITA_GL_CLEAR_STAGE("flushTriBuffer");

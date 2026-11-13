@@ -9,6 +9,8 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "game/socket-bridge-module.h"
+#include "game/resident-state-module.h"
 #include "network/packets.h"
 #include "duel/duel-queue.h"
 #include "network/community-match-client.h"
@@ -2313,10 +2315,10 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             }
 
             Debug::log(Debug::Category::Chat,
-                       "[CHAT TRACE 2 BEFORE HISTORY GATE] gpChatHistory=%p messageId=%llu text=\"%s\"\n",
-                       (void*)gpChatHistory, (unsigned long long)ev->messageId,
+                       "[CHAT TRACE 2 BEFORE HISTORY GATE] mimita::game::chatHistoryPtr()=%p messageId=%llu text=\"%s\"\n",
+                       (void*)mimita::game::chatHistoryPtr(), (unsigned long long)ev->messageId,
                        ev->utf8Message);
-            if (gpChatHistory)
+            if (mimita::game::chatHistoryPtr())
             {
                 gChatHistory.append(entry);
                 Debug::log(Debug::Category::Chat,
@@ -2331,12 +2333,12 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             else
             {
                 Debug::warn(Debug::Category::Chat,
-                            "[CHAT TRACE 2 PROBLEM] gpChatHistory is NULL; received message was NOT added to 2D history messageId=%llu\n",
+                            "[CHAT TRACE 2 PROBLEM] mimita::game::chatHistoryPtr() is NULL; received message was NOT added to 2D history messageId=%llu\n",
                             (unsigned long long)ev->messageId);
             }
             Debug::log(Debug::Category::Chat,
-                       "[CHAT TRACE 2 AFTER HISTORY GATE] gpChatHistory=%p messageId=%llu\n",
-                       (void*)gpChatHistory,
+                       "[CHAT TRACE 2 AFTER HISTORY GATE] mimita::game::chatHistoryPtr()=%p messageId=%llu\n",
+                       (void*)mimita::game::chatHistoryPtr(),
                        (unsigned long long)ev->messageId);
 
             Debug::log(Debug::Category::Chat,
@@ -2434,8 +2436,8 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
             auto rp = ctx.remotePlayers.find(ev->playerId);
             if (rp != ctx.remotePlayers.end())
                 rp->second.vipStyleDetail = detail;
-            if (ev->playerId == ctx.localPlayerId && gpPlayer)
-                gpPlayer->vipStyleDetail = detail;
+            if (ev->playerId == ctx.localPlayerId && mimita::game::playerPtr())
+                mimita::game::playerPtr()->vipStyleDetail = detail;
 
             Debug::warn(Debug::Category::Vip,
                 "[VIP STYLE RX] player=%u epoch=%u kind=%u colors=%u anim=%u\n",
@@ -2714,26 +2716,15 @@ void mpTick(MultiplayerContext& ctx, const std::string& playerName, float dt, co
         for (;;)
         {
             sockaddr_in from{};
-            int fromLen = sizeof(from);
-            int bytes = recvfrom(ctx.sock, buffer, sizeof(buffer), 0,
-                                 (sockaddr*)&from, &fromLen);
-            if (bytes <= 0)
-            {
-                int wsaErr = WSAGetLastError();
-                if (wsaErr == WSAEWOULDBLOCK)
-                    break;
-                if (wsaErr == WSAEINVAL)
-                {
-                    Debug::warn(Debug::Category::Networking,
-                           "[NET RX SOCKET BUG] recvfrom WSAEINVAL sock=%d "
-                           "state=%s connected=%d active=%d\n",
-                           (int)ctx.sock, connectionStateName(ctx.connectionState),
-                           (int)ctx.connected, (int)ctx.active);
-                    break;
-                }
-                printf("[NET RX ERROR] recvfrom failed error=%d\n", wsaErr);
+            std::uint32_t bytes = 0;
+            bool wouldBlock = false;
+            if (!mimita::game::recvFromSocket(ctx.sock, buffer, sizeof(buffer), &from,
+                                              &bytes, &wouldBlock)) {
+                printf("[NET RX ERROR] recv failed\n");
                 break;
             }
+            if (wouldBlock) break;
+            if (bytes == 0) break;
             ++ctx.packetsReceived;
             if (!isSameAddress(from, ctx.serverAddr))
             {

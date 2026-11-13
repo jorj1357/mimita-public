@@ -1286,11 +1286,7 @@ void handleAttackRequest(
             // HP; a dropped visual just means one fewer tracer, not lost damage.
             for (const auto& pe : players)
             {
-                if (pe.second.transport)
-                    pe.second.transport->send(&shotEvent, sizeof(shotEvent));
-                else
-                    sendto(sock, (const char*)&shotEvent, sizeof(shotEvent), 0,
-                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                serverSendToPlayer(sock, pe.second, &shotEvent, sizeof(shotEvent));
                 ++totalPacketsOut;
             }
 
@@ -1387,11 +1383,7 @@ void handleAttackRequest(
             // HP; a dropped visual just means fewer tracers, not lost damage.
             for (const auto& pe : players)
             {
-                if (pe.second.transport)
-                    pe.second.transport->send(&blastEvent, sizeof(blastEvent));
-                else
-                    sendto(sock, (const char*)&blastEvent, sizeof(blastEvent), 0,
-                           (sockaddr*)&pe.second.addr, sizeof(pe.second.addr));
+                serverSendToPlayer(sock, pe.second, &blastEvent, sizeof(blastEvent));
                 ++totalPacketsOut;
             }
         }

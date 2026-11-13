@@ -9,6 +9,10 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <mutex>
+#include <deque>
+#include <condition_variable>
 
 #include "debug/crash-handler.h"
 #include "debug/structured-log.h"
@@ -18,6 +22,9 @@
 #include "host/abi/effects-capability.h"
 #include "host/abi/gamemode-capability.h"
 #include "host/abi/global-capability.h"
+#include "host/abi/files-capability.h"
+#include "host/abi/gl-resource-capability.h"
+#include "host/abi/socket-capability.h"
 #include "host/abi/ice-capability.h"
 #include "host/abi/transport-session-capability.h"
 #include "host/abi/diagnostics-capability.h"
@@ -39,10 +46,118 @@
 #include "world/world.h"
 #include "network/ice/ice-config.h"
 #include "network/server.h"
+#include "combat/weapon-viewmodel.h"
+#include "gui/hud/chat-bubble.h"
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "network/server-authored-rebuild.h"
+
+extern void* gpPlayer;
+extern void* gpCamera;
+extern void* gpWorld;
+extern void* gpNpcSystem;
+extern void* gpWeapons;
+extern void* gpFreecamEnabled;
+extern void* gpDeathPosition;
+extern void* gpSelectedEditorObject;
+extern void* gpEditorMode;
+extern std::string* gpActiveGameMode;
+extern std::string* gpActiveMapPath;
+extern void* gpWorldLoaded;
+extern void* gpReplayRecorder;
+extern void* gpReplayPlayer;
+extern std::unordered_map<std::string, std::unique_ptr<Player>>* gpReplayActorModels;
+extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
+extern void* gpReplayFactory;
+extern void* gpReplayBrowser;
+extern void* gpReplayTimeline;
+extern void* gpReplayCameraMgr;
+extern std::unordered_map<std::string, ActorChatState>* gpReplayChatStates;
+extern std::vector<std::string>* gpReplayClipsCache;
+extern std::unordered_map<int, std::string>* gpCommandBinds;
+extern void* gpBindPrev;
+extern void* gpDuelConfig;
+extern void* gpMpContext;
+extern void* gpGameState;
+extern void* gpChatHistory;
+extern bool gReplayExportRenderMode;
+extern bool gMainmenuDebug;
+extern bool gReplayCinematicMode;
+extern bool gNetPresentationDebug;
+extern bool gNetDebugEntities;
+extern bool gRoomCodeShow;
+
 
 namespace mimita::host {
 namespace {
+
+struct ResidentJob {
+    void* job = nullptr;
+    void (*invoke)(void*) = nullptr;
+    void (*destroy)(void*) = nullptr;
+    void (*done)(void*) = nullptr;
+    void* doneData = nullptr;
+};
+
+class HostJobExecutor {
+public:
+    HostJobExecutor() : thread_([this] { run(); }) {}
+    ~HostJobExecutor() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+        }
+        cv_.notify_all();
+        if (thread_.joinable()) thread_.join();
+    }
+
+    void submit(ResidentJob job) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            jobs_.push_back(job);
+        }
+        cv_.notify_one();
+    }
+
+private:
+    void run() {
+        for (;;) {
+            ResidentJob job;
+            {
+                std::unique_lock<std::mutex> lock(mutex_);
+                cv_.wait(lock, [this] { return stop_ || !jobs_.empty(); });
+                if (stop_ && jobs_.empty()) return;
+                job = jobs_.front();
+                jobs_.pop_front();
+            }
+            if (job.job && job.invoke) {
+                try { job.invoke(job.job); } catch (...) {}
+            }
+            if (job.job && job.destroy) job.destroy(job.job);
+            if (job.done) job.done(job.doneData);
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::deque<ResidentJob> jobs_;
+    bool stop_ = false;
+    std::thread thread_;
+};
+
+HostJobExecutor gJobExecutor;
+
+struct HostWorkerSlot {
+    std::thread thread;
+    std::atomic<bool> finished{false};
+};
+
+std::mutex gWorkerMutex;
+std::unordered_map<std::uint64_t, std::shared_ptr<HostWorkerSlot>> gWorkers;
+std::uint64_t gNextWorker = 1;
+
 
 std::wstring widenUtf8(const char* text) {
     if (!text || !*text) {
@@ -1010,41 +1125,6 @@ void jsonWatchMarkDirty(void*, void* watch) {
     if (auto* typed = static_cast<JsonFileWatch*>(watch)) typed->markDirty();
 }
 
-extern void* gpPlayer;
-extern void* gpCamera;
-extern void* gpWorld;
-extern void* gpNpcSystem;
-extern void* gpWeapons;
-extern void* gpFreecamEnabled;
-extern void* gpDeathPosition;
-extern void* gpSelectedEditorObject;
-extern void* gpEditorMode;
-extern void* gpActiveGameMode;
-extern void* gpActiveMapPath;
-extern void* gpWorldLoaded;
-extern void* gpReplayRecorder;
-extern void* gpReplayPlayer;
-extern void* gpReplayActorModels;
-extern void* gpReplayWeaponModels;
-extern void* gpReplayFactory;
-extern void* gpReplayBrowser;
-extern void* gpReplayTimeline;
-extern void* gpReplayCameraMgr;
-extern void* gpReplayChatStates;
-extern void* gpReplayClipsCache;
-extern void* gpCommandBinds;
-extern void* gpBindPrev;
-extern void* gpDuelConfig;
-extern void* gpMpContext;
-extern void* gpGameState;
-extern void* gpChatHistory;
-extern bool gReplayExportRenderMode;
-extern bool gMainmenuDebug;
-extern bool gReplayCinematicMode;
-extern bool gNetPresentationDebug;
-extern bool gNetDebugEntities;
-extern bool gRoomCodeShow;
-
 std::uintptr_t globalGetPointer(void*, GlobalId id) {
     switch (id) {
         case GlobalId::Player: return reinterpret_cast<std::uintptr_t>(gpPlayer);
@@ -1075,6 +1155,12 @@ std::uintptr_t globalGetPointer(void*, GlobalId id) {
         case GlobalId::MpContext: return reinterpret_cast<std::uintptr_t>(gpMpContext);
         case GlobalId::GameState: return reinterpret_cast<std::uintptr_t>(gpGameState);
         case GlobalId::ChatHistory: return reinterpret_cast<std::uintptr_t>(gpChatHistory);
+        case GlobalId::ReplayExportRenderMode: return reinterpret_cast<std::uintptr_t>(&gReplayExportRenderMode);
+        case GlobalId::MainmenuDebug: return reinterpret_cast<std::uintptr_t>(&gMainmenuDebug);
+        case GlobalId::ReplayCinematicMode: return reinterpret_cast<std::uintptr_t>(&gReplayCinematicMode);
+        case GlobalId::NetPresentationDebug: return reinterpret_cast<std::uintptr_t>(&gNetPresentationDebug);
+        case GlobalId::NetDebugEntities: return reinterpret_cast<std::uintptr_t>(&gNetDebugEntities);
+        case GlobalId::RoomCodeShow: return reinterpret_cast<std::uintptr_t>(&gRoomCodeShow);
         default: return 0;
     }
 }
@@ -1306,6 +1392,220 @@ void authoredRebuildCancel(void*, void* worker) {
         target->cancelAndWait();
 }
 
+std::unordered_map<std::uint64_t, std::ofstream> gFileHandles;
+std::uint64_t gNextFileHandle = 1;
+
+std::uint64_t filesOpenWrite(void*, const char* path) {
+    if (!path || !*path) return 0;
+    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+    if (!stream) return 0;
+    const std::uint64_t handle = gNextFileHandle++;
+    gFileHandles.emplace(handle, std::move(stream));
+    return handle;
+}
+
+std::int32_t filesWrite(void*, std::uint64_t handle, const void* data,
+                        std::uint32_t size) {
+    auto it = gFileHandles.find(handle);
+    if (it == gFileHandles.end() || (!data && size)) return 0;
+    if (size) it->second.write(static_cast<const char*>(data), size);
+    return it->second.good() ? 1 : 0;
+}
+
+void filesClose(void*, std::uint64_t handle) {
+    auto it = gFileHandles.find(handle);
+    if (it == gFileHandles.end()) return;
+    it->second.flush();
+    it->second.close();
+    gFileHandles.erase(it);
+}
+
+std::unordered_map<std::uint64_t, SOCKET> gSockets;
+std::uint64_t gNextSocket = 1;
+bool gWsaReady = false;
+
+void ensureWsa() {
+    if (gWsaReady) return;
+    WSADATA data{};
+    if (WSAStartup(MAKEWORD(2, 2), &data) == 0) gWsaReady = true;
+}
+
+std::uint64_t socketOpenUdp(void*) {
+    ensureWsa();
+    const SOCKET socketHandle = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (socketHandle == INVALID_SOCKET) return 0;
+    const std::uint64_t handle = gNextSocket++;
+    gSockets[handle] = socketHandle;
+    return handle;
+}
+
+void socketClose(void*, std::uint64_t handle) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end()) return;
+    ::closesocket(it->second);
+    gSockets.erase(it);
+}
+
+std::int32_t socketBindAddress(void*, std::uint64_t handle, const void* address,
+                               std::uint32_t addressSize) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end() || !address || addressSize < sizeof(sockaddr_in)) return 0;
+    return ::bind(it->second, static_cast<const sockaddr*>(address),
+                  static_cast<int>(addressSize)) == 0 ? 1 : 0;
+}
+
+std::int32_t socketGetLocalAddress(void*, std::uint64_t handle, void* address,
+                                   std::uint32_t addressSize) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end() || !address || addressSize < sizeof(sockaddr_in)) return 0;
+    int length = static_cast<int>(addressSize);
+    return ::getsockname(it->second, static_cast<sockaddr*>(address), &length) == 0 ? 1 : 0;
+}
+
+std::int32_t socketSetNonblocking(void*, std::uint64_t handle) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end()) return 0;
+    u_long enabled = 1;
+    return ::ioctlsocket(it->second, FIONBIO, &enabled) == 0 ? 1 : 0;
+}
+
+std::int32_t socketSetReuse(void*, std::uint64_t handle, std::int32_t enabled) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end()) return 0;
+    BOOL value = enabled != 0;
+    return ::setsockopt(it->second, SOL_SOCKET, SO_REUSEADDR,
+                        reinterpret_cast<const char*>(&value), sizeof(value)) == 0 ? 1 : 0;
+}
+
+std::int32_t socketSetExclusive(void*, std::uint64_t handle, std::int32_t enabled) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end()) return 0;
+    BOOL value = enabled != 0;
+    return ::setsockopt(it->second, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+                        reinterpret_cast<const char*>(&value), sizeof(value)) == 0 ? 1 : 0;
+}
+
+std::int32_t socketSetRecvTimeout(void*, std::uint64_t handle,
+                                  std::uint32_t milliseconds) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end()) return 0;
+    DWORD value = milliseconds;
+    return ::setsockopt(it->second, SOL_SOCKET, SO_RCVTIMEO,
+                        reinterpret_cast<const char*>(&value), sizeof(value)) == 0 ? 1 : 0;
+}
+
+std::int32_t socketSendTo(void*, std::uint64_t handle, const void* data,
+                          std::uint32_t size, const void* address,
+                          std::uint32_t addressSize) {
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end() || !data || addressSize < sizeof(sockaddr_in)) return 0;
+    return ::sendto(it->second, static_cast<const char*>(data), static_cast<int>(size),
+                    0, static_cast<const sockaddr*>(address),
+                    static_cast<int>(addressSize)) != SOCKET_ERROR ? 1 : 0;
+}
+
+std::int32_t socketRecvFrom(void*, std::uint64_t handle, void* data,
+                            std::uint32_t capacity, void* address,
+                            std::uint32_t addressSize, std::uint32_t* received,
+                            std::int32_t* wouldBlock) {
+    if (received) *received = 0;
+    if (wouldBlock) *wouldBlock = 0;
+    auto it = gSockets.find(handle);
+    if (it == gSockets.end() || !data) return 0;
+    int length = static_cast<int>(addressSize);
+    const int result = ::recvfrom(it->second, static_cast<char*>(data),
+                                  static_cast<int>(capacity), 0,
+                                  address ? static_cast<sockaddr*>(address) : nullptr,
+                                  address ? &length : nullptr);
+    if (result == SOCKET_ERROR) {
+        if (WSAGetLastError() == WSAEWOULDBLOCK) {
+            if (wouldBlock) *wouldBlock = 1;
+            return 1;
+        }
+        return 0;
+    }
+    if (received) *received = static_cast<std::uint32_t>(result);
+    return 1;
+}
+
+std::uint32_t glGenTexture(void*) { GLuint id = 0; glGenTextures(1, &id); return id; }
+void glDeleteTexture(void*, std::uint32_t id) { GLuint value = id; glDeleteTextures(1, &value); }
+std::uint32_t glGenBuffer(void*) { GLuint id = 0; glGenBuffers(1, &id); return id; }
+void glDeleteBuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteBuffers(1, &value); }
+std::uint32_t glGenVertexArray(void*) { GLuint id = 0; glGenVertexArrays(1, &id); return id; }
+void glDeleteVertexArray(void*, std::uint32_t id) { GLuint value = id; glDeleteVertexArrays(1, &value); }
+std::uint32_t glGenFramebuffer(void*) { GLuint id = 0; glGenFramebuffers(1, &id); return id; }
+void glDeleteFramebuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteFramebuffers(1, &value); }
+std::uint32_t glGenRenderbuffer(void*) { GLuint id = 0; glGenRenderbuffers(1, &id); return id; }
+void glDeleteRenderbuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteRenderbuffers(1, &value); }
+std::uint32_t glGenQuery(void*) { GLuint id = 0; glGenQueries(1, &id); return id; }
+void glDeleteQuery(void*, std::uint32_t id) { GLuint value = id; glDeleteQueries(1, &value); }
+void glDeleteShaderRes(void*, std::uint32_t id) { glDeleteShader(id); }
+void glDeleteProgramRes(void*, std::uint32_t id) { glDeleteProgram(id); }
+void glGenerateMipmapRes(void*, std::uint32_t target) { glGenerateMipmap(target); }
+
+HostResult renderBufferData(void*, std::uint32_t target, std::uint64_t buffer,
+                            const void* data, std::uint32_t size,
+                            std::uint32_t usage) {
+    glBindBuffer(target, static_cast<GLuint>(buffer));
+    glBufferData(target, size, data, usage);
+    return HostResult::Ok;
+}
+
+HostResult renderTexImage2D(void*, std::uint64_t texture, std::int32_t level,
+                            std::int32_t internalFormat, std::int32_t width,
+                            std::int32_t height, std::int32_t border,
+                            std::uint32_t format, std::uint32_t type,
+                            const void* data, std::uint32_t) {
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
+    glTexImage2D(GL_TEXTURE_2D, level, internalFormat, width, height, border,
+                 format, type, data);
+    return HostResult::Ok;
+}
+
+HostResult renderTexParameteri(void*, std::uint32_t target, std::uint32_t pname,
+                               std::int32_t value) {
+    glTexParameteri(target, pname, value);
+    return HostResult::Ok;
+}
+
+HostResult renderVertexAttrib(void*, std::uint32_t index, std::int32_t size,
+                              std::uint32_t type, std::uint32_t normalized,
+                              std::int32_t stride, std::uint32_t offset) {
+    glVertexAttribPointer(index, size, type, normalized != 0, stride,
+                          reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offset)));
+    return HostResult::Ok;
+}
+
+HostResult renderEnableAttrib(void*, std::uint32_t index, std::uint32_t enabled) {
+    if (enabled) glEnableVertexAttribArray(index);
+    else glDisableVertexAttribArray(index);
+    return HostResult::Ok;
+}
+
+HostResult renderUniform1i(void*, std::int32_t location, std::int32_t value) {
+    glUniform1i(location, value);
+    return HostResult::Ok;
+}
+HostResult renderUniform1f(void*, std::int32_t location, float value) {
+    glUniform1f(location, value);
+    return HostResult::Ok;
+}
+HostResult renderUniform3f(void*, std::int32_t location, float x, float y, float z) {
+    glUniform3f(location, x, y, z);
+    return HostResult::Ok;
+}
+HostResult renderUniform4f(void*, std::int32_t location, float x, float y, float z, float w) {
+    glUniform4f(location, x, y, z, w);
+    return HostResult::Ok;
+}
+HostResult renderUniformMatrix4(void*, std::int32_t location, std::uint32_t count,
+                                const float* values) {
+    if (!values) return HostResult::InvalidArgument;
+    glUniformMatrix4fv(location, static_cast<GLsizei>(count), GL_FALSE, values);
+    return HostResult::Ok;
+}
+
 LogCapabilityV1 gLogCapability{
     kLogCapabilityVersion,
     static_cast<std::uint32_t>(sizeof(LogCapabilityV1)),
@@ -1421,6 +1721,83 @@ void HostRuntime::shutdown() {
     started_ = false;
     emitProbeEvent("game.host.probe.stopped", "generation unloaded", 0,
                    nlohmann::json::object());
+}
+
+bool HostRuntime::ownsGameFrame() const {
+    if (!started_) return false;
+    const char* enabled = std::getenv("MIMITA_GAME_OWN_FRAME");
+    if (!enabled || std::strcmp(enabled, "1") != 0) return false;
+    const GameModuleV1* api = loader_.active();
+    return api && api->frameCapable != 0 && api->tick && api->render;
+}
+
+bool HostRuntime::bootstrapGame(const GameStartupV1& startup) {
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->bootstrap) return false;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return false;
+    const HostResult result = api->bootstrap(&startup);
+    barrier_.leave();
+    if (result != HostResult::Ok) {
+        emitProbeEvent("game.host.bootstrap-failed", "game bootstrap returned failure", 0,
+                       nlohmann::json{{"generation", generation},
+                                      {"result", static_cast<int>(result)}});
+        return false;
+    }
+    return true;
+}
+
+bool HostRuntime::gameShouldClose() const {
+    const GameModuleV1* api = loader_.active();
+    return !api || !api->should_close || api->should_close() != 0;
+}
+
+HostResult HostRuntime::driveTick(double deltaSeconds) {
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->tick) return HostResult::NotFound;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return HostResult::Busy;
+    HostResult result = HostResult::InternalError;
+    try {
+        result = api->tick(deltaSeconds);
+    } catch (...) {
+        result = HostResult::InternalError;
+    }
+    barrier_.leave();
+    if (result != HostResult::Ok) {
+        emitProbeEvent("game.frame.tick-failed", "game tick returned failure", 0,
+                       nlohmann::json{{"generation", generation},
+                                      {"result", static_cast<int>(result)}});
+        return result;
+    }
+    ++tick_;
+    return HostResult::Ok;
+}
+
+HostResult HostRuntime::driveRender(void* renderContext) {
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->render) return HostResult::NotFound;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return HostResult::Busy;
+    HostResult result = HostResult::InternalError;
+    try {
+        result = api->render(renderContext);
+    } catch (...) {
+        result = HostResult::InternalError;
+    }
+    barrier_.leave();
+    if (result != HostResult::Ok) {
+        emitProbeEvent("game.frame.render-failed", "game render returned failure", 0,
+                       nlohmann::json{{"generation", generation},
+                                      {"result", static_cast<int>(result)}});
+    }
+    return result;
+}
+
+HostResult HostRuntime::driveFrame(double deltaSeconds, void* renderContext) {
+    const HostResult tickResult = driveTick(deltaSeconds);
+    if (tickResult != HostResult::Ok) return tickResult;
+    return driveRender(renderContext);
 }
 
 bool HostRuntime::deliverInbound(const TransportMessageV1& message) {
@@ -1641,6 +2018,7 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::transportSessionStateThunk,
             &HostRuntime::transportPeerStateThunk,
             &HostRuntime::transportPeerCountThunk,
+            &HostRuntime::transportSendToEndpointThunk,
         };
         return &transportCapability;
     }
@@ -1682,6 +2060,51 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &transportServerSetHostPlayerId,
         };
         return &transportSessionCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::GlResource) &&
+        version == kGlResourceCapabilityVersion) {
+        static GlResourceCapabilityV1 glResourceCapability{
+            kGlResourceCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(GlResourceCapabilityV1)),
+            &glGenTexture, &glDeleteTexture,
+            &glGenBuffer, &glDeleteBuffer,
+            &glGenVertexArray, &glDeleteVertexArray,
+            &glGenFramebuffer, &glDeleteFramebuffer,
+            &glGenRenderbuffer, &glDeleteRenderbuffer,
+            &glGenQuery, &glDeleteQuery,
+            &glDeleteShaderRes, &glDeleteProgramRes,
+            &glGenerateMipmapRes,
+        };
+        return &glResourceCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::Socket) &&
+        version == kSocketCapabilityVersion) {
+        static SocketCapabilityV1 socketCapability{
+            kSocketCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(SocketCapabilityV1)),
+            &socketOpenUdp,
+            &socketClose,
+            &socketBindAddress,
+            &socketGetLocalAddress,
+            &socketSetNonblocking,
+            &socketSetReuse,
+            &socketSetExclusive,
+            &socketSetRecvTimeout,
+            &socketSendTo,
+            &socketRecvFrom,
+        };
+        return &socketCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::Files) &&
+        version == kFilesCapabilityVersion) {
+        static FilesCapabilityV1 filesCapability{
+            kFilesCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(FilesCapabilityV1)),
+            &filesOpenWrite,
+            &filesWrite,
+            &filesClose,
+        };
+        return &filesCapability;
     }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Ice) &&
         version == kIceCapabilityVersion) {
@@ -1775,6 +2198,16 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::renderSubmitThunk,
             &HostRuntime::renderFlushThunk,
             &HostRuntime::renderPendingThunk,
+            &renderBufferData,
+            &renderTexImage2D,
+            &renderTexParameteri,
+            &renderVertexAttrib,
+            &renderEnableAttrib,
+            &renderUniform1i,
+            &renderUniform1f,
+            &renderUniform3f,
+            &renderUniform4f,
+            &renderUniformMatrix4,
         };
         return &renderCapability;
     }
@@ -1790,6 +2223,10 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &jsonWatchDestroy,
             &jsonWatchConsumeDirty,
             &jsonWatchMarkDirty,
+            &HostRuntime::jobsSubmitThunk,
+            &HostRuntime::jobsStartWorkerThunk,
+            &HostRuntime::jobsWaitWorkerThunk,
+            &HostRuntime::jobsReleaseWorkerThunk,
         };
         return &jobsCapability;
     }
@@ -1846,14 +2283,21 @@ void HostRuntime::clearTransportAdapter() {
     transportOwner_ = nullptr;
 }
 
-TransportResult HostRuntime::transportSendThunk(void* userData, PeerHandle,
+TransportResult HostRuntime::transportSendThunk(void* userData, PeerHandle peer,
                                                 TransportChannel, std::uint32_t,
                                                 std::uint32_t,
                                                 const std::uint8_t* payload,
                                                 std::uint32_t payloadSize) {
     auto* runtime = static_cast<HostRuntime*>(userData);
-    if (!runtime || !runtime->transportAdapter_ ||
-        !runtime->transportAdapter_->send_to_server) {
+    if (!runtime || !runtime->transportAdapter_) {
+        return TransportResult::Unsupported;
+    }
+    if (runtime->transportAdapter_->send_to_peer) {
+        return runtime->transportAdapter_->send_to_peer(
+                   runtime->transportOwner_, peer, payload, payloadSize)
+            ? TransportResult::Ok : TransportResult::TransportError;
+    }
+    if (!runtime->transportAdapter_->send_to_server) {
         return TransportResult::Unsupported;
     }
     return runtime->transportAdapter_->send_to_server(
@@ -1916,6 +2360,21 @@ std::uint32_t HostRuntime::transportPeerCountThunk(void* userData) {
     return runtime->transportAdapter_->peer_count(runtime->transportOwner_);
 }
 
+TransportResult HostRuntime::transportSendToEndpointThunk(
+    void* userData, std::uint32_t addressNetworkOrder,
+    std::uint16_t portNetworkOrder, TransportChannel, std::uint32_t,
+    std::uint32_t, const std::uint8_t* payload, std::uint32_t payloadSize) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->transportAdapter_ ||
+        !runtime->transportAdapter_->send_to_endpoint) {
+        return TransportResult::Unsupported;
+    }
+    return runtime->transportAdapter_->send_to_endpoint(
+               runtime->transportOwner_, addressNetworkOrder, portNetworkOrder,
+               payload, payloadSize)
+        ? TransportResult::Ok : TransportResult::TransportError;
+}
+
 void HostRuntime::logThunk(void* userData, std::int32_t level, const char* message) {
     auto* runtime = static_cast<HostRuntime*>(userData);
     emitProbeEvent("game.module.log", "module_log",
@@ -1964,6 +2423,61 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
         count > kRenderMaxCommandsPerSubmit) {
         return HostResult::InvalidArgument;
     }
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const RenderCommandV1& command = commands[i];
+        switch (static_cast<RenderOp>(command.op)) {
+            case RenderOp::Clear:
+                glClear(command.flags ? command.flags : (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+                break;
+            case RenderOp::Viewport:
+                glViewport(command.ints[0], command.ints[1], command.ints[2], command.ints[3]);
+                break;
+            case RenderOp::BindTexture:
+                glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::BindShader:
+                glUseProgram(static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::SetState:
+                if (command.flags & 1u) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+                if (command.flags & 2u) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+                if (command.flags & 4u) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+                break;
+            case RenderOp::DrawArrays:
+                glDrawArrays(command.ints[0], command.ints[1], command.ints[2]);
+                break;
+            case RenderOp::DrawElements:
+                if (command.handle1)
+                    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(command.handle1));
+                glDrawElements(command.ints[0], command.ints[2], command.ints[1],
+                               reinterpret_cast<const void*>(
+                                   static_cast<std::uintptr_t>(command.ints[3])));
+                break;
+            case RenderOp::BindVertexArray:
+                glBindVertexArray(static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::BindBuffer:
+                glBindBuffer(command.ints[0], static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::UseProgram:
+                glUseProgram(static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::BindFramebuffer:
+                glBindFramebuffer(command.ints[0], static_cast<GLuint>(command.handle0));
+                break;
+            case RenderOp::DepthTest:
+                if (command.flags) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+                break;
+            case RenderOp::Blend:
+                if (command.flags) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+                break;
+            case RenderOp::Cull:
+                if (command.flags) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+                break;
+            default:
+                return HostResult::Unsupported;
+        }
+    }
     runtime->renderPending_.fetch_add(count, std::memory_order_acq_rel);
     return HostResult::Ok;
 }
@@ -2009,6 +2523,73 @@ HostResult HostRuntime::jobsReleaseThunk(void* userData, std::uint64_t) {
 std::uint32_t HostRuntime::jobsBusyThunk(void* userData) {
     const auto* runtime = static_cast<const HostRuntime*>(userData);
     return runtime ? runtime->jobsBusy_.load(std::memory_order_acquire) : 0;
+}
+
+void HostRuntime::jobsSubmitThunk(void* userData, void* job,
+                                  void (*invoke)(void*),
+                                  void (*destroy)(void*), const char*) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !job || !invoke) return;
+    runtime->jobsBusy_.fetch_add(1, std::memory_order_acq_rel);
+    gJobExecutor.submit(ResidentJob{job, invoke, destroy,
+                                    &HostRuntime::jobsDoneThunk, runtime});
+}
+
+void HostRuntime::jobsDoneThunk(void* userData) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime) return;
+    std::uint32_t current = runtime->jobsBusy_.load(std::memory_order_acquire);
+    while (current > 0 &&
+           !runtime->jobsBusy_.compare_exchange_weak(
+               current, current - 1, std::memory_order_acq_rel)) {
+    }
+}
+
+std::uint64_t HostRuntime::jobsStartWorkerThunk(
+    void* userData, void* job, void (*invoke)(void*), void (*destroy)(void*),
+    const char*) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !job || !invoke) return 0;
+    auto slot = std::make_shared<HostWorkerSlot>();
+    std::uint64_t handle = 0;
+    {
+        std::lock_guard<std::mutex> lock(gWorkerMutex);
+        handle = gNextWorker++;
+        gWorkers.emplace(handle, slot);
+    }
+    runtime->jobsBusy_.fetch_add(1, std::memory_order_acq_rel);
+    slot->thread = std::thread([runtime, slot, job, invoke, destroy] {
+        try {
+            invoke(job);
+        } catch (...) {
+        }
+        if (destroy) destroy(job);
+        HostRuntime::jobsDoneThunk(runtime);
+    });
+    return handle;
+}
+
+void HostRuntime::jobsWaitWorkerThunk(void*, std::uint64_t handle) {
+    std::shared_ptr<HostWorkerSlot> slot;
+    {
+        std::lock_guard<std::mutex> lock(gWorkerMutex);
+        auto it = gWorkers.find(handle);
+        if (it == gWorkers.end()) return;
+        slot = it->second;
+    }
+    if (slot->thread.joinable()) slot->thread.join();
+}
+
+void HostRuntime::jobsReleaseWorkerThunk(void*, std::uint64_t handle) {
+    std::shared_ptr<HostWorkerSlot> slot;
+    {
+        std::lock_guard<std::mutex> lock(gWorkerMutex);
+        auto it = gWorkers.find(handle);
+        if (it == gWorkers.end()) return;
+        slot = it->second;
+        gWorkers.erase(it);
+    }
+    if (slot->thread.joinable()) slot->thread.join();
 }
 
 std::uint64_t HostRuntime::callbackRegisterThunk(void* userData, std::uint32_t,

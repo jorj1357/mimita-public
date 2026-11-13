@@ -1,4 +1,5 @@
 #include "player.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <array>
 #include <cstdio>
@@ -226,8 +227,8 @@ void initCapsuleMesh()
     capsuleVertCount = (int)verts.size();
 
     MIMITA_GL_CLEAR_STAGE("initCapsuleMesh");
-    MIMITA_GL_CALL(glGenVertexArrays(1,&capsuleVAO));
-    MIMITA_GL_CALL(glGenBuffers(1,&capsuleVBO));
+    capsuleVAO = mimita::game::genVertexArray();
+    capsuleVBO = mimita::game::genBuffer();
 
     MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER,capsuleVBO));
@@ -269,9 +270,9 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& 
     }
 
     if (!uploads.partVaos[partIndex])
-        MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.partVaos[partIndex]));
+        uploads.partVaos[partIndex] = mimita::game::genVertexArray();
     if (!uploads.partVbos[partIndex])
-        MIMITA_GL_CALL(glGenBuffers(1, &uploads.partVbos[partIndex]));
+        uploads.partVbos[partIndex] = mimita::game::genBuffer();
 
     MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.partVbos[partIndex]));
@@ -290,8 +291,8 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& 
 void uploadBodyPartMesh(const Mesh& mesh)
 {
     MIMITA_GL_CLEAR_STAGE("uploadBodyPartMesh");
-    if (!bodyPartVAO) MIMITA_GL_CALL(glGenVertexArrays(1, &bodyPartVAO));
-    if (!bodyPartVBO) MIMITA_GL_CALL(glGenBuffers(1, &bodyPartVBO));
+    if (!bodyPartVAO) bodyPartVAO = mimita::game::genVertexArray();
+    if (!bodyPartVBO) bodyPartVBO = mimita::game::genBuffer();
 
     MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO));
@@ -316,8 +317,8 @@ GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey)
     }
 
     MIMITA_GL_CLEAR_STAGE("uploadPlayerMeshIfNeeded");
-    if (!uploads.renderVao) MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.renderVao));
-    if (!uploads.renderVbo) MIMITA_GL_CALL(glGenBuffers(1, &uploads.renderVbo));
+    if (!uploads.renderVao) uploads.renderVao = mimita::game::genVertexArray();
+    if (!uploads.renderVbo) uploads.renderVbo = mimita::game::genBuffer();
 
     MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.renderVbo));
@@ -391,9 +392,9 @@ bool ensureCombinedBodyParts(const Player& player)
         return false;
 
     if (!uploads.combinedVao)
-        MIMITA_GL_CALL(glGenVertexArrays(1, &uploads.combinedVao));
+        uploads.combinedVao = mimita::game::genVertexArray();
     if (!uploads.combinedVbo)
-        MIMITA_GL_CALL(glGenBuffers(1, &uploads.combinedVbo));
+        uploads.combinedVbo = mimita::game::genBuffer();
 
     MIMITA_GL_CALL(glBindVertexArray(uploads.combinedVao));
     MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.combinedVbo));

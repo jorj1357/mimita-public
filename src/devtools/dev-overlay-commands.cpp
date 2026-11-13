@@ -1,4 +1,5 @@
 #include <cstdio>
+#include "game/resident-state-module.h"
 #include <string>
 #include <vector>
 #include "devtools/terminal.h"
@@ -8,7 +9,6 @@
 #include "audio/audio.h"
 #include "debug/debug-log.h"
 
-extern bool gMainmenuDebug;
 extern void forceMainMenu();
 
 void registerDevOverlayCommands()
@@ -41,9 +41,9 @@ void registerDevOverlayCommands()
     Terminal::instance().registerCommand({
         "mainmenu_debug", "Log mainmenu cleanup timing breakdown", "mainmenu_debug [0|1]",
         [](const std::vector<std::string>& args) {
-            gMainmenuDebug = args.empty() ? !gMainmenuDebug : args[0] != "0";
+            mimita::game::mainmenuDebugRef() = args.empty() ? !mimita::game::mainmenuDebugRef() : args[0] != "0";
             Terminal::instance().addLog(std::string("[MAINMENU] debug=") +
-                (gMainmenuDebug ? "1" : "0"));
+                (mimita::game::mainmenuDebugRef() ? "1" : "0"));
         }
     });
 

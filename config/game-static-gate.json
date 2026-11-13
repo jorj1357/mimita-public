@@ -3,7 +3,7 @@
   "description": "Static gate for game-owned sources. A game source that matches a banned raw pattern must use a host capability instead. This is what makes per-file runtime proof unnecessary: the barrier owns the lifetime, and bypasses are build defects.",
   "banned": {
     "raw_thread": {
-      "pattern": "\\bstd::thread\\b|\\bstd::async\\b|\\bCreateThread\\b|\\b_beginthread\\b|\\.detach\\s*\\(",
+      "pattern": "\\bstd::thread\\b(?!::)|\\bstd::async\\b|\\bCreateThread\\b|\\b_beginthread\\b|\\.detach\\s*\\(",
       "capability": "CAP_JOBS",
       "reason": "generation-stamped jobs; cancel/drain/join on quiesce"
     },

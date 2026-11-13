@@ -1,4 +1,5 @@
 #include "terminal.h"
+#include "game/resident-state-module.h"
 
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
@@ -56,10 +57,10 @@ struct RuntimeTickSnapshot {
 RuntimeTickSnapshot captureRuntimeTicks()
 {
     RuntimeTickSnapshot snapshot;
-    snapshot.clientTick = gpPlayer ? gpPlayer->movementSimulationTick : 0;
-    if (gpMpContext) {
-        snapshot.serverTick = gpMpContext->latestServerTick;
-        snapshot.serverTickSource = gpMpContext->active
+    snapshot.clientTick = mimita::game::playerPtr() ? mimita::game::playerPtr()->movementSimulationTick : 0;
+    if (mimita::game::mpContextPtr()) {
+        snapshot.serverTick = mimita::game::mpContextPtr()->latestServerTick;
+        snapshot.serverTickSource = mimita::game::mpContextPtr()->active
             ? "latest_received_server_tick" : "disconnected_context";
     }
     return snapshot;
@@ -186,11 +187,11 @@ void printVersionInfo()
                     " server_tick=" + std::to_string(ticks.serverTick) +
                     " server_tick_source=" + ticks.serverTickSource);
     terminal.addLog("[VERSIONINFO] room=" +
-                    (gpMpContext && !gpMpContext->currentRoomCode.empty()
-                        ? gpMpContext->currentRoomCode : "(none)") +
+                    (mimita::game::mpContextPtr() && !mimita::game::mpContextPtr()->currentRoomCode.empty()
+                        ? mimita::game::mpContextPtr()->currentRoomCode : "(none)") +
                     " server=" +
-                    (gpMpContext && !gpMpContext->serverName.empty()
-                        ? gpMpContext->serverName : "(none)"));
+                    (mimita::game::mpContextPtr() && !mimita::game::mpContextPtr()->serverName.empty()
+                        ? mimita::game::mpContextPtr()->serverName : "(none)"));
 
     StructuredLogger::instance().writeEvent(
         StructuredCategory::General,
@@ -336,7 +337,7 @@ void Terminal::init(GLFWwindow* window) {
         "setspawn_set",
         [](const std::vector<std::string>& args) {
             (void)args;
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost())
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost())
             {
                 auto& o = MimitaNet::serverGameOverrides();
                 o.spawnOverridePosition = THE_PLAYER.pos;
@@ -347,12 +348,12 @@ void Terminal::init(GLFWwindow* window) {
                     std::to_string(o.spawnOverridePosition.z) + ") — every player and NPC spawns here.");
                 return;
             }
-            if (::gpMpContext && ::gpMpContext->active)
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
             {
                 // Send multiple times — idempotent command, safe to duplicate.
                 // Under packet loss (badconn), one copy out of many survives.
                 for (int i = 0; i < 5; ++i)
-                    MimitaNet::mpSendServerCommand(*::gpMpContext, "setspawn_set");
+                    MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "setspawn_set");
                 Terminal::instance().addLog("[SETSPAWN] Sent to server (host only) — uses your current position.");
                 return;
             }
@@ -364,7 +365,7 @@ void Terminal::init(GLFWwindow* window) {
         "HOST ONLY — enable/disable the server spawn override. setspawn 1 = use the set position, setspawn 0 = default spawn points",
         "setspawn <0|1>",
         [](const std::vector<std::string>& args) {
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost())
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost())
             {
                 if (args.empty()) {
                     auto& o = MimitaNet::serverGameOverrides();
@@ -380,7 +381,7 @@ void Terminal::init(GLFWwindow* window) {
                                               : "[SETSPAWN] disabled — using default spawn points");
                 return;
             }
-            if (::gpMpContext && ::gpMpContext->active)
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
             {
                 if (args.empty())
                 {
@@ -391,7 +392,7 @@ void Terminal::init(GLFWwindow* window) {
                 // Send multiple times — idempotent command, safe to duplicate.
                 // Under packet loss (badconn), one copy out of many survives.
                 for (int i = 0; i < 3; ++i)
-                    MimitaNet::mpSendServerCommand(*::gpMpContext, cmd);
+                    MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), cmd);
                 Terminal::instance().addLog("[SETSPAWN] Sent to server (host only).");
                 return;
             }

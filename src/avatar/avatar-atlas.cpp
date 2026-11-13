@@ -1,4 +1,6 @@
 #include "avatar.h"
+#include "game/gl-resource-bridge-module.h"
+#include "game/job-bridge-module.h"
 #include "entities/player-avatar-animations.h"
 
 #include <algorithm>
@@ -45,7 +47,7 @@ static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 
 AvatarInstance::~AvatarInstance() {
     if (atlasTexture && glfwGetCurrentContext()) {
-        glDeleteTextures(1, &atlasTexture);
+        mimita::game::deleteTexture(atlasTexture);
     }
     atlasTexture = 0;
 }
@@ -448,11 +450,11 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     }
 
     if (mAtlasTexture) {
-        glDeleteTextures(1, &mAtlasTexture);
+        mimita::game::deleteTexture(mAtlasTexture);
         mAtlasTexture = 0;
     }
 
-    glGenTextures(1, &mAtlasTexture);
+    mAtlasTexture = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, mAtlasTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -460,7 +462,7 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());
-    glGenerateMipmap(GL_TEXTURE_2D);
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     printf("[AVATAR ATLAS] Built atlas texture ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
@@ -482,11 +484,10 @@ void AvatarSystem::requestAtlasBuild(Player& player) {
     PendingAtlasResult* result = mPendingAtlas.get();
 
     mAtlasThreadRunning = true;
-    std::thread t([result, avatarCopy, basePathCopy]() {
+    mimita::game::runDetached([result, avatarCopy, basePathCopy]() {
         result->pixels = buildAtlasPixels(avatarCopy, basePathCopy);
         result->ready = true;
-    });
-    t.detach();
+    }, "avatar-atlas");
 }
 
 void AvatarSystem::finalizeAtlasIfReady(Player& player) {
@@ -509,11 +510,11 @@ void AvatarSystem::finalizeAtlasIfReady(Player& player) {
         mAtlasThreadRunning = false;
 
         if (mAtlasTexture) {
-            glDeleteTextures(1, &mAtlasTexture);
+            mimita::game::deleteTexture(mAtlasTexture);
             mAtlasTexture = 0;
         }
 
-        glGenTextures(1, &mAtlasTexture);
+        mAtlasTexture = mimita::game::genTexture();
         glBindTexture(GL_TEXTURE_2D, mAtlasTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -521,7 +522,7 @@ void AvatarSystem::finalizeAtlasIfReady(Player& player) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, mPendingAtlas->pixels.data());
-        glGenerateMipmap(GL_TEXTURE_2D);
+        mimita::game::generateMipmap(GL_TEXTURE_2D);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
         printf("[AVATAR ATLAS] Async atlas texture ready ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
@@ -857,11 +858,11 @@ bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextur
     if (!glfwGetCurrentContext()) return true;
 
     if (inst.atlasTexture) {
-        glDeleteTextures(1, &inst.atlasTexture);
+        mimita::game::deleteTexture(inst.atlasTexture);
         inst.atlasTexture = 0;
     }
 
-    glGenTextures(1, &inst.atlasTexture);
+    inst.atlasTexture = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, inst.atlasTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -869,7 +870,7 @@ bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextur
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());
-    glGenerateMipmap(GL_TEXTURE_2D);
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     Debug::warn(Debug::Category::Avatar, "[AVATAR ATLAS] built atlas=%u for '%s'\n", inst.atlasTexture, inst.name.c_str());

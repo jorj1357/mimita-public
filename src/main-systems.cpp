@@ -765,10 +765,12 @@ void gameInitSubsystems(Engine& engine)
     gpWorldLoaded = &worldLoaded;
     gpDuelConfig = &gDuelConfig;
     gpMpContext = &mpContext;
+#ifndef MIMITA_GAME_DLL
     mimita::host::HostTransportAdapter::instance().bind(&mpContext);
     mimita::host::HostRuntime::instance().setTransportAdapter(
         mimita::host::HostTransportAdapter::instance().adapter(),
         mimita::host::HostTransportAdapter::instance().owner());
+#endif
 
     registerPlayerCommands();
     registerMovementCommands();

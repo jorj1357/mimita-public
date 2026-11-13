@@ -1,4 +1,5 @@
 #include "debug/debug-visuals.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <cmath>
@@ -26,8 +27,6 @@
 #include "physics/movement/actor-pair-collision.h"
 
 extern Renderer* gRenderer;
-extern NpcSystem* gpNpcSystem;
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 extern void flushDebugTris(const Camera& camera);
 extern void flushDebugLines(const Camera& camera);
@@ -150,15 +149,15 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
                            ("actor capsule " + collisionConfig.profileFor(localPreset).id).c_str(),
                            {0.1f, 0.9f, 1.0f, 1.0f});
 
-            if (gpNpcSystem)
-                for (const Npc& npc : gpNpcSystem->all())
+            if (mimita::game::npcSystemPtr())
+                for (const Npc& npc : mimita::game::npcSystemPtr()->all())
                     drawActor(npc.body, npc.actorPresetId, {1.0f, 0.55f, 0.15f, 0.9f});
 
-            if (gpMpContext && gpMpContext->active)
+            if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
             {
-                for (const auto& entry : gpMpContext->remotePlayers)
+                for (const auto& entry : mimita::game::mpContextPtr()->remotePlayers)
                     drawActor(entry.second, std::string(), {0.25f, 0.55f, 1.0f, 0.85f});
-                for (const auto& entry : gpMpContext->remoteNpcs)
+                for (const auto& entry : mimita::game::mpContextPtr()->remoteNpcs)
                     drawActor(entry.second, std::string(), {0.8f, 0.35f, 1.0f, 0.85f});
             }
         }
@@ -183,22 +182,22 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
             };
 
             drawWeaponHitboxes(player);
-            if (gpNpcSystem)
-                for (const Npc& npc : gpNpcSystem->all())
+            if (mimita::game::npcSystemPtr())
+                for (const Npc& npc : mimita::game::npcSystemPtr()->all())
                     drawWeaponHitboxes(npc.body);
-            if (gpMpContext && gpMpContext->active)
+            if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
             {
-                for (const auto& entry : gpMpContext->remotePlayers)
+                for (const auto& entry : mimita::game::mpContextPtr()->remotePlayers)
                     drawWeaponHitboxes(entry.second);
-                for (const auto& entry : gpMpContext->remoteNpcs)
+                for (const auto& entry : mimita::game::mpContextPtr()->remoteNpcs)
                     drawWeaponHitboxes(entry.second);
             }
         }
 
-        if (EntityVisibility::draw(EntityVisibility::Category::NpcPositions) && gpNpcSystem)
+        if (EntityVisibility::draw(EntityVisibility::Category::NpcPositions) && mimita::game::npcSystemPtr())
         {
             const glm::vec4 npcColor{0.15f, 1.0f, 0.4f, 0.9f};
-            for (const DebugVis::NpcDebugInfo& npc : gpNpcSystem->debugInfo())
+            for (const DebugVis::NpcDebugInfo& npc : mimita::game::npcSystemPtr()->debugInfo())
             {
                 drawWireSphere(camera, npc.position, 0.18f, npcColor);
                 drawLine(camera, npc.position,

@@ -1,4 +1,5 @@
 #include "engine/engine-tick-camera.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "mapeditor/map-editor.h"
@@ -1202,7 +1203,7 @@ void engineTickCamera(Engine& engine, float dt)
             if (effect.type == "chat") {
                 ActorChatState& chatState = gReplayChatStates[effect.sourceActorId];
                 addChatMessage(chatState, effect.assetId, effect.sourceActorId);
-                if (gpChatHistory) {
+                if (mimita::game::chatHistoryPtr()) {
                     ChatHistoryEntry entry;
                     entry.messageId = ((uint64_t)(uint32_t)effect.spawnTick << 32) |
                         (uint64_t)std::hash<std::string>{}(effect.sourceActorId + effect.assetId);

@@ -375,16 +375,7 @@ void broadcastPacket(SOCKET sock,
     {
         if (exceptPlayerId != 0 && playerEntry.first == exceptPlayerId)
             continue; // skip the shooter so it never sees the server's copy of its own projectile
-        if (playerEntry.second.transport)
-        {
-            playerEntry.second.transport->send(&packet, sizeof(packet));
-        }
-        else
-        {
-            sendto(sock, (const char*)&packet, sizeof(packet), 0,
-                   (sockaddr*)&playerEntry.second.addr,
-                   sizeof(playerEntry.second.addr));
-        }
+        serverSendToPlayer(sock, playerEntry.second, &packet, sizeof(packet));
         ++totalPacketsOut;
     }
 }

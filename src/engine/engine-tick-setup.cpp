@@ -1,6 +1,6 @@
 #include "engine/engine-tick-setup.h"
+#include "game/resident-state-module.h"
 #include <filesystem>
-#include "game/global-bridge-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
@@ -92,11 +92,6 @@ static void loadHotReloadConfig()
 
 void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
 {
-    static bool hostGlobalsSynced = false;
-    if (!hostGlobalsSynced) {
-        mimita::game::syncHostGlobals();
-        hostGlobalsSynced = true;
-    }
     { MIMITA_PERF_SCOPE("Setup::HotReloadDLL");
       static auto nextDllPoll = std::chrono::steady_clock::now();
       const auto dllNow = std::chrono::steady_clock::now();
@@ -204,14 +199,13 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
         case 3: {
             MIMITA_PERF_SCOPE("Setup::ConfigPolling::Game3");
             { MIMITA_PERF_SCOPE("Setup::ConfigPolling::Map");
-              MimitaNet::MultiplayerContext* mp = gpMpContext;
-              if (mp && WORLD_LOADED && gpActiveMapPath &&
-                  !gpActiveMapPath->empty()) {
+              MimitaNet::MultiplayerContext* mp = mimita::game::mpContextPtr();
+              if (mp && WORLD_LOADED && !ACTIVE_MAP_PATH.empty()) {
                   MimitaNet::mpApplyPendingMapConfig(*mp, THE_WORLD,
-                                                     *gpActiveMapPath);
+                                                     ACTIVE_MAP_PATH);
               }
-              if (gpActiveMapPath && !gpActiveMapPath->empty()) {
-                  const std::string mapId = std::filesystem::path(*gpActiveMapPath).stem().string();
+              if (!ACTIVE_MAP_PATH.empty()) {
+                  const std::string mapId = std::filesystem::path(ACTIVE_MAP_PATH).stem().string();
                   const uint64_t before =
                       authoredGeometrySignatureLive(MapConfigRegistry::instance().current());
                   if (!mapId.empty() && MapConfigRegistry::instance().current().mapId != mapId)

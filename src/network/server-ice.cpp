@@ -690,4 +690,13 @@ bool serverSendToPlayer(SOCKET sock, const ServerPlayer& player,
     return sent != SOCKET_ERROR;
 }
 
+bool serverSendToEndpoint(SOCKET sock, const sockaddr_in& to,
+                          const void* data, size_t size)
+{
+    if (sock == INVALID_SOCKET || !data || size == 0) return false;
+    int sent = sendto(sock, (const char*)data, (int)size, 0,
+                      (const sockaddr*)&to, sizeof(to));
+    return sent != SOCKET_ERROR;
+}
+
 } // namespace MimitaNet

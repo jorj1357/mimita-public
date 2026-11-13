@@ -11,6 +11,7 @@
 #pragma once
 
 #include "network/game-transport.h"
+#include "game/socket-bridge-module.h"
 #include "network/net_common.h"
 
 #include <winsock2.h>
@@ -28,9 +29,9 @@ public:
 
     bool send(const void* data, size_t size) override
     {
-        int sent = sendto(mSock, (const char*)data, (int)size, 0,
-                          (sockaddr*)&mServerAddr, sizeof(mServerAddr));
-        return sent != SOCKET_ERROR;
+        const bool sent = mimita::game::sendToSocket(
+            mSock, data, static_cast<std::uint32_t>(size), &mServerAddr);
+        return sent;
     }
 
     void poll(std::vector<ReceivedPacket>& out) override
@@ -42,8 +43,11 @@ public:
         for (;;)
         {
             int fromLen = sizeof(from);
-            int bytes = recvfrom(mSock, buffer, sizeof(buffer), 0,
-                                 (sockaddr*)&from, &fromLen);
+            std::uint32_t bytes = 0;
+            bool wouldBlock = false;
+            mimita::game::recvFromSocket(mSock, buffer, sizeof(buffer), &from,
+                                        &bytes, &wouldBlock);
+            if (wouldBlock) break;
             if (bytes <= 0)
                 break;
 
@@ -65,7 +69,7 @@ public:
     {
         if (mSock != INVALID_SOCKET)
         {
-            closesocket(mSock);
+            mimita::game::closeSocket(mSock);
             mSock = INVALID_SOCKET;
         }
     }

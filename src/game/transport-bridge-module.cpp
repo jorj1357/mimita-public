@@ -36,6 +36,29 @@ void initializeHostTransport(const mimita::host::HostServicesV1* services) {
     }
 }
 
+bool sendToServer(std::uint32_t typeId, const void* data, std::size_t size) {
+    if (!gTransport || !gTransport->send || !data || size == 0) {
+        return false;
+    }
+    return gTransport->send(
+               gHostData, 0, mimita::host::TransportChannel::Control, typeId, 0,
+               static_cast<const std::uint8_t*>(data),
+               static_cast<std::uint32_t>(size)) ==
+           mimita::host::TransportResult::Ok;
+}
+
+bool sendToPeer(std::uint64_t peer, std::uint32_t typeId, const void* data,
+                std::size_t size) {
+    if (!gTransport || !gTransport->send || !data || size == 0) {
+        return false;
+    }
+    return gTransport->send(
+               gHostData, peer, mimita::host::TransportChannel::Control, typeId, 0,
+               static_cast<const std::uint8_t*>(data),
+               static_cast<std::uint32_t>(size)) ==
+           mimita::host::TransportResult::Ok;
+}
+
 bool sendServerCommand(const char* command, std::size_t size) {
     if (!gTransport || !gTransport->send || !gTransport->session_state || !command) {
         return false;
@@ -95,6 +118,20 @@ bool sendToPlayer(std::uint32_t playerId, std::uint32_t typeId,
     }
     return gTransport->send_to_player(
                gHostData, playerId, typeId, 0,
+               static_cast<const std::uint8_t*>(data),
+               static_cast<std::uint32_t>(size)) ==
+           mimita::host::TransportResult::Ok;
+}
+
+bool sendToEndpoint(std::uint32_t addressNetworkOrder,
+                    std::uint16_t portNetworkOrder, std::uint32_t typeId,
+                    const void* data, std::size_t size) {
+    if (!gTransport || !gTransport->send_to_endpoint || !data || size == 0) {
+        return false;
+    }
+    return gTransport->send_to_endpoint(
+               gHostData, addressNetworkOrder, portNetworkOrder,
+               mimita::host::TransportChannel::Control, typeId, 0,
                static_cast<const std::uint8_t*>(data),
                static_cast<std::uint32_t>(size)) ==
            mimita::host::TransportResult::Ok;

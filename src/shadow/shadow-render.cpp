@@ -1,4 +1,5 @@
 #include "shadow-render.h"
+#include "game/resident-state-module.h"
 #include "shadow-config.h"
 
 #include <cstdio>
@@ -11,6 +12,7 @@
 #include "render/render-world.h"
 #include "render/lighting-config.h"
 #include "renderer/renderer.h"
+#include "game/gl-resource-bridge-module.h"
 #include "entities/player.h"
 #include "npc/npc.h"
 #include "effects/hit-effects.h"
@@ -18,8 +20,6 @@
 #include "perf/perf.h"
 
 extern Renderer* gRenderer;
-extern Player* gpPlayer;
-extern NpcSystem* gpNpcSystem;
 
 namespace {
 
@@ -76,8 +76,8 @@ static void ensureSphereVao()
         }
     }
 
-    glGenVertexArrays(1, &gSphereVao);
-    glGenBuffers(1, &gSphereVbo);
+    gSphereVao = mimita::game::genVertexArray();
+    gSphereVbo = mimita::game::genBuffer();
     glBindVertexArray(gSphereVao);
     glBindBuffer(GL_ARRAY_BUFFER, gSphereVbo);
     glBufferData(GL_ARRAY_BUFFER, triangles.size() * sizeof(glm::vec3), triangles.data(), GL_STATIC_DRAW);
@@ -107,8 +107,8 @@ static GLuint createShader(const char* vertSrc, const char* fragSrc)
     GLuint vs = glCreateShader(GL_VERTEX_SHADER);
     GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
     if (!compile(vs, vertSrc) || !compile(fs, fragSrc)) {
-        glDeleteShader(vs);
-        glDeleteShader(fs);
+        mimita::game::deleteShader(vs);
+        mimita::game::deleteShader(fs);
         return 0;
     }
 
@@ -122,11 +122,11 @@ static GLuint createShader(const char* vertSrc, const char* fragSrc)
         char log[1024];
         glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
         printf("[SHADOW SHADER] link error: %s\n", log);
-        glDeleteProgram(prog);
+        mimita::game::deleteProgram(prog);
         prog = 0;
     }
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+    mimita::game::deleteShader(vs);
+    mimita::game::deleteShader(fs);
     return prog;
 }
 
@@ -181,13 +181,13 @@ void initShadowMap(int mapSize)
     if (mapSize == gShadowMapSize && gShadowFbo) return;
 
     if (gShadowFbo) {
-        glDeleteFramebuffers(1, &gShadowFbo);
-        glDeleteTextures(1, &gShadowDepthTex);
+        mimita::game::deleteFramebuffer(gShadowFbo);
+        mimita::game::deleteTexture(gShadowDepthTex);
     }
 
     gShadowMapSize = mapSize;
 
-    glGenTextures(1, &gShadowDepthTex);
+    gShadowDepthTex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, gShadowDepthTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, mapSize, mapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -197,7 +197,7 @@ void initShadowMap(int mapSize)
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
-    glGenFramebuffers(1, &gShadowFbo);
+    gShadowFbo = mimita::game::genFramebuffer();
     glBindFramebuffer(GL_FRAMEBUFFER, gShadowFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gShadowDepthTex, 0);
     glDrawBuffer(GL_NONE);
@@ -206,8 +206,8 @@ void initShadowMap(int mapSize)
     GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
         printf("[SHADOWS] FBO incomplete: 0x%x\n", status);
-        glDeleteFramebuffers(1, &gShadowFbo);
-        glDeleteTextures(1, &gShadowDepthTex);
+        mimita::game::deleteFramebuffer(gShadowFbo);
+        mimita::game::deleteTexture(gShadowDepthTex);
         gShadowFbo = 0;
         gShadowDepthTex = 0;
         return;
@@ -256,11 +256,11 @@ void renderShadowMap(const World& world, const glm::vec3& focusPoint)
         renderWorldDepth(world, gShadowShader, gLightMVP);
 
     // Player depth
-    if (cfg.playersCastShadows() && gpPlayer)
-        renderPlayerDepth(*gpPlayer, gShadowShader, gLightMVP);
+    if (cfg.playersCastShadows() && mimita::game::playerPtr())
+        renderPlayerDepth(*mimita::game::playerPtr(), gShadowShader, gLightMVP);
 
     // NPC depth
-    if (cfg.npcsCastShadows() && gpNpcSystem)
+    if (cfg.npcsCastShadows() && mimita::game::npcSystemPtr())
         renderNpcDepths(gShadowShader, gLightMVP);
 
     // Effect depth
@@ -282,8 +282,8 @@ void renderPlayerDepth(const Player& player, GLuint shadowShader, const glm::mat
 
 void renderNpcDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
 {
-    if (!gpNpcSystem) return;
-    for (const Npc& npc : gpNpcSystem->all()) {
+    if (!mimita::game::npcSystemPtr()) return;
+    for (const Npc& npc : mimita::game::npcSystemPtr()->all()) {
         Perf::state().renderPerf.shadowBatches++;
         npc.body.renderDepth(shadowShader, lightViewProj);
     }
@@ -431,8 +431,8 @@ void renderShadowMapOverlay(int screenW, int screenH)
 
     static GLuint vao = 0, vbo = 0;
     if (!vao) {
-        glGenVertexArrays(1, &vao);
-        glGenBuffers(1, &vbo);
+        vao = mimita::game::genVertexArray();
+        vbo = mimita::game::genBuffer();
     }
 
     glBindVertexArray(vao);

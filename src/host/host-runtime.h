@@ -64,6 +64,19 @@ public:
     // endpoint. Returns true only when the generation handled the message.
     bool dispatchInbound(TransportDispatchV1* dispatch);
 
+    // Drive one whole-game fixed tick and render call through the barrier.
+    // Safe-point ownership remains with the caller: this does not advance the
+    // legacy EXE game loop by itself.
+    HostResult driveTick(double deltaSeconds);
+    HostResult driveRender(void* renderContext);
+    HostResult driveFrame(double deltaSeconds, void* renderContext);
+
+    // True only when the active generation declares a real whole-game frame and
+    // the owner explicitly enabled host-owned frame mode.
+    bool ownsGameFrame() const;
+    bool bootstrapGame(const GameStartupV1& startup);
+    bool gameShouldClose() const;
+
     // Poll build/game/ready.json (or MIMITA_GAME_READY) and swap a validated
     // candidate generation at a safe boundary. Called from the owning loop.
     void poll();
@@ -122,6 +135,11 @@ private:
     static TransportResult transportPeerStateThunk(void* userData, PeerHandle peer,
                                                    PeerStateV1* out);
     static std::uint32_t transportPeerCountThunk(void* userData);
+    static TransportResult transportSendToEndpointThunk(
+        void* userData, std::uint32_t addressNetworkOrder,
+        std::uint16_t portNetworkOrder, TransportChannel channel,
+        std::uint32_t typeId, std::uint32_t flags,
+        const std::uint8_t* payload, std::uint32_t payloadSize);
 
     static HostResult entityCapabilityReadThunk(void* userData, EntityHandle handle,
                                                EntitySnapshotV1* out);
@@ -137,6 +155,16 @@ private:
     static std::uint64_t jobsAcquireThunk(void* userData, const char* tag);
     static HostResult jobsReleaseThunk(void* userData, std::uint64_t lease);
     static std::uint32_t jobsBusyThunk(void* userData);
+    static void jobsSubmitThunk(void* userData, void* job,
+                                void (*invoke)(void*), void (*destroy)(void*),
+                                const char* tag);
+    static void jobsDoneThunk(void* userData);
+    static std::uint64_t jobsStartWorkerThunk(void* userData, void* job,
+                                              void (*invoke)(void*),
+                                              void (*destroy)(void*),
+                                              const char* tag);
+    static void jobsWaitWorkerThunk(void* userData, std::uint64_t handle);
+    static void jobsReleaseWorkerThunk(void* userData, std::uint64_t handle);
 
     static std::uint64_t callbackRegisterThunk(void* userData, std::uint32_t kind,
                                                const char* tag);

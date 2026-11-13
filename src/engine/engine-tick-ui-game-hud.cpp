@@ -8,6 +8,7 @@
 * Does NOT implement replay controls, timeline, or info panels.
 */
 #include "engine/engine-tick-ui.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include <algorithm>
 #include "terminal/terminal-state.h"
@@ -73,8 +74,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;
 
 void engineTickUIGameHUD(Engine& engine, float dt)
 {
@@ -305,7 +304,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     snprintf(hpText, sizeof(hpText), "HP: %d/%d", hp, maxHp);
     hudText("hpText", hpText);
     if (drawDeathPopup && gDuelManager.phase() != DuelPhase::MatchEnd && !DuelQueue::instance().matchOver()) {
-        if (!gReplayExportRenderMode || ReplayExportUI::showDeathScreen())
+        if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showDeathScreen())
         {
         // Draw death overlay from layout JSON
         const GuiElement* doEl = hudLayout.get("deathOverlay");
@@ -329,7 +328,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
                 deathPopupAlpha);
         }
     }
-    if (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay())
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay())
     {
         glm::vec3 totalVel = replayViewedActor ? replayViewedActor->velocity : player.vel;
         float speed = glm::length(totalVel);
@@ -337,7 +336,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         snprintf(spBuf, sizeof(spBuf), "Speed: %.2f m/s", speed);
         hudText("speedText", spBuf);
     }
-    if (DebugConfig::DEBUG_PHYSICS && (!gReplayExportRenderMode || ReplayExportUI::showSpeedDisplay()))
+    if (DebugConfig::DEBUG_PHYSICS && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showSpeedDisplay()))
     {
         char dbg[512];
         int y = 200;
@@ -366,7 +365,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
             (int)player.ground.stableOnGround, player.ground.groundLostTimer, player.ground.airborneTimer);
         uiDrawText(dbg, 24.0f, (float)y, 0.28f, {0.3f, 1.0f, 0.6f, 1.0f});
     }
-    if (!gReplayExportRenderMode || ReplayExportUI::showModeText())
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showModeText())
     {
         char modeText[128];
         snprintf(modeText, sizeof(modeText), "%s | %s | slot %d",
@@ -525,7 +524,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
 
-    if (!gReplayExportRenderMode || ReplayExportUI::showChatBubbles()) {
+    if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showChatBubbles()) {
         renderChatBubbles(player.chatState, player, camera);
         if (!replayPlaybackActive)
         {
@@ -544,7 +543,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
     }
 
     // Typing indicators above players
-    if (!gReplayExportRenderMode) {
+    if (!mimita::game::replayExportRenderModeRef()) {
         renderTypingIndicator(player, camera, true);
         if (!replayPlaybackActive)
         {
@@ -609,7 +608,7 @@ void engineTickUIGameHUD(Engine& engine, float dt)
         }
     }
     if (DebugConfig::DEBUG_MOVEMENT_HUD &&
-        (!gReplayExportRenderMode || ReplayExportUI::showDebugVis()))
+        (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showDebugVis()))
     {
         char dbg[256];
         snprintf(dbg, sizeof(dbg), "dt %.3f grounded %d vel %.2f %.2f %.2f cam %.1f %.1f %.1f",
@@ -621,22 +620,22 @@ void engineTickUIGameHUD(Engine& engine, float dt)
 
     // ── Chat Window ─────────────────────────────────────
     Debug::logThrottled(Debug::Category::Chat, "chat-trace-render-before", 1.0f,
-                        "[CHAT TRACE 3 BEFORE HUD GATE] gpChatHistory=%p chatOpen=%d\n",
-                        (void*)gpChatHistory,
+                        "[CHAT TRACE 3 BEFORE HUD GATE] mimita::game::chatHistoryPtr()=%p chatOpen=%d\n",
+                        (void*)mimita::game::chatHistoryPtr(),
                         (int)gChatWindowState.open);
-    if (gpChatHistory && (!gReplayExportRenderMode || ReplayExportUI::showChat()))
+    if (mimita::game::chatHistoryPtr() && (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showChat()))
     {
         renderChatWindow(gChatWindowState, engine.window(), gChatHistory,
                          gChatUiTickClock, uiScreenW(), uiScreenH());
         Debug::logThrottled(Debug::Category::Chat, "chat-trace-render-after", 1.0f,
-                            "[CHAT TRACE 3 AFTER HUD RENDER] gpChatHistory=%p chatOpen=%d\n",
-                            (void*)gpChatHistory,
+                            "[CHAT TRACE 3 AFTER HUD RENDER] mimita::game::chatHistoryPtr()=%p chatOpen=%d\n",
+                            (void*)mimita::game::chatHistoryPtr(),
                             (int)gChatWindowState.open);
     }
     else
     {
         Debug::warn(Debug::Category::Chat,
-                    "[CHAT TRACE 3 PROBLEM] gpChatHistory is NULL; renderChatWindow was skipped\n");
+                    "[CHAT TRACE 3 PROBLEM] mimita::game::chatHistoryPtr() is NULL; renderChatWindow was skipped\n");
     }
 
     { MIMITA_PERF_SCOPE("HUD::Vehicle"); drawVehicleHud(); }

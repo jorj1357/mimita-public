@@ -1,4 +1,5 @@
 #include "projectile-render.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -45,8 +46,8 @@ ProjectileModelMesh& projectileModelFor(const std::string& path)
     cached.mesh = loadGLB(path, false);
     if (cached.mesh.verts.empty())
         return cached;
-    glGenVertexArrays(1, &cached.vao);
-    glGenBuffers(1, &cached.vbo);
+    cached.vao = mimita::game::genVertexArray();
+    cached.vbo = mimita::game::genBuffer();
     glBindVertexArray(cached.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
     glBufferData(GL_ARRAY_BUFFER,
@@ -329,8 +330,8 @@ ProjectileRenderMesh& getProjectileMesh(float length, float radius, int segments
     flattenCylinder(verts, length, radius, segments);
     mesh.vertexCount = (int)verts.size();
 
-    glGenVertexArrays(1, &mesh.vao);
-    glGenBuffers(1, &mesh.vbo);
+    mesh.vao = mimita::game::genVertexArray();
+    mesh.vbo = mimita::game::genBuffer();
     glBindVertexArray(mesh.vao);
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
     glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STATIC_DRAW);
@@ -476,8 +477,8 @@ void clearProjectileMeshes()
 {
     for (auto& kv : gMeshCache) {
         ProjectileRenderMesh& m = kv.second;
-        if (m.vbo) glDeleteBuffers(1, &m.vbo);
-        if (m.vao) glDeleteVertexArrays(1, &m.vao);
+        if (m.vbo) mimita::game::deleteBuffer(m.vbo);
+        if (m.vao) mimita::game::deleteVertexArray(m.vao);
     }
     gMeshCache.clear();
 }

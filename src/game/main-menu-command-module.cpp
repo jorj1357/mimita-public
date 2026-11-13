@@ -3,6 +3,7 @@
 // current EXE; the game DLL uses this generation-local definition.
 
 #include <chrono>
+#include "game/resident-state-module.h"
 #include <cstdio>
 #include <string>
 
@@ -21,7 +22,6 @@
 #include "terminal/terminal-state.h"
 
 extern DuelManager gDuelManager;
-extern bool gMainmenuDebug;
 
 void forceMainMenu()
 {
@@ -30,7 +30,7 @@ void forceMainMenu()
     printf("[MAINMENU] entering\n");
 
     auto logPhase = [&](const char* phase) {
-        if (!gMainmenuDebug) return;
+        if (!mimita::game::mainmenuDebugRef()) return;
         auto now = std::chrono::steady_clock::now();
         double ms = (double)std::chrono::duration_cast<std::chrono::microseconds>(now - startTime).count() / 1000.0;
         Debug::log(Debug::Category::General, "[MAINMENU] %s: %.2fms", phase, ms);
@@ -49,9 +49,9 @@ void forceMainMenu()
     }
 
     printf("[MAINMENU] clearing replay models\n");
-    if (gpReplayActorModels) gpReplayActorModels->clear();
-    if (gpReplayWeaponModels) gpReplayWeaponModels->clear();
-    if (gpReplayChatStates) gpReplayChatStates->clear();
+    if (mimita::game::replayActorModelsPtr()) mimita::game::replayActorModelsPtr()->clear();
+    if (mimita::game::replayWeaponModelsPtr()) mimita::game::replayWeaponModelsPtr()->clear();
+    if (mimita::game::replayChatStatesPtr()) mimita::game::replayChatStatesPtr()->clear();
     logPhase("Replay Models Clear");
 
     if (REPLAY_RECORDER.isRecording()) {

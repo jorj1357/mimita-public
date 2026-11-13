@@ -8,6 +8,7 @@
 * Does NOT own general gameplay chat, ammo, or crosshair rendering.
 */
 #include "engine/engine-tick-ui.h"
+#include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
@@ -58,8 +59,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
-extern bool gReplayCinematicMode;
 
 void engineTickUIReplayHUD(Engine& engine, float dt)
 {
@@ -107,7 +106,7 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             hudText("connectionText", std::string(MimitaNet::mpConnectionHealthText(mpContext)) + "  " + tick);
         }
     }
-    if (gReplayRecorder.isRecording() && !gReplayExportRenderMode) {
+    if (gReplayRecorder.isRecording() && !mimita::game::replayExportRenderModeRef()) {
         const float overlayX = uiScreenW() - 230.0f;
         uiDrawRect({overlayX - 18.0f, 20.0f, 12.0f, 12.0f},
                    {1.0f, 0.05f, 0.05f, 1.0f}, "replay-record-dot");
@@ -119,8 +118,8 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
         uiDrawText(replayTickText, overlayX, 58.0f, 0.30f,
                    {1.0f, 0.12f, 0.12f, 1.0f});
     }
-    if (replayPlaybackActive && !gReplayCinematicMode) {
-        if (!gReplayExportRenderMode || ReplayExportUI::showReplayInfo()) {
+    if (replayPlaybackActive && !mimita::game::replayCinematicModeRef()) {
+        if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showReplayInfo()) {
         const float rOverlayX = uiScreenW() - 280.0f;
         const float rOverlayY = 20.0f;
         const auto* rFrame = gReplayPlayer.currentSceneFrame();
@@ -227,7 +226,7 @@ void engineTickUIReplayHUD(Engine& engine, float dt)
             }
         }
 
-        if (!gReplayExportRenderMode || ReplayExportUI::showReplayControls()) {
+        if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showReplayControls()) {
         const bool editorActive = gReplayEditor.isLoaded();
         const float helpX = uiScreenW() - 230.0f;
         const float helpW = 210.0f;

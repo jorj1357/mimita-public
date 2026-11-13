@@ -1,4 +1,5 @@
 #include "engine/engine-tick.h"
+#include "game/resident-state-module.h"
 #include "engine/engine-tick-setup.h"
 #include "engine/engine-tick-audio.h"
 #include "engine/engine-tick-state.h"
@@ -58,7 +59,6 @@
 extern DuelManager gDuelManager;
 extern GamemodeManager gGamemodeManager;
 extern FramePacer gFramePacer;
-extern bool gReplayExportRenderMode;
 
 static std::string gRoomCodeFilePath;
 static uint64_t gLastRoomCodeFilePollMs = 0;
@@ -85,20 +85,20 @@ void engineSetRoomCodeFilePath(const std::string& path)
         } \
     } while(0)
 
-void engineTick(Engine& engine)
+void engineTickSimulate(Engine& engine, EngineFrameState& state)
 {
     perfSetProgressMonitorThread(GetCurrentThreadId());
-    const auto tFrameStart = std::chrono::steady_clock::now();
+    state.frameStart = std::chrono::steady_clock::now();
     // Begin frame pacing and perf tracking BEFORE any scopes so the scope
     // stack is empty when perfResetScopes() runs.  This fixes the profiler
     // bug where Perf::beginFrame() was called inside two existing scopes,
     // corrupting the parent-child relationships.
     gFramePacer.beginFrame();
     Perf::beginFrame();
-    float dt;
-    bool worldPassRan;
-    { MIMITA_PERF_PROGRESS("EngineTick::Work");
-      MIMITA_PERF_SCOPE("EngineTick::Work");
+    float& dt = state.dt;
+    bool& worldPassRan = state.worldPassRan;
+    { MIMITA_PERF_PROGRESS("EngineTick::Simulate");
+      MIMITA_PERF_SCOPE("EngineTick::Simulate");
 
     // The pre-frame game tasks are measured separately; an EngineTick scope
     // would end after Perf::endFrame() and therefore be recorded one frame late.
@@ -210,6 +210,25 @@ void engineTick(Engine& engine)
               MIMITA_PERF_SCOPE("Camera"); engineTickCamera(engine, dt); } HEARTBEAT("after camera");
             { MIMITA_PERF_PROGRESS("Combat");
               MIMITA_PERF_SCOPE("Combat"); engineTickCombat(engine, dt); } HEARTBEAT("after combat");
+        }   // if (GAME_STATE == GAME_PLAYING) — simulation half
+    }       // replay/net gate — simulation half
+    } // MIMITA_PERF_SCOPE("EngineTick::Simulate")
+}
+
+void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
+{
+    float& dt = state.dt;
+    bool& worldPassRan = state.worldPassRan;
+    const auto tFrameStart = state.frameStart;
+    { MIMITA_PERF_PROGRESS("EngineTick::Render");
+      MIMITA_PERF_SCOPE("EngineTick::Render");
+    const bool replayExportForceRender =
+        (getReplayExportJob().state == ReplayExportJob::Capturing ||
+         getReplayExportJob().state == ReplayExportJob::Encoding) && WORLD_LOADED;
+
+    if (GAME_STATE == GAME_PLAYING || GAME_STATE == GAME_LOADING_MAP || replayExportForceRender)
+    {
+        if (GAME_STATE == GAME_PLAYING) {
             {
                 // Capture render prep (skybox/replay selection) together with
                 // the render pass so the scope tree has one Rendering owner.
@@ -222,7 +241,7 @@ void engineTick(Engine& engine)
         }
         MIMITA_PERF_PROGRESS("DevOverlay");
         { MIMITA_PERF_SCOPE("DevOverlay");
-        if (!gReplayExportRenderMode || ReplayExportUI::showDevOverlay())
+        if (!mimita::game::replayExportRenderModeRef() || ReplayExportUI::showDevOverlay())
             DevOverlay::instance().render();
         }
     }
@@ -425,12 +444,13 @@ void engineTick(Engine& engine)
       Perf::ScopedTimer _pacerSleep("FramePacing::PacerSleep");
       gFramePacer.endFrame();
     }
-    }
+    } // MIMITA_PERF_SCOPE("EngineTick::Render")
 
     // Pass the current frame's actual wall-clock time so the profiler doesn't
     // use the stale "previous frame" time from gFramePacer.frameTimeMs().
     auto tNow = std::chrono::steady_clock::now();
     float frameMs = std::chrono::duration<float, std::milli>(tNow - tFrameStart).count();
+    state.frameMs = frameMs;
     Perf::endFrame(frameMs);
 
     // ── Structured logger config hot-reload + tick ────
@@ -460,4 +480,14 @@ void engineTick(Engine& engine)
                 npcs, efx, aud);
         }
     }
+}
+
+// Legacy single-call frame used by the resident EXE path. Keeps the exact
+// simulate-then-render order while the module path calls the two halves
+// separately at their owning boundaries.
+void engineTick(Engine& engine)
+{
+    EngineFrameState state;
+    engineTickSimulate(engine, state);
+    engineTickRenderFrame(engine, state);
 }

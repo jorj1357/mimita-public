@@ -9,6 +9,7 @@
 * Does NOT advance replay playback state or own export notifications.
 */
 #include "replay/replay-export.h"
+#include "game/job-bridge-module.h"
 
 #ifdef _WIN32
 
@@ -256,7 +257,7 @@ struct MfMp4Writer {
     std::string encoderModeUsed = "software";
 
     // Worker queue.
-    std::thread worker;
+    mimita::game::HostWorker worker;
     std::mutex mtx;
     std::condition_variable cv;
     std::deque<EncodeFrame> queue;
@@ -1072,7 +1073,7 @@ bool startMfReplayExport(MfMp4Writer*& writer, const std::string& outputPath,
     writer->encoderModeConfig = gExportConfig.encoderMode;
     Debug::warn(Debug::Category::Replay,
         "[MF EXPORT] starting worker thread\n");
-    writer->worker = std::thread(workerLoop, writer);
+    writer->worker.start([writer] { workerLoop(writer); }, "replay-mf-writer");
     return true;
 }
 
@@ -1177,7 +1178,7 @@ bool pollMfReplayExport(MfMp4Writer*& writer, bool& ok, bool& outroMissing,
     ok = writer->ok.load();
     outroMissing = writer->outroMissing;
     error = writer->error;
-    if (writer->worker.joinable()) writer->worker.join();
+    writer->worker.release();
     cancelMfReplayExport(writer);
     return true;
 }
@@ -1190,7 +1191,7 @@ void cancelMfReplayExport(MfMp4Writer*& writer)
         writer->shutdown = true;
     }
     writer->cv.notify_all();
-    if (writer->worker.joinable()) writer->worker.join();
+    writer->worker.release();
     releaseCom(writer->sink);
     releaseCom(writer->encoder);
     releaseCom(writer->deviceManager);

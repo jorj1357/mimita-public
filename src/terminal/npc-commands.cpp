@@ -7,6 +7,7 @@
 */
 
 #include <cstdio>
+#include "game/resident-state-module.h"
 #include <cstdlib>
 #include <algorithm>
 #include <string>
@@ -77,8 +78,8 @@ void registerNpcCommands()
     Terminal::instance().registerCommand({
         "npc_void", "Runtime test: drop every NPC into the existing world void.", "npc_void",
         [](const std::vector<std::string>&) {
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_void");
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "npc_void");
                 Terminal::instance().addLog("[NPC COMMAND] npc_void sent to server");
             } else {
                 Terminal::instance().addLog("[NPC COMMAND] npc_void requires a connected room");
@@ -89,8 +90,8 @@ void registerNpcCommands()
         "npc_unstuck", "Teleport every NPC back to its team spawn point",
         "npc_unstuck",
         [](const std::vector<std::string>&) {
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_unstuck");
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "npc_unstuck");
                 Terminal::instance().addLog("[NPC COMMAND] npc_unstuck sent to server");
             } else {
                 Terminal::instance().addLog(
@@ -101,8 +102,8 @@ void registerNpcCommands()
     Terminal::instance().registerCommand({
         "npc_delete_all", "Delete every NPC", "npc_delete_all",
         [](const std::vector<std::string>&) {
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "npc_delete_all");
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "npc_delete_all");
                 Terminal::instance().addLog("[NPC COMMAND] sent to host");
                 return;
             }
@@ -131,8 +132,8 @@ void registerNpcCommands()
         "npcdiffload", "Load an NPC difficulty preset; host only", "npcdiffload <number>",
         [](const std::vector<std::string>& args) {
             if (args.empty()) { Terminal::instance().addLog("[NPC DIFFICULTY] Usage: npcdiffload <number>"); return; }
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext, "npcdiffload " + args[0]);
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), "npcdiffload " + args[0]);
                 Terminal::instance().addLog("[NPC DIFFICULTY] sent to host");
                 return;
             }

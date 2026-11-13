@@ -1,4 +1,5 @@
 #include <cstdio>
+#include "game/resident-state-module.h"
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
@@ -112,7 +113,7 @@ void requestSendChatMessage(const std::string& message)
     noteChatActivity();
     Debug::log(Debug::Category::Chat, "[CHAT LOCAL] player=%s len=%zu\n",
                player.username.c_str(), trimmed.size());
-    if (gpChatHistory)
+    if (mimita::game::chatHistoryPtr())
     {
         ChatHistoryEntry entry;
         entry.senderType = ChatSenderType::Player;
@@ -553,20 +554,20 @@ void registerPlayerCommands()
     Terminal::instance().registerCommand({
         "sizeme", "Set player size scale", "sizeme <value>",
         [](const std::vector<std::string>& args) {
-            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            if (!mimita::game::playerPtr()) { Terminal::instance().addLog("[ERROR] No player"); return; }
             if (args.empty()) {
                 char buf[128];
-                std::snprintf(buf, sizeof(buf), "[SIZE] current=%.4f", gpPlayer->sizeScale);
+                std::snprintf(buf, sizeof(buf), "[SIZE] current=%.4f", mimita::game::playerPtr()->sizeScale);
                 Terminal::instance().addLog(buf);
                 return;
             }
             float val = std::stof(args[0]);
             if (val < 0.001f) val = 0.001f;
-            gpPlayer->sizeScale = val;
+            mimita::game::playerPtr()->sizeScale = val;
             const auto& sc = SizeScalingConfig::instance().data();
             int effectiveHp = (int)(100.0f * sc.scale(1.0f, sc.healthExponent, val));
-            gpPlayer->maxHp = effectiveHp;
-            gpPlayer->currentHp = effectiveHp;
+            mimita::game::playerPtr()->maxHp = effectiveHp;
+            mimita::game::playerPtr()->currentHp = effectiveHp;
             char buf[256];
             std::snprintf(buf, sizeof(buf), "[SIZE] set to %.4f (maxHp=%d)", val, effectiveHp);
             Terminal::instance().addLog(buf);
@@ -575,18 +576,18 @@ void registerPlayerCommands()
     Terminal::instance().registerCommand({
         "size_reset", "Reset player size to 1.0", "size_reset",
         [](const std::vector<std::string>&) {
-            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
-            gpPlayer->sizeScale = 1.0f;
-            gpPlayer->maxHp = 100;
-            gpPlayer->currentHp = 100;
+            if (!mimita::game::playerPtr()) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            mimita::game::playerPtr()->sizeScale = 1.0f;
+            mimita::game::playerPtr()->maxHp = 100;
+            mimita::game::playerPtr()->currentHp = 100;
             Terminal::instance().addLog("[SIZE] Reset to 1.0 (maxHp=100)");
         }
     });
     Terminal::instance().registerCommand({
         "size_debug", "Show effective scaling values", "size_debug [1|0]",
         [](const std::vector<std::string>& args) {
-            if (!gpPlayer) { Terminal::instance().addLog("[ERROR] No player"); return; }
-            float s = std::max(gpPlayer->sizeScale, 0.001f);
+            if (!mimita::game::playerPtr()) { Terminal::instance().addLog("[ERROR] No player"); return; }
+            float s = std::max(mimita::game::playerPtr()->sizeScale, 0.001f);
             const auto& sc = SizeScalingConfig::instance().data();
             char buf[512];
             std::snprintf(buf, sizeof(buf),
@@ -612,11 +613,11 @@ void registerPlayerCommands()
     Terminal::instance().registerCommand({
         "pos", "Print local player position", "pos",
         [](const std::vector<std::string>&) {
-            if (!gpPlayer) {
+            if (!mimita::game::playerPtr()) {
                 Terminal::instance().addLog("No local player.");
                 return;
             }
-            Player& player = *gpPlayer;
+            Player& player = *mimita::game::playerPtr();
 
             char buf[256];
             snprintf(buf, sizeof(buf), "Player Position: (%.3f, %.3f, %.3f)",
@@ -630,8 +631,8 @@ void registerPlayerCommands()
             Terminal::instance().addLog(
                 player.ground.onGround ? "Grounded: true" : "Grounded: false");
 
-            if (gpActiveMapPath && !gpActiveMapPath->empty())
-                Terminal::instance().addLog("Current Map: " + *gpActiveMapPath);
+            if (!ACTIVE_MAP_PATH.empty())
+                Terminal::instance().addLog("Current Map: " + ACTIVE_MAP_PATH);
 
             snprintf(buf, sizeof(buf), "Facing: (%.3f, %.3f, %.3f)",
                      player.aimDirection.x, player.aimDirection.y, player.aimDirection.z);

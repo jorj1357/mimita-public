@@ -43,6 +43,9 @@ enum class HostCapabilityId : std::uint32_t {
     Ice = 16,
     TransportSession = 17,
     AuthoredRebuild = 18,
+    Files = 19,
+    Socket = 20,
+    GlResource = 21,
 };
 
 // Stable entity identity. The low bits are generation-specific; the host owns
@@ -123,6 +126,14 @@ struct HostServicesV1 {
     GetCapabilityFn get_capability;
 };
 
+struct GameStartupV1 {
+    std::uint32_t version;
+    std::uint32_t structSize;
+    std::int32_t width;
+    std::int32_t height;
+    const char* title;
+};
+
 // The single export every game.dll generation must return. Validated before any
 // function pointer is used:
 //   name matches, abiVersion == kGameHostAbiVersion, structSize == sizeof.
@@ -160,6 +171,12 @@ struct GameModuleV1 {
     // written. import_state must leave the previous state intact on failure.
     std::uint32_t (*export_state)(void* buffer, std::uint32_t capacity);
     HostResult (*import_state)(const void* buffer, std::uint32_t size);
+
+    // Nonzero only when tick+render implement the real whole-game frame. The
+    // host may take ownership of the legacy frame loop only when this is set.
+    std::uint32_t frameCapable;
+    HostResult (*bootstrap)(const GameStartupV1* startup);
+    std::int32_t (*should_close)();
 };
 
 using GetGameModuleFn = const GameModuleV1* (*)(std::uint32_t abiVersion);

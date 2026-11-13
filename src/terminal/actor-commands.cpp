@@ -7,6 +7,7 @@
 */
 
 #include "terminal/actor-commands.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -159,17 +160,17 @@ void registerActorCommands()
                     ? nullptr : MatchRoleRegistry::instance().get(role);
                 std::string avatar = "unknown";
                 std::string controller = "replicated";
-                if (::gpMpContext) {
-                    if (a.actorId == ::gpMpContext->localPlayerId) {
+                if (::mimita::game::mpContextPtr()) {
+                    if (a.actorId == ::mimita::game::mpContextPtr()->localPlayerId) {
                         avatar = GetPlayerSettings().avatarName;
                         controller = "local_human";
                     }
-                    auto player = ::gpMpContext->remotePlayers.find(a.actorId);
-                    auto npc = ::gpMpContext->remoteNpcs.find(a.actorId);
-                    if (player != ::gpMpContext->remotePlayers.end()) {
+                    auto player = ::mimita::game::mpContextPtr()->remotePlayers.find(a.actorId);
+                    auto npc = ::mimita::game::mpContextPtr()->remoteNpcs.find(a.actorId);
+                    if (player != ::mimita::game::mpContextPtr()->remotePlayers.end()) {
                         avatar = player->second.avatarName();
                         controller = "human";
-                    } else if (npc != ::gpMpContext->remoteNpcs.end()) {
+                    } else if (npc != ::mimita::game::mpContextPtr()->remoteNpcs.end()) {
                         avatar = npc->second.avatarName();
                         controller = "npc";
                     }
@@ -251,7 +252,7 @@ void registerActorCommands()
                 Terminal::instance().addLog("actor_preset_actor: unknown preset or index");
                 return;
             }
-            if (!(::gpMpContext && ::gpMpContext->active) && MimitaNet::isServerHost()) {
+            if (!(::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) && MimitaNet::isServerHost()) {
                 if (!MimitaNet::serverSetActorPreset(actorId, preset->id)) {
                     Terminal::instance().addLog(
                         "actor_preset_actor: actor not in active server match or preset unavailable");
@@ -262,8 +263,8 @@ void registerActorCommands()
                     std::to_string(actorId) + "; applies on next spawn and persists until actor removal");
                 return;
             }
-            if (::gpMpContext && ::gpMpContext->active) {
-                MimitaNet::mpSendServerCommand(*::gpMpContext,
+            if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(),
                     "actor_preset_actor " + std::to_string(actorId) + " " + preset->id);
                 Terminal::instance().addLog("actor_preset_actor: sent to server host for validation");
                 return;

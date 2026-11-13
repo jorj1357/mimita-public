@@ -7,6 +7,7 @@
 */
 
 #include "terminal/procedural-world-commands.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <string>
@@ -22,9 +23,9 @@ namespace {
 
 bool sendToServer(const std::string& command)
 {
-    if (::gpMpContext && ::gpMpContext->active)
+    if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active)
     {
-        MimitaNet::mpSendServerCommand(*::gpMpContext, command);
+        MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(), command);
         Terminal::instance().addLog("[PROCEDURAL] sent: " + command);
         return true;
     }

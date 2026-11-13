@@ -81,7 +81,6 @@ namespace {
 
 static bool deliverInboundToProbe(
     const TransportReceiveEvent& event,
-    std::unordered_map<uint32_t, ServerPlayer>& players,
     uint32_t serverTick,
     mimita::host::TransportDispatchV1* dispatch) {
     auto& runtime = mimita::host::HostRuntime::instance();
@@ -104,16 +103,67 @@ static bool deliverInboundToProbe(
     dispatch->message.payload = event.payload;
     dispatch->message.payloadSize = static_cast<std::uint32_t>(event.payloadBytes);
     dispatch->message.receivedAtMs = event.receivedAtMs;
+    dispatch->message.serverTick = serverTick;
 
     if (dispatch->message.payloadSize >= sizeof(PacketHeader)) {
         const auto* header =
             reinterpret_cast<const PacketHeader*>(dispatch->message.payload);
-        auto it = players.find(header->playerId);
-        if (it != players.end()) {
-            it->second.addr = event.remoteEndpoint;
-        }
+        dispatch->message.typeId = static_cast<std::uint32_t>(header->type);
     }
     return runtime.dispatchInbound(dispatch);
+}
+
+// Mirrors the resident liveness rule for a packet the game generation handled:
+// only a source-owned, non-HELLO player is refreshed.
+static void noteHandledInbound(
+    const TransportReceiveEvent& event,
+    std::unordered_map<uint32_t, ServerPlayer>& players) {
+    if (event.payloadBytes < static_cast<int>(sizeof(PacketHeader))) {
+        return;
+    }
+    const auto* header =
+        reinterpret_cast<const PacketHeader*>(event.payload);
+    if (header->type == PACKET_HELLO) {
+        return;
+    }
+    auto it = players.find(header->playerId);
+    if (it == players.end()) {
+        return;
+    }
+    const bool ownsSource = it->second.hasConnectionId
+        ? it->second.connectionId == event.connectionId
+        : (it->second.addr.sin_addr.s_addr ==
+               event.remoteEndpoint.sin_addr.s_addr &&
+           it->second.addr.sin_port == event.remoteEndpoint.sin_port);
+    if (ownsSource) {
+        it->second.lastHeardMs = nowMs();
+    }
+    it->second.addr = event.remoteEndpoint;
+}
+
+static bool deliverInboundToGame(const TransportReceiveEvent& event,
+                                 uint32_t serverTick) {
+    auto& runtime = mimita::host::HostRuntime::instance();
+    if (!runtime.probeEnabled() || !event.payload || event.payloadBytes <= 0) {
+        return false;
+    }
+    mimita::host::TransportMessageV1 message{};
+    message.structSize =
+        static_cast<std::uint32_t>(sizeof(mimita::host::TransportMessageV1));
+    message.version = mimita::host::kTransportCapabilityVersion;
+    message.session = 0;
+    message.peer = event.connectionId.value;
+    message.typeId = 0;
+    message.payload = event.payload;
+    message.payloadSize = static_cast<std::uint32_t>(event.payloadBytes);
+    message.receivedAtMs = event.receivedAtMs;
+    message.serverTick = serverTick;
+    if (message.payloadSize >= sizeof(PacketHeader)) {
+        const auto* header =
+            reinterpret_cast<const PacketHeader*>(message.payload);
+        message.typeId = static_cast<std::uint32_t>(header->type);
+    }
+    return runtime.deliverInbound(message);
 }
 
 static void sendProbeResponse(
@@ -157,6 +207,14 @@ static void sendProbeResponse(
         headerType = header->type;
         headerTick = header->tick;
         headerPlayer = header->playerId;
+    }
+    if (dispatch.response.typeId == PACKET_PING) {
+        static uint64_t lastPingResponseLogMs = 0;
+        const uint64_t now = nowMs();
+        if (now - lastPingResponseLogMs < 5000) {
+            return;
+        }
+        lastPingResponseLogMs = now;
     }
     StructuredLogger::instance().writeEvent(
         StructuredCategory::Network, StructuredLevel::Important,
@@ -868,6 +926,19 @@ int runServer(const LaunchOptions& options)
                 }
                 return false;
             });
+        transportAdapter.setEndpointSender(
+            [sock](std::uint32_t addressNetworkOrder,
+                   std::uint16_t portNetworkOrder, const void* data,
+                   std::size_t size) {
+                sockaddr_in target{};
+                target.sin_family = AF_INET;
+                target.sin_addr.s_addr = addressNetworkOrder;
+                target.sin_port = portNetworkOrder;
+                return sendto(sock, static_cast<const char*>(data),
+                              static_cast<int>(size), 0,
+                              reinterpret_cast<const sockaddr*>(&target),
+                              sizeof(target)) == static_cast<int>(size);
+            });
         mimita::host::HostRuntime::instance().setTransportAdapter(
             transportAdapter.adapter(), transportAdapter.owner());
     }
@@ -1284,9 +1355,28 @@ int runServer(const LaunchOptions& options)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            const bool probeInbound =
+                mimita::host::HostRuntime::instance().probeEnabled();
+            auto& transportAdapter =
+                mimita::host::HostServerTransportAdapter::instance();
+            if (probeInbound) {
+                transportAdapter.noteInbound(event.connectionId.value,
+                                             from.sin_addr.s_addr, from.sin_port);
+            }
             mimita::host::TransportDispatchV1 probeDispatch{};
-            if (deliverInboundToProbe(event, players, tick, &probeDispatch)) {
+            bool handledInbound = false;
+            if (deliverInboundToProbe(event, tick, &probeDispatch)) {
+                noteHandledInbound(event, players);
                 sendProbeResponse(sock, from, players, probeDispatch);
+                handledInbound = true;
+            } else if (deliverInboundToGame(event, tick)) {
+                noteHandledInbound(event, players);
+                handledInbound = true;
+            }
+            if (probeInbound) {
+                transportAdapter.clearInbound();
+            }
+            if (handledInbound) {
                 continue;
             }
             processServerPacket(sock, event, players, npcs, projectiles,
@@ -1865,6 +1955,19 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                 }
                 return false;
             });
+        transportAdapter.setEndpointSender(
+            [&state](std::uint32_t addressNetworkOrder,
+                     std::uint16_t portNetworkOrder, const void* data,
+                     std::size_t size) {
+                sockaddr_in target{};
+                target.sin_family = AF_INET;
+                target.sin_addr.s_addr = addressNetworkOrder;
+                target.sin_port = portNetworkOrder;
+                return sendto(state.sock, static_cast<const char*>(data),
+                              static_cast<int>(size), 0,
+                              reinterpret_cast<const sockaddr*>(&target),
+                              sizeof(target)) == static_cast<int>(size);
+            });
         mimita::host::HostRuntime::instance().setTransportAdapter(
             transportAdapter.adapter(), transportAdapter.owner());
     }
@@ -2069,10 +2172,28 @@ static void simulateOneServerTick(ListenServerState& state)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            const bool probeInbound =
+                mimita::host::HostRuntime::instance().probeEnabled();
+            auto& transportAdapter =
+                mimita::host::HostServerTransportAdapter::instance();
+            if (probeInbound) {
+                transportAdapter.noteInbound(event.connectionId.value,
+                                             from.sin_addr.s_addr, from.sin_port);
+            }
             mimita::host::TransportDispatchV1 probeDispatch{};
-            if (deliverInboundToProbe(event, state.players, state.tick,
-                                      &probeDispatch)) {
+            bool handledInbound = false;
+            if (deliverInboundToProbe(event, state.tick, &probeDispatch)) {
+                noteHandledInbound(event, state.players);
                 sendProbeResponse(state.sock, from, state.players, probeDispatch);
+                handledInbound = true;
+            } else if (deliverInboundToGame(event, state.tick)) {
+                noteHandledInbound(event, state.players);
+                handledInbound = true;
+            }
+            if (probeInbound) {
+                transportAdapter.clearInbound();
+            }
+            if (handledInbound) {
                 continue;
             }
             processServerPacket(state.sock, event, state.players, state.npcs,

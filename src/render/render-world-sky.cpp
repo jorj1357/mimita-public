@@ -1,4 +1,5 @@
 #include "render/render-world.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -39,8 +40,8 @@ void uploadSkyIfNeeded(const World& world)
         return;
 
     if (!gSkyVao) {
-        glGenVertexArrays(1, &gSkyVao);
-        glGenBuffers(1, &gSkyVbo);
+        gSkyVao = mimita::game::genVertexArray();
+        gSkyVbo = mimita::game::genBuffer();
     }
 
     glBindVertexArray(gSkyVao);

@@ -9,6 +9,8 @@
 */
 
 #include "combat/weapon-model-cache.h"
+#include "game/gl-resource-bridge-module.h"
+#include "game/job-bridge-module.h"
 
 #include <atomic>
 #include <cstddef>
@@ -38,7 +40,7 @@ GLuint uploadWeaponTexture(const tinygltf::Image& image)
         return 0;
 
     GLuint tex = 0;
-    glGenTextures(1, &tex);
+    tex = mimita::game::genTexture();
     if (!tex) return 0;
     glBindTexture(GL_TEXTURE_2D, tex);
 
@@ -54,7 +56,7 @@ GLuint uploadWeaponTexture(const tinygltf::Image& image)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    mimita::game::generateMipmap(GL_TEXTURE_2D);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
     return tex;
@@ -134,8 +136,7 @@ std::shared_ptr<PendingWeaponModel> WeaponModelCache::request(const std::string&
 
     mEntries.emplace(modelPath, Entry{asset});
 
-    std::thread t(weaponModelLoadThread, asset);
-    t.detach();
+    mimita::game::runDetached([asset] { weaponModelLoadThread(asset); }, "weapon-model-load");
     return asset;
 }
 
@@ -180,8 +181,8 @@ void WeaponModelCache::finalizeWeaponModelsIfReady()
         }
 
         // Upload the mesh to the GPU (shared by all viewmodels).
-        glGenVertexArrays(1, &asset->vao);
-        glGenBuffers(1, &asset->vbo);
+        asset->vao = mimita::game::genVertexArray();
+        asset->vbo = mimita::game::genBuffer();
         glBindVertexArray(asset->vao);
         glBindBuffer(GL_ARRAY_BUFFER, asset->vbo);
         glBufferData(GL_ARRAY_BUFFER, asset->mesh.verts.size() * sizeof(Vertex),

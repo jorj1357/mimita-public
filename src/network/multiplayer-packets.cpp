@@ -9,6 +9,8 @@
 */
 
 #include "network/multiplayer-context.h"
+#include "game/job-bridge-module.h"
+#include "game/socket-bridge-module.h"
 #include "network/community-match-client.h"
 #include "network/packets.h"
 #if defined(MIMITA_GAME_DLL)
@@ -142,6 +144,22 @@ bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
 
     ctx.lastPacketSentMs = nowMs();
 
+#if defined(MIMITA_GAME_DLL)
+    // The host owns the active session transport. Prefer CAP_TRANSPORT so this
+    // packet path stays in the replaceable game generation.
+    if (mimita::game::sendToServer(packetType, data, (std::size_t)bytes))
+    {
+        ++ctx.packetsSent;
+        if (godballClaim)
+        {
+            Debug::warn(Debug::Category::Weapons,
+                "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=1 reason=cap-transport packetsSent=%u",
+                (unsigned)packetType, ctx.packetsSent);
+        }
+        return true;
+    }
+#endif
+
     // Use ICE transport if available
     if (ctx.transport)
     {
@@ -157,20 +175,18 @@ bool mpSendPacket(MultiplayerContext& ctx, const void* data, int bytes)
         return sent;
     }
 
-    int sentBytes = sendto(ctx.sock, (const char*)data, bytes, 0,
-                           (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
-    if (sentBytes == SOCKET_ERROR)
-        printf("[NET TX ERROR] sendto failed error=%d\n", WSAGetLastError());
+    const bool sent = mimita::game::sendToSocket(ctx.sock, data, bytes, &ctx.serverAddr);
+    if (!sent)
+        printf("[NET TX ERROR] send failed\n");
     else
         printf("[NET TX] type=%d bytes=%d\n", ((PacketHeader*)data)->type, bytes);
-    const bool sent = sentBytes == bytes;
     if (sent)
         ++ctx.packetsSent;
     if (godballClaim)
     {
         Debug::warn(Debug::Category::Weapons,
-            "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=%d sentBytes=%d packetsSent=%u",
-            (unsigned)packetType, (int)sent, sentBytes, ctx.packetsSent);
+            "[GODBALL_DBG] CLAIM_SEND_RESULT type=%u sent=%d bytes=%d packetsSent=%u",
+            (unsigned)packetType, (int)sent, bytes, ctx.packetsSent);
     }
     return sent;
 }
@@ -470,7 +486,7 @@ void teardownPreviousSession(MultiplayerContext& ctx, DisconnectPolicy policy)
     }
     if (ctx.sock != INVALID_SOCKET)
     {
-        closesocket(ctx.sock);
+        mimita::game::closeSocket(ctx.sock);
         ctx.sock = INVALID_SOCKET;
     }
 
@@ -501,18 +517,18 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
 
     if (!netStartup())
     {
-        printf("[NET CONNECT] FATAL: WSAStartup failed\n");
+        printf("[NET CONNECT] FATAL: WSA init failed\n");
         return false;
     }
 
-    ctx.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ctx.sock = static_cast<SOCKET>(mimita::game::openUdpSocket());
     if (ctx.sock == INVALID_SOCKET)
     {
-        printf("[NET CONNECT] FATAL: socket() failed error=%d\n", WSAGetLastError());
+        printf("[NET CONNECT] FATAL: socket open failed error=%d\n", WSAGetLastError());
         netShutdown();
         return false;
     }
-    setNonBlocking(ctx.sock);
+    mimita::game::setSocketNonBlocking(ctx.sock);
     printf("[NET SOCKET] created sock=%d\n", (int)ctx.sock);
 
     {
@@ -520,13 +536,12 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
         localBind.sin_family = AF_INET;
         localBind.sin_addr.s_addr = htonl(INADDR_ANY);
         localBind.sin_port = htons(0);
-        if (bind(ctx.sock, (sockaddr*)&localBind, sizeof(localBind)) == SOCKET_ERROR)
-            printf("[NET CONNECT] WARNING: bind() port=0 failed error=%d (non-fatal)\n", WSAGetLastError());
+        if (!mimita::game::bindSocket(ctx.sock, &localBind))
+            printf("[NET CONNECT] WARNING: bind() port=0 failed (non-fatal)\n");
         else
         {
             sockaddr_in actual{};
-            int actualLen = sizeof(actual);
-            if (getsockname(ctx.sock, (sockaddr*)&actual, &actualLen) == 0)
+            if (mimita::game::getSocketLocalAddress(ctx.sock, &actual))
                 printf("[NET SOCKET] bound local endpoint=%s\n", addressToString(actual).c_str());
         }
     }
@@ -534,7 +549,7 @@ bool mpInit(MultiplayerContext& ctx, const std::string& address, const std::stri
     if (!parseAddress(address, ctx.serverAddr))
     {
         printf("[NET CONNECT] FATAL: invalid address: %s\n", address.c_str());
-        closesocket(ctx.sock);
+        mimita::game::closeSocket(ctx.sock);
         netShutdown();
         return false;
     }
@@ -632,11 +647,17 @@ void mpShutdown(MultiplayerContext& ctx)
         bye.header.type = PACKET_DISCONNECT;
         bye.header.tick = ctx.tick;
         bye.header.playerId = ctx.localPlayerId;
-        if (ctx.transport)
-            ctx.transport->send(&bye, sizeof(bye));
-        else if (ctx.sock != INVALID_SOCKET)
-            sendto(ctx.sock, (const char*)&bye, sizeof(bye), 0,
-                   (sockaddr*)&ctx.serverAddr, sizeof(ctx.serverAddr));
+        bool sent = false;
+#if defined(MIMITA_GAME_DLL)
+        sent = mimita::game::sendToServer(PACKET_DISCONNECT, &bye, sizeof(bye));
+#endif
+        if (!sent)
+        {
+            if (ctx.transport)
+                ctx.transport->send(&bye, sizeof(bye));
+            else if (ctx.sock != INVALID_SOCKET)
+                mimita::game::sendToSocket(ctx.sock, &bye, sizeof(bye), &ctx.serverAddr);
+        }
     }
 
     teardownPreviousSession(ctx, DisconnectPolicy::Leave);
@@ -996,7 +1017,7 @@ struct IceConnectJob
     std::mutex mutex;
     IceConnectStatus status;
     std::atomic<bool> cancel{false};
-    std::thread thread;
+    mimita::game::HostWorker worker;
 };
 
 IceConnectJob* gIceConnectJob = nullptr;
@@ -1068,7 +1089,7 @@ void iceConnectWorker(std::string roomCode, std::string playerName)
 
     if (!netStartup())
     {
-        printf("[ICE CONNECT] FATAL: WSAStartup failed\n");
+        printf("[ICE CONNECT] FATAL: WSA init failed\n");
         iceConnectFinish(job, false, "Network init failed");
         return;
     }
@@ -1472,7 +1493,9 @@ static bool startIceConnectInternal(MultiplayerContext& ctx,
     gIceConnectJob->status.roomCode = roomCode;
     gIceConnectJob->status.state = ConnectionState::NatNegotiating;
     gIceConnectJob->status.message = "Starting connection...";
-    gIceConnectJob->thread = std::thread(iceConnectWorker, roomCode, playerName);
+    gIceConnectJob->worker.start([roomCode, playerName] {
+        iceConnectWorker(roomCode, playerName);
+    }, "ice-connect");
     return true;
 }
 
@@ -1522,8 +1545,7 @@ IceConnectStatus mpIceConnectPoll()
         st = std::move(job->status);
     }
 
-    if (job->thread.joinable())
-        job->thread.join();
+    job->worker.release();
     delete job;
     gIceConnectJob = nullptr;
     return st;
@@ -1544,8 +1566,7 @@ void mpIceConnectCancel()
     if (!job)
         return;
     job->cancel.store(true, std::memory_order_relaxed);
-    if (job->thread.joinable())
-        job->thread.join();
+    job->worker.release();
     delete job;
     gIceConnectJob = nullptr;
 }
@@ -1765,15 +1786,19 @@ static bool sendReconnectRequest(MultiplayerContext& ctx)
     std::strncpy(packet.reconnectToken, ctx.reconnectToken.c_str(),
                  sizeof(packet.reconnectToken) - 1);
 
-    // Send through the active transport when available (fixes silent ICE loss
-    // where ctx.sock is INVALID_SOCKET); fall back to the raw UDP socket.
-    bool sent = ctx.transport &&
-        ctx.transport->send(&packet, sizeof(packet));
+    // Prefer CAP_TRANSPORT in the replaceable generation; then fall back to the
+    // active transport (fixes silent ICE loss where ctx.sock is INVALID_SOCKET),
+    // then the raw UDP socket.
+    bool sent = false;
+#if defined(MIMITA_GAME_DLL)
+    sent = mimita::game::sendToServer(PACKET_RECONNECT_REQUEST, &packet,
+                                     sizeof(packet));
+#endif
+    if (!sent && ctx.transport)
+        sent = ctx.transport->send(&packet, sizeof(packet));
     if (!sent && ctx.sock != INVALID_SOCKET)
     {
-        sent = sendto(ctx.sock, (const char*)&packet, sizeof(packet), 0,
-                      (sockaddr*)&ctx.serverAddr,
-                      sizeof(ctx.serverAddr)) != SOCKET_ERROR;
+        sent = mimita::game::sendToSocket(ctx.sock, &packet, sizeof(packet), &ctx.serverAddr);
     }
     if (!sent)
         return false;

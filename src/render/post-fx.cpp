@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "renderer/renderer.h"
+#include "game/gl-resource-bridge-module.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
 #include <cstdlib>
@@ -129,8 +130,8 @@ bool PostFX::initQuad(GLuint& vao, GLuint& vbo)
         -1.0f,  1.0f, 0.0f, 1.0f,
     };
 
-    glGenVertexArrays(1, &vao);
-    glGenBuffers(1, &vbo);
+    vao = mimita::game::genVertexArray();
+    vbo = mimita::game::genBuffer();
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
@@ -185,8 +186,8 @@ GLuint PostFX::createShader(const char* vertPath, const char* fragPath)
     GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
     if (!compile(vs, vsrc.c_str()) || !compile(fs, fsrc.c_str()))
     {
-        glDeleteShader(vs);
-        glDeleteShader(fs);
+        mimita::game::deleteShader(vs);
+        mimita::game::deleteShader(fs);
         return 0;
     }
 
@@ -201,12 +202,12 @@ GLuint PostFX::createShader(const char* vertPath, const char* fragPath)
         char log[1024];
         glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
         printf("[SHADER] link error: %s\n", log);
-        glDeleteProgram(prog);
+        mimita::game::deleteProgram(prog);
         prog = 0;
     }
 
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+    mimita::game::deleteShader(vs);
+    mimita::game::deleteShader(fs);
     return prog;
 }
 
@@ -244,14 +245,14 @@ bool PostFX::initFBO(int width, int height)
     // Clean up old
     if (mFbo)
     {
-        glDeleteFramebuffers(1, &mFbo);
-        glDeleteTextures(1, &mColorTex);
+        mimita::game::deleteFramebuffer(mFbo);
+        mimita::game::deleteTexture(mColorTex);
     }
 
     mFboW = width;
     mFboH = height;
 
-    glGenTextures(1, &mColorTex);
+    mColorTex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_2D, mColorTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -259,12 +260,12 @@ bool PostFX::initFBO(int width, int height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glGenFramebuffers(1, &mFbo);
+    mFbo = mimita::game::genFramebuffer();
     glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mColorTex, 0);
 
     GLuint depthRb = 0;
-    glGenRenderbuffers(1, &depthRb);
+    depthRb = mimita::game::genRenderbuffer();
     glBindRenderbuffer(GL_RENDERBUFFER, depthRb);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRb);
@@ -273,9 +274,9 @@ bool PostFX::initFBO(int width, int height)
     if (status != GL_FRAMEBUFFER_COMPLETE)
     {
         printf("[POSTFX] FBO incomplete: 0x%x\n", status);
-        glDeleteFramebuffers(1, &mFbo);
-        glDeleteTextures(1, &mColorTex);
-        glDeleteRenderbuffers(1, &depthRb);
+        mimita::game::deleteFramebuffer(mFbo);
+        mimita::game::deleteTexture(mColorTex);
+        mimita::game::deleteRenderbuffer(depthRb);
         mFbo = 0;
         return false;
     }

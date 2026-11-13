@@ -8,6 +8,7 @@
 #include <string>
 
 #include "game/entity-bridge-module.h"
+#include "game/transport-bridge-module.h"
 #include "network/packets.h"
 
 namespace mimita::game {
@@ -109,6 +110,40 @@ bool dispatchServerCommand(mimita::host::TransportDispatchV1* dispatch,
     dispatch->response.flags = 0;
     dispatch->response.payloadSize = static_cast<std::uint32_t>(sizeof(result));
     return true;
+}
+
+bool dispatchPingMessage(const mimita::host::TransportMessageV1* message,
+                         const mimita::host::HostServicesV1* services) {
+    if (!message || !message->payload ||
+        message->payloadSize < sizeof(MimitaNet::PingPacket)) {
+        return false;
+    }
+    const auto* header =
+        reinterpret_cast<const MimitaNet::PacketHeader*>(message->payload);
+    if (header->type != MimitaNet::PACKET_PING ||
+        header->magic != MimitaNet::PROTOCOL_MAGIC ||
+        header->version != MimitaNet::PROTOCOL_VERSION) {
+        return false;
+    }
+
+    MimitaNet::PingPacket pong =
+        *reinterpret_cast<const MimitaNet::PingPacket*>(message->payload);
+    pong.header.tick = message->serverTick;
+    const bool sent = sendToPeer(message->peer, MimitaNet::PACKET_PING, &pong,
+                                 sizeof(pong));
+    if (services && services->log) {
+        static std::uint64_t lastPingLogMs = 0;
+        if (message->receivedAtMs - lastPingLogMs >= 5000) {
+            lastPingLogMs = message->receivedAtMs;
+            char text[192] = {};
+            std::snprintf(text, sizeof(text),
+                          "game.transport.ping peer=%llu player=%u tick=%u sent=%d",
+                          (unsigned long long)message->peer, header->playerId,
+                          message->serverTick, sent ? 1 : 0);
+            services->log(services->hostUserData, 1, text);
+        }
+    }
+    return sent;
 }
 
 }  // namespace mimita::game

@@ -9,6 +9,7 @@
  // texture_store.cpp
 
 #include "texture-store.h"
+#include "game/gl-resource-bridge-module.h"
 #include "map/texture.h"
 #include "debug/debug-log.h"
 
@@ -58,7 +59,7 @@ GLuint TextureStore::getPath(const std::string& path, bool reload)
     if (it != map.end() && !reload)
         return it->second;
     if (it != map.end() && reload && it->second)
-        glDeleteTextures(1, &it->second);
+        mimita::game::deleteTexture(it->second);
     GLuint texture = loadTexture(normalized.c_str());
     map[key] = texture;
     return texture;

@@ -1,6 +1,7 @@
 #include "skybox.h"
 #include "camera.h"
 #include "renderer/renderer.h"
+#include "game/gl-resource-bridge-module.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -78,7 +79,7 @@ static GLuint compileShader(GLenum type, const std::string& src) {
         char log[1024];
         glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
         Debug::log(Debug::Category::Render, "[SKYBOX] Shader compile error: %s\n", log);
-        glDeleteShader(shader);
+        mimita::game::deleteShader(shader);
         return 0;
     }
     return shader;
@@ -88,7 +89,7 @@ static GLuint createProgram(const std::string& vertSrc, const std::string& fragS
     GLuint vs = compileShader(GL_VERTEX_SHADER, vertSrc);
     GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragSrc);
     if (!vs || !fs) {
-        glDeleteShader(vs); glDeleteShader(fs);
+        mimita::game::deleteShader(vs); mimita::game::deleteShader(fs);
         return 0;
     }
     GLuint prog = glCreateProgram();
@@ -101,11 +102,11 @@ static GLuint createProgram(const std::string& vertSrc, const std::string& fragS
         char log[1024];
         glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
         Debug::log(Debug::Category::Render, "[SKYBOX] Link error: %s\n", log);
-        glDeleteProgram(prog);
+        mimita::game::deleteProgram(prog);
         prog = 0;
     }
-    glDeleteShader(vs);
-    glDeleteShader(fs);
+    mimita::game::deleteShader(vs);
+    mimita::game::deleteShader(fs);
     return prog;
 }
 
@@ -127,17 +128,17 @@ void Skybox::init() {
 }
 
 void Skybox::destroyCubemap() {
-    if (mCubemapTex) { glDeleteTextures(1, &mCubemapTex); mCubemapTex = 0; }
+    if (mCubemapTex) { mimita::game::deleteTexture(mCubemapTex); mCubemapTex = 0; }
 }
 
 void Skybox::destroyMesh() {
-    if (mVAO) { glDeleteVertexArrays(1, &mVAO); mVAO = 0; }
-    if (mVBO) { glDeleteBuffers(1, &mVBO); mVBO = 0; }
+    if (mVAO) { mimita::game::deleteVertexArray(mVAO); mVAO = 0; }
+    if (mVBO) { mimita::game::deleteBuffer(mVBO); mVBO = 0; }
 }
 
 void Skybox::createMesh() {
-    glGenVertexArrays(1, &mVAO);
-    glGenBuffers(1, &mVBO);
+    mVAO = mimita::game::genVertexArray();
+    mVBO = mimita::game::genBuffer();
     glBindVertexArray(mVAO);
     glBindBuffer(GL_ARRAY_BUFFER, mVBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(gCubeVerts), gCubeVerts, GL_STATIC_DRAW);
@@ -147,7 +148,7 @@ void Skybox::createMesh() {
 }
 
 void Skybox::compileShader() {
-    if (mShader) { glDeleteProgram(mShader); mShader = 0; }
+    if (mShader) { mimita::game::deleteProgram(mShader); mShader = 0; }
     std::string vertSrc = readTextFile(shaderPath("skybox.vert"));
     std::string fragSrc = readTextFile(shaderPath("skybox.frag"));
     SKYDBG("compileShader: vert=%zu bytes frag=%zu bytes\n", vertSrc.size(), fragSrc.size());
@@ -258,7 +259,7 @@ void Skybox::loadCubemap() {
     destroyCubemap();
 
     GLuint tex = 0;
-    glGenTextures(1, &tex);
+    tex = mimita::game::genTexture();
     glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
 
     bool anyLoaded = false;
@@ -285,7 +286,7 @@ void Skybox::loadCubemap() {
     }
 
     if (!anyLoaded) {
-        glDeleteTextures(1, &tex);
+        mimita::game::deleteTexture(tex);
         mCubemapTex = 0;
         SKYDBG("ALL FACES FAILED\n");
         return;

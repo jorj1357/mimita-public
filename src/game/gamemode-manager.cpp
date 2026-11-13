@@ -9,6 +9,7 @@
 */
 
 #include "gamemode-manager.h"
+#include "game/resident-state-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -139,9 +140,9 @@ const char* GamemodeManager::bombHolderName(uint32_t localPlayerId, const Player
             return it->second.username.c_str();
         return "Player";
     }
-    if (c.bombOwnerType() == BOMB_OWNER_NPC && gpNpcSystem) {
+    if (c.bombOwnerType() == BOMB_OWNER_NPC && mimita::game::npcSystemPtr()) {
         uint32_t npcId = c.bombOwnerNpcIndex();
-        auto& npcs = gpNpcSystem->all();
+        auto& npcs = mimita::game::npcSystemPtr()->all();
         for (const Npc& npc : npcs) {
             if (npc.id == npcId) {
                 if (!npc.avatarName.empty())

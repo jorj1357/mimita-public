@@ -503,6 +503,26 @@ int main(int argc, char** argv)
             LogManager::instance().path().c_str());
     }
 
+    mimita::host::HostRuntime::instance().startFromEnvironment();
+    if (mimita::host::HostRuntime::instance().ownsGameFrame()) {
+        mimita::host::GameStartupV1 startup{};
+        startup.version = 1;
+        startup.structSize = sizeof(startup);
+        startup.width = 1024;
+        startup.height = 768;
+        startup.title = "mimita.exe";
+        if (mimita::host::HostRuntime::instance().bootstrapGame(startup)) {
+            while (!mimita::host::HostRuntime::instance().gameShouldClose()) {
+                mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, nullptr);
+                mimita::host::HostRuntime::instance().poll();
+            }
+            mimita::host::HostRuntime::instance().shutdown();
+            return 0;
+        }
+        mimita::host::HostRuntime::instance().shutdown();
+        return 1;
+    }
+
     Engine engine;
     gameInit(argc, argv, engine);
     engineSetRoomCodeFilePath(launchOptions.roomCodeFilePath);
@@ -546,7 +566,11 @@ int main(int argc, char** argv)
 
     while (engine.running())
     {
-        engineTick(engine);
+        if (mimita::host::HostRuntime::instance().ownsGameFrame()) {
+            mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, &engine);
+        } else {
+            engineTick(engine);
+        }
         mimita::host::HostRuntime::instance().poll();
 
         // Startup commands belong to the visible client terminal, not the

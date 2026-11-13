@@ -1,4 +1,5 @@
 #include "debug/debug-visuals.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -80,8 +81,8 @@ void flushDebugLines(const Camera& camera)
     if (!gLineVao)
     {
         MIMITA_GL_CLEAR_STAGE("flushDebugLines init");
-        MIMITA_GL_CALL(glGenVertexArrays(1, &gLineVao));
-        MIMITA_GL_CALL(glGenBuffers(1, &gLineVbo));
+        gLineVao = mimita::game::genVertexArray();
+        gLineVbo = mimita::game::genBuffer();
     }
 
     MIMITA_GL_CLEAR_STAGE("flushDebugLines");
@@ -570,8 +571,8 @@ void flushWeaponLines(const Camera& camera)
     if (!gWeaponLineVao)
     {
         MIMITA_GL_CLEAR_STAGE("flushWeaponLines init");
-        MIMITA_GL_CALL(glGenVertexArrays(1, &gWeaponLineVao));
-        MIMITA_GL_CALL(glGenBuffers(1, &gWeaponLineVbo));
+        gWeaponLineVao = mimita::game::genVertexArray();
+        gWeaponLineVbo = mimita::game::genBuffer();
     }
 
     MIMITA_GL_CLEAR_STAGE("flushWeaponLines");

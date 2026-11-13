@@ -9,6 +9,7 @@
 */
 
 #include "network/confirmed-damage-presentation.h"
+#include "game/resident-state-module.h"
 
 #include "audio/hitmarker-audio.h"
 #include "audio/audio.h"
@@ -114,12 +115,12 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     // One confirmed-damage owner for every victim: local victims get flinch and
     // camera blood, and all victims get the shared damage number/blood/impact
     // effects. This covers NPC hitscan, projectiles, Deathball, and grenades.
-    if (localVictim && gpPlayer) {
+    if (localVictim && mimita::game::playerPtr()) {
         const glm::vec3 incoming = glm::length(
             glm::vec3(event.knockX, event.knockY, event.knockZ)) > 0.001f
             ? glm::normalize(glm::vec3(event.knockX, event.knockY, event.knockZ))
             : glm::vec3(0.0f, 0.0f, -1.0f);
-        gpPlayer->applyHitFlinch(event.damage,
+        mimita::game::playerPtr()->applyHitFlinch(event.damage,
             glm::vec3(event.hitX, event.hitY, event.hitZ), incoming);
         EffectPartSystem::instance().spawnClientBloodFeedback(
             event.damage, glm::length(glm::vec3(event.knockX, event.knockY,
@@ -239,13 +240,13 @@ bool presentConfirmedDamage(MultiplayerContext& ctx,
     }
 
     // On kill, heal the local attacker to full health (matches server authority)
-    if (event.killed && gpPlayer)
+    if (event.killed && mimita::game::playerPtr())
     {
         // Server confirmed a kill: any pending predicted kill-heal for this
         // entity sticks (no rollback).
         mpConfirmPredictedKillHeal(ctx, event.targetPlayerId);
-        DeathSystem::instance().healKillerToFull(*gpPlayer, playerNameFor(ctx, event.attackerPlayerId));
-        printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, gpPlayer->currentHp);
+        DeathSystem::instance().healKillerToFull(*mimita::game::playerPtr(), playerNameFor(ctx, event.attackerPlayerId));
+        printf("[NET KILL HEAL] attacker=%u health=%d\n", event.attackerPlayerId, mimita::game::playerPtr()->currentHp);
 
         // The killfeed line is owned by the single authoritative
         // KillEventPacket so every viewer sees one identical entry. This path

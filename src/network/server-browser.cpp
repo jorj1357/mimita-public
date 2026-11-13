@@ -9,6 +9,8 @@
 */
 
 #include "network/server-browser.h"
+#include "game/job-bridge-module.h"
+#include "game/socket-bridge-module.h"
 #include "network/net_common.h"
 #include "network/packets.h"
 #include "network/coordinator-client.h"
@@ -52,13 +54,12 @@ ServerBrowserPing probeServerPing(const ServerListEntry& e)
     if (!parseAddress(host + ":" + std::to_string(e.port), addr))
         return out;
 
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    SOCKET s = static_cast<SOCKET>(mimita::game::openUdpSocket());
     if (s == INVALID_SOCKET)
         return out;
-    disableUdpConnReset(s);
 
-    DWORD timeoutMs = (DWORD)PING_TIMEOUT_MS;
-    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeoutMs, sizeof(timeoutMs));
+
+    mimita::game::setSocketRecvTimeout(s, PING_TIMEOUT_MS);
 
     PingPacket ping{};
     ping.header.magic = PROTOCOL_MAGIC;
@@ -68,14 +69,14 @@ ServerBrowserPing probeServerPing(const ServerListEntry& e)
     ping.header.playerId = 0;
     ping.clientTimeMs = nowMs();
 
-    sendto(s, (const char*)&ping, (int)sizeof(ping), 0,
-           (sockaddr*)&addr, sizeof(addr));
+    mimita::game::sendToSocket(s, &ping, sizeof(ping), &addr);
 
     char buf[256];
     sockaddr_in from{};
-    int fromLen = sizeof(from);
-    int n = recvfrom(s, buf, sizeof(buf), 0, (sockaddr*)&from, &fromLen);
-    closesocket(s);
+    std::uint32_t n = 0;
+    bool wouldBlock = false;
+    mimita::game::recvFromSocket(s, buf, sizeof(buf), &from, &n, &wouldBlock);
+    mimita::game::closeSocket(s);
 
     if (n >= (int)sizeof(PingPacket))
     {
@@ -190,7 +191,7 @@ void serverBrowserTick()
     gLastRefreshMs = now;
     gRefreshRequested = false;
     gRefreshRunning = true;
-    std::thread(refreshWorker).detach();
+    mimita::game::runDetached([] { refreshWorker(); }, "server-browser-refresh");
 }
 
 void serverBrowserRequestRefresh()

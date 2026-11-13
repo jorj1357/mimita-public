@@ -1,4 +1,5 @@
 #include "combat/weapon-audio.h"
+#include "game/resident-state-module.h"
 // 08 31 2026, 17 24
 /* purpose
 * Owns client-side network projectile prediction, adoption, correction, and rendering.
@@ -97,12 +98,12 @@ static void advanceClientVolumeTicks(int& remainingTicks, float& accumulator, fl
 
 static bool grenadeLineOfSight(const glm::vec3& from, const glm::vec3& to)
 {
-    if (!gpWorld) return true;
+    if (!mimita::game::worldPtr()) return true;
     const glm::vec3 delta = to - from;
     const float length = glm::length(delta);
     if (length <= 0.001f) return true;
     const glm::vec3 direction = delta / length;
-    for (const CollisionTriangle& triangle : gpWorld->collisionMesh.triangles) {
+    for (const CollisionTriangle& triangle : mimita::game::worldPtr()->collisionMesh.triangles) {
         float hitDistance = 0.0f;
         if (rayTriangle(from, direction, triangle, hitDistance) &&
             hitDistance < length - 0.15f)
@@ -1085,14 +1086,14 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                  {"damage_per_tick", grenade->damagePerTick},
                  {"interval_ticks", grenade->damageIntervalTicks},
                  {"damage_all_actors", !grenade->damagesEnemiesOnly}});
-        } else if (grenade->areaKind == AreaEffectKind::DarkBang && gpPlayer && gpCamera) {
-            const float distance = glm::length(position - gpCamera->pos);
+        } else if (grenade->areaKind == AreaEffectKind::DarkBang && mimita::game::playerPtr() && mimita::game::cameraPtr()) {
+            const float distance = glm::length(position - mimita::game::cameraPtr()->pos);
             if (distance <= grenade->maxEffectDistance) {
                 const glm::vec3 toGrenade = distance > 0.001f
-                    ? glm::normalize(position - gpCamera->pos) : gpCamera->front;
-                const float looking = glm::dot(glm::normalize(gpCamera->front), toGrenade);
+                    ? glm::normalize(position - mimita::game::cameraPtr()->pos) : mimita::game::cameraPtr()->front;
+                const float looking = glm::dot(glm::normalize(mimita::game::cameraPtr()->front), toGrenade);
                 const float lookFactor = looking >= 0.8f ? 1.0f : grenade->notLookingMultiplier;
-                const float lineOfSightFactor = grenadeLineOfSight(gpCamera->pos, position)
+                const float lineOfSightFactor = grenadeLineOfSight(mimita::game::cameraPtr()->pos, position)
                     ? 1.0f : grenade->noLineOfSightMultiplier;
                 const float distanceFactor = distance <= grenade->directEffectDistance
                     ? 1.0f
@@ -1106,10 +1107,10 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
                     lineOfSightFactor >= 0.5f;
                 const float exposure = insideEffect ? 1.0f
                     : lookFactor * distanceFactor * lineOfSightFactor;
-                gpPlayer->darkbangIntensity = std::max(
-                    gpPlayer->darkbangIntensity, exposure);
-                gpPlayer->darkbangTimer = std::max(
-                    gpPlayer->darkbangTimer, grenade->durationSeconds() * exposure);
+                mimita::game::playerPtr()->darkbangIntensity = std::max(
+                    mimita::game::playerPtr()->darkbangIntensity, exposure);
+                mimita::game::playerPtr()->darkbangTimer = std::max(
+                    mimita::game::playerPtr()->darkbangTimer, grenade->durationSeconds() * exposure);
                 if (!grenade->audioOnApply.empty()) {
                     const float previousDuck = getGlobalDuck();
                     setGlobalDuck(1.0f);
@@ -1181,11 +1182,11 @@ void mpProcessProjectileExplodeEventPacket(MultiplayerContext& ctx, const Projec
         ctx.predictedProjectileIds.erase(provisionalId);
     }
     bool removedLegacy = false;
-    if (gpWeapons)
+    if (mimita::game::weaponsPtr())
     {
-        removedLegacy = gpWeapons->removeAuthoritativeRocket(event->projectileId);
+        removedLegacy = mimita::game::weaponsPtr()->removeAuthoritativeRocket(event->projectileId);
         if (!removedLegacy)
-            removedLegacy = gpWeapons->removeLocalRocketByFireSerial(event->fireSerial);
+            removedLegacy = mimita::game::weaponsPtr()->removeLocalRocketByFireSerial(event->fireSerial);
     }
 
     // ── Terminal visuals: explosions reconcile; rifle bullets use a plain
@@ -1528,13 +1529,13 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
             event->targetSpawnGeneration == ctx.lastKnownSpawnGeneration);
         if (spawnGenOk)
         {
-            if (gpPlayer)
+            if (mimita::game::playerPtr())
             {
-                const int healthBefore = gpPlayer->currentHp;
-                const bool presentedBefore = gpPlayer->networkDeathPresented;
-                gpPlayer->currentHp = std::max(0, event->healthAfter);
-                gpPlayer->maxHp = std::max(gpPlayer->maxHp, gpPlayer->currentHp);
-                gpPlayer->dead = event->killed != 0 || gpPlayer->currentHp <= 0;
+                const int healthBefore = mimita::game::playerPtr()->currentHp;
+                const bool presentedBefore = mimita::game::playerPtr()->networkDeathPresented;
+                mimita::game::playerPtr()->currentHp = std::max(0, event->healthAfter);
+                mimita::game::playerPtr()->maxHp = std::max(mimita::game::playerPtr()->maxHp, mimita::game::playerPtr()->currentHp);
+                mimita::game::playerPtr()->dead = event->killed != 0 || mimita::game::playerPtr()->currentHp <= 0;
 
                 if (event->killed != 0)
                 {
@@ -1545,16 +1546,16 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                         "client applied authoritative local-player death", event->header.tick,
                         { {"actor_id", ctx.localPlayerId},
                           {"health_before", healthBefore},
-                          {"health_after", gpPlayer->currentHp},
+                          {"health_after", mimita::game::playerPtr()->currentHp},
                           {"network_death_presented_before", presentedBefore},
                           {"spawn_eligible", spawnEligible},
-                          {"position", {gpPlayer->pos.x, gpPlayer->pos.y, gpPlayer->pos.z}} },
+                          {"position", {mimita::game::playerPtr()->pos.x, mimita::game::playerPtr()->pos.y, mimita::game::playerPtr()->pos.z}} },
                         __FILE__, __LINE__, __FUNCTION__);
                     if (spawnEligible)
                     {
-                        gpPlayer->networkDeathPresented = true;
+                        mimita::game::playerPtr()->networkDeathPresented = true;
                         RagdollModeSystem::instance().spawnCorpse(
-                            *gpPlayer,
+                            *mimita::game::playerPtr(),
                             glm::vec3(event->knockX, event->knockY, event->knockZ),
                             "net_player_" + std::to_string(ctx.localPlayerId),
                             ctx.localPlayerId);
@@ -1665,12 +1666,12 @@ void mpProcessDamageConfirmedEventPacket(MultiplayerContext& ctx,
                     {"victim_hit_effects_enabled", victimHitEffectsEnabled},
                     {"hit_position", {hitPosition.x, hitPosition.y, hitPosition.z}},
                     {"hit_normal", {hitNormal.x, hitNormal.y, hitNormal.z}},
-                    {"camera_distance", gpCamera
-                        ? glm::length(hitPosition - gpCamera->pos) : -1.0f},
-                    {"camera_position", gpCamera
-                        ? nlohmann::json{{"x", gpCamera->pos.x},
-                                         {"y", gpCamera->pos.y},
-                                         {"z", gpCamera->pos.z}}
+                    {"camera_distance", mimita::game::cameraPtr()
+                        ? glm::length(hitPosition - mimita::game::cameraPtr()->pos) : -1.0f},
+                    {"camera_position", mimita::game::cameraPtr()
+                        ? nlohmann::json{{"x", mimita::game::cameraPtr()->pos.x},
+                                         {"y", mimita::game::cameraPtr()->pos.y},
+                                         {"z", mimita::game::cameraPtr()->pos.z}}
                         : nlohmann::json(nullptr)}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
@@ -1889,9 +1890,9 @@ void mpProcessProjectileDespawnEventPacket(MultiplayerContext& ctx, const Projec
     const bool removedVisual = ctx.networkProjectiles.erase(event->projectileId) > 0;
     const bool wasPredicted = ctx.predictedProjectileIds.erase(event->projectileId) > 0;
     bool removedLegacy = false;
-    if (gpWeapons)
+    if (mimita::game::weaponsPtr())
     {
-        removedLegacy = gpWeapons->removeAuthoritativeRocket(event->projectileId);
+        removedLegacy = mimita::game::weaponsPtr()->removeAuthoritativeRocket(event->projectileId);
     }
     printf("[PROJECTILE CLIENT DESPAWN] projectileId=%u weapon=%s reason=%u removedVisual=%d removedLegacy=%d predicted=%d\n",
            event->projectileId, networkWeaponTypeName(event->weapon),
@@ -2437,18 +2438,18 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                         // supersedes it (no double push).
                         const float kbStrength = cp(def, "knockbackStrength", 160.0f);
                         const float selfMul = cp(def, "selfKnockbackMultiplier", 1.0f);
-                        if (gpPlayer && !gpPlayer->dead)
+                        if (mimita::game::playerPtr() && !mimita::game::playerPtr()->dead)
                         {
-                            const Capsule cap = gpPlayer->getCapsule();
+                            const Capsule cap = mimita::game::playerPtr()->getCapsule();
                             const float selfH = cap.b.z - cap.a.z + 2.0f * cap.r;
                             const glm::vec3 center =
-                                gpPlayer->pos + glm::vec3(0.0f, 0.0f, selfH * 0.25f);
+                                mimita::game::playerPtr()->pos + glm::vec3(0.0f, 0.0f, selfH * 0.25f);
                             const glm::vec3 toSelf = center - explodePos;
                             const float selfDist = glm::length(toSelf);
                             if (selfDist < radius)
                             {
                                 glm::vec3 selfTarget;
-                                playerSplashBodyPoint(*gpPlayer, explodePos, selfTarget);
+                                playerSplashBodyPoint(*mimita::game::playerPtr(), explodePos, selfTarget);
                                 if (!losOn || clientSplashHasLineOfSight(world, explodePos, selfTarget))
                                 {
                                     const glm::vec3 dir = selfDist > 0.001f
@@ -2457,7 +2458,7 @@ if (step.type == ProjectileCollisionType::EntityImpact &&
                                     const float knockScale = (1.0f - t * t) * 0.85f + 0.15f;
                                     const glm::vec3 kb =
                                         dir * kbStrength * knockScale * selfMul;
-                                    gpPlayer->externalImpulse += kb;
+                                    mimita::game::playerPtr()->externalImpulse += kb;
                                     ctx.predictedSelfKnockbacks[projectile.fireSerial] = kb;
                                     printf("[PROJECTILE CLIENT PREDICTED SELF-KNOCKBACK] fireSerial=%u impulse=(%.2f,%.2f,%.2f)\n",
                                            projectile.fireSerial, kb.x, kb.y, kb.z);

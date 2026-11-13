@@ -14,11 +14,17 @@
 namespace mimita::game {
 
 void initializeHostTransport(const mimita::host::HostServicesV1* services);
+bool sendToServer(std::uint32_t typeId, const void* data, std::size_t size);
+bool sendToPeer(std::uint64_t peer, std::uint32_t typeId, const void* data,
+                std::size_t size);
 bool sendServerCommand(const char* command, std::size_t size);
 bool sendServerCommandResult(std::uint32_t playerId, std::int32_t accepted,
                              const char* status);
 bool sendToPlayer(std::uint32_t playerId, std::uint32_t typeId,
                   const void* data, std::size_t size);
+bool sendToEndpoint(std::uint32_t addressNetworkOrder,
+                    std::uint16_t portNetworkOrder, std::uint32_t typeId,
+                    const void* data, std::size_t size);
 bool sessionIsServerHost();
 
 }  // namespace mimita::game

@@ -1,5 +1,6 @@
 // 2026-11-05
 #include "procedural/infinite-world-runtime.h"
+#include "game/resident-state-module.h"
 
 #include <algorithm>
 #include <chrono>
@@ -30,7 +31,6 @@
 #include "world/streamed-world-layer.h"
 #include "worldgen/worldgen-library.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
 
@@ -1836,8 +1836,8 @@ void registerInfiniteWorldCommands()
                 std::string mapId = args[1];
                 if (mapId.rfind("infinite_", 0) != 0)
                     mapId = "infinite_" + mapId;
-                if (::gpMpContext && ::gpMpContext->active) {
-                    MimitaNet::mpSendServerCommand(*::gpMpContext,
+                if (::mimita::game::mpContextPtr() && ::mimita::game::mpContextPtr()->active) {
+                    MimitaNet::mpSendServerCommand(*::mimita::game::mpContextPtr(),
                                                    "changemap " + mapId);
                 } else if (MimitaNet::isServerHost()) {
                     MimitaNet::serverGamemodeRequestMapChange(mapId);

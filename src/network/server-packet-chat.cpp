@@ -101,12 +101,7 @@ void handleChatMessage(SOCKET sock, const char* buffer, int bytes,
     {
         if (playerEntry.first == chat->header.playerId)
             continue;
-        if (playerEntry.second.transport)
-            playerEntry.second.transport->send(chat, sizeof(ChatPacket));
-        else
-            sendto(sock, (const char*)chat, sizeof(ChatPacket), 0,
-                   (sockaddr*)&playerEntry.second.addr,
-                   sizeof(playerEntry.second.addr));
+        serverSendToPlayer(sock, playerEntry.second, chat, sizeof(ChatPacket));
         ++totalPacketsOut;
     }
 }
@@ -155,11 +150,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
         reject.senderAccountId = 0;
         std::strncpy(reject.utf8Message, "u cant send nothing, silly!", sizeof(reject.utf8Message) - 1);
         std::strncpy(reject.senderName, "server", sizeof(reject.senderName) - 1);
-        if (it->second.transport)
-            it->second.transport->send(&reject, sizeof(reject));
-        else
-            sendto(sock, (const char*)&reject, sizeof(reject), 0,
-                   (sockaddr*)&it->second.addr, sizeof(it->second.addr));
+        serverSendToPlayer(sock, it->second, &reject, sizeof(reject));
         ++totalPacketsOut;
         return;
     }
@@ -182,11 +173,7 @@ void handleChatRequestV2(SOCKET sock, const char* buffer, int bytes,
                       "too fast! u have %llu ticks left before u can chat again",
                       (unsigned long long)remainingTicks);
         std::strncpy(reject.senderName, "server", sizeof(reject.senderName) - 1);
-        if (it->second.transport)
-            it->second.transport->send(&reject, sizeof(reject));
-        else
-            sendto(sock, (const char*)&reject, sizeof(reject), 0,
-                   (sockaddr*)&it->second.addr, sizeof(it->second.addr));
+        serverSendToPlayer(sock, it->second, &reject, sizeof(reject));
         ++totalPacketsOut;
         return;
     }
@@ -258,11 +245,7 @@ void handleChatTypingStateRequest(SOCKET sock, const char* buffer, int bytes,
     {
         if (kv.first == req->header.playerId)
             continue;
-        if (kv.second.transport)
-            kv.second.transport->send(&event, sizeof(event));
-        else
-            sendto(sock, (const char*)&event, sizeof(event), 0,
-                   (sockaddr*)&kv.second.addr, sizeof(kv.second.addr));
+        serverSendToPlayer(sock, kv.second, &event, sizeof(event));
         ++totalPacketsOut;
     }
 }
@@ -435,11 +418,7 @@ void handleServerCommand(SOCKET sock, const sockaddr_in& from,
         res.accepted = accepted ? 1 : 0;
         std::memset(res.statusText, 0, sizeof(res.statusText));
         std::strncpy(res.statusText, status, sizeof(res.statusText) - 1);
-        if (it->second.transport)
-            it->second.transport->send(&res, sizeof(res));
-        else
-            sendto(sock, (const char*)&res, sizeof(res), 0,
-                   (sockaddr*)&from, sizeof(from));
+        serverSendToPlayer(sock, it->second, &res, sizeof(res));
         ++totalPacketsOut;
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network,

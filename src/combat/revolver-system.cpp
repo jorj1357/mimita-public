@@ -1,4 +1,6 @@
 #include "combat/revolver-system.h"
+#include "game/resident-state-module.h"
+#include "game/gl-resource-bridge-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -26,13 +28,12 @@
 #include "config/networking-config.h"
 #include "network/multiplayer-context.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace {
 
 bool serverAuthHits()
 {
-    if (!gpMpContext || !gpMpContext->active) return false;
+    if (!mimita::game::mpContextPtr() || !mimita::game::mpContextPtr()->active) return false;
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 
@@ -137,8 +138,8 @@ void RevolverSystem::loadHeldModel()
     mModelGrip[axis] = boundsMin[axis];
     mModelMuzzle[axis] = boundsMax[axis];
 
-    glGenVertexArrays(1, &mVao);
-    glGenBuffers(1, &mVbo);
+    mVao = mimita::game::genVertexArray();
+    mVbo = mimita::game::genBuffer();
     glBindVertexArray(mVao);
     glBindBuffer(GL_ARRAY_BUFFER, mVbo);
     glBufferData(GL_ARRAY_BUFFER, mHeldMesh.verts.size() * sizeof(Vertex), mHeldMesh.verts.data(), GL_STATIC_DRAW);

@@ -6,6 +6,7 @@
 * Does NOT run the fixed-step simulation tick or render viewmodels.
 */
 #include "weapon-fire.h"
+#include "game/resident-state-module.h"
 
 #include <algorithm>
 #include <cmath>
@@ -27,7 +28,6 @@
 #include "npc/npc.h"
 #include "ui/hitmarker.h"
 
-extern MimitaNet::MultiplayerContext* gpMpContext;
 
 namespace WeaponFire {
 
@@ -35,7 +35,7 @@ namespace WeaponFire {
 // feedback is suppressed and only server-confirmed hits show feedback.
 static bool serverAuthHits()
 {
-    if (!gpMpContext || !gpMpContext->active) return false;
+    if (!mimita::game::mpContextPtr() || !mimita::game::mpContextPtr()->active) return false;
     return NetworkingConfig::instance().data().serverAuthoritativeHits.enabled;
 }
 
@@ -350,10 +350,10 @@ void processRemotePlayerHit(
         ? remoteVictim->currentHp : totalDamage;
     const auto& prediction = NetworkingConfig::instance().data().prediction;
     bool predictedApplied = false;
-    if (gpMpContext && gpMpContext->active && remoteVictim && !serverAuthHits())
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active && remoteVictim && !serverAuthHits())
     {
         predictedApplied = MimitaNet::mpApplyPredictedDamage(
-            *gpMpContext, remoteTargetId, totalDamage, false);
+            *mimita::game::mpContextPtr(), remoteTargetId, totalDamage, false);
     }
     if (predictedApplied)
     {
@@ -374,8 +374,8 @@ void processRemotePlayerHit(
         remoteVictim->killedByWeapon = def.displayName;
         remoteVictim->lastDamagedBy = shooter.username;
         predictRemoteKill(*remoteVictim, shotDirection, "player", remoteTargetId);
-        if (gpMpContext && gpMpContext->active)
-            MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, remoteTargetId, false);
+        if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
+            MimitaNet::mpApplyPredictedKillHeal(*mimita::game::mpContextPtr(), remoteTargetId, false);
     }
 }
 
@@ -407,9 +407,9 @@ void processRemoteNpcHit(
         const int hpBeforePrediction = remoteNpc->currentHp;
         const auto& prediction = NetworkingConfig::instance().data().prediction;
         bool predictedApplied = false;
-        if (gpMpContext && gpMpContext->active && !serverAuthHits())
+        if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active && !serverAuthHits())
             predictedApplied = MimitaNet::mpApplyPredictedDamage(
-                *gpMpContext, remoteNpcTargetId, totalDamage, true);
+                *mimita::game::mpContextPtr(), remoteNpcTargetId, totalDamage, true);
         if (predictedApplied)
         {
             // Predict NPC knockback only after the damage overlay was accepted.
@@ -426,8 +426,8 @@ void processRemoteNpcHit(
             const uint64_t nowMsVal = static_cast<uint64_t>(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());
-            gpMpContext->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
-            gpMpContext->predictedNpcDamage[remoteNpcTargetId] = totalDamage;
+            mimita::game::mpContextPtr()->predictedNpcHitMs[remoteNpcTargetId] = nowMsVal;
+            mimita::game::mpContextPtr()->predictedNpcDamage[remoteNpcTargetId] = totalDamage;
             presentRemoteHit(def, hitEnd, normal, shotDirection, nearest, hitPart,
                              shooter.username, remoteNpc->username, totalDamage);
         }
@@ -440,8 +440,8 @@ void processRemoteNpcHit(
             remoteNpc->killedByWeapon = def.displayName;
             remoteNpc->lastDamagedBy = shooter.username;
             predictRemoteKill(*remoteNpc, result.end - result.start, "npc", remoteNpcTargetId);
-            if (gpMpContext && gpMpContext->active)
-                MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, remoteNpcTargetId, true);
+            if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
+                MimitaNet::mpApplyPredictedKillHeal(*mimita::game::mpContextPtr(), remoteNpcTargetId, true);
         }
         if (GetPlayerSettings().debugCombat)
             Debug::log(Debug::Category::Weapons,
@@ -479,9 +479,9 @@ void processRemoteBlastHitFeedback(
     const int hpBefore = target.currentHp;
 
     bool predictedApplied = false;
-    if (gpMpContext && gpMpContext->active && !serverAuthHits())
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active && !serverAuthHits())
         predictedApplied = MimitaNet::mpApplyPredictedDamage(
-            *gpMpContext, targetId, damage, isNpc);
+            *mimita::game::mpContextPtr(), targetId, damage, isNpc);
     if (!predictedApplied)
     {
         Debug::log(Debug::Category::Weapons,
@@ -495,8 +495,8 @@ void processRemoteBlastHitFeedback(
         const uint64_t nowMsVal = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
-        gpMpContext->predictedNpcHitMs[targetId] = nowMsVal;
-        gpMpContext->predictedNpcDamage[targetId] = damage;
+        mimita::game::mpContextPtr()->predictedNpcHitMs[targetId] = nowMsVal;
+        mimita::game::mpContextPtr()->predictedNpcDamage[targetId] = damage;
     }
     presentRemoteHit(def, hitEnd, normal, -normal, 1.0f, "torso",
                      shooterName, target.username, damage);
@@ -508,8 +508,8 @@ void processRemoteBlastHitFeedback(
         target.killedByWeapon = def.displayName;
         target.lastDamagedBy = shooterName;
         predictRemoteKill(target, dir, isNpc ? "npc" : "player", targetId);
-        if (gpMpContext && gpMpContext->active)
-            MimitaNet::mpApplyPredictedKillHeal(*gpMpContext, targetId, isNpc);
+        if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
+            MimitaNet::mpApplyPredictedKillHeal(*mimita::game::mpContextPtr(), targetId, isNpc);
     }
 }
 
@@ -761,20 +761,20 @@ void processMultiPelletRemoteNpcHit(
 
     // Predicted HP overlay for the remote NPC (instant feedback, corrected by
     // the server confirm). Mirrors the single-shot remote NPC path.
-    if (gpMpContext && gpMpContext->active)
+    if (mimita::game::mpContextPtr() && mimita::game::mpContextPtr()->active)
     {
         const uint64_t nowMsVal = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
         uint64_t& previousHitMs =
-            gpMpContext->predictedNpcHitMs[pelletRemoteNpcTargetId];
+            mimita::game::mpContextPtr()->predictedNpcHitMs[pelletRemoteNpcTargetId];
         if (previousHitMs == 0 || nowMsVal - previousHitMs > 50)
-            gpMpContext->predictedNpcDamage[pelletRemoteNpcTargetId] = 0;
+            mimita::game::mpContextPtr()->predictedNpcDamage[pelletRemoteNpcTargetId] = 0;
         previousHitMs = nowMsVal;
-        gpMpContext->predictedNpcDamage[pelletRemoteNpcTargetId] += totalDmg;
+        mimita::game::mpContextPtr()->predictedNpcDamage[pelletRemoteNpcTargetId] += totalDmg;
         if (NetworkingConfig::instance().data().prediction.predictDamage)
             MimitaNet::mpApplyPredictedDamage(
-                *gpMpContext, pelletRemoteNpcTargetId, totalDmg, true);
+                *mimita::game::mpContextPtr(), pelletRemoteNpcTargetId, totalDmg, true);
     }
 
     {

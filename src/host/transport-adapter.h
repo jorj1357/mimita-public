@@ -14,7 +14,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kTransportAdapterVersion = 1u;
+inline constexpr std::uint32_t kTransportAdapterVersion = 3u;
 
 struct TransportAdapterV1 {
     std::uint32_t version;
@@ -35,6 +35,17 @@ struct TransportAdapterV1 {
 
     // Optional connected peer count.
     std::uint32_t (*peer_count)(void* owner);
+
+    // Server -> exact source endpoint before the peer has a player record.
+    // Plain network-order address/port; the owner owns the socket.
+    bool (*send_to_endpoint)(void* owner, std::uint32_t addressNetworkOrder,
+                             std::uint16_t portNetworkOrder, const void* data,
+                             std::size_t size);
+
+    // Server -> an already-known transport peer. The owner resolves the peer
+    // to a player transport or the current inbound endpoint.
+    bool (*send_to_peer)(void* owner, PeerHandle peer, const void* data,
+                         std::size_t size);
 };
 
 }  // namespace mimita::host

@@ -1,4 +1,5 @@
 #include "render-world.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <cstddef>
@@ -31,7 +32,6 @@
 
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
-extern Camera* gpCamera;
 
 extern GLuint gVao;
 extern void uploadMeshIfNeeded(const World& world);
@@ -120,21 +120,21 @@ void registerWorldTextureCommands()
                     "[WORLD RENDER] usage: worldrender audit_faces <blockId>");
                 return;
             }
-            if (!gpWorld || !gpCamera) {
+            if (!mimita::game::worldPtr() || !mimita::game::cameraPtr()) {
                 Terminal::instance().addLog(
                     "[WORLD RENDER] no world or camera loaded");
                 return;
             }
             const std::string objectId = "block:" + args[1];
             const MapGLBObject* object = nullptr;
-            for (const MapGLBObject& candidate : gpWorld->mesh.objects) {
+            for (const MapGLBObject& candidate : mimita::game::worldPtr()->mesh.objects) {
                 if (candidate.id == objectId) {
                     object = &candidate;
                     break;
                 }
             }
             if (!object) {
-                for (const MapGLBObject& candidate : gpWorld->authoredObjects) {
+                for (const MapGLBObject& candidate : mimita::game::worldPtr()->authoredObjects) {
                     if (candidate.id == objectId) {
                         object = &candidate;
                         break;
@@ -153,7 +153,7 @@ void registerWorldTextureCommands()
             };
             mimita_world_rendering::FaceAuditV1 moduleFaces[6]{};
             const float cameraPosition[3] = {
-                gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z};
+                mimita::game::cameraPtr()->pos.x, mimita::game::cameraPtr()->pos.y, mimita::game::cameraPtr()->pos.z};
             const bool moduleHandled = ModuleHost::instance().worldRenderingAnalyzeFaces(
                 &object->transform[0][0], cameraPosition, moduleFaces, 6);
             const glm::mat3 normalMatrix =
@@ -178,7 +178,7 @@ void registerWorldTextureCommands()
                         glm::vec4(normals[face] * 0.5f, 1.0f));
                     normal = glm::normalize(normalMatrix * normals[face]);
                     cameraOutside =
-                        glm::dot(normal, gpCamera->pos - center) > 0.0f;
+                        glm::dot(normal, mimita::game::cameraPtr()->pos - center) > 0.0f;
                 }
                 if (cameraOutside)
                     ++outsideCount;
@@ -188,7 +188,7 @@ void registerWorldTextureCommands()
                 size_t count = 0;
                 const size_t expectedFirst =
                     object->vertexFirst + static_cast<size_t>(face) * 6;
-                for (const Mesh::Batch& batch : gpWorld->mesh.batches) {
+                for (const Mesh::Batch& batch : mimita::game::worldPtr()->mesh.batches) {
                     if (batch.first < object->vertexFirst ||
                         batch.first >= object->vertexFirst + object->vertexCount)
                         continue;
@@ -226,7 +226,7 @@ void registerWorldTextureCommands()
                                {"shader_program", gRenderer ? gRenderer->shaderProgram : 0},
                                {"vertex_first", object->vertexFirst},
                                {"vertex_count", object->vertexCount},
-                               {"camera_position", {gpCamera->pos.x, gpCamera->pos.y, gpCamera->pos.z}},
+                               {"camera_position", {mimita::game::cameraPtr()->pos.x, mimita::game::cameraPtr()->pos.y, mimita::game::cameraPtr()->pos.z}},
                                {"faces_outside_camera", outsideCount},
                                {"faces", faces}},
                 __FILE__, __LINE__, __FUNCTION__);

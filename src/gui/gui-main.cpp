@@ -9,7 +9,9 @@
 */
 
 #include "gui-main.h"
+#include "game/resident-state-module.h"
 #include "game/transport-session-bridge-module.h"
+#include "game/socket-bridge-module.h"
 #include "menus/main-menu.h"
 #include "menus/menu-avatar-preview.h"
 #include "menus/play-menu.h"
@@ -311,31 +313,23 @@ static uint16_t selectServerPort(uint16_t preferredPort)
         return 0;
 
     auto probe = [](uint16_t requestedPort, uint16_t& selectedPort) {
-        SOCKET socketHandle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        SOCKET socketHandle = static_cast<SOCKET>(mimita::game::openUdpSocket());
         if (socketHandle == INVALID_SOCKET)
             return false;
 
-        BOOL exclusive = TRUE;
-        const bool exclusiveSet = setsockopt(
-            socketHandle, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
-            reinterpret_cast<const char*>(&exclusive), sizeof(exclusive)) == 0;
+        const bool exclusiveSet = mimita::game::setSocketExclusive(socketHandle, true);
         sockaddr_in address{};
         address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_ANY);
         address.sin_port = htons(requestedPort);
-        bool available = exclusiveSet &&
-            bind(socketHandle, reinterpret_cast<sockaddr*>(&address),
-                 sizeof(address)) == 0;
+        bool available = exclusiveSet && mimita::game::bindSocket(socketHandle, &address);
         if (available && requestedPort == 0)
         {
-            int addressLength = sizeof(address);
-            available = getsockname(
-                socketHandle, reinterpret_cast<sockaddr*>(&address),
-                &addressLength) == 0;
+            available = mimita::game::getSocketLocalAddress(socketHandle, &address);
         }
         if (available)
             selectedPort = ntohs(address.sin_port);
-        closesocket(socketHandle);
+        mimita::game::closeSocket(socketHandle);
         return available;
     };
 
@@ -1293,8 +1287,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                     DuelQueue::defaultProfileId(),
                     AuthSystem::instance().displayName(),
                     "", GamemodeMapPool::instance().list());
-                extern GameState* gpGameState;
-                if (gpGameState) *gpGameState = GAME_PLAYING;
+                if (mimita::game::gameStatePtr()) *mimita::game::gameStatePtr() = GAME_PLAYING;
             }
             else if (r.goBombTag)
             {
@@ -1340,8 +1333,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gPendingDuelConfig.duelLengthSeconds = cfg.duelLengthSeconds;
                 gPendingDuelConfig.npcDifficulty = cfg.npcDifficulty;
 
-                extern GameState* gpGameState;
-                if (gpGameState) *gpGameState = GAME_PLAYING;
+                if (mimita::game::gameStatePtr()) *mimita::game::gameStatePtr() = GAME_PLAYING;
             }
             else if (action == CompetitiveMenuAction::GoBack)
             {
@@ -1378,8 +1370,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gPendingDuelConfig.duelLengthSeconds = cfg.duelLengthSeconds;
                 gPendingDuelConfig.npcDifficulty = cfg.npcDifficulty;
 
-                extern GameState* gpGameState;
-                if (gpGameState) *gpGameState = GAME_PLAYING;
+                if (mimita::game::gameStatePtr()) *mimita::game::gameStatePtr() = GAME_PLAYING;
                 gGuiMenuState = GUI_MENU_MAIN;
             }
             else if (action == CompetitiveResultAction::ExitToMenu)
@@ -1798,16 +1789,14 @@ void guiMain(GLFWwindow* win, GameState& state)
                 gGuiMenuState = GUI_MENU_MAIN;
             }
             if (r.goApply) {
-                extern Player* gpPlayer;
-                if (gpPlayer) {
-                    AvatarSystem::instance().applyToPlayer(*gpPlayer, true);
+                if (mimita::game::playerPtr()) {
+                    AvatarSystem::instance().applyToPlayer(*mimita::game::playerPtr(), true);
                     Terminal::instance().addLog("[AVATAR] Applied to player");
                 }
             }
             if (r.goSave) {
-                extern Player* gpPlayer;
-                if (gpPlayer) {
-                    AvatarSystem::instance().applyToPlayer(*gpPlayer, true);
+                if (mimita::game::playerPtr()) {
+                    AvatarSystem::instance().applyToPlayer(*mimita::game::playerPtr(), true);
                     Terminal::instance().addLog("[AVATAR] Saved and applied to player");
                 }
             }

@@ -16,6 +16,7 @@
 #endif
 
 #include "debug/structured-log.h"
+#include "game/job-bridge-module.h"
 #include "impact/destructible-geometry.h"
 #include "impact/impact-system.h"
 #include "physics/physical-entity.h"
@@ -46,7 +47,7 @@ struct DestructibleAsyncCutWorker::Impl
     std::deque<uint32_t> order;
     std::vector<Done> completed;
     bool stop = false;
-    std::thread thread;
+    mimita::game::HostWorker worker;
 };
 
 DestructibleAsyncCutWorker& DestructibleAsyncCutWorker::instance()
@@ -58,7 +59,7 @@ DestructibleAsyncCutWorker& DestructibleAsyncCutWorker::instance()
 DestructibleAsyncCutWorker::DestructibleAsyncCutWorker()
     : mImpl(new Impl())
 {
-    mImpl->thread = std::thread([this] {
+    mImpl->worker.start([this] {
 #ifdef _WIN32
         // Boolean replays can take tens of ms; keep them below the render thread.
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
@@ -93,7 +94,7 @@ DestructibleAsyncCutWorker::DestructibleAsyncCutWorker()
             impl.completed.push_back(
                 {job.networkId, job.cutCount, std::move(result), workerMs});
         }
-    });
+    }, "destructible-async-cut");
 }
 
 DestructibleAsyncCutWorker::~DestructibleAsyncCutWorker()
@@ -103,8 +104,7 @@ DestructibleAsyncCutWorker::~DestructibleAsyncCutWorker()
         mImpl->stop = true;
     }
     mImpl->cv.notify_all();
-    if (mImpl->thread.joinable())
-        mImpl->thread.join();
+    mImpl->worker.release();
     delete mImpl;
 }
 

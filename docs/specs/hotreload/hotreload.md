@@ -17,8 +17,8 @@ deepseek v4.1 flash
 > the host stayed on the old generation; `admincmds` still worked. Items 2-8
 > remain open; item 2 is partially wired because the host already polls
 > `build/game/ready.json`. Link pass update: the whole-game candidate now links
-> at generation 51 with **0 undefined / 0 unique** and 0 duplicate definitions
-> (`build/game/generation-51/game-g51.dll`, export
+> at generation 68 with **0 undefined / 0 unique** and 0 duplicate definitions
+> (`build/game/generation-67/game-g67.dll`, export
 > `GetMimitaGameModuleV1`). GLAD is 0 via a transitional diagnostic
 > `src/glad.c` object; audio, globals, Renderer lifecycle, replay jobs, ICE,
 > listen-server session, and authored-rebuild references are 0. CAP_RENDER must
@@ -31,9 +31,18 @@ deepseek v4.1 flash
 >   keep the same process, connection, player, and position/tick continuity.
 >   Exact `admincmds` is the first authoritative hot command.
 > - Production coverage: **0% of ordinary game code runs from `game.dll` in
->   production today**. All 598 game sources still run in the EXE. The whole-game
->   candidate compiles and links with **0 undefined / 0 unique** symbols, but it
->   has not been loaded as the full runtime. Static gate: **232 violations / 61
+>   production today**. All 600 game sources still run in the EXE. The whole-game
+>   candidate compiles and links with **0 undefined / 0 unique** symbols. The
+>   rebuilt host loaded and initialized generation 68 in a dedicated server
+>   (PID 13028, `game.host.probe.started`, ABI 1). The host has a barrier-
+>   guarded `driveTick`/`driveRender`/`driveFrame` path and `CAP_RENDER` has
+>   host-executed buffer/texture/attribute/uniform/draw commands. The first
+>   host-owned-frame client attempt crashed in the menu with an unhandled
+>   exception (`UnhandledExceptionFilter` / `MessageBoxA` stack). A full
+>   `main-init`/`main-systems` ownership move was attempted and reverted: it
+>   reintroduced 33 bootstrap-global/resident dependencies and broke link 0.
+>   `frameCapable` is held at 0; the driver is not used by the legacy loop and
+>   the production cutover is not running. Static gate: **0 violations / 0
 >   files**.
 > - Networking: the opaque envelope and command response work; most packet
 >   handlers are still resident.
@@ -190,6 +199,41 @@ Initially, ordinary game implementation `.cpp` files are assigned to one `game.d
 Function signatures and C++ types inside `game.dll` may change freely when the affected code is rebuilt together. Across the resident-host/game boundary, use a versioned ABI with size/version fields, plain data, handles, and explicit ownership. Do not pass STL containers, exceptions, allocator-owned objects, or pointers to short-lived game-DLL memory across that boundary.
 
 Adding or changing a field such as position, velocity, or health is a game-owned schema change plus migration. It should not alter a fixed resident C++ struct. The resident host preserves the record; the candidate game generation interprets or migrates it.
+
+### 2.3.1 Bootstrap/device versus hot Engine ownership (2026-11-13)
+
+The owner decision is explicit: **the replaceable `game.dll` owns the Engine
+controller and ordinary game bootstrap; the resident host owns process
+bootstrap, the window/GL device, the Renderer instance, OS services, and the
+loader/barrier.**
+
+- **Resident host:** process entry, DLL loader, generation barrier, window and
+  GL context, `Renderer` device, OS event pump, sockets/ICE, audio device,
+  workers, logging, and resident state.
+- **Hot game DLL:** the single `Engine` object and `engine.cpp`, `gameInit`,
+  `gameInitSubsystems`, input/UI policy and callback handlers, world/gameplay
+  logic, frame policy, and render submission.
+- The game Engine **borrows** the resident `Renderer*`/window context. It must
+  not construct, destroy, or replace the device.
+- The host must not construct an `Engine` or call `gameInit` when DLL frame
+  ownership is active. Two Engines or two device owners is a defect.
+- The host owns the actual GLFW/OS callback entry points. It forwards bounded
+  input events to the active generation through generation-stamped callbacks;
+  the DLL must not leave raw callback function pointers behind after unload.
+- The host owns the frame clock and safe-point call. It calls the generation's
+  `tick` and `render`; the generation owns simulation stepping and render
+  policy. The host checks `should_close` through the resident device.
+- The Engine object is generation-scoped: a swap destroys the old Engine and
+  creates a new one against the same resident device. State that must survive is
+  resident or explicitly migrated; Engine-local state that is safe to reset is
+  reset and documented.
+- `GameModuleV1` exposes the startup/bootstrap handshake and a frame-running
+  check. A candidate without a usable bootstrap or frame entry is not frame
+  capable and must not take ownership of the legacy loop.
+
+The `frameCapable` flag is true only after the DLL bootstrap can run without a
+host-constructed Engine and the first menu/gameplay frame proof passes. Until
+then the legacy host path remains authoritative.
 
 ### 2.4 Multiplayer and graphics
 
@@ -595,8 +639,8 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 760 `.cpp` rows at manifest revision `317b312698c34b2af9934dcfbd19031f375d74ff885295c7680305f49416a42d`; 672 rows are active in their owner build. The canonical owner map resolves all 760 `.cpp` rows: game 598, resident 23, bootstrap 4, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (598 game sources) and links at generation 51 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists, but it has not been loaded or cut over. The chosen design keeps the resident host in the EXE.
+Current measured status: 773 `.cpp` rows at manifest revision `e9a3aa3ff807d6872c8cb773f8df3cdf3098c3738e9c31ddb9f8ba71eff8f54d`; 685 rows are active in their owner build. The canonical owner map resolves all 770 `.cpp` rows: game 603, resident 28, bootstrap 4, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (603 game sources) and links at generation 75 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The rebuilt host loaded and initialized generation 75 in a dedicated server (PID 13028, run `20261113_090828`), but it has not run the full game loop or cut over. The chosen design keeps the resident host in the EXE.
 
 Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
@@ -686,7 +730,7 @@ Rules:
 - `devscripts/live.py` watches sources and headers, debounces/coalesces saves, pins one coherent revision through `devscripts/source_manifest.py`, spawns the worker in the background, and publishes `build/game/ready.json` for safe-point activation.
 - Unknown ownership stops with a diagnostic; compile failure keeps the active generation.
 - Acceptance: one coherent revision per build; add/remove/rename and header changes rebuild the right translation units; no compiler invocation from the manifest tool.
-- Diagnostic status (2026-11-13): all 598 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges + whole-game entry/dispatch) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the global/replay/audio/RenderDevice/diagnostics/ICE/TransportSession/AuthoredRebuild bridges it links at generation 51 with 0 undefined / 0 unique and 0 duplicate definitions; all previously listed families are 0. A transitional `src/glad.c` object is linked only for the diagnostic DLL; CAP_RENDER remains the cutover-safe replacement. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
+- Diagnostic status (2026-11-13): all 603 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges + whole-game entry/dispatch) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the global/replay/audio/RenderDevice/diagnostics/ICE/TransportSession/AuthoredRebuild bridges it links at generation 68 with 0 undefined / 0 unique and 0 duplicate definitions; all previously listed families are 0. Static gate is now **0/0**. Stage 2 resident state covers world-loaded/map/mode, player/world/NPC/weapons/multiplayer-context, camera, game state, chat history, freecam/editor/death/selected-object, duel config, replay pointers/collections, command binds, and debug scalars. The compatibility bridge was removed. The host has a barrier-guarded whole-game frame driver and `CAP_RENDER` command execution; frame ownership was attempted in a client and crashed in the menu. Moving `main-init`/`main-systems` ownership to the game also reintroduced 33 bootstrap/resident link references, so the ownership switch was reverted and `frameCapable` remains off. Game-owned `DuelManager`/`GamemodeManager`/`FramePacer` objects remain in a small game module. Client/direct socket paths now use opaque handles; server packet-send call sites still need the final CAP_TRANSPORT pass. GL create/delete is host-owned, but draw code still uses raw GL ids; full `CAP_RENDER` draw-state ownership remains. A transitional `src/glad.c` object is linked only for the diagnostic DLL; CAP_RENDER remains the cutover-safe replacement. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
 
 Foundation batch status (2026-11-12): the host ABI now declares `CAP_ENTITY`,
 `CAP_RENDER`, `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES`. The resident host
@@ -714,12 +758,12 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | **0 undefined / 0 unique** (generation 51) | 0 undefined |
-| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved | full-game swap + coordinator |
+| Whole-game link | **0 undefined / 0 unique** (generation 75) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 75 loaded/initialized | full-game tick/render + swap + coordinator |
 | State continuity | position/tick continuity in probe | resident records + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
 | Render/world | ABI skeleton | `CAP_RENDER`/`CAP_WORLD` + GLAD path |
-| Static gate | 235 violations | 0 |
+| Static gate | **0 violations / 0 files** | 0 |
 | Cutover | not started | 584 game sources moved |
 | Runtime campaign | not started | add/remove/edit/rollback proof |
 

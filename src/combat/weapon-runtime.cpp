@@ -136,26 +136,11 @@ void WeaponRuntimeHelper::tickReload(WeaponRuntime& rt, const WeaponDefinition& 
 
 #include <filesystem>
 
-static FILE* gSpawnDebugFile = nullptr;
-static void openSpawnDebugLog()
-{
-    if (gSpawnDebugFile) return;
-    std::error_code ec;
-    std::filesystem::create_directories("logs", ec);
-    gSpawnDebugFile = fopen("logs/spawn_weapon_debug.txt", "a");
-    if (gSpawnDebugFile)
-        fprintf(gSpawnDebugFile, "=== spawn weapon state log ===\n");
-}
-static void closeSpawnDebugLog()
-{
-    if (gSpawnDebugFile) { fclose(gSpawnDebugFile); gSpawnDebugFile = nullptr; }
-}
 
 void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller)
 {
     MIMITA_PERF_SCOPE("WeaponRuntime::ResetAllForSpawn");
     if (DebugConfig::DEBUG_WEAPON_SPAWN_LOG) {
-        openSpawnDebugLog();
         const WeaponRegistry& reg = WeaponRegistry::instance();
         for (auto& kv : player.weaponRuntimes)
         {
@@ -172,16 +157,14 @@ void resetAllWeaponRuntimesForSpawn(Player& player, const char* caller)
 
             rt.reset(*def);
 
-            if (gSpawnDebugFile)
-            {
-                fprintf(gSpawnDebugFile, "Player/NPC weapon=%s caller=%s\n", weaponId.c_str(), caller);
-                fprintf(gSpawnDebugFile, "  Before: ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
-                        oldAmmo, oldReserve, (int)oldReloading, oldReloadTimer, oldCooldown);
-                fprintf(gSpawnDebugFile, "  After:  ammo=%d reserve=%d reloading=%d reloadTimer=%.2f cooldown=%.2f\n",
-                        rt.currentAmmo, rt.reserveAmmo, (int)rt.isReloading, rt.reloadTimer, rt.fireCooldown);
-            }
+            Debug::log(Debug::Category::Weapons,
+                       "[SPAWN WEAPON] %s caller=%s before ammo=%d/%d reloading=%d timer=%.2f cooldown=%.2f "
+                       "after ammo=%d/%d reloading=%d timer=%.2f cooldown=%.2f\n",
+                       weaponId.c_str(), caller, oldAmmo, oldReserve,
+                       (int)oldReloading, oldReloadTimer, oldCooldown,
+                       rt.currentAmmo, rt.reserveAmmo, (int)rt.isReloading,
+                       rt.reloadTimer, rt.fireCooldown);
         }
-        closeSpawnDebugLog();
     } else {
         const WeaponRegistry& reg = WeaponRegistry::instance();
         for (auto& kv : player.weaponRuntimes)

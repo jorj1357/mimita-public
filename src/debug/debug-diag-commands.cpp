@@ -1,4 +1,5 @@
 #include "debug/debug-diag.h"
+#include "game/resident-state-module.h"
 
 #include <cstdio>
 #include <cstring>
@@ -390,11 +391,11 @@ void registerDiagnosticCommands()
         "collision_state", "Show current collision state (pos, vel, grounded, contacts)",
         "collision_state",
         [](const std::vector<std::string>&) {
-            if (!gpPlayer) {
+            if (!mimita::game::playerPtr()) {
                 Terminal::instance().addLog("[ERROR] No player available");
                 return;
             }
-            Terminal::instance().addLog(collisionStateSummary(*gpPlayer));
+            Terminal::instance().addLog(collisionStateSummary(*mimita::game::playerPtr()));
         }
     });
 

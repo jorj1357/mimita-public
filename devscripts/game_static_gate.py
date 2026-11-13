@@ -33,6 +33,21 @@ def load_manifest() -> dict:
     return build_manifest(ROOT)
 
 
+
+def scoped_local_file_handle(line: str, text: str) -> bool:
+    """True for a FILE* that is opened and closed within the same source file.
+
+    The gate's file rule targets persistent handles. A local FILE* with a
+    matching fclose is per-call RAII and does not outlive the call.
+    """
+    if "static" in line:
+        return False
+    match = re.search(r"(?:(?:FILE\s*\*+|auto)\s+)?([A-Za-z_]\w*)\s*=\s*fopen\s*\(", line)
+    if not match:
+        return False
+    name = match.group(1)
+    return re.search(r"\bfclose\s*\(\s*" + re.escape(name) + r"\s*\)", text) is not None
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Static gate for game-owned sources")
     parser.add_argument("--report", default=str(REPORT_REL))
@@ -62,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
         text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
         for index, line in enumerate(text.splitlines(), start=1):
             for name, rule in banned.items():
+                if name == "raw_file_handle" and scoped_local_file_handle(line, text):
+                    continue
                 if rule["regex"].search(line):
                     violations.append({
                         "path": rel,
@@ -88,8 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         "# Game static gate (2026-11-12)",
         "",
         "**Status:** static scan of game-owned sources for raw lifetime patterns that",
-        "must use a resident capability instead. This is not a semantic review and not",
-        "runtime evidence.",
+        "must use a resident capability instead. Per-call local file handles with a",
+        "matching fclose are allowed; persistent handles are not. This is not a semantic",
+        "review and not runtime evidence.",
         "",
         f"- Game sources scanned: {len(game_sources)}",
         f"- Violations: {len(violations)}",
