@@ -96,6 +96,7 @@ enum class IndexType : std::uint32_t {
 enum class TextureFormat : std::uint32_t {
     RGBA = 1,
     RGB,
+    RGBA8,
     Depth,
     Depth24,
 };
@@ -103,6 +104,7 @@ enum class TextureFormat : std::uint32_t {
 enum class PixelFormat : std::uint32_t {
     RGBA = 1,
     RGB,
+    RG,
     Red,
     Depth,
 };
@@ -176,6 +178,11 @@ enum class FramebufferBuffer : std::uint32_t {
     Color1,
     Color2,
     Color3,
+};
+
+enum class PixelStoreParameter : std::uint32_t {
+    UnpackAlignment = 1,
+    UnpackRowLength,
 };
 
 }  // namespace mimita::render

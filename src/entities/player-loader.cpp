@@ -27,6 +27,9 @@
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
 #include "entities/actor-body.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 
 // Global avatar bodypart overrides, set by AvatarSystem before loadModel.
 // Used by applyBodypartConfigOverrides to layer per-avatar overrides on
@@ -119,17 +122,22 @@ unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& a
 
 } // anonymous namespace
 
-static GLuint getOpaqueWhiteTexture() {
-    static GLuint tex = 0;
+static std::uint32_t getOpaqueWhiteTexture() {
+    static std::uint32_t tex = 0;
     if (tex) return tex;
     tex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, tex);
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
     unsigned char white[] = {255, 255, 255, 255};
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  1, 1, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte, white);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::Nearest);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Nearest);
     return tex;
 }
 
@@ -860,7 +868,7 @@ void appendNodeRenderMesh(
 // layers. Shrinking toward the part's node-local collider center keeps the
 // layer inside the skin shell without requiring authored inner geometry.
 void buildInnerLayerMesh(const Mesh& source, const Collider& collider,
-                         float scale, GLuint texture, Mesh& out)
+                         float scale, std::uint32_t texture, Mesh& out)
 {
     out = source;
     const glm::vec3 center = (collider.localMin + collider.localMax) * 0.5f;
@@ -887,8 +895,8 @@ void buildInnerLayerMesh(const Mesh& source, const Collider& collider,
 static void buildPlayerPartLayerMeshes(Player& player)
 {
     const ActorBodyConfig& bodyConfig = ActorBodyConfig::instance();
-    const GLuint meatTexture = gTextures.getPath("assets/textureshq/meat1.png");
-    const GLuint boneTexture = getOpaqueWhiteTexture();
+    const std::uint32_t meatTexture = gTextures.getPath("assets/textureshq/meat1.png");
+    const std::uint32_t boneTexture = getOpaqueWhiteTexture();
     const size_t count = std::min(player.physicalBody.parts.size(),
                                   player.physicalBody.partMeshes.size());
     for (size_t i = 0; i < count; ++i)
@@ -1358,32 +1366,37 @@ void Player::requestModelLoad(const std::string& filepath)
     mimita::game::runDetached([raw] { modelLoadThreadFunc(raw); }, "player-model-load");
 }
 
-static GLuint uploadPlayerTexture(const tinygltf::Image& image)
+static std::uint32_t uploadPlayerTexture(const tinygltf::Image& image)
 {
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
         return 0;
     if (image.component < 1 || image.component > 4)
         return 0;
 
-    GLuint tex = 0;
+    std::uint32_t tex = 0;
     tex = mimita::game::genTexture();
     if (!tex) return 0;
-    glBindTexture(GL_TEXTURE_2D, tex);
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
 
-    GLenum srcFormat = GL_RGBA;
-    if (image.component == 1) srcFormat = GL_RED;
-    else if (image.component == 2) srcFormat = GL_RG;
-    else if (image.component == 3) srcFormat = GL_RGB;
+    r::PixelFormat srcFormat = r::PixelFormat::RGBA;
+    if (image.component == 1) srcFormat = r::PixelFormat::Red;
+    else if (image.component == 2) srcFormat = r::PixelFormat::RG;
+    else if (image.component == 3) srcFormat = r::PixelFormat::RGB;
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,
-                 srcFormat, GL_UNSIGNED_BYTE, image.image.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  image.width, image.height, 0, srcFormat,
+                  r::PixelType::UnsignedByte, image.image.data());
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::generateMipmap(r::TextureTarget::Texture2D);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
     return tex;
 }
@@ -1415,10 +1428,10 @@ void Player::finalizeModelIfReady()
     }
 
     // Upload textures to GL (must be on main thread)
-    std::vector<GLuint> texIds;
+    std::vector<std::uint32_t> texIds;
     texIds.reserve(d->images.size());
     for (const auto& img : d->images) {
-        GLuint t = uploadPlayerTexture(img);
+        std::uint32_t t = uploadPlayerTexture(img);
         texIds.push_back(t);
     }
 

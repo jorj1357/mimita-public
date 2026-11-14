@@ -44,6 +44,9 @@ static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 #include "cosmetic-system.h"
 #include "stb_image.h"
 #include "stb_image_resize2.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 
 AvatarInstance::~AvatarInstance() {
     if (atlasTexture && glfwGetCurrentContext()) {
@@ -455,15 +458,21 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
     }
 
     mAtlasTexture = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, mAtlasTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    r::bindTexture(r::TextureTarget::Texture2D, mAtlasTexture);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Nearest);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  ATLAS_SIZE, ATLAS_SIZE, 0, r::PixelFormat::RGBA,
+                  r::PixelType::UnsignedByte, atlasPixels.data());
+    r::generateMipmap(r::TextureTarget::Texture2D);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
     printf("[AVATAR ATLAS] Built atlas texture ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
     Terminal::instance().addLog("[AVATAR] Built atlas texture for: " + mAvatarName);
@@ -515,15 +524,21 @@ void AvatarSystem::finalizeAtlasIfReady(Player& player) {
         }
 
         mAtlasTexture = mimita::game::genTexture();
-        glBindTexture(GL_TEXTURE_2D, mAtlasTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, mPendingAtlas->pixels.data());
-        mimita::game::generateMipmap(GL_TEXTURE_2D);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        r::bindTexture(r::TextureTarget::Texture2D, mAtlasTexture);
+        r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                         r::TextureValue::ClampToEdge);
+        r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                         r::TextureValue::ClampToEdge);
+        r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                         r::TextureValue::LinearMipmapLinear);
+        r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                         r::TextureValue::Nearest);
+        r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+        r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                      ATLAS_SIZE, ATLAS_SIZE, 0, r::PixelFormat::RGBA,
+                      r::PixelType::UnsignedByte, mPendingAtlas->pixels.data());
+        r::generateMipmap(r::TextureTarget::Texture2D);
+        r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
         printf("[AVATAR ATLAS] Async atlas texture ready ID=%u for %s\n", mAtlasTexture, mAvatarName.c_str());
     }
@@ -863,15 +878,21 @@ bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextur
     }
 
     inst.atlasTexture = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, inst.atlasTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, ATLAS_SIZE, ATLAS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlasPixels.data());
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    r::bindTexture(r::TextureTarget::Texture2D, inst.atlasTexture);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Nearest);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  ATLAS_SIZE, ATLAS_SIZE, 0, r::PixelFormat::RGBA,
+                  r::PixelType::UnsignedByte, atlasPixels.data());
+    r::generateMipmap(r::TextureTarget::Texture2D);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
     Debug::warn(Debug::Category::Avatar, "[AVATAR ATLAS] built atlas=%u for '%s'\n", inst.atlasTexture, inst.name.c_str());
     return true;

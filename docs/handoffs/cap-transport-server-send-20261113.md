@@ -181,6 +181,26 @@ resident owner:
 - `PACKET_JOIN_REQUEST` remains resident: it still needs VIP appearance,
   progression ticket, coordinator/password policy state, and avatar manifests.
 
+### Avatar manifests and godball state
+
+- `CAP_ENTITY.send_avatar_manifests(receiver)` sends every other spawned
+  player's stored manifest chunks through the resident transport. HELLO and JOIN
+  use it, so JOIN no longer has the avatar-manifest debt.
+- `PACKET_GODBALL_STATE` now updates the resident godball fields and relays the
+  raw packet to every other player through CAP_TRANSPORT.
+
+### Coordinator/VIP JOIN and VIP style
+
+- Snapshot now carries account role, VIP appearance, VIP style detail (bounded
+  32 colors), style epoch, and progression ticket.
+- `dispatchJoin` performs coordinator validation, VIP ticket verification,
+  free-appearance defaults for non-VIP joins, VIP write-back, and a resident-read
+  VIP style broadcast to all players.
+- Avatar-manifest delivery now runs through
+  `CAP_ENTITY.send_avatar_manifests(receiver)`: the host sends every other
+  spawned player's stored manifest chunks through the resident transport.
+  JOIN no longer has that debt.
+
 ### PACKET_CHAT_REQUEST (chat v2)
 
 - Snapshot now carries the resident token-bucket state (`chatTokens`,

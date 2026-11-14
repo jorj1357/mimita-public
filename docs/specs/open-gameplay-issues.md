@@ -38,7 +38,45 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 - how am i stuck on this
 - what even do we need to  do this for 
 
-### other issues 
+## other issues 
+
+### techniacl debt
+
+2026 11 14 0921 jorj
+
+i watchedthis vidoe https://www.youtube.com/watch?v=zgfwkQqBg5Q 
+
+its about techincal debt and AI and stuff and i think this has tehcnical debt bc im suckin dyick at it 
+
+so i wantetd to 
+
+these are the things that i know are old that we dont need or can be chanegd
+1. packets.h is too big  and had like 160 files change bc u change 1 thing in it
+2. local only paths like , when we were building it just to work on 1 computer, those i havent audited fully to see if they exist at all
+3. server gamemode cpp is like 9k lines that is Insane dude  i think we can split 
+4. phsics collisions files are split across like 30 files idk what or why , i feel we can condense those maybe ? bc i 
+
+oriignally when i was doign the code i split it into phsics-walk, phsics-gravitt, phsics-drag, etc
+donthave to do that
+we have workign examples of it so we can jsut get the working bits from like git and stuff anad put it all into 1 file and explain
+in docuemntaiton too
+we should have docuemtnaiton i think, or
+we should conitnue documenting bc that is lowk huge for this stuff 
+
+5. duel queue
+6. duelstatepacket like bro we are not  even in duels we are 
+andi just decided out of nowehre to just change to being a game engine or a 
+whole everthing doable with 1engine engine 
+so thats mi bad
+at the smae itme i think teh naming sucks and idk we can do bettter
+
+but i think thtas all i know off top m head
+
+the end goal here is to like
+code that we made  that is not external or libraries its 
+we looked at it and cleaned it soooo much to ensure that its not full of just junk and stuff  
+
+### out of memory  Out of mana.
 
 2026 11 11 1637 jorj 
 space on disk

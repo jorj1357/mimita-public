@@ -280,6 +280,16 @@ void readBuffer(FramebufferBuffer buffer) {
     submitOp(RenderOp::ReadBuffer, 0, 0, 0, nullptr, ints);
 }
 
+void pixelStorei(PixelStoreParameter parameter, std::int32_t value) {
+    const std::int32_t ints[4] = {static_cast<std::int32_t>(parameter), value, 0, 0};
+    submitOp(RenderOp::PixelStore, 0, 0, 0, nullptr, ints);
+}
+
+void generateMipmap(TextureTarget target) {
+    const std::int32_t ints[4] = {static_cast<std::int32_t>(target), 0, 0, 0};
+    submitOp(RenderOp::GenerateMipmap, 0, 0, 0, nullptr, ints);
+}
+
 void drawElements(Primitive mode, std::int32_t count, IndexType type,
                   const void* indices) {
     const std::int32_t ints[4] = {

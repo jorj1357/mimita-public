@@ -133,6 +133,7 @@ GLenum toGl(TextureFormat value) {
     switch (value) {
         case TextureFormat::RGBA: return GL_RGBA;
         case TextureFormat::RGB: return GL_RGB;
+        case TextureFormat::RGBA8: return GL_RGBA8;
         case TextureFormat::Depth: return GL_DEPTH_COMPONENT;
         case TextureFormat::Depth24: return GL_DEPTH_COMPONENT24;
     }
@@ -143,6 +144,7 @@ GLenum toGl(PixelFormat value) {
     switch (value) {
         case PixelFormat::RGBA: return GL_RGBA;
         case PixelFormat::RGB: return GL_RGB;
+        case PixelFormat::RG: return GL_RG;
         case PixelFormat::Red: return GL_RED;
         case PixelFormat::Depth: return GL_DEPTH_COMPONENT;
     }
@@ -248,6 +250,14 @@ GLenum toGl(FramebufferBuffer value) {
         case FramebufferBuffer::Color3: return GL_COLOR_ATTACHMENT3;
     }
     return GL_NONE;
+}
+
+GLenum toGl(PixelStoreParameter value) {
+    switch (value) {
+        case PixelStoreParameter::UnpackAlignment: return GL_UNPACK_ALIGNMENT;
+        case PixelStoreParameter::UnpackRowLength: return GL_UNPACK_ROW_LENGTH;
+    }
+    return GL_UNPACK_ALIGNMENT;
 }
 
 struct GlState {
@@ -460,6 +470,14 @@ void texParameteri(TextureTarget target, TextureParameter parameter,
 void texParameterfv(TextureTarget target, TextureParameter parameter,
                     const float* values) {
     glTexParameterfv(toGl(target), toGl(parameter), values);
+}
+
+void pixelStorei(PixelStoreParameter parameter, std::int32_t value) {
+    glPixelStorei(toGl(parameter), static_cast<GLint>(value));
+}
+
+void generateMipmap(TextureTarget target) {
+    glGenerateMipmap(toGl(target));
 }
 
 void vertexAttribPointer(std::uint32_t index, std::int32_t size,

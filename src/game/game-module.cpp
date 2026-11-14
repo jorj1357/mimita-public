@@ -12,6 +12,7 @@
 
 #include "engine/whole-game-entry.h"
 #include "game/server-command-dispatch.h"
+#include "game/game-input-module.h"
 #include "host/abi/game-host-abi.h"
 #include "host/abi/transport-capability.h"
 
@@ -131,6 +132,18 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
                      std::int32_t* handled) {
     if (handled) {
         *handled = 0;
+    }
+    if (eventId == kEventGameInput) {
+        if (!payload || payloadSize < sizeof(GameInputEventV1)) {
+            return HostResult::InvalidArgument;
+        }
+        auto* input = static_cast<GameInputEventV1*>(payload);
+        if (input->version != 1 || input->structSize < sizeof(GameInputEventV1)) {
+            return HostResult::InvalidArgument;
+        }
+        mimita::game::handleGameInputEvent(*input);
+        if (handled) *handled = 1;
+        return HostResult::Ok;
     }
     if (eventId == kEventTransportMessage) {
         if (!payload || payloadSize < sizeof(TransportMessageV1)) {

@@ -138,6 +138,23 @@ join capacity / spawn-NPC checks read the resident values.
 The remaining join/reconnect blockers are the reliable-event session queue and
 the spawn/transform helpers.
 
+## Avatar manifests and godball state
+
+- `CAP_ENTITY.send_avatar_manifests(receiver)` delivers stored manifest chunks
+  through the resident transport; HELLO/JOIN use it.
+- `PACKET_GODBALL_STATE` is migrated: update resident godball fields, relay the
+  raw packet to other players.
+
+## Coordinator/VIP JOIN
+
+- Snapshot carries account role, VIP appearance/style detail (bounded colors),
+  style epoch, and progression ticket.
+- JOIN now validates the coordinator token, verifies VIP tickets, applies free
+  defaults for non-VIP joins, writes VIP state, and broadcasts VIP styles from
+  resident snapshots.
+- `CAP_ENTITY.send_avatar_manifests(receiver)` delivers stored manifest chunks
+  through the resident transport; HELLO and JOIN use it.
+
 ## PACKET_CHAT_REQUEST migration
 
 - Snapshot carries resident chat token-bucket + cached retry event fields.
@@ -266,10 +283,24 @@ skip rules, counters, and retransmit queues are unchanged.
   `2026-11-14T13:09:43.795325Z`; `host_host-server-entity-adapter.o` and
   `host_host-runtime.o` rebuilt; static gate 0/0.
 - After the chat-v2 pass, `host-server-entity-adapter.o` and
-  `network_server.o` compiled. The shared EXE build is currently blocked by
-  another lane's `src/shadow/shadow-render.cpp`
-  (`Program` → `ShaderProgram&` conversion), not this work. HELLO/JOIN/reconnect/
-  chat dispatch remains DLL-side until A runs the whole-game worker.
+  `network_server.o` compiled.
+- The shared EXE later went green at `2026-11-14T13:54:46.160916Z`. The whole-game
+  worker linked generation 127 at revision
+  `e26bd83f5de521fc2366e4b2150c566c4afce2c3b203b0fdd380d8de3d5048e8`
+  (`build/game/generation-127/game-g127.dll`), including the new dispatch code.
+- Runtime load/initialize: dedicated server PID 17028 wrote
+  `game.host.probe.started` (ABI 1, generation 1) for generation 127 in
+  `logs/2026-11-14/probe-gen127c/events.jsonl`.
+- Runtime JOIN attempt: a direct `--client --connect` run did not connect
+  (`players=0`); the client journal stops after map/audio load. No joined/chat
+  behavior is claimed. A proper dev-loop client run is still required.
+- After the avatar-manifest + godball pass, the whole-game worker linked
+  generation 131 (`build/game/generation-131/game-g131.dll`). Dedicated server
+  PID 22500 wrote `game.host.probe.started` (ABI 1) in
+  `logs/2026-11-14/probe-gen131/events.jsonl`.
+- Static gate is currently **1 violation** in
+  `src/render/render-command-legacy.cpp` (`glGenerateMipmap`), owned by the
+  render lane, not this work.
 - After the entity/world/chat edits, the shared dev-loop compiled
   `host_host-server-world-adapter.o`, `host_host-server-entity-adapter.o`,
   `host_host-runtime.o`, and `network_server.o`, then failed on an unrelated

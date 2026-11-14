@@ -177,6 +177,7 @@ extern bool gUnlockCursorOnLaunch;
 void gameInit(int argc, char** argv, Engine& engine)
 {
     printf("[MAIN] start\n");
+    printf("[LIVE EDIT] menu generation initialized\n");
 
     
     StructuredLogger::instance().init();
@@ -197,6 +198,9 @@ void gameInit(int argc, char** argv, Engine& engine)
 
     glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 
+    guiBindingsSetWindow(engine.window());
+    glfwSetWindowUserPointer(engine.window(), &engine);
+#ifndef MIMITA_GAME_DLL
     glfwSetCharCallback(engine.window(), [](GLFWwindow*, unsigned int codepoint) {
         authPopupHandleChar(codepoint);
         signInMenuHandleChar(codepoint);
@@ -209,8 +213,6 @@ void gameInit(int argc, char** argv, Engine& engine)
         Terminal::instance().handleChar(codepoint);
         GuiEditor::instance().handleChar(codepoint);
     });
-    guiBindingsSetWindow(engine.window());
-    glfwSetWindowUserPointer(engine.window(), &engine);
     glfwSetKeyCallback(engine.window(), [](GLFWwindow* win, int key, int scancode, int action, int mods) {
         (void)scancode;
         (void)win;
@@ -237,6 +239,7 @@ void gameInit(int argc, char** argv, Engine& engine)
     glfwSetDropCallback(engine.window(), [](GLFWwindow*, int count, const char** paths) {
         avatarEditorHandleDrop(count, paths);
     });
+#endif
 
     printf("[MAIN] after glfwSetInputMode\n");
 

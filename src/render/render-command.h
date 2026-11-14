@@ -70,6 +70,8 @@ void texParameteri(TextureTarget target, TextureParameter parameter,
                    std::int32_t value);
 void texParameterfv(TextureTarget target, TextureParameter parameter,
                     const float* values);
+void pixelStorei(PixelStoreParameter parameter, std::int32_t value);
+void generateMipmap(TextureTarget target);
 void vertexAttribPointer(std::uint32_t index, std::int32_t size,
                          VertexType type, bool normalized, std::int32_t stride,
                          std::uint32_t offset);

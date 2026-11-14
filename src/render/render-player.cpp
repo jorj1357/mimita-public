@@ -1140,16 +1140,8 @@ void drawPlayerTrailBatch(const Camera& cam)
                            {"face_culling", false}},
             __FILE__, __LINE__, __FUNCTION__);
     }
-    glBindVertexArray((GLuint)oldVao);
-    glBindBuffer(GL_ARRAY_BUFFER, (GLuint)oldBuffer);
     if (useColorLoc >= 0) r::uniform1i(useColorLoc, oldUseColor);
-    glBlendFuncSeparate((GLenum)oldBlendSrcRgb, (GLenum)oldBlendDstRgb,
-                        (GLenum)oldBlendSrcAlpha, (GLenum)oldBlendDstAlpha);
-    glDepthMask(depthWriteWas);
-    if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-    if (cullWas) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    r::useProgram(static_cast<r::Program>(oldProgram));
+    r::popState();
 }
 
 void renderPlayer(const Player& player, const Camera& cam)

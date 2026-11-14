@@ -32,5 +32,7 @@ mimita::host::HostResult findHostReconnectToken(
     mimita::host::EntityHandle* out);
 mimita::host::HostResult findHostJoinToken(const char* token,
                                            mimita::host::EntityHandle* out);
+mimita::host::HostResult sendHostAvatarManifests(
+    mimita::host::EntityHandle receiver);
 
 }  // namespace mimita::game

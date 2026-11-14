@@ -4,6 +4,8 @@
 #include "host/host-server-entity-adapter.h"
 
 #include <algorithm>
+
+#include "host/host-server-transport-adapter.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -52,6 +54,8 @@ HostServerEntityAdapter::HostServerEntityAdapter() {
     adapter_.find_reconnect_token =
         &HostServerEntityAdapter::findReconnectTokenThunk;
     adapter_.find_join_token = &HostServerEntityAdapter::findJoinTokenThunk;
+    adapter_.send_avatar_manifests =
+        &HostServerEntityAdapter::sendAvatarManifestsThunk;
 }
 
 void HostServerEntityAdapter::bindPlayers(
@@ -84,7 +88,7 @@ HostResult HostServerEntityAdapter::readThunk(void* owner, EntityHandle handle,
         return HostResult::InvalidArgument;
     }
     out->structSize = static_cast<std::uint32_t>(sizeof(EntitySnapshotV1));
-    out->schemaVersion = 4;
+    out->schemaVersion = 6;
     out->handle = handle;
     out->kind = static_cast<std::int32_t>(entityKind(handle));
     out->team = -1;
@@ -143,6 +147,13 @@ HostResult HostServerEntityAdapter::readThunk(void* owner, EntityHandle handle,
     out->vipSolidColor[3] = 1.0f;
     out->vipColorCount = 0;
     out->progressionTicket[0] = 0;
+    out->godballX = 0.0f;
+    out->godballY = 0.0f;
+    out->godballZ = 0.0f;
+    out->godballVx = 0.0f;
+    out->godballVy = 0.0f;
+    out->godballVz = 0.0f;
+    out->godballActive = 0;
 
     const std::uint32_t id = entityId(handle);
     switch (entityKind(handle)) {
@@ -256,6 +267,13 @@ HostResult HostServerEntityAdapter::readThunk(void* owner, EntityHandle handle,
             std::snprintf(out->progressionTicket,
                           sizeof(out->progressionTicket), "%s",
                           player.progressionTicket.c_str());
+            out->godballX = player.godballX;
+            out->godballY = player.godballY;
+            out->godballZ = player.godballZ;
+            out->godballVx = player.godballVx;
+            out->godballVy = player.godballVy;
+            out->godballVz = player.godballVz;
+            out->godballActive = player.godballActive ? 1u : 0u;
             return HostResult::Ok;
         }
         case EntityKind::Npc: {
@@ -374,6 +392,39 @@ HostResult HostServerEntityAdapter::writeThunk(void* owner, EntityHandle handle,
                               sizeof(player.cachedChatEvent.senderName), "%s",
                               in->cachedChatSenderName);
             }
+            player.vipAccountId = in->vipAccountId;
+            player.accountRole = in->accountRole;
+            player.vipAppearance.tier = in->vipTier;
+            player.vipAppearance.styleKind = in->vipStyleKind;
+            player.vipAppearance.colorR = in->vipColorR;
+            player.vipAppearance.colorG = in->vipColorG;
+            player.vipAppearance.colorB = in->vipColorB;
+            player.vipAppearance.flags = in->vipFlags;
+            player.vipStyleEpoch = in->vipStyleEpoch;
+            player.vipStyleDetail.styleKind = in->vipDetailStyleKind;
+            player.vipStyleDetail.animation = in->vipDetailAnimation;
+            player.vipStyleDetail.direction = in->vipDetailDirection;
+            player.vipStyleDetail.rainbowSpeed = in->vipRainbowSpeed;
+            player.vipStyleDetail.solidColor = glm::vec4(
+                in->vipSolidColor[0], in->vipSolidColor[1],
+                in->vipSolidColor[2], in->vipSolidColor[3]);
+            const std::uint32_t colorCount =
+                std::min<std::uint32_t>(in->vipColorCount, 32);
+            player.vipStyleDetail.colors.clear();
+            player.vipStyleDetail.colors.reserve(colorCount);
+            for (std::uint32_t i = 0; i < colorCount; ++i) {
+                player.vipStyleDetail.colors.emplace_back(
+                    in->vipColors[i][0], in->vipColors[i][1],
+                    in->vipColors[i][2], in->vipColors[i][3]);
+            }
+            player.progressionTicket = in->progressionTicket;
+            player.godballX = in->godballX;
+            player.godballY = in->godballY;
+            player.godballZ = in->godballZ;
+            player.godballVx = in->godballVx;
+            player.godballVy = in->godballVy;
+            player.godballVz = in->godballVz;
+            player.godballActive = in->godballActive != 0;
             return HostResult::Ok;
         }
         case EntityKind::Npc: {
@@ -599,6 +650,43 @@ HostResult HostServerEntityAdapter::findJoinTokenThunk(void* owner,
         }
     }
     return HostResult::NotFound;
+}
+
+HostResult HostServerEntityAdapter::sendAvatarManifestsThunk(
+    void* owner, EntityHandle receiver) {
+    auto* adapter = static_cast<HostServerEntityAdapter*>(owner);
+    if (!adapter || !adapter->players_) {
+        return HostResult::Unsupported;
+    }
+    if (entityKind(receiver) != EntityKind::Player) {
+        return HostResult::InvalidArgument;
+    }
+    const std::uint32_t receiverId = entityId(receiver);
+    auto receiverIt = adapter->players_->find(receiverId);
+    if (receiverIt == adapter->players_->end()) {
+        return HostResult::NotFound;
+    }
+    auto& transport = HostServerTransportAdapter::instance();
+    const TransportAdapterV1* transportAdapter = transport.adapter();
+    if (!transportAdapter || !transportAdapter->send_to_player) {
+        return HostResult::Unsupported;
+    }
+    for (const auto& peer : *adapter->players_) {
+        if (peer.first == receiverId || !peer.second.spawned) {
+            continue;
+        }
+        for (const auto& manifest : peer.second.avatarManifestChunks) {
+            for (const std::vector<std::uint8_t>& bytes : manifest.second) {
+                if (bytes.size() != sizeof(MimitaNet::AvatarManifestChunkPacket)) {
+                    continue;
+                }
+                transportAdapter->send_to_player(
+                    transport.owner(), receiverId, bytes.data(),
+                    bytes.size());
+            }
+        }
+    }
+    return HostResult::Ok;
 }
 
 HostResult HostServerEntityAdapter::createThunk(void* owner, std::int32_t kind,

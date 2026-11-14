@@ -19,11 +19,14 @@ its bad and breaks everythung
 #include "stb_image.h"
 #include "utils/path_utils.h"
 #include "debug/gl-debug.h"
+#include "render/render-command.h"
 #include <string>
 
-static GLuint makeFallbackTexture()
+namespace r = mimita::game::render;
+
+static std::uint32_t makeFallbackTexture()
 {
-    static GLuint fallback = 0;
+    static std::uint32_t fallback = 0;
     if (fallback)
         return fallback;
 
@@ -37,16 +40,21 @@ static GLuint makeFallbackTexture()
 
     MIMITA_GL_CLEAR_STAGE("makeFallbackTexture");
     fallback = mimita::game::genTexture();
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, fallback));
-    MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 4, 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    r::bindTexture(r::TextureTarget::Texture2D, fallback);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  4, 4, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte, pixels);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::Nearest);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Nearest);
     return fallback;
 }
 
-GLuint loadTexture(const char* path) {
+std::uint32_t loadTexture(const char* path) {
     printf("[TEXTURE] Loading texture %s\n", path);
 
     std::string resolvedPath = path;
@@ -60,7 +68,7 @@ GLuint loadTexture(const char* path) {
         return makeFallbackTexture();
     }
 
-    GLuint tex;
+    std::uint32_t tex;
     MIMITA_GL_CLEAR_STAGE("loadTexture");
     tex = mimita::game::genTexture();
     if (!tex)
@@ -68,18 +76,23 @@ GLuint loadTexture(const char* path) {
         stbi_image_free(data);
         return makeFallbackTexture();
     }
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
 
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Nearest);
 
     printf("[TEXTURE] Uploading to GPU tex=%u size=%dx%d channels=%d\n", tex, w, h, n);
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  w, h, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte, data);
+    r::generateMipmap(r::TextureTarget::Texture2D);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
     stbi_image_free(data);
     printf("[TEXTURE] Upload complete %s tex=%u\n", path, tex);

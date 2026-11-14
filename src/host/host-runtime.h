@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -30,6 +31,8 @@
 #include "host/abi/world-capability.h"
 #include "host/host-barrier.h"
 #include "host/host-loader.h"
+
+struct GLFWwindow;
 
 namespace mimita::host {
 struct TransportAdapterV1;
@@ -78,6 +81,7 @@ public:
     // True only when the active generation declares a real whole-game frame and
     // the owner explicitly enabled host-owned frame mode.
     bool ownsGameFrame() const;
+    void installInputCallbacks(GLFWwindow* window);
     MenuStateV1* menuState() { return &menuState_; }
     void* ensureStateObject(std::uint32_t id, std::uint32_t size,
                             std::uint32_t alignment, std::int32_t* created);
@@ -178,6 +182,8 @@ private:
         EntityHandle* out);
     static HostResult entityCapabilityFindJoinTokenThunk(
         void* userData, const char* token, EntityHandle* out);
+    static HostResult entityCapabilitySendAvatarManifestsThunk(
+        void* userData, EntityHandle receiver);
     static std::uint32_t sessionGetTextThunk(void* userData,
                                              std::uint32_t field, char* out,
                                              std::uint32_t capacity);
@@ -244,6 +250,16 @@ private:
     static void resourceReleaseThunk(void* userData, std::uint64_t resource);
     static std::uint32_t resourceBusyThunk(void* userData);
 
+    static void inputKeyCallback(GLFWwindow* window, int key, int scancode,
+                                 int action, int mods);
+    static void inputCharCallback(GLFWwindow* window, unsigned int codepoint);
+    static void inputScrollCallback(GLFWwindow* window, double xOffset,
+                                    double yOffset);
+    static void inputDropCallback(GLFWwindow* window, int count,
+                                  const char** paths);
+    void enqueueInput(const GameInputEventV1& event);
+    void dispatchQueuedInput();
+
     HostLoader loader_;
     GenerationBarrier& barrier_;
     HostServicesV1 services_{};
@@ -255,6 +271,8 @@ private:
     };
     std::mutex stateObjectMutex_;
     std::unordered_map<std::uint32_t, StateObjectRecord> stateObjects_;
+    std::mutex inputMutex_;
+    std::deque<GameInputEventV1> inputQueue_;
     std::atomic<bool> probeEnabled_{false};
     std::uint64_t tick_ = 0;
     bool started_ = false;

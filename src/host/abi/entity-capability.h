@@ -13,7 +13,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kEntityCapabilityVersion = 9u;
+inline constexpr std::uint32_t kEntityCapabilityVersion = 11u;
 inline constexpr std::uint64_t kEntityKindShift = 56u;
 inline constexpr std::uint64_t kEntityIdMask = (1ull << kEntityKindShift) - 1u;
 
@@ -74,6 +74,9 @@ struct EntityAdapterV1 {
                                        EntityHandle* out);
     HostResult (*find_join_token)(void* owner, const char* token,
                                   EntityHandle* out);
+    // Sends every other spawned player's stored avatar manifest chunks to the
+    // receiver through the resident transport.
+    HostResult (*send_avatar_manifests)(void* owner, EntityHandle receiver);
 };
 
 struct EntityCapabilityV1 {
@@ -103,6 +106,8 @@ struct EntityCapabilityV1 {
                                        EntityHandle* out);
     HostResult (*find_join_token)(void* hostUserData, const char* token,
                                   EntityHandle* out);
+    HostResult (*send_avatar_manifests)(void* hostUserData,
+                                        EntityHandle receiver);
 };
 
 }  // namespace mimita::host

@@ -57,6 +57,8 @@ enum class RenderOp : std::uint32_t {
     TexParameterfv = 32,
     DrawBuffer = 33,
     ReadBuffer = 34,
+    PixelStore = 35,
+    GenerateMipmap = 36,
 };
 
 struct RenderCommandV1 {

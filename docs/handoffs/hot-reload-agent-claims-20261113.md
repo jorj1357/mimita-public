@@ -70,8 +70,9 @@ binding and reliable-event identity/enqueue now have bounded resident
 operations; CAP_ENTITY v5 adds bounded record creation, authoritative transform
 reset, NPC spawn, teleport, and disconnect removal; CAP_WORLD v2 adds resident
 safe-spawn selection. Reconnect, HELLO, and the local/free JOIN path are
-migrated, and chat v2 is migrated. Coordinator/VIP JOIN, avatar-manifest
-delivery, and VIP style broadcasts remain resident. Separately, `tools/escrow/` is a tested
+and chat v2 are migrated, along with coordinator/VIP JOIN, VIP style broadcast,
+avatar-manifest delivery, and godball state. Input/movement, shot/attack/melee,
+ragdoll, vehicle, and avatar asset handling remain resident. Separately, `tools/escrow/` is a tested
 standalone C++17 escrow CLI outside `src/`. Build and runtime verification
 remain A-owned;
 B holds the claim until A confirms the host and whole-game builds, then fills

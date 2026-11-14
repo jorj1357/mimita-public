@@ -503,6 +503,31 @@ int main(int argc, char** argv)
             LogManager::instance().path().c_str());
     }
 
+    if (!std::getenv("MIMITA_GAME_PROBE") &&
+        !std::getenv("MIMITA_GAME_OWN_FRAME") &&
+        !std::getenv("MIMITA_GAME_DISABLE") && !gExportSubprocessMode) {
+        std::string dllPath;
+        if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
+            dllPath = configured;
+        } else {
+            std::ifstream current("build/game/current.json");
+            if (current.is_open()) {
+                try {
+                    nlohmann::json metadata;
+                    current >> metadata;
+                    dllPath = metadata.value("dll", std::string());
+                } catch (const std::exception&) {
+                    dllPath.clear();
+                }
+            }
+        }
+        if (!dllPath.empty() && std::filesystem::exists(dllPath)) {
+            _putenv_s("MIMITA_GAME_DLL", dllPath.c_str());
+            _putenv_s("MIMITA_GAME_PROBE", "1");
+            _putenv_s("MIMITA_GAME_OWN_FRAME", "1");
+        }
+    }
+
     mimita::host::HostRuntime::instance().startFromEnvironment();
     if (mimita::host::HostRuntime::instance().ownsGameFrame()) {
         mimita::host::GameStartupV1 startup{};

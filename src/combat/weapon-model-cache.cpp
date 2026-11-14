@@ -27,37 +27,45 @@
 #include "utils/path_utils.h"
 #include "world/texture-store.h"
 #include "debug/debug-log.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 
 extern TextureStore gTextures;
 
 namespace {
 
-GLuint uploadWeaponTexture(const tinygltf::Image& image)
+std::uint32_t uploadWeaponTexture(const tinygltf::Image& image)
 {
     if (image.image.empty() || image.width <= 0 || image.height <= 0)
         return 0;
     if (image.component < 1 || image.component > 4)
         return 0;
 
-    GLuint tex = 0;
+    std::uint32_t tex = 0;
     tex = mimita::game::genTexture();
     if (!tex) return 0;
-    glBindTexture(GL_TEXTURE_2D, tex);
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
 
-    GLenum srcFormat = GL_RGBA;
-    if (image.component == 1) srcFormat = GL_RED;
-    else if (image.component == 2) srcFormat = GL_RG;
-    else if (image.component == 3) srcFormat = GL_RGB;
+    r::PixelFormat srcFormat = r::PixelFormat::RGBA;
+    if (image.component == 1) srcFormat = r::PixelFormat::Red;
+    else if (image.component == 2) srcFormat = r::PixelFormat::RG;
+    else if (image.component == 3) srcFormat = r::PixelFormat::RGB;
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0,
-                 srcFormat, GL_UNSIGNED_BYTE, image.image.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  image.width, image.height, 0, srcFormat,
+                  r::PixelType::UnsignedByte, image.image.data());
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::generateMipmap(r::TextureTarget::Texture2D);
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
 
     return tex;
 }
@@ -94,7 +102,7 @@ void weaponModelLoadThread(std::shared_ptr<PendingWeaponModel> d)
 
     // Build the CPU mesh via the standard GLB scene walk. The walker assigns
     // texture handles; those are resolved to real GL textures on the main thread.
-    std::vector<GLuint> zeroTextures(model.materials.size(), 0);
+    std::vector<std::uint32_t> zeroTextures(model.materials.size(), 0);
     Mesh mesh;
     int sceneIndex = model.defaultScene >= 0 ? model.defaultScene : 0;
     walkGLBScene(model, zeroTextures, mesh, sceneIndex, nullptr);
@@ -183,17 +191,21 @@ void WeaponModelCache::finalizeWeaponModelsIfReady()
         // Upload the mesh to the GPU (shared by all viewmodels).
         asset->vao = mimita::game::genVertexArray();
         asset->vbo = mimita::game::genBuffer();
-        glBindVertexArray(asset->vao);
-        glBindBuffer(GL_ARRAY_BUFFER, asset->vbo);
-        glBufferData(GL_ARRAY_BUFFER, asset->mesh.verts.size() * sizeof(Vertex),
-                     asset->mesh.verts.data(), GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-        glBindVertexArray(0);
+        r::bindVertexArray(asset->vao);
+        r::bindBuffer(r::BufferTarget::Array, asset->vbo);
+        r::bufferData(r::BufferTarget::Array, asset->vbo, asset->mesh.verts.data(),
+                      static_cast<std::uint32_t>(asset->mesh.verts.size() * sizeof(Vertex)),
+                      r::BufferUsage::Static);
+        r::enableVertexAttribArray(0);
+        r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                               static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+        r::enableVertexAttribArray(1);
+        r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                               static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+        r::enableVertexAttribArray(2);
+        r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                               static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+        r::bindVertexArray(0);
 
         asset->gpuUploaded = true;
         Debug::log(Debug::Category::Weapons, "[WEAPON MODEL] uploaded=%s verts=%zu vao=%u\n",

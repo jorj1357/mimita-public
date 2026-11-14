@@ -3,6 +3,7 @@
 
 #include "host/host-runtime.h"
 #include "renderer/renderer.h"
+#include <GLFW/glfw3.h>
 
 #include <chrono>
 #include <cstdlib>
@@ -1189,6 +1190,7 @@ void* renderDeviceAcquire(void*, std::int32_t width, std::int32_t height,
                           const char* title) {
     if (!gRenderDevice) {
         gRenderDevice = new Renderer(width, height, title ? title : "MiMITA");
+        HostRuntime::instance().installInputCallbacks(gRenderDevice->window);
     }
     return gRenderDevice;
 }
@@ -1668,6 +1670,7 @@ GLenum toGl(mimita::render::TextureFormat value) {
     switch (value) {
         case mimita::render::TextureFormat::RGBA: return GL_RGBA;
         case mimita::render::TextureFormat::RGB: return GL_RGB;
+        case mimita::render::TextureFormat::RGBA8: return GL_RGBA8;
         case mimita::render::TextureFormat::Depth: return GL_DEPTH_COMPONENT;
         case mimita::render::TextureFormat::Depth24: return GL_DEPTH_COMPONENT24;
     }
@@ -1678,6 +1681,7 @@ GLenum toGl(mimita::render::PixelFormat value) {
     switch (value) {
         case mimita::render::PixelFormat::RGBA: return GL_RGBA;
         case mimita::render::PixelFormat::RGB: return GL_RGB;
+        case mimita::render::PixelFormat::RG: return GL_RG;
         case mimita::render::PixelFormat::Red: return GL_RED;
         case mimita::render::PixelFormat::Depth: return GL_DEPTH_COMPONENT;
     }
@@ -1783,6 +1787,14 @@ GLenum toGl(mimita::render::FramebufferBuffer value) {
         case mimita::render::FramebufferBuffer::Color3: return GL_COLOR_ATTACHMENT3;
     }
     return GL_NONE;
+}
+
+GLenum toGl(mimita::render::PixelStoreParameter value) {
+    switch (value) {
+        case mimita::render::PixelStoreParameter::UnpackAlignment: return GL_UNPACK_ALIGNMENT;
+        case mimita::render::PixelStoreParameter::UnpackRowLength: return GL_UNPACK_ROW_LENGTH;
+    }
+    return GL_UNPACK_ALIGNMENT;
 }
 
 struct HostGlState {
@@ -2173,6 +2185,7 @@ bool HostRuntime::startFromEnvironment() {
         return false;
     }
 
+    printf("[HOST] candidate load begin\n");
     LoadedGeneration candidate;
     const HostResult loaded = loader_.loadCandidate(widePath, &services_, &candidate);
     if (loaded != HostResult::Ok) {
@@ -2291,7 +2304,89 @@ HostResult HostRuntime::driveRender(void* renderContext) {
     return result;
 }
 
+void HostRuntime::installInputCallbacks(GLFWwindow* window) {
+    if (!window) return;
+    glfwSetKeyCallback(window, &HostRuntime::inputKeyCallback);
+    glfwSetCharCallback(window, &HostRuntime::inputCharCallback);
+    glfwSetScrollCallback(window, &HostRuntime::inputScrollCallback);
+    glfwSetDropCallback(window, &HostRuntime::inputDropCallback);
+}
+
+void HostRuntime::enqueueInput(const GameInputEventV1& event) {
+    std::lock_guard<std::mutex> lock(inputMutex_);
+    inputQueue_.push_back(event);
+}
+
+void HostRuntime::dispatchQueuedInput() {
+    std::deque<GameInputEventV1> pending;
+    {
+        std::lock_guard<std::mutex> lock(inputMutex_);
+        if (inputQueue_.empty()) return;
+        pending.swap(inputQueue_);
+    }
+    if (!probeEnabled_.load(std::memory_order_acquire)) return;
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->on_event) return;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return;
+    for (GameInputEventV1& event : pending) {
+        std::int32_t handled = 0;
+        api->on_event(kEventGameInput, &event, sizeof(event), &handled);
+    }
+    barrier_.leave();
+}
+
+void HostRuntime::inputKeyCallback(GLFWwindow*, int key, int scancode,
+                                   int action, int mods) {
+    GameInputEventV1 event{};
+    event.version = 1;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::Key;
+    event.key = key;
+    event.scancode = scancode;
+    event.action = action;
+    event.mods = mods;
+    instance().enqueueInput(event);
+}
+
+void HostRuntime::inputCharCallback(GLFWwindow*, unsigned int codepoint) {
+    GameInputEventV1 event{};
+    event.version = 1;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::Char;
+    event.codepoint = codepoint;
+    instance().enqueueInput(event);
+}
+
+void HostRuntime::inputScrollCallback(GLFWwindow*, double xOffset,
+                                      double yOffset) {
+    GameInputEventV1 event{};
+    event.version = 1;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::Scroll;
+    event.scrollX = xOffset;
+    event.scrollY = yOffset;
+    instance().enqueueInput(event);
+}
+
+void HostRuntime::inputDropCallback(GLFWwindow*, int count, const char** paths) {
+    GameInputEventV1 event{};
+    event.version = 1;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::Drop;
+    const int accepted = count < 8 ? (count > 0 ? count : 0) : 8;
+    event.pathCount = static_cast<std::uint32_t>(accepted);
+    for (int i = 0; i < accepted; ++i) {
+        if (paths && paths[i]) {
+            std::strncpy(event.paths[i], paths[i], sizeof(event.paths[i]) - 1);
+            event.paths[i][sizeof(event.paths[i]) - 1] = '\0';
+        }
+    }
+    instance().enqueueInput(event);
+}
+
 HostResult HostRuntime::driveFrame(double deltaSeconds, void* renderContext) {
+    dispatchQueuedInput();
     const HostResult tickResult = driveTick(deltaSeconds);
     if (tickResult != HostResult::Ok) return tickResult;
     return driveRender(renderContext);
@@ -2382,6 +2477,8 @@ void HostRuntime::poll() {
     if (ready.value("status", std::string()) != "ready") {
         return;
     }
+    printf("[HOST] ready candidate gen=%llu\n",
+           static_cast<unsigned long long>(ready.value("generation", std::uint64_t{0})));
     const std::uint64_t generation = ready.value("generation", std::uint64_t{0});
     const std::string dll = ready.value("dll", std::string());
     if (generation == 0 || dll.empty() ||
@@ -2393,6 +2490,7 @@ void HostRuntime::poll() {
         return;
     }
     if (!std::filesystem::exists(dll)) {
+        printf("[HOST] candidate missing dll=%s\n", dll.c_str());
         lastFailedGeneration_ = generation;
         lastFailedDll_ = dll;
         lastFailedAt_ = now;
@@ -2402,9 +2500,12 @@ void HostRuntime::poll() {
     }
 
     const std::uint64_t oldGeneration = loader_.activeGeneration();
+    printf("[HOST] swap quiesce begin\n");
     barrier_.beginQuiesce(QuiesceMode::Swap);
     const HostResult quiesced = barrier_.finishQuiesce(2000);
+    printf("[HOST] swap quiesce result=%d\n", static_cast<int>(quiesced));
     if (quiesced != HostResult::Ok) {
+        printf("[HOST] swap refused busy result=%d\n", static_cast<int>(quiesced));
         emitProbeEvent("game.generation.swap-refused", "generation busy", 0,
                        nlohmann::json{{"generation", generation},
                                       {"result", static_cast<int>(quiesced)}});
@@ -2412,10 +2513,14 @@ void HostRuntime::poll() {
         return;
     }
 
+    printf("[HOST] candidate load begin\n");
     LoadedGeneration candidate;
     const HostResult loaded = loader_.loadCandidate(
         widenUtf8(dll.c_str()), &services_, &candidate);
+    printf("[HOST] candidate load result=%d\n", static_cast<int>(loaded));
     if (loaded != HostResult::Ok) {
+        printf("[HOST] candidate rejected result=%d dll=%s\n",
+               static_cast<int>(loaded), dll.c_str());
         lastFailedGeneration_ = generation;
         lastFailedDll_ = dll;
         lastFailedAt_ = now;
@@ -2429,19 +2534,28 @@ void HostRuntime::poll() {
 
     const GameModuleV1* oldApi = loader_.active();
     if (oldApi && oldApi->quiesce) {
+        printf("[HOST] old quiesce begin\n");
         oldApi->quiesce(QuiesceMode::Swap);
+        printf("[HOST] old quiesce end\n");
     }
     if (oldApi && oldApi->shutdown) {
+        printf("[HOST] old shutdown begin\n");
         oldApi->shutdown();
+        printf("[HOST] old shutdown end\n");
     }
     // The ready manifest is the generation identity for the swap; a module may
     // hardcode a local version field that is not the build generation.
     candidate.generation = generation;
+    printf("[HOST] commit begin\n");
     loader_.commit(std::move(candidate));
+    printf("[HOST] commit end\n");
     lastReadyGeneration_ = generation;
     lastFailedGeneration_ = 0;
     lastFailedDll_.clear();
     barrier_.beginGeneration(generation);
+    printf("[HOST] generation activated old=%llu new=%llu\n",
+           static_cast<unsigned long long>(oldGeneration),
+           static_cast<unsigned long long>(generation));
     emitProbeEvent("game.generation.activated", "candidate committed", 0,
                    nlohmann::json{{"old_generation", oldGeneration},
                                   {"generation", generation},
@@ -2716,6 +2830,7 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::entityCapabilityFindConnectionThunk,
             &HostRuntime::entityCapabilityFindReconnectTokenThunk,
             &HostRuntime::entityCapabilityFindJoinTokenThunk,
+            &HostRuntime::entityCapabilitySendAvatarManifestsThunk,
         };
         return &entityCapability;
     }
@@ -3206,6 +3321,17 @@ HostResult HostRuntime::entityCapabilityFindJoinTokenThunk(
                                                     token, out);
 }
 
+HostResult HostRuntime::entityCapabilitySendAvatarManifestsThunk(
+    void* userData, EntityHandle receiver) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->send_avatar_manifests) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->send_avatar_manifests(
+        runtime->entityOwner_, receiver);
+}
+
 HostResult HostRuntime::entityCapabilityRemoveThunk(void* userData,
                                                     EntityHandle handle) {
     auto* runtime = static_cast<HostRuntime*>(userData);
@@ -3313,6 +3439,17 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
             case RenderOp::ReadBuffer:
                 glReadBuffer(toGl(static_cast<mimita::render::FramebufferBuffer>(
                     command.ints[0])));
+                break;
+            case RenderOp::PixelStore:
+                glPixelStorei(
+                    toGl(static_cast<mimita::render::PixelStoreParameter>(
+                        command.ints[0])),
+                    command.ints[1]);
+                break;
+            case RenderOp::GenerateMipmap:
+                glGenerateMipmap(
+                    toGl(static_cast<mimita::render::TextureTarget>(
+                        command.ints[0])));
                 break;
             case RenderOp::DrawElements:
                 if (command.handle1)

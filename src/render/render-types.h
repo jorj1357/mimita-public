@@ -35,6 +35,7 @@ using mimita::render::FramebufferTarget;
 using mimita::render::FramebufferAttachment;
 using mimita::render::RenderbufferFormat;
 using mimita::render::FramebufferBuffer;
+using mimita::render::PixelStoreParameter;
 
 using Program = std::uint32_t;
 using Uniform = std::int32_t;

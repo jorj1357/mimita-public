@@ -52,6 +52,8 @@ private:
                                               EntityHandle* out);
     static HostResult findJoinTokenThunk(void* owner, const char* token,
                                          EntityHandle* out);
+    static HostResult sendAvatarManifestsThunk(void* owner,
+                                               EntityHandle receiver);
 
     std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>* players_ = nullptr;
     std::unordered_map<std::uint32_t, MimitaNet::ServerNpc>* npcs_ = nullptr;

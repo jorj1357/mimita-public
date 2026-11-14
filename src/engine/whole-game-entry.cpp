@@ -35,7 +35,11 @@ bool initializeWholeGameEntry(int width, int height, const char* title) {
 }
 
 bool wholeGameShouldClose() {
-    return !gWholeGameReady || !gWholeGameEngine || !gWholeGameEngine->running();
+    // A freshly activated generation is not initialized yet. Let the host loop
+    // call tick once so lazy bootstrap can acquire the resident renderer.
+    if (!gWholeGameReady || !gWholeGameEngine)
+        return false;
+    return !gWholeGameEngine->running();
 }
 
 void tickWholeGame(double deltaSeconds) {

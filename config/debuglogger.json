@@ -65,8 +65,7 @@
       "level": "off",
       "file_output": false
     },
-    "executable": {
-      "level": "errors",
+    "executable": { "level": "errors",
       "file_output": false
     },
     "grenade_launcher": { "level": "important", "file_output": false, "throttle": 0.0 },

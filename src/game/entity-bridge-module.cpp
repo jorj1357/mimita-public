@@ -112,4 +112,12 @@ mimita::host::HostResult findHostJoinToken(const char* token,
     return gEntity->find_join_token(gHostData, token, out);
 }
 
+mimita::host::HostResult sendHostAvatarManifests(
+    mimita::host::EntityHandle receiver) {
+    if (!gEntity || !gEntity->send_avatar_manifests) {
+        return mimita::host::HostResult::Unsupported;
+    }
+    return gEntity->send_avatar_manifests(gHostData, receiver);
+}
+
 }  // namespace mimita::game

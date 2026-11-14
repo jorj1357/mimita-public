@@ -289,6 +289,53 @@ here performs the ownership cutover.
   generation 115 linked (`build/game/generation-115/game-g115.dll`,
   0 compiled / 615 skipped, link 15.5 s).
 
+## Phase 1k render lane complete (owner-directed)
+
+- Fully migrated the last four render-lane files to the contract:
+  - `src/entities/player-render.cpp` (body-part/extra-part draw, outline/cull,
+    render-mesh and capsule paths, shadow depth, `pushState`/`popState`)
+  - `src/entities/player-render-mesh.cpp` (already done in Phase 1j)
+  - `src/physics/physical-entity.cpp` (box, sphere, and prop-model paths,
+    `pushState`/`popState`, uploads)
+  - `src/render/render-player.cpp` (blend/outline/capsule/wireframe guards,
+    trail batch, `pushState`/`popState`)
+- Result: **the entire render lane has 0 raw GL calls** outside `glfw`
+  window/input. Every shader program is game-owned (`WorldShader`,
+  `ShadowShader`, `PostFX`, skybox).
+- Evidence: EXE build `2026-11-14T13:54:46.160916Z` succeeded.
+- Whole-game DLL compile is blocked by Agent A's in-progress
+  `src/game/game-input-module.cpp:83` (`event.paths` is
+  `const char (*)[260]` but `handleGameInputDrop` takes `const char**`). That
+  file is A's lane; the last successful DLL remains generation 115.
+
+## Phase 1l upload and mipmap sweep (owner-directed)
+
+- Extended the render contract for texture uploads:
+  - `PixelFormat::RG`, `PixelStoreParameter`, `pixelStorei`, and
+    `generateMipmap(TextureTarget)` across the contract, EXE mapping, DLL
+    bridge, and host submit switch.
+- Fully migrated:
+  - `src/combat/weapon-model-cache.cpp` (weapon texture upload, mesh upload)
+  - `src/avatar/avatar-atlas.cpp` (all three atlas texture uploads)
+- Evidence: EXE build `2026-11-14T14:18:20.275535Z` succeeded; whole-game DLL
+  generation 130 linked (`build/game/generation-130/game-g130.dll`,
+  54 compiled / 562 skipped, link 23.4 s).
+
+## Phase 1m map/player/replay upload and target sweep
+
+- Spec: recorded the **world-ownership decision** (game DLL owns the client
+  `World`; `CAP_WORLD` stays the server `HeadlessWorld` surface; client world
+  queries stay in the DLL) in `docs/specs/hotreload/hotreload.md`.
+- Contract: added `TextureFormat::RGBA8` (EXE mapping and host mapping).
+- Fully migrated (0 raw GL):
+  - `src/map/texture.cpp` (fallback + `loadTexture` upload)
+  - `src/entities/player-loader.cpp` (white texture + glTF image upload)
+  - `src/replay/replay-export-target.cpp` (offscreen color texture + depth
+    renderbuffer + completeness check)
+- `src/map/map_render.cpp` counted 26 raw-GL "sites" but they are all
+  commented-out dead code; no active GL there.
+- Evidence: EXE build `2026-11-14T14:41:21.629869Z` succeeded.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls
@@ -400,14 +447,17 @@ here performs the ownership cutover.
 
 ## Next
 
-1. Finish the last three bind/draw/state files: `render-player` (95 raw GL),
-   `physical-entity` (69), `player-render` (53).
-2. Migrate world-query call sites to A's `src/game/world-bridge-module.*`
-   (`readWorldInfo`, `castHostWorldRay`, `pickHostSpawn`); the host CAP_WORLD
-   surface already exists.
-3. Agent A retires `Renderer::shaderProgram` creation and
+1. Continue the remaining non-render raw-GL sweep: `avatar/cosmetic-system`
+   (44), `map/map_render` (26), `replay/replay-export` (22),
+   `replay/replay-export-target` (15), `map/map-loader-material` (16),
+   `entities/player-loader` (14), `map/texture` (14), and the smaller
+   debug/game-cli/network/perf/notifications files.
+2. Agent A retires `Renderer::shaderProgram` creation and
    `reloadWorldShaderIfChanged`; game code no longer reads it.
-4. Agent A: swap hardening (per-generation GL registry, `gameQuiesce` Busy,
+3. Agent A: swap hardening (per-generation GL registry, `gameQuiesce` Busy,
    `gameShutdown` release, pending-render drain).
-5. Runtime proof: whole-game own-frame, then save → rebuild → same-PID swap with
-   continuity. Extend the static gate to ban raw `gl*` after the sweep.
+4. Runtime proof: whole-game own-frame, then save → rebuild → same-PID swap with
+   continuity.
+5. Extend the static gate to ban raw `gl*` and finish the ownership cutover.
+6. World stays DLL-owned: do not add a host client-world adapter or migrate
+   client `World` queries to CAP_WORLD.

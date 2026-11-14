@@ -7,8 +7,9 @@
 */
 #include "replay/replay-export-target.h"
 #include "game/gl-resource-bridge-module.h"
+#include "render/render-command.h"
 
-#include <glad/glad.h>
+namespace r = mimita::game::render;
 
 static ReplayExportTarget gTarget;
 
@@ -22,31 +23,34 @@ bool replayExportTargetInit(int w, int h)
     gTarget.height = h;
 
     gTarget.fbo = mimita::game::genFramebuffer();
-    glBindFramebuffer(GL_FRAMEBUFFER, gTarget.fbo);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, gTarget.fbo);
 
     gTarget.colorTex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, gTarget.colorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                           GL_TEXTURE_2D, gTarget.colorTex, 0);
+    r::bindTexture(r::TextureTarget::Texture2D, gTarget.colorTex);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA8,
+                  w, h, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte, nullptr);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToEdge);
+    r::framebufferTexture2D(r::TextureTarget::Texture2D,
+                            r::FramebufferAttachment::Color0, gTarget.colorTex);
 
     gTarget.depthRbo = mimita::game::genRenderbuffer();
-    glBindRenderbuffer(GL_RENDERBUFFER, gTarget.depthRbo);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, gTarget.depthRbo);
+    r::bindRenderbuffer(gTarget.depthRbo);
+    r::renderbufferStorage(r::RenderbufferFormat::Depth24, w, h);
+    r::framebufferRenderbuffer(r::FramebufferAttachment::Depth, gTarget.depthRbo);
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    const bool complete = r::checkFramebufferStatus();
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+    r::bindTexture(r::TextureTarget::Texture2D, 0);
+    r::bindRenderbuffer(0);
 
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
+    if (!complete) {
         replayExportTargetDestroy();
         return false;
     }

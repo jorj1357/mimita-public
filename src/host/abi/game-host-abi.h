@@ -148,6 +148,15 @@ struct EntitySnapshotV1 {
     std::uint32_t vipColorCount;
     float vipColors[32][4];
     char progressionTicket[256];
+
+    // Godball relay state.
+    float godballX;
+    float godballY;
+    float godballZ;
+    float godballVx;
+    float godballVy;
+    float godballVz;
+    std::uint32_t godballActive;
 };
 
 // Resident services the game generation may call. Functions are synchronous and
@@ -182,6 +191,30 @@ struct HostServicesV1 {
     using GetCapabilityFn = void* (*)(void* hostUserData, std::uint32_t capability,
                                       std::uint32_t version);
     GetCapabilityFn get_capability;
+};
+
+inline constexpr std::uint32_t kEventGameInput = 723u;
+
+enum class GameInputKind : std::uint32_t {
+    Key = 1,
+    Char = 2,
+    Scroll = 3,
+    Drop = 4,
+};
+
+struct GameInputEventV1 {
+    std::uint32_t version;
+    std::uint32_t structSize;
+    GameInputKind kind;
+    std::int32_t key;
+    std::int32_t scancode;
+    std::int32_t action;
+    std::int32_t mods;
+    std::uint32_t codepoint;
+    double scrollX;
+    double scrollY;
+    std::uint32_t pathCount;
+    char paths[8][260];
 };
 
 struct GameStartupV1 {

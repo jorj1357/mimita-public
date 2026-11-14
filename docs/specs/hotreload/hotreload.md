@@ -2140,3 +2140,21 @@ game-owned world shader.
 The counts above are a static source scan. They do not prove render parity,
 resource lifetime, state correctness, or visual acceptance. Those require the
 live dev-loop run and human review described in this document.
+
+### World ownership decision (2026-11-14)
+
+The **game DLL owns the client `World` instance**. The resident host must not
+own the client world and must not expose a client-world adapter through
+`CAP_WORLD`.
+
+- `CAP_WORLD` remains the **server** `HeadlessWorld` surface
+  (`readWorldInfo`, `castHostWorldRay`, `pickHostSpawn`). The host's
+  `HostServerWorldAdapter` is the owner of that server world.
+- Client world queries (spawn placement, client raycasts, client collision
+  reads) stay in the game generation and read the DLL-owned `World` directly.
+- Do **not** migrate client `World` queries to `CAP_WORLD`. A host client-world
+  adapter would split world ownership and is explicitly rejected.
+- Durable world state that must survive a generation swap is handled by the
+  resident record/schema migration rules, not by moving the client `World`
+  object into the host.
+

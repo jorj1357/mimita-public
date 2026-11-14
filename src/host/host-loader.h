@@ -8,7 +8,8 @@
 //                                     and frees the library.
 //   barrier.finishQuiesce() == Ok  -> caller guarantees no old-generation call,
 //                                     callback, job, or return address remains.
-//   commit(candidate)              -> make the candidate active, FreeLibrary old.
+//   commit(candidate)              -> make the candidate active; retire the old
+//                                     module until process exit (deferred unload).
 //   reject(candidate)              -> shutdown + FreeLibrary the candidate.
 //
 // This is header-only scaffolding. It is not called by the EXE yet, so it adds
@@ -21,6 +22,7 @@
 #include <cstddef>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "host/abi/game-host-abi.h"
 
@@ -113,7 +115,10 @@ public:
             return;
         }
         if (active_.module) {
-            ::FreeLibrary(active_.module);
+            // Deferred unload: legacy generations still own static C++ objects
+            // (workers/threads) whose DLL destructors can block FreeLibrary.
+            // The host callbacks are resident now, so the old module is inert.
+            retiredModules_.push_back(active_.module);
         }
         active_ = std::move(candidate);
         candidate.reset();
@@ -135,12 +140,14 @@ public:
             active_.api->shutdown();
         }
         if (active_.module) {
-            ::FreeLibrary(active_.module);
+            retiredModules_.push_back(active_.module);
         }
         active_.reset();
     }
 
 private:
+    std::vector<HMODULE> retiredModules_;
+
     static HostResult validate(const GameModuleV1* api, const HostServicesV1* services) {
         if (!api) {
             return HostResult::Unsupported;

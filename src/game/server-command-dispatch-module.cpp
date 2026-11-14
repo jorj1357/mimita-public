@@ -3,6 +3,7 @@
 
 #include "game/server-command-dispatch.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -18,9 +19,11 @@
 #include "game/session-identity-bridge-module.h"
 #include "game/transport-bridge-module.h"
 #include "network/community-server-config.h"
+#include "network/coordinator-client.h"
 #include "network/packets.h"
 #include "network/server.h"
 #include "physics/movement/movement-conversion.h"
+#include "website/api-client.h"
 
 namespace mimita::game {
 
@@ -694,6 +697,7 @@ bool dispatchHello(const mimita::host::TransportMessageV1* message,
     }
     sendToPeer(message->peer, MimitaNet::PACKET_WELCOME, &welcome,
                sizeof(welcome));
+    sendHostAvatarManifests(handle);
 
     if (!existing) {
         MimitaNet::ChatMessageEventPacket event{};
@@ -766,6 +770,52 @@ void queue_server_chat(std::uint32_t serverTick, const std::string& text) {
     }
 }
 
+void broadcast_vip_styles(std::uint32_t serverTick) {
+    mimita::host::EntityHandle players[kMaxInboundPlayers] = {};
+    const std::uint32_t count = listHostEntities(
+        mimita::host::EntityKind::Player, players, kMaxInboundPlayers);
+    const std::uint32_t limit =
+        count < kMaxInboundPlayers ? count : kMaxInboundPlayers;
+    for (std::uint32_t targetIndex = 0; targetIndex < limit; ++targetIndex) {
+        const std::uint32_t targetId =
+            mimita::host::entityId(players[targetIndex]);
+        mimita::host::EntitySnapshotV1 target{};
+        target.structSize = static_cast<std::uint32_t>(sizeof(target));
+        if (readHostEntity(players[targetIndex], &target) !=
+                mimita::host::HostResult::Ok ||
+            target.vipStyleEpoch == 0) {
+            continue;
+        }
+        MimitaNet::VipStyleEventPacket packet{};
+        packet.header.type = MimitaNet::PACKET_VIP_STYLE_EVENT;
+        packet.header.tick = serverTick;
+        packet.header.playerId = targetId;
+        packet.playerId = targetId;
+        packet.styleEpoch = target.vipStyleEpoch;
+        packet.styleKind = target.vipDetailStyleKind;
+        packet.animation = target.vipDetailAnimation;
+        packet.direction = target.vipDetailDirection;
+        packet.rainbowSpeed = target.vipRainbowSpeed;
+        const std::uint32_t colorCount =
+            std::min<std::uint32_t>(target.vipColorCount, 32);
+        packet.colorCount = static_cast<std::uint8_t>(colorCount);
+        for (std::uint32_t index = 0; index < colorCount; ++index) {
+            packet.colors[index].r = static_cast<std::uint8_t>(
+                std::clamp(target.vipColors[index][0], 0.0f, 1.0f) * 255.0f);
+            packet.colors[index].g = static_cast<std::uint8_t>(
+                std::clamp(target.vipColors[index][1], 0.0f, 1.0f) * 255.0f);
+            packet.colors[index].b = static_cast<std::uint8_t>(
+                std::clamp(target.vipColors[index][2], 0.0f, 1.0f) * 255.0f);
+        }
+        for (std::uint32_t recipientIndex = 0; recipientIndex < limit;
+             ++recipientIndex) {
+            sendToPlayer(mimita::host::entityId(players[recipientIndex]),
+                         MimitaNet::PACKET_VIP_STYLE_EVENT, &packet,
+                         sizeof(packet));
+        }
+    }
+}
+
 bool dispatchJoin(const mimita::host::TransportMessageV1* message,
                   const mimita::host::HostServicesV1* services) {
     if (!message || !message->payload ||
@@ -785,15 +835,24 @@ bool dispatchJoin(const mimita::host::TransportMessageV1* message,
         send_join_reject(message, 2);
         return true;
     }
-    // Coordinator/VIP policy remains resident until its state is bounded.
-    if (MimitaNet::getServerCoordinatorCode() != "LOCAL") {
-        return false;
+    const std::string coordinatorCode = MimitaNet::getServerCoordinatorCode();
+    if (coordinatorCode.empty()) {
+        send_join_reject(message, 2);
+        return true;
+    }
+    if (coordinatorCode != "LOCAL" &&
+        !MimitaNet::coordinatorIceValidateJoin(coordinatorCode, joinToken)) {
+        send_join_reject(message, 2);
+        return true;
     }
     const std::string vipTicket(join->vipJoinTicket,
                                 strnlen(join->vipJoinTicket,
                                         sizeof(join->vipJoinTicket)));
+    VipJoinTicketResult vipResult;
+    bool hasVipTicket = false;
     if (!vipTicket.empty()) {
-        return false;
+        vipResult = verifyVipJoinTicket(vipTicket, coordinatorCode, "", 2000);
+        hasVipTicket = vipResult.ok && vipResult.verified;
     }
     if (getSessionFlag(
             mimita::host::SessionFlagField::PasswordProtected) != 0) {
@@ -855,7 +914,62 @@ bool dispatchJoin(const mimita::host::TransportMessageV1* message,
     std::snprintf(player.joinToken, sizeof(player.joinToken), "%s",
                   joinToken.c_str());
     player.joinTokenValidated = 1;
-    player.accountId = 0;
+    if (hasVipTicket) {
+        player.accountId = static_cast<std::uint32_t>(vipResult.accountId);
+        player.vipAccountId = vipResult.accountId;
+        std::snprintf(player.accountRole, sizeof(player.accountRole), "%s",
+                      vipResult.role.c_str());
+        player.vipTier = vipResult.vipAppearance.tier;
+        player.vipStyleKind = vipResult.vipAppearance.styleKind;
+        player.vipColorR = vipResult.vipAppearance.colorR;
+        player.vipColorG = vipResult.vipAppearance.colorG;
+        player.vipColorB = vipResult.vipAppearance.colorB;
+        player.vipFlags = vipResult.vipAppearance.flags;
+        player.vipStyleEpoch = vipResult.vipStyleDetail.styleEpoch > 0
+            ? vipResult.vipStyleDetail.styleEpoch : 1;
+        player.vipDetailStyleKind = vipResult.vipStyleDetail.styleKind;
+        player.vipDetailAnimation = vipResult.vipStyleDetail.animation;
+        player.vipDetailDirection = vipResult.vipStyleDetail.direction;
+        player.vipRainbowSpeed = vipResult.vipStyleDetail.rainbowSpeed;
+        player.vipSolidColor[0] = vipResult.vipStyleDetail.solidColor.r;
+        player.vipSolidColor[1] = vipResult.vipStyleDetail.solidColor.g;
+        player.vipSolidColor[2] = vipResult.vipStyleDetail.solidColor.b;
+        player.vipSolidColor[3] = vipResult.vipStyleDetail.solidColor.a;
+        const std::uint32_t colorCount = static_cast<std::uint32_t>(
+            std::min<std::size_t>(vipResult.vipStyleDetail.colors.size(), 32));
+        player.vipColorCount = colorCount;
+        for (std::uint32_t index = 0; index < colorCount; ++index) {
+            player.vipColors[index][0] =
+                vipResult.vipStyleDetail.colors[index].r;
+            player.vipColors[index][1] =
+                vipResult.vipStyleDetail.colors[index].g;
+            player.vipColors[index][2] =
+                vipResult.vipStyleDetail.colors[index].b;
+            player.vipColors[index][3] =
+                vipResult.vipStyleDetail.colors[index].a;
+        }
+        std::snprintf(player.progressionTicket,
+                      sizeof(player.progressionTicket), "%s",
+                      vipTicket.c_str());
+    } else if (!existing) {
+        const MimitaVip::VipAppearance free = MimitaVip::freeAppearance();
+        player.accountId = 0;
+        player.vipAccountId = 0;
+        player.accountRole[0] = 0;
+        player.vipTier = free.tier;
+        player.vipStyleKind = free.styleKind;
+        player.vipColorR = free.colorR;
+        player.vipColorG = free.colorG;
+        player.vipColorB = free.colorB;
+        player.vipFlags = free.flags;
+        player.vipStyleEpoch = 0;
+        player.vipDetailStyleKind = 0;
+        player.vipDetailAnimation = 0;
+        player.vipDetailDirection = 0;
+        player.vipRainbowSpeed = 1.0f;
+        player.vipColorCount = 0;
+        player.progressionTicket[0] = 0;
+    }
     const std::uint32_t hostId = MimitaNet::serverHostPlayerId();
     if (hostId == 0) {
         MimitaNet::setServerHostPlayerId(playerId);
@@ -933,6 +1047,8 @@ bool dispatchJoin(const mimita::host::TransportMessageV1* message,
     }
     sendToPeer(message->peer, MimitaNet::PACKET_JOIN_ACCEPT, &accept,
                sizeof(accept));
+    sendHostAvatarManifests(handle);
+    broadcast_vip_styles(message->serverTick);
     if (!existing) {
         queue_server_chat(message->serverTick,
                           std::string(player.displayName) +
@@ -1113,6 +1229,52 @@ bool dispatchChatRequest(const mimita::host::TransportMessageV1* message,
     return true;
 }
 
+bool dispatchGodballState(const mimita::host::TransportMessageV1* message,
+                          const mimita::host::HostServicesV1*) {
+    if (!message || !message->payload ||
+        message->payloadSize < sizeof(MimitaNet::GodballStatePacket)) {
+        return false;
+    }
+    const auto* packet =
+        reinterpret_cast<const MimitaNet::GodballStatePacket*>(message->payload);
+    if (packet->header.type != MimitaNet::PACKET_GODBALL_STATE ||
+        packet->header.magic != MimitaNet::PROTOCOL_MAGIC ||
+        packet->header.version != MimitaNet::PROTOCOL_VERSION) {
+        return false;
+    }
+    const std::uint32_t playerId = packet->header.playerId;
+    const auto handle = mimita::host::makeEntityHandle(
+        mimita::host::EntityKind::Player, playerId);
+    mimita::host::EntitySnapshotV1 player{};
+    player.structSize = static_cast<std::uint32_t>(sizeof(player));
+    if (readHostEntity(handle, &player) != mimita::host::HostResult::Ok) {
+        return false;
+    }
+    player.godballX = packet->posX;
+    player.godballY = packet->posY;
+    player.godballZ = packet->posZ;
+    player.godballVx = packet->velX;
+    player.godballVy = packet->velY;
+    player.godballVz = packet->velZ;
+    player.godballActive = packet->active != 0 ? 1u : 0u;
+    writeHostEntity(handle, &player);
+
+    mimita::host::EntityHandle players[kMaxInboundPlayers] = {};
+    const std::uint32_t count = listHostEntities(
+        mimita::host::EntityKind::Player, players, kMaxInboundPlayers);
+    const std::uint32_t limit =
+        count < kMaxInboundPlayers ? count : kMaxInboundPlayers;
+    for (std::uint32_t i = 0; i < limit; ++i) {
+        const std::uint32_t recipient = mimita::host::entityId(players[i]);
+        if (recipient == playerId) {
+            continue;
+        }
+        sendToPlayer(recipient, MimitaNet::PACKET_GODBALL_STATE,
+                     message->payload, message->payloadSize);
+    }
+    return true;
+}
+
 }  // namespace
 
 bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
@@ -1144,6 +1306,8 @@ bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
             return dispatchJoin(message, services);
         case MimitaNet::PACKET_CHAT_REQUEST:
             return dispatchChatRequest(message, services);
+        case MimitaNet::PACKET_GODBALL_STATE:
+            return dispatchGodballState(message, services);
         default:
             return false;
     }
