@@ -11,7 +11,12 @@
 #include <cstring>
 
 #include "engine/whole-game-entry.h"
+#include "gui/gui-main.h"
+#include "game/game-state.h"
+#include "game/resident-state-module.h"
+#include "debug/structured-log.h"
 #include "game/server-command-dispatch.h"
+#include "devtools/terminal.h"
 #include "game/server-runtime.h"
 #include "game/game-input-module.h"
 #include "host/abi/game-host-abi.h"
@@ -147,6 +152,65 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
         if (handled) *handled = 1;
         return HostResult::Ok;
     }
+    if (eventId == kEventStartupConnect) {
+        if (!payload || payloadSize < sizeof(StartupConnectV1)) {
+            return HostResult::InvalidArgument;
+        }
+        auto* request = static_cast<StartupConnectV1*>(payload);
+        if (request->version != kStartupConnectVersion ||
+            request->structSize < sizeof(StartupConnectV1)) {
+            return HostResult::InvalidArgument;
+        }
+        MultiplayerConnectInfo info;
+        info.shouldConnect = request->shouldConnect != 0;
+        info.directAddress = request->directAddress;
+        info.roomCode = request->roomCode;
+        info.playerName = request->playerName;
+        info.mapName = request->mapName;
+        info.password = request->password;
+        info.serverName = request->serverName;
+        info.passwordProtected = request->passwordProtected != 0;
+        if (auto* state = mimita::game::gameStatePtr()) {
+            *state = GAME_PLAYING;
+        }
+        setPendingMultiplayerConnect(info);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "game.startup.connect", "startup-connect",
+            "launcher connect request applied to game generation", 0,
+            {{"should_connect", info.shouldConnect},
+             {"direct_address", info.directAddress},
+             {"room_code", info.roomCode},
+             {"player_name", info.playerName},
+             {"map_name", info.mapName}}, __FILE__, __LINE__, __func__);
+        const std::uint32_t commandCount =
+            request->startupCommandCount < 4 ? request->startupCommandCount : 4;
+        for (std::uint32_t index = 0; index < commandCount; ++index) {
+            if (request->startupCommands[index][0] != '\0') {
+                mimita::game::queueStartupCommand(request->startupCommands[index]);
+            }
+        }
+        if (handled) *handled = 1;
+        return HostResult::Ok;
+    }
+    if (eventId == kEventAgentCommand) {
+        if (!payload || payloadSize < sizeof(AgentCommandV1)) {
+            return HostResult::InvalidArgument;
+        }
+        auto* command = static_cast<AgentCommandV1*>(payload);
+        if (command->command[0] == '\0') return HostResult::InvalidArgument;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "dev-loop.command.delivered", command->requestId,
+            "game generation consumed host-owned agent command", 0,
+            {{"command", command->command}, {"scenario_id", command->scenarioId},
+             {"step_index", command->stepIndex}, {"step_count", command->stepCount}},
+            __FILE__, __LINE__, __func__);
+        Terminal::instance().executeWithRequestId(command->command,
+                                                  command->requestId);
+        if (handled) *handled = 1;
+        return HostResult::Ok;
+    }
     if (eventId == kEventTransportMessage) {
         if (!payload || payloadSize < sizeof(TransportMessageV1)) {
             return HostResult::InvalidArgument;
@@ -238,6 +302,7 @@ GetMimitaGameServerV1(std::uint32_t abiVersion) {
         mimita::host::GameServerV1 server{};
         server.abiVersion = mimita::host::kGameServerAbiVersion;
         server.structSize = static_cast<std::uint32_t>(sizeof(server));
+        server.runtimeRevision = 2;
         server.process_packet = &mimita::game::serverRuntimeProcessPacket;
         server.simulate_players = &mimita::game::serverRuntimeSimulatePlayers;
         server.simulate_world = &mimita::game::serverRuntimeSimulateWorld;

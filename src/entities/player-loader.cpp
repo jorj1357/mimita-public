@@ -3,6 +3,7 @@
 #include "game/job-bridge-module.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -15,6 +16,8 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
+
+#include <GLFW/glfw3.h>
 
 #include "avatar/character-registry.h"
 #include "camera.h"
@@ -122,10 +125,16 @@ unsigned int readIndex(const tinygltf::Model& model, const tinygltf::Accessor& a
 
 } // anonymous namespace
 
+static std::atomic<std::uint32_t> gOpaqueWhiteTexture{0};
+
 static std::uint32_t getOpaqueWhiteTexture() {
-    static std::uint32_t tex = 0;
+    std::uint32_t tex = gOpaqueWhiteTexture.load(std::memory_order_acquire);
     if (tex) return tex;
+    // Model jobs run on a worker. Only the GL owner thread may create the
+    // shared white texture; requestModelLoad prewarms it before dispatching.
+    if (!glfwGetCurrentContext()) return 0;
     tex = mimita::game::genTexture();
+    if (!tex) return 0;
     r::bindTexture(r::TextureTarget::Texture2D, tex);
     unsigned char white[] = {255, 255, 255, 255};
     r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
@@ -138,6 +147,7 @@ static std::uint32_t getOpaqueWhiteTexture() {
                      r::TextureValue::Nearest);
     r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
                      r::TextureValue::Nearest);
+    gOpaqueWhiteTexture.store(tex, std::memory_order_release);
     return tex;
 }
 
@@ -1363,6 +1373,8 @@ void Player::requestModelLoad(const std::string& filepath)
     mPendingModel = data;
     PendingPlayerModel* raw = mPendingModel.get();
 
+    // Must run on the GL thread before the model job calls appendNodeRenderMesh.
+    getOpaqueWhiteTexture();
     mimita::game::runDetached([raw] { modelLoadThreadFunc(raw); }, "player-model-load");
 }
 

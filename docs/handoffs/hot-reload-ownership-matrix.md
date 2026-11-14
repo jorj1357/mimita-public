@@ -464,6 +464,7 @@
 | `src/host/game-gl-legacy.cpp` | `resident` | - |
 | `src/host/game-job-legacy.cpp` | `resident` | - |
 | `src/host/game-socket-legacy.cpp` | `resident` | - |
+| `src/host/game-state-bridge-legacy.cpp` | `resident` | `scenario-runner-and-gameplay-proof` |
 | `src/host/game-state-legacy.cpp` | `resident` | - |
 | `src/host/host-runtime.cpp` | `resident` | `safe-generation-unload` |
 | `src/host/host-server-entity-adapter.cpp` | `resident` | - |

@@ -168,3 +168,10 @@ Audit of C-owned render/menu paths (2026 11 14 1008):
 3. A new file must be placed here in the same change that adds it.
 4. When a file moves tables, update this file, `config/source-owners.json`, and
    the manifest together.
+
+## ECS recovery (2026-11-14)
+
+`src/ecs/**` is restored as game-owned source. It owns stable entity identity,
+typed component storage, dynamic component schema/migration, relationships, and
+prediction metadata. Legacy `Player`/`Npc` remain authoritative until component
+systems take over. The live mirror is `src/game/ecs-live-sync.*`.

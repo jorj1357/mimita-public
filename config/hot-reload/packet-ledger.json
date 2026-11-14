@@ -1,0 +1,483 @@
+{
+  "counts": {
+    "client_dll": 12,
+    "server_dll": 78,
+    "total": 78
+  },
+  "generator": "devscripts/packet_registry_codegen.py",
+  "generator_version": 1,
+  "header": "src/host/generated/packet-registry-v1.h",
+  "packets": [
+    {
+      "client": "dll",
+      "id": 1,
+      "name": "PACKET_HELLO",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 2,
+      "name": "PACKET_WELCOME",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 3,
+      "name": "PACKET_INPUT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 4,
+      "name": "PACKET_SNAPSHOT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 5,
+      "name": "PACKET_DISCONNECT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 6,
+      "name": "PACKET_PING",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 7,
+      "name": "PACKET_PLAYER_LIST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 8,
+      "name": "PACKET_PROFILE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 9,
+      "name": "PACKET_ENTITY_SPAWN",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 10,
+      "name": "PACKET_ENTITY_DESPAWN",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 11,
+      "name": "PACKET_SPAWN_NPC_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 12,
+      "name": "PACKET_TELEPORT_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 13,
+      "name": "PACKET_EXPLODE_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 14,
+      "name": "PACKET_SHOT_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 15,
+      "name": "PACKET_SHOT_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 16,
+      "name": "PACKET_CHAT_MESSAGE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 17,
+      "name": "PACKET_NPC_DAMAGE_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 18,
+      "name": "PACKET_NPC_DAMAGE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 19,
+      "name": "PACKET_SERVER_COMMAND",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 20,
+      "name": "PACKET_JOIN_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 21,
+      "name": "PACKET_JOIN_ACCEPT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 22,
+      "name": "PACKET_JOIN_REJECT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 23,
+      "name": "PACKET_RECONNECT_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 24,
+      "name": "PACKET_RECONNECT_ACCEPT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 25,
+      "name": "PACKET_DISAGREEMENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 26,
+      "name": "PACKET_CLIENT_MAP_READY",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 28,
+      "name": "PACKET_PROJECTILE_SPAWN_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 29,
+      "name": "PACKET_PROJECTILE_STATE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 30,
+      "name": "PACKET_PROJECTILE_EXPLODE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 31,
+      "name": "PACKET_PROJECTILE_DESPAWN_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 33,
+      "name": "PACKET_MELEE_HIT_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 34,
+      "name": "PACKET_PELLET_BLAST_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 35,
+      "name": "PACKET_PELLET_BLAST_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 36,
+      "name": "PACKET_GODBALL_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 37,
+      "name": "PACKET_PROJECTILE_FIRE_RESULT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 38,
+      "name": "PACKET_ATTACK_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 39,
+      "name": "PACKET_ATTACK_RESULT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 40,
+      "name": "PACKET_RELOAD_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 41,
+      "name": "PACKET_RELOAD_RESULT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 42,
+      "name": "PACKET_RESPAWN_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 43,
+      "name": "PACKET_PLAYER_RESPAWNED",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 44,
+      "name": "PACKET_SPAWN_ACK",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 45,
+      "name": "PACKET_SPAWN_ACTIVATED",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 46,
+      "name": "PACKET_RELIABLE_EVENT_ACK",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 47,
+      "name": "PACKET_DAMAGE_CONFIRMED_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 48,
+      "name": "PACKET_CHAT_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 49,
+      "name": "PACKET_CHAT_MESSAGE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "dll",
+      "id": 50,
+      "name": "PACKET_CHAT_TYPING_STATE_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 51,
+      "name": "PACKET_CHAT_TYPING_STATE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 52,
+      "name": "PACKET_VIP_STYLE_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 53,
+      "name": "PACKET_PLAYER_CONNECTION_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 54,
+      "name": "PACKET_SERVER_COMMAND_RESULT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 55,
+      "name": "PACKET_DUEL_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 56,
+      "name": "PACKET_DUEL_ENEMY_SPAWN",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 57,
+      "name": "PACKET_DUEL_REMATCH_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 58,
+      "name": "PACKET_MAP_CHANGE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 59,
+      "name": "PACKET_SPYKNIFE_HIT_CLAIM",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 60,
+      "name": "PACKET_GODBALL_HIT_CLAIM",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 61,
+      "name": "PACKET_SERVER_NOTIFICATION",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 62,
+      "name": "PACKET_AVATAR_MANIFEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 63,
+      "name": "PACKET_AVATAR_ASSET_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 64,
+      "name": "PACKET_AVATAR_ASSET_CHUNK",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 65,
+      "name": "PACKET_PROGRESSION_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 66,
+      "name": "PACKET_BOMB_TAG_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 67,
+      "name": "PACKET_BOMB_TAG_PASS_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 68,
+      "name": "PACKET_KILL_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 69,
+      "name": "PACKET_RAGDOLL_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 70,
+      "name": "PACKET_PHYSICAL_ENTITY_SPAWN",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 71,
+      "name": "PACKET_PHYSICAL_ENTITY_DESPAWN",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 72,
+      "name": "PACKET_PHYSICAL_ENTITY_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 73,
+      "name": "PACKET_ENTITY_CUT_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 74,
+      "name": "PACKET_DISASTER_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 75,
+      "name": "PACKET_VEHICLE_INPUT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 76,
+      "name": "PACKET_VEHICLE_SEAT_REQUEST",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 77,
+      "name": "PACKET_VEHICLE_SPAWN_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 78,
+      "name": "PACKET_VEHICLE_DESPAWN_EVENT",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 79,
+      "name": "PACKET_VEHICLE_STATE",
+      "server": "dll"
+    },
+    {
+      "client": "resident",
+      "id": 80,
+      "name": "PACKET_VEHICLE_SEAT_EVENT",
+      "server": "dll"
+    }
+  ],
+  "protocol_version": 52,
+  "schema_sha256": "712db33fe81e9d86f41fefe127f0ecd553e742d2228238223971c7d5e760b5b4",
+  "schema_version": 1
+}

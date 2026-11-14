@@ -1,5 +1,6 @@
 // 2026-11-12
-// Resident host runtime implementation. Disabled unless MIMITA_GAME_PROBE=1.
+// Resident host runtime implementation. Hot by default; MIMITA_GAME_DISABLE=1
+// keeps the resident EXE path.
 
 #include "host/host-runtime.h"
 #include "renderer/renderer.h"
@@ -37,6 +38,7 @@
 #include "host/abi/diagnostics-capability.h"
 #include "host/abi/render-device-capability.h"
 #include "host/abi/state-capability.h"
+#include "game/state-bridge-module.h"
 #include "host/abi/persistence-capability.h"
 #include "host/abi/module-capability.h"
 #include "host/abi/transport-capability.h"
@@ -1193,6 +1195,9 @@ void* renderDeviceAcquire(void*, std::int32_t width, std::int32_t height,
     if (!gRenderDevice) {
         gRenderDevice = new Renderer(width, height, title ? title : "MiMITA");
         HostRuntime::instance().installInputCallbacks(gRenderDevice->window);
+        // The thread that creates the context is the only thread allowed to
+        // call GL. Workers must marshal uploads to the main thread.
+        HostRuntime::instance().markGlThread();
     }
     return gRenderDevice;
 }
@@ -1534,21 +1539,82 @@ std::int32_t socketRecvFrom(void*, std::uint64_t handle, void* data,
     return 1;
 }
 
-std::uint32_t glGenTexture(void*) { GLuint id = 0; glGenTextures(1, &id); return id; }
-void glDeleteTexture(void*, std::uint32_t id) { GLuint value = id; glDeleteTextures(1, &value); }
-std::uint32_t glGenBuffer(void*) { GLuint id = 0; glGenBuffers(1, &id); return id; }
-void glDeleteBuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteBuffers(1, &value); }
-std::uint32_t glGenVertexArray(void*) { GLuint id = 0; glGenVertexArrays(1, &id); return id; }
-void glDeleteVertexArray(void*, std::uint32_t id) { GLuint value = id; glDeleteVertexArrays(1, &value); }
-std::uint32_t glGenFramebuffer(void*) { GLuint id = 0; glGenFramebuffers(1, &id); return id; }
-void glDeleteFramebuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteFramebuffers(1, &value); }
-std::uint32_t glGenRenderbuffer(void*) { GLuint id = 0; glGenRenderbuffers(1, &id); return id; }
-void glDeleteRenderbuffer(void*, std::uint32_t id) { GLuint value = id; glDeleteRenderbuffers(1, &value); }
-std::uint32_t glGenQuery(void*) { GLuint id = 0; glGenQueries(1, &id); return id; }
-void glDeleteQuery(void*, std::uint32_t id) { GLuint value = id; glDeleteQueries(1, &value); }
-void glDeleteShaderRes(void*, std::uint32_t id) { glDeleteShader(id); }
-void glDeleteProgramRes(void*, std::uint32_t id) { glDeleteProgram(id); }
-void glGenerateMipmapRes(void*, std::uint32_t target) { glGenerateMipmap(target); }
+std::uint32_t glGenTexture(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenTexture")) return 0;
+    GLuint id = 0; glGenTextures(1, &id); return id;
+}
+void glDeleteTexture(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteTexture")) {
+        HostRuntime::instance().deferGlDelete(1, id); return;
+    }
+    GLuint value = id; glDeleteTextures(1, &value);
+}
+std::uint32_t glGenBuffer(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenBuffer")) return 0;
+    GLuint id = 0; glGenBuffers(1, &id); return id;
+}
+void glDeleteBuffer(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteBuffer")) {
+        HostRuntime::instance().deferGlDelete(2, id); return;
+    }
+    GLuint value = id; glDeleteBuffers(1, &value);
+}
+std::uint32_t glGenVertexArray(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenVertexArray")) return 0;
+    GLuint id = 0; glGenVertexArrays(1, &id); return id;
+}
+void glDeleteVertexArray(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteVertexArray")) {
+        HostRuntime::instance().deferGlDelete(3, id); return;
+    }
+    GLuint value = id; glDeleteVertexArrays(1, &value);
+}
+std::uint32_t glGenFramebuffer(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenFramebuffer")) return 0;
+    GLuint id = 0; glGenFramebuffers(1, &id); return id;
+}
+void glDeleteFramebuffer(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteFramebuffer")) {
+        HostRuntime::instance().deferGlDelete(4, id); return;
+    }
+    GLuint value = id; glDeleteFramebuffers(1, &value);
+}
+std::uint32_t glGenRenderbuffer(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenRenderbuffer")) return 0;
+    GLuint id = 0; glGenRenderbuffers(1, &id); return id;
+}
+void glDeleteRenderbuffer(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteRenderbuffer")) {
+        HostRuntime::instance().deferGlDelete(5, id); return;
+    }
+    GLuint value = id; glDeleteRenderbuffers(1, &value);
+}
+std::uint32_t glGenQuery(void*) {
+    if (!HostRuntime::instance().onGlThread("glGenQuery")) return 0;
+    GLuint id = 0; glGenQueries(1, &id); return id;
+}
+void glDeleteQuery(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteQuery")) {
+        HostRuntime::instance().deferGlDelete(6, id); return;
+    }
+    GLuint value = id; glDeleteQueries(1, &value);
+}
+void glDeleteShaderRes(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteShader")) {
+        HostRuntime::instance().deferGlDelete(7, id); return;
+    }
+    glDeleteShader(id);
+}
+void glDeleteProgramRes(void*, std::uint32_t id) {
+    if (!HostRuntime::instance().onGlThread("glDeleteProgram")) {
+        HostRuntime::instance().deferGlDelete(8, id); return;
+    }
+    glDeleteProgram(id);
+}
+void glGenerateMipmapRes(void*, std::uint32_t target) {
+    if (!HostRuntime::instance().onGlThread("glGenerateMipmap")) return;
+    glGenerateMipmap(target);
+}
 
 namespace {
 
@@ -1635,6 +1701,7 @@ void restoreHostGlState(const HostGlState& state) {
 HostResult renderBufferData(void*, mimita::render::BufferTarget target,
                             std::uint64_t buffer, const void* data,
                             std::uint32_t size, mimita::render::BufferUsage usage) {
+    if (!HostRuntime::instance().onGlThread("renderBufferData")) return HostResult::Busy;
     glBindBuffer(toGl(target), static_cast<GLuint>(buffer));
     glBufferData(toGl(target), static_cast<GLsizeiptr>(size), data, toGl(usage));
     return HostResult::Ok;
@@ -1643,6 +1710,7 @@ HostResult renderBufferData(void*, mimita::render::BufferTarget target,
 HostResult renderBufferSubData(void*, mimita::render::BufferTarget target,
                                std::uint64_t buffer, std::uint32_t offset,
                                const void* data, std::uint32_t size) {
+    if (!HostRuntime::instance().onGlThread("renderBufferSubData")) return HostResult::Busy;
     glBindBuffer(toGl(target), static_cast<GLuint>(buffer));
     glBufferSubData(toGl(target), static_cast<GLintptr>(offset),
                     static_cast<GLsizeiptr>(size), data);
@@ -1657,6 +1725,7 @@ HostResult renderTexImage2D(void*, mimita::render::TextureTarget target,
                             mimita::render::PixelFormat pixelFormat,
                             mimita::render::PixelType pixelType,
                             const void* data, std::uint32_t) {
+    if (!HostRuntime::instance().onGlThread("renderTexImage2D")) return HostResult::Busy;
     glTexImage2D(toGl(target), level, static_cast<GLint>(toGl(format)), width,
                  height, border, toGl(pixelFormat), toGl(pixelType), data);
     return HostResult::Ok;
@@ -1665,6 +1734,7 @@ HostResult renderTexImage2D(void*, mimita::render::TextureTarget target,
 HostResult renderTexParameteri(void*, mimita::render::TextureTarget target,
                                mimita::render::TextureParameter parameter,
                                std::int32_t value) {
+    if (!HostRuntime::instance().onGlThread("renderTexParameteri")) return HostResult::Busy;
     glTexParameteri(toGl(target), toGl(parameter), static_cast<GLint>(value));
     return HostResult::Ok;
 }
@@ -1673,6 +1743,7 @@ HostResult renderVertexAttrib(void*, std::uint32_t index, std::int32_t size,
                               mimita::render::VertexType type,
                               std::uint32_t normalized, std::int32_t stride,
                               std::uint32_t offset) {
+    if (!HostRuntime::instance().onGlThread("renderVertexAttrib")) return HostResult::Busy;
     glVertexAttribPointer(index, size, toGl(type), normalized != 0, stride,
                           reinterpret_cast<const void*>(
                               static_cast<std::uintptr_t>(offset)));
@@ -1680,58 +1751,70 @@ HostResult renderVertexAttrib(void*, std::uint32_t index, std::int32_t size,
 }
 
 HostResult renderEnableAttrib(void*, std::uint32_t index, std::uint32_t enabled) {
+    if (!HostRuntime::instance().onGlThread("renderEnableAttrib")) return HostResult::Busy;
     if (enabled) glEnableVertexAttribArray(index);
     else glDisableVertexAttribArray(index);
     return HostResult::Ok;
 }
 
 HostResult renderUniform1i(void*, std::int32_t location, std::int32_t value) {
+    if (!HostRuntime::instance().onGlThread("renderUniform1i")) return HostResult::Busy;
     glUniform1i(location, value);
     return HostResult::Ok;
 }
 HostResult renderUniform1f(void*, std::int32_t location, float value) {
+    if (!HostRuntime::instance().onGlThread("renderUniform1f")) return HostResult::Busy;
     glUniform1f(location, value);
     return HostResult::Ok;
 }
 HostResult renderUniform2f(void*, std::int32_t location, float x, float y) {
+    if (!HostRuntime::instance().onGlThread("renderUniform2f")) return HostResult::Busy;
     glUniform2f(location, x, y);
     return HostResult::Ok;
 }
 HostResult renderUniform3f(void*, std::int32_t location, float x, float y, float z) {
+    if (!HostRuntime::instance().onGlThread("renderUniform3f")) return HostResult::Busy;
     glUniform3f(location, x, y, z);
     return HostResult::Ok;
 }
 HostResult renderUniform4f(void*, std::int32_t location, float x, float y, float z, float w) {
+    if (!HostRuntime::instance().onGlThread("renderUniform4f")) return HostResult::Busy;
     glUniform4f(location, x, y, z, w);
     return HostResult::Ok;
 }
 HostResult renderUniform1fv(void*, std::int32_t location, std::int32_t count,
                             const float* values) {
+    if (!HostRuntime::instance().onGlThread("renderUniform1fv")) return HostResult::Busy;
     glUniform1fv(location, static_cast<GLsizei>(count), values);
     return HostResult::Ok;
 }
 HostResult renderUniform2fv(void*, std::int32_t location, std::int32_t count,
                             const float* values) {
+    if (!HostRuntime::instance().onGlThread("renderUniform2fv")) return HostResult::Busy;
     glUniform2fv(location, static_cast<GLsizei>(count), values);
     return HostResult::Ok;
 }
 HostResult renderUniform3fv(void*, std::int32_t location, std::int32_t count,
                             const float* values) {
+    if (!HostRuntime::instance().onGlThread("renderUniform3fv")) return HostResult::Busy;
     glUniform3fv(location, static_cast<GLsizei>(count), values);
     return HostResult::Ok;
 }
 HostResult renderUniformMatrix4(void*, std::int32_t location, std::uint32_t count,
                                 const float* values) {
+    if (!HostRuntime::instance().onGlThread("renderUniformMatrix4")) return HostResult::Busy;
     if (!values) return HostResult::InvalidArgument;
     glUniformMatrix4fv(location, static_cast<GLsizei>(count), GL_FALSE, values);
     return HostResult::Ok;
 }
 
 std::uint32_t renderCreateShader(void*, mimita::render::ShaderStage stage) {
+    if (!HostRuntime::instance().onGlThread("renderCreateShader")) return 0;
     return static_cast<std::uint32_t>(glCreateShader(toGl(stage)));
 }
 
 HostResult renderShaderSource(void*, std::uint32_t shader, const char* source) {
+    if (!HostRuntime::instance().onGlThread("renderShaderSource")) return HostResult::Busy;
     if (!source) return HostResult::InvalidArgument;
     const GLchar* sources[1] = {source};
     glShaderSource(static_cast<GLuint>(shader), 1, sources, nullptr);
@@ -1739,26 +1822,31 @@ HostResult renderShaderSource(void*, std::uint32_t shader, const char* source) {
 }
 
 HostResult renderCompileShader(void*, std::uint32_t shader) {
+    if (!HostRuntime::instance().onGlThread("renderCompileShader")) return HostResult::Busy;
     glCompileShader(static_cast<GLuint>(shader));
     return HostResult::Ok;
 }
 
 std::uint32_t renderCreateProgram(void*) {
+    if (!HostRuntime::instance().onGlThread("renderCreateProgram")) return 0;
     return static_cast<std::uint32_t>(glCreateProgram());
 }
 
 HostResult renderAttachShader(void*, std::uint32_t program, std::uint32_t shader) {
+    if (!HostRuntime::instance().onGlThread("renderAttachShader")) return HostResult::Busy;
     glAttachShader(static_cast<GLuint>(program), static_cast<GLuint>(shader));
     return HostResult::Ok;
 }
 
 HostResult renderLinkProgram(void*, std::uint32_t program) {
+    if (!HostRuntime::instance().onGlThread("renderLinkProgram")) return HostResult::Busy;
     glLinkProgram(static_cast<GLuint>(program));
     return HostResult::Ok;
 }
 
 std::int32_t renderGetUniformLocation(void*, std::uint32_t program,
                                       const char* name) {
+    if (!HostRuntime::instance().onGlThread("renderGetUniformLocation")) return -1;
     if (!name) return -1;
     return static_cast<std::int32_t>(
         glGetUniformLocation(static_cast<GLuint>(program), name));
@@ -1767,6 +1855,7 @@ std::int32_t renderGetUniformLocation(void*, std::uint32_t program,
 HostResult renderGetUniformiv(void*, std::uint32_t program,
                               std::int32_t location, std::int32_t* values,
                               std::int32_t count) {
+    if (!HostRuntime::instance().onGlThread("renderGetUniformiv")) return HostResult::Busy;
     if (!values || count <= 0) return HostResult::InvalidArgument;
     glGetUniformiv(static_cast<GLuint>(program), location,
                    reinterpret_cast<GLint*>(values));
@@ -1776,6 +1865,7 @@ HostResult renderGetUniformiv(void*, std::uint32_t program,
 HostResult renderGetProgramiv(void*, std::uint32_t program,
                               mimita::render::ShaderParameter parameter,
                               std::int32_t* value) {
+    if (!HostRuntime::instance().onGlThread("renderGetProgramiv")) return HostResult::Busy;
     if (!value) return HostResult::InvalidArgument;
     glGetProgramiv(static_cast<GLuint>(program), toGl(parameter),
                    reinterpret_cast<GLint*>(value));
@@ -1785,6 +1875,7 @@ HostResult renderGetProgramiv(void*, std::uint32_t program,
 HostResult renderGetShaderiv(void*, std::uint32_t shader,
                              mimita::render::ShaderParameter parameter,
                              std::int32_t* value) {
+    if (!HostRuntime::instance().onGlThread("renderGetShaderiv")) return HostResult::Busy;
     if (!value) return HostResult::InvalidArgument;
     glGetShaderiv(static_cast<GLuint>(shader), toGl(parameter),
                   reinterpret_cast<GLint*>(value));
@@ -1794,6 +1885,7 @@ HostResult renderGetShaderiv(void*, std::uint32_t shader,
 HostResult renderGetProgramInfoLog(void*, std::uint32_t program,
                                    std::int32_t capacity, std::int32_t* length,
                                    char* log) {
+    if (!HostRuntime::instance().onGlThread("renderGetProgramInfoLog")) return HostResult::Busy;
     if (!log || capacity <= 0) return HostResult::InvalidArgument;
     glGetProgramInfoLog(static_cast<GLuint>(program),
                         static_cast<GLsizei>(capacity),
@@ -1804,6 +1896,7 @@ HostResult renderGetProgramInfoLog(void*, std::uint32_t program,
 HostResult renderGetShaderInfoLog(void*, std::uint32_t shader,
                                   std::int32_t capacity, std::int32_t* length,
                                   char* log) {
+    if (!HostRuntime::instance().onGlThread("renderGetShaderInfoLog")) return HostResult::Busy;
     if (!log || capacity <= 0) return HostResult::InvalidArgument;
     glGetShaderInfoLog(static_cast<GLuint>(shader),
                        static_cast<GLsizei>(capacity),
@@ -1812,18 +1905,21 @@ HostResult renderGetShaderInfoLog(void*, std::uint32_t shader,
 }
 
 std::uint32_t renderGetError(void*) {
+    if (!HostRuntime::instance().onGlThread("renderGetError")) return 0;
     return static_cast<std::uint32_t>(glGetError());
 }
 
 HostResult renderFramebufferTexture2D(
     void*, mimita::render::TextureTarget target,
     mimita::render::FramebufferAttachment attachment, std::uint64_t texture) {
+    if (!HostRuntime::instance().onGlThread("renderFramebufferTexture2D")) return HostResult::Busy;
     glFramebufferTexture2D(GL_FRAMEBUFFER, toGl(attachment), toGl(target),
                            static_cast<GLuint>(texture), 0);
     return HostResult::Ok;
 }
 
 HostResult renderBindRenderbuffer(void*, std::uint32_t renderbuffer) {
+    if (!HostRuntime::instance().onGlThread("renderBindRenderbuffer")) return HostResult::Busy;
     glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(renderbuffer));
     return HostResult::Ok;
 }
@@ -1831,6 +1927,7 @@ HostResult renderBindRenderbuffer(void*, std::uint32_t renderbuffer) {
 HostResult renderRenderbufferStorage(void*,
                                      mimita::render::RenderbufferFormat format,
                                      std::int32_t width, std::int32_t height) {
+    if (!HostRuntime::instance().onGlThread("renderRenderbufferStorage")) return HostResult::Busy;
     glRenderbufferStorage(GL_RENDERBUFFER, toGl(format), width, height);
     return HostResult::Ok;
 }
@@ -1838,12 +1935,14 @@ HostResult renderRenderbufferStorage(void*,
 HostResult renderFramebufferRenderbuffer(
     void*, mimita::render::FramebufferAttachment attachment,
     std::uint32_t renderbuffer) {
+    if (!HostRuntime::instance().onGlThread("renderFramebufferRenderbuffer")) return HostResult::Busy;
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, toGl(attachment), GL_RENDERBUFFER,
                               static_cast<GLuint>(renderbuffer));
     return HostResult::Ok;
 }
 
 std::int32_t renderCheckFramebufferStatus(void*) {
+    if (!HostRuntime::instance().onGlThread("renderCheckFramebufferStatus")) return 0;
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
                ? 1
                : 0;
@@ -1854,6 +1953,7 @@ HostResult renderReadPixels(void*, std::int32_t x, std::int32_t y,
                             mimita::render::PixelFormat format,
                             mimita::render::PixelType type, void* data,
                             std::uint32_t) {
+    if (!HostRuntime::instance().onGlThread("renderReadPixels")) return HostResult::Busy;
     glReadPixels(x, y, width, height, toGl(format), toGl(type), data);
     return HostResult::Ok;
 }
@@ -1863,6 +1963,7 @@ HostResult renderBlitFramebuffer(
     std::int32_t srcY1, std::int32_t dstX0, std::int32_t dstY0,
     std::int32_t dstX1, std::int32_t dstY1, mimita::render::BlitMask mask,
     mimita::render::BlitFilter filter) {
+    if (!HostRuntime::instance().onGlThread("renderBlitFramebuffer")) return HostResult::Busy;
     glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1,
                       toGl(mask), toGl(filter));
     return HostResult::Ok;
@@ -1870,6 +1971,7 @@ HostResult renderBlitFramebuffer(
 
 HostResult renderTextureAnisotropy(void*, mimita::render::TextureTarget target,
                                    float requested) {
+    if (!HostRuntime::instance().onGlThread("renderTextureAnisotropy")) return HostResult::Busy;
 #ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
 #endif
@@ -1894,6 +1996,7 @@ HostResult renderTextureAnisotropy(void*, mimita::render::TextureTarget target,
 }
 
 HostResult renderGetViewport(void*, std::int32_t out[4]) {
+    if (!HostRuntime::instance().onGlThread("renderGetViewport")) return HostResult::Busy;
     GLint viewport[4] = {0, 0, 0, 0};
     glGetIntegerv(GL_VIEWPORT, viewport);
     for (int i = 0; i < 4; ++i)
@@ -1908,6 +2011,7 @@ HostResult renderTexSubImage2D(void*, mimita::render::TextureTarget target,
                                mimita::render::PixelFormat format,
                                mimita::render::PixelType type, const void* data,
                                std::uint32_t) {
+    if (!HostRuntime::instance().onGlThread("renderTexSubImage2D")) return HostResult::Busy;
     glTexSubImage2D(toGl(target), level, x, y, width, height, toGl(format),
                     toGl(type), data);
     return HostResult::Ok;
@@ -1926,12 +2030,12 @@ std::chrono::steady_clock::time_point gStartTime = std::chrono::steady_clock::no
 
 void emitProbeEvent(const char* eventName, const char* reason, std::uint32_t tick,
                     const nlohmann::json& fields) {
-    if (!StructuredLogger::instance().shouldLog(StructuredCategory::Executable,
+    if (!StructuredLogger::instance().shouldLog(StructuredCategory::General,
                                                 StructuredLevel::Important)) {
         return;
     }
     StructuredLogger::instance().writeEvent(
-        StructuredCategory::Executable, StructuredLevel::Important, eventName, "", reason,
+        StructuredCategory::General, StructuredLevel::Important, eventName, "", reason,
         tick, fields, __FILE__, __LINE__, __FUNCTION__);
 }
 
@@ -1973,23 +2077,145 @@ void* HostRuntime::ensureStateObject(std::uint32_t id, std::uint32_t size,
     return record.storage;
 }
 
+void* HostRuntime::ensureStateObjectMigrating(
+    std::uint32_t id, std::uint32_t size, std::uint32_t alignment,
+    mimita::host::StateMigrateFn migrate, std::int32_t* created) {
+    if (created) *created = 0;
+    if (size == 0 || alignment == 0 ||
+        (alignment & (alignment - 1)) != 0) {
+        return nullptr;
+    }
+
+    std::lock_guard<std::mutex> lock(stateObjectMutex_);
+    StateObjectRecord& record = stateObjects_[id];
+    if (record.storage) {
+        if (record.size == size && record.alignment == alignment) {
+            return record.storage;
+        }
+        if (!migrate) {
+            return nullptr;
+        }
+        void* next = _aligned_malloc(size, alignment);
+        if (!next) return nullptr;
+        std::memset(next, 0, size);
+        migrate(record.storage, record.size, next, size);
+        _aligned_free(record.storage);
+        record.storage = next;
+        record.size = size;
+        record.alignment = alignment;
+        return record.storage;
+    }
+
+    record.storage = _aligned_malloc(size, alignment);
+    if (!record.storage) return nullptr;
+    std::memset(record.storage, 0, size);
+    record.size = size;
+    record.alignment = alignment;
+    if (created) *created = 1;
+    return record.storage;
+}
+
+void HostRuntime::markGlThread() {
+    glThreadId_ = std::this_thread::get_id();
+    glThreadKnown_.store(true, std::memory_order_release);
+}
+
+bool HostRuntime::onGlThread(const char* op) {
+    if (!glThreadKnown_.load(std::memory_order_acquire)) {
+        // Refuse until the owner thread is known. startFromEnvironment and
+        // bootstrapGame mark it before any generation work can run.
+        return false;
+    }
+    if (std::this_thread::get_id() == glThreadId_) {
+        return true;
+    }
+    void* frames[16] = {};
+    const USHORT frameCount = CaptureStackBackTrace(1, 16, frames, nullptr);
+    nlohmann::json stack = nlohmann::json::array();
+    for (USHORT index = 0; index < frameCount; ++index) {
+        stack.push_back(reinterpret_cast<std::uintptr_t>(frames[index]));
+    }
+    emitProbeEvent("game.render.thread-violation", op ? op : "(unknown)", 0,
+                   nlohmann::json{{"op", op ? op : ""},
+                                  {"action", "refused"},
+                                  {"thread", "worker"},
+                                  {"stack", stack},
+                                  {"exe_base", reinterpret_cast<std::uintptr_t>(
+                                                   GetModuleHandle(nullptr))},
+                                  {"dll_base", reinterpret_cast<std::uintptr_t>(
+                                                   loader_.activeGenerationInfo().module)}});
+    return false;
+}
+
+void HostRuntime::deferGlDelete(std::uint32_t kind, std::uint32_t id) {
+    std::lock_guard<std::mutex> lock(glDeleteMutex_);
+    deferredGlDeletes_.push_back(DeferredGlDelete{kind, id});
+}
+
+void HostRuntime::processDeferredGlDeletes() {
+    if (!gRenderDevice) {
+        return;
+    }
+    std::vector<DeferredGlDelete> pending;
+    {
+        std::lock_guard<std::mutex> lock(glDeleteMutex_);
+        pending.swap(deferredGlDeletes_);
+    }
+    for (const DeferredGlDelete& item : pending) {
+        GLuint value = static_cast<GLuint>(item.id);
+        switch (item.kind) {
+            case 1: glDeleteTextures(1, &value); break;
+            case 2: glDeleteBuffers(1, &value); break;
+            case 3: glDeleteVertexArrays(1, &value); break;
+            case 4: glDeleteFramebuffers(1, &value); break;
+            case 5: glDeleteRenderbuffers(1, &value); break;
+            case 6: glDeleteQueries(1, &value); break;
+            case 7: glDeleteShader(value); break;
+            case 8: glDeleteProgram(value); break;
+            default: break;
+        }
+    }
+}
+
 bool HostRuntime::startFromEnvironment() {
     if (started_) {
         return probeEnabled_.load(std::memory_order_acquire);
     }
 
-    const char* enabled = std::getenv("MIMITA_GAME_PROBE");
-    if (!enabled || std::strcmp(enabled, "1") != 0) {
+    // Hot by default: load the newest built generation. MIMITA_GAME_DISABLE=1
+    // keeps the resident EXE path for debugging or bisecting.
+    const char* disabled = std::getenv("MIMITA_GAME_DISABLE");
+    if (disabled && std::strcmp(disabled, "1") == 0) {
         return false;
     }
+
+    // The full-client path bootstraps the game generation before the legacy
+    // gameInit runs. Initialize the resident logger first so the client writes
+    // its own canonical journal and the dev loop can observe logger.started.
+    StructuredLogger::instance().init();
 
     const char* readyPath = std::getenv("MIMITA_GAME_READY");
     readyPath_ = (readyPath && *readyPath) ? readyPath : "build/game/ready.json";
 
-    const char* dllPath = std::getenv("MIMITA_GAME_DLL");
-    if (!dllPath || !*dllPath) {
-        emitProbeEvent("game.host.probe.disabled", "missing MIMITA_GAME_DLL", 0,
-                       nlohmann::json{{"env", "MIMITA_GAME_DLL"}});
+    std::string dllPath;
+    if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
+        dllPath = configured;
+    } else {
+        std::ifstream current("build/game/current.json");
+        if (current.is_open()) {
+            try {
+                nlohmann::json metadata;
+                current >> metadata;
+                dllPath = metadata.value("dll", std::string());
+            } catch (const std::exception&) {
+                dllPath.clear();
+            }
+        }
+    }
+    if (dllPath.empty() || !std::filesystem::exists(dllPath)) {
+        emitProbeEvent("game.host.inactive", "no built generation", 0,
+                       nlohmann::json{{"env", "MIMITA_GAME_DLL"},
+                                      {"fallback", "resident-exe"}});
         return false;
     }
 
@@ -2006,7 +2232,11 @@ bool HostRuntime::startFromEnvironment() {
     services_.release = &HostRuntime::releaseThunk;
     services_.get_capability = &HostRuntime::getCapabilityThunk;
 
-    const std::wstring widePath = widenUtf8(dllPath);
+    // The resident EXE and the game DLL must resolve the same resident state
+    // objects. Initialize the EXE-side bridge with the same service table.
+    mimita::game::initializeHostState(&services_);
+
+    const std::wstring widePath = widenUtf8(dllPath.c_str());
     if (widePath.empty()) {
         emitProbeEvent("game.host.probe.failed", "invalid dll path", 0,
                        nlohmann::json{{"path", dllPath}});
@@ -2027,6 +2257,12 @@ bool HostRuntime::startFromEnvironment() {
     loader_.commit(std::move(candidate));
     probeEnabled_.store(true, std::memory_order_release);
     started_ = true;
+
+    // The host loop and the window/GL context are owned by this thread. Mark it
+    // before any generation initialization can spawn workers and call the
+    // render capability, so a worker GL call is refused instead of racing the
+    // main thread inside the driver.
+    markGlThread();
 
     emitProbeEvent("game.host.probe.started", "generation loaded", 0,
                    nlohmann::json{{"generation", generation},
@@ -2063,12 +2299,13 @@ void HostRuntime::shutdown() {
 bool HostRuntime::ownsGameFrame() const {
     if (!started_) return false;
     const char* enabled = std::getenv("MIMITA_GAME_OWN_FRAME");
-    if (!enabled || std::strcmp(enabled, "1") != 0) return false;
+    if (enabled && std::strcmp(enabled, "0") == 0) return false;
     const GameModuleV1* api = loader_.active();
     return api && api->frameCapable != 0 && api->tick && api->render;
 }
 
 bool HostRuntime::bootstrapGame(const GameStartupV1& startup) {
+    markGlThread();
     const GameModuleV1* api = loader_.active();
     if (!api || !api->bootstrap) return false;
     const std::uint64_t generation = loader_.activeGeneration();
@@ -2212,7 +2449,33 @@ void HostRuntime::inputDropCallback(GLFWwindow*, int count, const char** paths) 
     instance().enqueueInput(event);
 }
 
+void HostRuntime::queueStartupConnect(const StartupConnectV1& request) {
+    std::lock_guard<std::mutex> lock(startupMutex_);
+    startupQueue_.push_back(request);
+}
+
+void HostRuntime::dispatchQueuedStartup() {
+    std::deque<StartupConnectV1> pending;
+    {
+        std::lock_guard<std::mutex> lock(startupMutex_);
+        if (startupQueue_.empty()) return;
+        pending.swap(startupQueue_);
+    }
+    if (!probeEnabled_.load(std::memory_order_acquire)) return;
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->on_event) return;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return;
+    for (StartupConnectV1& request : pending) {
+        std::int32_t handled = 0;
+        api->on_event(kEventStartupConnect, &request, sizeof(request), &handled);
+    }
+    barrier_.leave();
+}
+
 HostResult HostRuntime::driveFrame(double deltaSeconds, void* renderContext) {
+    processDeferredGlDeletes();
+    dispatchQueuedStartup();
     dispatchQueuedInput();
     const HostResult tickResult = driveTick(deltaSeconds);
     if (tickResult != HostResult::Ok) return tickResult;
@@ -2276,6 +2539,20 @@ bool HostRuntime::dispatchInbound(TransportDispatchV1* dispatch) {
         return false;
     }
     return dispatch->response.payloadSize != 0;
+}
+
+bool HostRuntime::dispatchAgentCommand(const AgentCommandV1& command) {
+    if (!probeEnabled_.load(std::memory_order_acquire)) return false;
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->on_event) return false;
+    const std::uint64_t generation = loader_.activeGeneration();
+    if (!barrier_.enter(generation)) return false;
+    std::int32_t handled = 0;
+    const HostResult result = api->on_event(
+        kEventAgentCommand, const_cast<AgentCommandV1*>(&command),
+        sizeof(command), &handled);
+    barrier_.leave();
+    return result == HostResult::Ok && handled != 0;
 }
 
 bool HostRuntime::serverApiAvailable() const {
@@ -2672,6 +2949,13 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
                 std::uint32_t alignment, std::int32_t* created) {
                 return HostRuntime::instance().ensureStateObject(
                     static_cast<std::uint32_t>(id), size, alignment, created);
+            },
+            [](void*, mimita::host::StateObjectId id, std::uint32_t size,
+                std::uint32_t alignment, mimita::host::StateMigrateFn migrate,
+                std::int32_t* created) {
+                return HostRuntime::instance().ensureStateObjectMigrating(
+                    static_cast<std::uint32_t>(id), size, alignment, migrate,
+                    created);
             },
         };
         return &stateCapability;
@@ -3273,6 +3557,7 @@ HostResult HostRuntime::worldPickSpawnThunk(void* userData,
 HostResult HostRuntime::renderSubmitThunk(void* userData,
                                            const RenderCommandV1* commands,
                                            std::uint32_t count) {
+    if (!HostRuntime::instance().onGlThread("renderSubmitThunk")) return HostResult::Busy;
     auto* runtime = static_cast<HostRuntime*>(userData);
     if (!runtime || !commands || count == 0 ||
         count > kRenderMaxCommandsPerSubmit) {
@@ -3439,6 +3724,7 @@ HostResult HostRuntime::renderFlushThunk(void* userData) {
     if (!runtime) {
         return HostResult::InvalidArgument;
     }
+    runtime->processDeferredGlDeletes();
     runtime->renderPending_.store(0, std::memory_order_release);
     return HostResult::Ok;
 }

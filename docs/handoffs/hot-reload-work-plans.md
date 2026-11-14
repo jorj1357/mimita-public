@@ -5,10 +5,10 @@
 | Plan | Owner | Status | Files | Objective |
 |---|---|---|---:|---|
 | `spec-and-work-registry` | `agent-a` | `active` | 12 | add append-only spec contracts and generated plan/ownership registry |
-| `scenario-runner-and-gameplay-proof` | `agent-a` | `planned` | 53 | evaluate assertions and prove join/move/click/terminal behavior through events.jsonl |
+| `scenario-runner-and-gameplay-proof` | `agent-a` | `planned` | 54 | evaluate assertions and prove join/move/click/terminal behavior through events.jsonl |
 | `server-hotsplit` | `agent-b` | `active` | 27 | split resident transport pump from hot server session, join, session, packet, lag-comp and error behavior |
 | `render-cap-and-gl-bridge-removal` | `agent-c` | `active` | 221 | finish CAP_RENDER coverage for menu/gameplay render/effect/avatar/map/debug and remove transitional GLAD bridge |
-| `ecs-and-state-migration` | `agent-a` | `active` | 21 | use existing EntityRegistry/DynamicComponentStore for actor state and add versioned records for non-entity state |
+| `ecs-and-state-migration` | `agent-a` | `planned` | 21 | ECS recovered and parked; expand into gameplay state later if needed |
 | `safe-generation-unload` | `agent-a` | `planned` | 4 | replace deferred module retirement with safe generation shutdown/arena cleanup |
 
 ## Active claims
@@ -278,26 +278,3 @@
 - `src/render/world-shader.cpp`
 - `src/render/world-shader.h`
 - `src/world/streamed-world-layer.cpp`
-
-### `ecs-and-state-migration` (agent-a)
-- `src/ecs/actor-entities.cpp`
-- `src/ecs/actor-entities.h`
-- `src/ecs/components.h`
-- `src/ecs/dynamic-components.cpp`
-- `src/ecs/dynamic-components.h`
-- `src/ecs/dynamic-lifecycle-selftest.cpp`
-- `src/ecs/dynamic-lifecycle-selftest.h`
-- `src/ecs/entity-registry.cpp`
-- `src/ecs/entity-registry.h`
-- `src/ecs/entity-slice-selftest.cpp`
-- `src/ecs/entity-slice-selftest.h`
-- `src/ecs/entity-types.h`
-- `src/ecs/prediction-registry.cpp`
-- `src/ecs/prediction-registry.h`
-- `src/ecs/relationship-store.cpp`
-- `src/ecs/relationship-store.h`
-- `src/game/game-objects-module.cpp`
-- `src/game/state-bridge-module.cpp`
-- `src/game/state-bridge-module.h`
-- `src/host/abi/state-capability.h`
-- `src/main-systems.cpp`

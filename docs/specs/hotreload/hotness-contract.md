@@ -69,11 +69,22 @@ game.hotness.stale_dll exe_build_id dll_build_id reason
 Runtime paths:
 
 ```text
-game.transport.handled type player path=dll|resident generation [fallback_reason]
-game.render.path path=dll|legacy generation frames
+game.transport.path type player path=dll|resident generation [fallback_reason]
+game.transport.dispatch type peer path=dll|resident   (verbose; off by default)
+game.render.path path=dll|legacy subpath=render|menu|map-editor generation frames
 game.input.path path=dll|resident|direct generation
-game.hotness.summary tick dll resident resident_types render_path input_path
+game.server.path path=dll|resident generation
+game.hotness.summary tick dll resident resident_types render_path input_path server_path
+game.render.thread-violation op action=refused thread=worker
+presentation.framebuffer_probe center_r center_g center_b non_black_pixels viewport_w viewport_h png
+performance.frame-budget total_ms budget_ms=4 over_ms top_scopes
+performance.npc-budget id total_ms think_ms path_ms combat_ms collision_ms
 ```
+
+The frame budget is 4 ms or less every frame (240 FPS minimum) regardless of
+NPC count or scene. `performance.frame-budget` fires on any frame over 4 ms;
+`performance.npc-budget` fires when an NPC exceeds 4 ms and is rate-limited to
+one record per second.
 
 Lifetime:
 
@@ -131,3 +142,29 @@ game.hotness.violation
 - `Rejected` is a protocol/state error and is logged.
 - `Cold` is only for a genuinely cold mechanism, named in the ledger.
 - Every fallback reason is a fixed string; "unknown" is not allowed.
+
+## Runtime gate (2026-11-14)
+
+`devscripts/server_hotness_probe.py` is the first executable hotness gate. It
+launches the published EXE plus the current generation, drives a real PING, and
+fails unless the journal proves DLL packet handling and DLL server calls. Its
+`--swap` mode requires a distinct-module generation swap and a post-swap PONG.
+Use `python devscripts/live.py --once --verify-server` to pair the build and the
+runtime proof.
+
+## Hot client gate (2026-11-14)
+
+`server_hotness_probe.py --client --chat <text>` is the required client/server
+gate: it launches a real client, requires a hot join (`players>=1`), requires
+the chat request to appear as `game.transport.path` with `path=dll`, and
+requires zero resident packet handling and zero server failures. Add `--swap`
+to require a distinct-module generation swap while the client stays connected.
+
+## Behavior-changing swap gate (2026-11-14)
+
+`GameServerV1.runtimeRevision` is the behavior revision of a generation and is
+reported as `runtime_revision` in `game.hotness.summary`. The behavior-swap gate
+starts a server on an older generation, joins a client, chats, swaps to a new
+generation with a different `runtimeRevision`, and requires the new revision plus
+a still-connected client afterwards. A gameplay-visible delta should be added to
+this gate once one is chosen.

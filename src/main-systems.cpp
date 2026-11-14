@@ -161,6 +161,37 @@ void writeAgentCommandEvent(const std::string& eventName,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
+namespace {
+
+GLFWwindow* agentWindow()
+{
+    GLFWwindow* window = glfwGetCurrentContext();
+    return window ? window : Terminal::instance().window();
+}
+
+void postAgentMouseButton(int button, bool down)
+{
+    const DWORD flag = button == GLFW_MOUSE_BUTTON_RIGHT
+        ? (down ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_RIGHTUP)
+        : (down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP);
+    mouse_event(flag, 0, 0, 0, 0);
+}
+
+bool postAgentMousePosition(double x, double y)
+{
+    GLFWwindow* window = agentWindow();
+    if (!window) return false;
+    glfwFocusWindow(window);
+    glfwSetCursorPos(window, x, y);
+    int wx = 0, wy = 0;
+    glfwGetWindowPos(window, &wx, &wy);
+    if (!SetCursorPos(wx + static_cast<int>(x), wy + static_cast<int>(y)))
+        return false;
+    return true;
+}
+
+}  // namespace
+
 void registerAgentCommands()
 {
     Terminal::instance().registerCommand({
@@ -473,6 +504,130 @@ void registerAgentCommands()
                  {"percent", gpPlayer ? gpPlayer->percent : 0.0f}, {"player", gpPlayer->username}});
         }, "2026-10-18", CommandCategory::Debug
     });
+
+    Terminal::instance().registerCommand({
+        "agent.join", "Join a server through the normal connection path.",
+        "agent.join <address>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.join <address>");
+                return;
+            }
+            writeAgentCommandEvent("agent.command.dispatched", "agent.join accepted",
+                                   {{"command", "agent.join"}, {"address", args[0]}});
+            Terminal::instance().execute("serverconnect " + args[0]);
+        }, "2026-11-14", CommandCategory::Network
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.leave", "Leave the current server through the normal disconnect path.",
+        "agent.leave",
+        [](const std::vector<std::string>&) {
+            Terminal::instance().execute("disconnectserver");
+        }, "2026-11-14", CommandCategory::Network
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.terminal", "Run one normal terminal command as an agent action.",
+        "agent.terminal <command>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty() || args[0] == "agent.terminal") {
+                Terminal::instance().addLog("[AGENT] Usage: agent.terminal <command>");
+                return;
+            }
+            std::string command;
+            for (const std::string& arg : args) {
+                if (!command.empty()) command += ' ';
+                command += arg;
+            }
+            Terminal::instance().execute(command);
+        }, "2026-11-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.mouse_move", "Move the real cursor to window coordinates using GLFW.",
+        "agent.mouse_move <x> <y>",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.mouse_move <x> <y>");
+                return;
+            }
+            double x = 0.0, y = 0.0;
+            try {
+                x = std::stod(args[0]);
+                y = std::stod(args[1]);
+            } catch (...) {
+                Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
+                return;
+            }
+            if (GLFWwindow* window = agentWindow()) {
+                glfwSetCursorPos(window, x, y);
+                writeAgentCommandEvent("input.normalized", "agent.mouse_move applied",
+                                       {{"source", "agent"}, {"context", "menu_or_gameplay"},
+                                        {"action", "mouse_move"}, {"x", x}, {"y", y}});
+            }
+        }, "2026-11-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.mouse_down", "Hold a real mouse button at window coordinates.",
+        "agent.mouse_down <x> <y> [left|right]",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.mouse_down <x> <y> [left|right]");
+                return;
+            }
+            const int button = args.size() > 2 && args[2] == "right"
+                ? GLFW_MOUSE_BUTTON_RIGHT : GLFW_MOUSE_BUTTON_LEFT;
+            try {
+                if (!postAgentMousePosition(std::stod(args[0]), std::stod(args[1]))) return;
+            } catch (...) {
+                Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
+                return;
+            }
+            postAgentMouseButton(button, true);
+            writeAgentCommandEvent("input.normalized", "agent.mouse_down applied",
+                {{"source", "agent"}, {"context", "menu_or_gameplay"},
+                 {"action", "mouse_down"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
+        }, "2026-11-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.mouse_up", "Release a real mouse button.",
+        "agent.mouse_up [left|right]",
+        [](const std::vector<std::string>& args) {
+            const int button = !args.empty() && args[0] == "right"
+                ? GLFW_MOUSE_BUTTON_RIGHT : GLFW_MOUSE_BUTTON_LEFT;
+            postAgentMouseButton(button, false);
+            writeAgentCommandEvent("input.normalized", "agent.mouse_up applied",
+                {{"source", "agent"}, {"context", "menu_or_gameplay"},
+                 {"action", "mouse_up"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
+        }, "2026-11-14", CommandCategory::Debug
+    });
+
+    Terminal::instance().registerCommand({
+        "agent.mouse_click", "Click a real mouse button at window coordinates.",
+        "agent.mouse_click <x> <y> [left|right]",
+        [](const std::vector<std::string>& args) {
+            if (args.size() < 2) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.mouse_click <x> <y> [left|right]");
+                return;
+            }
+            const int button = args.size() > 2 && args[2] == "right"
+                ? GLFW_MOUSE_BUTTON_RIGHT : GLFW_MOUSE_BUTTON_LEFT;
+            try {
+                if (!postAgentMousePosition(std::stod(args[0]), std::stod(args[1]))) return;
+            } catch (...) {
+                Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
+                return;
+            }
+            postAgentMouseButton(button, true);
+            postAgentMouseButton(button, false);
+            writeAgentCommandEvent("input.normalized", "agent.mouse_click queued",
+                {{"source", "agent"}, {"context", "menu_or_gameplay"},
+                 {"action", "mouse_click"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
+        }, "2026-11-14", CommandCategory::Debug
+    });
 }
 
 } // namespace
@@ -536,6 +691,7 @@ void registerAgentCommands()
 #include "audio/music-commands.h"
 #include "notifications/notification-commands.h"
 #include <windows.h>
+#include <GLFW/glfw3.h>
 #include <glad/glad.h>
 
 extern DuelManager gDuelManager;

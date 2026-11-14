@@ -6,6 +6,11 @@
 #include "engine/engine.h"
 #include "main-init.h"
 #include "engine/engine-tick.h"
+#include "network/multiplayer-context.h"
+#include "terminal/terminal-state.h"
+#include "devtools/terminal.h"
+
+#include <vector>
 
 namespace mimita::game {
 namespace {
@@ -13,8 +18,29 @@ namespace {
 Engine* gWholeGameEngine = nullptr;
 bool gWholeGameReady = false;
 EngineFrameState gWholeGameFrameState;
+std::vector<std::string> gStartupCommands;
+
+void executePendingStartupCommands() {
+    if (gStartupCommands.empty()) {
+        return;
+    }
+    if (!gpMpContext || !gpMpContext->connected || !gpWorldLoaded ||
+        !*gpWorldLoaded) {
+        return;
+    }
+    for (const std::string& command : gStartupCommands) {
+        Terminal::instance().execute(command);
+    }
+    gStartupCommands.clear();
+}
 
 }  // namespace
+
+void queueStartupCommand(const std::string& command) {
+    if (!command.empty()) {
+        gStartupCommands.push_back(command);
+    }
+}
 
 bool initializeWholeGameEntry(int width, int height, const char* title) {
     if (gWholeGameReady)
@@ -47,6 +73,7 @@ void tickWholeGame(double deltaSeconds) {
     if (!gWholeGameReady || !gWholeGameEngine)
         return;
     engineTickSimulate(*gWholeGameEngine, gWholeGameFrameState);
+    executePendingStartupCommands();
 }
 
 void renderWholeGame(void* renderContext) {
@@ -64,6 +91,7 @@ void shutdownWholeGameEntry() {
     delete gWholeGameEngine;
     gWholeGameEngine = nullptr;
     gWholeGameReady = false;
+    gStartupCommands.clear();
 }
 
 }  // namespace mimita::game

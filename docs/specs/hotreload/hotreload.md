@@ -1,3 +1,39 @@
+2026 11 14 1504 jorj - "P1 — remaining hotness gaps
+Some client packet handlers remain resident.
+EntitySnapshotV1 is still wide and migration-incomplete.
+Server default/fallback paths still have resident behavior.
+ICE peer sessions and live server swap under connected clients are incomplete.
+Gameplay state continuity across a DLL swap is not comprehensively proven.
+No safe generation unload yet; old generations are deferred.
+Render device/resource creation remains resident; CAP_RENDER is incomplete.
+Transitional GLAD bridge still exists.
+render-command-legacy.cpp still exists.
+P2 — cleanup and expansion
+Remove the GLAD bridge and legacy render path.
+Retire the wide snapshot with domain adapters.
+Finish safe unload/quiesce.
+Expand resident state/ECS only when needed.
+Finish agent/scenario tooling later.
+Still cold or not fully hot
+These are legitimately cold or still incomplete:
+
+EXE host, loader, barrier, process lifetime, window/device creation
+public game ABI
+OS/window/GPU device interface
+socket/ICE/UDP/transport mechanism
+logging sink
+resident state layout
+bootstrap/main shell
+deferred old-generation unloading
+parts of server startup and fallback
+some renderer resource upload/lifetime paths
+This does not block ordinary NPC, collision, vehicle, weapon, or render code edits, because those sources are in game.dll. It does block changing the host/ABI or transport mechanism live.
+
+"
+need to fix all this sill 
+
+2026 11 14 1334 jorj - "You’re playing a real game, you find a bug, you change the code, and the game fixes itself without restarting. Same match, same scores, same process."
+
 2026  11 14 1139 jorj - "u are agent C  do agent C things,
 then tell what is left to do after
 
@@ -717,8 +753,8 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 796 `.cpp` rows at manifest revision `7628451e21194e1c9d2b74545fabeeb75faf4fc9bedf19874fb304bcde3ef551`. The canonical owner map resolves all 796 rows: game 624, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (624 game sources) and links at generation 138 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The default full client smoke-ran generation 138; ECS self-tests pass and a same-process live swap from generation 128 to 132 initialized the new menu generation. `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. Server and fallback paths still run from the EXE. The chosen design keeps the resident host in the EXE.
+Current measured status: 797 `.cpp` rows at manifest revision `00f885d555924e891cad76961b6c7e8a9371bc650e3f5317471509e6a746537b`. The canonical owner map resolves all 797 rows: game 624, resident 33, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (624 game sources) and links at generation 157 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The default full client smoke-ran generation 157; ECS self-tests pass; legacy actor mirror wired into gameTick and a same-process live swap from generation 128 to 132 initialized the new menu generation. `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. Server and fallback paths still run from the EXE. The chosen design keeps the resident host in the EXE.
 
 Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
@@ -836,8 +872,8 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | **0 undefined / 0 unique** (generation 138) | 0 undefined |
-| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 138 loaded/initialized; host-owned menu/frame loop stable; host callbacks active; live edit swap 128→132 succeeded | gameplay frame + human acceptance |
+| Whole-game link | **0 undefined / 0 unique** (generation 157) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 157 loaded/initialized; host-owned menu/frame loop stable; host callbacks active; live edit swap 128→132 succeeded | gameplay frame + human acceptance |
 | State continuity | menu reload reinitializes UI; resident core/session objects survive | gameplay state continuity + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
 | Render/world | UI/font path on CAP_RENDER; transitional GLAD bridge for legacy render | remove GLAD bridge; full game/world render |
@@ -2328,6 +2364,31 @@ allowlist shrinks to zero at cutover. New raw diagnostic sinks are rejected in
 changed files. The rule is documented in
 `docs/specs/dev-loop/quality-gates.md`.
 
+### D13 — Off-GL-thread calls fail (owner: Agent A/C)
+
+The host records the thread that created the GL context. Every `CAP_RENDER` and
+`CAP_GL_RESOURCE` thunk checks it. A call from another thread is refused and
+journaled as `game.render.thread-violation`; GL deletions are queued and
+executed on the GL thread. Tradeoff: a worker upload returns 0/`Busy` instead
+of crashing the NVIDIA driver; game code must marshal uploads to the main
+thread. Deferred deletion keeps destructors and cache eviction safe.
+
+### D14 — 4 ms frame budget and live NPC behavior (owner: Agent C)
+
+The frame budget is **4 ms or less every frame, 240 FPS minimum**, regardless
+of NPC count, effects, or scene. Any frame over 4 ms emits
+`performance.frame-budget` with the top scopes. Any NPC over 4 ms emits
+`performance.npc-budget` (rate-limited to 1/s). NPC behavior is editable both
+in C++ (live DLL swap) and in the behavior-profile JSON it reads; both must
+reload live.
+
+### D15 — Framebuffer proof (owner: Agent C)
+
+The client reads the presented framebuffer after rendering, saves
+`build/framebuffer-probe.png`, and journals `presentation.framebuffer_probe`
+with the center pixel, non-black pixel count, and viewport. This separates a
+black render output from a swap/window problem.
+
 ## 2026-11-14 — Hotness contract, state domains, and live evolution
 
 This section is append-only. It adds the current direction; it does not replace
@@ -2528,11 +2589,13 @@ still a separate claim.
 The current B-lite state store rejects a size/alignment mismatch; that is
 fail-closed validation, not migration.
 
-Use the recovered ECS mechanism for entity state:
+The recovered ECS is parked for now and is not a gameplay dependency:
 
-- `src/ecs/` was recovered from commit `202b341b` on 2026-11-14.
-- `EntityRegistry`, `DynamicComponentStore`, existing components and
-  `applySchemaUpdate` migration;
+- `src/ecs/` was recovered from commit `202b341b` and its self-tests pass.
+- `EntityRegistry`, `DynamicComponentStore`, components and
+  `applySchemaUpdate` migration remain available for a later expansion.
+- Do not migrate gameplay state until the client/join/gameplay proof is stable.
+- When expanded, use the existing store; do not create a parallel ECS.
 - legacy `Player`/`Npc`/`ServerPlayer`/`ServerNpc` mirrors remain until systems
   consume components;
 - migrate one vertical slice at a time: Transform, Movement/Intent, Health,
@@ -2614,14 +2677,37 @@ The coordination writes are installed:
   path inventory.
 - The legacy manual claim file is marked deprecated and is not to receive new
   rows.
-- The dev-loop already evaluates the supported scenario assertions and emits
-  `scenario.assert`/`scenario.finished`; remaining AI-proof work is join,
-  mouse/click/GUI, terminal/chat/packet/lag-comp adapters, readiness lifecycle,
-  and broader assertions.
-- `src/ecs/` is restored and both the entity-slice and dynamic-lifecycle
-  self-tests pass. Do not create a parallel ECS store.
+- The dev-loop evaluates supported scenario assertions and emits
+  `scenario.assert`/`scenario.finished`.
+- Added `agent.join`, `agent.leave`, `agent.terminal`, `agent.mouse_move`,
+  `agent.mouse_down`, `agent.mouse_up`, and `agent.mouse_click` adapters.
+  Remaining AI-proof adapters are GUI click, packet, lag-comp, chat, readiness
+  lifecycle, and broader assertions.
+- `src/ecs/` is restored, both self-tests pass, and the live mirror was removed.
+  ECS is parked until a later gameplay-state expansion. Do not create a
+  parallel ECS store.
 
 Next implementation gates are unchanged: scenario adapters, gameplay/join
 proof, server hot split, state migration, safe unload, CAP_RENDER cleanup,
 rollback, and human acceptance.
+
+### 11.11 Client connect and command-delivery checkpoint
+
+Run `20261114_192532` reached `Connected` with the whole-game client:
+- `game.startup.connect` applied the launcher connect request.
+- `network.connection-state.changed` recorded `Connecting -> Connected`.
+- `game.startup` map load, join accept, required map, spawn, and map-ready
+  stages were recorded.
+- The host-owned command queue was read and the game terminal executed
+  `agent.mouse_move 100 100`; `terminal.command.received`,
+  `terminal.command.resolved`, and `terminal.command.completed` were present.
+- `dev-loop.command.host-read` and `dev-loop.command.host-dispatched`
+  confirmed host-to-DLL delivery.
+
+Remaining command gaps:
+- add `dev-loop.command.delivered` from the game generation;
+- resolve the foreground GLFW window in agent mouse commands;
+- prove mouse-down/up UI click and snapshot correlation;
+- latest build is unblocked: `stb_image_write` implementation is centralized in
+  `src/utils/stb_image_impl.cpp`; generation 157 links cleanly.
 

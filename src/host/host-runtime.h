@@ -1,10 +1,10 @@
 // 2026-11-12
 // Purpose: resident host runtime for the whole-game game.dll.
 //
-// Owns the loader, the generation barrier, and the host service table. It is
-// disabled unless MIMITA_GAME_PROBE=1, so the default EXE path is unchanged.
-// With MIMITA_GAME_DLL set to a candidate DLL path, it loads one generation and
-// exposes a bounded NPC target-selection probe for parity validation.
+// Owns the loader, the generation barrier, and the host service table. Hot by
+// default: it loads the newest built generation from MIMITA_GAME_DLL or
+// build/game/current.json. Set MIMITA_GAME_DISABLE=1 to keep the resident EXE
+// path for debugging or bisecting.
 //
 // This header is resident/bootstrap code. It must not move into game.dll.
 
@@ -17,6 +17,7 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -74,6 +75,7 @@ public:
     bool dispatchInbound(TransportDispatchV1* dispatch);
 
     // True when the active generation exports the server cutover behavior API.
+    bool dispatchAgentCommand(const AgentCommandV1& command);
     bool serverApiAvailable() const;
     bool serverProcessPacket(ServerFrameV1* frame, const void* event,
                              ServerPacketResultV1* out);
@@ -93,9 +95,23 @@ public:
     // the owner explicitly enabled host-owned frame mode.
     bool ownsGameFrame() const;
     void installInputCallbacks(GLFWwindow* window);
+    // Queue a launcher auto-join request for delivery to the active generation.
+    void queueStartupConnect(const StartupConnectV1& request);
     MenuStateV1* menuState() { return &menuState_; }
+    const HostServicesV1* services() const { return &services_; }
     void* ensureStateObject(std::uint32_t id, std::uint32_t size,
                             std::uint32_t alignment, std::int32_t* created);
+    void* ensureStateObjectMigrating(std::uint32_t id, std::uint32_t size,
+                                     std::uint32_t alignment,
+                                     mimita::host::StateMigrateFn migrate,
+                                     std::int32_t* created);
+    // True on the thread that owns the GL context. Off-thread GL calls are
+    // refused (and deletions deferred) so a game worker cannot crash the
+    // driver; the game must marshal uploads to the main thread.
+    bool onGlThread(const char* op);
+    void markGlThread();
+    void deferGlDelete(std::uint32_t kind, std::uint32_t id);
+    void processDeferredGlDeletes();
     bool bootstrapGame(const GameStartupV1& startup);
     bool gameShouldClose() const;
 
@@ -273,6 +289,7 @@ private:
                                   const char** paths);
     void enqueueInput(const GameInputEventV1& event);
     void dispatchQueuedInput();
+    void dispatchQueuedStartup();
 
     HostLoader loader_;
     GenerationBarrier& barrier_;
@@ -285,8 +302,18 @@ private:
     };
     std::mutex stateObjectMutex_;
     std::unordered_map<std::uint32_t, StateObjectRecord> stateObjects_;
+    std::thread::id glThreadId_{};
+    std::atomic<bool> glThreadKnown_{false};
+    std::mutex glDeleteMutex_;
+    struct DeferredGlDelete {
+        std::uint32_t kind = 0;
+        std::uint32_t id = 0;
+    };
+    std::vector<DeferredGlDelete> deferredGlDeletes_;
     std::mutex inputMutex_;
     std::deque<GameInputEventV1> inputQueue_;
+    std::mutex startupMutex_;
+    std::deque<StartupConnectV1> startupQueue_;
     std::atomic<bool> probeEnabled_{false};
     std::uint64_t tick_ = 0;
     bool started_ = false;

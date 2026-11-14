@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "protocol_version": 52,
+  "defaults": {
+    "server": "dll",
+    "client": "resident"
+  },
+  "note": "The server cutover routes every inbound type through the DLL process_packet export. Client overrides below are the handlers owned by game/server-command-dispatch-module.cpp.",
+  "overrides": [
+    {"type": "PACKET_PING", "client": "dll"},
+    {"type": "PACKET_SERVER_COMMAND", "client": "dll"},
+    {"type": "PACKET_CHAT_MESSAGE", "client": "dll"},
+    {"type": "PACKET_CHAT_TYPING_STATE_REQUEST", "client": "dll"},
+    {"type": "PACKET_CHAT_REQUEST", "client": "dll"},
+    {"type": "PACKET_SPAWN_NPC_REQUEST", "client": "dll"},
+    {"type": "PACKET_TELEPORT_REQUEST", "client": "dll"},
+    {"type": "PACKET_DISCONNECT", "client": "dll"},
+    {"type": "PACKET_RECONNECT_REQUEST", "client": "dll"},
+    {"type": "PACKET_HELLO", "client": "dll"},
+    {"type": "PACKET_JOIN_REQUEST", "client": "dll"},
+    {"type": "PACKET_GODBALL_STATE", "client": "dll"}
+  ]
+}

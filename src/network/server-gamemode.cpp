@@ -9,6 +9,7 @@
 */
 
 #include "network/server-gamemode.h"
+#include "game/state-bridge-module.h"
 #include "network/server-authored-rebuild.h"
 #include "network/server-infinite-collision.h"
 
@@ -18,6 +19,8 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <new>
+#include <utility>
 #include <cstring>
 #include <random>
 
@@ -147,10 +150,66 @@ static void finalizeServerNpcMirrorSpawn(ServerNpc& npc,
     npc.knockbackImpulse = glm::vec3(0.0f);
 }
 
+namespace {
+void migrateServerGamemodeBlock(void* oldBlock, std::uint32_t oldSize,
+                                void* newBlock, std::uint32_t newSize) {
+    auto* next = new (newBlock) ServerGamemodeState();
+    if (oldBlock && oldSize == sizeof(ServerGamemodeState)) {
+        auto* previous = static_cast<ServerGamemodeState*>(oldBlock);
+        *next = std::move(*previous);
+        previous->~ServerGamemodeState();
+        next->schemaVersion = kServerGamemodeSchemaVersion;
+        return;
+    }
+    // Older/smaller layout: start from defaults. Version-specific field
+    // copies belong here when a schema version is added.
+    next->schemaVersion = kServerGamemodeSchemaVersion;
+    if (oldBlock) {
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "game.state.schema-migrate", "server-gamemode",
+            "older resident gamemode layout reset to defaults", 0,
+            nlohmann::json{{"old_size", oldSize}, {"new_size", newSize}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+}
+}  // namespace
+
 ServerGamemodeState& serverGamemodeState()
 {
-    static ServerGamemodeState state;
-    return state;
+    bool created = false;
+    void* object = mimita::game::ensureResidentObjectMigrating(
+        mimita::host::StateObjectId::ServerGamemode,
+        sizeof(ServerGamemodeState), alignof(ServerGamemodeState),
+        &migrateServerGamemodeBlock, &created);
+    if (!object) {
+        // The host cannot grow a C++-typed record safely. Keep a local
+        // fallback and log so a schema change is visible instead of silent.
+        static ServerGamemodeState fallback;
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Errors,
+            "game.state.schema-mismatch", "server-gamemode",
+            "resident gamemode block size changed; using a local fallback", 0,
+            nlohmann::json{{"size", sizeof(ServerGamemodeState)},
+                           {"schema", kServerGamemodeSchemaVersion}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return fallback;
+    }
+    auto* state = static_cast<ServerGamemodeState*>(object);
+    if (created) {
+        new (state) ServerGamemodeState();
+    } else if (state->schemaVersion != kServerGamemodeSchemaVersion) {
+        // Version 1 is the first resident layout; later versions migrate here.
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::World, StructuredLevel::Important,
+            "game.state.schema-migrate", "server-gamemode",
+            "migrating resident gamemode state", 0,
+            nlohmann::json{{"from", state->schemaVersion},
+                           {"to", kServerGamemodeSchemaVersion}},
+            __FILE__, __LINE__, __FUNCTION__);
+        state->schemaVersion = kServerGamemodeSchemaVersion;
+    }
+    return *state;
 }
 
 void serverCaptureAuthoredBaseWorld(const HeadlessWorld& glbWorld,

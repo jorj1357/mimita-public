@@ -3044,11 +3044,14 @@ The current dev-loop now evaluates the supported assertion types from the live
 journals and emits `scenario.assert`/`scenario.finished` with
 `assertions_evaluated=true`.
 
+Implemented adapter subset: `agent.join`, `agent.leave`, `agent.terminal`,
+`agent.mouse_move`, `agent.mouse_down`, `agent.mouse_up`, and
+`agent.mouse_click`.
+
 Remaining gaps for full AI proof:
 
-- readiness/join lifecycle adapters and join commands;
-- mouse move/click, GUI click, keyboard, terminal, chat, packet, and lag-comp
-  command adapters;
+- readiness lifecycle waits and browser/room join coverage;
+- GUI click, keyboard, chat, packet, and lag-comp adapters;
 - broader assertion vocabulary for gameplay/network outcomes;
 - server/client journal correlation in the final report;
 - browser/mobile/controller adapter coverage.

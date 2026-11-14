@@ -1133,6 +1133,34 @@ void NpcSystem::update(const World& world, Player& player, float dt, const Input
         Perf::collectNpcProfile(nc.id, "total", npcMs);
     }
     Perf::flushNpcProfiles();
+    // Any NPC over the 4 ms frame budget is a defect. Emit the slowest one,
+    // rate-limited to one record per second so the journal stays readable.
+    {
+        const auto& perfState = Perf::state();
+        if (perfState.npcProfileCount > 0 &&
+            perfState.npcProfiles[0].totalMs > 4.0) {
+            static uint64_t lastNpcBudgetMs = 0;
+            const uint64_t nowMs = static_cast<uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch())
+                    .count());
+            if (nowMs - lastNpcBudgetMs >= 1000) {
+                lastNpcBudgetMs = nowMs;
+                const auto& top = perfState.npcProfiles[0];
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Performance, StructuredLevel::Important,
+                    "performance.npc-budget", "npc",
+                    "NPC exceeded the 4ms budget", 0,
+                    nlohmann::json{{"id", top.id},
+                                   {"total_ms", top.totalMs},
+                                   {"think_ms", top.thinkMs},
+                                   {"path_ms", top.pathfindingMs},
+                                   {"combat_ms", top.combatMs},
+                                   {"collision_ms", top.collisionMs}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
+    }
 }
 
 void NpcSystem::updateOneWithTarget(uint32_t npcId, const World& world, Player& player,

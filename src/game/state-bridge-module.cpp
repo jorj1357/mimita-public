@@ -43,4 +43,21 @@ void* ensureResidentObject(mimita::host::StateObjectId id, std::size_t size,
     if (created) *created = first != 0;
     return result;
 }
+
+void* ensureResidentObjectMigrating(mimita::host::StateObjectId id,
+                                    std::size_t size, std::size_t alignment,
+                                    mimita::host::StateMigrateFn migrate,
+                                    bool* created) {
+    if (created) *created = false;
+    if (!gState || !gState->ensure_object_migrating || size > UINT32_MAX ||
+        alignment > UINT32_MAX || alignment == 0 || !migrate) {
+        return nullptr;
+    }
+    std::int32_t first = 0;
+    void* result = gState->ensure_object_migrating(
+        gHostData, id, static_cast<std::uint32_t>(size),
+        static_cast<std::uint32_t>(alignment), migrate, &first);
+    if (created) *created = first != 0;
+    return result;
+}
 }  // namespace mimita::game

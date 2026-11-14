@@ -13,8 +13,13 @@
 #include <chrono>
 #include <cstdio>
 #include <string>
+#include <vector>
 #include <shellapi.h>
 #include <windows.h>
+#include "stb_image_write.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "engine/engine.h"
 #include "render/post-fx.h"
 #include "gui/gui-main.h"
@@ -428,6 +433,64 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     }
 
     HEARTBEAT("end frame");
+
+    // One-shot framebuffer probe: read the presented pixels, save a PNG, and
+    // journal the center pixel + non-black count. This distinguishes a black
+    // render output from a swap/window problem.
+    {
+        auto probeFramebuffer = [&](const char* phase, const char* pngPath) {
+            std::int32_t viewport[4] = {};
+            r::getViewport(viewport);
+            const int probeW = viewport[2];
+            const int probeH = viewport[3];
+            if (probeW <= 0 || probeH <= 0) {
+                return;
+            }
+            std::vector<unsigned char> pixels(
+                static_cast<size_t>(probeW) * probeH * 3);
+            r::bindFramebuffer(r::FramebufferTarget::Read, 0);
+            r::readPixels(0, 0, probeW, probeH, r::PixelFormat::RGB,
+                          r::PixelType::UnsignedByte, pixels.data());
+            unsigned char center[3] = {0, 0, 0};
+            r::readPixels(probeW / 2, probeH / 2, 1, 1,
+                          r::PixelFormat::RGB,
+                          r::PixelType::UnsignedByte, center);
+            stbi_write_png(pngPath, probeW, probeH, 3, pixels.data(),
+                           probeW * 3);
+            std::uint64_t nonBlack = 0;
+            for (size_t i = 0; i + 2 < pixels.size(); i += 3) {
+                if (pixels[i] || pixels[i + 1] || pixels[i + 2]) ++nonBlack;
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "presentation.framebuffer_probe", "render",
+                "presented framebuffer pixel readback", 0,
+                nlohmann::json{
+                    {"phase", phase},
+                    {"center_r", center[0]},
+                    {"center_g", center[1]},
+                    {"center_b", center[2]},
+                    {"non_black_pixels", nonBlack},
+                    {"total_pixels",
+                     static_cast<std::uint64_t>(probeW) * probeH},
+                    {"viewport_w", probeW},
+                    {"viewport_h", probeH},
+                    {"png", pngPath}},
+                __FILE__, __LINE__, __FUNCTION__);
+        };
+        static int probeCount = 0;
+        if (probeCount < 2) {
+            ++probeCount;
+            probeFramebuffer("startup", "build/framebuffer-probe.png");
+        }
+        static bool lateProbeDone = false;
+        static std::uint64_t renderFrameIndex = 0;
+        ++renderFrameIndex;
+        if (!lateProbeDone && renderFrameIndex > 1200) {
+            lateProbeDone = true;
+            probeFramebuffer("late", "build/framebuffer-probe-late.png");
+        }
+    }
     { MIMITA_PERF_PROGRESS("Swap");
       MIMITA_PERF_SCOPE("Swap");
       Perf::ScopedTimer _beforeSwap("FramePacing::BeforeSwap");

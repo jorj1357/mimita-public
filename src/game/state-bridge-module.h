@@ -12,4 +12,8 @@ void initializeHostState(const mimita::host::HostServicesV1* services);
 mimita::host::MenuStateV1* menuState();
 void* ensureResidentObject(mimita::host::StateObjectId id, std::size_t size,
                            std::size_t alignment, bool* created);
+void* ensureResidentObjectMigrating(mimita::host::StateObjectId id,
+                                    std::size_t size, std::size_t alignment,
+                                    mimita::host::StateMigrateFn migrate,
+                                    bool* created);
 }  // namespace mimita::game

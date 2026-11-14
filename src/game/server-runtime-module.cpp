@@ -8,6 +8,7 @@
 #include "game/server-runtime.h"
 
 #include <chrono>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -94,8 +95,12 @@ int serverRuntimeProcessPacket(void* rawFrame, const void* rawEvent,
         static_cast<MimitaNet::ServerPacketStats*>(frame.transportStats),
         static_cast<MimitaNet::DisagreementRetransmitState*>(
             frame.disagreementRetransmit),
-        nullptr, nullptr, nullptr, &npcSystemOf(frame));
+        static_cast<MimitaNet::ServerPlayer*>(frame.authenticatedPlayer),
+        static_cast<std::unique_ptr<IGameTransport>*>(frame.claimedTransport),
+        static_cast<std::vector<std::uint32_t>*>(frame.pendingRemovals),
+        frame.npcSystem ? &npcSystemOf(frame) : nullptr);
     out->handled = result.handled ? 1u : 0u;
+    out->transportConsumed = result.transportConsumed ? 1u : 0u;
     out->playerId = result.playerId;
     return out->handled ? 1 : 0;
 }

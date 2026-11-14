@@ -226,6 +226,9 @@ bool PostFX::initFBO(int width, int height)
 
 void PostFX::bindFBO()
 {
+    if (std::getenv("MIMITA_DISABLE_POSTFX")) {
+        mBypass = true;
+    }
     const bool outputScaleRequired = gRenderer &&
         (gRenderer->sceneWidth != gRenderer->width ||
          gRenderer->sceneHeight != gRenderer->height);

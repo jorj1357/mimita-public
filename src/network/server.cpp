@@ -55,6 +55,7 @@
 #include "host/host-session-identity.h"
 #include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
+#include "host/generated/packet-registry-v1.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
 #include "audio/audio.h"
@@ -88,6 +89,8 @@ struct HotnessState {
     std::atomic<std::uint64_t> dllCount{0};
     std::atomic<std::uint64_t> residentCount{0};
     std::atomic<std::uint64_t> violationCount{0};
+    std::atomic<std::uint64_t> serverCalls{0};
+    std::atomic<std::uint64_t> serverFailures{0};
     std::atomic<std::uint64_t> lastSummaryMs{0};
     std::array<std::atomic<std::uint64_t>, 256> lastTypeLogMs{};
 
@@ -104,23 +107,8 @@ HotnessState& hotnessState() {
 }
 
 bool isMigratedPacketType(std::uint8_t type) {
-    switch (type) {
-        case PACKET_PING:
-        case PACKET_SERVER_COMMAND:
-        case PACKET_CHAT_MESSAGE:
-        case PACKET_CHAT_TYPING_STATE_REQUEST:
-        case PACKET_CHAT_REQUEST:
-        case PACKET_SPAWN_NPC_REQUEST:
-        case PACKET_TELEPORT_REQUEST:
-        case PACKET_DISCONNECT:
-        case PACKET_RECONNECT_REQUEST:
-        case PACKET_HELLO:
-        case PACKET_JOIN_REQUEST:
-        case PACKET_GODBALL_STATE:
-            return true;
-        default:
-            return false;
-    }
+    return mimita::host::packet_registry::clientPath(type) ==
+           mimita::host::packet_registry::Path::Dll;
 }
 
 void noteHotnessPath(bool dll, std::uint8_t type, std::uint32_t player,
@@ -140,8 +128,8 @@ void noteHotnessPath(bool dll, std::uint8_t type, std::uint32_t player,
     if (now - last.load(std::memory_order_relaxed) >= 1000) {
         last.store(now, std::memory_order_relaxed);
         ::StructuredLogger::instance().writeEvent(
-            StructuredCategory::Executable, StructuredLevel::Important,
-            "game.transport.handled", std::to_string(player),
+            StructuredCategory::Network, StructuredLevel::Important,
+            "game.transport.path", std::to_string(player),
             dll ? "packet handled by the game generation"
                 : "packet handled by the resident fallback",
             tick,
@@ -155,7 +143,7 @@ void noteHotnessPath(bool dll, std::uint8_t type, std::uint32_t player,
     }
     if (violation) {
         ::StructuredLogger::instance().writeEvent(
-            StructuredCategory::Executable, StructuredLevel::Errors,
+            StructuredCategory::Network, StructuredLevel::Errors,
             "game.hotness.violation", std::to_string(player),
             "migrated packet fell back to the resident handler",
             tick,
@@ -168,7 +156,14 @@ void noteHotnessPath(bool dll, std::uint8_t type, std::uint32_t player,
     }
 }
 
-void emitHotnessSummary(std::uint32_t tick) {
+void noteServerCall(bool ok) {
+    HotnessState& state = hotnessState();
+    (ok ? state.serverCalls : state.serverFailures)
+        .fetch_add(1, std::memory_order_relaxed);
+}
+
+void emitHotnessSummary(std::uint32_t tick, std::size_t playerCount,
+                        std::size_t npcCount) {
     HotnessState& state = hotnessState();
     const std::uint64_t now = nowMs();
     const std::uint64_t last =
@@ -178,7 +173,7 @@ void emitHotnessSummary(std::uint32_t tick) {
     }
     state.lastSummaryMs.store(now, std::memory_order_relaxed);
     ::StructuredLogger::instance().writeEvent(
-        StructuredCategory::Executable, StructuredLevel::Important,
+        StructuredCategory::Network, StructuredLevel::Important,
         "game.hotness.summary", "", "DLL vs resident packet handling", tick,
         {{"dll", state.dllCount.load(std::memory_order_relaxed)},
          {"resident", state.residentCount.load(std::memory_order_relaxed)},
@@ -188,6 +183,16 @@ void emitHotnessSummary(std::uint32_t tick) {
           mimita::host::HostRuntime::instance().serverApiAvailable()
               ? "dll"
               : "resident"},
+         {"server_calls", state.serverCalls.load(std::memory_order_relaxed)},
+         {"server_failures",
+          state.serverFailures.load(std::memory_order_relaxed)},
+         {"players", playerCount},
+         {"npcs", npcCount},
+         {"runtime_revision",
+          mimita::host::HostRuntime::instance().activeServerApi()
+              ? mimita::host::HostRuntime::instance().activeServerApi()
+                    ->runtimeRevision
+              : 0},
          {"generation",
           mimita::host::HostRuntime::instance().activeGeneration()}},
         __FILE__, __LINE__, __func__);
@@ -738,6 +743,17 @@ int runServer(const LaunchOptions& options)
 
     ::StructuredLogger::instance().init();
     mimita::host::HostRuntime::instance().startFromEnvironment();
+    if (!mimita::host::HostRuntime::instance().serverApiAvailable()) {
+        const char* disabled = std::getenv("MIMITA_GAME_DISABLE");
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Important,
+            "game.server.fallback", "server",
+            "server tick runs in the resident EXE", 0,
+            {{"reason", (disabled && std::strcmp(disabled, "1") == 0)
+                            ? "disabled"
+                            : "no-generation"}},
+            __FILE__, __LINE__, __func__);
+    }
     auto logStartupStage = [&](const char* stage, const char* result,
                                const char* reason, double elapsedMs = 0.0,
                                nlohmann::json extra = nlohmann::json::object()) {
@@ -1561,7 +1577,7 @@ int runServer(const LaunchOptions& options)
             }
         }
 
-        emitHotnessSummary(tick);
+        emitHotnessSummary(tick, players.size(), npcs.size());
         mimita::host::HostRuntime::instance().poll();
         ::StructuredLogger::instance().pollConfig();
         ::StructuredLogger::instance().tick();
@@ -1574,6 +1590,9 @@ int runServer(const LaunchOptions& options)
             const auto tickStart = std::chrono::steady_clock::now();
             const bool hotServer =
                 mimita::host::HostRuntime::instance().serverApiAvailable();
+            // TODO-DELETE(fallback): the resident else blocks are the
+            // MIMITA_GAME_DISABLE=1 escape hatch. Delete them once the same-PID
+            // hot-path swap is proven and the flag is removed.
             mimita::host::ServerFrameV1 serverFrame{};
             serverFrame.tick = tick;
             serverFrame.players = &players;
@@ -1602,10 +1621,11 @@ int runServer(const LaunchOptions& options)
             std::uint64_t contactWeaponUs = 0;
             std::uint64_t snapshotUs = 0;
             std::uint64_t gamemodeUs = 0;
-            if (hotServer) {
+            const bool hotPlayers = hotServer &&
                 mimita::host::HostRuntime::instance().serverSimulatePlayers(
                     &serverFrame);
-            } else {
+            noteServerCall(hotPlayers);
+            if (!hotPlayers) {
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)
             {
@@ -1634,9 +1654,11 @@ int runServer(const LaunchOptions& options)
             // Simulate all NPCs once per tick. simulateSharedNpcs already walks
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
-            if (hotServer) {
+            const bool hotWorld = hotServer &&
                 mimita::host::HostRuntime::instance().serverSimulateWorld(
                     &serverFrame);
+            noteServerCall(hotWorld);
+            if (hotWorld) {
                 npcUs = serverFrame.simulate_world_us;
             } else {
             const auto npcStart = std::chrono::steady_clock::now();
@@ -1721,11 +1743,14 @@ int runServer(const LaunchOptions& options)
                                     nextEntityId, nextProjectileId,
                                     nextPlayerId, pendingIceTransports, world,
                                     tick, totalPacketsIn, totalPacketsOut,
-                                    &transportStats, &disagreementRetransmit);
+                                    &transportStats, &disagreementRetransmit,
+                                    &npcSystem);
 
-            if (hotServer) {
+            const bool hotPublish = hotServer &&
                 mimita::host::HostRuntime::instance().serverPublish(
                     &serverFrame);
+            noteServerCall(hotPublish);
+            if (hotPublish) {
                 snapshotUs = serverFrame.publish_us;
             } else {
             serverTickVehicles(dedicatedVehicleState, players, &npcWorld,
@@ -1748,9 +1773,11 @@ int runServer(const LaunchOptions& options)
                     overrides.spawnOverridePosition.y,
                     overrides.spawnOverridePosition.z);
             }
-            if (hotServer) {
+            const bool hotGamemode = hotServer &&
                 mimita::host::HostRuntime::instance().serverGamemode(
                     &serverFrame);
+            noteServerCall(hotGamemode);
+            if (hotGamemode) {
                 gamemodeUs = serverFrame.gamemode_us;
             } else {
             const auto gamemodeStart = std::chrono::steady_clock::now();
@@ -2508,10 +2535,13 @@ static void simulateOneServerTick(ListenServerState& state)
             }
         }
 
-        emitHotnessSummary(state.tick);
+        emitHotnessSummary(state.tick, state.players.size(), state.npcs.size());
         mimita::host::HostRuntime::instance().poll();
         const bool hotServer =
             mimita::host::HostRuntime::instance().serverApiAvailable();
+        // TODO-DELETE(fallback): the resident else blocks are the
+        // MIMITA_GAME_DISABLE=1 escape hatch. Delete them once the same-PID
+        // hot-path swap is proven and the flag is removed.
         mimita::host::ServerFrameV1 serverFrame{};
         serverFrame.tick = state.tick;
         serverFrame.flags = mimita::host::kServerFrameHazardScratch;
@@ -2534,10 +2564,11 @@ static void simulateOneServerTick(ListenServerState& state)
         serverFrame.totalPacketsIn = &state.totalPacketsIn;
         serverFrame.totalPacketsOut = &state.totalPacketsOut;
         serverFrame.socket = static_cast<std::uintptr_t>(state.sock);
-        if (hotServer) {
+        const bool hotPlayers = hotServer &&
             mimita::host::HostRuntime::instance().serverSimulatePlayers(
                 &serverFrame);
-        } else {
+        noteServerCall(hotPlayers);
+        if (!hotPlayers) {
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
         for (auto& kv : state.players)
         {
@@ -2556,10 +2587,11 @@ static void simulateOneServerTick(ListenServerState& state)
         tickWeaponRuntimes(state.players, state.tick);
         checkVoidDeath(state.players, state.npcs);
         }
-        if (hotServer) {
+        const bool hotWorld = hotServer &&
             mimita::host::HostRuntime::instance().serverSimulateWorld(
                 &serverFrame);
-        } else {
+        noteServerCall(hotWorld);
+        if (!hotWorld) {
         ScenarioServerPlayback::instance().tick(
             state.tick, state.players, *state.npcSystem);
         {
@@ -2635,11 +2667,13 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.pendingIceTransports, state.world,
                                 state.tick, state.totalPacketsIn,
                                 state.totalPacketsOut, nullptr,
-                                &state.disagreementRetransmit);
+                                &state.disagreementRetransmit,
+                                state.npcSystem.get());
 
-        if (hotServer) {
+        const bool hotPublish = hotServer &&
             mimita::host::HostRuntime::instance().serverPublish(&serverFrame);
-        } else {
+        noteServerCall(hotPublish);
+        if (!hotPublish) {
         serverTickVehicles(state.vehicleState, state.players,
                            state.npcWorld.get(), state.nextEntityId, state.tick);
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
@@ -2664,9 +2698,10 @@ static void simulateOneServerTick(ListenServerState& state)
                 overrides.spawnOverridePosition.y,
                 overrides.spawnOverridePosition.z);
         }
-        if (hotServer) {
+        const bool hotGamemode = hotServer &&
             mimita::host::HostRuntime::instance().serverGamemode(&serverFrame);
-        } else {
+        noteServerCall(hotGamemode);
+        if (!hotGamemode) {
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);

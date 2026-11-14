@@ -470,6 +470,103 @@ here performs the ownership cutover.
   until normal play runs the DLL.
 - Build is green; A is rebuilding with these changes.
 
+## Phase 1w transport proof and C validation
+
+- B proof: `game.transport.handled` is now journaled from the game dispatch
+  (`src/game/server-command-dispatch-module.cpp`) with `type`, `peer`, and
+  `path=dll|resident` for every handled inbound packet.
+- C validation: confirmed the `game.render.path` records for gameplay
+  (`engine-tick-render.cpp`), UI/menu (`engine-tick-ui.cpp`), and map editor
+  (`map-editor.cpp`) are emitted at 1/s with `path` and `subpath`.
+- Blocked, not done:
+  - moving the authoritative server tick out of resident `server.cpp` requires
+    the host cutover and a `GameModuleV1` server-tick export (A-owned);
+  - deleting `game-gl-legacy.cpp` / `render-command-legacy.cpp` requires normal
+    play to run the DLL first.
+
+## Phase 1x live coordination and hot-default activation
+
+- `devscripts/live.py`:
+  - single-instance `.dev/live.lock` (stale-PID recovery);
+  - owner-aware preflight against `hot-reload-work-plans.json`;
+  - `--agent` and `--allow-other-owners`; shared paths require `integrator`;
+  - touched-source list now includes changed files and changed headers;
+  - coalesced game-DLL builds remain one at a time.
+- Event split:
+  - resident loop emits `game.transport.path` (aggregate path proof);
+  - game dispatch emits `game.transport.dispatch` at Verbose, off by default.
+- Hot by default:
+  - `HostRuntime::startFromEnvironment` loads `MIMITA_GAME_DLL` or
+    `build/game/current.json` without requiring `MIMITA_GAME_PROBE`;
+  - `MIMITA_GAME_DISABLE=1` forces the resident EXE path;
+  - `ownsGameFrame()` defaults on unless `MIMITA_GAME_OWN_FRAME=0`.
+- Server state continuity:
+  - added `StateObjectId::ServerGamemode`;
+  - `ServerGamemodeState` now lives in the resident state object with
+    `schemaVersion` and a migration/refusal path;
+  - the EXE initializes the same state bridge as the DLL so both resolve the
+    same object.
+- Added `game.server.fallback` with `reason=disabled|no-generation`.
+- Added `live.py --journal [event]` / `--journal-lines`: read the newest
+  `events.jsonl` read-only. Multiple agents can run it at once against the same
+  journal while one build owner runs the loop.
+- Default `live.py --agent` is `integrator` because the build owner is the
+  integrator; other owners mark their plan `ready` before their files build.
+- Updated `hotness-contract.md` and `agent-lanes-build-authority.md`.
+- Evidence: EXE build `2026-11-14T17:46:26Z` succeeded; whole-game DLL
+  generation 144 (`build/game/generation-144/game-g144.dll`) linked at
+  `17:47:06Z` with `status=ok`.
+
+## Phase 1y cross-size state migration and cutover gating
+
+- State capability v3:
+  - added `StateMigrateFn` and `ensure_object_migrating`;
+  - the host grows a resident record when the size changes, calls the game
+    migration callback, then frees the old block;
+  - `state-bridge-module` exposes `ensureResidentObjectMigrating`;
+  - `ServerGamemodeState` migrates through
+    `migrateServerGamemodeBlock` (move-assign when the old block is at least the
+    new size, otherwise default + `game.state.schema-migrate`).
+- Server fallback gating:
+  - `game.server.fallback` is emitted with `reason=disabled|no-generation`;
+  - `MIMITA_GAME_DISABLE=1` remains the explicit resident escape hatch.
+- C validation: confirmed `game.render.path` is emitted for gameplay
+  (`engine-tick-render.cpp`), UI/menu (`engine-tick-ui.cpp`), and map editor
+  (`map-editor.cpp`) with `path` and `subpath`.
+- The two `TODO-DELETE(cutover)` files remain until the same-PID swap is proven;
+  deleting them now would break `MIMITA_GAME_DISABLE=1`.
+- Added `TODO-DELETE(fallback)` markers to both resident server tick branches.
+- Build status: compile phase succeeded; link is blocked because two running
+  `mimita.exe` processes hold `.dev/current/mimita.exe`. Stop the dev-loop run
+  to link and publish the new EXE.
+
+## Phase 1z GL thread guard, black-screen probe, and 4 ms budget
+
+- Root cause of the `nvoglv64.dll` crash: a worker thread called GL through the
+  host thunks. The crash report stack shows `beginthreadex` → DLL worker →
+  host GL thunk → `nvoglv64.dll`.
+- Host GL thread guard:
+  - the context-creating thread is recorded;
+  - every `CAP_RENDER`/`CAP_GL_RESOURCE` thunk refuses off-thread calls and
+    journals `game.render.thread-violation`;
+  - GL deletions are deferred and drained on the GL thread in `driveFrame` /
+    `renderFlushThunk`.
+- Breadcrumb throttle: `recordCrashBreadcrumb` now journals at most once per
+  second per subsystem (was every render stage every frame, ~85 MB/10 min).
+- Framebuffer probe: after the final render, read the presented pixels, save
+  `build/framebuffer-probe.png`, and journal
+  `presentation.framebuffer_probe` with center RGB, non-black count, and
+  viewport.
+- 4 ms / 240 FPS budget:
+  - `performance.frame-budget` fires on any frame over 4 ms with the top scopes;
+  - `performance.npc-budget` fires when an NPC exceeds 4 ms (1/s).
+- Spec: D13 (off-thread GL fails), D14 (4 ms budget + live NPC behavior),
+  D15 (framebuffer proof); event list updated in `hotness-contract.md`.
+- Build: compile phase succeeded. A manual link with the MinGW bin on PATH
+  produced a 244 MB candidate (exit 0). The dev-loop link failure is low free
+  memory (~750–900 MB free while Roblox/browsers/editors are open); close apps
+  or add linker memory flags and rerun the dev-loop.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls

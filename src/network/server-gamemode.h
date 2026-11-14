@@ -28,6 +28,8 @@
 #include "procedural/procedural-world.h"
 #include "gamemode/action-graph.h"
 #include "gamemode/disaster-runtime.h"
+
+inline constexpr std::uint32_t kServerGamemodeSchemaVersion = 1u;
 #include "gamemode/gamemode.h"
 #include "gamemode/payload-runtime.h"
 
@@ -54,6 +56,9 @@ struct ServerGamemodeKillEvent
 
 struct ServerGamemodeState
 {
+    // Bumped when the resident state layout changes. A candidate that reads a
+    // different version migrates before the swap is accepted.
+    std::uint32_t schemaVersion = 1;
     bool enabled = false;
     ServerMode mode = ServerMode::Sandbox;
     bool mapOnly = false;

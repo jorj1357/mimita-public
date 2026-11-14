@@ -14,6 +14,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <mutex>
+#include <unordered_map>
 
 #include "debug/crash-handler.h"
 #include "debug/structured-log.h"
@@ -91,6 +93,11 @@ std::string addressToString(const sockaddr_in& addr) {
 
 }  // namespace MimitaNet
 
+namespace {
+std::mutex gBreadcrumbMutex;
+std::unordered_map<std::string, uint64_t> gLastBreadcrumbMs;
+}  // namespace
+
 void recordCrashBreadcrumb(const char* subsystem, const char* format, ...) {
     char message[2048];
     message[0] = '\0';
@@ -99,6 +106,19 @@ void recordCrashBreadcrumb(const char* subsystem, const char* format, ...) {
         va_start(args, format);
         vsnprintf(message, sizeof(message), format, args);
         va_end(args);
+    }
+    // Per-frame breadcrumbs were flooding events.jsonl (tens of MB per minute)
+    // and adding main-thread I/O. Keep the last message per subsystem in the
+    // journal at most once per second.
+    const std::string key = subsystem ? subsystem : "(unknown)";
+    const uint64_t now = MimitaNet::nowMs();
+    {
+        std::lock_guard<std::mutex> lock(gBreadcrumbMutex);
+        auto& last = gLastBreadcrumbMs[key];
+        if (now - last < 1000) {
+            return;
+        }
+        last = now;
     }
     StructuredLogger::instance().writeFormatted(
         StructuredCategory::General, StructuredLevel::Important, __FILE__, __LINE__,

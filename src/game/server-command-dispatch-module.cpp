@@ -24,6 +24,7 @@
 #include "network/server.h"
 #include "physics/movement/movement-conversion.h"
 #include "website/api-client.h"
+#include "debug/structured-log.h"
 
 namespace mimita::game {
 
@@ -1324,6 +1325,26 @@ bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
             return false;
     }
     if (handled) {
+        // Per-handler detail is verbose-only and off by default. The resident
+        // loop owns the aggregate `game.transport.path` record.
+        if (StructuredLogger::instance().shouldLog(StructuredCategory::Network,
+                                                   StructuredLevel::Verbose)) {
+#ifdef MIMITA_GAME_DLL
+            const char* handledPath = "dll";
+#else
+            const char* handledPath = "resident";
+#endif
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Verbose,
+                "game.transport.dispatch", "transport",
+                "inbound packet handler ran in the generation",
+                message->serverTick,
+                nlohmann::json{
+                    {"type", static_cast<std::uint32_t>(header->type)},
+                    {"peer", message->peer},
+                    {"path", handledPath}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         return true;
     }
     const char* strictValue = std::getenv("MIMITA_HOTNESS_STRICT");

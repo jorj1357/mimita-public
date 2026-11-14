@@ -37,6 +37,9 @@ struct ServerFrameV1 {
     void* disagreementRetransmit = nullptr;
     void* npcIdsAlive = nullptr;
     void* mirrorPlayer = nullptr;
+    void* authenticatedPlayer = nullptr;
+    void* claimedTransport = nullptr;
+    void* pendingRemovals = nullptr;
     std::uint32_t* nextPlayerId = nullptr;
     std::uint32_t* nextEntityId = nullptr;
     std::uint32_t* nextProjectileId = nullptr;
@@ -51,12 +54,16 @@ struct ServerFrameV1 {
 
 struct ServerPacketResultV1 {
     std::uint32_t handled = 0;
+    std::uint32_t transportConsumed = 0;
     std::uint32_t playerId = 0;
 };
 
 struct GameServerV1 {
     std::uint32_t abiVersion = kGameServerAbiVersion;
     std::uint32_t structSize = sizeof(GameServerV1);
+    // Diagnostics: compile-time revision of the server behavior in this
+    // generation. Change it when proving a behavior-changing swap.
+    std::uint32_t runtimeRevision = 1;
     int (*process_packet)(void* frame, const void* event,
                           ServerPacketResultV1* out) = nullptr;
     int (*simulate_players)(void* frame) = nullptr;

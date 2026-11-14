@@ -8,6 +8,8 @@
 */
 #pragma once
 
+#include <string>
+
 namespace mimita::game {
 
 // Acquire the resident renderer and prepare the generation-owned Engine.
@@ -26,5 +28,9 @@ void renderWholeGame(void* renderContext);
 bool wholeGameShouldClose();
 
 void shutdownWholeGameEntry();
+
+// Queue a launcher startup command for execution once the hot join has both a
+// live multiplayer session and a loaded gameplay world.
+void queueStartupCommand(const std::string& command);
 
 }  // namespace mimita::game

@@ -297,6 +297,62 @@ void processAgentCommandQueue(const std::string& queuePath,
     deferredLines = std::move(remaining);
 }
 
+void processAgentCommandQueueForDll(const std::string& queuePath,
+                                    uint32_t tick)
+{
+    static std::string activePath;
+    static std::streamoff offset = 0;
+    if (queuePath.empty()) return;
+    if (activePath != queuePath) {
+        activePath = queuePath;
+        offset = 0;
+    }
+    std::ifstream queue(queuePath, std::ios::binary);
+    if (!queue.is_open()) return;
+    queue.seekg(offset);
+    std::string line;
+    while (std::getline(queue, line)) {
+        const std::streampos next = queue.tellg();
+        offset = next >= 0 ? static_cast<std::streamoff>(next) : 0;
+        if (line.empty()) continue;
+        try {
+            const nlohmann::json request = nlohmann::json::parse(line);
+            const std::string command = request.value("command", "");
+            if (command.empty()) continue;
+            mimita::host::AgentCommandV1 event{};
+            std::snprintf(event.command, sizeof(event.command), "%s", command.c_str());
+            std::snprintf(event.requestId, sizeof(event.requestId), "%s",
+                          request.value("request_id", "").c_str());
+            std::snprintf(event.scenarioId, sizeof(event.scenarioId), "%s",
+                          request.value("scenario_id", "").c_str());
+            event.stepIndex = request.value("step_index", 0u);
+            event.stepCount = request.value("step_count", 0u);
+            event.notBeforeMs = request.value("not_before_ms", uint64_t{0});
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "dev-loop.command.host-read", event.requestId,
+                "host-owned frame read queued agent command", tick,
+                {{"command", command}}, __FILE__, __LINE__, __func__);
+            const bool dispatched =
+                mimita::host::HostRuntime::instance().dispatchAgentCommand(event);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "dev-loop.command.host-dispatched", event.requestId,
+                dispatched ? "agent command dispatched to active generation"
+                           : "agent command dispatch failed",
+                tick, {{"command", command}, {"dispatched", dispatched}},
+                __FILE__, __LINE__, __func__);
+        } catch (const std::exception& error) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "dev-loop.command.invalid", "agent-queue",
+                "host-owned game command JSON parse failed", tick,
+                {{"queue_path", queuePath}, {"error", error.what()}},
+                __FILE__, __LINE__, __func__);
+        }
+    }
+}
+
 } // namespace
 
 // todo sort 6 7 2026 alphabetical
@@ -462,30 +518,44 @@ int main(int argc, char** argv)
         printf("[BOOT MODE] mode=udp-echo-server graphicsInitialized=0 uiInitialized=0\n");
         return MimitaNet::runUdpEchoServer(launchOptions);
     }
-    const auto configureWholeGameHost = [] {
-        if (!std::getenv("MIMITA_GAME_PROBE") &&
-            !std::getenv("MIMITA_GAME_OWN_FRAME") &&
-            !std::getenv("MIMITA_GAME_DISABLE") && !gExportSubprocessMode) {
-            std::string dllPath;
-            if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
-                dllPath = configured;
-            } else {
-                std::ifstream current("build/game/current.json");
-                if (current.is_open()) {
-                    try {
-                        nlohmann::json metadata;
-                        current >> metadata;
-                        dllPath = metadata.value("dll", std::string());
-                    } catch (const std::exception&) {
-                        dllPath.clear();
-                    }
+    const auto configureWholeGameHost = [](bool serverMode) {
+        if (std::getenv("MIMITA_GAME_PROBE") ||
+            std::getenv("MIMITA_GAME_OWN_FRAME") ||
+            std::getenv("MIMITA_GAME_DISABLE") || gExportSubprocessMode) {
+            return;
+        }
+        const bool explicitDll = std::getenv("MIMITA_GAME_DLL") != nullptr;
+        const bool hotClient = std::getenv("MIMITA_GAME_HOT_CLIENT") != nullptr;
+        std::string dllPath;
+        if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
+            dllPath = configured;
+        } else {
+            std::ifstream current("build/game/current.json");
+            if (current.is_open()) {
+                try {
+                    nlohmann::json metadata;
+                    current >> metadata;
+                    dllPath = metadata.value("dll", std::string());
+                } catch (const std::exception&) {
+                    dllPath.clear();
                 }
             }
-            if (!dllPath.empty() && std::filesystem::exists(dllPath)) {
-                _putenv_s("MIMITA_GAME_DLL", dllPath.c_str());
-                _putenv_s("MIMITA_GAME_PROBE", "1");
+        }
+        if (!dllPath.empty() && std::filesystem::exists(dllPath) &&
+            (serverMode || hotClient || explicitDll)) {
+            _putenv_s("MIMITA_GAME_DLL", dllPath.c_str());
+            _putenv_s("MIMITA_GAME_PROBE", "1");
+            // The hot client frame is opt-in until its render viewport and
+            // GL-state issues are resolved. Normal play uses the visible
+            // resident client frame while the server stays hot.
+            if (hotClient || explicitDll) {
                 _putenv_s("MIMITA_GAME_OWN_FRAME", "1");
             }
+        } else {
+            // A DLL loaded by a normal client without frame ownership still
+            // changes device/module state. Keep normal play on the known-good
+            // resident path until the hot client render is accepted.
+            _putenv_s("MIMITA_GAME_DISABLE", "1");
         }
     };
 
@@ -494,8 +564,7 @@ int main(int argc, char** argv)
         printf("[BOOT MODE] mode=headless-server graphicsInitialized=0 uiInitialized=0\n");
         LogManager::instance().setLogType("Server");
         LogManager::instance().init();
-        configureWholeGameHost();
-        mimita::host::HostRuntime::instance().startFromEnvironment();
+        configureWholeGameHost(true);
         int ret = MimitaNet::runServer(launchOptions);
         LogManager::instance().shutdown();
         return ret;
@@ -532,9 +601,45 @@ int main(int argc, char** argv)
             LogManager::instance().path().c_str());
     }
 
-    configureWholeGameHost();
+    configureWholeGameHost(false);
 
     mimita::host::HostRuntime::instance().startFromEnvironment();
+
+    // The whole-game frame path returns below and never reaches the legacy
+    // auto-join block. Queue the launcher request for the DLL before the
+    // frame-ownership branch so both paths see the same join.
+    const auto queueStartupConnectForDll = [&] {
+        if (!launchOptions.connectExplicit && !launchOptions.roomCodeExplicit) {
+            return;
+        }
+        MultiplayerConnectInfo info;
+        info.shouldConnect = true;
+        info.directAddress = launchOptions.connect;
+        info.roomCode = launchOptions.roomCode;
+        info.playerName = launchOptions.name;
+        info.mapName = launchOptions.mapName;
+        mimita::host::StartupConnectV1 request{};
+        request.shouldConnect = 1;
+        std::snprintf(request.directAddress, sizeof(request.directAddress), "%s",
+                      info.directAddress.c_str());
+        std::snprintf(request.roomCode, sizeof(request.roomCode), "%s",
+                      info.roomCode.c_str());
+        std::snprintf(request.playerName, sizeof(request.playerName), "%s",
+                      info.playerName.c_str());
+        std::snprintf(request.mapName, sizeof(request.mapName), "%s",
+                      info.mapName.c_str());
+        const std::size_t commandCount =
+            std::min<std::size_t>(launchOptions.startupCommands.size(), 4);
+        request.startupCommandCount = static_cast<std::uint32_t>(commandCount);
+        for (std::size_t index = 0; index < commandCount; ++index) {
+            std::snprintf(request.startupCommands[index],
+                          sizeof(request.startupCommands[index]), "%s",
+                          launchOptions.startupCommands[index].c_str());
+        }
+        mimita::host::HostRuntime::instance().queueStartupConnect(request);
+    };
+    queueStartupConnectForDll();
+
     if (mimita::host::HostRuntime::instance().ownsGameFrame()) {
         mimita::host::GameStartupV1 startup{};
         startup.version = 1;
@@ -545,6 +650,9 @@ int main(int argc, char** argv)
         if (mimita::host::HostRuntime::instance().bootstrapGame(startup)) {
             while (!mimita::host::HostRuntime::instance().gameShouldClose()) {
                 mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, nullptr);
+                processAgentCommandQueueForDll(
+                    launchOptions.agentCommandFile,
+                    static_cast<std::uint32_t>(mimita::host::HostRuntime::instance().activeGeneration()));
                 mimita::host::HostRuntime::instance().poll();
             }
             mimita::host::HostRuntime::instance().shutdown();

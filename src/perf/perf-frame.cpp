@@ -696,6 +696,33 @@ void perfCaptureFrame(double totalMs, double budgetMs, int frameNumber)
         e.depth = depth;
     }
 
+    // Any frame over the 4 ms / 240 FPS budget is a defect. Emit the top
+    // scopes so the journal shows exactly what blew the budget.
+    if (totalMs > 4.0) {
+        std::vector<int> order;
+        order.reserve(static_cast<size_t>(frame.entryCount));
+        for (int i = 0; i < frame.entryCount; ++i) order.push_back(i);
+        std::sort(order.begin(), order.end(), [&](int a, int b) {
+            return frame.entries[a].selfMs > frame.entries[b].selfMs;
+        });
+        nlohmann::json top = nlohmann::json::array();
+        for (size_t i = 0; i < order.size() && i < 5; ++i) {
+            const PerfBreakdownEntry& e = frame.entries[order[i]];
+            top.push_back(nlohmann::json{{"name", e.label},
+                                         {"self_ms", e.selfMs},
+                                         {"incl_ms", e.inclMs}});
+        }
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Performance, StructuredLevel::Important,
+            "performance.frame-budget", "performance",
+            "frame exceeded the 4ms / 240fps budget", frameNumber,
+            nlohmann::json{{"total_ms", totalMs},
+                           {"budget_ms", 4.0},
+                           {"over_ms", totalMs - 4.0},
+                           {"top_scopes", top}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
+
     // Fill entity snapshot from PerfState (already populated by engine systems)
     PerfState& ps = Perf::state();
     frame.npcCount = ps.npcCount;

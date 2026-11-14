@@ -225,6 +225,38 @@ struct GameStartupV1 {
     const char* title;
 };
 
+// Bootstrap -> DLL handoff for launcher auto-join. The resident EXE owns the
+// launch options; the DLL owns the GUI/connect state that consumes them.
+inline constexpr std::uint32_t kEventStartupConnect = 724u;
+inline constexpr std::uint32_t kEventAgentCommand = 725u;
+
+struct AgentCommandV1 {
+    std::uint32_t version = 1;
+    std::uint32_t structSize = sizeof(AgentCommandV1);
+    char command[512] = {};
+    char requestId[128] = {};
+    char scenarioId[128] = {};
+    std::uint32_t stepIndex = 0;
+    std::uint32_t stepCount = 0;
+    std::uint64_t notBeforeMs = 0;
+};
+inline constexpr std::uint32_t kStartupConnectVersion = 1u;
+
+struct StartupConnectV1 {
+    std::uint32_t version = kStartupConnectVersion;
+    std::uint32_t structSize = sizeof(StartupConnectV1);
+    std::uint32_t shouldConnect = 0;
+    std::uint32_t passwordProtected = 0;
+    char directAddress[256] = {};
+    char roomCode[64] = {};
+    char playerName[64] = {};
+    char mapName[64] = {};
+    char password[128] = {};
+    char serverName[96] = {};
+    std::uint32_t startupCommandCount = 0;
+    char startupCommands[4][192] = {};
+};
+
 // The single export every game.dll generation must return. Validated before any
 // function pointer is used:
 //   name matches, abiVersion == kGameHostAbiVersion, structSize == sizeof.

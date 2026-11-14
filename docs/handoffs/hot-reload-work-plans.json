@@ -55,7 +55,8 @@
         "src/game/game-input-module.*",
         "src/game/server-command-dispatch-module.*",
         "src/main-systems.cpp",
-        "src/main-init.cpp"
+        "src/main-init.cpp",
+        "src/host/game-state-bridge-legacy.cpp"
       ],
       "shared_contracts": [
         "kEventGameInput",
@@ -70,7 +71,12 @@
         "src/render/**",
         "src/engine/**"
       ],
-      "evidence": []
+      "evidence": [
+        "assertion runner exists",
+        "agent.join/leave/terminal/mouse adapters",
+        "client Connected in run 20261114_192532",
+        "host command queue read/dispatch to DLL terminal"
+      ]
     },
     {
       "plan_id": "server-hotsplit",
@@ -129,8 +135,8 @@
     {
       "plan_id": "ecs-and-state-migration",
       "owner": "agent-a",
-      "status": "active",
-      "objective": "use existing EntityRegistry/DynamicComponentStore for actor state and add versioned records for non-entity state",
+      "status": "planned",
+      "objective": "ECS recovered and parked; expand into gameplay state later if needed",
       "paths": [
         "src/ecs/**",
         "src/host/abi/state-capability.h",
@@ -152,7 +158,8 @@
       "evidence": [
         "recovered from 202b341b",
         "entity-slice-selftest PASS",
-        "dynamic-lifecycle-selftest PASS"
+        "dynamic-lifecycle-selftest PASS",
+        "parked: no gameplay dependency"
       ]
     },
     {

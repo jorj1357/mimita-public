@@ -5331,3 +5331,20 @@ allowed only after measured build/activation or isolation evidence justifies it.
 
 The authoritative live-development contract is
 `docs/specs/hotreload/hotreload.md` §11.
+
+## Packet registry codegen (2026-11-14)
+
+- `config/hot-reload/packet-schema.json` is the reviewed classification input.
+- `devscripts/packet_registry_codegen.py` parses every `PACKET_*` in
+  `src/network/packets.h` and generates
+  `src/host/generated/packet-registry-v1.h` plus
+  `config/hot-reload/packet-ledger.json`.
+- The generated table records the server and client path (`dll` or `resident`)
+  for every packet id. `src/network/server.cpp` now derives migrated-type
+  classification from it instead of a hand-maintained switch.
+- Default: server `dll` (the cutover routes all inbound through
+  `GetMimitaGameServerV1.process_packet`), client `resident` except the 12
+  reviewed `dispatchInboundMessage` handlers.
+- Adding or moving a packet is a schema edit plus
+  `python devscripts/packet_registry_codegen.py`; `--check` is the drift gate.
+  `live.py` runs both codegens before every build.

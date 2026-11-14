@@ -9,6 +9,8 @@
 */
 
 #include "network/server.h"
+#include "host/abi/game-server-abi.h"
+#include "host/host-runtime.h"
 #include "host/host-session-identity.h"
 #include "network/server-gamemode.h"
 #include "network/game-transport.h"
@@ -525,12 +527,58 @@ void tickServerIceTransports(SOCKET sock,
                              uint64_t& totalPacketsIn,
                              uint64_t& totalPacketsOut,
                              ServerPacketStats* stats,
-                             DisagreementRetransmitState* retransmitState)
+                             DisagreementRetransmitState* retransmitState,
+                             NpcSystem* npcSystem)
 {
     // 1. Poll existing players' ICE transports
     // Deferred erasure: handleDisconnect pushes to this vector instead of
     // erasing from the map during iteration, avoiding iterator invalidation.
     std::vector<uint32_t> pendingRemovals;
+
+    auto processIcePacket = [&](const TransportReceiveEvent& event,
+                                ServerPlayer* authenticated,
+                                std::unique_ptr<IGameTransport>* claimed,
+                                std::vector<uint32_t>* removals) {
+        ServerPacketProcessResult result{};
+        const bool handledByDll =
+            mimita::host::HostRuntime::instance().serverApiAvailable() &&
+            [&] {
+                mimita::host::ServerFrameV1 frame{};
+                frame.tick = tick;
+                frame.players = &players;
+                frame.npcs = &npcs;
+                frame.projectiles = &projectiles;
+                frame.npcSystem = npcSystem;
+                frame.world = const_cast<HeadlessWorld*>(&world);
+                frame.transportStats = stats;
+                frame.disagreementRetransmit = retransmitState;
+                frame.authenticatedPlayer = authenticated;
+                frame.claimedTransport = claimed;
+                frame.pendingRemovals = removals;
+                frame.nextPlayerId = &nextPlayerId;
+                frame.nextEntityId = &nextEntityId;
+                frame.nextProjectileId = &nextProjectileId;
+                frame.totalPacketsIn = &totalPacketsIn;
+                frame.totalPacketsOut = &totalPacketsOut;
+                frame.socket = static_cast<std::uintptr_t>(sock);
+                mimita::host::ServerPacketResultV1 out{};
+                const bool handled =
+                    mimita::host::HostRuntime::instance().serverProcessPacket(
+                        &frame, &event, &out);
+                result.handled = out.handled != 0;
+                result.transportConsumed = out.transportConsumed != 0;
+                result.playerId = out.playerId;
+                return handled;
+            }();
+        if (!handledByDll) {
+            result = processServerPacket(
+                sock, event, players, npcs, projectiles, nextPlayerId,
+                nextEntityId, nextProjectileId, world, tick, totalPacketsIn,
+                totalPacketsOut, stats, retransmitState, authenticated, claimed,
+                removals);
+        }
+        return result;
+    };
 
     std::vector<uint32_t> playerIds;
     playerIds.reserve(players.size());
@@ -603,11 +651,7 @@ void tickServerIceTransports(SOCKET sock,
             event.payloadBytes = (int)rp.bytes.size();
             event.receivedAtMs = rp.receivedAtMs;
             event.transportKind = TransportKind::Ice;
-            processServerPacket(sock, event, players, npcs, projectiles,
-                                nextPlayerId, nextEntityId, nextProjectileId,
-                                world, tick, totalPacketsIn, totalPacketsOut,
-                                stats, retransmitState, &current, nullptr,
-                                &pendingRemovals);
+            processIcePacket(event, &current, nullptr, &pendingRemovals);
             ++packetsProcessed;
             if (std::find(pendingRemovals.begin(), pendingRemovals.end(),
                           playerId) != pendingRemovals.end())
@@ -662,12 +706,7 @@ void tickServerIceTransports(SOCKET sock,
             event.receivedAtMs = rp.receivedAtMs;
             event.transportKind = TransportKind::Ice;
             ServerPacketProcessResult result =
-                processServerPacket(sock, event, players, npcs, projectiles,
-                                    nextPlayerId, nextEntityId,
-                                    nextProjectileId, world, tick,
-                                    totalPacketsIn, totalPacketsOut, stats,
-                                    retransmitState, nullptr,
-                                    &pending.transport);
+                processIcePacket(event, nullptr, &pending.transport, nullptr);
             processed = result.transportConsumed;
             if (processed)
                 break;

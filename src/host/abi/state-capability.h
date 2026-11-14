@@ -14,7 +14,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kStateCapabilityVersion = 2u;
+inline constexpr std::uint32_t kStateCapabilityVersion = 3u;
 
 struct MenuStateV1 {
     std::uint32_t structSize;
@@ -53,7 +53,14 @@ enum class StateObjectId : std::uint32_t {
     ReplayActorModels = 21,
     ReplayWeaponModels = 22,
     ReplaySaveWorker = 23,
+    ServerGamemode = 24,
 };
+
+// Called by the host when a resident record must grow. The game owns the
+// layout, so it constructs the new block, moves the known fields from the old
+// block, and destroys the old object. The host frees the old raw memory.
+using StateMigrateFn = void (*)(void* oldBlock, std::uint32_t oldSize,
+                                void* newBlock, std::uint32_t newSize);
 
 struct StateCapabilityV1 {
     std::uint32_t version;
@@ -62,6 +69,11 @@ struct StateCapabilityV1 {
     void* (*ensure_object)(void* hostUserData, StateObjectId id,
                            std::uint32_t size, std::uint32_t alignment,
                            std::int32_t* created);
+    void* (*ensure_object_migrating)(void* hostUserData, StateObjectId id,
+                                     std::uint32_t size,
+                                     std::uint32_t alignment,
+                                     StateMigrateFn migrate,
+                                     std::int32_t* created);
 };
 
 }  // namespace mimita::host
