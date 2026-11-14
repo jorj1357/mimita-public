@@ -14,11 +14,15 @@
 #include "debug/debug-diag.h"
 #include "debug/gl-debug.h"
 #include "world/texture-store.h"
+#include "render/render-command.h"
+#include "render/shader-program.h"
+
+namespace r = mimita::game::render;
 
 extern TextureStore gTextures;
 
-GLuint capsuleVAO = 0;
-GLuint capsuleVBO = 0;
+std::uint32_t capsuleVAO = 0;
+std::uint32_t capsuleVBO = 0;
 int    capsuleVertCount = 0;
 
 namespace {
@@ -28,24 +32,24 @@ namespace {
 // actor performs the upload and all replicas reuse the same VAO/VBO instead of
 // re-uploading their private mesh copies every frame.
 struct CombinedBatch {
-    GLint first = 0;
-    GLsizei count = 0;
+    std::int32_t first = 0;
+    std::int32_t count = 0;
     uint16_t shaderPartIndex = 0;
     uint16_t sourcePartIndex = 0;
     uint16_t sourceBatchIndex = 0;
 };
 
 struct ModelUploadSet {
-    std::vector<GLuint> partVaos;
-    std::vector<GLuint> partVbos;
+    std::vector<std::uint32_t> partVaos;
+    std::vector<std::uint32_t> partVbos;
     std::vector<uint64_t> partGenerations;
-    GLuint renderVao = 0;
-    GLuint renderVbo = 0;
+    std::uint32_t renderVao = 0;
+    std::uint32_t renderVbo = 0;
     uint64_t renderGeneration = ~0ull;
-    GLuint combinedVao = 0;
-    GLuint combinedVbo = 0;
+    std::uint32_t combinedVao = 0;
+    std::uint32_t combinedVbo = 0;
     uint64_t combinedGeneration = ~0ull;
-    GLsizei combinedVertexCount = 0;
+    std::int32_t combinedVertexCount = 0;
     int combinedPartCount = 0;
     std::vector<CombinedBatch> combinedBatches;
 };
@@ -78,8 +82,8 @@ std::size_t playerModelUploadCacheCount()
     return gModelUploads.size();
 }
 
-GLuint bodyPartVAO = 0;
-GLuint bodyPartVBO = 0;
+std::uint32_t bodyPartVAO = 0;
+std::uint32_t bodyPartVBO = 0;
 
 void initCapsuleMesh()
 {
@@ -230,22 +234,22 @@ void initCapsuleMesh()
     capsuleVAO = mimita::game::genVertexArray();
     capsuleVBO = mimita::game::genBuffer();
 
-    MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER,capsuleVBO));
+    r::bindVertexArray(capsuleVAO);
+    r::bindBuffer(r::BufferTarget::Array, capsuleVBO);
+    r::bufferData(r::BufferTarget::Array, capsuleVBO, verts.data(),
+                  static_cast<std::uint32_t>(verts.size() * sizeof(V)),
+                  r::BufferUsage::Static);
 
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER,
-        verts.size()*sizeof(V),
-        verts.data(),
-        GL_STATIC_DRAW));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(V), 0);
 
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(0,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)0));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(V),
+                           static_cast<std::uint32_t>(offsetof(V, uv)));
 
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,uv)));
-
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
-    MIMITA_GL_CALL(glVertexAttribPointer(2,3,GL_FLOAT,GL_FALSE,sizeof(V),(void*)offsetof(V,normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(V),
+                           static_cast<std::uint32_t>(offsetof(V, normal)));
 }
 
 void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey)
@@ -265,7 +269,7 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& 
     if (uploads.partGenerations[partIndex] == expectedGen &&
         uploads.partVaos[partIndex] != 0)
     {
-        MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
+        r::bindVertexArray(uploads.partVaos[partIndex]);
         return;
     }
 
@@ -274,16 +278,22 @@ void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& 
     if (!uploads.partVbos[partIndex])
         uploads.partVbos[partIndex] = mimita::game::genBuffer();
 
-    MIMITA_GL_CALL(glBindVertexArray(uploads.partVaos[partIndex]));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.partVbos[partIndex]));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
+    r::bindVertexArray(uploads.partVaos[partIndex]);
+    r::bindBuffer(r::BufferTarget::Array, uploads.partVbos[partIndex]);
+    r::bufferData(r::BufferTarget::Array, uploads.partVbos[partIndex],
+                  mesh.verts.data(),
+                  static_cast<std::uint32_t>(mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
 
     uploads.partGenerations[partIndex] = expectedGen;
 }
@@ -294,25 +304,30 @@ void uploadBodyPartMesh(const Mesh& mesh)
     if (!bodyPartVAO) bodyPartVAO = mimita::game::genVertexArray();
     if (!bodyPartVBO) bodyPartVBO = mimita::game::genBuffer();
 
-    MIMITA_GL_CALL(glBindVertexArray(bodyPartVAO));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, bodyPartVBO));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_DYNAMIC_DRAW));
+    r::bindVertexArray(bodyPartVAO);
+    r::bindBuffer(r::BufferTarget::Array, bodyPartVBO);
+    r::bufferData(r::BufferTarget::Array, bodyPartVBO, mesh.verts.data(),
+                  static_cast<std::uint32_t>(mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Dynamic);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
 }
 
-GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey)
+std::uint32_t uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey)
 {
     ModelUploadSet& uploads = uploadsFor(modelKey);
     const uint64_t expectedGen = meshGeometryGeneration(mesh);
     if (uploads.renderVao && uploads.renderGeneration == expectedGen)
     {
-        MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
+        r::bindVertexArray(uploads.renderVao);
         return uploads.renderVao;
     }
 
@@ -320,18 +335,23 @@ GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey)
     if (!uploads.renderVao) uploads.renderVao = mimita::game::genVertexArray();
     if (!uploads.renderVbo) uploads.renderVbo = mimita::game::genBuffer();
 
-    MIMITA_GL_CALL(glBindVertexArray(uploads.renderVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.renderVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW));
+    r::bindVertexArray(uploads.renderVao);
+    r::bindBuffer(r::BufferTarget::Array, uploads.renderVbo);
+    r::bufferData(r::BufferTarget::Array, uploads.renderVbo, mesh.verts.data(),
+                  static_cast<std::uint32_t>(mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(0);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(1);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
 
     uploads.renderGeneration = expectedGen;
     printf("[PLAYER GLB] uploaded model=%s verts=%zu triangles=%zu batches=%zu\n",
@@ -369,7 +389,7 @@ bool ensureCombinedBodyParts(const Player& player)
             const Mesh& mesh = meshes[i];
             if (mesh.verts.empty())
                 continue;
-            const GLint base = static_cast<GLint>(verts.size());
+            const std::int32_t base = static_cast<std::int32_t>(verts.size());
             for (const Vertex& v : mesh.verts)
                 verts.push_back({v.pos, v.normal, v.uv,
                                  static_cast<float>(shaderPartIndex)});
@@ -377,8 +397,8 @@ bool ensureCombinedBodyParts(const Player& player)
                 const Mesh::Batch& batch = mesh.batches[b];
                 if (batch.count == 0)
                     continue;
-                batches.push_back({base + static_cast<GLint>(batch.first),
-                                   static_cast<GLsizei>(batch.count),
+                batches.push_back({base + static_cast<std::int32_t>(batch.first),
+                                   static_cast<std::int32_t>(batch.count),
                                    static_cast<uint16_t>(shaderPartIndex),
                                    static_cast<uint16_t>(sourceBase + i),
                                    static_cast<uint16_t>(b)});
@@ -396,22 +416,27 @@ bool ensureCombinedBodyParts(const Player& player)
     if (!uploads.combinedVbo)
         uploads.combinedVbo = mimita::game::genBuffer();
 
-    MIMITA_GL_CALL(glBindVertexArray(uploads.combinedVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, uploads.combinedVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(MergedBodyVertex),
-                                verts.data(), GL_STATIC_DRAW));
+    r::bindVertexArray(uploads.combinedVao);
+    r::bindBuffer(r::BufferTarget::Array, uploads.combinedVbo);
+    r::bufferData(r::BufferTarget::Array, uploads.combinedVbo, verts.data(),
+                  static_cast<std::uint32_t>(verts.size() * sizeof(MergedBodyVertex)),
+                  r::BufferUsage::Static);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MergedBodyVertex), (void*)offsetof(MergedBodyVertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(MergedBodyVertex), (void*)offsetof(MergedBodyVertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(MergedBodyVertex), (void*)offsetof(MergedBodyVertex, normal)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
-    MIMITA_GL_CALL(glVertexAttribPointer(8, 1, GL_FLOAT, GL_FALSE, sizeof(MergedBodyVertex), (void*)offsetof(MergedBodyVertex, partIndex)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(8));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(MergedBodyVertex),
+                           static_cast<std::uint32_t>(offsetof(MergedBodyVertex, pos)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(MergedBodyVertex),
+                           static_cast<std::uint32_t>(offsetof(MergedBodyVertex, uv)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(MergedBodyVertex),
+                           static_cast<std::uint32_t>(offsetof(MergedBodyVertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(8, 1, r::VertexType::Float, false, sizeof(MergedBodyVertex),
+                           static_cast<std::uint32_t>(offsetof(MergedBodyVertex, partIndex)));
+    r::enableVertexAttribArray(8);
 
     uploads.combinedGeneration = gen;
-    uploads.combinedVertexCount = static_cast<GLsizei>(verts.size());
+    uploads.combinedVertexCount = static_cast<std::int32_t>(verts.size());
     uploads.combinedPartCount = shaderPartIndex;
     uploads.combinedBatches = std::move(batches);
     printf("[PLAYER GLB] combined body model=%s parts=%d verts=%zu batches=%zu\n",
@@ -419,7 +444,7 @@ bool ensureCombinedBodyParts(const Player& player)
     return true;
 }
 
-GLuint combinedBatchTexture(const Player& player, const CombinedBatch& batch)
+std::uint32_t combinedBatchTexture(const Player& player, const CombinedBatch& batch)
 {
     const auto& parts = player.physicalBody.partMeshes;
     const auto& extras = player.physicalBody.extraPartMeshes;
@@ -440,7 +465,7 @@ GLuint combinedBatchTexture(const Player& player, const CombinedBatch& batch)
 
 } // namespace
 
-bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outlinePass)
+bool drawCombinedBodyParts(const Player& player, mimita::game::render::ShaderProgram& shader, bool outlinePass)
 {
     if (!ensureCombinedBodyParts(player))
         return false;
@@ -466,20 +491,20 @@ bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outli
     if (partCount != uploads.combinedPartCount)
         return false;
 
-    static GLint usePartModelsLoc = -1;
-    static GLint partModelsLoc = -1;
+    static std::int32_t usePartModelsLoc = -1;
+    static std::int32_t partModelsLoc = -1;
     if (usePartModelsLoc < 0)
-        usePartModelsLoc = glGetUniformLocation(shader, "uUsePartModels");
+        usePartModelsLoc = shader.uniform("uUsePartModels");
     if (partModelsLoc < 0)
-        partModelsLoc = glGetUniformLocation(shader, "uPartModels");
+        partModelsLoc = shader.uniform("uPartModels");
     if (usePartModelsLoc < 0 || partModelsLoc < 0)
         return false;
 
-    glUniform1i(usePartModelsLoc, 1);
-    glUniformMatrix4fv(partModelsLoc, partCount, GL_FALSE, &partModels[0][0][0]);
-    glBindVertexArray(uploads.combinedVao);
+    r::uniform1i(usePartModelsLoc, 1);
+    r::uniformMatrix4fv(partModelsLoc, partCount, &partModels[0][0][0]);
+    r::bindVertexArray(uploads.combinedVao);
 
-    const GLuint firstTexture = combinedBatchTexture(player, uploads.combinedBatches.front());
+    const std::uint32_t firstTexture = combinedBatchTexture(player, uploads.combinedBatches.front());
     bool singleTexture = true;
     for (const CombinedBatch& batch : uploads.combinedBatches) {
         if (combinedBatchTexture(player, batch) != firstTexture) {
@@ -493,21 +518,25 @@ bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outli
       // filled the actor with the outline color instead of drawing a
       // silhouette, which is the large red/green "outline" seen in TDM.
       if (outlinePass) {
-          glEnable(GL_CULL_FACE);
-          glCullFace(GL_FRONT);
+          r::enable(r::Capability::CullFace);
+          r::cullFace(r::CullFaceMode::Front);
       } else {
-          glDisable(GL_CULL_FACE);
+          r::disable(r::Capability::CullFace);
       }
       if (singleTexture) {
-          glBindTexture(GL_TEXTURE_2D, firstTexture ? firstTexture : gTextures.get("default"));
-        glDrawArrays(GL_TRIANGLES, 0, uploads.combinedVertexCount);
+          r::bindTexture(r::TextureTarget::Texture2D,
+                         firstTexture ? firstTexture : gTextures.get("default"));
+        r::drawArrays(r::Primitive::Triangles, 0, uploads.combinedVertexCount);
     } else {
         for (const CombinedBatch& batch : uploads.combinedBatches) {
-            const GLuint texture = combinedBatchTexture(player, batch);
-            glBindTexture(GL_TEXTURE_2D, texture ? texture : gTextures.get("default"));
-            glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
+            const std::uint32_t texture = combinedBatchTexture(player, batch);
+            r::bindTexture(r::TextureTarget::Texture2D,
+                           texture ? texture : gTextures.get("default"));
+            r::drawArrays(r::Primitive::Triangles,
+                          static_cast<std::int32_t>(batch.first),
+                          static_cast<std::int32_t>(batch.count));
         }
     }
-    glUniform1i(usePartModelsLoc, 0);
+    r::uniform1i(usePartModelsLoc, 0);
     return true;
 }

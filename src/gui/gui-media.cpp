@@ -7,6 +7,7 @@
 #include "game/gl-resource-bridge-module.h"
 #include "map/texture.h"
 #include "stb_image.h"
+#include "render/render-command.h"
 
 #include <algorithm>
 #include <chrono>
@@ -37,12 +38,19 @@ static bool fileChanged(const std::string& path, std::filesystem::file_time_type
 
 static GLuint uploadFrame(const unsigned char* data, int w, int h) {
     GLuint tex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    namespace r = mimita::game::render;
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::WrapS, r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::WrapT, r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::MinFilter, r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::MagFilter, r::TextureValue::Linear);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  w, h, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte,
+                  data);
     return tex;
 }
 

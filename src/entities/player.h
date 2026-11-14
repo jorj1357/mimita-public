@@ -551,6 +551,8 @@ struct GroundReturnState {
     float rechargeTimer = 0.0f;
 };
 
+namespace mimita::game::render { class ShaderProgram; }
+
 class Player {
 public:
     std::string username = "admin";
@@ -803,7 +805,7 @@ public:
         float rootYaw,
         const ReplayBodyPartState* parts,
         uint8_t partCount);
-    void renderCurrentPose(unsigned int shader,
+    void renderCurrentPose(mimita::game::render::ShaderProgram& shader,
                            const glm::mat4& view,
                            const glm::mat4& proj,
                            bool whiteOverride = false,
@@ -861,12 +863,12 @@ public:
 
     // -------- Systems --------
     void updateAudio(float dt);
-    void render(unsigned int shader,
+    void render(mimita::game::render::ShaderProgram& shader,
                 const glm::mat4& view,
                 const glm::mat4& proj,
                 bool hideHead = false,
                 const glm::vec3& playerTint = glm::vec3(1.0f)) const;
-    void renderDepth(unsigned int shadowShader,
+    void renderDepth(mimita::game::render::ShaderProgram& shadowShader,
                      const glm::mat4& lightViewProj) const;
 
 

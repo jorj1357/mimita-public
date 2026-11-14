@@ -9,6 +9,11 @@
 */
 
 #include "network/server.h"
+#if defined(MIMITA_GAME_DLL)
+#include "game/session-identity-bridge-module.h"
+#else
+#include "host/host-session-identity.h"
+#endif
 #include "network/server-gamemode.h"
 #include "network/server-gamemode.h"
 #include "network/community-server-config.h"
@@ -477,34 +482,139 @@ void serverLogPlayerSessionRemoval(const ServerPlayer& player,
         __FILE__, __LINE__, __FUNCTION__);
 }
 
-// ── Global server code for coordinator validation ────────────────────
-// Set by the server when it registers with the coordinator.
-static std::string gServerCoordinatorCode;
-static std::string gServerCoordinatorJoinToken;
-
-// ── Global server map ID ─────────────────────────────────────────────
-static std::string gServerMapId = "funworldv3";
-
-// ── Global server password state for private servers ─────────────────
-static bool gServerPasswordProtected = false;
-static std::string gServerPassword;
+// ── Resident session identity ────────────────────────────────────────
+// The live map id, coordinator code/token, and password state have one owner:
+// the resident host. The EXE calls it directly; game.dll goes through
+// CAP_SESSION_IDENTITY so both sides read the same values.
 
 void setServerCoordinatorState(const std::string& code, const std::string& joinToken)
 {
-    gServerCoordinatorCode = code;
-    gServerCoordinatorJoinToken = joinToken;
+#if defined(MIMITA_GAME_DLL)
+    mimita::game::setSessionText(
+        mimita::host::SessionTextField::CoordinatorCode, code);
+    mimita::game::setSessionText(
+        mimita::host::SessionTextField::CoordinatorJoinToken, joinToken);
+#else
+    mimita::host::setSessionCoordinatorCode(code);
+    mimita::host::setSessionCoordinatorJoinToken(joinToken);
+#endif
 }
 
-const std::string& getServerCoordinatorCode() { return gServerCoordinatorCode; }
-const std::string& getServerCoordinatorJoinToken() { return gServerCoordinatorJoinToken; }
+const std::string& getServerCoordinatorCode()
+{
+#if defined(MIMITA_GAME_DLL)
+    thread_local std::string cached;
+    cached = mimita::game::getSessionText(
+        mimita::host::SessionTextField::CoordinatorCode);
+    return cached;
+#else
+    return mimita::host::sessionCoordinatorCode();
+#endif
+}
 
-void setServerMapId(const std::string& mapId) { gServerMapId = mapId; }
-const std::string& getServerMapId() { return gServerMapId; }
+const std::string& getServerCoordinatorJoinToken()
+{
+#if defined(MIMITA_GAME_DLL)
+    thread_local std::string cached;
+    cached = mimita::game::getSessionText(
+        mimita::host::SessionTextField::CoordinatorJoinToken);
+    return cached;
+#else
+    return mimita::host::sessionCoordinatorJoinToken();
+#endif
+}
+
+void setServerMapId(const std::string& mapId)
+{
+#if defined(MIMITA_GAME_DLL)
+    mimita::game::setSessionText(mimita::host::SessionTextField::MapId, mapId);
+#else
+    mimita::host::setSessionMapId(mapId);
+#endif
+}
+
+const std::string& getServerMapId()
+{
+#if defined(MIMITA_GAME_DLL)
+    thread_local std::string cached;
+    cached = mimita::game::getSessionText(
+        mimita::host::SessionTextField::MapId);
+    return cached;
+#else
+    return mimita::host::sessionMapId();
+#endif
+}
 
 void setServerPasswordState(bool protectedFlag, const std::string& password)
 {
-    gServerPasswordProtected = protectedFlag;
-    gServerPassword = password;
+#if defined(MIMITA_GAME_DLL)
+    mimita::game::setSessionPassword(protectedFlag, password);
+#else
+    mimita::host::setSessionPasswordState(protectedFlag, password);
+#endif
+}
+
+void setServerMatchMode(const std::string& mode)
+{
+#if defined(MIMITA_GAME_DLL)
+    mimita::game::setSessionText(
+        mimita::host::SessionTextField::MatchMode, mode);
+#else
+    mimita::host::setSessionMatchMode(mode);
+#endif
+}
+
+const std::string& getServerMatchMode()
+{
+#if defined(MIMITA_GAME_DLL)
+    thread_local std::string cached;
+    cached = mimita::game::getSessionText(
+        mimita::host::SessionTextField::MatchMode);
+    return cached;
+#else
+    return mimita::host::sessionMatchMode();
+#endif
+}
+
+void setServerCommunityMode(const std::string& mode)
+{
+#if defined(MIMITA_GAME_DLL)
+    mimita::game::setSessionText(
+        mimita::host::SessionTextField::CommunityMode, mode);
+#else
+    mimita::host::setSessionCommunityMode(mode);
+#endif
+}
+
+const std::string& getServerCommunityMode()
+{
+#if defined(MIMITA_GAME_DLL)
+    thread_local std::string cached;
+    cached = mimita::game::getSessionText(
+        mimita::host::SessionTextField::CommunityMode);
+    return cached;
+#else
+    return mimita::host::sessionCommunityMode();
+#endif
+}
+
+static bool serverPasswordProtected()
+{
+#if defined(MIMITA_GAME_DLL)
+    return mimita::game::getSessionFlag(
+               mimita::host::SessionFlagField::PasswordProtected) != 0;
+#else
+    return mimita::host::sessionPasswordProtected();
+#endif
+}
+
+static bool serverPasswordMatches(const std::string& supplied)
+{
+#if defined(MIMITA_GAME_DLL)
+    return mimita::game::sessionPasswordMatches(supplied.c_str());
+#else
+    return mimita::host::sessionPasswordMatches(supplied.c_str());
+#endif
 }
 
 const char* transportKindName(TransportKind kind)
@@ -1123,7 +1233,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
             "network.server.client-hello-accepted", std::to_string(id),
             "accepted a new client hello and sent authoritative welcome", tick,
             {{"player_id", id}, {"player_name", p.name},
-             {"map", gServerMapId},
+             {"map", getServerMapId()},
              {"run_id", runtimeRunId ? runtimeRunId : ""},
              {"build_id", runtimeBuildId ? runtimeBuildId : ""}},
             __FILE__, __LINE__, __func__);
@@ -1167,7 +1277,7 @@ void handleHello(SOCKET sock, const sockaddr_in& from, const char* buffer, int b
     std::memset(welcome.reconnectToken, 0, sizeof(welcome.reconnectToken));
     std::strncpy(welcome.reconnectToken, p.reconnectToken.c_str(), sizeof(welcome.reconnectToken) - 1);
     std::memset(welcome.mapId, 0, sizeof(welcome.mapId));
-    std::strncpy(welcome.mapId, gServerMapId.c_str(), sizeof(welcome.mapId) - 1);
+    std::strncpy(welcome.mapId, getServerMapId().c_str(), sizeof(welcome.mapId) - 1);
     const char* runtimeRunId = std::getenv("MIMITA_RUN_ID");
     const char* runtimeBuildId = std::getenv("MIMITA_BUILD_ID");
     if (runtimeRunId)
@@ -1569,7 +1679,7 @@ void handleSpawnNpcRequest(const char* buffer, int bytes,
         return;
 
     // Melee is a one-human-versus-one-NPC mode: cap the total to one live NPC.
-    if (serverGamemodeState().matchMode == "ssbm") {
+    if (getServerMatchMode() == "ssbm") {
         int liveNpcs = 0;
         for (const auto& kv : npcs)
             if (kv.second.health > 0)
@@ -1711,7 +1821,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     // Apply the selected community mode's human capacity before the server-wide
     // transport limit. NPC participants do not consume human connection slots.
     const CommunityMode* communityMode = CommunityServerConfig::instance().modeById(
-        serverGamemodeState().communityMode);
+        getServerCommunityMode());
     const size_t playerLimit = communityMode && communityMode->maxPlayers > 0
         ? std::min<size_t>(MAX_PLAYERS, (size_t)communityMode->maxPlayers)
         : MAX_PLAYERS;
@@ -1769,7 +1879,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
              {"elapsed_ms", nowMs() - joinValidationStartMs},
              {"existing_player_id", existingJoinId},
              {"players", players.size()},
-             {"room_code", gServerCoordinatorCode},
+             {"room_code", getServerCoordinatorCode()},
              {"transport", "server"},
              {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
@@ -1778,19 +1888,19 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     {
     // Validate ICE join token with coordinator
     // (skip validation for local-only servers)
-    if (gServerCoordinatorCode == "LOCAL")
+    if (getServerCoordinatorCode() == "LOCAL")
     {
         printf("%s [SERVER JOIN] local server — accepting join for %s\n",
                serverTimestamp(), join->name);
     }
-    else if (!gServerCoordinatorCode.empty())
+    else if (!getServerCoordinatorCode().empty())
     {
         printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s\n",
-               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
-        if (!coordinatorIceValidateJoin(gServerCoordinatorCode, joinTokenStr))
+               getServerCoordinatorCode().c_str(), joinTokenStr.substr(0, 12).c_str());
+        if (!coordinatorIceValidateJoin(getServerCoordinatorCode(), joinTokenStr))
         {
             printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s REJECTED\n",
-                   gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+                   getServerCoordinatorCode().c_str(), joinTokenStr.substr(0, 12).c_str());
             JoinRejectPacket reject{};
             reject.header.type = PACKET_JOIN_REJECT;
             reject.header.tick = tick;
@@ -1808,7 +1918,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
             return;
         }
         printf("[ICE TOKEN VALIDATE] code=%s tokenPrefix=%s valid\n",
-               gServerCoordinatorCode.c_str(), joinTokenStr.substr(0, 12).c_str());
+               getServerCoordinatorCode().c_str(), joinTokenStr.substr(0, 12).c_str());
         printf("%s [SERVER JOIN] coordinator validated token for %s\n",
                serverTimestamp(), join->name);
     }
@@ -1847,7 +1957,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
              {"attempt", 0}, {"max_attempts", 0},
              {"elapsed_ms", nowMs() - joinValidationStartMs},
              {"players", players.size()},
-             {"room_code", gServerCoordinatorCode},
+             {"room_code", getServerCoordinatorCode()},
              {"transport", "server"},
              {"build_id", std::getenv("MIMITA_BUILD_ID") ? std::getenv("MIMITA_BUILD_ID") : ""}},
             __FILE__, __LINE__, __FUNCTION__);
@@ -1856,10 +1966,10 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     // ── Password check for private servers ──
     // A protected room is private even when its configured password is empty:
     // no client may enter without the exact host-selected password.
-    if (gServerPasswordProtected)
+    if (serverPasswordProtected())
     {
         const std::string supplied = boundedPacketString(join->password, sizeof(join->password));
-        if (supplied.empty() || supplied != gServerPassword)
+        if (supplied.empty() || !serverPasswordMatches(supplied))
         {
             JoinRejectPacket reject{};
             reject.header.type = PACKET_JOIN_REJECT;
@@ -1892,7 +2002,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
         const uint64_t vipStartMs = nowMs();
         constexpr int kVipJoinVerifyTimeoutMs = 2000;
         vipResult = verifyVipJoinTicket(
-            vipTicket, gServerCoordinatorCode, "", kVipJoinVerifyTimeoutMs);
+            vipTicket, getServerCoordinatorCode(), "", kVipJoinVerifyTimeoutMs);
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Network,
             vipResult.ok && vipResult.verified ? StructuredLevel::Important
@@ -2034,7 +2144,7 @@ void handleJoinRequest(SOCKET sock, const sockaddr_in& from, const char* buffer,
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
     std::memset(accept.mapId, 0, sizeof(accept.mapId));
-    std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
+    std::strncpy(accept.mapId, getServerMapId().c_str(), sizeof(accept.mapId) - 1);
     const char* joinRunId = std::getenv("MIMITA_RUN_ID");
     const char* joinBuildId = std::getenv("MIMITA_BUILD_ID");
     if (joinRunId)
@@ -2172,7 +2282,7 @@ void handleReconnectRequest(SOCKET sock, const sockaddr_in& from, const char* bu
     std::memset(accept.reconnectToken, 0, sizeof(accept.reconnectToken));
     std::strncpy(accept.reconnectToken, p.reconnectToken.c_str(), sizeof(accept.reconnectToken) - 1);
     std::memset(accept.mapId, 0, sizeof(accept.mapId));
-    std::strncpy(accept.mapId, gServerMapId.c_str(), sizeof(accept.mapId) - 1);
+    std::strncpy(accept.mapId, getServerMapId().c_str(), sizeof(accept.mapId) - 1);
     accept.restoredHealth = p.health;
     accept.restoredKills = p.kills;
     accept.restoredDeaths = p.deaths;

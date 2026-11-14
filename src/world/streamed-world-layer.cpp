@@ -29,13 +29,17 @@
 #include "modules/api/chunk-collision-api.h"
 #include "physics/physical-entity.h"
 #include "render/world-box-mesh.h"
+#include "render/world-shader.h"
+#include "render/render-command.h"
+#include "render/render-world.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
 #include "world/world.h"
 
+namespace r = mimita::game::render;
+
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
-extern void setUniforms(GLuint shader, const glm::vec3& cameraPos);
 
 namespace {
 
@@ -689,45 +693,46 @@ void StreamedWorldLayer::uploadTemplate(Template& templateData)
 {
     if (templateData.vao == 0) templateData.vao = mimita::game::genVertexArray();
     if (templateData.vbo == 0) templateData.vbo = mimita::game::genBuffer();
-    glBindVertexArray(templateData.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, templateData.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(templateData.verts.size() * sizeof(Vertex)),
-                 templateData.verts.empty() ? nullptr : templateData.verts.data(),
-                 GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, normal));
+    r::bindVertexArray(templateData.vao);
+    r::bindBuffer(r::BufferTarget::Array, templateData.vbo);
+    r::bufferData(r::BufferTarget::Array, templateData.vbo,
+                  templateData.verts.empty() ? nullptr : templateData.verts.data(),
+                  static_cast<std::uint32_t>(templateData.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
 
     // Instance matrix attributes (locations 9..12) with divisor 1.
     if (templateData.instanceVbo == 0) templateData.instanceVbo = mimita::game::genBuffer();
-    glBindBuffer(GL_ARRAY_BUFFER, templateData.instanceVbo);
+    r::bindBuffer(r::BufferTarget::Array, templateData.instanceVbo);
     for (int i = 0; i < 4; ++i) {
-        glEnableVertexAttribArray(9 + i);
-        glVertexAttribPointer(9 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
-                              (void*)(i * sizeof(glm::vec4)));
-        glVertexAttribDivisor(9 + i, 1);
+        r::enableVertexAttribArray(9 + i);
+        r::vertexAttribPointer(9 + i, 4, r::VertexType::Float, false,
+                               sizeof(glm::mat4),
+                               static_cast<std::uint32_t>(i * sizeof(glm::vec4)));
+        r::vertexAttribDivisor(9 + i, 1);
     }
-    glBindVertexArray(0);
+    r::bindVertexArray(0);
     templateData.vboDirty = false;
 }
 
 void StreamedWorldLayer::uploadInstanceBuffer(Template& templateData)
 {
     if (templateData.instanceVbo == 0) templateData.instanceVbo = mimita::game::genBuffer();
-    glBindBuffer(GL_ARRAY_BUFFER, templateData.instanceVbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(templateData.instances.size() * sizeof(glm::mat4)),
-                 templateData.instances.empty() ? nullptr
-                                                : templateData.instances.data(),
-                 GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    r::bindBuffer(r::BufferTarget::Array, templateData.instanceVbo);
+    r::bufferData(r::BufferTarget::Array, templateData.instanceVbo,
+                  templateData.instances.empty() ? nullptr
+                                                 : templateData.instances.data(),
+                  static_cast<std::uint32_t>(templateData.instances.size() * sizeof(glm::mat4)),
+                  r::BufferUsage::Dynamic);
+    r::bindBuffer(r::BufferTarget::Array, 0);
 }
 
 void StreamedWorldLayer::rebuildRecordVbo(ChunkRecord& record,
@@ -742,11 +747,11 @@ void StreamedWorldLayer::rebuildRecordVbo(ChunkRecord& record,
         worldVerts.push_back(copy);
     }
     if (record.vbo == 0) record.vbo = mimita::game::genBuffer();
-    glBindBuffer(GL_ARRAY_BUFFER, record.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(worldVerts.size() * sizeof(Vertex)),
-                 worldVerts.empty() ? nullptr : worldVerts.data(),
-                 GL_STATIC_DRAW);
+    r::bindBuffer(r::BufferTarget::Array, record.vbo);
+    r::bufferData(r::BufferTarget::Array, record.vbo,
+                  worldVerts.empty() ? nullptr : worldVerts.data(),
+                  static_cast<std::uint32_t>(worldVerts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
     if (record.vao == 0) record.vao = makeChunkVao(record.vbo, 0);
 }
 
@@ -810,18 +815,18 @@ GLuint StreamedWorldLayer::makeChunkVao(GLuint vbo, GLuint /*instanceVbo*/)
 {
     GLuint vao = 0;
     vao = mimita::game::genVertexArray();
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, normal));
-    glBindVertexArray(0);
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::bindVertexArray(0);
     return vao;
 }
 
@@ -1093,59 +1098,56 @@ void StreamedWorldLayer::updateMaterial(const std::string& chunkId,
 
 void StreamedWorldLayer::render(const Camera& camera)
 {
-    if (!gRenderer || !gRenderer->shaderProgram || mChunks.empty())
+    if (!gRenderer || !r::worldShader().ensureLoaded() || mChunks.empty())
         return;
 
-    glUseProgram(gRenderer->shaderProgram);
+    r::useProgram(r::worldShader().program());
     const glm::mat4 view = camera.getView();
     const glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth,
                                           (float)gRenderer->sceneHeight);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"),
-                       1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"),
-                       1, GL_FALSE, &proj[0][0]);
-    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUsePartModels"), 0);
-    setUniforms(gRenderer->shaderProgram, camera.pos);
+    r::uniformMatrix4fv(r::worldShader().uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("projection"), 1, &proj[0][0]);
+    r::uniform1i(r::worldShader().uniform("uUsePartModels"), 0);
+    setUniforms(r::worldShader(), camera.pos);
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glActiveTexture(GL_TEXTURE0);
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(true);
+    r::activeTexture(0);
 
     if (mInstancing) {
-        glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseInstanceModel"), 1);
+        r::uniform1i(r::worldShader().uniform("uUseInstanceModel"), 1);
         const glm::mat4 identity(1.0f);
-        glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
-                           1, GL_FALSE, &identity[0][0]);
+        r::uniformMatrix4fv(r::worldShader().uniform("model"), 1, &identity[0][0]);
         for (Template& templateData : mTemplates) {
             if (templateData.instances.empty()) continue;
-            glBindVertexArray(templateData.vao);
+            r::bindVertexArray(templateData.vao);
             for (const Mesh::Batch& batch : templateData.batches) {
-                glBindTexture(GL_TEXTURE_2D, batch.texture);
-                glDrawArraysInstanced(GL_TRIANGLES, (GLint)batch.first,
-                                      (GLsizei)batch.count,
-                                      (GLsizei)templateData.instances.size());
+                r::bindTexture(r::TextureTarget::Texture2D, batch.texture);
+                r::drawArraysInstanced(r::Primitive::Triangles,
+                                       static_cast<std::int32_t>(batch.first),
+                                       static_cast<std::int32_t>(batch.count),
+                                       static_cast<std::int32_t>(templateData.instances.size()));
             }
         }
     } else {
-        glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseInstanceModel"), 0);
+        r::uniform1i(r::worldShader().uniform("uUseInstanceModel"), 0);
         const glm::mat4 identity(1.0f);
-        glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"),
-                           1, GL_FALSE, &identity[0][0]);
+        r::uniformMatrix4fv(r::worldShader().uniform("model"), 1, &identity[0][0]);
         for (const ChunkRecord& record : mChunks) {
             if (record.vao == 0) continue;
-            glBindVertexArray(record.vao);
+            r::bindVertexArray(record.vao);
             for (const Mesh::Batch& batch : record.batches) {
-                glBindTexture(GL_TEXTURE_2D, batch.texture);
-                glDrawArrays(GL_TRIANGLES, (GLint)batch.first,
-                             (GLsizei)batch.count);
+                r::bindTexture(r::TextureTarget::Texture2D, batch.texture);
+                r::drawArrays(r::Primitive::Triangles,
+                              static_cast<std::int32_t>(batch.first),
+                              static_cast<std::int32_t>(batch.count));
             }
         }
     }
     // Shared-shader state: leaving uUseInstanceModel enabled corrupts the next
     // frame's base-world and actor draws because their VAOs have no instance
     // matrix attributes.
-    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram,
-                                     "uUseInstanceModel"), 0);
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::uniform1i(r::worldShader().uniform("uUseInstanceModel"), 0);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 }

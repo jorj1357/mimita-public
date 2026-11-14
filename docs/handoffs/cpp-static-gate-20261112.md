@@ -5,7 +5,7 @@ must use a resident capability instead. Per-call local file handles with a
 matching fclose are allowed; persistent handles are not. This is not a semantic
 review and not runtime evidence.
 
-- Game sources scanned: 606
+- Game sources scanned: 616
 - Violations: 0
 - Files with violations: 0
 

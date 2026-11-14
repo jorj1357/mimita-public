@@ -59,6 +59,14 @@ bool sendToPeer(std::uint64_t peer, std::uint32_t typeId, const void* data,
            mimita::host::TransportResult::Ok;
 }
 
+bool bindSession(std::uint64_t peer, std::uint32_t playerId) {
+    if (!gTransport || !gTransport->bind_session) {
+        return false;
+    }
+    return gTransport->bind_session(gHostData, peer, playerId) ==
+           mimita::host::TransportResult::Ok;
+}
+
 bool sendServerCommand(const char* command, std::size_t size) {
     if (!gTransport || !gTransport->send || !gTransport->session_state || !command) {
         return false;

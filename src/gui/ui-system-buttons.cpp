@@ -1,5 +1,6 @@
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
+#include "render/render-command.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -249,9 +250,10 @@ void beginScreenScrollArea(GLFWwindow* win, UIRect area, float contentHeight,
                            UIScrollState& scroll)
 {
     uiFlushBatch();
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((int)area.x, (int)(UISys::gFbH - area.y - area.h),
-              (int)area.w, (int)area.h);
+    namespace r = mimita::game::render;
+    r::enable(r::Capability::ScissorTest);
+    r::scissor((int)area.x, (int)(UISys::gFbH - area.y - area.h),
+               (int)area.w, (int)area.h);
 
     double mx = 0.0;
     double my = 0.0;
@@ -276,7 +278,8 @@ void endScreenScrollArea(UIRect area, float contentHeight, UIScrollState& scroll
                          float scrollbarWidth, float scrollbarInset)
 {
     uiFlushBatch();
-    glDisable(GL_SCISSOR_TEST);
+    namespace r = mimita::game::render;
+    r::disable(r::Capability::ScissorTest);
 
     const float maxScroll = std::max(0.0f, contentHeight - area.h);
     if (maxScroll <= 0.0f) return;
@@ -301,9 +304,10 @@ void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScro
 
     uiFlushBatch();
     const UIRect fbArea = cs.designToScreen(area);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((int)fbArea.x, (int)(UISys::gFbH - fbArea.y - fbArea.h),
-              (int)fbArea.w, (int)fbArea.h);
+    namespace r = mimita::game::render;
+    r::enable(r::Capability::ScissorTest);
+    r::scissor((int)fbArea.x, (int)(UISys::gFbH - fbArea.y - fbArea.h),
+               (int)fbArea.w, (int)fbArea.h);
 
     double mx = 0.0;
     double my = 0.0;
@@ -331,7 +335,8 @@ void uiEndScrollArea(UIRect area, float contentHeight, UIScrollState& scroll)
     cs.popTranslate();
 
     uiFlushBatch();
-    glDisable(GL_SCISSOR_TEST);
+    namespace r = mimita::game::render;
+    r::disable(r::Capability::ScissorTest);
 
     const float maxScroll = std::max(0.0f, contentHeight - area.h);
     if (maxScroll <= 0.0f) return;

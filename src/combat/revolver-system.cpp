@@ -44,6 +44,10 @@ bool serverAuthHits()
 #include "replay/replay.h"
 #include "world/texture-store.h"
 #include "world/world.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 #include "ui/hitmarker.h"
 
@@ -140,16 +144,21 @@ void RevolverSystem::loadHeldModel()
 
     mVao = mimita::game::genVertexArray();
     mVbo = mimita::game::genBuffer();
-    glBindVertexArray(mVao);
-    glBindBuffer(GL_ARRAY_BUFFER, mVbo);
-    glBufferData(GL_ARRAY_BUFFER, mHeldMesh.verts.size() * sizeof(Vertex), mHeldMesh.verts.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
+    r::bindVertexArray(mVao);
+    r::bindBuffer(r::BufferTarget::Array, mVbo);
+    r::bufferData(r::BufferTarget::Array, mVbo, mHeldMesh.verts.data(),
+                  static_cast<std::uint32_t>(mHeldMesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::bindVertexArray(0);
     printf("[REVOLVER] held model loaded verts=%zu\n", mHeldMesh.verts.size());
 }
 
@@ -208,26 +217,29 @@ void RevolverSystem::update(const Camera& camera, Player& player, float dt)
 
 void RevolverSystem::render(const Camera& camera, const Player& player) const
 {
-    if (player.equippedSlot != 1 || !gRenderer || !gRenderer->shaderProgram || !mVao || mHeldMesh.verts.empty())
+    if (player.equippedSlot != 1 || !gRenderer || !r::worldShader().ensureLoaded() || !mVao || mHeldMesh.verts.empty())
         return;
 
-    const unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &mWeaponTransform[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(mVao);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &mWeaponTransform[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::activeTexture(0);
+    r::bindVertexArray(mVao);
     for (const Mesh::Batch& batch : mHeldMesh.batches) {
-        glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        r::bindTexture(r::TextureTarget::Texture2D,
+                       batch.texture ? batch.texture : gTextures.get("default"));
+        r::drawArrays(r::Primitive::Triangles,
+                      static_cast<std::int32_t>(batch.first),
+                      static_cast<std::int32_t>(batch.count));
         diagRenderCountWeaponDraw();
     }
-    glBindVertexArray(0);
+    r::bindVertexArray(0);
 }
 
 RevolverShotResult RevolverSystem::fire(const Camera& camera, Player& shooter, NpcSystem& npcs, const World& world)

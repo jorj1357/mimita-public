@@ -4,6 +4,7 @@
 #include <new>
 
 #include "engine/engine.h"
+#include "main-init.h"
 #include "engine/engine-tick.h"
 
 namespace mimita::game {
@@ -28,6 +29,7 @@ bool initializeWholeGameEntry(int width, int height, const char* title) {
         return false;
     }
     gWholeGameFrameState = EngineFrameState{};
+    gameInit(0, nullptr, *gWholeGameEngine);
     gWholeGameReady = true;
     return true;
 }
@@ -40,7 +42,11 @@ void tickWholeGame(double deltaSeconds) {
     (void)deltaSeconds;
     if (!gWholeGameReady || !gWholeGameEngine)
         return;
+    static int traceTicks = 0;
+    if (traceTicks < 5) printf("[WHOLE FRAME] tick begin %d\n", traceTicks);
     engineTickSimulate(*gWholeGameEngine, gWholeGameFrameState);
+    if (traceTicks < 5) printf("[WHOLE FRAME] tick end %d\n", traceTicks);
+    ++traceTicks;
 }
 
 void renderWholeGame(void* renderContext) {
@@ -49,7 +55,11 @@ void renderWholeGame(void* renderContext) {
         return;
     // The host calls tick then render every frame, so the render half completes
     // the pacing/perf frame that tickWholeGame started.
+    static int traceRenders = 0;
+    if (traceRenders < 5) printf("[WHOLE FRAME] render begin %d\n", traceRenders);
     engineTickRenderFrame(*gWholeGameEngine, gWholeGameFrameState);
+    if (traceRenders < 5) printf("[WHOLE FRAME] render end %d\n", traceRenders);
+    ++traceRenders;
 }
 
 void shutdownWholeGameEntry() {

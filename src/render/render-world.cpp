@@ -1,5 +1,7 @@
 #include "render-world.h"
 #include "game/resident-state-module.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
 
 #include <cstdio>
 #include <cstddef>
@@ -33,13 +35,15 @@
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
-extern GLuint gVao;
+namespace r = mimita::game::render;
+
+extern std::uint32_t gVao;
 extern void uploadMeshIfNeeded(const World& world);
 extern void renderWorldMeshBatches(const World& world, const Camera& cam);
 
 void renderWorld(const World& world, const Camera& cam)
 {
-    if (!gRenderer || !gRenderer->shaderProgram)
+    if (!gRenderer || !r::worldShader().ensureLoaded())
     {
         printf("[RENDER WARNING] renderWorld skipped: renderer/shader missing\n");
         return;
@@ -59,25 +63,17 @@ void renderWorld(const World& world, const Camera& cam)
     MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world);
 
-    const GLboolean blendWas = glIsEnabled(GL_BLEND);
-    GLint blendSrcRgbWas = GL_ONE, blendDstRgbWas = GL_ZERO;
-    GLint blendSrcAlphaWas = GL_ONE, blendDstAlphaWas = GL_ZERO;
-    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgbWas);
-    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgbWas);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlphaWas);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlphaWas);
+    r::pushState();
     if (CamConfig::instance().data().proximityFadeEnabled) {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        r::enable(r::Capability::Blend);
+        r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     }
 
     renderWorldMeshBatches(world, cam);
 
     StreamedWorldLayer::instance().render(cam);
 
-    glBlendFuncSeparate((GLenum)blendSrcRgbWas, (GLenum)blendDstRgbWas,
-                        (GLenum)blendSrcAlphaWas, (GLenum)blendDstAlphaWas);
-    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    r::popState();
 
     if (DebugVis::normals())
     {
@@ -102,8 +98,8 @@ void renderWorld(const World& world, const Camera& cam)
         }
     }
 
-    glBindVertexArray(0);
-    MIMITA_GL_CALL(glUseProgram(0));
+    r::bindVertexArray(0);
+    r::useProgram(0);
 
     MIMITA_GL_CHECK("renderWorld");
 }
@@ -223,7 +219,7 @@ void registerWorldTextureCommands()
                                {"handled_by_world_module", moduleHandled},
                                {"world_module_generation",
                                 ModuleHost::instance().activeGeneration("world-rendering")},
-                               {"shader_program", gRenderer ? gRenderer->shaderProgram : 0},
+                               {"shader_program", r::worldShader().program()},
                                {"vertex_first", object->vertexFirst},
                                {"vertex_count", object->vertexCount},
                                {"camera_position", {mimita::game::cameraPtr()->pos.x, mimita::game::cameraPtr()->pos.y, mimita::game::cameraPtr()->pos.z}},

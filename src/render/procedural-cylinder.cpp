@@ -17,6 +17,10 @@
 #include "map/map_common.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -146,20 +150,21 @@ const TexturedCylinderMesh& getTexturedCylinderMesh(float radius,
     mesh.vertexCount = static_cast<int>(verts.size());
     mesh.vao = mimita::game::genVertexArray();
     mesh.vbo = mimita::game::genBuffer();
-    glBindVertexArray(mesh.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(),
-                 GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
+    r::bindVertexArray(mesh.vao);
+    r::bindBuffer(r::BufferTarget::Array, mesh.vbo);
+    r::bufferData(r::BufferTarget::Array, mesh.vbo, verts.data(),
+                  static_cast<std::uint32_t>(verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::bindVertexArray(0);
 
     auto result = gCylinderCache.emplace(key, mesh);
     return result.first->second;
@@ -170,48 +175,32 @@ void drawTexturedCylinder(const Camera& camera, const glm::mat4& model,
                           unsigned int texture, const glm::vec3& tint,
                           float alpha)
 {
-    if (!gRenderer || !gRenderer->shaderProgram || mesh.vertexCount <= 0)
+    if (!gRenderer || !r::worldShader().ensureLoaded() || mesh.vertexCount <= 0)
         return;
 
-    const unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     const glm::mat4 view = camera.getView();
     const glm::mat4 projection =
         camera.getProj(static_cast<float>(gRenderer->sceneWidth),
                        static_cast<float>(gRenderer->sceneHeight));
 
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE,
-                       &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE,
-                       &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE,
-                       &model[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glUniform3f(glGetUniformLocation(shader, "uTint"), tint.x, tint.y,
-                tint.z);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &model[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::uniform3f(shader.uniform("uTint"), tint.x, tint.y, tint.z);
     // Wheels are opaque; the texture has no intended cutout.
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.0f);
+    r::uniform1f(shader.uniform("uAlphaCutoff"), 0.0f);
 
-    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
-    GLint cullModeWas = GL_BACK;
-    if (cullWasEnabled)
-        glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
-    glDisable(GL_CULL_FACE);
+    r::pushState();
+    r::disable(r::Capability::CullFace);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glBindVertexArray(mesh.vao);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
-    glBindVertexArray(0);
-
-    if (cullWasEnabled)
-    {
-        glEnable(GL_CULL_FACE);
-        glCullFace(cullModeWas);
-    }
-    else
-    {
-        glDisable(GL_CULL_FACE);
-    }
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, texture);
+    r::bindVertexArray(mesh.vao);
+    r::drawArrays(r::Primitive::Triangles, 0, mesh.vertexCount);
+    r::bindVertexArray(0);
+    r::popState();
 }

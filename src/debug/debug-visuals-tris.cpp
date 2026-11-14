@@ -13,6 +13,10 @@
 #include "renderer/renderer.h"
 #include "debug/gl-debug.h"
 #include "debug/debug-diag.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -27,23 +31,23 @@ extern std::vector<DebugTriVertex> gOverlayTriVerts;
 std::vector<DebugTriVertex> gSolidTriVerts;
 
 namespace {
-GLuint gTriVao = 0;
-GLuint gTriVbo = 0;
-GLuint gOverlayVao = 0;
-GLuint gOverlayVbo = 0;
-GLuint gSolidVao = 0;
-GLuint gSolidVbo = 0;
+std::uint32_t gTriVao = 0;
+std::uint32_t gTriVbo = 0;
+std::uint32_t gOverlayVao = 0;
+std::uint32_t gOverlayVbo = 0;
+std::uint32_t gSolidVao = 0;
+std::uint32_t gSolidVbo = 0;
 } // anonymous namespace
 
 // Shared helper to upload and draw a tri buffer (used by both regular and overlay flushes).
 static void flushTriBuffer(const Camera& camera,
     std::vector<DebugTriVertex>& verts,
-    GLuint& vao, GLuint& vbo,
+    std::uint32_t& vao, std::uint32_t& vbo,
     bool depthTest,
     bool depthWrite = false)
 {
     if (verts.empty()) return;
-    if (!gRenderer || !gRenderer->shaderProgram) { verts.clear(); return; }
+    if (!gRenderer || !r::worldShader().ensureLoaded()) { verts.clear(); return; }
 
     if (!vao)
     {
@@ -53,39 +57,44 @@ static void flushTriBuffer(const Camera& camera,
 
     MIMITA_GL_CLEAR_STAGE("flushTriBuffer");
     if (depthTest)
-        MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+        r::enable(r::Capability::DepthTest);
     else
-        MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
-    MIMITA_GL_CALL(glDepthMask(depthWrite ? GL_TRUE : GL_FALSE));
-    MIMITA_GL_CALL(glEnable(GL_BLEND));
-    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
+        r::disable(r::Capability::DepthTest);
+    r::depthMask(depthWrite);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
 
-    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+    r::useProgram(r::worldShader().program());
 
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
 
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 2);
+    r::uniformMatrix4fv(r::worldShader().uniform("model"), 1, &model[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("projection"), 1, &proj[0][0]);
+    r::uniform1i(r::worldShader().uniform("uUseColor"), 2);
 
-    MIMITA_GL_CALL(glBindVertexArray(vao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, vbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(DebugTriVertex), verts.data(), GL_DYNAMIC_DRAW));
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::bufferData(r::BufferTarget::Array, vbo, verts.data(),
+                  static_cast<std::uint32_t>(verts.size() * sizeof(DebugTriVertex)),
+                  r::BufferUsage::Dynamic);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(DebugTriVertex), (void*)offsetof(DebugTriVertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(DebugTriVertex), (void*)offsetof(DebugTriVertex, color)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
-    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
-    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(DebugTriVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugTriVertex, pos)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(3, 4, r::VertexType::Float, false, sizeof(DebugTriVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugTriVertex, color)));
+    r::enableVertexAttribArray(3);
+    r::disableVertexAttribArray(1);
+    r::disableVertexAttribArray(2);
 
-    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size()));
+    r::drawArrays(r::Primitive::Triangles, 0,
+                  static_cast<std::int32_t>(verts.size()));
     diagRenderCountEffectDraw();
 
-    MIMITA_GL_CALL(glDepthMask(GL_TRUE));
+    r::depthMask(true);
     verts.clear();
 }
 

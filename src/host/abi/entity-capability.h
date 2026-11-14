@@ -13,7 +13,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kEntityCapabilityVersion = 1u;
+inline constexpr std::uint32_t kEntityCapabilityVersion = 9u;
 inline constexpr std::uint64_t kEntityKindShift = 56u;
 inline constexpr std::uint64_t kEntityIdMask = (1ull << kEntityKindShift) - 1u;
 
@@ -53,6 +53,27 @@ struct EntityAdapterV1 {
     HostResult (*read)(void* owner, EntityHandle handle, EntitySnapshotV1* out);
     HostResult (*write)(void* owner, EntityHandle handle,
                         const EntitySnapshotV1* in);
+    // Returns the total count for `kind`; writes at most `capacity` handles.
+    std::uint32_t (*list)(void* owner, std::int32_t kind, EntityHandle* out,
+                          std::uint32_t capacity);
+    // Creates a default record of `kind` and returns its stable handle.
+    HostResult (*create)(void* owner, std::int32_t kind, EntityHandle* out);
+    // Applies an authoritative transform + movement lifecycle reset.
+    HostResult (*reset_transform)(void* owner, EntityHandle handle,
+                                  const float position[3],
+                                  const float velocity[3], float yaw,
+                                  std::uint32_t onGround,
+                                  std::uint32_t invulnerabilityTicks,
+                                  std::uint32_t maxAirJumps,
+                                  std::uint32_t awaitAck);
+    HostResult (*remove)(void* owner, EntityHandle handle);
+    HostResult (*find_connection)(void* owner, std::uint64_t peer,
+                                  EntityHandle* out);
+    HostResult (*find_reconnect_token)(void* owner, const char* token,
+                                       std::uint32_t includePrevious,
+                                       EntityHandle* out);
+    HostResult (*find_join_token)(void* owner, const char* token,
+                                  EntityHandle* out);
 };
 
 struct EntityCapabilityV1 {
@@ -63,6 +84,25 @@ struct EntityCapabilityV1 {
                        EntitySnapshotV1* out);
     HostResult (*write)(void* hostUserData, EntityHandle handle,
                         const EntitySnapshotV1* in);
+    std::uint32_t (*list)(void* hostUserData, std::int32_t kind,
+                          EntityHandle* out, std::uint32_t capacity);
+    HostResult (*create)(void* hostUserData, std::int32_t kind,
+                         EntityHandle* out);
+    HostResult (*reset_transform)(void* hostUserData, EntityHandle handle,
+                                  const float position[3],
+                                  const float velocity[3], float yaw,
+                                  std::uint32_t onGround,
+                                  std::uint32_t invulnerabilityTicks,
+                                  std::uint32_t maxAirJumps,
+                                  std::uint32_t awaitAck);
+    HostResult (*remove)(void* hostUserData, EntityHandle handle);
+    HostResult (*find_connection)(void* hostUserData, std::uint64_t peer,
+                                  EntityHandle* out);
+    HostResult (*find_reconnect_token)(void* hostUserData, const char* token,
+                                       std::uint32_t includePrevious,
+                                       EntityHandle* out);
+    HostResult (*find_join_token)(void* hostUserData, const char* token,
+                                  EntityHandle* out);
 };
 
 }  // namespace mimita::host

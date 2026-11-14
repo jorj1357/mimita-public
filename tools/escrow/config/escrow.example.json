@@ -1,0 +1,9 @@
+{
+  "store_path": "escrow-state.json",
+  "event_log_path": "escrow-events.jsonl",
+  "admin": "admin",
+  "fee_account": "fees",
+  "default_currency": "USD",
+  "default_fee_bps": 100,
+  "max_fee_bps": 1000
+}

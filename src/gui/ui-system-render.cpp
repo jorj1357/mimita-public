@@ -15,6 +15,8 @@
 #include "audio/audio.h"
 #include "gui/font-stuff/font-loader.h"
 #include "debug/gl-debug.h"
+#include "stb_image.h"
+#include "render/render-command.h"
 
 extern TextureStore gTextures;
 
@@ -85,22 +87,23 @@ int glyphIndex(char c)
     return 37;
 }
 
-GLuint compile(GLenum type, const char* src, const char* name)
+namespace r = mimita::game::render;
+
+r::Shader compile(r::ShaderStage stage, const char* src, const char* name)
 {
-    GLuint s = glCreateShader(type);
-    MIMITA_GL_CHECK("ui glCreateShader");
-    if (!s)
+    r::Shader shader = r::createShader(stage);
+    if (!shader)
         return 0;
-    MIMITA_GL_CALL(glShaderSource(s, 1, &src, nullptr));
-    MIMITA_GL_CALL(glCompileShader(s));
-    GLint ok = 0;
-    MIMITA_GL_CALL(glGetShaderiv(s, GL_COMPILE_STATUS, &ok));
+    r::shaderSource(shader, src);
+    r::compileShader(shader);
+    std::int32_t ok = 0;
+    r::getShaderiv(shader, r::ShaderParameter::CompileStatus, &ok);
     if (!ok) {
-        char log[2048];
-        MIMITA_GL_CALL(glGetShaderInfoLog(s, sizeof(log), nullptr, log));
+        char log[2048] = {};
+        r::getShaderInfoLog(shader, sizeof(log), nullptr, log);
         printf("[UI ERROR] shader compile failed: %s\n%s\n", name, log);
     }
-    return s;
+    return shader;
 }
 
 } // anonymous namespace
@@ -143,51 +146,53 @@ void ensureProgram()
         "  FragColor = vColor;\n"
         "}\n";
 
-    MIMITA_GL_CLEAR_STAGE("ui ensureProgram");
-    GLuint vert = compile(GL_VERTEX_SHADER, vs, "ui.vert");
-    GLuint frag = compile(GL_FRAGMENT_SHADER, fs, "ui.frag");
+    r::Shader vert = compile(r::ShaderStage::Vertex, vs, "ui.vert");
+    r::Shader frag = compile(r::ShaderStage::Fragment, fs, "ui.frag");
     if (!vert || !frag)
         return;
-    gProgram = glCreateProgram();
-    MIMITA_GL_CHECK("ui glCreateProgram");
+    gProgram = r::createProgram();
     if (!gProgram)
         return;
-    MIMITA_GL_CALL(glAttachShader(gProgram, vert));
-    MIMITA_GL_CALL(glAttachShader(gProgram, frag));
-    MIMITA_GL_CALL(glLinkProgram(gProgram));
+    r::attachShader(gProgram, vert);
+    r::attachShader(gProgram, frag);
+    r::linkProgram(gProgram);
     mimita::game::deleteShader(vert);
     mimita::game::deleteShader(frag);
 
-    GLint ok = 0;
-    MIMITA_GL_CALL(glGetProgramiv(gProgram, GL_LINK_STATUS, &ok));
+    std::int32_t ok = 0;
+    r::getProgramiv(gProgram, r::ShaderParameter::LinkStatus, &ok);
     if (!ok) {
-        char log[2048];
-        MIMITA_GL_CALL(glGetProgramInfoLog(gProgram, sizeof(log), nullptr, log));
+        char log[2048] = {};
+        r::getProgramInfoLog(gProgram, sizeof(log), nullptr, log);
         printf("[UI ERROR] program link failed\n%s\n", log);
     } else {
         printf("[UI] UI shader linked program=%u\n", gProgram);
     }
 
-    gScreenLoc = glGetUniformLocation(gProgram, "uScreen");
+    gScreenLoc = r::getUniformLocation(gProgram, "uScreen");
     gColorLoc = -1;
     gUseTexLoc = -1;
     gTexLoc = -1;
-    gImageTexLoc = glGetUniformLocation(gProgram, "uImageTex");
+    gImageTexLoc = r::getUniformLocation(gProgram, "uImageTex");
 
     gVao = mimita::game::genVertexArray();
     gVbo = mimita::game::genBuffer();
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, sizeof(UIVertex) * 1024, nullptr, GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-    MIMITA_GL_CALL(glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, position)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, uv)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
-    MIMITA_GL_CALL(glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, color)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(2));
-    MIMITA_GL_CALL(glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(UIVertex), (void*)offsetof(UIVertex, textureMode)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
+    r::bindVertexArray(gVao);
+    r::bindBuffer(r::BufferTarget::Array, gVbo);
+    r::bufferData(r::BufferTarget::Array, gVbo, nullptr,
+                  sizeof(UIVertex) * 1024, r::BufferUsage::Dynamic);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 2, r::VertexType::Float, false,
+                           sizeof(UIVertex), offsetof(UIVertex, position));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false,
+                           sizeof(UIVertex), offsetof(UIVertex, uv));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 4, r::VertexType::Float, false,
+                           sizeof(UIVertex), offsetof(UIVertex, color));
+    r::enableVertexAttribArray(3);
+    r::vertexAttribPointer(3, 1, r::VertexType::Float, false,
+                           sizeof(UIVertex), offsetof(UIVertex, textureMode));
 }
 
 void drawTriVerts(const float* verts, int vertCount, glm::vec4 color, GLenum mode)
@@ -204,22 +209,23 @@ void drawTexturedQuad(const float* verts, int vertCount, GLuint tex, glm::vec4 c
     if (!gProgram || !gVao || !gVbo || !verts || !tex || vertCount <= 0)
         return;
     uiFlushBatch();
-    MIMITA_GL_CALL(glUseProgram(gProgram));
-    MIMITA_GL_CALL(glEnable(GL_BLEND));
-    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    MIMITA_GL_CALL(glUniform1i(gImageTexLoc, 0));
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
+    r::useProgram(gProgram);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::uniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
+    r::uniform1i(gImageTexLoc, 0);
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
+    r::bindVertexArray(gVao);
+    r::bindBuffer(r::BufferTarget::Array, gVbo);
     static std::vector<UIVertex> imageVertices;
     imageVertices.clear();
     imageVertices.reserve(static_cast<size_t>(vertCount));
     for (int i = 0; i < vertCount; ++i)
         imageVertices.push_back({{verts[i * 4], verts[i * 4 + 1]}, {verts[i * 4 + 2], verts[i * 4 + 3]}, color, 3.0f});
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, imageVertices.size() * sizeof(UIVertex), imageVertices.data(), GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, vertCount));
+    r::bufferData(r::BufferTarget::Array, gVbo, imageVertices.data(),
+                  imageVertices.size() * sizeof(UIVertex), r::BufferUsage::Dynamic);
+    r::drawArrays(r::Primitive::Triangles, 0, vertCount);
     ++gDrawCalls;
 }
 
@@ -228,24 +234,27 @@ void uiFlushBatch()
     if (gBatchVertices.empty())
         return;
     ensureProgram();
-    MIMITA_GL_CALL(glUseProgram(gProgram));
-    MIMITA_GL_CALL(glUniform2f(gScreenLoc, (float)gFbW, (float)gFbH));
-    static GLint fontPage0Loc = -1;
-    static GLint fontPage1Loc = -1;
+    r::useProgram(gProgram);
+    r::uniform2f(gScreenLoc, (float)gFbW, (float)gFbH);
+    static std::int32_t fontPage0Loc = -1;
+    static std::int32_t fontPage1Loc = -1;
     if (fontPage0Loc < 0) {
-        fontPage0Loc = glGetUniformLocation(gProgram, "uFontPage0");
-        fontPage1Loc = glGetUniformLocation(gProgram, "uFontPage1");
+        fontPage0Loc = r::getUniformLocation(gProgram, "uFontPage0");
+        fontPage1Loc = r::getUniformLocation(gProgram, "uFontPage1");
     }
-    MIMITA_GL_CALL(glUniform1i(fontPage0Loc, 0));
-    MIMITA_GL_CALL(glUniform1i(fontPage1Loc, 1));
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gFontPages[0]));
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE1));
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gFontPages[1]));
-    MIMITA_GL_CALL(glBindVertexArray(gVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gVbo));
-    MIMITA_GL_CALL(glBufferData(GL_ARRAY_BUFFER, gBatchVertices.size() * sizeof(UIVertex), gBatchVertices.data(), GL_DYNAMIC_DRAW));
-    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(gBatchVertices.size())));
+    r::uniform1i(fontPage0Loc, 0);
+    r::uniform1i(fontPage1Loc, 1);
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, gFontPages[0]);
+    r::activeTexture(1);
+    r::bindTexture(r::TextureTarget::Texture2D, gFontPages[1]);
+    r::bindVertexArray(gVao);
+    r::bindBuffer(r::BufferTarget::Array, gVbo);
+    r::bufferData(r::BufferTarget::Array, gVbo, gBatchVertices.data(),
+                  gBatchVertices.size() * sizeof(UIVertex),
+                  r::BufferUsage::Dynamic);
+    r::drawArrays(r::Primitive::Triangles, 0,
+                  static_cast<std::int32_t>(gBatchVertices.size()));
     ++gDrawCalls;
     gBatchVertices.clear();
 }
@@ -431,11 +440,13 @@ void uiDrawImageFit(const char* path, UIRect r, bool checkerboard, glm::vec4 col
         return;
     }
 
-    // Get texture dimensions
-    GLint texW = 0, texH = 0;
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+    // The fit calculation only needs source dimensions. Reading them from the
+    // image file avoids a raw GL query in the hot generation.
+    int texW = 0, texH = 0, channels = 0;
+    if (!stbi_info(path, &texW, &texH, &channels)) {
+        texW = 0;
+        texH = 0;
+    }
 
     if (texW <= 0 || texH <= 0) {
         uiDrawRect(r, {0.15f, 0.05f, 0.05f, 1.0f}, "missing-tex-bg");

@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <fstream>
 
-#include <glad/glad.h>
+#include "render/render-command.h"
 #include <nlohmann/json.hpp>
 
 #include "renderer/renderer.h"
@@ -17,6 +17,8 @@
 #include <cstddef>
 
 using json = nlohmann::json;
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -119,7 +121,7 @@ void PostFX::pollReload()
     }
 }
 
-bool PostFX::initQuad(GLuint& vao, GLuint& vbo)
+bool PostFX::initQuad(std::uint32_t& vao, std::uint32_t& vbo)
 {
     float verts[] = {
         -1.0f, -1.0f, 0.0f, 0.0f,
@@ -132,96 +134,26 @@ bool PostFX::initQuad(GLuint& vao, GLuint& vbo)
 
     vao = mimita::game::genVertexArray();
     vbo = mimita::game::genBuffer();
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::bufferData(r::BufferTarget::Array, vbo, verts, sizeof(verts),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 2, r::VertexType::Float, false, 4 * sizeof(float), 0);
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, 4 * sizeof(float),
+                           2 * sizeof(float));
+    r::bindVertexArray(0);
     return true;
-}
-
-GLuint PostFX::createShader(const char* vertPath, const char* fragPath)
-{
-    auto readFile = [](const char* path) -> std::string {
-        std::string resolved = resolveAssetPath(path);
-        FILE* f = fopen(resolved.c_str(), "rb");
-        if (!f) return {};
-        fseek(f, 0, SEEK_END);
-        long len = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::string s((size_t)len, '\0');
-        fread(s.data(), 1, (size_t)len, f);
-        fclose(f);
-        return s;
-    };
-
-    auto compile = [](GLuint shader, const char* src) -> bool {
-        const char* srcs[] = { src };
-        glShaderSource(shader, 1, srcs, nullptr);
-        glCompileShader(shader);
-        GLint ok = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-        if (!ok)
-        {
-            char log[1024];
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            printf("[SHADER] compile error: %s\n", log);
-            return false;
-        }
-        return true;
-    };
-
-    std::string vsrc = readFile(vertPath);
-    std::string fsrc = readFile(fragPath);
-    if (vsrc.empty() || fsrc.empty())
-    {
-        printf("[SHADER] Failed to read %s or %s\n", vertPath, fragPath);
-        return 0;
-    }
-
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    if (!compile(vs, vsrc.c_str()) || !compile(fs, fsrc.c_str()))
-    {
-        mimita::game::deleteShader(vs);
-        mimita::game::deleteShader(fs);
-        return 0;
-    }
-
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-    GLint ok = 0;
-    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-    if (!ok)
-    {
-        char log[1024];
-        glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
-        printf("[SHADER] link error: %s\n", log);
-        mimita::game::deleteProgram(prog);
-        prog = 0;
-    }
-
-    mimita::game::deleteShader(vs);
-    mimita::game::deleteShader(fs);
-    return prog;
 }
 
 bool PostFX::loadShaders()
 {
-    mPostShader = createShader("shaders/post.vert", "shaders/post.frag");
-    if (!mPostShader)
+    if (!mPostShader.load("shaders/post.vert", "shaders/post.frag"))
     {
         printf("[POSTFX] Failed to load post shader\n");
         return false;
     }
-
-    // GUI shader is the same — the effect values differ (uGui prefix vs no prefix)
-    mGuiShader = mPostShader; // same shader handles both via uniform prefixes
 
     // Must init quad VAO so PostFX::render() can blit the FBO to screen.
     // Without this, render() returns early and 3D content is invisible.
@@ -236,7 +168,7 @@ bool PostFX::loadShaders()
 
 bool PostFX::initFBO(int width, int height)
 {
-    if (!mPostShader && !loadShaders())
+    if (!mPostShader.valid() && !loadShaders())
         return false;
 
     if (mFbo && width == mFboW && height == mFboH)
@@ -253,27 +185,33 @@ bool PostFX::initFBO(int width, int height)
     mFboH = height;
 
     mColorTex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, mColorTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    r::bindTexture(r::TextureTarget::Texture2D, mColorTex);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  width, height, 0, r::PixelFormat::RGBA,
+                  r::PixelType::UnsignedByte, nullptr);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToEdge);
 
     mFbo = mimita::game::genFramebuffer();
-    glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mColorTex, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, mFbo);
+    r::framebufferTexture2D(r::TextureTarget::Texture2D,
+                            r::FramebufferAttachment::Color0, mColorTex);
 
-    GLuint depthRb = 0;
+    std::uint32_t depthRb = 0;
     depthRb = mimita::game::genRenderbuffer();
-    glBindRenderbuffer(GL_RENDERBUFFER, depthRb);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRb);
+    r::bindRenderbuffer(depthRb);
+    r::renderbufferStorage(r::RenderbufferFormat::Depth24, width, height);
+    r::framebufferRenderbuffer(r::FramebufferAttachment::Depth, depthRb);
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE)
+    if (!r::checkFramebufferStatus())
     {
-        printf("[POSTFX] FBO incomplete: 0x%x\n", status);
+        printf("[POSTFX] FBO incomplete\n");
         mimita::game::deleteFramebuffer(mFbo);
         mimita::game::deleteTexture(mColorTex);
         mimita::game::deleteRenderbuffer(depthRb);
@@ -281,7 +219,7 @@ bool PostFX::initFBO(int width, int height)
         return false;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
     printf("[POSTFX] FBO created: %dx%d\n", width, height);
     return true;
 }
@@ -292,46 +230,46 @@ void PostFX::bindFBO()
         (gRenderer->sceneWidth != gRenderer->width ||
          gRenderer->sceneHeight != gRenderer->height);
     if (mBypass && !outputScaleRequired) {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
         return;
     }
     if (gRenderer && (!mFbo ||
         mFboW != gRenderer->sceneWidth || mFboH != gRenderer->sceneHeight))
         initFBO(gRenderer->sceneWidth, gRenderer->sceneHeight);
     if (!mFbo) {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
         if (gRenderer)
-            glViewport(0, 0, gRenderer->width, gRenderer->height);
+            r::viewport(0, 0, gRenderer->width, gRenderer->height);
         return;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, mFbo);
-    glViewport(0, 0, mFboW, mFboH);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, mFbo);
+    r::viewport(0, 0, mFboW, mFboH);
     // Clear the FBO's color and depth buffers.
     // Renderer::beginFrame() only clears the default framebuffer, not the FBO.
     // Without this, the FBO retains the previous frame's depth buffer,
     // causing new geometry to fail depth testing.
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    r::clear(true, true, false);
 }
 
 void PostFX::unbindFBO()
 {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
 }
 
-void PostFX::setUniforms(GLuint shader, const PostFXData& data, const char* prefix)
+void PostFX::setUniforms(const PostFXData& data, const char* prefix)
 {
-    auto loc = [&](const char* name) -> GLint {
+    auto loc = [&](const char* name) -> r::Uniform {
         std::string full = std::string(prefix) + name;
-        return glGetUniformLocation(shader, full.c_str());
+        return mPostShader.uniform(full.c_str());
     };
 
     auto set1f = [&](const char* name, float v) {
-        GLint l = loc(name);
-        if (l >= 0) glUniform1f(l, v);
+        r::Uniform l = loc(name);
+        if (l >= 0) r::uniform1f(l, v);
     };
     auto set1i = [&](const char* name, int v) {
-        GLint l = loc(name);
-        if (l >= 0) glUniform1i(l, v);
+        r::Uniform l = loc(name);
+        if (l >= 0) r::uniform1i(l, v);
     };
 
     set1i("uScene", 0);
@@ -373,11 +311,11 @@ void PostFX::setUniforms(GLuint shader, const PostFXData& data, const char* pref
     set1f("uScreenH", (float)mFboH);
 }
 
-void PostFX::renderQuad(GLuint vao)
+void PostFX::renderQuad(std::uint32_t vao)
 {
-    glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
+    r::bindVertexArray(vao);
+    r::drawArrays(r::Primitive::Triangles, 0, 6);
+    r::bindVertexArray(0);
 }
 
 bool PostFX::isActive() const
@@ -418,23 +356,23 @@ void PostFX::render()
         (gRenderer->sceneWidth != gRenderer->width ||
          gRenderer->sceneHeight != gRenderer->height);
     if (mBypass && !outputScaleRequired) return;
-    if (!mPostShader || !mFbo || !mQuadVao) {
+    if (!mPostShader.valid() || !mFbo || !mQuadVao) {
         if (gRenderer)
-            glViewport(0, 0, gRenderer->width, gRenderer->height);
+            r::viewport(0, 0, gRenderer->width, gRenderer->height);
         return;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
     if (gRenderer)
-        glViewport(0, 0, gRenderer->width, gRenderer->height);
-    glDisable(GL_DEPTH_TEST);
+        r::viewport(0, 0, gRenderer->width, gRenderer->height);
+    r::disable(r::Capability::DepthTest);
 
     // --- Pass 1: full scene post-process ---
-    glUseProgram(mPostShader);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, mColorTex);
+    r::useProgram(mPostShader.program());
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, mColorTex);
     const PostFXData identity;
-    setUniforms(mPostShader, mBypass ? identity : mData, "");
+    setUniforms(mBypass ? identity : mData, "");
 
     renderQuad(mQuadVao);
 
@@ -447,9 +385,9 @@ bool PostFX::consumeMagentaTest()
         return false;
 
     mMagentaTestPending = false;
-    glClearColor(1.0f, 0.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
+    r::clearColor(1.0f, 0.0f, 1.0f, 1.0f);
+    r::clear(true, false, false);
+    r::clearColor(0.1f, 0.1f, 0.12f, 1.0f);
     return true;
 }
 

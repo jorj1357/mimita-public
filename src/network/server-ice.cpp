@@ -9,6 +9,7 @@
 */
 
 #include "network/server.h"
+#include "host/host-session-identity.h"
 #include "network/server-gamemode.h"
 #include "network/game-transport.h"
 #include "network/ice-transport.h"
@@ -310,8 +311,10 @@ void publishServerIceListener(const ListenServerState& state)
     hostedRoomSession().serverProcessId = (uint64_t)GetCurrentProcessId();
     hostedRoomSession().coordinatorRoomType = "ice";
     hostedRoomSession().createdAtMs = nowMs();
-    setServerCoordinatorState(state.serverCode, state.joinToken);
-    setServerPasswordState(state.passwordProtected, state.password);
+    mimita::host::setSessionCoordinatorCode(state.serverCode);
+    mimita::host::setSessionCoordinatorJoinToken(state.joinToken);
+    mimita::host::setSessionPasswordState(state.passwordProtected,
+                                          state.password);
 }
 
 // ── Poll coordinator for new requests + advance existing peers ───────

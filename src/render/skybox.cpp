@@ -10,7 +10,7 @@
 #include <fstream>
 #include <cmath>
 
-#include <glad/glad.h>
+#include "render/render-command.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -19,6 +19,8 @@
 
 Skybox gSkybox;
 extern Renderer* gRenderer;
+
+namespace r = mimita::game::render;
 
 // ── Printf-based debug (always visible in console) ──────────
 #define SKYDBG(...) do { printf("[SKYBOX] " __VA_ARGS__); fflush(stdout); } while(0)
@@ -52,64 +54,6 @@ static bool fileExists(const std::string& path) {
     return std::filesystem::exists(path, ec);
 }
 
-static std::string shaderPath(const std::string& name) {
-    return "shaders/" + name;
-}
-
-static std::string readTextFile(const std::string& path) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return {};
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    std::string s((size_t)len, '\0');
-    fread(&s[0], 1, (size_t)len, f);
-    fclose(f);
-    return s;
-}
-
-static GLuint compileShader(GLenum type, const std::string& src) {
-    GLuint shader = glCreateShader(type);
-    const char* srcPtr = src.c_str();
-    glShaderSource(shader, 1, &srcPtr, nullptr);
-    glCompileShader(shader);
-    GLint ok = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[1024];
-        glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-        Debug::log(Debug::Category::Render, "[SKYBOX] Shader compile error: %s\n", log);
-        mimita::game::deleteShader(shader);
-        return 0;
-    }
-    return shader;
-}
-
-static GLuint createProgram(const std::string& vertSrc, const std::string& fragSrc) {
-    GLuint vs = compileShader(GL_VERTEX_SHADER, vertSrc);
-    GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragSrc);
-    if (!vs || !fs) {
-        mimita::game::deleteShader(vs); mimita::game::deleteShader(fs);
-        return 0;
-    }
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-    GLint ok = 0;
-    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[1024];
-        glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
-        Debug::log(Debug::Category::Render, "[SKYBOX] Link error: %s\n", log);
-        mimita::game::deleteProgram(prog);
-        prog = 0;
-    }
-    mimita::game::deleteShader(vs);
-    mimita::game::deleteShader(fs);
-    return prog;
-}
-
 // ── Skybox implementation ───────────────────────────────────
 
 Skybox::Skybox() = default;
@@ -124,7 +68,7 @@ void Skybox::init() {
     createMesh();
     loadConfig();
     SKYDBG("init: complete (tex=%u shader=%u vao=%u enabled=%d)\n",
-           mCubemapTex, mShader, mVAO, (int)mEnabled);
+           mCubemapTex, mProgram.program(), mVAO, (int)mEnabled);
 }
 
 void Skybox::destroyCubemap() {
@@ -139,29 +83,24 @@ void Skybox::destroyMesh() {
 void Skybox::createMesh() {
     mVAO = mimita::game::genVertexArray();
     mVBO = mimita::game::genBuffer();
-    glBindVertexArray(mVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, mVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(gCubeVerts), gCubeVerts, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glBindVertexArray(0);
+    r::bindVertexArray(mVAO);
+    r::bindBuffer(r::BufferTarget::Array, mVBO);
+    r::bufferData(r::BufferTarget::Array, mVBO, gCubeVerts, sizeof(gCubeVerts),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                           3 * sizeof(float), 0);
+    r::bindVertexArray(0);
 }
 
 void Skybox::compileShader() {
-    if (mShader) { mimita::game::deleteProgram(mShader); mShader = 0; }
-    std::string vertSrc = readTextFile(shaderPath("skybox.vert"));
-    std::string fragSrc = readTextFile(shaderPath("skybox.frag"));
-    SKYDBG("compileShader: vert=%zu bytes frag=%zu bytes\n", vertSrc.size(), fragSrc.size());
-    if (vertSrc.empty() || fragSrc.empty()) {
-        SKYDBG("compileShader: FAILED to read shader files from 'shaders/skybox.vert/frag'\n");
-        Debug::log(Debug::Category::Render, "[SKYBOX] Cannot read shader files\n");
+    if (!mProgram.load("shaders/skybox.vert", "shaders/skybox.frag")) {
+        SKYDBG("compileShader: FAILED to load shaders/skybox.vert|frag\n");
+        Debug::log(Debug::Category::Render,
+                   "[SKYBOX] Cannot read or compile shader files\n");
         return;
     }
-    mShader = createProgram(vertSrc, fragSrc);
-    SKYDBG("compileShader: program=%u\n", mShader);
-    if (!mShader) {
-        Debug::log(Debug::Category::Render, "[SKYBOX] Shader compilation failed\n");
-    }
+    SKYDBG("compileShader: program=%u\n", mProgram.program());
 }
 
 bool Skybox::loadConfig(const std::string& path) {
@@ -258,9 +197,9 @@ bool Skybox::loadConfig(const std::string& path) {
 void Skybox::loadCubemap() {
     destroyCubemap();
 
-    GLuint tex = 0;
+    std::uint32_t tex = 0;
     tex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_CUBE_MAP, tex);
+    r::bindTexture(r::TextureTarget::TextureCube, tex);
 
     bool anyLoaded = false;
     for (int i = 0; i < 6; i++) {
@@ -268,7 +207,8 @@ void Skybox::loadCubemap() {
         SKYDBG("  face[%d] '%s' exists=%d\n", i, path.c_str(), (int)fileExists(path));
         if (path.empty() || !fileExists(path)) {
             unsigned char magenta[] = {255, 0, 255, 255};
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);
+            r::texImage2D(r::cubeFace(i), 0, r::TextureFormat::RGBA, 1, 1, 0,
+                          r::PixelFormat::RGBA, r::PixelType::UnsignedByte, magenta);
             continue;
         }
         int w, h, comp;
@@ -276,11 +216,13 @@ void Skybox::loadCubemap() {
         if (!data) {
             SKYDBG("  stbi_load FAILED\n");
             unsigned char magenta[] = {255, 0, 255, 255};
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, magenta);
+            r::texImage2D(r::cubeFace(i), 0, r::TextureFormat::RGBA, 1, 1, 0,
+                          r::PixelFormat::RGBA, r::PixelType::UnsignedByte, magenta);
             continue;
         }
         SKYDBG("  LOADED %dx%d\n", w, h);
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        r::texImage2D(r::cubeFace(i), 0, r::TextureFormat::RGBA, w, h, 0,
+                      r::PixelFormat::RGBA, r::PixelType::UnsignedByte, data);
         stbi_image_free(data);
         anyLoaded = true;
     }
@@ -293,17 +235,25 @@ void Skybox::loadCubemap() {
     }
     SKYDBG("Cubemap loaded OK (tex=%u)\n", tex);
 
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    r::texParameteri(r::TextureTarget::TextureCube, r::TextureParameter::MinFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::TextureCube, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::TextureCube, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::TextureCube, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::TextureCube, r::TextureParameter::WrapR,
+                     r::TextureValue::ClampToEdge);
 
     mCubemapTex = tex;
     Debug::log(Debug::Category::Render, "[SKYBOX] Cubemap loaded (tex=%u)\n", tex);
 }
 
 void Skybox::pollReload() {
+    // Shader sources are hot: recompile when either file changed. The previous
+    // program stays active if the candidate fails.
+    mProgram.reloadIfChanged();
     if (mConfigPath.empty()) return;
     std::error_code ec;
     auto wt = std::filesystem::last_write_time(mConfigPath, ec);
@@ -354,7 +304,7 @@ void Skybox::update(float dt) {
     }
 }
 
-void Skybox::setUniforms() const {
+void Skybox::setUniforms() {
     // Per-face arrays
     glm::vec3 faceColors[6];
     float faceAlphas[6];
@@ -370,49 +320,43 @@ void Skybox::setUniforms() const {
         faceUVOffsets[i] = {mFaceAnim[i].uvOffX, mFaceAnim[i].uvOffY};
     }
 
-    glUniform3fv(glGetUniformLocation(mShader, "uFaceColor"), 6, glm::value_ptr(faceColors[0]));
-    glUniform1fv(glGetUniformLocation(mShader, "uFaceAlpha"), 6, faceAlphas);
-    glUniform1fv(glGetUniformLocation(mShader, "uFaceHue"), 6, faceHues);
-    glUniform2fv(glGetUniformLocation(mShader, "uFaceStretch"), 6, glm::value_ptr(faceStretches[0]));
-    glUniform2fv(glGetUniformLocation(mShader, "uFaceUVOffset"), 6, glm::value_ptr(faceUVOffsets[0]));
+    r::uniform3fv(mProgram.uniform("uFaceColor"), 6, glm::value_ptr(faceColors[0]));
+    r::uniform1fv(mProgram.uniform("uFaceAlpha"), 6, faceAlphas);
+    r::uniform1fv(mProgram.uniform("uFaceHue"), 6, faceHues);
+    r::uniform2fv(mProgram.uniform("uFaceStretch"), 6, glm::value_ptr(faceStretches[0]));
+    r::uniform2fv(mProgram.uniform("uFaceUVOffset"), 6, glm::value_ptr(faceUVOffsets[0]));
 
-    glUniform1f(glGetUniformLocation(mShader, "uGlobalRotation"), mGlobalRotation);
-    glUniform1f(glGetUniformLocation(mShader, "uGlobalHue"), mGlobalHue);
-    glUniform2f(glGetUniformLocation(mShader, "uGlobalScale"), mGlobalScaleX, mGlobalScaleY);
+    r::uniform1f(mProgram.uniform("uGlobalRotation"), mGlobalRotation);
+    r::uniform1f(mProgram.uniform("uGlobalHue"), mGlobalHue);
+    r::uniform2f(mProgram.uniform("uGlobalScale"), mGlobalScaleX, mGlobalScaleY);
 }
 
 void Skybox::render(const Camera& camera) {
     if (!mInitialized) init();
-    if (!mEnabled || mCubemapTex == 0 || mShader == 0 || mVAO == 0) {
+    if (!mEnabled || mCubemapTex == 0 || !mProgram.valid() || mVAO == 0) {
         SKYDBG("render: SKIPPED (enabled=%d tex=%u shader=%u vao=%u)\n",
-               (int)mEnabled, mCubemapTex, mShader, mVAO);
+               (int)mEnabled, mCubemapTex, mProgram.program(), mVAO);
         return;
     }
 
     if (StructuredLogger::instance().shouldLog(StructuredCategory::Skybox, StructuredLevel::Trace))
-        SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mShader);
+        SKYDBG("render: CALLED tex=%u shader=%u\n", mCubemapTex, mProgram.program());
 
-    // Save render state
-    GLint prevCullFaceMode, prevDepthFunc;
-    GLboolean prevCullEnabled, prevDepthMask;
-    glGetIntegerv(GL_CULL_FACE_MODE, &prevCullFaceMode);
-    glGetIntegerv(GL_DEPTH_FUNC, &prevDepthFunc);
-    glGetBooleanv(GL_CULL_FACE, &prevCullEnabled);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &prevDepthMask);
+    // Host-owned state guard: the host snapshots and restores the GL state it
+    // owns, so the game does not query or restore raw GL state here.
+    r::pushState();
 
     // Skybox render state:
-    // 1. Cull front faces (we're inside the cube, so front faces are the inner ones)
-    //    (Alternatively just disable culling entirely)
-    glDisable(GL_CULL_FACE);
-    // 2. Use LEQUAL depth so skybox passes at the far plane
-    glDepthFunc(GL_LEQUAL);
-    // 3. Do NOT write depth — skybox should not pollute the depth buffer.
-    //    World geometry must be able to render on top with GL_LESS.
-    glDepthMask(GL_FALSE);
+    // 1. Do not cull: we are inside the cube.
+    // 2. LEQUAL depth so the skybox passes at the far plane.
+    // 3. Do not write depth: world geometry must render on top.
+    r::disable(r::Capability::CullFace);
+    r::depthFunc(r::DepthFunc::Lequal);
+    r::depthMask(false);
 
-    glUseProgram(mShader);
-    glBindVertexArray(mVAO);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, mCubemapTex);
+    r::useProgram(mProgram.program());
+    r::bindVertexArray(mVAO);
+    r::bindTexture(r::TextureTarget::TextureCube, mCubemapTex);
 
     glm::mat4 view = camera.getView();
     const float projectionWidth = gRenderer
@@ -420,21 +364,16 @@ void Skybox::render(const Camera& camera) {
     const float projectionHeight = gRenderer
         ? (float)gRenderer->sceneHeight : 720.0f;
     glm::mat4 proj = camera.getProj(projectionWidth, projectionHeight);
-    glUniformMatrix4fv(glGetUniformLocation(mShader, "view"), 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(glGetUniformLocation(mShader, "projection"), 1, GL_FALSE, glm::value_ptr(proj));
+    r::uniformMatrix4fv(mProgram.uniform("view"), 1, glm::value_ptr(view));
+    r::uniformMatrix4fv(mProgram.uniform("projection"), 1, glm::value_ptr(proj));
 
     setUniforms();
 
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    r::drawArrays(r::Primitive::Triangles, 0, 36);
     Debug::log(Debug::Category::Render, "[SKYBOX] draw call submitted\n");
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 
-    // Restore render state
-    glDepthFunc(prevDepthFunc);
-    glDepthMask(prevDepthMask);
-    if (prevCullEnabled) glEnable(GL_CULL_FACE);
-    else glDisable(GL_CULL_FACE);
-    glCullFace(prevCullFaceMode);
+    r::popState();
 }

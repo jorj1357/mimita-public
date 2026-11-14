@@ -18,7 +18,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kTransportCapabilityVersion = 3u;
+inline constexpr std::uint32_t kTransportCapabilityVersion = 4u;
 inline constexpr std::uint32_t kEventTransportMessage = 721u;
 inline constexpr std::uint32_t kEventTransportDispatch = 722u;
 inline constexpr std::uint32_t kTransportMaxPayloadBytes = 64u * 1024u;
@@ -173,6 +173,11 @@ struct TransportCapabilityV1 {
                                         std::uint32_t flags,
                                         const std::uint8_t* payload,
                                         std::uint32_t payloadSize);
+
+    // Bind the current inbound peer (and any claimed transport) to an existing
+    // player. Used by join/reconnect after the game validates the token/policy.
+    TransportResult (*bind_session)(void* hostUserData, PeerHandle peer,
+                                    std::uint32_t playerId);
 };
 
 }  // namespace mimita::host

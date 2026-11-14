@@ -2,6 +2,7 @@
 #include "game/resident-state-module.h"
 #include <filesystem>
 #include "engine/engine.h"
+#include "render/world-shader.h"
 #include "terminal/terminal-state.h"
 #include "video/frame-pacer.h"
 #include "perf/perf.h"
@@ -98,8 +99,9 @@ void engineTickSetup(Engine& engine, float& dt, bool& worldPassRan)
       if (sHotReloadEnabled && dllNow >= nextDllPoll) {
           nextDllPoll = dllNow + HOT_RELOAD_POLL_INTERVAL;
           ModuleHost::instance().poll();
-          if (engine.renderer)
-              engine.renderer->reloadWorldShaderIfChanged();
+          auto& world = mimita::game::render::worldShader();
+          if (world.ensureLoaded())
+              world.reloadIfChanged();
       } }
     // gFramePacer.beginFrame() and Perf::beginFrame() are now called in
     // engineTick() BEFORE the first MIMITA_PERF_SCOPE so the scope stack

@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <malloc.h>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -24,11 +25,16 @@
 #include "host/abi/global-capability.h"
 #include "host/abi/files-capability.h"
 #include "host/abi/gl-resource-capability.h"
+#include "host/abi/session-events-capability.h"
+#include "host/abi/session-identity-capability.h"
+#include "host/host-server-session-events.h"
 #include "host/abi/socket-capability.h"
+#include "host/host-session-identity.h"
 #include "host/abi/ice-capability.h"
 #include "host/abi/transport-session-capability.h"
 #include "host/abi/diagnostics-capability.h"
 #include "host/abi/render-device-capability.h"
+#include "host/abi/state-capability.h"
 #include "host/abi/persistence-capability.h"
 #include "host/abi/module-capability.h"
 #include "host/abi/transport-capability.h"
@@ -1544,36 +1550,361 @@ void glDeleteShaderRes(void*, std::uint32_t id) { glDeleteShader(id); }
 void glDeleteProgramRes(void*, std::uint32_t id) { glDeleteProgram(id); }
 void glGenerateMipmapRes(void*, std::uint32_t target) { glGenerateMipmap(target); }
 
-HostResult renderBufferData(void*, std::uint32_t target, std::uint64_t buffer,
-                            const void* data, std::uint32_t size,
-                            std::uint32_t usage) {
-    glBindBuffer(target, static_cast<GLuint>(buffer));
-    glBufferData(target, size, data, usage);
+namespace {
+
+GLenum toGl(mimita::render::Primitive value) {
+    switch (value) {
+        case mimita::render::Primitive::Points: return GL_POINTS;
+        case mimita::render::Primitive::Lines: return GL_LINES;
+        case mimita::render::Primitive::LineStrip: return GL_LINE_STRIP;
+        case mimita::render::Primitive::Triangles: return GL_TRIANGLES;
+        case mimita::render::Primitive::TriangleStrip: return GL_TRIANGLE_STRIP;
+        case mimita::render::Primitive::TriangleFan: return GL_TRIANGLE_FAN;
+    }
+    return GL_TRIANGLES;
+}
+
+GLenum toGl(mimita::render::TextureTarget value) {
+    switch (value) {
+        case mimita::render::TextureTarget::Texture2D: return GL_TEXTURE_2D;
+        case mimita::render::TextureTarget::TextureCube: return GL_TEXTURE_CUBE_MAP;
+        case mimita::render::TextureTarget::CubePositiveX: return GL_TEXTURE_CUBE_MAP_POSITIVE_X;
+        case mimita::render::TextureTarget::CubeNegativeX: return GL_TEXTURE_CUBE_MAP_NEGATIVE_X;
+        case mimita::render::TextureTarget::CubePositiveY: return GL_TEXTURE_CUBE_MAP_POSITIVE_Y;
+        case mimita::render::TextureTarget::CubeNegativeY: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Y;
+        case mimita::render::TextureTarget::CubePositiveZ: return GL_TEXTURE_CUBE_MAP_POSITIVE_Z;
+        case mimita::render::TextureTarget::CubeNegativeZ: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Z;
+    }
+    return GL_TEXTURE_2D;
+}
+
+GLenum toGl(mimita::render::BufferTarget value) {
+    switch (value) {
+        case mimita::render::BufferTarget::Array: return GL_ARRAY_BUFFER;
+        case mimita::render::BufferTarget::ElementArray: return GL_ELEMENT_ARRAY_BUFFER;
+    }
+    return GL_ARRAY_BUFFER;
+}
+
+GLenum toGl(mimita::render::BufferUsage value) {
+    switch (value) {
+        case mimita::render::BufferUsage::Static: return GL_STATIC_DRAW;
+        case mimita::render::BufferUsage::Dynamic: return GL_DYNAMIC_DRAW;
+        case mimita::render::BufferUsage::Stream: return GL_STREAM_DRAW;
+    }
+    return GL_STATIC_DRAW;
+}
+
+GLenum toGl(mimita::render::Capability value) {
+    switch (value) {
+        case mimita::render::Capability::DepthTest: return GL_DEPTH_TEST;
+        case mimita::render::Capability::Blend: return GL_BLEND;
+        case mimita::render::Capability::CullFace: return GL_CULL_FACE;
+        case mimita::render::Capability::ScissorTest: return GL_SCISSOR_TEST;
+        case mimita::render::Capability::StencilTest: return GL_STENCIL_TEST;
+        case mimita::render::Capability::PolygonOffsetFill: return GL_POLYGON_OFFSET_FILL;
+        case mimita::render::Capability::Multisample: return GL_MULTISAMPLE;
+    }
+    return GL_DEPTH_TEST;
+}
+
+GLenum toGl(mimita::render::BlendFactor value) {
+    switch (value) {
+        case mimita::render::BlendFactor::Zero: return GL_ZERO;
+        case mimita::render::BlendFactor::One: return GL_ONE;
+        case mimita::render::BlendFactor::SrcAlpha: return GL_SRC_ALPHA;
+        case mimita::render::BlendFactor::OneMinusSrcAlpha: return GL_ONE_MINUS_SRC_ALPHA;
+        case mimita::render::BlendFactor::DstAlpha: return GL_DST_ALPHA;
+        case mimita::render::BlendFactor::OneMinusDstAlpha: return GL_ONE_MINUS_DST_ALPHA;
+        case mimita::render::BlendFactor::SrcColor: return GL_SRC_COLOR;
+        case mimita::render::BlendFactor::OneMinusSrcColor: return GL_ONE_MINUS_SRC_COLOR;
+        case mimita::render::BlendFactor::DstColor: return GL_DST_COLOR;
+        case mimita::render::BlendFactor::OneMinusDstColor: return GL_ONE_MINUS_DST_COLOR;
+    }
+    return GL_ONE;
+}
+
+GLenum toGl(mimita::render::DepthFunc value) {
+    switch (value) {
+        case mimita::render::DepthFunc::Never: return GL_NEVER;
+        case mimita::render::DepthFunc::Less: return GL_LESS;
+        case mimita::render::DepthFunc::Equal: return GL_EQUAL;
+        case mimita::render::DepthFunc::Lequal: return GL_LEQUAL;
+        case mimita::render::DepthFunc::Greater: return GL_GREATER;
+        case mimita::render::DepthFunc::Notequal: return GL_NOTEQUAL;
+        case mimita::render::DepthFunc::Gequal: return GL_GEQUAL;
+        case mimita::render::DepthFunc::Always: return GL_ALWAYS;
+    }
+    return GL_LESS;
+}
+
+GLenum toGl(mimita::render::CullFaceMode value) {
+    switch (value) {
+        case mimita::render::CullFaceMode::Front: return GL_FRONT;
+        case mimita::render::CullFaceMode::Back: return GL_BACK;
+        case mimita::render::CullFaceMode::FrontAndBack: return GL_FRONT_AND_BACK;
+    }
+    return GL_BACK;
+}
+
+GLenum toGl(mimita::render::PolygonMode value) {
+    switch (value) {
+        case mimita::render::PolygonMode::Point: return GL_POINT;
+        case mimita::render::PolygonMode::Line: return GL_LINE;
+        case mimita::render::PolygonMode::Fill: return GL_FILL;
+    }
+    return GL_FILL;
+}
+
+GLenum toGl(mimita::render::IndexType value) {
+    switch (value) {
+        case mimita::render::IndexType::UInt16: return GL_UNSIGNED_SHORT;
+        case mimita::render::IndexType::UInt32: return GL_UNSIGNED_INT;
+    }
+    return GL_UNSIGNED_INT;
+}
+
+GLenum toGl(mimita::render::TextureFormat value) {
+    switch (value) {
+        case mimita::render::TextureFormat::RGBA: return GL_RGBA;
+        case mimita::render::TextureFormat::RGB: return GL_RGB;
+        case mimita::render::TextureFormat::Depth: return GL_DEPTH_COMPONENT;
+        case mimita::render::TextureFormat::Depth24: return GL_DEPTH_COMPONENT24;
+    }
+    return GL_RGBA;
+}
+
+GLenum toGl(mimita::render::PixelFormat value) {
+    switch (value) {
+        case mimita::render::PixelFormat::RGBA: return GL_RGBA;
+        case mimita::render::PixelFormat::RGB: return GL_RGB;
+        case mimita::render::PixelFormat::Red: return GL_RED;
+        case mimita::render::PixelFormat::Depth: return GL_DEPTH_COMPONENT;
+    }
+    return GL_RGBA;
+}
+
+GLenum toGl(mimita::render::PixelType value) {
+    switch (value) {
+        case mimita::render::PixelType::UnsignedByte: return GL_UNSIGNED_BYTE;
+        case mimita::render::PixelType::Float: return GL_FLOAT;
+    }
+    return GL_UNSIGNED_BYTE;
+}
+
+GLenum toGl(mimita::render::TextureParameter value) {
+    switch (value) {
+        case mimita::render::TextureParameter::MinFilter: return GL_TEXTURE_MIN_FILTER;
+        case mimita::render::TextureParameter::MagFilter: return GL_TEXTURE_MAG_FILTER;
+        case mimita::render::TextureParameter::WrapS: return GL_TEXTURE_WRAP_S;
+        case mimita::render::TextureParameter::WrapT: return GL_TEXTURE_WRAP_T;
+        case mimita::render::TextureParameter::WrapR: return GL_TEXTURE_WRAP_R;
+        case mimita::render::TextureParameter::MaxLevel: return GL_TEXTURE_MAX_LEVEL;
+        case mimita::render::TextureParameter::BorderColor: return GL_TEXTURE_BORDER_COLOR;
+    }
+    return GL_TEXTURE_MIN_FILTER;
+}
+
+GLenum toGl(mimita::render::TextureValue value) {
+    switch (value) {
+        case mimita::render::TextureValue::Nearest: return GL_NEAREST;
+        case mimita::render::TextureValue::Linear: return GL_LINEAR;
+        case mimita::render::TextureValue::LinearMipmapLinear: return GL_LINEAR_MIPMAP_LINEAR;
+        case mimita::render::TextureValue::ClampToEdge: return GL_CLAMP_TO_EDGE;
+        case mimita::render::TextureValue::ClampToBorder: return GL_CLAMP_TO_BORDER;
+        case mimita::render::TextureValue::Repeat: return GL_REPEAT;
+        case mimita::render::TextureValue::MirroredRepeat: return GL_MIRRORED_REPEAT;
+    }
+    return GL_LINEAR;
+}
+
+GLenum toGl(mimita::render::VertexType value) {
+    switch (value) {
+        case mimita::render::VertexType::Float: return GL_FLOAT;
+        case mimita::render::VertexType::UInt32: return GL_UNSIGNED_INT;
+    }
+    return GL_FLOAT;
+}
+
+GLenum toGl(mimita::render::ShaderStage value) {
+    switch (value) {
+        case mimita::render::ShaderStage::Vertex: return GL_VERTEX_SHADER;
+        case mimita::render::ShaderStage::Fragment: return GL_FRAGMENT_SHADER;
+    }
+    return GL_VERTEX_SHADER;
+}
+
+GLenum toGl(mimita::render::ShaderParameter value) {
+    switch (value) {
+        case mimita::render::ShaderParameter::CompileStatus: return GL_COMPILE_STATUS;
+        case mimita::render::ShaderParameter::LinkStatus: return GL_LINK_STATUS;
+        case mimita::render::ShaderParameter::InfoLogLength: return GL_INFO_LOG_LENGTH;
+    }
+    return GL_COMPILE_STATUS;
+}
+
+GLenum toGl(mimita::render::FramebufferTarget value) {
+    switch (value) {
+        case mimita::render::FramebufferTarget::Framebuffer: return GL_FRAMEBUFFER;
+        case mimita::render::FramebufferTarget::Read: return GL_READ_FRAMEBUFFER;
+        case mimita::render::FramebufferTarget::Draw: return GL_DRAW_FRAMEBUFFER;
+    }
+    return GL_FRAMEBUFFER;
+}
+
+GLenum toGl(mimita::render::FramebufferAttachment value) {
+    switch (value) {
+        case mimita::render::FramebufferAttachment::Color0: return GL_COLOR_ATTACHMENT0;
+        case mimita::render::FramebufferAttachment::Color1: return GL_COLOR_ATTACHMENT1;
+        case mimita::render::FramebufferAttachment::Color2: return GL_COLOR_ATTACHMENT2;
+        case mimita::render::FramebufferAttachment::Color3: return GL_COLOR_ATTACHMENT3;
+        case mimita::render::FramebufferAttachment::Depth: return GL_DEPTH_ATTACHMENT;
+        case mimita::render::FramebufferAttachment::Stencil: return GL_STENCIL_ATTACHMENT;
+        case mimita::render::FramebufferAttachment::DepthStencil: return GL_DEPTH_STENCIL_ATTACHMENT;
+    }
+    return GL_COLOR_ATTACHMENT0;
+}
+
+GLenum toGl(mimita::render::RenderbufferFormat value) {
+    switch (value) {
+        case mimita::render::RenderbufferFormat::Depth24: return GL_DEPTH_COMPONENT24;
+        case mimita::render::RenderbufferFormat::Depth24Stencil8: return GL_DEPTH24_STENCIL8;
+        case mimita::render::RenderbufferFormat::RGBA8: return GL_RGBA8;
+    }
+    return GL_DEPTH_COMPONENT24;
+}
+
+GLenum toGl(mimita::render::FramebufferBuffer value) {
+    switch (value) {
+        case mimita::render::FramebufferBuffer::None: return GL_NONE;
+        case mimita::render::FramebufferBuffer::Color0: return GL_COLOR_ATTACHMENT0;
+        case mimita::render::FramebufferBuffer::Color1: return GL_COLOR_ATTACHMENT1;
+        case mimita::render::FramebufferBuffer::Color2: return GL_COLOR_ATTACHMENT2;
+        case mimita::render::FramebufferBuffer::Color3: return GL_COLOR_ATTACHMENT3;
+    }
+    return GL_NONE;
+}
+
+struct HostGlState {
+    GLboolean depthTest = GL_FALSE;
+    GLboolean blend = GL_FALSE;
+    GLboolean cullFace = GL_FALSE;
+    GLboolean scissorTest = GL_FALSE;
+    GLboolean depthMask = GL_TRUE;
+    GLint depthFunc = GL_LESS;
+    GLint cullFaceMode = GL_BACK;
+    GLint blendSrcRgb = GL_ONE;
+    GLint blendDstRgb = GL_ZERO;
+    GLint blendSrcAlpha = GL_ONE;
+    GLint blendDstAlpha = GL_ZERO;
+    GLint polygonMode[2] = {GL_FILL, GL_FILL};
+    GLint viewport[4] = {0, 0, 0, 0};
+    GLint activeTexture = GL_TEXTURE0;
+    GLint program = 0;
+    GLint vertexArray = 0;
+    GLint arrayBuffer = 0;
+    GLint elementBuffer = 0;
+    GLint texture2D = 0;
+    GLint framebuffer = 0;
+};
+
+std::vector<HostGlState> gHostGlStateStack;
+
+HostGlState captureHostGlState() {
+    HostGlState state;
+    state.depthTest = glIsEnabled(GL_DEPTH_TEST);
+    state.blend = glIsEnabled(GL_BLEND);
+    state.cullFace = glIsEnabled(GL_CULL_FACE);
+    state.scissorTest = glIsEnabled(GL_SCISSOR_TEST);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &state.depthMask);
+    glGetIntegerv(GL_DEPTH_FUNC, &state.depthFunc);
+    glGetIntegerv(GL_CULL_FACE_MODE, &state.cullFaceMode);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &state.blendSrcRgb);
+    glGetIntegerv(GL_BLEND_DST_RGB, &state.blendDstRgb);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &state.blendSrcAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &state.blendDstAlpha);
+    glGetIntegerv(GL_POLYGON_MODE, state.polygonMode);
+    glGetIntegerv(GL_VIEWPORT, state.viewport);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &state.activeTexture);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &state.program);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &state.vertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &state.arrayBuffer);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &state.elementBuffer);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &state.texture2D);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &state.framebuffer);
+    return state;
+}
+
+void restoreHostGlState(const HostGlState& state) {
+    glUseProgram(static_cast<GLuint>(state.program));
+    glBindVertexArray(static_cast<GLuint>(state.vertexArray));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(state.arrayBuffer));
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(state.elementBuffer));
+    glActiveTexture(static_cast<GLenum>(state.activeTexture));
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(state.texture2D));
+    glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(state.framebuffer));
+    glDepthMask(state.depthMask);
+    glDepthFunc(static_cast<GLenum>(state.depthFunc));
+    glCullFace(static_cast<GLenum>(state.cullFaceMode));
+    glBlendFuncSeparate(static_cast<GLenum>(state.blendSrcRgb),
+                        static_cast<GLenum>(state.blendDstRgb),
+                        static_cast<GLenum>(state.blendSrcAlpha),
+                        static_cast<GLenum>(state.blendDstAlpha));
+    glPolygonMode(GL_FRONT_AND_BACK, static_cast<GLenum>(state.polygonMode[0]));
+    glViewport(state.viewport[0], state.viewport[1], state.viewport[2],
+               state.viewport[3]);
+    if (state.depthTest) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (state.blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (state.cullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (state.scissorTest) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+}
+
+}  // namespace
+
+HostResult renderBufferData(void*, mimita::render::BufferTarget target,
+                            std::uint64_t buffer, const void* data,
+                            std::uint32_t size, mimita::render::BufferUsage usage) {
+    glBindBuffer(toGl(target), static_cast<GLuint>(buffer));
+    glBufferData(toGl(target), static_cast<GLsizeiptr>(size), data, toGl(usage));
     return HostResult::Ok;
 }
 
-HostResult renderTexImage2D(void*, std::uint64_t texture, std::int32_t level,
-                            std::int32_t internalFormat, std::int32_t width,
-                            std::int32_t height, std::int32_t border,
-                            std::uint32_t format, std::uint32_t type,
+HostResult renderBufferSubData(void*, mimita::render::BufferTarget target,
+                               std::uint64_t buffer, std::uint32_t offset,
+                               const void* data, std::uint32_t size) {
+    glBindBuffer(toGl(target), static_cast<GLuint>(buffer));
+    glBufferSubData(toGl(target), static_cast<GLintptr>(offset),
+                    static_cast<GLsizeiptr>(size), data);
+    return HostResult::Ok;
+}
+
+HostResult renderTexImage2D(void*, mimita::render::TextureTarget target,
+                            std::int32_t level,
+                            mimita::render::TextureFormat format,
+                            std::int32_t width, std::int32_t height,
+                            std::int32_t border,
+                            mimita::render::PixelFormat pixelFormat,
+                            mimita::render::PixelType pixelType,
                             const void* data, std::uint32_t) {
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture));
-    glTexImage2D(GL_TEXTURE_2D, level, internalFormat, width, height, border,
-                 format, type, data);
+    glTexImage2D(toGl(target), level, static_cast<GLint>(toGl(format)), width,
+                 height, border, toGl(pixelFormat), toGl(pixelType), data);
     return HostResult::Ok;
 }
 
-HostResult renderTexParameteri(void*, std::uint32_t target, std::uint32_t pname,
+HostResult renderTexParameteri(void*, mimita::render::TextureTarget target,
+                               mimita::render::TextureParameter parameter,
                                std::int32_t value) {
-    glTexParameteri(target, pname, value);
+    glTexParameteri(toGl(target), toGl(parameter), static_cast<GLint>(value));
     return HostResult::Ok;
 }
 
 HostResult renderVertexAttrib(void*, std::uint32_t index, std::int32_t size,
-                              std::uint32_t type, std::uint32_t normalized,
-                              std::int32_t stride, std::uint32_t offset) {
-    glVertexAttribPointer(index, size, type, normalized != 0, stride,
-                          reinterpret_cast<const void*>(static_cast<std::uintptr_t>(offset)));
+                              mimita::render::VertexType type,
+                              std::uint32_t normalized, std::int32_t stride,
+                              std::uint32_t offset) {
+    glVertexAttribPointer(index, size, toGl(type), normalized != 0, stride,
+                          reinterpret_cast<const void*>(
+                              static_cast<std::uintptr_t>(offset)));
     return HostResult::Ok;
 }
 
@@ -1591,6 +1922,10 @@ HostResult renderUniform1f(void*, std::int32_t location, float value) {
     glUniform1f(location, value);
     return HostResult::Ok;
 }
+HostResult renderUniform2f(void*, std::int32_t location, float x, float y) {
+    glUniform2f(location, x, y);
+    return HostResult::Ok;
+}
 HostResult renderUniform3f(void*, std::int32_t location, float x, float y, float z) {
     glUniform3f(location, x, y, z);
     return HostResult::Ok;
@@ -1599,11 +1934,148 @@ HostResult renderUniform4f(void*, std::int32_t location, float x, float y, float
     glUniform4f(location, x, y, z, w);
     return HostResult::Ok;
 }
+HostResult renderUniform1fv(void*, std::int32_t location, std::int32_t count,
+                            const float* values) {
+    glUniform1fv(location, static_cast<GLsizei>(count), values);
+    return HostResult::Ok;
+}
+HostResult renderUniform2fv(void*, std::int32_t location, std::int32_t count,
+                            const float* values) {
+    glUniform2fv(location, static_cast<GLsizei>(count), values);
+    return HostResult::Ok;
+}
+HostResult renderUniform3fv(void*, std::int32_t location, std::int32_t count,
+                            const float* values) {
+    glUniform3fv(location, static_cast<GLsizei>(count), values);
+    return HostResult::Ok;
+}
 HostResult renderUniformMatrix4(void*, std::int32_t location, std::uint32_t count,
                                 const float* values) {
     if (!values) return HostResult::InvalidArgument;
     glUniformMatrix4fv(location, static_cast<GLsizei>(count), GL_FALSE, values);
     return HostResult::Ok;
+}
+
+std::uint32_t renderCreateShader(void*, mimita::render::ShaderStage stage) {
+    return static_cast<std::uint32_t>(glCreateShader(toGl(stage)));
+}
+
+HostResult renderShaderSource(void*, std::uint32_t shader, const char* source) {
+    if (!source) return HostResult::InvalidArgument;
+    const GLchar* sources[1] = {source};
+    glShaderSource(static_cast<GLuint>(shader), 1, sources, nullptr);
+    return HostResult::Ok;
+}
+
+HostResult renderCompileShader(void*, std::uint32_t shader) {
+    glCompileShader(static_cast<GLuint>(shader));
+    return HostResult::Ok;
+}
+
+std::uint32_t renderCreateProgram(void*) {
+    return static_cast<std::uint32_t>(glCreateProgram());
+}
+
+HostResult renderAttachShader(void*, std::uint32_t program, std::uint32_t shader) {
+    glAttachShader(static_cast<GLuint>(program), static_cast<GLuint>(shader));
+    return HostResult::Ok;
+}
+
+HostResult renderLinkProgram(void*, std::uint32_t program) {
+    glLinkProgram(static_cast<GLuint>(program));
+    return HostResult::Ok;
+}
+
+std::int32_t renderGetUniformLocation(void*, std::uint32_t program,
+                                      const char* name) {
+    if (!name) return -1;
+    return static_cast<std::int32_t>(
+        glGetUniformLocation(static_cast<GLuint>(program), name));
+}
+
+HostResult renderGetUniformiv(void*, std::uint32_t program,
+                              std::int32_t location, std::int32_t* values,
+                              std::int32_t count) {
+    if (!values || count <= 0) return HostResult::InvalidArgument;
+    glGetUniformiv(static_cast<GLuint>(program), location,
+                   reinterpret_cast<GLint*>(values));
+    return HostResult::Ok;
+}
+
+HostResult renderGetProgramiv(void*, std::uint32_t program,
+                              mimita::render::ShaderParameter parameter,
+                              std::int32_t* value) {
+    if (!value) return HostResult::InvalidArgument;
+    glGetProgramiv(static_cast<GLuint>(program), toGl(parameter),
+                   reinterpret_cast<GLint*>(value));
+    return HostResult::Ok;
+}
+
+HostResult renderGetShaderiv(void*, std::uint32_t shader,
+                             mimita::render::ShaderParameter parameter,
+                             std::int32_t* value) {
+    if (!value) return HostResult::InvalidArgument;
+    glGetShaderiv(static_cast<GLuint>(shader), toGl(parameter),
+                  reinterpret_cast<GLint*>(value));
+    return HostResult::Ok;
+}
+
+HostResult renderGetProgramInfoLog(void*, std::uint32_t program,
+                                   std::int32_t capacity, std::int32_t* length,
+                                   char* log) {
+    if (!log || capacity <= 0) return HostResult::InvalidArgument;
+    glGetProgramInfoLog(static_cast<GLuint>(program),
+                        static_cast<GLsizei>(capacity),
+                        reinterpret_cast<GLsizei*>(length), log);
+    return HostResult::Ok;
+}
+
+HostResult renderGetShaderInfoLog(void*, std::uint32_t shader,
+                                  std::int32_t capacity, std::int32_t* length,
+                                  char* log) {
+    if (!log || capacity <= 0) return HostResult::InvalidArgument;
+    glGetShaderInfoLog(static_cast<GLuint>(shader),
+                       static_cast<GLsizei>(capacity),
+                       reinterpret_cast<GLsizei*>(length), log);
+    return HostResult::Ok;
+}
+
+std::uint32_t renderGetError(void*) {
+    return static_cast<std::uint32_t>(glGetError());
+}
+
+HostResult renderFramebufferTexture2D(
+    void*, mimita::render::TextureTarget target,
+    mimita::render::FramebufferAttachment attachment, std::uint64_t texture) {
+    glFramebufferTexture2D(GL_FRAMEBUFFER, toGl(attachment), toGl(target),
+                           static_cast<GLuint>(texture), 0);
+    return HostResult::Ok;
+}
+
+HostResult renderBindRenderbuffer(void*, std::uint32_t renderbuffer) {
+    glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(renderbuffer));
+    return HostResult::Ok;
+}
+
+HostResult renderRenderbufferStorage(void*,
+                                     mimita::render::RenderbufferFormat format,
+                                     std::int32_t width, std::int32_t height) {
+    glRenderbufferStorage(GL_RENDERBUFFER, toGl(format), width, height);
+    return HostResult::Ok;
+}
+
+HostResult renderFramebufferRenderbuffer(
+    void*, mimita::render::FramebufferAttachment attachment,
+    std::uint32_t renderbuffer) {
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, toGl(attachment), GL_RENDERBUFFER,
+                              static_cast<GLuint>(renderbuffer));
+    return HostResult::Ok;
+}
+
+std::int32_t renderCheckFramebufferStatus(void*) {
+    return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
+               ? 1
+               : 0;
 }
 
 LogCapabilityV1 gLogCapability{
@@ -1636,6 +2108,30 @@ HostRuntime& HostRuntime::instance() {
 }
 
 HostRuntime::HostRuntime() : barrier_(hostBarrier()) {}
+
+void* HostRuntime::ensureStateObject(std::uint32_t id, std::uint32_t size,
+                                     std::uint32_t alignment, std::int32_t* created) {
+    if (created) *created = 0;
+    if (size == 0 || alignment == 0 ||
+        (alignment & (alignment - 1)) != 0) {
+        return nullptr;
+    }
+
+    std::lock_guard<std::mutex> lock(stateObjectMutex_);
+    StateObjectRecord& record = stateObjects_[id];
+    if (record.storage) {
+        if (record.size != size || record.alignment != alignment) return nullptr;
+        return record.storage;
+    }
+
+    record.storage = _aligned_malloc(size, alignment);
+    if (!record.storage) return nullptr;
+    std::memset(record.storage, 0, size);
+    record.size = size;
+    record.alignment = alignment;
+    if (created) *created = 1;
+    return record.storage;
+}
 
 bool HostRuntime::startFromEnvironment() {
     if (started_) {
@@ -1709,6 +2205,7 @@ void HostRuntime::shutdown() {
     loader_.unloadActive();
     barrier_.shutdown();
     clearEntityAdapter();
+    clearWorldAdapter();
     clearTransportAdapter();
     renderPending_.store(0, std::memory_order_release);
     {
@@ -1961,6 +2458,16 @@ void HostRuntime::clearEntityAdapter() {
     entityOwner_ = nullptr;
 }
 
+void HostRuntime::setWorldAdapter(const WorldAdapterV1* adapter, void* owner) {
+    worldAdapter_ = adapter;
+    worldOwner_ = owner;
+}
+
+void HostRuntime::clearWorldAdapter() {
+    worldAdapter_ = nullptr;
+    worldOwner_ = nullptr;
+}
+
 bool HostRuntime::probeNpcTargetSelect(NpcTargetDecisionV1* decision) {
     if (!decision || !probeEnabled_.load(std::memory_order_acquire)) {
         return false;
@@ -2019,6 +2526,7 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::transportPeerStateThunk,
             &HostRuntime::transportPeerCountThunk,
             &HostRuntime::transportSendToEndpointThunk,
+            &HostRuntime::transportBindSessionThunk,
         };
         return &transportCapability;
     }
@@ -2152,6 +2660,20 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
         };
         return &renderDeviceCapability;
     }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::State) &&
+        version == kStateCapabilityVersion) {
+        static StateCapabilityV1 stateCapability{
+            kStateCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(StateCapabilityV1)),
+            [](void*) { return HostRuntime::instance().menuState(); },
+            [](void*, mimita::host::StateObjectId id, std::uint32_t size,
+                std::uint32_t alignment, std::int32_t* created) {
+                return HostRuntime::instance().ensureStateObject(
+                    static_cast<std::uint32_t>(id), size, alignment, created);
+            },
+        };
+        return &stateCapability;
+    }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Globals) &&
         version == kGlobalCapabilityVersion) {
         static GlobalCapabilityV1 globalCapability{
@@ -2187,8 +2709,53 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             static_cast<std::uint32_t>(sizeof(EntityCapabilityV1)),
             &HostRuntime::entityCapabilityReadThunk,
             &HostRuntime::entityCapabilityWriteThunk,
+            &HostRuntime::entityCapabilityListThunk,
+            &HostRuntime::entityCapabilityCreateThunk,
+            &HostRuntime::entityCapabilityResetTransformThunk,
+            &HostRuntime::entityCapabilityRemoveThunk,
+            &HostRuntime::entityCapabilityFindConnectionThunk,
+            &HostRuntime::entityCapabilityFindReconnectTokenThunk,
+            &HostRuntime::entityCapabilityFindJoinTokenThunk,
         };
         return &entityCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::World) &&
+        version == kWorldCapabilityVersion) {
+        static WorldCapabilityV1 worldCapability{
+            kWorldCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(WorldCapabilityV1)),
+            &HostRuntime::worldInfoThunk,
+            &HostRuntime::worldRaycastThunk,
+            &HostRuntime::worldPickSpawnThunk,
+        };
+        return &worldCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::SessionIdentity) &&
+        version == kSessionIdentityCapabilityVersion) {
+        static SessionIdentityCapabilityV1 sessionIdentityCapability{
+            kSessionIdentityCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(SessionIdentityCapabilityV1)),
+            &HostRuntime::sessionGetTextThunk,
+            &HostRuntime::sessionSetTextThunk,
+            &HostRuntime::sessionGetFlagThunk,
+            &HostRuntime::sessionSetFlagThunk,
+            &HostRuntime::sessionSetPasswordThunk,
+            &HostRuntime::sessionPasswordMatchesThunk,
+        };
+        return &sessionIdentityCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::SessionEvents) &&
+        version == kSessionEventsCapabilityVersion) {
+        static SessionEventsCapabilityV1 sessionEventsCapability{
+            kSessionEventsCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(SessionEventsCapabilityV1)),
+            &HostRuntime::sessionEventsNextIdThunk,
+            &HostRuntime::sessionEventsSessionIdThunk,
+            &HostRuntime::sessionEventsQueueToPlayerThunk,
+            &HostRuntime::sessionEventsQueueToAllThunk,
+            &HostRuntime::sessionEventsResetPlayerThunk,
+        };
+        return &sessionEventsCapability;
     }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Render) &&
         version == kRenderCapabilityVersion) {
@@ -2199,15 +2766,38 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::renderFlushThunk,
             &HostRuntime::renderPendingThunk,
             &renderBufferData,
+            &renderBufferSubData,
             &renderTexImage2D,
             &renderTexParameteri,
             &renderVertexAttrib,
             &renderEnableAttrib,
             &renderUniform1i,
             &renderUniform1f,
+            &renderUniform2f,
             &renderUniform3f,
             &renderUniform4f,
+            &renderUniform1fv,
+            &renderUniform2fv,
+            &renderUniform3fv,
             &renderUniformMatrix4,
+            &renderCreateShader,
+            &renderShaderSource,
+            &renderCompileShader,
+            &renderCreateProgram,
+            &renderAttachShader,
+            &renderLinkProgram,
+            &renderGetUniformLocation,
+            &renderGetUniformiv,
+            &renderGetProgramiv,
+            &renderGetShaderiv,
+            &renderGetProgramInfoLog,
+            &renderGetShaderInfoLog,
+            &renderGetError,
+            &renderFramebufferTexture2D,
+            &renderBindRenderbuffer,
+            &renderRenderbufferStorage,
+            &renderFramebufferRenderbuffer,
+            &renderCheckFramebufferStatus,
         };
         return &renderCapability;
     }
@@ -2360,6 +2950,19 @@ std::uint32_t HostRuntime::transportPeerCountThunk(void* userData) {
     return runtime->transportAdapter_->peer_count(runtime->transportOwner_);
 }
 
+TransportResult HostRuntime::transportBindSessionThunk(void* userData,
+                                                       PeerHandle peer,
+                                                       std::uint32_t playerId) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->transportAdapter_ ||
+        !runtime->transportAdapter_->bind_session) {
+        return TransportResult::Unsupported;
+    }
+    return runtime->transportAdapter_->bind_session(
+               runtime->transportOwner_, peer, playerId)
+        ? TransportResult::Ok : TransportResult::TransportError;
+}
+
 TransportResult HostRuntime::transportSendToEndpointThunk(
     void* userData, std::uint32_t addressNetworkOrder,
     std::uint16_t portNetworkOrder, TransportChannel, std::uint32_t,
@@ -2415,6 +3018,239 @@ HostResult HostRuntime::entityCapabilityWriteThunk(void* userData,
     return entityWriteThunk(userData, handle, in);
 }
 
+std::uint32_t HostRuntime::entityCapabilityListThunk(void* userData,
+                                                     std::int32_t kind,
+                                                     EntityHandle* out,
+                                                     std::uint32_t capacity) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ || !runtime->entityAdapter_->list ||
+        !out || capacity == 0) {
+        return 0;
+    }
+    return runtime->entityAdapter_->list(runtime->entityOwner_, kind, out,
+                                         capacity);
+}
+
+namespace {
+
+const std::string* sessionText(std::uint32_t field) {
+    switch (static_cast<SessionTextField>(field)) {
+        case SessionTextField::MapId: return &sessionMapId();
+        case SessionTextField::CoordinatorCode: return &sessionCoordinatorCode();
+        case SessionTextField::CoordinatorJoinToken:
+            return &sessionCoordinatorJoinToken();
+        case SessionTextField::MatchMode: return &sessionMatchMode();
+        case SessionTextField::CommunityMode: return &sessionCommunityMode();
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+std::uint32_t HostRuntime::sessionGetTextThunk(void*,
+                                               std::uint32_t field,
+                                               char* out,
+                                               std::uint32_t capacity) {
+    const std::string* text = sessionText(field);
+    if (!text) {
+        return 0;
+    }
+    if (out && capacity > 0) {
+        const std::size_t count =
+            text->size() < capacity - 1 ? text->size() : capacity - 1;
+        std::memcpy(out, text->data(), count);
+        out[count] = '\0';
+    }
+    return static_cast<std::uint32_t>(text->size());
+}
+
+void HostRuntime::sessionSetTextThunk(void*, std::uint32_t field,
+                                      const char* value) {
+    const std::string text = value ? value : "";
+    switch (static_cast<SessionTextField>(field)) {
+        case SessionTextField::MapId:
+            setSessionMapId(text);
+            break;
+        case SessionTextField::CoordinatorCode:
+            setSessionCoordinatorCode(text);
+            break;
+        case SessionTextField::CoordinatorJoinToken:
+            setSessionCoordinatorJoinToken(text);
+            break;
+        case SessionTextField::MatchMode:
+            setSessionMatchMode(text);
+            break;
+        case SessionTextField::CommunityMode:
+            setSessionCommunityMode(text);
+            break;
+    }
+}
+
+std::uint32_t HostRuntime::sessionGetFlagThunk(void*, std::uint32_t field) {
+    switch (static_cast<SessionFlagField>(field)) {
+        case SessionFlagField::PasswordProtected:
+            return sessionPasswordProtected() ? 1u : 0u;
+    }
+    return 0;
+}
+
+void HostRuntime::sessionSetFlagThunk(void*, std::uint32_t field,
+                                      std::uint32_t value) {
+    switch (static_cast<SessionFlagField>(field)) {
+        case SessionFlagField::PasswordProtected:
+            setSessionPasswordState(value != 0, "");
+            break;
+    }
+}
+
+void HostRuntime::sessionSetPasswordThunk(void*, std::uint32_t protectedFlag,
+                                          const char* password) {
+    setSessionPasswordState(protectedFlag != 0, password ? password : "");
+}
+
+std::uint32_t HostRuntime::sessionPasswordMatchesThunk(void*,
+                                                       const char* supplied) {
+    return sessionPasswordMatches(supplied) ? 1u : 0u;
+}
+
+std::uint32_t HostRuntime::sessionEventsNextIdThunk(void*) {
+    auto& events = HostServerSessionEvents::instance();
+    return events.capability()->next_event_id(events.owner());
+}
+
+std::uint32_t HostRuntime::sessionEventsSessionIdThunk(void*,
+                                                       std::uint32_t playerId) {
+    auto& events = HostServerSessionEvents::instance();
+    return events.capability()->session_id(events.owner(), playerId);
+}
+
+SessionEventQueueResult HostRuntime::sessionEventsQueueToPlayerThunk(
+    void*, std::uint32_t playerId, const std::uint8_t* bytes,
+    std::uint32_t size, std::uint32_t eventId, std::uint32_t maxPending) {
+    auto& events = HostServerSessionEvents::instance();
+    return events.capability()->queue_to_player(
+        events.owner(), playerId, bytes, size, eventId, maxPending);
+}
+
+SessionEventQueueResult HostRuntime::sessionEventsQueueToAllThunk(
+    void*, const std::uint8_t* bytes, std::uint32_t size,
+    std::uint32_t eventId, std::uint32_t maxPending) {
+    auto& events = HostServerSessionEvents::instance();
+    return events.capability()->queue_to_all(events.owner(), bytes, size,
+                                             eventId, maxPending);
+}
+
+HostResult HostRuntime::sessionEventsResetPlayerThunk(
+    void*, std::uint32_t playerId) {
+    auto& events = HostServerSessionEvents::instance();
+    return events.capability()->reset_player(events.owner(), playerId);
+}
+
+HostResult HostRuntime::entityCapabilityCreateThunk(void* userData,
+                                                    std::int32_t kind,
+                                                    EntityHandle* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->create || !out) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->create(runtime->entityOwner_, kind, out);
+}
+
+HostResult HostRuntime::entityCapabilityResetTransformThunk(
+    void* userData, EntityHandle handle, const float position[3],
+    const float velocity[3], float yaw, std::uint32_t onGround,
+    std::uint32_t invulnerabilityTicks, std::uint32_t maxAirJumps,
+    std::uint32_t awaitAck) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->reset_transform) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->reset_transform(
+        runtime->entityOwner_, handle, position, velocity, yaw, onGround,
+        invulnerabilityTicks, maxAirJumps, awaitAck);
+}
+
+HostResult HostRuntime::entityCapabilityFindConnectionThunk(
+    void* userData, std::uint64_t peer, EntityHandle* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->find_connection) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->find_connection(runtime->entityOwner_,
+                                                    peer, out);
+}
+
+HostResult HostRuntime::entityCapabilityFindReconnectTokenThunk(
+    void* userData, const char* token, std::uint32_t includePrevious,
+    EntityHandle* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->find_reconnect_token) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->find_reconnect_token(
+        runtime->entityOwner_, token, includePrevious, out);
+}
+
+HostResult HostRuntime::entityCapabilityFindJoinTokenThunk(
+    void* userData, const char* token, EntityHandle* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->find_join_token) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->find_join_token(runtime->entityOwner_,
+                                                    token, out);
+}
+
+HostResult HostRuntime::entityCapabilityRemoveThunk(void* userData,
+                                                    EntityHandle handle) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->entityAdapter_ ||
+        !runtime->entityAdapter_->remove) {
+        return HostResult::Unsupported;
+    }
+    return runtime->entityAdapter_->remove(runtime->entityOwner_, handle);
+}
+
+HostResult HostRuntime::worldInfoThunk(void* userData, WorldInfoV1* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->worldAdapter_ || !runtime->worldAdapter_->info ||
+        !out || out->structSize < sizeof(WorldInfoV1)) {
+        return HostResult::Unsupported;
+    }
+    return runtime->worldAdapter_->info(runtime->worldOwner_, out);
+}
+
+HostResult HostRuntime::worldRaycastThunk(void* userData, const float origin[3],
+                                          const float direction[3],
+                                          float maxDistance,
+                                          WorldRayHitV1* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->worldAdapter_ ||
+        !runtime->worldAdapter_->raycast || !origin || !direction || !out ||
+        out->structSize < sizeof(WorldRayHitV1)) {
+        return HostResult::Unsupported;
+    }
+    return runtime->worldAdapter_->raycast(runtime->worldOwner_, origin,
+                                           direction, maxDistance, out);
+}
+
+HostResult HostRuntime::worldPickSpawnThunk(void* userData,
+                                            std::uint32_t playerId,
+                                            WorldSpawnV1* out) {
+    auto* runtime = static_cast<HostRuntime*>(userData);
+    if (!runtime || !runtime->worldAdapter_ ||
+        !runtime->worldAdapter_->pick_spawn || !out) {
+        return HostResult::Unsupported;
+    }
+    return runtime->worldAdapter_->pick_spawn(runtime->worldOwner_, playerId,
+                                              out);
+}
+
 HostResult HostRuntime::renderSubmitThunk(void* userData,
                                            const RenderCommandV1* commands,
                                            std::uint32_t count) {
@@ -2426,16 +3262,24 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
     for (std::uint32_t i = 0; i < count; ++i) {
         const RenderCommandV1& command = commands[i];
         switch (static_cast<RenderOp>(command.op)) {
-            case RenderOp::Clear:
-                glClear(command.flags ? command.flags : (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+            case RenderOp::Clear: {
+                GLbitfield mask = 0;
+                if (command.flags & 1u) mask |= GL_COLOR_BUFFER_BIT;
+                if (command.flags & 2u) mask |= GL_DEPTH_BUFFER_BIT;
+                if (command.flags & 4u) mask |= GL_STENCIL_BUFFER_BIT;
+                glClear(mask ? mask : (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
                 break;
+            }
             case RenderOp::Viewport:
                 glViewport(command.ints[0], command.ints[1], command.ints[2], command.ints[3]);
                 break;
             case RenderOp::BindTexture:
-                glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(command.handle0));
+            case RenderOp::BindTextureTarget:
+                glBindTexture(toGl(static_cast<mimita::render::TextureTarget>(command.ints[0])),
+                              static_cast<GLuint>(command.handle0));
                 break;
             case RenderOp::BindShader:
+            case RenderOp::UseProgram:
                 glUseProgram(static_cast<GLuint>(command.handle0));
                 break;
             case RenderOp::SetState:
@@ -2444,12 +3288,38 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
                 if (command.flags & 4u) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
                 break;
             case RenderOp::DrawArrays:
-                glDrawArrays(command.ints[0], command.ints[1], command.ints[2]);
+                glDrawArrays(toGl(static_cast<mimita::render::Primitive>(command.ints[0])),
+                             command.ints[1], command.ints[2]);
+                break;
+            case RenderOp::DrawArraysInstanced:
+                glDrawArraysInstanced(
+                    toGl(static_cast<mimita::render::Primitive>(command.ints[0])),
+                    command.ints[1], command.ints[2], command.ints[3]);
+                break;
+            case RenderOp::VertexAttribDivisor:
+                glVertexAttribDivisor(static_cast<GLuint>(command.ints[0]),
+                                      static_cast<GLuint>(command.ints[1]));
+                break;
+            case RenderOp::TexParameterfv:
+                glTexParameterfv(
+                    toGl(static_cast<mimita::render::TextureTarget>(command.ints[0])),
+                    toGl(static_cast<mimita::render::TextureParameter>(command.ints[1])),
+                    command.floats);
+                break;
+            case RenderOp::DrawBuffer:
+                glDrawBuffer(toGl(static_cast<mimita::render::FramebufferBuffer>(
+                    command.ints[0])));
+                break;
+            case RenderOp::ReadBuffer:
+                glReadBuffer(toGl(static_cast<mimita::render::FramebufferBuffer>(
+                    command.ints[0])));
                 break;
             case RenderOp::DrawElements:
                 if (command.handle1)
                     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(command.handle1));
-                glDrawElements(command.ints[0], command.ints[2], command.ints[1],
+                glDrawElements(toGl(static_cast<mimita::render::Primitive>(command.ints[0])),
+                               command.ints[2],
+                               toGl(static_cast<mimita::render::IndexType>(command.ints[1])),
                                reinterpret_cast<const void*>(
                                    static_cast<std::uintptr_t>(command.ints[3])));
                 break;
@@ -2457,13 +3327,12 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
                 glBindVertexArray(static_cast<GLuint>(command.handle0));
                 break;
             case RenderOp::BindBuffer:
-                glBindBuffer(command.ints[0], static_cast<GLuint>(command.handle0));
-                break;
-            case RenderOp::UseProgram:
-                glUseProgram(static_cast<GLuint>(command.handle0));
+                glBindBuffer(toGl(static_cast<mimita::render::BufferTarget>(command.ints[0])),
+                             static_cast<GLuint>(command.handle0));
                 break;
             case RenderOp::BindFramebuffer:
-                glBindFramebuffer(command.ints[0], static_cast<GLuint>(command.handle0));
+                glBindFramebuffer(toGl(static_cast<mimita::render::FramebufferTarget>(command.ints[0])),
+                                  static_cast<GLuint>(command.handle0));
                 break;
             case RenderOp::DepthTest:
                 if (command.flags) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
@@ -2473,6 +3342,59 @@ HostResult HostRuntime::renderSubmitThunk(void* userData,
                 break;
             case RenderOp::Cull:
                 if (command.flags) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+                break;
+            case RenderOp::ActiveTexture:
+                glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + command.ints[0]));
+                break;
+            case RenderOp::EnableCapability:
+                glEnable(toGl(static_cast<mimita::render::Capability>(command.ints[0])));
+                break;
+            case RenderOp::DisableCapability:
+                glDisable(toGl(static_cast<mimita::render::Capability>(command.ints[0])));
+                break;
+            case RenderOp::DepthMask:
+                glDepthMask(command.flags ? GL_TRUE : GL_FALSE);
+                break;
+            case RenderOp::DepthFunc:
+                glDepthFunc(toGl(static_cast<mimita::render::DepthFunc>(command.ints[0])));
+                break;
+            case RenderOp::CullFaceMode:
+                glCullFace(toGl(static_cast<mimita::render::CullFaceMode>(command.ints[0])));
+                break;
+            case RenderOp::BlendFunc:
+                glBlendFunc(toGl(static_cast<mimita::render::BlendFactor>(command.ints[0])),
+                            toGl(static_cast<mimita::render::BlendFactor>(command.ints[1])));
+                break;
+            case RenderOp::BlendFuncSeparate:
+                glBlendFuncSeparate(
+                    toGl(static_cast<mimita::render::BlendFactor>(command.ints[0])),
+                    toGl(static_cast<mimita::render::BlendFactor>(command.ints[1])),
+                    toGl(static_cast<mimita::render::BlendFactor>(command.ints[2])),
+                    toGl(static_cast<mimita::render::BlendFactor>(command.ints[3])));
+                break;
+            case RenderOp::PolygonMode:
+                glPolygonMode(GL_FRONT_AND_BACK,
+                              toGl(static_cast<mimita::render::PolygonMode>(command.ints[0])));
+                break;
+            case RenderOp::Scissor:
+                glScissor(command.ints[0], command.ints[1], command.ints[2], command.ints[3]);
+                break;
+            case RenderOp::LineWidth:
+                glLineWidth(command.floats[0]);
+                break;
+            case RenderOp::ClearColor:
+                glClearColor(command.floats[0], command.floats[1], command.floats[2],
+                             command.floats[3]);
+                break;
+            case RenderOp::PushState:
+                gHostGlStateStack.push_back(captureHostGlState());
+                break;
+            case RenderOp::PopState:
+                if (!gHostGlStateStack.empty()) {
+                    const HostGlState state = gHostGlStateStack.back();
+                    gHostGlStateStack.pop_back();
+                    restoreHostGlState(state);
+                }
                 break;
             default:
                 return HostResult::Unsupported;

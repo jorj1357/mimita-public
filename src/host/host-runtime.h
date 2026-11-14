@@ -24,12 +24,16 @@
 #include "host/abi/entity-capability.h"
 #include "host/abi/lifetime-capability.h"
 #include "host/abi/render-capability.h"
+#include "host/abi/state-capability.h"
+#include "host/abi/session-events-capability.h"
 #include "host/abi/transport-capability.h"
+#include "host/abi/world-capability.h"
 #include "host/host-barrier.h"
 #include "host/host-loader.h"
 
 namespace mimita::host {
 struct TransportAdapterV1;
+struct WorldAdapterV1;
 }
 
 namespace mimita::host {
@@ -74,6 +78,9 @@ public:
     // True only when the active generation declares a real whole-game frame and
     // the owner explicitly enabled host-owned frame mode.
     bool ownsGameFrame() const;
+    MenuStateV1* menuState() { return &menuState_; }
+    void* ensureStateObject(std::uint32_t id, std::uint32_t size,
+                            std::uint32_t alignment, std::int32_t* created);
     bool bootstrapGame(const GameStartupV1& startup);
     bool gameShouldClose() const;
 
@@ -85,6 +92,8 @@ public:
     // stable handles to live player/NPC records. The game never sees the map.
     void setEntityAdapter(const EntityAdapterV1* adapter, void* owner);
     void clearEntityAdapter();
+    void setWorldAdapter(const WorldAdapterV1* adapter, void* owner);
+    void clearWorldAdapter();
 
     std::uint64_t activeGeneration() const { return loader_.activeGeneration(); }
 
@@ -140,11 +149,68 @@ private:
         std::uint16_t portNetworkOrder, TransportChannel channel,
         std::uint32_t typeId, std::uint32_t flags,
         const std::uint8_t* payload, std::uint32_t payloadSize);
+    static TransportResult transportBindSessionThunk(void* userData,
+                                                     PeerHandle peer,
+                                                     std::uint32_t playerId);
 
     static HostResult entityCapabilityReadThunk(void* userData, EntityHandle handle,
                                                EntitySnapshotV1* out);
     static HostResult entityCapabilityWriteThunk(void* userData, EntityHandle handle,
                                                  const EntitySnapshotV1* in);
+    static std::uint32_t entityCapabilityListThunk(void* userData,
+                                                   std::int32_t kind,
+                                                   EntityHandle* out,
+                                                   std::uint32_t capacity);
+    static HostResult entityCapabilityCreateThunk(void* userData,
+                                                  std::int32_t kind,
+                                                  EntityHandle* out);
+    static HostResult entityCapabilityResetTransformThunk(
+        void* userData, EntityHandle handle, const float position[3],
+        const float velocity[3], float yaw, std::uint32_t onGround,
+        std::uint32_t invulnerabilityTicks, std::uint32_t maxAirJumps,
+        std::uint32_t awaitAck);
+    static HostResult entityCapabilityRemoveThunk(void* userData,
+                                                  EntityHandle handle);
+    static HostResult entityCapabilityFindConnectionThunk(
+        void* userData, std::uint64_t peer, EntityHandle* out);
+    static HostResult entityCapabilityFindReconnectTokenThunk(
+        void* userData, const char* token, std::uint32_t includePrevious,
+        EntityHandle* out);
+    static HostResult entityCapabilityFindJoinTokenThunk(
+        void* userData, const char* token, EntityHandle* out);
+    static std::uint32_t sessionGetTextThunk(void* userData,
+                                             std::uint32_t field, char* out,
+                                             std::uint32_t capacity);
+    static void sessionSetTextThunk(void* userData, std::uint32_t field,
+                                    const char* value);
+    static std::uint32_t sessionGetFlagThunk(void* userData,
+                                             std::uint32_t field);
+    static void sessionSetFlagThunk(void* userData, std::uint32_t field,
+                                    std::uint32_t value);
+    static void sessionSetPasswordThunk(void* userData,
+                                        std::uint32_t protectedFlag,
+                                        const char* password);
+    static std::uint32_t sessionPasswordMatchesThunk(void* userData,
+                                                     const char* supplied);
+    static std::uint32_t sessionEventsNextIdThunk(void* userData);
+    static std::uint32_t sessionEventsSessionIdThunk(void* userData,
+                                                     std::uint32_t playerId);
+    static SessionEventQueueResult sessionEventsQueueToPlayerThunk(
+        void* userData, std::uint32_t playerId, const std::uint8_t* bytes,
+        std::uint32_t size, std::uint32_t eventId, std::uint32_t maxPending);
+    static SessionEventQueueResult sessionEventsQueueToAllThunk(
+        void* userData, const std::uint8_t* bytes, std::uint32_t size,
+        std::uint32_t eventId, std::uint32_t maxPending);
+    static HostResult sessionEventsResetPlayerThunk(void* userData,
+                                                    std::uint32_t playerId);
+
+    static HostResult worldInfoThunk(void* userData, WorldInfoV1* out);
+    static HostResult worldRaycastThunk(void* userData, const float origin[3],
+                                        const float direction[3],
+                                        float maxDistance, WorldRayHitV1* out);
+    static HostResult worldPickSpawnThunk(void* userData,
+                                          std::uint32_t playerId,
+                                          WorldSpawnV1* out);
 
     static HostResult renderSubmitThunk(void* userData,
                                         const RenderCommandV1* commands,
@@ -181,6 +247,14 @@ private:
     HostLoader loader_;
     GenerationBarrier& barrier_;
     HostServicesV1 services_{};
+    MenuStateV1 menuState_{sizeof(MenuStateV1), 1, 0, -1, false, false, false};
+    struct StateObjectRecord {
+        void* storage = nullptr;
+        std::uint32_t size = 0;
+        std::uint32_t alignment = 0;
+    };
+    std::mutex stateObjectMutex_;
+    std::unordered_map<std::uint32_t, StateObjectRecord> stateObjects_;
     std::atomic<bool> probeEnabled_{false};
     std::uint64_t tick_ = 0;
     bool started_ = false;
@@ -189,6 +263,8 @@ private:
     void* transportOwner_ = nullptr;
     const EntityAdapterV1* entityAdapter_ = nullptr;
     void* entityOwner_ = nullptr;
+    const WorldAdapterV1* worldAdapter_ = nullptr;
+    void* worldOwner_ = nullptr;
 
     std::atomic<std::uint32_t> jobsBusy_{0};
     std::atomic<std::uint32_t> callbacksBusy_{0};

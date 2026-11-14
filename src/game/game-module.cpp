@@ -25,6 +25,9 @@ void initializeHostDuel(const mimita::host::HostServicesV1* services);
 void initializeHostPersistence(const mimita::host::HostServicesV1* services);
 void initializeHostJobsWatch(const mimita::host::HostServicesV1* services);
 void initializeHostEntity(const mimita::host::HostServicesV1* services);
+void initializeHostWorld(const mimita::host::HostServicesV1* services);
+void initializeHostSessionIdentity(const mimita::host::HostServicesV1* services);
+void initializeHostSessionEvents(const mimita::host::HostServicesV1* services);
 void initializeHostLifetime(const mimita::host::HostServicesV1* services);
 void initializeHostRender(const mimita::host::HostServicesV1* services);
 void initializeHostReplayWorker(const mimita::host::HostServicesV1* services);
@@ -37,6 +40,7 @@ void initializeHostJobs(const mimita::host::HostServicesV1* services);
 void initializeHostFiles(const mimita::host::HostServicesV1* services);
 void initializeHostSocket(const mimita::host::HostServicesV1* services);
 void initializeHostGlResources(const mimita::host::HostServicesV1* services);
+void initializeHostState(const mimita::host::HostServicesV1* services);
 void initializeResidentState(const mimita::host::HostServicesV1* services);
 }  // namespace mimita::game
 
@@ -61,6 +65,9 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostPersistence(services);
     mimita::game::initializeHostJobsWatch(services);
     mimita::game::initializeHostEntity(services);
+    mimita::game::initializeHostWorld(services);
+    mimita::game::initializeHostSessionIdentity(services);
+    mimita::game::initializeHostSessionEvents(services);
     mimita::game::initializeHostLifetime(services);
     mimita::game::initializeHostRender(services);
     mimita::game::initializeHostReplayWorker(services);
@@ -73,6 +80,7 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostFiles(services);
     mimita::game::initializeHostSocket(services);
     mimita::game::initializeHostGlResources(services);
+    mimita::game::initializeHostState(services);
     mimita::game::initializeResidentState(services);
     return HostResult::Ok;
 }
@@ -134,7 +142,7 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
             return HostResult::InvalidArgument;
         }
         const bool handledMessage =
-            mimita::game::dispatchPingMessage(message, gServices);
+            mimita::game::dispatchInboundMessage(message, gServices);
         if (handled) {
             *handled = handledMessage ? 1 : 0;
         }
@@ -188,7 +196,7 @@ GameModuleV1 makeWholeGameApi() {
     api.on_event = &gameEvent;
     api.export_state = &gameExportState;
     api.import_state = &gameImportState;
-    api.frameCapable = 0;  // full DLL bootstrap is not yet safe; see hot-reload spec §2.3.1
+    api.frameCapable = 1;
     api.bootstrap = &gameBootstrap;
     api.should_close = &gameShouldClose;
     return api;

@@ -17,8 +17,12 @@
 #include <vector>
 #include <random>
 #include <memory>
+#include <new>
+#include <utility>
 #include "engine/engine.h"
 #include "host/host-runtime.h"
+#include "host/abi/state-capability.h"
+#include "game/state-bridge-module.h"
 #include "host/host-transport-adapter.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -32,6 +36,7 @@
 #include "input/input-poll.h"
 #include "input/input-frame.h"
 #include "input/input-commands.h"
+#include "render/render-command.h"
 #include "render/render-world.h"
 #include "render/post-fx.h"
 #include "render/render-player.h"
@@ -573,8 +578,48 @@ extern std::unordered_map<std::string, WeaponViewModel>* gpReplayWeaponModels;
 
 extern Renderer* gRenderer;
 
+template <typename T, typename... Args>
+T* residentObject(mimita::host::StateObjectId id, Args&&... args) {
+    bool created = false;
+#ifdef MIMITA_GAME_DLL
+    void* storage = mimita::game::ensureResidentObject(
+        id, sizeof(T), alignof(T), &created);
+#else
+    std::int32_t first = 0;
+    void* storage = mimita::host::HostRuntime::instance().ensureStateObject(
+        static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(sizeof(T)),
+        static_cast<std::uint32_t>(alignof(T)), &first);
+    created = first != 0;
+#endif
+    if (!storage) return nullptr;
+    auto* value = static_cast<T*>(storage);
+    if (created) new (value) T(std::forward<Args>(args)...);
+    return value;
+}
+
+template <typename T, typename... Args>
+T& requireResident(mimita::host::StateObjectId id, Args&&... args) {
+    if (T* value = residentObject<T>(id, std::forward<Args>(args)...)) {
+        return *value;
+    }
+    std::fprintf(stderr, "[STATE] incompatible resident object id=%u\n",
+                 static_cast<unsigned>(id));
+    std::abort();
+}
+
 void gameInitSubsystems(Engine& engine)
 {
+#ifdef MIMITA_GAME_DLL
+    auto* menuState = mimita::game::menuState();
+#else
+    auto* menuState = mimita::host::HostRuntime::instance().menuState();
+#endif
+    GameState& gameState = reinterpret_cast<GameState&>(menuState->gameState);
+    bool& worldLoaded = menuState->worldLoaded;
+    bool& editorMode = menuState->editorMode;
+    int& selectedEditorObject = menuState->selectedEditorObject;
+    bool& freecamEnabled = menuState->freecamEnabled;
+
     DevConfig::instance().load("config/dev_controls.txt");
     DevOverlay::instance().init(engine.window());
     DevOverlay::instance().showNotification("Dev mode enabled. Press ` to open console.", 5.0f);
@@ -626,17 +671,17 @@ void gameInitSubsystems(Engine& engine)
     // HotReload DLL is lazy-loaded on first reloadGameDLLIfChanged() call
     printf("[MAIN] dev tools initialized\n");
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_DEPTH_TEST);
+    namespace r = mimita::game::render;
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::enable(r::Capability::DepthTest);
 
     printf("[MAIN] after glEnable and glBlendFunc()\n");
 
-    static World world;
-    static bool worldLoaded = false;
+    World& world = requireResident<World>(mimita::host::StateObjectId::World);
     printf("[MAIN] world object made; world JSON loads when PLAY is pressed so the menu appears first\n");
 
-    static Player player;
+    Player& player = requireResident<Player>(mimita::host::StateObjectId::Player);
     player.username = AuthSystem::instance().displayName();
     Debug::warn(Debug::Category::Auth, "[BOOT] player.username=%s\n", player.username.c_str());
     // Every new game starts with empty hands. The saved slot is a convenience
@@ -653,10 +698,11 @@ void gameInitSubsystems(Engine& engine)
 
     printf("[MAIN] player made\n");
 
-    static NpcSystem npcSystem;
+    NpcSystem& npcSystem = requireResident<NpcSystem>(
+        mimita::host::StateObjectId::NpcSystem);
     printf("[MAIN] npc system made\n");
 
-    static Camera camera;
+    Camera& camera = requireResident<Camera>(mimita::host::StateObjectId::Camera);
     printf("[MAIN] camera made\n");
     printf("[CAMERA] Config: stiffness=%.2f  fov=%.0f\n", CamConfig::instance().data().positionStiffness, CamConfig::instance().data().fov);
     printf("[CAMERA] Raw 1:1 camera enabled\n");
@@ -665,51 +711,68 @@ void gameInitSubsystems(Engine& engine)
     glfwSetWindowUserPointer(engine.window(), &camera);
     printf("[MAIN] camera bound\n");
 
-    static ReplayRingBuffer gReplayRecorder;
-    static ReplayPlayer gReplayPlayer;
-    static ReplaySaveWorker gReplayWorker;
-    AvatarSystem::instance().setBackgroundWorker(&gReplayWorker);
-    static ReplayFactory gReplayFactory(gReplayRecorder);
-    gReplayFactory.setWorker(&gReplayWorker);
-    static ReplayBrowser gReplayBrowser;
-    static ReplayTimeline gReplayTimeline;
-    static ReplayCameraMgr gReplayCameraMgr;
+    ReplayRingBuffer& gReplayRecorder = requireResident<ReplayRingBuffer>(
+        mimita::host::StateObjectId::ReplayRecorder);
+    ReplayPlayer& gReplayPlayer = requireResident<ReplayPlayer>(
+        mimita::host::StateObjectId::ReplayPlayer);
+    ReplaySaveWorker* gReplayWorker = nullptr;
+#ifndef MIMITA_GAME_DLL
+    gReplayWorker = &requireResident<ReplaySaveWorker>(
+        mimita::host::StateObjectId::ReplaySaveWorker);
+#endif
+    AvatarSystem::instance().setBackgroundWorker(gReplayWorker);
+    ReplayFactory& gReplayFactory = requireResident<ReplayFactory>(
+        mimita::host::StateObjectId::ReplayFactory, gReplayRecorder);
+    gReplayFactory.setWorker(gReplayWorker);
+    ReplayBrowser& gReplayBrowser = requireResident<ReplayBrowser>(
+        mimita::host::StateObjectId::ReplayBrowser);
+    ReplayTimeline& gReplayTimeline = requireResident<ReplayTimeline>(
+        mimita::host::StateObjectId::ReplayTimeline);
+    ReplayCameraMgr& gReplayCameraMgr = requireResident<ReplayCameraMgr>(
+        mimita::host::StateObjectId::ReplayCameraMgr);
 
-    static GameState gameState = GAME_MENU;
 
     setReplayFactoryNotifyFn([](const std::string& killerId,
                                  const std::string& victimId,
                                  bool killerAirborne,
                                  bool victimAirborne,
                                  bool roundWinning) {
-        gReplayFactory.notifyKill(killerId, victimId, killerAirborne, victimAirborne, roundWinning);
+        REPLAY_FACTORY.notifyKill(killerId, victimId, killerAirborne, victimAirborne, roundWinning);
     });
 
     gReplayBrowser.setPlayCallback([](const std::string& path) {
-        if (!gReplayPlayer.loadFromJSON(path)) {
+        if (!REPLAY_PLAYER.loadFromJSON(path)) {
             Terminal::instance().addLog("[ERROR] failed to load: " + path);
             return;
         }
-        gReplayPlayer.preloadAssets();
-        gReplayPlayer.beginPlayback();
-        gameState = GAME_PLAYING;
+        REPLAY_PLAYER.preloadAssets();
+        REPLAY_PLAYER.beginPlayback();
+        GAME_STATE = GAME_PLAYING;
     });
-    static std::unordered_map<std::string, ActorChatState> gReplayChatStates;
-    static std::vector<std::string> G_REPLAY_CLIPS_CACHE;
-    static std::unordered_map<int, std::string> G_COMMAND_BINDS;
-    static std::unordered_map<int, bool> G_BIND_PREV;
+    auto& gReplayChatStates = requireResident<
+        std::unordered_map<std::string, ActorChatState>>(
+        mimita::host::StateObjectId::ReplayChatStates);
+    auto& G_REPLAY_CLIPS_CACHE = requireResident<std::vector<std::string>>(
+        mimita::host::StateObjectId::ReplayClipsCache);
+    auto& G_COMMAND_BINDS = requireResident<std::unordered_map<int, std::string>>(
+        mimita::host::StateObjectId::CommandBinds);
+    auto& G_BIND_PREV = requireResident<std::unordered_map<int, bool>>(
+        mimita::host::StateObjectId::BindPrev);
     static std::mt19937 rng(std::random_device{}());
 
     // Keep the owning object distinct from the gChatHistory convenience macro
     // in terminal-state.h so initialization targets the real storage object.
-    static ChatHistory sChatHistory;
+    ChatHistory& sChatHistory = requireResident<ChatHistory>(
+        mimita::host::StateObjectId::ChatHistory);
 
-    static DuelConfig gDuelConfig;
+    DuelConfig& gDuelConfig = requireResident<DuelConfig>(
+        mimita::host::StateObjectId::DuelConfig);
 
-    static MimitaNet::MultiplayerContext mpContext;
+    MimitaNet::MultiplayerContext& mpContext = requireResident<
+        MimitaNet::MultiplayerContext>(mimita::host::StateObjectId::MpContext);
 
-    static bool editorMode = false;
-    static std::string activeGameMode = "sandbox";
+    std::string& activeGameMode = requireResident<std::string>(
+        mimita::host::StateObjectId::ActiveGameMode, "sandbox");
     // const std::string defaultMapPath =
     //     "assets/maps/mimita-aabb-only-interior-small-v4.glb";
     // 9 5 2026 not good  needs to work without wifi
@@ -717,15 +780,19 @@ void gameInitSubsystems(Engine& engine)
     const std::string defaultMapPath =
        "assets/maps/dust2cyberiav4.glb";
         
-    static std::string activeMapPath;
-    static int selectedEditorObject = -1;
-    static WeaponSystem weapons;
-    static std::unordered_map<std::string, std::unique_ptr<Player>> replayActorModels;
-    static std::unordered_map<std::string, WeaponViewModel> replayWeaponModels;
+    std::string& activeMapPath = requireResident<std::string>(
+        mimita::host::StateObjectId::ActiveMapPath);
+    WeaponSystem& weapons = requireResident<WeaponSystem>(
+        mimita::host::StateObjectId::Weapons);
+    auto& replayActorModels = requireResident<
+        std::unordered_map<std::string, std::unique_ptr<Player>>>(
+        mimita::host::StateObjectId::ReplayActorModels);
+    auto& replayWeaponModels = requireResident<
+        std::unordered_map<std::string, WeaponViewModel>>(
+        mimita::host::StateObjectId::ReplayWeaponModels);
     gpReplayActorModels = &replayActorModels;
     gpReplayWeaponModels = &replayWeaponModels;
-    static bool freecamEnabled = false;
-    static glm::vec3 deathPosition{0.0f};
+        static glm::vec3 deathPosition{0.0f};
     struct ReplayTestState {
         bool active = false;
         uint32_t tick = 0;
@@ -746,7 +813,7 @@ void gameInitSubsystems(Engine& engine)
     gpReplayClipsCache = &G_REPLAY_CLIPS_CACHE;
     gpCommandBinds = &G_COMMAND_BINDS;
     gpBindPrev = &G_BIND_PREV;
-    gpGameState = &gameState;
+    gpGameState = reinterpret_cast<GameState*>(&menuState->gameState);
     Debug::log(Debug::Category::Chat,
                "[CHAT TRACE 1 BEFORE INIT] gpChatHistory=%p\n",
                (void*)gpChatHistory);
@@ -758,11 +825,11 @@ void gameInitSubsystems(Engine& engine)
     setAudioSpatialWorld(&world);
     gpActiveMapPath = &activeMapPath;
     gpNpcSystem = &npcSystem;
-    gpFreecamEnabled = &freecamEnabled;
+    gpFreecamEnabled = &menuState->freecamEnabled;
     gpDeathPosition = &deathPosition;
-    gpEditorMode = &editorMode;
+    gpEditorMode = &menuState->editorMode;
     gpActiveGameMode = &activeGameMode;
-    gpWorldLoaded = &worldLoaded;
+    gpWorldLoaded = &menuState->worldLoaded;
     gpDuelConfig = &gDuelConfig;
     gpMpContext = &mpContext;
 #ifndef MIMITA_GAME_DLL
@@ -912,12 +979,12 @@ void gameInitSubsystems(Engine& engine)
         "Record a deterministic gameplay replay and validate it in Blender",
         "replay_test",
         [](const std::vector<std::string>&) {
-            if (gameState != GAME_PLAYING || activeMapPath.empty()) {
+            if (GAME_STATE != GAME_PLAYING || ACTIVE_MAP_PATH.empty()) {
                 Terminal::instance().addLog(
                     "[REPLAY TEST] Enter a loaded game map first");
                 return;
             }
-            if (mpContext.active) {
+            if (MP_CONTEXT.active) {
                 Terminal::instance().addLog(
                     "[REPLAY TEST] Disabled during multiplayer");
                 return;
@@ -928,31 +995,31 @@ void gameInitSubsystems(Engine& engine)
                 return;
             }
 
-            npcSystem.destroyAll();
-            if (gReplayRecorder.isRecording())
-                gReplayRecorder.stopRecording();
+            THE_NPC_SYSTEM.destroyAll();
+            if (REPLAY_RECORDER.isRecording())
+                REPLAY_RECORDER.stopRecording();
             Terminal::instance().execute("replay.record");
-            if (!gReplayRecorder.isRecording()) {
+            if (!REPLAY_RECORDER.isRecording()) {
                 Terminal::instance().addLog(
                     "[REPLAY TEST] Could not start recording");
                 return;
             }
 
-            glm::vec3 forward = camera.front;
+            glm::vec3 forward = THE_CAMERA.front;
             if (glm::length(forward) < 0.001f)
                 forward = glm::vec3(0.0f, 1.0f, 0.0f);
             forward = glm::normalize(forward);
-            replayTest.npcId = npcSystem.nextNpcId();
-            npcSystem.spawnNpc(replayTest.npcId, 1.0f, npcSpawnPoint);
-            if (!npcSystem.all().empty()) {
-                Npc& npc = npcSystem.all().back();
+            replayTest.npcId = THE_NPC_SYSTEM.nextNpcId();
+            THE_NPC_SYSTEM.spawnNpc(replayTest.npcId, 1.0f, npcSpawnPoint);
+            if (!THE_NPC_SYSTEM.all().empty()) {
+                Npc& npc = THE_NPC_SYSTEM.all().back();
                 npc.trainingMode = 0;
                 npc.body.maxHp = 500;
                 npc.body.currentHp = 500;
             }
 
-            player.dead = false;
-            player.currentHp = player.maxHp;
+            THE_PLAYER.dead = false;
+            THE_PLAYER.currentHp = THE_PLAYER.maxHp;
             replayTest.tick = 0;
             replayTest.active = true;
             Terminal::instance().addLog(

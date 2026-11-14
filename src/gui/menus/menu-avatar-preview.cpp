@@ -12,6 +12,7 @@
 #include "entities/player.h"
 #include "camera.h"
 #include "render/render-player.h"
+#include "render/render-command.h"
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
 #include "gui/hud/player-nameplates.h"
@@ -363,30 +364,27 @@ void MenuAvatarPreview::draw(int fbW, int fbH)
     Camera previewCam;
     setupCamera(previewCam, p->pos, vpW, vpH);
 
-    GLint prevVp[4]; glGetIntegerv(GL_VIEWPORT, prevVp);
-    GLboolean depthEn = glIsEnabled(GL_DEPTH_TEST);
-    GLboolean scissorEn = glIsEnabled(GL_SCISSOR_TEST);
-    GLint prevScissor[4]; glGetIntegerv(GL_SCISSOR_BOX, prevScissor);
-    glViewport(vpX, vpY, vpW, vpH);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(vpX, vpY, vpW, vpH);
-    glEnable(GL_DEPTH_TEST);
+    namespace r = mimita::game::render;
+    r::pushState();
+    r::viewport(vpX, vpY, vpW, vpH);
+    r::enable(r::Capability::ScissorTest);
+    r::scissor(vpX, vpY, vpW, vpH);
+    r::enable(r::Capability::DepthTest);
 
     int prevRW = gRenderer->width, prevRH = gRenderer->height;
     gRenderer->width = vpW; gRenderer->height = vpH;
 
     if (mConfig.backgroundEnabled)
-        glClearColor(mConfig.ambientColor.r, mConfig.ambientColor.g, mConfig.ambientColor.b, mConfig.backgroundOpacity);
+        r::clearColor(mConfig.ambientColor.r, mConfig.ambientColor.g,
+                      mConfig.ambientColor.b, mConfig.backgroundOpacity);
     else
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        r::clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    r::clear(true, true, false);
 
     renderPlayer(*p, previewCam);
 
     gRenderer->width = prevRW; gRenderer->height = prevRH;
-    if (!depthEn) glDisable(GL_DEPTH_TEST);
-    if (!scissorEn) glDisable(GL_SCISSOR_TEST); else glScissor(prevScissor[0], prevScissor[1], prevScissor[2], prevScissor[3]);
-    glViewport(prevVp[0], prevVp[1], prevVp[2], prevVp[3]);
+    r::popState();
 
     if (p->dead || p->currentHp <= 0) return;
     if (mConfig.drawNameplate) drawNameplateUI(*p, previewCam, vpX, vpY, vpW, vpH);

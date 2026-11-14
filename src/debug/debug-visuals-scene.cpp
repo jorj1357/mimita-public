@@ -25,6 +25,10 @@
 #include "npc/npc.h"
 #include "physics/constraints/constraint-debug.h"
 #include "physics/movement/actor-pair-collision.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -516,10 +520,10 @@ void drawDebugStuff(const Player& player, const Camera& camera, const World& wor
         }
     }
 
-    if (gRenderer && gRenderer->shaderProgram) {
-        glUseProgram(gRenderer->shaderProgram);
+    if (gRenderer && r::worldShader().ensureLoaded()) {
+        r::useProgram(r::worldShader().program());
 
-        glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 0);
+        r::uniform1i(r::worldShader().uniform("uUseColor"), 0);
     }
     drawConstraintDebug(camera);
     flushDebugTris(camera);

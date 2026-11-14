@@ -181,10 +181,12 @@ void gameInit(int argc, char** argv, Engine& engine)
     
     StructuredLogger::instance().init();
     AnalyticsManager::instance().init(LocalProfileSystem::instance().currentUsername());
+#ifndef MIMITA_GAME_DLL
     mimita::host::HostRuntime::instance().startFromEnvironment();
+    printf("[LOG] Active log path: %s\n", LogManager::instance().path().c_str());
+#endif
     printf("[LOG] Console output enabled\n");
     printf("[LOG] File logging enabled\n");
-    printf("[LOG] Active log path: %s\n", LogManager::instance().path().c_str());
     printf("[LOG] Mirroring console -> file\n");
 
     if (!engine.renderer) {

@@ -42,6 +42,10 @@
 #include <unordered_set>
 #include <vector>
 #include <glad/glad.h>
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -516,7 +520,7 @@ void renderPlayerInternal(
     if (player.dead && player.ragdollModeActive)
         logRagdollRenderStage(
             player, 8u, "ragdoll.render.player_entry", "passed player render gates",
-            {{"actor_id", player.username}, {"shader_program", gRenderer->shaderProgram},
+            {{"actor_id", player.username}, {"shader_program", r::worldShader().program()},
              {"model_loaded", player.modelLoaded},
              {"physical_part_count", player.physicalBody.parts.size()},
              {"physical_mesh_count", player.physicalBody.partMeshes.size()},
@@ -550,12 +554,12 @@ void renderPlayerInternal(
     // Apply ghost rendering for server_showghost
     if (player.renderGhost)
     {
-        GLuint prog = gRenderer->shaderProgram;
-        GLint colorLoc = glGetUniformLocation(prog, "uColor");
+        auto& prog = r::worldShader();
+        auto colorLoc = prog.uniform("uColor");
         if (colorLoc >= 0)
         {
             // Semi-transparent dark teal tint for ghost
-            glUniform4f(colorLoc, 0.0f, 0.5f, 0.5f, 0.4f);
+            r::uniform4f(colorLoc, 0.0f, 0.5f, 0.5f, 0.4f);
         }
     }
 
@@ -758,19 +762,13 @@ void renderPlayerInternal(
         }
     }
     const bool hideHead = isLocal && !cam.thirdPerson;
-    const GLboolean blendWas = glIsEnabled(GL_BLEND);
-    GLint blendSrcRgbWas = GL_ONE, blendDstRgbWas = GL_ZERO;
-    GLint blendSrcAlphaWas = GL_ONE, blendDstAlphaWas = GL_ZERO;
-    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgbWas);
-    glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgbWas);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlphaWas);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlphaWas);
+    r::pushState();
     if (CamConfig::instance().data().proximityFadeEnabled) {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        r::enable(r::Capability::Blend);
+        r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
     }
     { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerBody");
-      player.render(gRenderer->shaderProgram, view, proj, hideHead, playerTint); }
+      player.render(r::worldShader().programObject(), view, proj, hideHead, playerTint); }
     if (isLocal && CamConfig::instance().data().proximityFadeEnabled) {
         static double lastLocalFadeDiag = -1.0;
         const double now = glfwGetTime();
@@ -797,9 +795,7 @@ void renderPlayerInternal(
                 __FILE__, __LINE__, __func__);
         }
     }
-    glBlendFuncSeparate((GLenum)blendSrcRgbWas, (GLenum)blendDstRgbWas,
-                        (GLenum)blendSrcAlphaWas, (GLenum)blendDstAlphaWas);
-    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    r::popState();
     auto drawTrail = [&]() {
         if (gPlayerVisualLayerFilter != 0) return;
         if (trail && !isLocal) appendPlayerTrail(player, cam, networkEntityId, *trail);
@@ -915,33 +911,24 @@ void renderPlayerInternal(
             }
             return;
         }
-        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
-        const GLboolean blendWas = glIsEnabled(GL_BLEND);
-        const GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
-        GLint depthFuncWas = GL_LESS;
-        GLint cullModeWas = GL_BACK;
-        glGetIntegerv(GL_DEPTH_FUNC, &depthFuncWas);
-        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        if (outline->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_FALSE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_FRONT);
+        r::pushState();
+        r::enable(r::Capability::Blend);
+        r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+        if (outline->visibleThroughWalls)
+            r::disable(r::Capability::DepthTest);
+        else
+            r::enable(r::Capability::DepthTest);
+        r::depthMask(false);
+        r::polygonMode(r::PolygonMode::Fill);
+        r::enable(r::Capability::CullFace);
+        r::cullFace(r::CullFaceMode::Front);
         const glm::vec3 outlineRgb = PlayerVisualsConfig::instance().effectiveOutlineColor(friendlyActor, outline->color);
         const glm::vec4 color(outlineRgb.r / 255.0f, outlineRgb.g / 255.0f,
                               outlineRgb.b / 255.0f, outlineAlpha);
         { MIMITA_PERF_SCOPE("Rendering::Actors::PlayerOutline");
-          player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
+          player.renderCurrentPose(r::worldShader().programObject(), view, proj, true, hideHead,
                                    true, worldThickness, color); }
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glDepthMask(GL_TRUE);
-        glDepthFunc(depthFuncWas);
-        if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
-        else glDisable(GL_CULL_FACE);
-        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-        if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        r::popState();
         Debug::logThrottled(Debug::Category::Render, "player_visuals_outline", 1.0f,
             "[PLAYER VISUALS] outline entity=%u category=%s throughWalls=%d thickness=%.2f world=%.3f",
             networkEntityId, isLocal ? "self" : (teammate ? "teammate" : "enemy"),
@@ -956,20 +943,21 @@ void renderPlayerInternal(
         const Capsule c = player.getCapsule();
         const glm::vec4 color(capsule->color.r / 255.0f, capsule->color.g / 255.0f,
                               capsule->color.b / 255.0f, capsule->alpha);
-        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean depthWriteWas = GL_TRUE;
-        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
-        const GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
-        GLint cullModeWas = GL_BACK;
-        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
-        if (capsule->visibleThroughWalls || !capsule->depthTest) glDisable(GL_DEPTH_TEST);
-        else glEnable(GL_DEPTH_TEST);
+        r::pushState();
+        if (capsule->visibleThroughWalls || !capsule->depthTest)
+            r::disable(r::Capability::DepthTest);
+        else
+            r::enable(r::Capability::DepthTest);
         if (capsule->frontFaceCull || capsule->backFaceCull) {
-            glEnable(GL_CULL_FACE);
-            glCullFace(capsule->frontFaceCull && capsule->backFaceCull ? GL_FRONT_AND_BACK
-                : (capsule->frontFaceCull ? GL_FRONT : GL_BACK));
-        } else glDisable(GL_CULL_FACE);
-        glDepthMask(capsule->depthWrite ? GL_TRUE : GL_FALSE);
+            r::enable(r::Capability::CullFace);
+            r::cullFace(capsule->frontFaceCull && capsule->backFaceCull
+                            ? r::CullFaceMode::FrontAndBack
+                            : (capsule->frontFaceCull ? r::CullFaceMode::Front
+                                                      : r::CullFaceMode::Back));
+        } else {
+            r::disable(r::Capability::CullFace);
+        }
+        r::depthMask(capsule->depthWrite);
         const glm::vec3 axis = c.b - c.a;
         const float length = glm::length(axis);
         const glm::vec3 center = (c.a + c.b) * 0.5f;
@@ -977,10 +965,7 @@ void renderPlayerInternal(
             DebugVis::drawFilledCylinder(cam, center, axis, c.r * capsule->scale, length, color);
         DebugVis::drawFilledSphere(cam, c.a, c.r * capsule->scale, color);
         DebugVis::drawFilledSphere(cam, c.b, c.r * capsule->scale, color);
-        glDepthMask(depthWriteWas);
-        if (cullWas) { glEnable(GL_CULL_FACE); glCullFace(cullModeWas); }
-        else glDisable(GL_CULL_FACE);
-        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        r::popState();
     }
     };
 
@@ -1028,19 +1013,20 @@ void renderPlayerInternal(
             }
             return;
         }
-        const GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST);
-        if (wireframe->visibleThroughWalls) glDisable(GL_DEPTH_TEST); else glEnable(GL_DEPTH_TEST);
-        glDepthMask(GL_FALSE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glLineWidth(wireframe->lineWidth);
+        r::pushState();
+        if (wireframe->visibleThroughWalls)
+            r::disable(r::Capability::DepthTest);
+        else
+            r::enable(r::Capability::DepthTest);
+        r::depthMask(false);
+        r::polygonMode(r::PolygonMode::Line);
+        r::lineWidth(wireframe->lineWidth);
         const glm::vec3 wireRgb = visualsConfig.effectiveWireframeColor(friendlyActor, wireframe->color);
         const glm::vec4 wireColor(wireRgb.r / 255.0f, wireRgb.g / 255.0f,
                                   wireRgb.b / 255.0f, wireframe->alpha);
-        player.renderCurrentPose(gRenderer->shaderProgram, view, proj, true, hideHead,
+        player.renderCurrentPose(r::worldShader().programObject(), view, proj, true, hideHead,
                                  true, 0.0f, wireColor);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glDepthMask(GL_TRUE);
-        if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        r::popState();
     }
     };
 
@@ -1076,10 +1062,10 @@ void renderPlayerInternal(
     // Reset ghost color
     if (player.renderGhost)
     {
-        GLuint prog = gRenderer->shaderProgram;
-        GLint colorLoc = glGetUniformLocation(prog, "uColor");
+        auto& prog = r::worldShader();
+        auto colorLoc = prog.uniform("uColor");
         if (colorLoc >= 0)
-            glUniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+            r::uniform4f(colorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 }
 
@@ -1103,52 +1089,43 @@ void beginPlayerTrailBatch()
 
 void drawPlayerTrailBatch(const Camera& cam)
 {
-    if (gTrailBatch.empty() || !gRenderer || !gRenderer->shaderProgram)
+    if (gTrailBatch.empty() || !gRenderer || !r::worldShader().ensureLoaded())
         return;
 
-    static GLuint vao = 0, vbo = 0;
+    static std::uint32_t vao = 0, vbo = 0;
     if (!vao) { vao = mimita::game::genVertexArray(); vbo = mimita::game::genBuffer(); }
-    GLint oldVao = 0, oldBuffer = 0, oldProgram = 0;
-    GLint oldUseColor = 0;
-    GLint oldBlendSrcRgb = GL_ONE, oldBlendDstRgb = GL_ZERO;
-    GLint oldBlendSrcAlpha = GL_ONE, oldBlendDstAlpha = GL_ZERO;
-    GLboolean depthWas = glIsEnabled(GL_DEPTH_TEST), blendWas = glIsEnabled(GL_BLEND);
-    GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
-    GLboolean depthWriteWas = GL_TRUE;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &oldBuffer);
-    glGetIntegerv(GL_CURRENT_PROGRAM, &oldProgram);
-    glGetIntegerv(GL_BLEND_SRC_RGB, &oldBlendSrcRgb);
-    glGetIntegerv(GL_BLEND_DST_RGB, &oldBlendDstRgb);
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &oldBlendSrcAlpha);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &oldBlendDstAlpha);
-    const GLint useColorLoc = glGetUniformLocation(gRenderer->shaderProgram, "uUseColor");
-    if (useColorLoc >= 0) glGetUniformiv(gRenderer->shaderProgram, useColorLoc, &oldUseColor);
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
-    glUseProgram(gRenderer->shaderProgram);
+    std::int32_t oldUseColor = 0;
+    const auto useColorLoc = r::worldShader().uniform("uUseColor");
+    if (useColorLoc >= 0) r::getUniformiv(r::worldShader().program(), useColorLoc, &oldUseColor, 1);
+    r::pushState();
+    r::useProgram(r::worldShader().program());
     const glm::mat4 model(1.0f), view = cam.getView();
     const glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth,
                                        (float)gRenderer->sceneHeight);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 2);
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glDisable(GL_CULL_FACE);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, gTrailBatch.size() * sizeof(TrailVertex),
-                 gTrailBatch.data(), GL_STREAM_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TrailVertex), (void*)offsetof(TrailVertex, position));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TrailVertex), (void*)offsetof(TrailVertex, color));
-    glEnableVertexAttribArray(3);
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(2);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)gTrailBatch.size());
+    r::uniformMatrix4fv(r::worldShader().uniform("model"), 1, &model[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("projection"), 1, &proj[0][0]);
+    r::uniform1i(useColorLoc, 2);
+    r::enable(r::Capability::DepthTest);
+    r::enable(r::Capability::Blend);
+    r::disable(r::Capability::CullFace);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::depthMask(false);
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::bufferData(r::BufferTarget::Array, vbo, gTrailBatch.data(),
+                  static_cast<std::uint32_t>(gTrailBatch.size() * sizeof(TrailVertex)),
+                  r::BufferUsage::Stream);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(TrailVertex),
+                           static_cast<std::uint32_t>(offsetof(TrailVertex, position)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(3, 4, r::VertexType::Float, false, sizeof(TrailVertex),
+                           static_cast<std::uint32_t>(offsetof(TrailVertex, color)));
+    r::enableVertexAttribArray(3);
+    r::disableVertexAttribArray(1);
+    r::disableVertexAttribArray(2);
+    r::drawArrays(r::Primitive::Triangles, 0,
+                  static_cast<std::int32_t>(gTrailBatch.size()));
     static auto lastTrailBatchEvent = std::chrono::steady_clock::time_point{};
     const auto trailBatchNow = std::chrono::steady_clock::now();
     if (lastTrailBatchEvent == std::chrono::steady_clock::time_point{} ||
@@ -1165,14 +1142,14 @@ void drawPlayerTrailBatch(const Camera& cam)
     }
     glBindVertexArray((GLuint)oldVao);
     glBindBuffer(GL_ARRAY_BUFFER, (GLuint)oldBuffer);
-    if (useColorLoc >= 0) glUniform1i(useColorLoc, oldUseColor);
+    if (useColorLoc >= 0) r::uniform1i(useColorLoc, oldUseColor);
     glBlendFuncSeparate((GLenum)oldBlendSrcRgb, (GLenum)oldBlendDstRgb,
                         (GLenum)oldBlendSrcAlpha, (GLenum)oldBlendDstAlpha);
     glDepthMask(depthWriteWas);
     if (depthWas) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
     if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     if (cullWas) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
-    glUseProgram((GLuint)oldProgram);
+    r::useProgram(static_cast<r::Program>(oldProgram));
 }
 
 void renderPlayer(const Player& player, const Camera& cam)

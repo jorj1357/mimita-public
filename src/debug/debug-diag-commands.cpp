@@ -16,6 +16,10 @@
 #include "entities/player.h"
 #include "physics/movement/physics-collision.h"
 #include "terminal/terminal-state.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -141,17 +145,18 @@ static void cmdShaderValidate(const std::vector<std::string>&)
     char buf[256];
 
     if (!gRenderer) { Terminal::instance().addLog("[ERROR] No renderer"); return; }
-    snprintf(buf, sizeof(buf), "Main shader: id=%u", gRenderer->shaderProgram);
+    const auto mainProgram = r::worldShader().program();
+    snprintf(buf, sizeof(buf), "Main shader: id=%u", mainProgram);
     Terminal::instance().addLog(buf);
 
-    if (gRenderer->shaderProgram) {
-        GLint status = 0;
-        glGetProgramiv(gRenderer->shaderProgram, GL_LINK_STATUS, &status);
+    if (mainProgram) {
+        std::int32_t status = 0;
+        r::getProgramiv(mainProgram, r::ShaderParameter::LinkStatus, &status);
         snprintf(buf, sizeof(buf), "  Link status: %s", status ? "OK" : "FAILED");
         Terminal::instance().addLog(buf);
         if (!status) {
             char log[2048];
-            glGetProgramInfoLog(gRenderer->shaderProgram, sizeof(log), nullptr, log);
+            r::getProgramInfoLog(mainProgram, sizeof(log), nullptr, log);
             Terminal::instance().addLog(std::string("  Error: ") + log);
         }
     } else {
@@ -179,7 +184,7 @@ static void cmdResourceList(const std::vector<std::string>&)
         char buf[128];
         snprintf(buf, sizeof(buf), "  Window: %p  Size: %dx%d  Shader: %u",
                  (void*)gRenderer->window, gRenderer->width, gRenderer->height,
-                 gRenderer->shaderProgram);
+                 r::worldShader().program());
         Terminal::instance().addLog(buf);
     }
 }

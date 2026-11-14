@@ -14,7 +14,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kTransportAdapterVersion = 3u;
+inline constexpr std::uint32_t kTransportAdapterVersion = 4u;
 
 struct TransportAdapterV1 {
     std::uint32_t version;
@@ -46,6 +46,9 @@ struct TransportAdapterV1 {
     // to a player transport or the current inbound endpoint.
     bool (*send_to_peer)(void* owner, PeerHandle peer, const void* data,
                          std::size_t size);
+
+    // Bind the current inbound peer/claimed transport to an existing player.
+    bool (*bind_session)(void* owner, PeerHandle peer, std::uint32_t playerId);
 };
 
 }  // namespace mimita::host

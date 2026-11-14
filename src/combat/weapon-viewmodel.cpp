@@ -30,6 +30,10 @@
 #include "network/packets.h"
 #include "world/texture-store.h"
 #include "world/world.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 static float customParamOr(const WeaponDefinition* def, const char* key, float fallback)
 {
@@ -593,32 +597,35 @@ void WeaponViewModel::clearRecoil()
 }
 
 void WeaponViewModel::render(const Camera& camera, const Player& player, int equippedSlot) const {
-    if (player.equippedSlot != equippedSlot || !gRenderer || !gRenderer->shaderProgram || !vao || heldMesh.verts.empty())
+    if (player.equippedSlot != equippedSlot || !gRenderer || !r::worldShader().ensureLoaded() || !vao || heldMesh.verts.empty())
         return;
 
-    const unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &weaponTransform[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uCosmeticTextureEnabled"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTexBreatheEnabled"), 0);
-    glUniform3f(glGetUniformLocation(shader, "uTint"), mTint.r, mTint.g, mTint.b);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &weaponTransform[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::uniform1i(shader.uniform("uCosmeticTextureEnabled"), 0);
+    r::uniform1i(shader.uniform("uTexBreatheEnabled"), 0);
+    r::uniform3f(shader.uniform("uTint"), mTint.r, mTint.g, mTint.b);
     if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
         printf("[WEAPON SHADER STATE] entityId=%s weaponId=slot_%d tint=(%.2f,%.2f,%.2f) "
                "useTexture=1 useColor=0\n",
                player.username.c_str(), equippedSlot, mTint.r, mTint.g, mTint.b);
     }
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(vao);
+    r::activeTexture(0);
+    r::bindVertexArray(vao);
     for (const Mesh::Batch& batch : heldMesh.batches) {
-        glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default"));
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        r::bindTexture(r::TextureTarget::Texture2D,
+                       batch.texture ? batch.texture : gTextures.get("default"));
+        r::drawArrays(r::Primitive::Triangles,
+                      static_cast<std::int32_t>(batch.first),
+                      static_cast<std::int32_t>(batch.count));
         diagRenderCountWeaponDraw();
     }
-    glBindVertexArray(0);
+    r::bindVertexArray(0);
 }

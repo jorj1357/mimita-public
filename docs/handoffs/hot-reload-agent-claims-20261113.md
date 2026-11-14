@@ -23,6 +23,33 @@ authoritative missing-operation list for `CAP_RENDER`. `render-command-legacy.cp
 is the `!MIMITA_GAME_DLL` raw-GL implementation; the DLL bridge is added only
 after A implements the declared operations. No call sites have moved yet.
 
+Owner-requested spec append (2026-11-13): C appended the render hot-coverage
+worklist to `docs/specs/hotreload/hotreload.md` at the owner's explicit request.
+A's spec sections were not modified.
+
+Owner-directed lane extension (2026-11-13): at the owner's explicit request, C
+implemented the `CAP_RENDER` version-2 surface in
+`src/host/abi/render-types.h`, `src/host/abi/render-capability.h`, and
+`src/host/host-runtime.cpp`, plus the DLL bridge in
+`src/game/render-bridge-module.cpp`. A remains the owner of those paths for
+review; this note records the temporary extension.
+
+Owner-directed world sweep (2026-11-13): C also migrated the shader/uniform
+family in `src/physics/physical-entity.cpp`,
+`src/impact/destructible-render.cpp`, and `src/world/streamed-world-layer.cpp`
+because they call the shared world shader. Their bind/draw/state calls remain
+raw for the next family sweep.
+
+Owner-directed blocker fix (2026-11-13): C changed
+`getServerMatchMode()` to `MimitaNet::getServerMatchMode()` in
+`src/game/server-command-dispatch-module.cpp` to unblock the whole-game DLL
+rebuild. A owns that file; this one-line fix is recorded for review.
+
+Owner-directed combat sweep (2026-11-13): C migrated the shader/uniform family
+in `src/combat/weapon-viewmodel.cpp`, `src/combat/projectile-render.cpp`,
+`src/combat/revolver-system.cpp`, and `src/render/procedural-cylinder.cpp` to the
+game-owned world shader.
+
 ## Agent B status (2026-11-13)
 
 Source pass complete. Owner authorized B to extend `CAP_TRANSPORT` with a
@@ -36,8 +63,17 @@ for: 23 game-owned sites route through `serverSendToPlayer` /
 ordering, and retransmit logic are unchanged. Inbound command uses
 `on_event(722)` and inbound `PACKET_PING` uses
 `on_event(721)` + `CAP_TRANSPORT::send(peer)`; the remaining handlers still use
-`SOCKET`/`sockaddr_in` and are blocked on resident player/NPC/world handles.
-Build and runtime verification remain A-owned;
+`SOCKET`/`sockaddr_in`. CAP_ENTITY v2 adds enumeration/snapshot fields and
+CAP_WORLD v1 adds read-only world info/raycast; legacy chat and typing now use
+them. Session identity/password, match/community mode, and transport session
+binding and reliable-event identity/enqueue now have bounded resident
+operations; CAP_ENTITY v5 adds bounded record creation, authoritative transform
+reset, NPC spawn, teleport, and disconnect removal; CAP_WORLD v2 adds resident
+safe-spawn selection. Reconnect, HELLO, and the local/free JOIN path are
+migrated, and chat v2 is migrated. Coordinator/VIP JOIN, avatar-manifest
+delivery, and VIP style broadcasts remain resident. Separately, `tools/escrow/` is a tested
+standalone C++17 escrow CLI outside `src/`. Build and runtime verification
+remain A-owned;
 B holds the claim until A confirms the host and whole-game builds, then fills
 `Finished`.
 

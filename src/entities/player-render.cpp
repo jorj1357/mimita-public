@@ -22,6 +22,10 @@
 #include "entities/player-avatar-animations.h"
 #include "hot-reload/module-host.h"
 #include "modules/api/actor-rendering-api.h"
+#include "render/render-command.h"
+#include "render/shader-program.h"
+
+namespace r = mimita::game::render;
 
 #include <glm/gtx/matrix_decompose.hpp>
 
@@ -91,15 +95,15 @@ static glm::mat4 renderPartTransform(const Player& player, const PhysicalBodyPar
            glm::scale(glm::mat4(1.0f), scale);
 }
 
-extern GLuint capsuleVAO;
+extern std::uint32_t capsuleVAO;
 extern int capsuleVertCount;
 
 void initCapsuleMesh();
 void uploadBodyPartMeshPart(const Mesh& mesh, int partIndex, const std::string& modelKey);
-GLuint uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey);
-bool drawCombinedBodyParts(const Player& player, unsigned int shader, bool outlinePass);
+std::uint32_t uploadPlayerMeshIfNeeded(const Mesh& mesh, const std::string& modelKey);
+bool drawCombinedBodyParts(const Player& player, mimita::game::render::ShaderProgram& shader, bool outlinePass);
 
-void Player::render(unsigned int shader,
+void Player::render(mimita::game::render::ShaderProgram& shader,
                     const glm::mat4& view,
                     const glm::mat4& proj,
                     bool hideHead,
@@ -180,7 +184,7 @@ void Player::applyReplayPose(
     }
 }
 
-void Player::renderCurrentPose(unsigned int shader,
+void Player::renderCurrentPose(mimita::game::render::ShaderProgram& shader,
                                const glm::mat4& view,
                                const glm::mat4& proj,
                                bool whiteOverride,
@@ -236,80 +240,80 @@ void Player::renderCurrentPose(unsigned int shader,
         size_t drawableParts = 0;
         size_t drawableBatches = 0;
         size_t drawableVertices = 0;
-        static GLint uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
-        static GLint uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
-        static GLint uOutlinePassLoc = -1, uOutlineThicknessLoc = -1;
-        static GLint uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
-        static GLint uCosmeticTextureEnabledLoc = -1;
-        static GLint uCosmeticUvOffsetLoc = -1, uCosmeticUvScaleLoc = -1;
-        static GLint uCosmeticUvRotationLoc = -1, uCosmeticBrightnessLoc = -1;
-        static GLint uCosmeticOpacityLoc = -1;
-        static GLint uCameraFadeEnabledLoc = -1, uCameraFadeStartLoc = -1;
-        static GLint uCameraFadeEndLoc = -1, uCameraPositionLoc = -1;
-        if (uViewLoc < 0) uViewLoc = glGetUniformLocation(shader, "view");
-        if (uProjLoc < 0) uProjLoc = glGetUniformLocation(shader, "projection");
-        if (uModelLoc < 0) uModelLoc = glGetUniformLocation(shader, "model");
-        if (uOutlinePassLoc < 0) uOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
-        if (uOutlineThicknessLoc < 0) uOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
-        if (uUseColorLoc < 0) uUseColorLoc = glGetUniformLocation(shader, "uUseColor");
-        if (uColorLoc < 0) uColorLoc = glGetUniformLocation(shader, "uColor");
-        if (uTexLoc < 0) uTexLoc = glGetUniformLocation(shader, "uTex");
-        if (uTintLoc < 0) uTintLoc = glGetUniformLocation(shader, "uTint");
-        if (uAlphaCutoffLoc < 0) uAlphaCutoffLoc = glGetUniformLocation(shader, "uAlphaCutoff");
-        if (uDebugViewLoc < 0) uDebugViewLoc = glGetUniformLocation(shader, "uDebugView");
+        static std::int32_t uViewLoc = -1, uProjLoc = -1, uModelLoc = -1;
+        static std::int32_t uUseColorLoc = -1, uColorLoc = -1, uTexLoc = -1, uTintLoc = -1;
+        static std::int32_t uOutlinePassLoc = -1, uOutlineThicknessLoc = -1;
+        static std::int32_t uAlphaCutoffLoc = -1, uDebugViewLoc = -1;
+        static std::int32_t uCosmeticTextureEnabledLoc = -1;
+        static std::int32_t uCosmeticUvOffsetLoc = -1, uCosmeticUvScaleLoc = -1;
+        static std::int32_t uCosmeticUvRotationLoc = -1, uCosmeticBrightnessLoc = -1;
+        static std::int32_t uCosmeticOpacityLoc = -1;
+        static std::int32_t uCameraFadeEnabledLoc = -1, uCameraFadeStartLoc = -1;
+        static std::int32_t uCameraFadeEndLoc = -1, uCameraPositionLoc = -1;
+        if (uViewLoc < 0) uViewLoc = shader.uniform( "view");
+        if (uProjLoc < 0) uProjLoc = shader.uniform( "projection");
+        if (uModelLoc < 0) uModelLoc = shader.uniform( "model");
+        if (uOutlinePassLoc < 0) uOutlinePassLoc = shader.uniform( "uOutlinePass");
+        if (uOutlineThicknessLoc < 0) uOutlineThicknessLoc = shader.uniform( "uOutlineThickness");
+        if (uUseColorLoc < 0) uUseColorLoc = shader.uniform( "uUseColor");
+        if (uColorLoc < 0) uColorLoc = shader.uniform( "uColor");
+        if (uTexLoc < 0) uTexLoc = shader.uniform( "uTex");
+        if (uTintLoc < 0) uTintLoc = shader.uniform( "uTint");
+        if (uAlphaCutoffLoc < 0) uAlphaCutoffLoc = shader.uniform( "uAlphaCutoff");
+        if (uDebugViewLoc < 0) uDebugViewLoc = shader.uniform( "uDebugView");
         if (uCosmeticTextureEnabledLoc < 0)
-            uCosmeticTextureEnabledLoc = glGetUniformLocation(shader, "uCosmeticTextureEnabled");
+            uCosmeticTextureEnabledLoc = shader.uniform( "uCosmeticTextureEnabled");
         if (uCosmeticUvOffsetLoc < 0)
-            uCosmeticUvOffsetLoc = glGetUniformLocation(shader, "uCosmeticUvOffset");
+            uCosmeticUvOffsetLoc = shader.uniform( "uCosmeticUvOffset");
         if (uCosmeticUvScaleLoc < 0)
-            uCosmeticUvScaleLoc = glGetUniformLocation(shader, "uCosmeticUvScale");
+            uCosmeticUvScaleLoc = shader.uniform( "uCosmeticUvScale");
         if (uCosmeticUvRotationLoc < 0)
-            uCosmeticUvRotationLoc = glGetUniformLocation(shader, "uCosmeticUvRotation");
+            uCosmeticUvRotationLoc = shader.uniform( "uCosmeticUvRotation");
         if (uCosmeticBrightnessLoc < 0)
-            uCosmeticBrightnessLoc = glGetUniformLocation(shader, "uCosmeticBrightness");
+            uCosmeticBrightnessLoc = shader.uniform( "uCosmeticBrightness");
         if (uCosmeticOpacityLoc < 0)
-            uCosmeticOpacityLoc = glGetUniformLocation(shader, "uCosmeticOpacity");
+            uCosmeticOpacityLoc = shader.uniform( "uCosmeticOpacity");
         if (uCameraFadeEnabledLoc < 0)
-            uCameraFadeEnabledLoc = glGetUniformLocation(shader, "uCameraProximityFadeEnabled");
+            uCameraFadeEnabledLoc = shader.uniform( "uCameraProximityFadeEnabled");
         if (uCameraFadeStartLoc < 0)
-            uCameraFadeStartLoc = glGetUniformLocation(shader, "uCameraProximityFadeStart");
+            uCameraFadeStartLoc = shader.uniform( "uCameraProximityFadeStart");
         if (uCameraFadeEndLoc < 0)
-            uCameraFadeEndLoc = glGetUniformLocation(shader, "uCameraProximityFadeEnd");
+            uCameraFadeEndLoc = shader.uniform( "uCameraProximityFadeEnd");
         if (uCameraPositionLoc < 0)
-            uCameraPositionLoc = glGetUniformLocation(shader, "uCameraPos");
+            uCameraPositionLoc = shader.uniform( "uCameraPos");
 
         MIMITA_GL_CLEAR_STAGE("Player::render body parts");
-        MIMITA_GL_CALL(glUseProgram(shader));
+        r::useProgram(shader.program());
         const CameraConfigData& cameraConfig = CamConfig::instance().data();
         const glm::vec3 cameraPosition = glm::vec3(glm::inverse(view)[3]);
         if (uCameraFadeEnabledLoc >= 0)
-            glUniform1i(uCameraFadeEnabledLoc, cameraConfig.proximityFadeEnabled ? 1 : 0);
+            r::uniform1i(uCameraFadeEnabledLoc, cameraConfig.proximityFadeEnabled ? 1 : 0);
         if (uCameraFadeStartLoc >= 0)
-            glUniform1f(uCameraFadeStartLoc, cameraConfig.proximityFadeStartDistanceMeters);
+            r::uniform1f(uCameraFadeStartLoc, cameraConfig.proximityFadeStartDistanceMeters);
         if (uCameraFadeEndLoc >= 0)
-            glUniform1f(uCameraFadeEndLoc, cameraConfig.proximityFadeEndDistanceMeters);
+            r::uniform1f(uCameraFadeEndLoc, cameraConfig.proximityFadeEndDistanceMeters);
         if (uCameraPositionLoc >= 0)
-            glUniform3f(uCameraPositionLoc, cameraPosition.x, cameraPosition.y, cameraPosition.z);
-        glUniformMatrix4fv(uViewLoc, 1, 0, &view[0][0]);
-        glUniformMatrix4fv(uProjLoc, 1, 0, &proj[0][0]);
-        if (uOutlinePassLoc >= 0) glUniform1i(uOutlinePassLoc, outlinePass ? 1 : 0);
-        if (uOutlineThicknessLoc >= 0) glUniform1f(uOutlineThicknessLoc, outlineThickness);
-        glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
-        glUniform1i(uTexLoc, 0);
+            r::uniform3f(uCameraPositionLoc, cameraPosition.x, cameraPosition.y, cameraPosition.z);
+        r::uniformMatrix4fv(uViewLoc, 1, &view[0][0]);
+        r::uniformMatrix4fv(uProjLoc, 1, &proj[0][0]);
+        if (uOutlinePassLoc >= 0) r::uniform1i(uOutlinePassLoc, outlinePass ? 1 : 0);
+        if (uOutlineThicknessLoc >= 0) r::uniform1f(uOutlineThicknessLoc, outlineThickness);
+        r::uniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
+        r::uniform1i(uTexLoc, 0);
         if (uTintLoc >= 0)
-            glUniform3f(uTintLoc, playerTint.r, playerTint.g, playerTint.b);
+            r::uniform3f(uTintLoc, playerTint.r, playerTint.g, playerTint.b);
         if (uCosmeticTextureEnabledLoc >= 0)
-            glUniform1i(uCosmeticTextureEnabledLoc, 0);
+            r::uniform1i(uCosmeticTextureEnabledLoc, 0);
         if (uCosmeticUvOffsetLoc >= 0)
-            glUniform2f(uCosmeticUvOffsetLoc, 0.0f, 0.0f);
+            r::uniform2f(uCosmeticUvOffsetLoc, 0.0f, 0.0f);
         if (uCosmeticUvScaleLoc >= 0)
-            glUniform2f(uCosmeticUvScaleLoc, 1.0f, 1.0f);
+            r::uniform2f(uCosmeticUvScaleLoc, 1.0f, 1.0f);
         if (uCosmeticUvRotationLoc >= 0)
-            glUniform1f(uCosmeticUvRotationLoc, 0.0f);
+            r::uniform1f(uCosmeticUvRotationLoc, 0.0f);
         if (uCosmeticBrightnessLoc >= 0)
-            glUniform1f(uCosmeticBrightnessLoc, 1.0f);
+            r::uniform1f(uCosmeticBrightnessLoc, 1.0f);
         if (uCosmeticOpacityLoc >= 0)
-            glUniform1f(uCosmeticOpacityLoc, 1.0f);
+            r::uniform1f(uCosmeticOpacityLoc, 1.0f);
         if (DebugConfig::DEBUG_WEAPON_VIEWMODEL) {
             printf("[PLAYER SHADER RESET] entityId=%s bodyColor=(1.00,1.00,1.00) "
                    "useTexture=1 useColor=%d\n",
@@ -317,7 +321,7 @@ void Player::renderCurrentPose(unsigned int shader,
         }
 
         // Set debug view (UV checker etc.) for player too
-        glUniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
+        r::uniform1i(uDebugViewLoc, DebugVis::shaderDebugView());
 
         // Compute death animation alpha override. The body stays FULLY visible
         // while it falls over (the renderer hides it the instant the animation
@@ -345,25 +349,18 @@ void Player::renderCurrentPose(unsigned int shader,
                 }
             }
         }
-        glUniform1f(uAlphaCutoffLoc, alphaCutoff);
+        r::uniform1f(uAlphaCutoffLoc, alphaCutoff);
 
-        // Save and explicitly set culling state for player rendering
-        GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
-        GLint cullModeWas = GL_BACK;
-        if (cullWas) glGetIntegerv(GL_CULL_FACE_MODE, &cullModeWas);
-
-        // Set GL blend state based on alpha mode
-        GLboolean blendWas = glIsEnabled(GL_BLEND);
-        if (alphaBlendMode == 0) {
-            glDisable(GL_BLEND);
-        } else if (alphaBlendMode == 1) {
-            glDisable(GL_BLEND);
+        // Save and restore GL state around the player render.
+        r::pushState();
+        if (alphaBlendMode == 0 || alphaBlendMode == 1) {
+            r::disable(r::Capability::Blend);
         } else {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            r::enable(r::Capability::Blend);
+            r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
         }
 
-        glActiveTexture(GL_TEXTURE0);
+        r::activeTexture(0);
         static thread_local std::vector<mimita_actor_rendering::PartV1> planParts;
         static thread_local std::vector<std::uint8_t> planMask;
         planParts.resize(physicalBody.parts.size());
@@ -453,39 +450,48 @@ void Player::renderCurrentPose(unsigned int shader,
             uploadBodyPartMeshPart(*drawMesh, (int)i, uploadKey);
 
             const glm::mat4 model = renderPartTransform(*this, part);
-            glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
+            r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
 
             // Per-part color tint from outfit.json
             glm::vec3 tint = layerTint;
             if (!whiteOverride && i < outfitPartColors.size() &&
                 layer == ActorBodyLayer::Skin)
                 tint = outfitPartColors[i];
-            glUniform4f(uColorLoc, outlinePass ? outlineColor.r : tint.r,
+            r::uniform4f(uColorLoc, outlinePass ? outlineColor.r : tint.r,
                         outlinePass ? outlineColor.g : tint.g,
                         outlinePass ? outlineColor.b : tint.b,
                         outlinePass ? outlineColor.a : deathAlpha);
 
             for (const Mesh::Batch& batch : drawMesh->batches)
             {
-                MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
+                r::bindTexture(r::TextureTarget::Texture2D,
+                               batch.texture ? batch.texture : gTextures.get("default"));
 
                 // Cull debug mode: enable culling + solid color to expose winding issues
                 if (DebugConfig::DEBUG_CULL) {
                     if (batch.doubleSided)
-                        glDisable(GL_CULL_FACE);
+                        r::disable(r::Capability::CullFace);
                     else {
-                        glEnable(GL_CULL_FACE);
-                        glCullFace(GL_BACK);
+                        r::enable(r::Capability::CullFace);
+                        r::cullFace(r::CullFaceMode::Back);
                     }
-                    glUniform1i(uUseColorLoc, 1);
-                    glUniform4f(uColorLoc, 1.0f, 0.5f, 0.0f, 1.0f);
-                    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
-                    glUniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
+                    r::uniform1i(uUseColorLoc, 1);
+                    r::uniform4f(uColorLoc, 1.0f, 0.5f, 0.0f, 1.0f);
+                    r::drawArrays(r::Primitive::Triangles,
+                                  static_cast<std::int32_t>(batch.first),
+                                  static_cast<std::int32_t>(batch.count));
+                    r::uniform1i(uUseColorLoc, whiteOverride ? 1 : 0);
                 } else {
                     // Character meshes are thin-shell — always render both sides
-                    if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
-                    else glDisable(GL_CULL_FACE);
-                    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                    if (outlinePass) {
+                        r::enable(r::Capability::CullFace);
+                        r::cullFace(r::CullFaceMode::Front);
+                    } else {
+                        r::disable(r::Capability::CullFace);
+                    }
+                    r::drawArrays(r::Primitive::Triangles,
+                                  static_cast<std::int32_t>(batch.first),
+                                  static_cast<std::int32_t>(batch.count));
                 }
                 diagRenderCountPlayerDraw();
 
@@ -506,10 +512,6 @@ void Player::renderCurrentPose(unsigned int shader,
                         printf("  double_sided=%d\n", (int)batch.doubleSided);
                         printf("  model_determinant=%.4f\n", det);
                         printf("  culling=%s\n", "disabled (engine override)");
-                        printf("  blend=%s\n", glIsEnabled(GL_BLEND) ? "enabled" : "disabled");
-                        GLboolean depthWrite = GL_FALSE;
-                        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWrite);
-                        printf("  depth_write=%s\n", depthWrite ? "true" : "false");
                         printf("  front_face=CCW (default)\n");
                         if (!mesh.verts.empty()) {
                             float minU=1e10f, maxU=-1e10f, minV=1e10f, maxV=-1e10f;
@@ -543,8 +545,8 @@ void Player::renderCurrentPose(unsigned int shader,
             uploadBodyPartMeshPart(mesh, (int)(physicalBody.parts.size() + i), renderUploadKey());
 
             const glm::mat4 model = renderPartTransform(*this, part);
-            glUniformMatrix4fv(uModelLoc, 1, 0, &model[0][0]);
-            glUniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
+            r::uniformMatrix4fv(uModelLoc, 1, &model[0][0]);
+            r::uniform4f(uColorLoc, outlinePass ? outlineColor.r : 1.0f,
                         outlinePass ? outlineColor.g : 1.0f,
                         outlinePass ? outlineColor.b : 1.0f,
                         outlinePass ? outlineColor.a : deathAlpha);
@@ -572,44 +574,39 @@ void Player::renderCurrentPose(unsigned int shader,
 
             for (const Mesh::Batch& batch : mesh.batches)
             {
-                MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
-                if (outlinePass) { glEnable(GL_CULL_FACE); glCullFace(GL_FRONT); }
-                else glDisable(GL_CULL_FACE);
-                MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+                r::bindTexture(r::TextureTarget::Texture2D,
+                               batch.texture ? batch.texture : gTextures.get("default"));
+                if (outlinePass) {
+                    r::enable(r::Capability::CullFace);
+                    r::cullFace(r::CullFaceMode::Front);
+                } else {
+                    r::disable(r::Capability::CullFace);
+                }
+                r::drawArrays(r::Primitive::Triangles,
+                              static_cast<std::int32_t>(batch.first),
+                              static_cast<std::int32_t>(batch.count));
                 diagRenderCountPlayerDraw();
             }
         }
         } // !combinedDrawn
 
-        // Restore culling state
-        if (cullWas) {
-            glEnable(GL_CULL_FACE);
-            glCullFace(cullModeWas);
-        } else {
-            glDisable(GL_CULL_FACE);
-        }
-
-        // Restore blend state
-        if (blendWas)
-            glEnable(GL_BLEND);
-        else
-            glDisable(GL_BLEND);
+        r::popState();
 
         // Reset avatar-only shader uniforms to prevent leaking into world/subsequent renders
-        if (uAlphaCutoffLoc >= 0) glUniform1f(uAlphaCutoffLoc, 0.0f);
-        if (uOutlinePassLoc >= 0) glUniform1i(uOutlinePassLoc, 0);
-        if (uOutlineThicknessLoc >= 0) glUniform1f(uOutlineThicknessLoc, 0.0f);
-        if (uCosmeticTextureEnabledLoc >= 0) glUniform1i(uCosmeticTextureEnabledLoc, 0);
-        if (uCosmeticBrightnessLoc >= 0) glUniform1f(uCosmeticBrightnessLoc, 1.0f);
-        if (uCosmeticOpacityLoc >= 0) glUniform1f(uCosmeticOpacityLoc, 1.0f);
-        if (uTintLoc >= 0) glUniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
+        if (uAlphaCutoffLoc >= 0) r::uniform1f(uAlphaCutoffLoc, 0.0f);
+        if (uOutlinePassLoc >= 0) r::uniform1i(uOutlinePassLoc, 0);
+        if (uOutlineThicknessLoc >= 0) r::uniform1f(uOutlineThicknessLoc, 0.0f);
+        if (uCosmeticTextureEnabledLoc >= 0) r::uniform1i(uCosmeticTextureEnabledLoc, 0);
+        if (uCosmeticBrightnessLoc >= 0) r::uniform1f(uCosmeticBrightnessLoc, 1.0f);
+        if (uCosmeticOpacityLoc >= 0) r::uniform1f(uCosmeticOpacityLoc, 1.0f);
+        if (uTintLoc >= 0) r::uniform3f(uTintLoc, 1.0f, 1.0f, 1.0f);
 
         if (dead && ragdollModeActive)
             logRagdollPath(
                 1u, "ragdoll.render.path", "physical body mesh path completed",
                 {{"actor_id", username}, {"path", "physical_body"},
                  {"drawable_parts", drawableParts}, {"drawable_batches", drawableBatches},
-                 {"drawable_vertices", drawableVertices}, {"shader_program", shader},
+                 {"drawable_vertices", drawableVertices}, {"shader_program", shader.program()},
                  {"position", {pos.x, pos.y, pos.z}}});
 
         return;
@@ -622,57 +619,60 @@ void Player::renderCurrentPose(unsigned int shader,
                 2u, "ragdoll.render.path", "fallback render mesh path selected",
                 {{"actor_id", username}, {"path", "render_mesh"},
                  {"vertices", renderMesh.verts.size()}, {"batches", renderMesh.batches.size()},
-                 {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
-        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
+                 {"shader_program", shader.program()}, {"position", {pos.x, pos.y, pos.z}}});
+        const std::uint32_t meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
 
         glm::mat4 model =
             glm::translate(glm::mat4(1.0f), pos) *
             glm::rotate(glm::mat4(1.0f), glm::radians(yaw), glm::vec3(0,0,1));
 
         MIMITA_GL_CLEAR_STAGE("Player::render mesh");
-        MIMITA_GL_CALL(glUseProgram(shader));
-        glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-        const GLint meshOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
-        const GLint meshOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
-        if (meshOutlinePassLoc >= 0) glUniform1i(meshOutlinePassLoc, outlinePass ? 1 : 0);
+        r::useProgram(shader.program());
+        r::uniformMatrix4fv(shader.uniform("view"),1,&view[0][0]);
+        r::uniformMatrix4fv(shader.uniform("projection"),1,&proj[0][0]);
+        r::uniformMatrix4fv(shader.uniform("model"),1,&model[0][0]);
+        const std::int32_t meshOutlinePassLoc = shader.uniform( "uOutlinePass");
+        const std::int32_t meshOutlineThicknessLoc = shader.uniform( "uOutlineThickness");
+        if (meshOutlinePassLoc >= 0) r::uniform1i(meshOutlinePassLoc, outlinePass ? 1 : 0);
         if (meshOutlineThicknessLoc >= 0)
-            glUniform1f(meshOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
-        const GLint meshUseColorLoc = glGetUniformLocation(shader, "uUseColor");
-        const GLint meshColorLoc = glGetUniformLocation(shader, "uColor");
-        glUniform1i(meshUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
+            r::uniform1f(meshOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
+        const std::int32_t meshUseColorLoc = shader.uniform( "uUseColor");
+        const std::int32_t meshColorLoc = shader.uniform( "uColor");
+        r::uniform1i(meshUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
         if (outlinePass)
-            glUniform4f(meshColorLoc, outlineColor.r, outlineColor.g,
+            r::uniform4f(meshColorLoc, outlineColor.r, outlineColor.g,
                         outlineColor.b, outlineColor.a);
         else if (whiteOverride)
-            glUniform4f(meshColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
-        glUniform1i(glGetUniformLocation(shader,"uTex"),0);
-        const GLint tintLoc = glGetUniformLocation(shader, "uTint");
-        glUniform3f(tintLoc, playerTint.r, playerTint.g, playerTint.b);
+            r::uniform4f(meshColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+        r::uniform1i(shader.uniform("uTex"),0);
+        const std::int32_t tintLoc = shader.uniform( "uTint");
+        r::uniform3f(tintLoc, playerTint.r, playerTint.g, playerTint.b);
 
         // The single-mesh fallback is used by avatars that do not expose
         // physical body parts (for example the girl body and normal zombie).
         // It must still honor the outline pass or those actors never receive
         // the mode-authored silhouette.
         if (outlinePass) {
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_FRONT);
+            r::enable(r::Capability::CullFace);
+            r::cullFace(r::CullFaceMode::Front);
         }
-        MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-        MIMITA_GL_CALL(glBindVertexArray(meshVao));
+        r::activeTexture(0);
+        r::bindVertexArray(meshVao);
         for (const Mesh::Batch& batch : renderMesh.batches)
         {
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, batch.texture ? batch.texture : gTextures.get("default")));
-            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count));
+            r::bindTexture(r::TextureTarget::Texture2D,
+                           batch.texture ? batch.texture : gTextures.get("default"));
+            r::drawArrays(r::Primitive::Triangles,
+                          static_cast<std::int32_t>(batch.first),
+                          static_cast<std::int32_t>(batch.count));
             diagRenderCountPlayerDraw();
         }
         if (outlinePass) {
-            if (meshOutlinePassLoc >= 0) glUniform1i(meshOutlinePassLoc, 0);
-            if (meshOutlineThicknessLoc >= 0) glUniform1f(meshOutlineThicknessLoc, 0.0f);
-            glDisable(GL_CULL_FACE);
+            if (meshOutlinePassLoc >= 0) r::uniform1i(meshOutlinePassLoc, 0);
+            if (meshOutlineThicknessLoc >= 0) r::uniform1f(meshOutlineThicknessLoc, 0.0f);
+            r::disable(r::Capability::CullFace);
         }
-        glUniform3f(tintLoc, 1.0f, 1.0f, 1.0f);
+        r::uniform3f(tintLoc, 1.0f, 1.0f, 1.0f);
         return;
     }
 
@@ -680,58 +680,58 @@ void Player::renderCurrentPose(unsigned int shader,
         logRagdollPath(
             4u, "ragdoll.render.path", "fallback capsule path selected",
             {{"actor_id", username}, {"path", "capsule"},
-             {"shader_program", shader}, {"position", {pos.x, pos.y, pos.z}}});
+             {"shader_program", shader.program()}, {"position", {pos.x, pos.y, pos.z}}});
 
     initCapsuleMesh();
 
     glm::mat4 model = glm::translate(glm::mat4(1.0f), pos);
 
     MIMITA_GL_CLEAR_STAGE("Player::render capsule");
-    MIMITA_GL_CALL(glUseProgram(shader));
-    glUniformMatrix4fv(glGetUniformLocation(shader,"view"),1,0,&view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader,"projection"),1,0,&proj[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader,"model"),1,0,&model[0][0]);
-    const GLint capsuleOutlinePassLoc = glGetUniformLocation(shader, "uOutlinePass");
-    const GLint capsuleOutlineThicknessLoc = glGetUniformLocation(shader, "uOutlineThickness");
-    if (capsuleOutlinePassLoc >= 0) glUniform1i(capsuleOutlinePassLoc, outlinePass ? 1 : 0);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"),1,&view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"),1,&proj[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"),1,&model[0][0]);
+    const std::int32_t capsuleOutlinePassLoc = shader.uniform( "uOutlinePass");
+    const std::int32_t capsuleOutlineThicknessLoc = shader.uniform( "uOutlineThickness");
+    if (capsuleOutlinePassLoc >= 0) r::uniform1i(capsuleOutlinePassLoc, outlinePass ? 1 : 0);
     if (capsuleOutlineThicknessLoc >= 0)
-        glUniform1f(capsuleOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
-    const GLint capsuleUseColorLoc = glGetUniformLocation(shader, "uUseColor");
-    const GLint capsuleColorLoc = glGetUniformLocation(shader, "uColor");
-    glUniform1i(capsuleUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
+        r::uniform1f(capsuleOutlineThicknessLoc, outlinePass ? outlineThickness : 0.0f);
+    const std::int32_t capsuleUseColorLoc = shader.uniform( "uUseColor");
+    const std::int32_t capsuleColorLoc = shader.uniform( "uColor");
+    r::uniform1i(capsuleUseColorLoc, (whiteOverride || outlinePass) ? 1 : 0);
     if (outlinePass)
-        glUniform4f(capsuleColorLoc, outlineColor.r, outlineColor.g,
+        r::uniform4f(capsuleColorLoc, outlineColor.r, outlineColor.g,
                     outlineColor.b, outlineColor.a);
     else if (whiteOverride)
-        glUniform4f(capsuleColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
-    glUniform1i(glGetUniformLocation(shader,"uTex"),0);
-    glUniform3f(glGetUniformLocation(shader,"uTint"), playerTint.r, playerTint.g, playerTint.b);
+        r::uniform4f(capsuleColorLoc, 1.0f, 1.0f, 1.0f, 1.0f);
+    r::uniform1i(shader.uniform("uTex"),0);
+    r::uniform3f(shader.uniform("uTint"), playerTint.r, playerTint.g, playerTint.b);
 
     if (outlinePass) {
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_FRONT);
+        r::enable(r::Capability::CullFace);
+        r::cullFace(r::CullFaceMode::Front);
     }
-    MIMITA_GL_CALL(glActiveTexture(GL_TEXTURE0));
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, gTextures.get("greenwirev1")));
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, gTextures.get("greenwirev1"));
 
-    MIMITA_GL_CALL(glBindVertexArray(capsuleVAO));
-    MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount));
+    r::bindVertexArray(capsuleVAO);
+    r::drawArrays(r::Primitive::Triangles, 0, capsuleVertCount);
     if (outlinePass) {
-        if (capsuleOutlinePassLoc >= 0) glUniform1i(capsuleOutlinePassLoc, 0);
-        if (capsuleOutlineThicknessLoc >= 0) glUniform1f(capsuleOutlineThicknessLoc, 0.0f);
-        glDisable(GL_CULL_FACE);
+        if (capsuleOutlinePassLoc >= 0) r::uniform1i(capsuleOutlinePassLoc, 0);
+        if (capsuleOutlineThicknessLoc >= 0) r::uniform1f(capsuleOutlineThicknessLoc, 0.0f);
+        r::disable(r::Capability::CullFace);
     }
-    glUniform3f(glGetUniformLocation(shader, "uTint"), 1.0f, 1.0f, 1.0f);
+    r::uniform3f(shader.uniform( "uTint"), 1.0f, 1.0f, 1.0f);
     diagRenderCountPlayerDraw();
 }
 
-void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewProj) const
+void Player::renderDepth(mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightViewProj) const
 {
     const_cast<Player*>(this)->finalizeModelIfReady();
     const_cast<Player*>(this)->updateModelWorldTransforms();
 
-    glUseProgram(shadowShader);
-    GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
+    r::useProgram(shadowShader.program());
+    std::int32_t loc = shadowShader.uniform("uLightMVP");
 
     const bool havePhysicalParts =
         !physicalBody.parts.empty() &&
@@ -753,18 +753,20 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
             const glm::mat4 model = renderPartTransform(*this, part);
             glm::mat4 mvp = lightViewProj * model;
             if (loc >= 0)
-                glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+                r::uniformMatrix4fv(loc, 1, &mvp[0][0]);
 
             for (const Mesh::Batch& batch : mesh.batches)
-                glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+                r::drawArrays(r::Primitive::Triangles,
+                              static_cast<std::int32_t>(batch.first),
+                              static_cast<std::int32_t>(batch.count));
         }
-        glUseProgram(0);
+        r::useProgram(0);
         return;
     }
 
     if (modelLoaded && !renderMesh.verts.empty())
     {
-        const GLuint meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
+        const std::uint32_t meshVao = uploadPlayerMeshIfNeeded(renderMesh, renderUploadKey());
 
         glm::mat4 modelMat =
             glm::translate(glm::mat4(1.0f), pos) *
@@ -772,13 +774,15 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
 
         glm::mat4 mvp = lightViewProj * modelMat;
         if (loc >= 0)
-            glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+            r::uniformMatrix4fv(loc, 1, &mvp[0][0]);
 
-        glBindVertexArray(meshVao);
+        r::bindVertexArray(meshVao);
         for (const Mesh::Batch& batch : renderMesh.batches)
-            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            r::drawArrays(r::Primitive::Triangles,
+                          static_cast<std::int32_t>(batch.first),
+                          static_cast<std::int32_t>(batch.count));
 
-        glUseProgram(0);
+        r::useProgram(0);
         return;
     }
 
@@ -787,9 +791,9 @@ void Player::renderDepth(unsigned int shadowShader, const glm::mat4& lightViewPr
     glm::mat4 modelMat = glm::translate(glm::mat4(1.0f), pos);
     glm::mat4 mvp = lightViewProj * modelMat;
     if (loc >= 0)
-        glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
+        r::uniformMatrix4fv(loc, 1, &mvp[0][0]);
 
-    glBindVertexArray(capsuleVAO);
-    glDrawArrays(GL_TRIANGLES, 0, capsuleVertCount);
-    glUseProgram(0);
+    r::bindVertexArray(capsuleVAO);
+    r::drawArrays(r::Primitive::Triangles, 0, capsuleVertCount);
+    r::useProgram(0);
 }

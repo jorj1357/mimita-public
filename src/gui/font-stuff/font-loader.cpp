@@ -27,6 +27,7 @@ Call them once at startup.
 #include <unordered_map>
 #include <glad/glad.h>
 #include "debug/gl-debug.h"
+#include "render/render-command.h"
 
 // do not define stb image implementation here 
 // it only goes in C:\important\quiet\n\mimita-private-v7-a9358d95ca5050b5d062287dd41ee2e63709f9a5\src\utils\stb_image_impl.cpp
@@ -91,22 +92,25 @@ static GLuint loadFontAtlasPage(const char* path, int pageId)
     }
 
     GLuint tex = 0;
-    MIMITA_GL_CLEAR_STAGE("loadFontAtlasPage");
     tex = mimita::game::genTexture();
     if (!tex)
     {
         stbi_image_free(data);
         return 0;
     }
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
-    // 5 23 2026 fonts not wokring? added this
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    MIMITA_GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
+    namespace r = mimita::game::render;
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  w, h, 0, r::PixelFormat::RGBA, r::PixelType::UnsignedByte,
+                  data);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::MinFilter, r::TextureValue::Nearest);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::MagFilter, r::TextureValue::Nearest);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::WrapS, r::TextureValue::ClampToEdge);
+    r::texParameteri(r::TextureTarget::Texture2D,
+                     r::TextureParameter::WrapT, r::TextureValue::ClampToEdge);
     stbi_image_free(data);
 
     if (pageId >= 0 && pageId < 8)
@@ -134,35 +138,23 @@ void fontInit()
         printf("[FONT WARNING] asset font failed; UI will use visible fallback text\n");
     gFontReady = atlasOk && glyphsOk;
 
-    // we must have this stuff below 
+    // we must have this stuff below
     // or else it just draws nothing
-    MIMITA_GL_CLEAR_STAGE("fontInit");
+    namespace r = mimita::game::render;
     guiVAO = mimita::game::genVertexArray();
     guiVBO = mimita::game::genBuffer();
 
-    // mar 14 2026 this is in font-loader (this file) and gui-label
-    // not good? 
-    MIMITA_GL_CALL(glBindVertexArray(guiVAO));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER,guiVBO));
+    r::bindVertexArray(guiVAO);
+    r::bindBuffer(r::BufferTarget::Array, guiVBO);
+    r::bufferData(r::BufferTarget::Array, guiVBO, nullptr,
+                  sizeof(float) * 30, r::BufferUsage::Dynamic);
 
-    MIMITA_GL_CALL(glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(float)*30,
-        nullptr,
-        GL_DYNAMIC_DRAW
-    ));
-
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        0,3,GL_FLOAT,GL_FALSE,
-        5*sizeof(float),(void*)0
-    ));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
-
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        1,2,GL_FLOAT,GL_FALSE,
-        5*sizeof(float),(void*)(3*sizeof(float))
-    ));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(1));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                           5 * sizeof(float), 0);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false,
+                           5 * sizeof(float), 3 * sizeof(float));
+    r::enableVertexAttribArray(1);
 
     printf("[FONT] VAO/VBO ready\n");
 }

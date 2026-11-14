@@ -1,5 +1,6 @@
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
+#include "render/render-command.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -122,15 +123,15 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
             fields, __FILE__, __LINE__, __FUNCTION__);
     }
 
-    MIMITA_GL_CLEAR_STAGE("uiBeginFrame");
-    MIMITA_GL_CALL(glViewport(0, 0, gFbW, gFbH));
-    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
-    MIMITA_GL_CALL(glEnable(GL_BLEND));
-    MIMITA_GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));
-    MIMITA_GL_CALL(glDisable(GL_CULL_FACE));
+    namespace r = mimita::game::render;
+    r::viewport(0, 0, gFbW, gFbH);
+    r::disable(r::Capability::DepthTest);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::disable(r::Capability::CullFace);
     ensureProgram();
     if (gProgram)
-        MIMITA_GL_CALL(glUseProgram(gProgram));
+        r::useProgram(gProgram);
 
     if (gFrame % 120 == 1)
         Debug::logThrottled(Debug::Category::Render, "ui-frame", DebugConfig::PRINT_INTERVAL, "[UI] Rendering UI frame %d pass=%s framebuffer=%dx%d\n", gFrame, passName ? passName : "unknown", gFbW, gFbH);
@@ -253,8 +254,9 @@ void uiEndFrame()
         Debug::logThrottled(Debug::Category::Render, "ui-frame-complete", DebugConfig::PRINT_INTERVAL, "[UI] Render pass complete drawCalls=%d widgets=%d warnings=%zu\n", gDrawCalls, gWidgets, gWarnings.size());
     if (gOwnsHoverInput)
         gMousePrev = gMouseDown;
-    MIMITA_GL_CALL(glUseProgram(0));
-    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    namespace r = mimita::game::render;
+    r::useProgram(0);
+    r::enable(r::Capability::DepthTest);
 }
 
 void uiSetDebug(bool enabled) { gDebug = enabled; }

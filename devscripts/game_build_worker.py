@@ -418,7 +418,7 @@ def build(args: argparse.Namespace) -> int:
     ]
     if args.pch:
         base_flags += ["-include", "pch.h"]
-    if args.sources_file:
+    if args.sources_file and not args.no_probe_bridge:
         base_flags.append("-DMIMITA_PROBE_BRIDGE")
 
     flags_hash = flags_identity(cxx, base_flags, args.build_mode, args.pch)
@@ -617,6 +617,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--priority", choices=tuple(PRIORITY_CLASSES), default="high")
     parser.add_argument("--max-errors", type=int, default=20)
     parser.add_argument("--no-seed", action="store_true", help="do not reuse older generation objects")
+    parser.add_argument("--no-probe-bridge", action="store_true",
+                        help="explicit whole-game source set, not a probe bridge build")
     parser.add_argument("--no-pch", dest="pch", action="store_false", default=True)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--list", action="store_true")

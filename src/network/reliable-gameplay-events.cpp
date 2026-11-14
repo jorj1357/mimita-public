@@ -11,6 +11,11 @@
 #include "network/server.h"
 #include "debug/debug-log.h"
 #include "config/networking-config.h"
+#if defined(MIMITA_GAME_DLL)
+#include "game/session-events-bridge-module.h"
+#else
+#include "host/host-server-session-events.h"
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -115,6 +120,17 @@ uint32_t serverReliableEventSessionId()
 
 uint32_t nextReliableGameplayEventId()
 {
+#if defined(MIMITA_GAME_DLL)
+    const uint32_t hostId = mimita::game::nextSessionEventId();
+    if (hostId != 0)
+        return hostId;
+#else
+    auto& events = mimita::host::HostServerSessionEvents::instance();
+    const uint32_t hostId =
+        events.capability()->next_event_id(events.owner());
+    if (hostId != 0)
+        return hostId;
+#endif
     static uint32_t nextId = 1;
     uint32_t id = nextId++;
     if (nextId == 0)
@@ -124,6 +140,14 @@ uint32_t nextReliableGameplayEventId()
 
 uint32_t reliableGameplayEventSessionForPlayer(ServerPlayer& player)
 {
+#if defined(MIMITA_GAME_DLL)
+    const uint32_t hostSession =
+        mimita::game::sessionEventSessionId(player.id);
+    if (hostSession != 0) {
+        player.reliableEventSessionId = hostSession;
+        return hostSession;
+    }
+#endif
     if (player.reliableEventSessionId == 0)
         player.reliableEventSessionId = nextSessionId();
     return player.reliableEventSessionId;

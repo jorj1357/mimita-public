@@ -16,17 +16,19 @@
 struct World;
 class Camera;
 class Terminal; // forward decl for dump functions
+namespace mimita::game::render { class WorldShader; class ShaderProgram; }
 
 extern bool gWorldTextureDebug;
 extern bool gRenderBackfaces;
 
 void renderSky(const World& world, const Camera& cam);
 void renderWorld(const World& world, const Camera& cam);
-void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP);
+void renderWorldDepth(const World& world, mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightMVP);
 void setWorldSolidRedDebug(bool enabled);
 bool worldSolidRedDebug();
 void registerWorldTextureCommands();
-void setUniforms(GLuint shader, const glm::vec3& cameraPos = glm::vec3(0.0f));
+void setUniforms(mimita::game::render::WorldShader& shader,
+                 const glm::vec3& cameraPos = glm::vec3(0.0f));
 void dumpGLBMaterials(Terminal& t);
 void dumpGLBTextures(Terminal& t);
 void dumpGLBLights(Terminal& t);

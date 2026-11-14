@@ -11,9 +11,7 @@
       "owner": "bootstrap",
       "reason": "process entry and orchestration; must stay resident",
       "include": [
-        "src/main.cpp",
-        "src/main-init.cpp",
-        "src/main-systems.cpp"
+        "src/main.cpp"
       ]
     },
     {

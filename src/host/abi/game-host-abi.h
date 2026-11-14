@@ -46,6 +46,10 @@ enum class HostCapabilityId : std::uint32_t {
     Files = 19,
     Socket = 20,
     GlResource = 21,
+    World = 22,
+    SessionIdentity = 23,
+    SessionEvents = 24,
+    State = 25,
 };
 
 // Stable entity identity. The low bits are generation-specific; the host owns
@@ -90,6 +94,60 @@ struct EntitySnapshotV1 {
     std::uint32_t playerFlags;
     std::uint32_t maxHealth;
     char displayName[64];
+    float yaw;
+    std::uint32_t onGround;
+    std::uint32_t transformEpoch;
+    std::uint32_t accountId;
+    std::uint32_t pingMs;
+    float difficulty;
+
+    // Session identity/continuity fields. Fixed-width buffers; never a
+    // std::string or game-owned pointer.
+    char avatarName[24];
+    char joinToken[64];
+    char reconnectToken[64];
+    char previousReconnectToken[64];
+    std::uint64_t previousReconnectTokenValidUntilMs;
+    std::uint32_t spawnGeneration;
+    std::int32_t kills;
+    std::int32_t deaths;
+    std::uint32_t reliableEventSessionId;
+    std::uint32_t joinTokenValidated;
+    std::uint32_t spawned;
+    std::uint64_t lastHeardMs;
+
+    // Chat v2 rate/retry state.
+    float chatTokens;
+    std::uint64_t chatLastUpdateTick;
+    std::uint32_t lastChatRequestId;
+    std::uint32_t hasCachedChatEvent;
+    std::uint32_t cachedChatEventId;
+    std::uint32_t cachedChatRequestId;
+    std::uint64_t cachedChatMessageId;
+    std::uint64_t cachedChatServerTick;
+    std::int64_t cachedChatUtcMs;
+    std::uint32_t cachedChatSenderAccountId;
+    char cachedChatText[256];
+    char cachedChatSenderName[32];
+
+    // VIP/account state.
+    std::int32_t vipAccountId;
+    char accountRole[32];
+    std::uint8_t vipTier;
+    std::uint8_t vipStyleKind;
+    std::uint8_t vipColorR;
+    std::uint8_t vipColorG;
+    std::uint8_t vipColorB;
+    std::uint8_t vipFlags;
+    std::uint32_t vipStyleEpoch;
+    std::uint8_t vipDetailStyleKind;
+    std::uint8_t vipDetailAnimation;
+    std::uint8_t vipDetailDirection;
+    float vipRainbowSpeed;
+    float vipSolidColor[4];
+    std::uint32_t vipColorCount;
+    float vipColors[32][4];
+    char progressionTicket[256];
 };
 
 // Resident services the game generation may call. Functions are synchronous and

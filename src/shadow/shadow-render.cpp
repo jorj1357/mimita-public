@@ -1,4 +1,5 @@
 #include "shadow-render.h"
+#include "shadow/shadow-shader.h"
 #include "game/resident-state-module.h"
 #include "shadow-config.h"
 
@@ -12,6 +13,8 @@
 #include "render/render-world.h"
 #include "render/lighting-config.h"
 #include "renderer/renderer.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
 #include "game/gl-resource-bridge-module.h"
 #include "entities/player.h"
 #include "npc/npc.h"
@@ -21,21 +24,22 @@
 
 extern Renderer* gRenderer;
 
+namespace r = mimita::game::render;
+
 namespace {
 
-GLuint gShadowFbo = 0;
-GLuint gShadowDepthTex = 0;
+std::uint32_t gShadowFbo = 0;
+std::uint32_t gShadowDepthTex = 0;
 int gShadowMapSize = 0;
 
-GLuint gShadowShader = 0;
 glm::mat4 gShadowMatrix(1.0f);
 glm::mat4 gLightMVP(1.0f);
 
 bool gShowShadowMap = false;
 
 // Shared sphere VAO for effect/particle shadow rendering
-GLuint gSphereVao = 0;
-GLuint gSphereVbo = 0;
+std::uint32_t gSphereVao = 0;
+std::uint32_t gSphereVbo = 0;
 int gSphereVertCount = 0;
 
 static void ensureSphereVao()
@@ -78,99 +82,16 @@ static void ensureSphereVao()
 
     gSphereVao = mimita::game::genVertexArray();
     gSphereVbo = mimita::game::genBuffer();
-    glBindVertexArray(gSphereVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gSphereVbo);
-    glBufferData(GL_ARRAY_BUFFER, triangles.size() * sizeof(glm::vec3), triangles.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-    glBindVertexArray(0);
+    r::bindVertexArray(gSphereVao);
+    r::bindBuffer(r::BufferTarget::Array, gSphereVbo);
+    r::bufferData(r::BufferTarget::Array, gSphereVbo, triangles.data(),
+                  static_cast<std::uint32_t>(triangles.size() * sizeof(glm::vec3)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(glm::vec3), 0);
+    r::bindVertexArray(0);
 
     gSphereVertCount = (int)triangles.size();
-}
-
-static GLuint createShader(const char* vertSrc, const char* fragSrc)
-{
-    auto compile = [](GLuint shader, const char* src) -> bool {
-        glShaderSource(shader, 1, &src, nullptr);
-        glCompileShader(shader);
-        GLint ok = 0;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
-        if (!ok) {
-            char log[1024];
-            glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-            printf("[SHADOW SHADER] compile error: %s\n", log);
-            return false;
-        }
-        return true;
-    };
-
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    if (!compile(vs, vertSrc) || !compile(fs, fragSrc)) {
-        mimita::game::deleteShader(vs);
-        mimita::game::deleteShader(fs);
-        return 0;
-    }
-
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-    GLint ok = 0;
-    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[1024];
-        glGetProgramInfoLog(prog, sizeof(log), nullptr, log);
-        printf("[SHADOW SHADER] link error: %s\n", log);
-        mimita::game::deleteProgram(prog);
-        prog = 0;
-    }
-    mimita::game::deleteShader(vs);
-    mimita::game::deleteShader(fs);
-    return prog;
-}
-
-static bool loadShadowShaders()
-{
-    auto readFile = [](const char* path) -> std::string {
-        FILE* f = fopen(path, "rb");
-        if (!f) return {};
-        fseek(f, 0, SEEK_END);
-        long len = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::string s((size_t)len, '\0');
-        fread(s.data(), 1, (size_t)len, f);
-        fclose(f);
-        return s;
-    };
-
-    const char* vertSrc = R"(
-#version 330 core
-layout (location = 0) in vec3 aPos;
-uniform mat4 uLightMVP;
-void main() {
-    gl_Position = uLightMVP * vec4(aPos, 1.0);
-}
-)";
-
-    const char* fragSrc = R"(
-#version 330 core
-void main() {
-}
-)";
-
-    std::string vertFile = readFile("shaders/shadow.vert");
-    std::string fragFile = readFile("shaders/shadow.frag");
-
-    const char* vert = vertFile.empty() ? vertSrc : vertFile.c_str();
-    const char* frag = fragFile.empty() ? fragSrc : fragFile.c_str();
-
-    gShadowShader = createShader(vert, frag);
-    if (!gShadowShader) {
-        printf("[SHADOWS] Failed to load shadow shader, trying embedded fallback\n");
-        gShadowShader = createShader(vertSrc, fragSrc);
-    }
-    return gShadowShader != 0;
 }
 
 } // namespace
@@ -188,36 +109,41 @@ void initShadowMap(int mapSize)
     gShadowMapSize = mapSize;
 
     gShadowDepthTex = mimita::game::genTexture();
-    glBindTexture(GL_TEXTURE_2D, gShadowDepthTex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, mapSize, mapSize, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    r::bindTexture(r::TextureTarget::Texture2D, gShadowDepthTex);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::Depth24,
+                  mapSize, mapSize, 0, r::PixelFormat::Depth,
+                  r::PixelType::Float, nullptr);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::ClampToBorder);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::ClampToBorder);
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    r::texParameterfv(r::TextureTarget::Texture2D,
+                      r::TextureParameter::BorderColor, borderColor);
 
     gShadowFbo = mimita::game::genFramebuffer();
-    glBindFramebuffer(GL_FRAMEBUFFER, gShadowFbo);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gShadowDepthTex, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, gShadowFbo);
+    r::framebufferTexture2D(r::TextureTarget::Texture2D,
+                            r::FramebufferAttachment::Depth, gShadowDepthTex);
+    r::drawBuffer(r::FramebufferBuffer::None);
+    r::readBuffer(r::FramebufferBuffer::None);
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-    if (status != GL_FRAMEBUFFER_COMPLETE) {
-        printf("[SHADOWS] FBO incomplete: 0x%x\n", status);
+    if (!r::checkFramebufferStatus()) {
+        printf("[SHADOWS] FBO incomplete\n");
         mimita::game::deleteFramebuffer(gShadowFbo);
         mimita::game::deleteTexture(gShadowDepthTex);
         gShadowFbo = 0;
         gShadowDepthTex = 0;
         return;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
     printf("[SHADOWS] Shadow map FBO created: %dx%d\n", mapSize, mapSize);
 
-    if (!gShadowShader) {
-        loadShadowShaders();
-    }
+    r::shadowShader().ensureLoaded();
 }
 
 void renderShadowMap(const World& world, const glm::vec3& focusPoint)
@@ -228,9 +154,7 @@ void renderShadowMap(const World& world, const glm::vec3& focusPoint)
     int mapSize = cfg.shadowMapSize();
     if (mapSize < 16) return;
 
-    if (!gShadowShader) {
-        if (!loadShadowShaders()) return;
-    }
+    if (!r::shadowShader().ensureLoaded()) return;
 
     initShadowMap(mapSize);
     if (!gShadowFbo) return;
@@ -241,46 +165,46 @@ void renderShadowMap(const World& world, const glm::vec3& focusPoint)
 
     updateShadowMatrix(lightDir, distance, focusPoint, mapSize, cfg.stabilize());
 
-    glBindFramebuffer(GL_FRAMEBUFFER, gShadowFbo);
-    glViewport(0, 0, mapSize, mapSize);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, gShadowFbo);
+    r::viewport(0, 0, mapSize, mapSize);
+    r::clear(false, true, false);
+    r::enable(r::Capability::DepthTest);
+    r::depthFunc(r::DepthFunc::Less);
+    r::depthMask(true);
+    r::disable(r::Capability::Blend);
+    r::enable(r::Capability::CullFace);
+    r::cullFace(r::CullFaceMode::Back);
 
     // World depth
     if (cfg.worldReceivesShadows() || true) // world always casts into the map
-        renderWorldDepth(world, gShadowShader, gLightMVP);
+        renderWorldDepth(world, r::shadowShader().programObject(), gLightMVP);
 
     // Player depth
     if (cfg.playersCastShadows() && mimita::game::playerPtr())
-        renderPlayerDepth(*mimita::game::playerPtr(), gShadowShader, gLightMVP);
+        renderPlayerDepth(*mimita::game::playerPtr(), r::shadowShader().programObject(), gLightMVP);
 
     // NPC depth
     if (cfg.npcsCastShadows() && mimita::game::npcSystemPtr())
-        renderNpcDepths(gShadowShader, gLightMVP);
+        renderNpcDepths(r::shadowShader().programObject(), gLightMVP);
 
     // Effect depth
     if (cfg.effectsCastShadows())
-        renderEffectDepths(gShadowShader, gLightMVP);
+        renderEffectDepths(r::shadowShader().programObject(), gLightMVP);
 
     // Particle depth
     if (cfg.particlesCastShadows())
-        renderParticleDepths(gShadowShader, gLightMVP);
+        renderParticleDepths(r::shadowShader().programObject(), gLightMVP);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
 }
 
-void renderPlayerDepth(const Player& player, GLuint shadowShader, const glm::mat4& lightViewProj)
+void renderPlayerDepth(const Player& player, mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightViewProj)
 {
     Perf::state().renderPerf.shadowBatches++;
     player.renderDepth(shadowShader, lightViewProj);
 }
 
-void renderNpcDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
+void renderNpcDepths(mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightViewProj)
 {
     if (!mimita::game::npcSystemPtr()) return;
     for (const Npc& npc : mimita::game::npcSystemPtr()->all()) {
@@ -289,14 +213,14 @@ void renderNpcDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
     }
 }
 
-void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
+void renderEffectDepths(mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightViewProj)
 {
     ensureSphereVao();
 
-    glUseProgram(shadowShader);
-    GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
-    if (loc < 0) { glUseProgram(0); return; }
-    glBindVertexArray(gSphereVao);
+    r::useProgram(shadowShader.program());
+    const auto loc = shadowShader.uniform("uLightMVP");
+    if (loc < 0) { r::useProgram(0); return; }
+    r::bindVertexArray(gSphereVao);
 
     float cutoffAlpha = ShadowConfig::instance().effectShadowCutoffAlpha();
 
@@ -313,22 +237,22 @@ void renderEffectDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
         float baseRadius = 0.3f + progress * 0.5f;
         glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), b.position), glm::vec3(baseRadius));
         glm::mat4 mvp = lightViewProj * model;
-        glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
-        glDrawArrays(GL_TRIANGLES, 0, gSphereVertCount);
+        r::uniformMatrix4fv(loc, 1, &mvp[0][0]);
+        r::drawArrays(r::Primitive::Triangles, 0, gSphereVertCount);
     }
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 }
 
-void renderParticleDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
+void renderParticleDepths(mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightViewProj)
 {
     ensureSphereVao();
 
-    glUseProgram(shadowShader);
-    GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
-    if (loc < 0) { glUseProgram(0); return; }
-    glBindVertexArray(gSphereVao);
+    r::useProgram(shadowShader.program());
+    const auto loc = shadowShader.uniform("uLightMVP");
+    if (loc < 0) { r::useProgram(0); return; }
+    r::bindVertexArray(gSphereVao);
 
     float cutoffAlpha = ShadowConfig::instance().effectShadowCutoffAlpha();
 
@@ -344,19 +268,19 @@ void renderParticleDepths(GLuint shadowShader, const glm::mat4& lightViewProj)
 
         glm::mat4 model = glm::scale(glm::translate(glm::mat4(1.0f), p.position), glm::vec3(radius));
         glm::mat4 mvp = lightViewProj * model;
-        glUniformMatrix4fv(loc, 1, GL_FALSE, &mvp[0][0]);
-        glDrawArrays(GL_TRIANGLES, 0, gSphereVertCount);
+        r::uniformMatrix4fv(loc, 1, &mvp[0][0]);
+        r::drawArrays(r::Primitive::Triangles, 0, gSphereVertCount);
     }
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 }
 
 void bindShadowMap(int textureUnit)
 {
     if (gShadowDepthTex) {
-        glActiveTexture(GL_TEXTURE0 + textureUnit);
-        glBindTexture(GL_TEXTURE_2D, gShadowDepthTex);
+        r::activeTexture(static_cast<std::uint32_t>(textureUnit));
+        r::bindTexture(r::TextureTarget::Texture2D, gShadowDepthTex);
     }
 }
 
@@ -391,7 +315,7 @@ const glm::mat4& shadowMatrix()
     return gShadowMatrix;
 }
 
-GLuint shadowDepthTex()
+std::uint32_t shadowDepthTex()
 {
     return gShadowDepthTex;
 }
@@ -414,11 +338,11 @@ void renderShadowMapOverlay(int screenW, int screenH)
     int x = screenW - size - 10;
     int y = 70;
 
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_CULL_FACE);
+    r::disable(r::Capability::DepthTest);
+    r::enable(r::Capability::CullFace);
 
-    GLuint shader = gRenderer ? gRenderer->shaderProgram : 0;
-    if (!shader) return;
+    if (!r::worldShader().ensureLoaded()) return;
+    auto& shader = r::worldShader();
 
     float verts[] = {
         (float)x,          (float)y,           0.0f, 0.0f,
@@ -429,34 +353,36 @@ void renderShadowMapOverlay(int screenW, int screenH)
         (float)x,          (float)(y + size),  0.0f, 1.0f,
     };
 
-    static GLuint vao = 0, vbo = 0;
+    static std::uint32_t vao = 0, vbo = 0;
     if (!vao) {
         vao = mimita::game::genVertexArray();
         vbo = mimita::game::genBuffer();
     }
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STREAM_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::bufferData(r::BufferTarget::Array, vbo, verts, sizeof(verts),
+                  r::BufferUsage::Stream);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 2, r::VertexType::Float, false, 4 * sizeof(float), 0);
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, 4 * sizeof(float),
+                           2 * sizeof(float));
 
-    glUseProgram(shader);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uDebugView"), 3);
+    r::useProgram(shader.program());
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uDebugView"), 3);
     glm::mat4 id(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &id[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &id[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &id[0][0]);
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &id[0][0]);
     glm::mat4 ortho = glm::ortho(0.0f, (float)screenW, (float)screenH, 0.0f, -1.0f, 1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &ortho[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &ortho[0][0]);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, gShadowDepthTex);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, gShadowDepthTex);
+    r::uniform1i(shader.uniform("uTex"), 0);
 
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::drawArrays(r::Primitive::Triangles, 0, 6);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 }

@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include "render/shader-program.h"
+
 struct PostFXData
 {
     // Core
@@ -102,16 +104,16 @@ public:
     const char* animPropName(int idx) const;
 
     // Diagnostic accessors
-    GLuint fboId() const { return mFbo; }
-    GLuint colorTexId() const { return mColorTex; }
-    GLuint quadVaoId() const { return mQuadVao; }
-    GLuint postShaderId() const { return mPostShader; }
+    std::uint32_t fboId() const { return mFbo; }
+    std::uint32_t colorTexId() const { return mColorTex; }
+    std::uint32_t quadVaoId() const { return mQuadVao; }
+    std::uint32_t postShaderId() const { return mPostShader.program(); }
     int fboWidth() const { return mFboW; }
     int fboHeight() const { return mFboH; }
     bool hasFbo() const { return mFbo != 0; }
     bool hasColorTex() const { return mColorTex != 0; }
     bool hasQuadVao() const { return mQuadVao != 0; }
-    bool hasPostShader() const { return mPostShader != 0; }
+    bool hasPostShader() const { return mPostShader.valid(); }
 
 public:
     PostFX() = default;
@@ -125,20 +127,19 @@ private:
     uint64_t mLastModified = 0;
 
     // FBO
-    GLuint mFbo = 0;
-    GLuint mColorTex = 0;
+    std::uint32_t mFbo = 0;
+    std::uint32_t mColorTex = 0;
     int mFboW = 0;
     int mFboH = 0;
 
     // Fullscreen quad
-    GLuint mQuadVao = 0;
-    GLuint mQuadVbo = 0;
-    GLuint mGuiQuadVao = 0;
-    GLuint mGuiQuadVbo = 0;
+    std::uint32_t mQuadVao = 0;
+    std::uint32_t mQuadVbo = 0;
+    std::uint32_t mGuiQuadVao = 0;
+    std::uint32_t mGuiQuadVbo = 0;
 
     // Shader
-    GLuint mPostShader = 0;
-    GLuint mGuiShader = 0;
+    mimita::game::render::ShaderProgram mPostShader;
 
     float mTime = 0.0f;
     char mDebugText[512] = {};
@@ -168,11 +169,10 @@ private:
     void pickRandomTarget(AnimProp& p);
     void updateRandomAnim(float dt);
 
-    bool initQuad(GLuint& vao, GLuint& vbo);
+    bool initQuad(std::uint32_t& vao, std::uint32_t& vbo);
     bool loadShaders();
-    GLuint createShader(const char* vertPath, const char* fragPath);
-    void setUniforms(GLuint shader, const PostFXData& data, const char* prefix = "");
-    void renderQuad(GLuint vao);
+    void setUniforms(const PostFXData& data, const char* prefix = "");
+    void renderQuad(std::uint32_t vao);
 };
 
 extern PostFX gPostFX;

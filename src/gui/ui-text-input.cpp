@@ -1,6 +1,7 @@
 #include "gui/ui-text-input.h"
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
+#include "render/render-command.h"
 #include "gui/gui-coord.h"
 #include "gui/font-stuff/font-loader.h"
 #include "debug/debug-log.h"
@@ -383,15 +384,14 @@ static bool renderTextInput(GLFWwindow* window, const char* id,
     float textX = textOriginX - state.horizontalScrollPx;
 
     // Draw text with scissor
-    GLboolean scissorWas = glIsEnabled(GL_SCISSOR_TEST);
-    GLint scissorBox[4];
-    glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
-    glEnable(GL_SCISSOR_TEST);
+    namespace r = mimita::game::render;
+    r::pushState();
+    r::enable(r::Capability::ScissorTest);
     int fbX = (int)clipX;
     int fbY = (int)((float)UISys::gFbH - clipY - clipH);
     int fbW = (int)clipW;
     int fbH = (int)clipH;
-    glScissor(fbX, fbY, std::max(0, fbW), std::max(0, fbH));
+    r::scissor(fbX, fbY, std::max(0, fbW), std::max(0, fbH));
 
     Debug::logThrottled(Debug::Category::Chat, "chat-debug-input-render", 0.25f,
                         "[CHAT DEBUG GUI INPUT] utc=%s id=%s value=\"%s\" focused=%d designRect=(%.1f,%.1f,%.1f,%.1f) screenRect=(%.1f,%.1f,%.1f,%.1f) textPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) clipPixels=(x=%.1f,y=%.1f,w=%.1f,h=%.1f) glScissor=(x=%d,y=%d,w=%d,h=%d) framebuffer=%dx%d\n",
@@ -459,11 +459,7 @@ static bool renderTextInput(GLFWwindow* window, const char* id,
         }
     }
 
-    // Restore scissor
-    if (!scissorWas)
-        glDisable(GL_SCISSOR_TEST);
-    else
-        glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+    r::popState();
 
     // ── Mouse handling ───────────────────────────────────────
     if (opts.interactive)

@@ -17,6 +17,7 @@ void initializeHostTransport(const mimita::host::HostServicesV1* services);
 bool sendToServer(std::uint32_t typeId, const void* data, std::size_t size);
 bool sendToPeer(std::uint64_t peer, std::uint32_t typeId, const void* data,
                 std::size_t size);
+bool bindSession(std::uint64_t peer, std::uint32_t playerId);
 bool sendServerCommand(const char* command, std::size_t size);
 bool sendServerCommandResult(std::uint32_t playerId, std::int32_t accepted,
                              const char* status);

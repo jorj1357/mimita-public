@@ -1,5 +1,7 @@
 #include "render-world.h"
 #include "game/gl-resource-bridge-module.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -36,8 +38,10 @@
 extern Renderer* gRenderer;
 extern TextureStore gTextures;
 
-GLuint gVao = 0;
-GLuint gVbo = 0;
+namespace r = mimita::game::render;
+
+std::uint32_t gVao = 0;
+std::uint32_t gVbo = 0;
 
 size_t gBuiltVertCount = (size_t)-1;
 size_t gBuiltBatchCount = (size_t)-1;
@@ -45,29 +49,24 @@ std::uint64_t gBuiltRevision = (std::uint64_t)-1;
 
 namespace {
 
-GLint uniformLoc(GLuint shader, const char* name)
+void setInt(r::WorldShader& shader, const char* name, int v)
 {
-    return glGetUniformLocation(shader, name);
+    r::uniform1i(shader.uniform(name), v);
 }
 
-void setInt(GLuint shader, const char* name, int v)
+void setFloat(r::WorldShader& shader, const char* name, float v)
 {
-    glUniform1i(uniformLoc(shader, name), v);
+    r::uniform1f(shader.uniform(name), v);
 }
 
-void setFloat(GLuint shader, const char* name, float v)
+void setVec3(r::WorldShader& shader, const char* name, glm::vec3 v)
 {
-    glUniform1f(uniformLoc(shader, name), v);
+    r::uniform3f(shader.uniform(name), v.x, v.y, v.z);
 }
 
-void setVec3(GLuint shader, const char* name, glm::vec3 v)
+void setMat4(r::WorldShader& shader, const char* name, const glm::mat4& m)
 {
-    glUniform3f(uniformLoc(shader, name), v.x, v.y, v.z);
-}
-
-void setMat4(GLuint shader, const char* name, const glm::mat4& m)
-{
-    glUniformMatrix4fv(uniformLoc(shader, name), 1, GL_FALSE, &m[0][0]);
+    r::uniformMatrix4fv(shader.uniform(name), 1, &m[0][0]);
 }
 
 } // anonymous namespace
@@ -88,22 +87,24 @@ void uploadMeshIfNeeded(const World& world)
         gVbo = mimita::game::genBuffer();
     }
 
-    glBindVertexArray(gVao);
-    glBindBuffer(GL_ARRAY_BUFFER, gVbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 mesh.verts.size() * sizeof(Vertex),
-                 mesh.verts.data(),
-                 GL_STATIC_DRAW);
+    r::bindVertexArray(gVao);
+    r::bindBuffer(r::BufferTarget::Array, gVbo);
+    r::bufferData(r::BufferTarget::Array, gVbo, mesh.verts.data(),
+                  static_cast<std::uint32_t>(mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
 
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+    r::bindBuffer(r::BufferTarget::Array, 0);
+    r::bindVertexArray(0);
 
     gBuiltVertCount = mesh.verts.size();
     gBuiltBatchCount = mesh.batches.size();
@@ -146,7 +147,7 @@ void setTexBreatheEnabled(bool enabled)
 
 bool texBreatheEnabled() { return gTexBreatheEnabled || gTexBreatheRestoring; }
 
-void setUniforms(GLuint shader, const glm::vec3& cameraPos)
+void setUniforms(r::WorldShader& shader, const glm::vec3& cameraPos)
 {
     MIMITA_PERF_SCOPE("Rendering::World::UniformSetup");
     const auto& cfg = LightingConfig::instance();
@@ -154,7 +155,7 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
 
     setInt(shader, "uUseColor", worldSolidRedDebug() ? 1 : 0);
     if (worldSolidRedDebug())
-        glUniform4f(uniformLoc(shader, "uColor"), 1.0f, 0.0f, 1.0f, 1.0f);
+        r::uniform4f(shader.uniform("uColor"), 1.0f, 0.0f, 1.0f, 1.0f);
     double now = glfwGetTime();
     if (gTexBreatheRestoring) {
         gTexBreatheRestoreElapsed += 0.016f; // approximate dt
@@ -217,13 +218,13 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
 
     // Reset avatar-only uniforms leaked from previous frame's player/cosmetic rendering.
     // These are neutral defaults that have no effect on world appearance.
-    if (uniformLoc(shader, "uAlphaCutoff") >= 0)
+    if (shader.uniform("uAlphaCutoff") >= 0)
         setFloat(shader, "uAlphaCutoff", 0.0f);
-    if (uniformLoc(shader, "uCosmeticTextureEnabled") >= 0)
+    if (shader.uniform("uCosmeticTextureEnabled") >= 0)
         setInt(shader, "uCosmeticTextureEnabled", 0);
-    if (uniformLoc(shader, "uCosmeticBrightness") >= 0)
+    if (shader.uniform("uCosmeticBrightness") >= 0)
         setFloat(shader, "uCosmeticBrightness", 1.0f);
-    if (uniformLoc(shader, "uCosmeticOpacity") >= 0)
+    if (shader.uniform("uCosmeticOpacity") >= 0)
         setFloat(shader, "uCosmeticOpacity", 1.0f);
 
     // Dynamic point lights
@@ -257,7 +258,7 @@ void setUniforms(GLuint shader, const glm::vec3& cameraPos)
         setFloat(shader, "uShadowSoftness", scfg.shadowSoftness());
         glm::vec3 tint = scfg.shadowTint();
         setVec3(shader, "uShadowTint", tint);
-        glActiveTexture(GL_TEXTURE0);
+        r::activeTexture(0);
     }
 }
 
@@ -305,15 +306,15 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 {
     MIMITA_PERF_SCOPE("Rendering::World::BatchSubmission");
     if (gRenderBackfaces)
-        glDisable(GL_CULL_FACE);
+        r::disable(r::Capability::CullFace);
     else
     {
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
+        r::enable(r::Capability::CullFace);
+        r::cullFace(r::CullFaceMode::Back);
     }
 
-    GLuint shader = gRenderer->shaderProgram;
-    MIMITA_GL_CALL(glUseProgram(shader));
+    auto& shader = r::worldShader();
+    r::useProgram(shader.program());
 
     glm::mat4 model(1.0f);
     glm::mat4 view = cam.getView();
@@ -326,12 +327,12 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
 
     setUniforms(shader, cam.pos);
 
-    glBindVertexArray(gVao);
+    r::bindVertexArray(gVao);
 
     const Mesh& mesh = world.mesh;
     size_t drawCalls = 0;
     size_t skippedBatches = 0;
-    GLuint boundTexture = 0;
+    std::uint32_t boundTexture = 0;
     auto& renderPerf = Perf::state().renderPerf;
     renderPerf.worldBatches += static_cast<uint32_t>(mesh.batches.size());
     renderPerf.worldBackfaceCulling = gRenderBackfaces ? 0u : 1u;
@@ -378,7 +379,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
     hiddenRanges.resize(merged);
 
     // Ensure texture unit 0 is active before binding world textures
-    glActiveTexture(GL_TEXTURE0);
+    r::activeTexture(0);
 
     for (const auto& batch : mesh.batches)
     {
@@ -398,7 +399,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             if (boundsDistance < proximityConfig.proximityFadeEndDistanceMeters)
                 ++nearFadeCandidateCount;
         }
-        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
+        std::uint32_t tex = batch.texture ? batch.texture : gTextures.get("default");
         if (gWorldTextureDebug)
         {
             printf("[WORLD TEX] batch first=%zu count=%zu texture=%u material=%s\n",
@@ -406,14 +407,14 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
         }
         if (tex != boundTexture) {
             MIMITA_PERF_SCOPE("Rendering::World::TextureBind");
-            MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+            r::bindTexture(r::TextureTarget::Texture2D, tex);
             boundTexture = tex;
             renderPerf.worldTextureBinds++;
         }
 
         const bool temporarilyDisableCulling = !gRenderBackfaces && batch.doubleSided;
         if (temporarilyDisableCulling)
-            glDisable(GL_CULL_FACE);
+            r::disable(r::Capability::CullFace);
 
         const size_t batchEnd = batch.first + batch.count;
         size_t cursor = batch.first;
@@ -423,7 +424,8 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             if (count == 0)
                 return;
             MIMITA_PERF_SCOPE("Rendering::World::DrawCall");
-            MIMITA_GL_CALL(glDrawArrays(GL_TRIANGLES, (GLint)first, (GLsizei)count));
+            r::drawArrays(r::Primitive::Triangles, static_cast<std::int32_t>(first),
+                          static_cast<std::int32_t>(count));
             ++drawCalls;
             ++segments;
             renderPerf.worldSubmittedBatches++;
@@ -450,7 +452,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
             renderPerf.worldSkippedBatches++;
 
         if (temporarilyDisableCulling)
-            glEnable(GL_CULL_FACE);
+            r::enable(r::Capability::CullFace);
     }
     diagRenderWorldCounts(mesh.batches.size(), mesh.verts.size(), drawCalls);
 
@@ -472,7 +474,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
                            {"vertex_count", mesh.verts.size()},
                            {"submitted_batches", drawCalls},
                            {"skipped_batches", skippedBatches},
-                           {"shader_program", shader}},
+                           {"shader_program", shader.program()}},
             __FILE__, __LINE__, __FUNCTION__);
     }
 
@@ -495,7 +497,7 @@ void renderWorldMeshBatches(const World& world, const Camera& cam)
                 {"enabled", true},
                 {"fade_start_meters", proximityConfig.proximityFadeStartDistanceMeters},
                 {"fade_end_meters", proximityConfig.proximityFadeEndDistanceMeters},
-                {"blend_enabled", glIsEnabled(GL_BLEND) == GL_TRUE},
+                {"blend_enabled", proximityConfig.proximityFadeEnabled},
                 {"world_draw_calls", drawCalls},
                 {"visible_bounds_count", visibleBoundsCount},
                 {"near_fade_candidate_count", nearFadeCandidateCount},

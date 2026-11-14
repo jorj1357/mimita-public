@@ -8250,6 +8250,8 @@ void serverGamemodeTick(SOCKET sock,
                     uint64_t& totalPacketsOut)
 {
     ServerGamemodeState& d = serverGamemodeState();
+    setServerMatchMode(d.matchMode);
+    setServerCommunityMode(d.communityMode);
     if (!d.enabled) return;
     d.currentServerTick = tick;
     serverDrainAuthoredGeometryRebuild(sock, d, players, world, npcWorld,

@@ -20,6 +20,10 @@
 #include "map/map_loader.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -48,21 +52,21 @@ ProjectileModelMesh& projectileModelFor(const std::string& path)
         return cached;
     cached.vao = mimita::game::genVertexArray();
     cached.vbo = mimita::game::genBuffer();
-    glBindVertexArray(cached.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(cached.mesh.verts.size() * sizeof(Vertex)),
-                 cached.mesh.verts.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
+    r::bindVertexArray(cached.vao);
+    r::bindBuffer(r::BufferTarget::Array, cached.vbo);
+    r::bufferData(r::BufferTarget::Array, cached.vbo, cached.mesh.verts.data(),
+                  static_cast<std::uint32_t>(cached.mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::bindVertexArray(0);
     cached.ready = true;
     return cached;
 }
@@ -81,7 +85,7 @@ bool drawProjectileModel(const Camera& camera, const glm::vec3& position,
                          const glm::quat& orientation,
                          const ProjectileVisualConfig& cfg)
 {
-    if (cfg.modelPath.empty() || !gRenderer || !gRenderer->shaderProgram)
+    if (cfg.modelPath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
         return false;
     ProjectileModelMesh& model = projectileModelFor(cfg.modelPath);
     if (!model.ready)
@@ -100,28 +104,30 @@ bool drawProjectileModel(const Camera& camera, const glm::vec3& position,
         * glm::translate(glm::mat4(1.0f), cfg.modelOffset)
         * glm::scale(glm::mat4(1.0f), cfg.scale);
 
-    unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &modelMatrix[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glUniform3f(glGetUniformLocation(shader, "uTint"), 1.0f, 1.0f, 1.0f);
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.5f);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &proj[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &modelMatrix[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::uniform3f(shader.uniform("uTint"), 1.0f, 1.0f, 1.0f);
+    r::uniform1f(shader.uniform("uAlphaCutoff"), 0.5f);
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(model.vao);
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(true);
+    r::activeTexture(0);
+    r::bindVertexArray(model.vao);
     for (const Mesh::Batch& batch : model.mesh.batches) {
-        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        std::uint32_t tex = batch.texture ? batch.texture : gTextures.get("default");
+        r::bindTexture(r::TextureTarget::Texture2D, tex);
+        r::drawArrays(r::Primitive::Triangles,
+                      static_cast<std::int32_t>(batch.first),
+                      static_cast<std::int32_t>(batch.count));
     }
-    glBindVertexArray(0);
+    r::bindVertexArray(0);
     return true;
 }
 
@@ -332,16 +338,21 @@ ProjectileRenderMesh& getProjectileMesh(float length, float radius, int segments
 
     mesh.vao = mimita::game::genVertexArray();
     mesh.vbo = mimita::game::genBuffer();
-    glBindVertexArray(mesh.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
+    r::bindVertexArray(mesh.vao);
+    r::bindBuffer(r::BufferTarget::Array, mesh.vbo);
+    r::bufferData(r::BufferTarget::Array, mesh.vbo, verts.data(),
+                  static_cast<std::uint32_t>(verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::bindVertexArray(0);
 
     auto result = gMeshCache.emplace(key, mesh);
     return result.first->second;
@@ -352,31 +363,31 @@ static void bindShaderAndMesh(
     const Camera& camera,
     const glm::mat4& modelMatrix,
     const ProjectileRenderMesh& mesh,
-    GLuint texture,
+    std::uint32_t texture,
     const glm::vec3& tint,
     float alpha)
 {
-    if (!gRenderer || !gRenderer->shaderProgram || mesh.vertexCount <= 0)
+    if (!gRenderer || !r::worldShader().ensureLoaded() || mesh.vertexCount <= 0)
         return;
 
-    unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
 
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &modelMatrix[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glUniform3f(glGetUniformLocation(shader, "uTint"), tint.x, tint.y, tint.z);
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), alpha >= 0.999f ? 0.5f : 0.0f);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &proj[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &modelMatrix[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::uniform3f(shader.uniform("uTint"), tint.x, tint.y, tint.z);
+    r::uniform1f(shader.uniform("uAlphaCutoff"), alpha >= 0.999f ? 0.5f : 0.0f);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glBindVertexArray(mesh.vao);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.vertexCount);
-    glBindVertexArray(0);
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, texture);
+    r::bindVertexArray(mesh.vao);
+    r::drawArrays(r::Primitive::Triangles, 0, mesh.vertexCount);
+    r::bindVertexArray(0);
 }
 
 static glm::mat4 buildModelMatrix(
@@ -405,7 +416,7 @@ void renderProjectile(
     const glm::quat& orientation,
     const ProjectileVisualConfig& cfg)
 {
-    if (!gRenderer || !gRenderer->shaderProgram)
+    if (!gRenderer || !r::worldShader().ensureLoaded())
         return;
 
     if (cfg.sphere) {
@@ -426,7 +437,7 @@ void renderProjectile(
 
 
     // Load texture
-    GLuint tex = gTextures.getPath(cfg.texturePath);
+    std::uint32_t tex = gTextures.getPath(cfg.texturePath);
     if (tex == 0) {
         static std::unordered_set<std::string> sTexWarned;
         if (sTexWarned.insert(cfg.texturePath).second)
@@ -440,11 +451,9 @@ void renderProjectile(
     // The rocket body is an opaque, closed cylinder. Only the outline and glow
     // are allowed to use blending; the fill must write depth so the far cap
     // cannot show through the projectile.
-    GLboolean blendWas = glIsEnabled(GL_BLEND);
-    GLboolean depthWriteWas = GL_FALSE;
-    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteWas);
-    glDisable(GL_BLEND);
-    glDepthMask(GL_TRUE);
+    r::pushState();
+    r::disable(r::Capability::Blend);
+    r::depthMask(true);
 
     // 1. Outline pass: slightly larger mesh with outline color
     if (cfg.outlineEnabled && cfg.outlineAlpha > 0.001f) {
@@ -459,8 +468,7 @@ void renderProjectile(
         bindShaderAndMesh(camera, fillModel, mesh, tex, cfg.fillColor, 1.0f);
     }
 
-    if (blendWas) glEnable(GL_BLEND); else glDisable(GL_BLEND);
-    glDepthMask(depthWriteWas);
+    r::popState();
 
     // 3. Glow sphere: large semi-transparent sphere
     if (cfg.glowEnabled && cfg.glowAlpha > 0.001f) {

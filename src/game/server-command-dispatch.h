@@ -13,8 +13,10 @@ namespace mimita::game {
 bool dispatchServerCommand(mimita::host::TransportDispatchV1* dispatch,
                            const mimita::host::HostServicesV1* services);
 
-// Small inbound packets delivered through on_event(kEventTransportMessage).
-// The game answers the same peer through CAP_TRANSPORT.
+// Inbound packets delivered through on_event(kEventTransportMessage). The game
+// validates and answers through CAP_TRANSPORT/CAP_ENTITY, not resident state.
+bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
+                            const mimita::host::HostServicesV1* services);
 bool dispatchPingMessage(const mimita::host::TransportMessageV1* message,
                          const mimita::host::HostServicesV1* services);
 

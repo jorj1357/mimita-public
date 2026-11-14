@@ -432,6 +432,8 @@ struct ServerPlayer
     uint32_t lastChatRequestId = 0;
     ChatMessageEventPacket cachedChatEvent{};
     bool hasCachedChatEvent = false;
+    double chatRateTokens = 0.0;
+    uint64_t chatRateLastUpdateTick = 0;
 
     // ── Idempotent projectile fire result cache ───────────────────────
     // When the client retries a fire request, the server must respond with
@@ -1432,6 +1434,12 @@ void setServerPasswordState(bool protectedFlag, const std::string& password);
 // Server map identity
 void setServerMapId(const std::string& mapId);
 const std::string& getServerMapId();
+
+// Live gamemode identity mirrored into the resident session state
+void setServerMatchMode(const std::string& mode);
+const std::string& getServerMatchMode();
+void setServerCommunityMode(const std::string& mode);
+const std::string& getServerCommunityMode();
 
 // Authoritative transform helper
 void beginAuthoritativeTransform(ServerPlayer& player,

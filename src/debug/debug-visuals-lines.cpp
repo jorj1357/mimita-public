@@ -17,6 +17,10 @@
 #include "debug/gl-debug.h"
 #include "debug/debug-diag.h"
 #include "config.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -47,25 +51,25 @@ void drawWorldLabel(glm::vec3 worldPos, const char* text, glm::vec4 color);
 bool projectToScreen(const Camera& camera, glm::vec3 worldPos, float& x, float& y);
 
 namespace {
-GLuint gLineVao = 0;
-GLuint gLineVbo = 0;
+std::uint32_t gLineVao = 0;
+std::uint32_t gLineVbo = 0;
 
 void setLineState(const Camera& camera, glm::vec4 color)
 {
-    if (!gRenderer || !gRenderer->shaderProgram) {
+    if (!gRenderer || !r::worldShader().ensureLoaded()) {
         Debug::warn(Debug::Category::Render, "[DEBUG WARNING] Cannot draw line: renderer/shader missing\n");
         return;
     }
 
-    glUseProgram(gRenderer->shaderProgram);
+    r::useProgram(r::worldShader().program());
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "model"), 1, GL_FALSE, &model[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(gRenderer->shaderProgram, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniform1i(glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"), 1);
-    glUniform4fv(glGetUniformLocation(gRenderer->shaderProgram, "uColor"), 1, &color.x);
+    r::uniformMatrix4fv(r::worldShader().uniform("model"), 1, &model[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(r::worldShader().uniform("projection"), 1, &proj[0][0]);
+    r::uniform1i(r::worldShader().uniform("uUseColor"), 1);
+    r::uniform4f(r::worldShader().uniform("uColor"), color.x, color.y, color.z, color.w);
 }
 } // anonymous namespace
 
@@ -73,7 +77,7 @@ void flushDebugLines(const Camera& camera)
 {
     if (gLineVerts.empty())
         return;
-    if (!gRenderer || !gRenderer->shaderProgram) {
+    if (!gRenderer || !r::worldShader().ensureLoaded()) {
         gLineVerts.clear();
         return;
     }
@@ -86,9 +90,9 @@ void flushDebugLines(const Camera& camera)
     }
 
     MIMITA_GL_CLEAR_STAGE("flushDebugLines");
-    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+    r::disable(r::Capability::DepthTest);
 
-    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+    r::useProgram(r::worldShader().program());
 
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
@@ -97,72 +101,53 @@ void flushDebugLines(const Camera& camera)
         (float)gRenderer->sceneHeight
     );
 
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "model"),
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("model"),
         1,
-        GL_FALSE,
         &model[0][0]
     );
 
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "view"),
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("view"),
         1,
-        GL_FALSE,
         &view[0][0]
     );
 
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "projection"),
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("projection"),
         1,
-        GL_FALSE,
         &proj[0][0]
     );
 
-    glUniform1i(
-        glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
+    r::uniform1i(
+        r::worldShader().uniform("uUseColor"),
         2
     );
 
-    MIMITA_GL_CALL(glBindVertexArray(gLineVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gLineVbo));
-
-    MIMITA_GL_CALL(glBufferData(
-        GL_ARRAY_BUFFER,
-        gLineVerts.size() * sizeof(DebugLineVertex),
-        gLineVerts.data(),
-        GL_DYNAMIC_DRAW
-    ));
+    r::bindVertexArray(gLineVao);
+    r::bindBuffer(r::BufferTarget::Array, gLineVbo);
+    r::bufferData(r::BufferTarget::Array, gLineVbo, gLineVerts.data(),
+                  static_cast<std::uint32_t>(gLineVerts.size() * sizeof(DebugLineVertex)),
+                  r::BufferUsage::Dynamic);
 
     // position
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(DebugLineVertex),
-        (void*)offsetof(DebugLineVertex, pos)
-    ));
-
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                           sizeof(DebugLineVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugLineVertex, pos)));
+    r::enableVertexAttribArray(0);
 
     // per-line debug color
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        3,
-        4,
-        GL_FLOAT,
-        GL_FALSE,
-        sizeof(DebugLineVertex),
-        (void*)offsetof(DebugLineVertex, color)
-    ));
+    r::vertexAttribPointer(3, 4, r::VertexType::Float, false,
+                           sizeof(DebugLineVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugLineVertex, color)));
+    r::enableVertexAttribArray(3);
+    r::disableVertexAttribArray(1);
+    r::disableVertexAttribArray(2);
 
-    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
+    r::drawArrays(r::Primitive::Lines, 0,
+                  static_cast<std::int32_t>(gLineVerts.size()));
 
-    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
-    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
-
-    MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gLineVerts.size()));
-
-    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    r::enable(r::Capability::DepthTest);
 
     gLineVerts.clear();
 }
@@ -556,14 +541,14 @@ void drawWeaponWireBox(const Camera& camera, const glm::mat4& weaponTransform,
 }
 
 // Reuse the same line VAO/VBO for the weapon line buffer.
-static GLuint gWeaponLineVao = 0;
-static GLuint gWeaponLineVbo = 0;
+static std::uint32_t gWeaponLineVao = 0;
+static std::uint32_t gWeaponLineVbo = 0;
 
 void flushWeaponLines(const Camera& camera)
 {
     if (gWeaponLineVerts.empty())
         return;
-    if (!gRenderer || !gRenderer->shaderProgram) {
+    if (!gRenderer || !r::worldShader().ensureLoaded()) {
         gWeaponLineVerts.clear();
         return;
     }
@@ -576,9 +561,9 @@ void flushWeaponLines(const Camera& camera)
     }
 
     MIMITA_GL_CLEAR_STAGE("flushWeaponLines");
-    MIMITA_GL_CALL(glDisable(GL_DEPTH_TEST));
+    r::disable(r::Capability::DepthTest);
 
-    MIMITA_GL_CALL(glUseProgram(gRenderer->shaderProgram));
+    r::useProgram(r::worldShader().program());
 
     glm::mat4 model(1.0f);
     glm::mat4 view = camera.getView();
@@ -587,44 +572,41 @@ void flushWeaponLines(const Camera& camera)
         (float)gRenderer->sceneHeight
     );
 
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "model"),
-        1, GL_FALSE, &model[0][0]);
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "view"),
-        1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(
-        glGetUniformLocation(gRenderer->shaderProgram, "projection"),
-        1, GL_FALSE, &proj[0][0]);
-    glUniform1i(
-        glGetUniformLocation(gRenderer->shaderProgram, "uUseColor"),
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("model"),
+        1, &model[0][0]);
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("view"),
+        1, &view[0][0]);
+    r::uniformMatrix4fv(
+        r::worldShader().uniform("projection"),
+        1, &proj[0][0]);
+    r::uniform1i(
+        r::worldShader().uniform("uUseColor"),
         2);
 
-    MIMITA_GL_CALL(glBindVertexArray(gWeaponLineVao));
-    MIMITA_GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, gWeaponLineVbo));
+    r::bindVertexArray(gWeaponLineVao);
+    r::bindBuffer(r::BufferTarget::Array, gWeaponLineVbo);
+    r::bufferData(r::BufferTarget::Array, gWeaponLineVbo, gWeaponLineVerts.data(),
+                  static_cast<std::uint32_t>(gWeaponLineVerts.size() * sizeof(DebugLineVertex)),
+                  r::BufferUsage::Dynamic);
 
-    MIMITA_GL_CALL(glBufferData(
-        GL_ARRAY_BUFFER,
-        gWeaponLineVerts.size() * sizeof(DebugLineVertex),
-        gWeaponLineVerts.data(),
-        GL_DYNAMIC_DRAW));
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                           sizeof(DebugLineVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugLineVertex, pos)));
+    r::enableVertexAttribArray(0);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        0, 3, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex),
-        (void*)offsetof(DebugLineVertex, pos)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(0));
+    r::vertexAttribPointer(3, 4, r::VertexType::Float, false,
+                           sizeof(DebugLineVertex),
+                           static_cast<std::uint32_t>(offsetof(DebugLineVertex, color)));
+    r::enableVertexAttribArray(3);
+    r::disableVertexAttribArray(1);
+    r::disableVertexAttribArray(2);
 
-    MIMITA_GL_CALL(glVertexAttribPointer(
-        3, 4, GL_FLOAT, GL_FALSE, sizeof(DebugLineVertex),
-        (void*)offsetof(DebugLineVertex, color)));
-    MIMITA_GL_CALL(glEnableVertexAttribArray(3));
+    r::drawArrays(r::Primitive::Lines, 0,
+                  static_cast<std::int32_t>(gWeaponLineVerts.size()));
 
-    MIMITA_GL_CALL(glDisableVertexAttribArray(1));
-    MIMITA_GL_CALL(glDisableVertexAttribArray(2));
-
-    MIMITA_GL_CALL(glDrawArrays(GL_LINES, 0, (GLsizei)gWeaponLineVerts.size()));
-
-    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    r::enable(r::Capability::DepthTest);
 
     gWeaponLineVerts.clear();
 }

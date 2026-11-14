@@ -31,19 +31,18 @@ deepseek v4.1 flash
 >   keep the same process, connection, player, and position/tick continuity.
 >   Exact `admincmds` is the first authoritative hot command.
 > - Production coverage: **0% of ordinary game code runs from `game.dll` in
->   production today**. All 600 game sources still run in the EXE. The whole-game
+>   production today**. All 616 game sources are now game-owned; the EXE fallback/server path still compiles them. The whole-game
 >   candidate compiles and links with **0 undefined / 0 unique** symbols. The
->   rebuilt host loaded and initialized generation 68 in a dedicated server
->   (PID 13028, `game.host.probe.started`, ABI 1). The host has a barrier-
->   guarded `driveTick`/`driveRender`/`driveFrame` path and `CAP_RENDER` has
->   host-executed buffer/texture/attribute/uniform/draw commands. The first
->   host-owned-frame client attempt crashed in the menu with an unhandled
->   exception (`UnhandledExceptionFilter` / `MessageBoxA` stack). A full
->   `main-init`/`main-systems` ownership move was attempted and reverted: it
->   reintroduced 33 bootstrap-global/resident dependencies and broke link 0.
->   `frameCapable` is held at 0; the driver is not used by the legacy loop and
->   the production cutover is not running. Static gate: **0 violations / 0
->   files**.
+>   rebuilt host loaded and initialized generation 120 in a dedicated server
+>   (PID 27912, `game.host.probe.started`, ABI 1). B-lite resident state is
+>   now implemented for menu-critical scalars (`GameState`, freelook/editor
+>   selection, world-loaded) plus resident `Camera`, `activeMapPath`, and
+>   `activeGameMode`, core gameplay/session, and replay objects. `main-init` and
+>   `main-systems` are now game-owned. The host-owned full client reached a
+>   stable 30-second menu/frame loop with `frameCapable=1`; a transitional
+>   Windows GL loader covers legacy raw-GL render/effect/debug sites while their
+>   CAP_RENDER migration continues. Gameplay-frame, live-edit, and same-PID swap
+>   proofs are still outstanding. Static gate: **0 violations / 0 files**.
 > - Networking: the opaque envelope and command response work; most packet
 >   handlers are still resident.
 > - Rendering: `CAP_RENDER` is a command-stream skeleton; a resident
@@ -192,6 +191,58 @@ The efficiency cost of a separate `runtime.dll` is therefore real and immediate 
 
 For the rest of this document, "runtime" means the resident host and its records (currently the EXE) unless a separate `runtime.dll` is explicitly named.
 
+### 2.2.2 B-lite resident records (2026-11-13)
+
+The first generic-state implementation is deliberately **B-lite**: the host
+owns fixed-layout scalar records and opaque object storage; the game generation
+borrows direct pointers. There is no per-tick field-name lookup. Scalar records
+contain no STL. Opaque objects are game-typed, constructed once by the game
+inside host-owned storage, and may contain STL or other ordinary C++ fields;
+construction happens behind an explicit `created` flag. Schema versioning and
+migration stay at the activation boundary.
+
+The maximal form is deferred and is the preferred long-term target: the most
+general schema/field model, the hottest reasonable state coverage, and the least
+cold/manual per-field migration. B-lite is the first proof: direct-access POD
+records only, with reflection and arbitrary schema evolution added later.
+
+Current slice: menu-critical scalars (game state, freecam/editor selection,
+world loaded); resident `Camera`, `activeMapPath`, `activeGameMode`, `Player`,
+`World`, `NpcSystem`, `WeaponSystem`, `ChatHistory`, `DuelConfig`,
+`MultiplayerContext`; and replay session objects/collections. Resident-object
+layout is validated by size/alignment. Remaining: broader actor/world graph
+migration and the bootstrap/frame cutover.
+
+The resident-object pattern is deliberately small:
+
+```cpp
+bool created = false;
+void* storage = ensure_object(StateObjectId::Camera, sizeof(Camera),
+                              alignof(Camera), &created);
+auto& camera = *static_cast<Camera*>(storage);
+if (created) new (&camera) Camera();
+```
+
+New state must follow this pattern or extend a named scalar record. Do not add a
+second global alias for the same concept.
+
+Layout caveat: persistent opaque objects keep their bytes across generations. A
+live edit that changes an object's layout must add schema/size validation or a
+migration step; it is not safe to reinterpret an old object with a new layout.
+
+### 2.2.3 Readability and the ideal live loop
+
+The ideal end state is: any ordinary gameplay, NPC, collision, network,
+rendering, UI, or tool bug can be fixed in C++, rebuilt as a candidate
+`game.dll`, validated, and activated in the **same process with no EXE restart**.
+An EXE restart is reserved for a genuine resident-host boundary change, not for
+ordinary behavior.
+
+Keep the implementation understandable: one state owner, typed capability
+bridges, small named records, explicit construct-once flags, and no per-feature
+ad-hoc global pointer spam. A new hot field should extend a named record or
+object, not add a parallel state path.
+
 ### 2.3 Replaceable `game.dll`
 
 Initially, ordinary game implementation `.cpp` files are assigned to one `game.dll` by default. The DLL receives a versioned resident function table and stable handles; it owns behavior, not persistent world/session data.
@@ -234,6 +285,15 @@ loader/barrier.**
 The `frameCapable` flag is true only after the DLL bootstrap can run without a
 host-constructed Engine and the first menu/gameplay frame proof passes. Until
 then the legacy host path remains authoritative.
+
+### 2.3.2 Logging ownership and deprecation (2026-11-13)
+
+`StructuredLogger` is the canonical process journal. `LogManager` and the
+legacy `Debug::*` logging surface are **deprecated** and must be migrated out of
+game-owned code. This migration is deliberately deferred: do not remove or
+rewrite those calls as part of the Engine/bootstrap cutover. Record them as
+accepted debt and migrate them after the full-frame/cutover proof, using the
+resident logging capability rather than opening a second journal.
 
 ### 2.4 Multiplayer and graphics
 
@@ -639,8 +699,8 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 773 `.cpp` rows at manifest revision `e9a3aa3ff807d6872c8cb773f8df3cdf3098c3738e9c31ddb9f8ba71eff8f54d`; 685 rows are active in their owner build. The canonical owner map resolves all 770 `.cpp` rows: game 603, resident 28, bootstrap 4, module 12, test 33, tool 1, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (603 game sources) and links at generation 75 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The rebuilt host loaded and initialized generation 75 in a dedicated server (PID 13028, run `20261113_090828`), but it has not run the full game loop or cut over. The chosen design keeps the resident host in the EXE.
+Current measured status: 788 `.cpp` rows at manifest revision `5a82777128b71ee6fb6d410f5346e33687f7c7cd2a9fa83c6a95803a00c4d86d`. The canonical owner map resolves all 788 rows: game 616, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (616 game sources) and links at generation 120 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The rebuilt host loaded and initialized generation 120 in a dedicated server (PID 27912, run `20261114_083846`). The host-owned full client reached a stable 30-second menu/frame loop; `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. The normal EXE fallback remains active for launches that do not opt into DLL frame ownership. The chosen design keeps the resident host in the EXE.
 
 Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
@@ -730,7 +790,7 @@ Rules:
 - `devscripts/live.py` watches sources and headers, debounces/coalesces saves, pins one coherent revision through `devscripts/source_manifest.py`, spawns the worker in the background, and publishes `build/game/ready.json` for safe-point activation.
 - Unknown ownership stops with a diagnostic; compile failure keeps the active generation.
 - Acceptance: one coherent revision per build; add/remove/rename and header changes rebuild the right translation units; no compiler invocation from the manifest tool.
-- Diagnostic status (2026-11-13): all 603 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges + whole-game entry/dispatch) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the global/replay/audio/RenderDevice/diagnostics/ICE/TransportSession/AuthoredRebuild bridges it links at generation 68 with 0 undefined / 0 unique and 0 duplicate definitions; all previously listed families are 0. Static gate is now **0/0**. Stage 2 resident state covers world-loaded/map/mode, player/world/NPC/weapons/multiplayer-context, camera, game state, chat history, freecam/editor/death/selected-object, duel config, replay pointers/collections, command binds, and debug scalars. The compatibility bridge was removed. The host has a barrier-guarded whole-game frame driver and `CAP_RENDER` command execution; frame ownership was attempted in a client and crashed in the menu. Moving `main-init`/`main-systems` ownership to the game also reintroduced 33 bootstrap/resident link references, so the ownership switch was reverted and `frameCapable` remains off. Game-owned `DuelManager`/`GamemodeManager`/`FramePacer` objects remain in a small game module. Client/direct socket paths now use opaque handles; server packet-send call sites still need the final CAP_TRANSPORT pass. GL create/delete is host-owned, but draw code still uses raw GL ids; full `CAP_RENDER` draw-state ownership remains. A transitional `src/glad.c` object is linked only for the diagnostic DLL; CAP_RENDER remains the cutover-safe replacement. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
+- Diagnostic status (2026-11-13): all 603 `game` sources (575 original + CAP_LOG bridge + compat bridge + transport bridge + module/audio/effects/entity/lifetime/render bridges + whole-game entry/dispatch) compile as DLL translation units. Before CAP_LOG the link failed with 389 unique resident/vendored symbols; after the global/replay/audio/RenderDevice/diagnostics/ICE/TransportSession/AuthoredRebuild bridges it links at generation 68 with 0 undefined / 0 unique and 0 duplicate definitions; all previously listed families are 0. Static gate is now **0/0**. Stage 2 resident state covers world-loaded/map/mode, player/world/NPC/weapons/multiplayer-context, camera, game state, chat history, freecam/editor/death/selected-object, duel config, replay pointers/collections, command binds, and debug scalars. The compatibility bridge was removed. The host has a barrier-guarded whole-game frame driver and `CAP_RENDER` command execution; frame ownership was attempted in a client and crashed in the menu. Moving `main-init`/`main-systems` ownership to the game also reintroduced 33 bootstrap/resident link references, so the ownership switch was reverted and `frameCapable` remains off. B-lite menu state is resident and shared through `MenuStateV1`. Game-owned `DuelManager`/`GamemodeManager`/`FramePacer` objects remain in a small game module. Client/direct socket paths now use opaque handles; server packet-send call sites still need the final CAP_TRANSPORT pass. GL create/delete is host-owned, but draw code still uses raw GL ids; full `CAP_RENDER` draw-state ownership remains. A transitional `src/glad.c` object is linked only for the diagnostic DLL; CAP_RENDER remains the cutover-safe replacement. See `docs/handoffs/cpp-game-dll-diagnostic-link-20261112.md`. This is compile/link evidence, not runtime proof.
 
 Foundation batch status (2026-11-12): the host ABI now declares `CAP_ENTITY`,
 `CAP_RENDER`, `CAP_JOBS`, `CAP_CALLBACKS`, and `CAP_RESOURCES`. The resident host
@@ -758,8 +818,8 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | **0 undefined / 0 unique** (generation 75) | 0 undefined |
-| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 75 loaded/initialized | full-game tick/render + swap + coordinator |
+| Whole-game link | **0 undefined / 0 unique** (generation 120) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 120 loaded/initialized; host-owned menu/frame loop stable for 30s with transitional GL loader | gameplay frame + live edit + swap/coordinator |
 | State continuity | position/tick continuity in probe | resident records + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
 | Render/world | ABI skeleton | `CAP_RENDER`/`CAP_WORLD` + GLAD path |
@@ -1929,3 +1989,154 @@ JSON definition changes the visible result without a rebuild or restart.
 Source parsing and reload success are not the same as visual acceptance. A
 live game or replay capture is still required to prove that the intended HUD
 element changed and that the correct owner is being rendered.
+
+## Render hot-coverage worklist (2026-11-13, Agent C)
+
+Status: static inventory of the game-owned render lane
+(`src/engine/**`, `src/render/**`, `src/entities/player-render*.cpp`). This is a
+worklist and contract, not runtime or visual evidence. Raw `glfw*` window/input
+calls are excluded; they are a separate input/window capability.
+
+### Decisions
+
+- **Shaders are hot.** The host provides only primitive shader operations
+  (create, source, compile, link, location, log, delete). The game DLL owns the
+  program handles, sources, file-watch/reload, and the `name -> location` cache.
+  The host must not own a shader registry, program cache, or reload policy.
+- **The main world shader moves into the game generation.** The resident
+  `Renderer::shaderProgram` creation/reload is retired; a game-owned
+  `WorldShader` loads `shaders/basic.vert|frag`, watches them, and swaps at the
+  frame boundary.
+- **Semantic enums.** The contract passes backend-neutral enums
+  (`Primitive::Triangles`, `TextureTarget::TextureCube`,
+  `BlendFactor::SrcAlpha`, ...), never GL constants. The legacy EXE maps them
+  to GL; the host maps them to the active backend.
+- **Host state guards.** `pushState`/`popState` replace the game's manual
+  `glGetIntegerv`/`glIsEnabled`/`glGetBooleanv` save/restore blocks. The host
+  snapshots and restores the state it owns.
+- **Render targets.** Post-FX framebuffer/renderbuffer creation becomes a
+  resident render-target service; the game asks for a target, not raw FBO ids.
+
+### Worklist: every GL function to its contract target
+
+Counts are real call sites in the game lane (643 total, 54 distinct functions).
+The new `src/render/render-command-legacy.cpp` façade is excluded from the
+counts.
+
+#### Family A — shader + uniform (236 sites)
+
+| GL function (sites) | Contract target |
+|---|---|
+| `glGetUniformLocation` (93) | `ShaderProgram::uniform(name)` -> one capability lookup, then cached |
+| `glUniformMatrix4fv` (36) | `setUniformMatrix4fv(Uniform, count, values)` |
+| `glUniform1i` (33) | `setUniform1i(Uniform, value)` |
+| `glUniform1f` (20) | `setUniform1f` |
+| `glUniform4f` (14) | `setUniform4f` |
+| `glUniform3f` (9) | `setUniform3f` |
+| `glUniform2f` (3) | `setUniform2f` |
+| `glUniform1fv` (2) | `setUniform1fv` |
+| `glUniform2fv` (2) | `setUniform2fv` |
+| `glUniform3fv` (1) | `setUniform3fv` |
+| `glAttachShader` (4) | capability `attachShader` |
+| `glCreateShader` (3) | capability `createShader(ShaderStage)` |
+| `glShaderSource` (2) | capability `shaderSource` |
+| `glCompileShader` (2) | capability `compileShader` |
+| `glCreateProgram` (2) | capability `createProgram` |
+| `glLinkProgram` (2) | capability `linkProgram` |
+| `glGetShaderiv` (2) | capability `getShaderiv` |
+| `glGetProgramiv` (2) | capability `getProgramiv` |
+| `glGetShaderInfoLog` (2) | capability `getShaderInfoLog` |
+| `glGetProgramInfoLog` (2) | capability `getProgramInfoLog` |
+| `glGetUniformiv` (1) | **GAP** -> `getUniformiv` / `setUniform4iv` |
+
+#### Family B — draw / bind / upload (224 sites)
+
+| GL function (sites) | Contract target |
+|---|---|
+| `glBindVertexArray` (43) | `bindVertexArray` |
+| `glEnableVertexAttribArray` (33) | `enableVertexAttribArray` |
+| `glVertexAttribPointer` (33) | `vertexAttribPointer(VertexType, ...)` |
+| `glUseProgram` (22) | `useProgram(Program)` |
+| `glDrawArrays` (20) | `drawArrays(Primitive, first, count)` |
+| `glBindBuffer` (17) | `bindBuffer(BufferTarget, id)` |
+| `glBufferData` (14) | `bufferData(BufferTarget, id, data, size, BufferUsage)` |
+| `glBindTexture` (13) | `bindTexture(TextureTarget, id)` |
+| `glTexParameteri` (9) | `texParameteri(TextureTarget, TextureParameter, value)` |
+| `glBindFramebuffer` (7) | `bindFramebuffer(FramebufferTarget, id)` |
+| `glActiveTexture` (7) | `activeTexture(unit)` |
+| `glTexImage2D` (4) | `texImage2D(TextureTarget, ...)` |
+| `glDisableVertexAttribArray` (2) | `disableVertexAttribArray` |
+
+#### Family C — state (133 sites)
+
+| GL function (sites) | Contract target |
+|---|---|
+| `glEnable` (41) | `enable(Capability)` |
+| `glDisable` (39) | `disable(Capability)` |
+| `glCullFace` (15) | `cullFace(CullFaceMode)` |
+| `glDepthMask` (11) | `depthMask(bool)` |
+| `glBlendFunc` (6) | `blendFunc(BlendFactor, BlendFactor)` |
+| `glViewport` (5) | `viewport(x, y, w, h)` |
+| `glPolygonMode` (4) | `polygonMode(PolygonMode)` |
+| `glDepthFunc` (4) | `depthFunc(DepthFunc)` |
+| `glClear` (3) | `clear(bool color, bool depth, bool stencil)` |
+| `glBlendFuncSeparate` (3) | `blendFuncSeparate(...)` |
+| `glClearColor` (2) | `clearColor(r, g, b, a)` |
+| `glLineWidth` (1) | **GAP** -> `lineWidth(float)` |
+
+#### Family D — queries (43 sites) -> replaced by host state guards
+
+| GL function (sites) | Replacement |
+|---|---|
+| `glGetIntegerv` (22) | `pushState` / `popState` |
+| `glIsEnabled` (16) | `pushState` / `popState` |
+| `glGetBooleanv` (5) | `pushState` / `popState` |
+
+#### Family E — render targets (5 sites) -> resident render-target service
+
+| GL function (sites) | Replacement |
+|---|---|
+| `glFramebufferTexture2D` (1) | `createRenderTarget(key, w, h, format)` |
+| `glBindRenderbuffer` (1) | `bindRenderTarget(key)` |
+| `glRenderbufferStorage` (1) | `createRenderTarget` |
+| `glFramebufferRenderbuffer` (1) | `createRenderTarget` |
+| `glCheckFramebufferStatus` (1) | `createRenderTarget` reports status |
+
+### Contract gaps
+
+Seven sites had no contract function at inventory time: the five
+framebuffer/renderbuffer operations, `glLineWidth`, and `glGetUniformiv`.
+Phase 0 added them to `src/render/render-command.h`. They remain
+host-implementation gaps until Agent A lands the matching `CAP_RENDER`
+operations; a game-owned call site must not use them before that.
+
+The world sweep (2026-11-13) found two more gaps in
+`src/world/streamed-world-layer.cpp`: `glDrawArraysInstanced` (1 site) and
+`glVertexAttribDivisor` (1 site). The contract needs `drawArraysInstanced` and
+`vertexAttribDivisor` before the instanced chunk path can move; until then that
+path keeps the raw instanced calls while its shader/uniform family uses the
+game-owned world shader.
+
+### What to do with this worklist
+
+1. **Agent A:** implement the primitive shader capability, the semantic-enum
+   mapping, `pushState`/`popState`, and the render-target service in
+   `CAP_RENDER`; retire the resident main-shader creation/reload. Harden the
+   swap in the same batch (per-generation GL registry, `gameQuiesce` Busy,
+   `gameShutdown` release, drain pending render work).
+2. **Agent C:** add the game-side `ShaderProgram`/`WorldShader`, then the
+   `MIMITA_GAME_DLL` bridge, then migrate family by family.
+3. **Order:** Family A first (it removes 93 per-frame uniform lookups), then B,
+   then C via state guards, then D (mostly deleted by the guards), then E.
+4. **Per file, migrate once:** the capability surface is built family by
+   family, but each source file is swept only when every family it uses has
+   landed, so a file is not edited twice.
+5. **Enforcement:** after the migration, extend `config/game-static-gate.json`
+   to ban raw `gl*` in game-owned sources with the transitional façade
+   allowlisted. Delete the façade at cutover.
+
+### Evidence boundary
+
+The counts above are a static source scan. They do not prove render parity,
+resource lifetime, state correctness, or visual acceptance. Those require the
+live dev-loop run and human review described in this document.

@@ -79,6 +79,10 @@
 #include "config/player-settings.h"
 #include "game/duel.h"
 #include "video/frame-pacer.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern FramePacer gFramePacer;
 
@@ -216,7 +220,7 @@ static void renderReplayActors(
                         ? actorState.outfitPath
                         : REPLAY_PLAYER.outfitPath();
                 if (!outfitToUse.empty()) {
-                    GLuint tex = gTextures.getPath(outfitToUse);
+                    std::uint32_t tex = gTextures.getPath(outfitToUse);
                     if (tex) {
                         for (auto& mesh : actor->physicalBody.partMeshes)
                             for (auto& batch : mesh.batches)
@@ -308,18 +312,18 @@ static void renderReplayActors(
             const bool isImpactVictim = gKillImpactFrame.active &&
                 actorState.id == gKillImpactFrame.victimId;
             if (isImpactVictim) {
-                GLuint shader = engine.renderer->shaderProgram;
-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-                glUniform4f(glGetUniformLocation(shader, "uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
+                auto& shader = r::worldShader();
+                r::uniform1i(shader.uniform("uUseColor"), 1);
+                r::uniform4f(shader.uniform("uColor"), 1.0f, 1.0f, 1.0f, 1.0f);
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
-                  actor->renderCurrentPose(shader, view, proj); }
+                  actor->renderCurrentPose(shader.programObject(), view, proj); }
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
                   CosmeticSystem::instance().renderCosmetics(*actor); }
-                glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+                r::uniform1i(shader.uniform("uUseColor"), 0);
             } else {
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
                   actor->renderCurrentPose(
-                      engine.renderer->shaderProgram,
+                      r::worldShader().programObject(),
                       view, proj); }
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
                   CosmeticSystem::instance().renderCosmetics(*actor); }
@@ -369,63 +373,65 @@ static void renderReplayActors(
             glm::vec3(0.0f, 0.0f, 1.0f),
             deCfg.length, deCfg.radius, deCfg.lifetime);
         // Full-screen black overlay (impact frame)
-        static GLuint impactVao = 0, impactVbo = 0;
+        static std::uint32_t impactVao = 0, impactVbo = 0;
         if (!impactVao) {
             float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
             impactVao = mimita::game::genVertexArray();
             impactVbo = mimita::game::genBuffer();
-            glBindVertexArray(impactVao);
-            glBindBuffer(GL_ARRAY_BUFFER, impactVbo);
-            glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+            r::bindVertexArray(impactVao);
+            r::bindBuffer(r::BufferTarget::Array, impactVbo);
+            r::bufferData(r::BufferTarget::Array, impactVbo, verts, sizeof(verts),
+                          r::BufferUsage::Static);
+            r::enableVertexAttribArray(0);
+            r::vertexAttribPointer(0, 3, r::VertexType::Float, false, 0, 0);
         }
-        GLuint shader = engine.renderer->shaderProgram;
-        glDisable(GL_DEPTH_TEST);
-        glUseProgram(shader);
+        auto& shader = r::worldShader();
+        r::disable(r::Capability::DepthTest);
+        r::useProgram(shader.program());
         glm::mat4 id(1.0f);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
-        glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
-        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-        glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
-        glBindVertexArray(impactVao);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-        glEnable(GL_DEPTH_TEST);
-        glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
+        r::uniformMatrix4fv(shader.uniform("model"), 1, &id[0][0]);
+        r::uniformMatrix4fv(shader.uniform("view"), 1, &id[0][0]);
+        r::uniformMatrix4fv(shader.uniform("projection"), 1, &id[0][0]);
+        r::uniform1i(shader.uniform("uUseColor"), 1);
+        r::uniform4f(shader.uniform("uColor"), 0.0f, 0.0f, 0.0f, 0.6f);
+        r::bindVertexArray(impactVao);
+        r::drawArrays(r::Primitive::Triangles, 0, 3);
+        r::enable(r::Capability::DepthTest);
+        r::uniform1i(shader.uniform("uUseColor"), 0);
     }
 }
 
 static void drawScreenOverlay(Engine& engine, const glm::vec4& color)
 {
     if (color.a <= 0.001f) return;
-    static GLuint vao = 0, vbo = 0;
+    static std::uint32_t vao = 0, vbo = 0;
     if (!vao) {
         float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
         vao = mimita::game::genVertexArray();
         vbo = mimita::game::genBuffer();
-        glBindVertexArray(vao);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        r::bindVertexArray(vao);
+        r::bindBuffer(r::BufferTarget::Array, vbo);
+        r::bufferData(r::BufferTarget::Array, vbo, verts, sizeof(verts),
+                      r::BufferUsage::Static);
+        r::enableVertexAttribArray(0);
+        r::vertexAttribPointer(0, 3, r::VertexType::Float, false, 0, 0);
     }
-    GLuint shader = engine.renderer->shaderProgram;
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(shader);
+    auto& shader = r::worldShader();
+    r::disable(r::Capability::DepthTest);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::useProgram(shader.program());
     glm::mat4 id(1.0f);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &id[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &id[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &id[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-    glUniform4f(glGetUniformLocation(shader, "uColor"),
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &id[0][0]);
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &id[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &id[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 1);
+    r::uniform4f(shader.uniform("uColor"),
                 color.r, color.g, color.b, std::clamp(color.a, 0.0f, 1.0f));
-    glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    glDisable(GL_BLEND);
-    glEnable(GL_DEPTH_TEST);
+    r::bindVertexArray(vao);
+    r::drawArrays(r::Primitive::Triangles, 0, 3);
+    r::disable(r::Capability::Blend);
+    r::enable(r::Capability::DepthTest);
 }
 
 void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
@@ -511,15 +517,18 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
           (kShadowUpdateMode == 2 && (shadowFrameCounter++ & 1u) == 0u);
       if (renderShadowThisFrame) {
           Perf::ScopedTimer _shadowDraw("Rendering::Shadows::Draw");
+          recordCrashBreadcrumb("render-frame", "shadow-map begin");
           PerfGpu::beginRegion("GPU::Shadows");
           renderShadowMap(world, camera.pos);
           PerfGpu::endRegion();
+          recordCrashBreadcrumb("render-frame", "shadow-map end");
       } }
-    glViewport(0, 0, engine.renderer->width, engine.renderer->height);
+    r::viewport(0, 0, engine.renderer->width, engine.renderer->height);
     { MIMITA_PERF_SCOPE("Rendering::PostFX::Bind"); PostFX::instance().bindFBO(); }
     diagRenderStage(1);
     // Skybox renders first (if loaded), otherwise fall back to mesh-based sky
     { MIMITA_PERF_SCOPE("Rendering::World");
+    recordCrashBreadcrumb("render-frame", "world pass begin");
     PerfGpu::beginRegion("GPU::World");
     if (gSkybox.isEnabled()) {
         { MIMITA_PERF_SCOPE("Rendering::World::Skybox"); gSkybox.render(camera); }
@@ -528,6 +537,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     }
     { MIMITA_PERF_SCOPE("Rendering::World::Mesh"); renderWorld(world, camera); }
     PerfGpu::endRegion();
+    recordCrashBreadcrumb("render-frame", "world pass end");
     }
     { MIMITA_PERF_SCOPE("Rendering::World::Finalize"); PostFX::instance().consumeMagentaTest(); }
     diagRenderStage(2);
@@ -570,6 +580,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         gExportFrameTimings.renderMs += (replayExportNowSec() - tRender0) * 1000.0;
     } else {
         { MIMITA_PERF_SCOPE("Rendering::Actors");
+        recordCrashBreadcrumb("render-frame", "actors begin");
         PerfGpu::beginRegion("GPU::Actors");
         beginPlayerTrailBatch();
         static uint32_t remoteWeaponFrameCounter = 0;
@@ -581,6 +592,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
             drawScreenOverlay(engine, glm::vec4(0.0f, 0.0f, 0.0f,
                 player.darkbangIntensity));
         { MIMITA_PERF_SCOPE("Rendering::Actors::LocalPlayer");
+          recordCrashBreadcrumb("render-frame", "local player begin");
           Perf::state().renderPerf.actorLocal++;
           try {
               renderPlayer(player, camera);
@@ -590,7 +602,9 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
           } catch (...) {
               recordCrashBreadcrumb("render-local-player", "unknown exception");
               throw;
-          } }
+          }
+          recordCrashBreadcrumb("render-frame", "local player end");
+        }
         clientProceduralTeleportShieldRender(player, camera);
         MimitaMelee::drawActiveHitbox(player, camera);
         if (meleePresentation) {
@@ -966,31 +980,32 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
         const MimitaNet::CommunityMatchClient& aftermath =
             MimitaNet::CommunityMatchClient::instance();
         if (aftermath.aftermathLocal() && aftermath.aftermathBlackout()) {
-            static GLuint aftermathVao = 0, aftermathVbo = 0;
+            static std::uint32_t aftermathVao = 0, aftermathVbo = 0;
             if (!aftermathVao) {
                 float verts[] = { -1,-1,0, 3,-1,0, -1,3,0 };
                 aftermathVao = mimita::game::genVertexArray();
                 aftermathVbo = mimita::game::genBuffer();
-                glBindVertexArray(aftermathVao);
-                glBindBuffer(GL_ARRAY_BUFFER, aftermathVbo);
-                glBufferData(GL_ARRAY_BUFFER, sizeof(verts), verts, GL_STATIC_DRAW);
-                glEnableVertexAttribArray(0);
-                glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+                r::bindVertexArray(aftermathVao);
+                r::bindBuffer(r::BufferTarget::Array, aftermathVbo);
+                r::bufferData(r::BufferTarget::Array, aftermathVbo, verts,
+                              sizeof(verts), r::BufferUsage::Static);
+                r::enableVertexAttribArray(0);
+                r::vertexAttribPointer(0, 3, r::VertexType::Float, false, 0, 0);
             }
-            GLuint shader = engine.renderer->shaderProgram;
-            glDisable(GL_DEPTH_TEST);
-            glUseProgram(shader);
+            auto& shader = r::worldShader();
+            r::disable(r::Capability::DepthTest);
+            r::useProgram(shader.program());
             glm::mat4 identity(1.0f);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, 0, &identity[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, 0, &identity[0][0]);
-            glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, 0, &identity[0][0]);
-            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 1);
-            glUniform4f(glGetUniformLocation(shader, "uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
-            glBindVertexArray(aftermathVao);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-            glClear(GL_DEPTH_BUFFER_BIT);
-            glEnable(GL_DEPTH_TEST);
+            r::uniformMatrix4fv(shader.uniform("model"), 1, &identity[0][0]);
+            r::uniformMatrix4fv(shader.uniform("view"), 1, &identity[0][0]);
+            r::uniformMatrix4fv(shader.uniform("projection"), 1, &identity[0][0]);
+            r::uniform1i(shader.uniform("uUseColor"), 1);
+            r::uniform4f(shader.uniform("uColor"), 0.0f, 0.0f, 0.0f, 1.0f);
+            r::bindVertexArray(aftermathVao);
+            r::drawArrays(r::Primitive::Triangles, 0, 3);
+            r::uniform1i(shader.uniform("uUseColor"), 0);
+            r::clear(false, true, false);
+            r::enable(r::Capability::DepthTest);
 
             auto moverIt = mpContext.remoteNpcs.find(aftermath.aftermathMoverActorId());
             if (moverIt != mpContext.remoteNpcs.end()) {
@@ -1005,7 +1020,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
                 mover.pos = savedPos;
                 mover.updateModelWorldTransforms();
             }
-            glBindVertexArray(0);
+            r::bindVertexArray(0);
         }
     }
 

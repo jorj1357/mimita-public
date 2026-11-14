@@ -31,7 +31,8 @@ public:
     void setSender(ServerSendFn sender);
     void setEndpointSender(ServerEndpointSendFn sender);
     void noteInbound(std::uint64_t peer, std::uint32_t addressNetworkOrder,
-                     std::uint16_t portNetworkOrder);
+                     std::uint16_t portNetworkOrder,
+                     std::unique_ptr<IGameTransport>* claimedTransport = nullptr);
     void clearInbound();
     void clear();
 
@@ -51,6 +52,8 @@ private:
                                std::size_t size);
     static bool sendToPeer(void* owner, std::uint64_t peer, const void* data,
                            std::size_t size);
+    static bool bindSession(void* owner, std::uint64_t peer,
+                            std::uint32_t playerId);
 
     std::unordered_map<std::uint32_t, MimitaNet::ServerPlayer>* players_ = nullptr;
     ServerSendFn sender_;
@@ -58,6 +61,7 @@ private:
     std::uint64_t inboundPeer_ = 0;
     std::uint32_t inboundAddress_ = 0;
     std::uint16_t inboundPort_ = 0;
+    std::unique_ptr<IGameTransport>* claimedTransport_ = nullptr;
     TransportAdapterV1 adapter_{};
 };
 

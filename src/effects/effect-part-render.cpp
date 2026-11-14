@@ -32,6 +32,10 @@
 #include <limits>
 #include <vector>
 #include <unordered_map>
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 extern Renderer* gRenderer;
 
@@ -46,8 +50,8 @@ struct TexturedParticleVertex {
 
 struct EffectModelMesh {
     Mesh mesh;
-    GLuint vao = 0;
-    GLuint vbo = 0;
+    std::uint32_t vao = 0;
+    std::uint32_t vbo = 0;
     bool attempted = false;
     bool ready = false;
 };
@@ -65,21 +69,21 @@ EffectModelMesh& effectModelFor(const std::string& path)
         return cached;
     cached.vao = mimita::game::genVertexArray();
     cached.vbo = mimita::game::genBuffer();
-    glBindVertexArray(cached.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, cached.vbo);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(cached.mesh.verts.size() * sizeof(Vertex)),
-                 cached.mesh.verts.data(), GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, pos));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex),
-                          (void*)offsetof(Vertex, uv));
-    glBindVertexArray(0);
+    r::bindVertexArray(cached.vao);
+    r::bindBuffer(r::BufferTarget::Array, cached.vbo);
+    r::bufferData(r::BufferTarget::Array, cached.vbo, cached.mesh.verts.data(),
+                  static_cast<std::uint32_t>(cached.mesh.verts.size() * sizeof(Vertex)),
+                  r::BufferUsage::Static);
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(1, 3, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(2, 2, r::VertexType::Float, false, sizeof(Vertex),
+                           static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+    r::bindVertexArray(0);
     cached.ready = true;
     return cached;
 }
@@ -87,7 +91,7 @@ EffectModelMesh& effectModelFor(const std::string& path)
 void drawEffectModel(const Camera& camera, const EffectPart& effect,
                      float scale, const glm::vec4& color)
 {
-    if (effect.modelPath.empty() || !gRenderer || !gRenderer->shaderProgram)
+    if (effect.modelPath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
         return;
     EffectModelMesh& model = effectModelFor(effect.modelPath);
     if (!model.ready)
@@ -104,87 +108,98 @@ void drawEffectModel(const Camera& camera, const EffectPart& effect,
     glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), effect.position)
         * glm::mat4_cast(orientation)
         * glm::scale(glm::mat4(1.0f), glm::vec3(scale));
-    unsigned int shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     glm::mat4 view = camera.getView();
     glm::mat4 proj = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &proj[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &modelMatrix[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
-    glUniform3f(glGetUniformLocation(shader, "uTint"), color.x, color.y, color.z);
-    glUniform1f(glGetUniformLocation(shader, "uAlphaCutoff"), 0.0f);
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glActiveTexture(GL_TEXTURE0);
-    glBindVertexArray(model.vao);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &proj[0][0]);
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &modelMatrix[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 0);
+    r::uniform1i(shader.uniform("uTex"), 0);
+    r::uniform3f(shader.uniform("uTint"), color.x, color.y, color.z);
+    r::uniform1f(shader.uniform("uAlphaCutoff"), 0.0f);
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(true);
+    r::activeTexture(0);
+    r::bindVertexArray(model.vao);
     for (const Mesh::Batch& batch : model.mesh.batches) {
-        GLuint tex = batch.texture ? batch.texture : gTextures.get("default");
-        glBindTexture(GL_TEXTURE_2D, tex);
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        std::uint32_t tex = batch.texture ? batch.texture : gTextures.get("default");
+        r::bindTexture(r::TextureTarget::Texture2D, tex);
+        r::drawArrays(r::Primitive::Triangles,
+                      static_cast<std::int32_t>(batch.first),
+                      static_cast<std::int32_t>(batch.count));
     }
-    glBindVertexArray(0);
+    r::bindVertexArray(0);
 }
 
 void drawTexturedHitParticles(const Camera& camera,
                               const std::vector<TexturedParticleVertex>& vertices,
                               const std::string& texturePath)
 {
-    if (vertices.empty() || texturePath.empty() || !gRenderer || !gRenderer->shaderProgram)
+    if (vertices.empty() || texturePath.empty() || !gRenderer || !r::worldShader().ensureLoaded())
         return;
 
-    static GLuint vao = 0;
-    static GLuint vbo = 0;
+    static std::uint32_t vao = 0;
+    static std::uint32_t vbo = 0;
     if (!vao) {
         vao = mimita::game::genVertexArray();
         vbo = mimita::game::genBuffer();
     }
 
-    const GLuint texture = gTextures.getPath(texturePath);
+    const std::uint32_t texture = gTextures.getPath(texturePath);
     if (!texture)
         return;
 
-    const GLuint shader = gRenderer->shaderProgram;
+    auto& shader = r::worldShader();
     const glm::mat4 model(1.0f);
     const glm::mat4 view = camera.getView();
     const glm::mat4 projection = camera.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
-    const GLboolean cullWasEnabled = glIsEnabled(GL_CULL_FACE);
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDisable(GL_CULL_FACE);
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "model"), 1, GL_FALSE, &model[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-    glUniform1i(glGetUniformLocation(shader, "uUseColor"), 3);
-    glUniform1i(glGetUniformLocation(shader, "uTex"), 0);
+    r::pushState();
+    r::enable(r::Capability::DepthTest);
+    r::depthMask(false);
+    r::enable(r::Capability::Blend);
+    r::blendFunc(r::BlendFactor::SrcAlpha, r::BlendFactor::OneMinusSrcAlpha);
+    r::disable(r::Capability::CullFace);
+    r::useProgram(shader.program());
+    r::uniformMatrix4fv(shader.uniform("model"), 1, &model[0][0]);
+    r::uniformMatrix4fv(shader.uniform("view"), 1, &view[0][0]);
+    r::uniformMatrix4fv(shader.uniform("projection"), 1, &projection[0][0]);
+    r::uniform1i(shader.uniform("uUseColor"), 3);
+    r::uniform1i(shader.uniform("uTex"), 0);
     // The complete impact PNG uses its authored 0..1 UV range. Avatar
     // cosmetic and world texture animation state must not remap it.
-    glUniform1i(glGetUniformLocation(shader, "uCosmeticTextureEnabled"), 0);
-    glUniform1i(glGetUniformLocation(shader, "uTexBreatheEnabled"), 0);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    r::uniform1i(shader.uniform("uCosmeticTextureEnabled"), 0);
+    r::uniform1i(shader.uniform("uTexBreatheEnabled"), 0);
+    r::activeTexture(0);
+    r::bindTexture(r::TextureTarget::Texture2D, texture);
 
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(TexturedParticleVertex), vertices.data(), GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, pos));
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, uv));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, normal));
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(TexturedParticleVertex), (void*)offsetof(TexturedParticleVertex, color));
-    glEnableVertexAttribArray(3);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)vertices.size());
+    r::bindVertexArray(vao);
+    r::bindBuffer(r::BufferTarget::Array, vbo);
+    r::bufferData(r::BufferTarget::Array, vbo, vertices.data(),
+                  static_cast<std::uint32_t>(vertices.size() * sizeof(TexturedParticleVertex)),
+                  r::BufferUsage::Dynamic);
+    r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                           sizeof(TexturedParticleVertex),
+                           static_cast<std::uint32_t>(offsetof(TexturedParticleVertex, pos)));
+    r::enableVertexAttribArray(0);
+    r::vertexAttribPointer(1, 2, r::VertexType::Float, false,
+                           sizeof(TexturedParticleVertex),
+                           static_cast<std::uint32_t>(offsetof(TexturedParticleVertex, uv)));
+    r::enableVertexAttribArray(1);
+    r::vertexAttribPointer(2, 3, r::VertexType::Float, false,
+                           sizeof(TexturedParticleVertex),
+                           static_cast<std::uint32_t>(offsetof(TexturedParticleVertex, normal)));
+    r::enableVertexAttribArray(2);
+    r::vertexAttribPointer(3, 4, r::VertexType::Float, false,
+                           sizeof(TexturedParticleVertex),
+                           static_cast<std::uint32_t>(offsetof(TexturedParticleVertex, color)));
+    r::enableVertexAttribArray(3);
+    r::drawArrays(r::Primitive::Triangles, 0,
+                  static_cast<std::int32_t>(vertices.size()));
 
-    glDepthMask(GL_TRUE);
-    if (cullWasEnabled)
-        glEnable(GL_CULL_FACE);
+    r::popState();
 }
 
 void appendTexturedHitParticle(std::vector<TexturedParticleVertex>& vertices,
@@ -592,9 +607,7 @@ void EffectPartSystem::render(const Camera& camera) const {
             // Damage numbers must never write depth (that creates invisible
             // occluding rectangles over the world) and optionally skip depth
             // testing entirely so they float on top of geometry.
-            GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-            GLboolean depthMaskWasOn;
-            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasOn);
+            r::pushState();
             const auto& dnCfg = HitEffects::config().damageNumber;
             const std::string depthMode = damageNumber
                 ? (dnCfg.occluded && dnCfg.depthMode == "always_on_top"
@@ -603,13 +616,10 @@ void EffectPartSystem::render(const Camera& camera) const {
             const bool depthTestOn = depthMode != "always_on_top";
             const bool depthWriteOn = depthMode == "normal";
             if (depthTestOn)
-                glEnable(GL_DEPTH_TEST);
+                r::enable(r::Capability::DepthTest);
             else
-                glDisable(GL_DEPTH_TEST);
-            if (depthWriteOn)
-                glDepthMask(GL_TRUE);
-            else
-                glDepthMask(GL_FALSE);
+                r::disable(r::Capability::DepthTest);
+            r::depthMask(depthWriteOn);
 
             float x = 0.0f, y = 0.0f;
             const glm::vec3 projectPos = damageNumber
@@ -662,14 +672,7 @@ void EffectPartSystem::render(const Camera& camera) const {
                     effect.color.x, effect.color.y, effect.color.z);
             }
 
-            if (depthMaskWasOn)
-                glDepthMask(GL_TRUE);
-            else
-                glDepthMask(GL_FALSE);
-            if (depthWasEnabled)
-                glEnable(GL_DEPTH_TEST);
-            else
-                glDisable(GL_DEPTH_TEST);
+            r::popState();
         }
     }
 
@@ -987,15 +990,13 @@ void EffectPartSystem::renderText(const Camera& camera) const {
         const float distFade = dist > fadeStart ? (cullDist - dist) / (cullDist - fadeStart) : 1.0f;
         const float t = std::clamp(effect.lifetime / effect.maxLifetime, 0.0f, 1.0f);
 
-        GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean depthMaskWasOn;
-        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMaskWasOn);
+        r::pushState();
         const auto& dnCfg = HitEffects::config().damageNumber;
         const std::string depthMode = damageNumber
             ? (dnCfg.occluded && dnCfg.depthMode == "always_on_top" ? "occluded" : dnCfg.depthMode)
             : "always_on_top";
-        if (depthMode != "always_on_top") glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
-        glDepthMask(depthMode == "normal" ? GL_TRUE : GL_FALSE);
+        if (depthMode != "always_on_top") r::enable(r::Capability::DepthTest); else r::disable(r::Capability::DepthTest);
+        r::depthMask(depthMode == "normal");
 
         float x = 0.0f, y = 0.0f;
         const glm::vec3 projectPos = damageNumber ? effect.position : effect.position + glm::vec3(0, 0, 0.5f);
@@ -1013,7 +1014,6 @@ void EffectPartSystem::renderText(const Camera& camera) const {
                            {effect.color.x, effect.color.y, effect.color.z, effect.alpha * distFade * (1.0f - t)});
             }
         }
-        if (depthMaskWasOn) glDepthMask(GL_TRUE); else glDepthMask(GL_FALSE);
-        if (depthWasEnabled) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        r::popState();
     }
 }

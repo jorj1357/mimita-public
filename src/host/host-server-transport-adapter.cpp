@@ -24,6 +24,7 @@ HostServerTransportAdapter::HostServerTransportAdapter() {
     adapter_.peer_count = &HostServerTransportAdapter::peerCount;
     adapter_.send_to_endpoint = &HostServerTransportAdapter::sendToEndpoint;
     adapter_.send_to_peer = &HostServerTransportAdapter::sendToPeer;
+    adapter_.bind_session = &HostServerTransportAdapter::bindSession;
 }
 
 void HostServerTransportAdapter::bindPlayers(
@@ -39,18 +40,21 @@ void HostServerTransportAdapter::setEndpointSender(ServerEndpointSendFn sender) 
     endpointSender_ = std::move(sender);
 }
 
-void HostServerTransportAdapter::noteInbound(std::uint64_t peer,
-                                             std::uint32_t addressNetworkOrder,
-                                             std::uint16_t portNetworkOrder) {
+void HostServerTransportAdapter::noteInbound(
+    std::uint64_t peer, std::uint32_t addressNetworkOrder,
+    std::uint16_t portNetworkOrder,
+    std::unique_ptr<IGameTransport>* claimedTransport) {
     inboundPeer_ = peer;
     inboundAddress_ = addressNetworkOrder;
     inboundPort_ = portNetworkOrder;
+    claimedTransport_ = claimedTransport;
 }
 
 void HostServerTransportAdapter::clearInbound() {
     inboundPeer_ = 0;
     inboundAddress_ = 0;
     inboundPort_ = 0;
+    claimedTransport_ = nullptr;
 }
 
 void HostServerTransportAdapter::clear() {
@@ -114,6 +118,36 @@ bool HostServerTransportAdapter::sendToEndpoint(
     }
     return adapter->endpointSender_(addressNetworkOrder, portNetworkOrder, data,
                                     size);
+}
+
+bool HostServerTransportAdapter::bindSession(void* owner, std::uint64_t peer,
+                                             std::uint32_t playerId) {
+    auto* adapter = static_cast<HostServerTransportAdapter*>(owner);
+    if (!adapter || !adapter->players_) {
+        return false;
+    }
+    auto it = adapter->players_->find(playerId);
+    if (it == adapter->players_->end()) {
+        return false;
+    }
+    MimitaNet::ServerPlayer& player = it->second;
+    if (peer != 0 && peer == adapter->inboundPeer_) {
+        if (adapter->inboundAddress_ != 0) {
+            player.addr.sin_family = AF_INET;
+            player.addr.sin_addr.s_addr = adapter->inboundAddress_;
+            player.addr.sin_port = adapter->inboundPort_;
+        }
+        player.connectionId.kind = MimitaNet::TransportKind::Udp;
+        player.connectionId.value = peer;
+        player.hasConnectionId = true;
+    }
+    if (adapter->claimedTransport_ && adapter->claimedTransport_->get()) {
+        if (player.transport) {
+            player.transport->close();
+        }
+        player.transport = std::move(*adapter->claimedTransport_);
+    }
+    return true;
 }
 
 bool HostServerTransportAdapter::sendToPeer(void* owner, std::uint64_t peer,

@@ -1,12 +1,16 @@
 #include "render/render-world.h"
+#include "render/render-command.h"
+#include "render/shader-program.h"
 
-#include <glad/glad.h>
+#include <cstdint>
 #include <glm/glm.hpp>
 
 #include "world/world.h"
 #include "perf/perf.h"
 
-extern GLuint gVao;
+namespace r = mimita::game::render;
+
+extern std::uint32_t gVao;
 
 static bool shadowBatchVisible(const Mesh::Batch& batch, const glm::mat4& lightMVP)
 {
@@ -38,34 +42,34 @@ static bool shadowBatchVisible(const Mesh::Batch& batch, const glm::mat4& lightM
 
 void uploadMeshIfNeeded(const World& world);
 
-void renderWorldDepth(const World& world, GLuint shadowShader, const glm::mat4& lightMVP)
+void renderWorldDepth(const World& world, mimita::game::render::ShaderProgram& shadowShader, const glm::mat4& lightMVP)
 {
     if (world.mesh.verts.empty()) return;
     uploadMeshIfNeeded(world);
 
-    glUseProgram(shadowShader);
-    if (shadowShader) {
-        GLint loc = glGetUniformLocation(shadowShader, "uLightMVP");
-        if (loc >= 0)
-            glUniformMatrix4fv(loc, 1, GL_FALSE, &lightMVP[0][0]);
-    }
+    r::useProgram(shadowShader.program());
+    const auto loc = shadowShader.uniform("uLightMVP");
+    if (loc >= 0)
+        r::uniformMatrix4fv(loc, 1, &lightMVP[0][0]);
 
-    glBindVertexArray(gVao);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_BLEND);
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
+    r::bindVertexArray(gVao);
+    r::enable(r::Capability::DepthTest);
+    r::depthFunc(r::DepthFunc::Less);
+    r::depthMask(true);
+    r::disable(r::Capability::Blend);
+    r::enable(r::Capability::CullFace);
+    r::cullFace(r::CullFaceMode::Back);
 
     auto& shadowPerf = Perf::state().renderPerf;
     for (const auto& batch : world.mesh.batches) {
         if (!shadowBatchVisible(batch, lightMVP))
             continue;
         shadowPerf.shadowBatches++;
-        glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+        r::drawArrays(r::Primitive::Triangles,
+                      static_cast<std::int32_t>(batch.first),
+                      static_cast<std::int32_t>(batch.count));
     }
 
-    glBindVertexArray(0);
-    glUseProgram(0);
+    r::bindVertexArray(0);
+    r::useProgram(0);
 }

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <filesystem>
 #include <glm/glm.hpp>
+
+#include "render/shader-program.h"
 
 class Camera;
 
@@ -52,7 +55,7 @@ private:
     void compileShader();
     void createMesh();
     void destroyMesh();
-    void setUniforms() const;
+    void setUniforms();
 
     bool mEnabled = true;
     bool mInitialized = false;
@@ -67,10 +70,10 @@ private:
     SkyboxFaceConfig mFaces[6];
     SkyboxFaceAnim mFaceAnim[6];
 
-    GLuint mCubemapTex = 0;
-    GLuint mVAO = 0;
-    GLuint mVBO = 0;
-    GLuint mShader = 0;
+    std::uint32_t mCubemapTex = 0;
+    std::uint32_t mVAO = 0;
+    std::uint32_t mVBO = 0;
+    mimita::game::render::ShaderProgram mProgram;
 
     std::string mConfigPath;
     std::filesystem::file_time_type mConfigLastWrite;

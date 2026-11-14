@@ -76,6 +76,10 @@
 #include <glad/glad.h>
 #include <shellapi.h>
 #include <windows.h>
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 GuiMenuState gGuiMenuState = GUI_MENU_AUTH;
 
@@ -120,24 +124,25 @@ private:
 static void setupPlayerPreviewLighting()
 {
     if (!gRenderer) return;
-    GLuint shader = gRenderer->shaderProgram;
-    glUseProgram(shader);
-    auto ul = [&](const char* name) { return glGetUniformLocation(shader, name); };
-    glUniform1i(ul("uUseColor"), 0);
-    glUniform1i(ul("uTex"), 0);
-    glUniform1i(ul("uDebugView"), 0);
-    glUniform1i(ul("uShadowsEnabled"), 0);
+    if (!r::worldShader().ensureLoaded()) return;
+    auto& shader = r::worldShader();
+    r::useProgram(shader.program());
+    auto ul = [&](const char* name) { return shader.uniform(name); };
+    r::uniform1i(ul("uUseColor"), 0);
+    r::uniform1i(ul("uTex"), 0);
+    r::uniform1i(ul("uDebugView"), 0);
+    r::uniform1i(ul("uShadowsEnabled"), 0);
     // Brighter preview lighting (separate from world config)
-    glUniform3f(ul("uLightDir"), -0.35f, -0.1f, -1.0f);
-    glUniform1f(ul("uAmbientStrength"), 0.65f);
-    glUniform1f(ul("uDiffuseStrength"), 0.75f);
-    glUniform1f(ul("uEdgeDarkness"), 0.05f);
-    glUniform1f(ul("uEdgeWidth"), 0.8f);
-    glUniform1f(ul("uAODarkness"), 0.03f);
-    glUniform1f(ul("uAOContrast"), 0.6f);
-    glUniform1f(ul("uTextureContrast"), 1.10f);
-    glUniform1f(ul("uTextureBrightness"), 1.40f);
-    glUniform3f(ul("uTint"), 1.0f, 1.0f, 1.0f);
+    r::uniform3f(ul("uLightDir"), -0.35f, -0.1f, -1.0f);
+    r::uniform1f(ul("uAmbientStrength"), 0.65f);
+    r::uniform1f(ul("uDiffuseStrength"), 0.75f);
+    r::uniform1f(ul("uEdgeDarkness"), 0.05f);
+    r::uniform1f(ul("uEdgeWidth"), 0.8f);
+    r::uniform1f(ul("uAODarkness"), 0.03f);
+    r::uniform1f(ul("uAOContrast"), 0.6f);
+    r::uniform1f(ul("uTextureContrast"), 1.10f);
+    r::uniform1f(ul("uTextureBrightness"), 1.40f);
+    r::uniform3f(ul("uTint"), 1.0f, 1.0f, 1.0f);
 }
 
 static const char* layoutFileForMenu(GuiMenuState state)
@@ -1745,20 +1750,18 @@ void guiMain(GLFWwindow* win, GameState& state)
                 vpW = std::max(1.0f, vpW);
                 vpH = std::max(1.0f, vpH);
 
-                GLint prevViewport[4];
-                glGetIntegerv(GL_VIEWPORT, prevViewport);
-                GLboolean depthWasEnabled = glIsEnabled(GL_DEPTH_TEST);
-
-                glViewport((int)vpX, (int)vpY, (int)vpW, (int)vpH);
-                glEnable(GL_DEPTH_TEST);
+                namespace r = mimita::game::render;
+                r::pushState();
+                r::viewport((int)vpX, (int)vpY, (int)vpW, (int)vpH);
+                r::enable(r::Capability::DepthTest);
 
                 int prevRW = gRenderer->width;
                 int prevRH = gRenderer->height;
                 gRenderer->width = (int)vpW;
                 gRenderer->height = (int)vpH;
 
-                glClearColor(0.035f, 0.040f, 0.055f, 1.0f);
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                r::clearColor(0.035f, 0.040f, 0.055f, 1.0f);
+                r::clear(true, true, false);
 
                 const auto& cfg = av.config();
 
@@ -1779,8 +1782,7 @@ void guiMain(GLFWwindow* win, GameState& state)
 
                 gRenderer->width = prevRW;
                 gRenderer->height = prevRH;
-                if (!depthWasEnabled) glDisable(GL_DEPTH_TEST);
-                glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+                r::popState();
             }
 
             AvatarSystem::instance().autosaveUpdate(1.0f / 60.0f);  // ~60fps dt approximation

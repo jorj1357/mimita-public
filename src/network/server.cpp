@@ -50,6 +50,9 @@
 #include "host/host-runtime.h"
 #include "host/host-server-entity-adapter.h"
 #include "host/host-server-transport-adapter.h"
+#include "host/host-server-world-adapter.h"
+#include "host/host-server-session-events.h"
+#include "host/host-session-identity.h"
 #include "host/abi/transport-capability.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
@@ -762,7 +765,7 @@ int runServer(const LaunchOptions& options)
     if (options.mapName.empty() && !modeDefaultMap.empty())
         mapName = modeDefaultMap;
     std::string mapPath = "assets/maps/" + mapName + ".glb";
-    setServerMapId(mapName);
+    mimita::host::setSessionMapId(mapName);
     printf("%s [SERVER MAP] mapId=%s path=%s\n", serverTimestamp(), mapName.c_str(), mapPath.c_str());
 
     {
@@ -905,6 +908,11 @@ int runServer(const LaunchOptions& options)
         mimita::host::HostRuntime::instance().setEntityAdapter(
             entityAdapter.adapter(), entityAdapter.owner());
 
+        auto& worldAdapter = mimita::host::HostServerWorldAdapter::instance();
+        worldAdapter.bind(&world);
+        mimita::host::HostRuntime::instance().setWorldAdapter(
+            worldAdapter.adapter(), worldAdapter.owner());
+
         auto& transportAdapter =
             mimita::host::HostServerTransportAdapter::instance();
         transportAdapter.bindPlayers(&players);
@@ -941,10 +949,15 @@ int runServer(const LaunchOptions& options)
             });
         mimita::host::HostRuntime::instance().setTransportAdapter(
             transportAdapter.adapter(), transportAdapter.owner());
+        mimita::host::HostServerSessionEvents::instance().bindPlayers(&players);
     }
     uint32_t nextPlayerId = 1;
     uint32_t nextEntityId = 1000;
     uint32_t nextProjectileId = 1;
+    if (mimita::host::HostRuntime::instance().probeEnabled()) {
+        mimita::host::HostServerEntityAdapter::instance().bindNextIds(
+            &nextPlayerId, &nextEntityId);
+    }
     uint32_t tick = 0;
     uint64_t lastLog = nowMs();
     uint64_t totalPacketsIn = 0;
@@ -1377,6 +1390,7 @@ int runServer(const LaunchOptions& options)
                 transportAdapter.clearInbound();
             }
             if (handledInbound) {
+                ++totalPacketsIn;
                 continue;
             }
             processServerPacket(sock, event, players, npcs, projectiles,
@@ -1516,6 +1530,14 @@ int runServer(const LaunchOptions& options)
                                     totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
+            if (mimita::host::HostRuntime::instance().probeEnabled()) {
+                const auto& overrides = serverGameOverrides();
+                mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
+                    overrides.spawnOverrideEnabled,
+                    overrides.spawnOverridePosition.x,
+                    overrides.spawnOverridePosition.y,
+                    overrides.spawnOverridePosition.z);
+            }
             const auto gamemodeStart = std::chrono::steady_clock::now();
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
@@ -1793,7 +1815,9 @@ int runServer(const LaunchOptions& options)
         coordinatorIceDone(serverCode);
     }
     mimita::host::HostRuntime::instance().clearEntityAdapter();
+    mimita::host::HostRuntime::instance().clearWorldAdapter();
     mimita::host::HostRuntime::instance().clearTransportAdapter();
+    mimita::host::HostServerSessionEvents::instance().clear();
     closesocket(sock);
     netShutdown();
     printf("%s [SERVER] shutdown complete\n", serverTimestamp());
@@ -1879,7 +1903,7 @@ bool startListenServer(ListenServerState& state, uint16_t port,
     std::string mapPath = settings ? settings->resolvedMapPath : "";
     if (mapPath.empty())
         mapPath = "assets/maps/" + mapName + ".glb";
-    setServerMapId(mapName);
+    mimita::host::setSessionMapId(mapName);
     printf("[LISTEN SERVER MAP] mapId=%s path=%s\n", mapName.c_str(), mapPath.c_str());
     if (!loadHeadlessWorld(mapPath.c_str(), state.world))
         printf("[LISTEN SERVER] WARNING: headless world load failed; using floor fallback\n");
@@ -1932,8 +1956,14 @@ bool startListenServer(ListenServerState& state, uint16_t port,
         auto& entityAdapter = mimita::host::HostServerEntityAdapter::instance();
         entityAdapter.bindPlayers(&state.players);
         entityAdapter.bindNpcs(&state.npcs);
+        entityAdapter.bindNextIds(&state.nextPlayerId, &state.nextEntityId);
         mimita::host::HostRuntime::instance().setEntityAdapter(
             entityAdapter.adapter(), entityAdapter.owner());
+
+        auto& worldAdapter = mimita::host::HostServerWorldAdapter::instance();
+        worldAdapter.bind(&state.world);
+        mimita::host::HostRuntime::instance().setWorldAdapter(
+            worldAdapter.adapter(), worldAdapter.owner());
 
         auto& transportAdapter =
             mimita::host::HostServerTransportAdapter::instance();
@@ -1970,6 +2000,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
             });
         mimita::host::HostRuntime::instance().setTransportAdapter(
             transportAdapter.adapter(), transportAdapter.owner());
+        mimita::host::HostServerSessionEvents::instance().bindPlayers(
+            &state.players);
     }
     if (settings)
     {
@@ -2043,7 +2075,8 @@ bool startListenServer(ListenServerState& state, uint16_t port,
                 suffix += chars[dist(gen)];
         }
         state.serverCode = "LOCAL-" + suffix;
-        setServerCoordinatorState("LOCAL", "");
+        mimita::host::setSessionCoordinatorCode("LOCAL");
+        mimita::host::setSessionCoordinatorJoinToken("");
         printf("[LISTEN SERVER] local-only mode: code=%s\n", state.serverCode.c_str());
     }
     else if (!settings || !settings->externalProcessLaunched)
@@ -2116,7 +2149,9 @@ void stopListenServer(ListenServerState& state)
     state.sock = INVALID_SOCKET;
     state.active = false;
     mimita::host::HostRuntime::instance().clearEntityAdapter();
+    mimita::host::HostRuntime::instance().clearWorldAdapter();
     mimita::host::HostRuntime::instance().clearTransportAdapter();
+    mimita::host::HostServerSessionEvents::instance().clear();
     netShutdown();
 }
 
@@ -2194,6 +2229,7 @@ static void simulateOneServerTick(ListenServerState& state)
                 transportAdapter.clearInbound();
             }
             if (handledInbound) {
+                ++state.totalPacketsIn;
                 continue;
             }
             processServerPacket(state.sock, event, state.players, state.npcs,
@@ -2314,6 +2350,14 @@ static void simulateOneServerTick(ListenServerState& state)
                                    state.totalPacketsOut);
         tickReliableGameplayEvents(state.sock, state.players,
                                    state.totalPacketsOut);
+        if (mimita::host::HostRuntime::instance().probeEnabled()) {
+            const auto& overrides = serverGameOverrides();
+            mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
+                overrides.spawnOverrideEnabled,
+                overrides.spawnOverridePosition.x,
+                overrides.spawnOverridePosition.y,
+                overrides.spawnOverridePosition.z);
+        }
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
