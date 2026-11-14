@@ -1,23 +1,23 @@
 # Whole-game DLL load/initialize evidence (2026-11-13)
 
-**Status:** the generation-120 whole-game candidate was loaded and initialized by
+**Status:** the generation-133 whole-game candidate was loaded and initialized by
 the rebuilt host EXE. This is load/initialize evidence, not full-runtime proof.
 
 ## Build identity
 
 - Host artifact: `.dev/builds/2026-11-13T02-44-36.913656Z/mimita.exe`
-- Build ID: `2026-11-14T13-36-47.462561Z`
-- Candidate: `build/game/generation-120/game-g68.dll`
+- Build ID: `2026-11-14T14-43-47.512040Z`
+- Candidate: `build/game/generation-133/game-g68.dll`
 - Candidate export: `GetMimitaGameModuleV1`
 - Candidate ABI: 1
 
 ## Runtime observation
 
-- Run: `20261114_083846`
-- Process: dedicated server PID `27912`
+- Run: default full-client launch (no probe env)
+- Process: default full client PID `19620`
 - Journal: `logs/11-12-2026/20261113_002726/events.jsonl`
 - Environment: `MIMITA_GAME_PROBE=1`,
-  `MIMITA_GAME_DLL=C:\mimita-v9\build\game\generation-120\game-g76.dll`
+  `MIMITA_GAME_DLL=C:\mimita-v9\build\game\generation-133\game-g76.dll`
 - Event:
   `game.host.probe.started` with `abi=1`, `generation=1`, and the candidate DLL
   path.

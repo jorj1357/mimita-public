@@ -3,6 +3,7 @@
 
 #include "host/host-runtime.h"
 #include "renderer/renderer.h"
+#include "render/render-gl-mapping.h"
 #include <GLFW/glfw3.h>
 
 #include <chrono>
@@ -98,6 +99,7 @@ extern bool gRoomCodeShow;
 
 
 namespace mimita::host {
+using mimita::render::toGl;
 namespace {
 
 struct ResidentJob {
@@ -1222,10 +1224,6 @@ void renderDeviceSetVSync(void*, std::int32_t enabled) {
     if (gRenderDevice) gRenderDevice->setVSync(enabled != 0);
 }
 
-bool renderDeviceReloadWorldShader(void*) {
-    return gRenderDevice ? gRenderDevice->reloadWorldShaderIfChanged() : false;
-}
-
 void renderDeviceSetCursorVisible(void*, std::int32_t visible) {
     if (!gRenderDevice || !gRenderDevice->window) return;
     glfwSetInputMode(gRenderDevice->window, GLFW_CURSOR,
@@ -1554,249 +1552,6 @@ void glGenerateMipmapRes(void*, std::uint32_t target) { glGenerateMipmap(target)
 
 namespace {
 
-GLenum toGl(mimita::render::Primitive value) {
-    switch (value) {
-        case mimita::render::Primitive::Points: return GL_POINTS;
-        case mimita::render::Primitive::Lines: return GL_LINES;
-        case mimita::render::Primitive::LineStrip: return GL_LINE_STRIP;
-        case mimita::render::Primitive::Triangles: return GL_TRIANGLES;
-        case mimita::render::Primitive::TriangleStrip: return GL_TRIANGLE_STRIP;
-        case mimita::render::Primitive::TriangleFan: return GL_TRIANGLE_FAN;
-    }
-    return GL_TRIANGLES;
-}
-
-GLenum toGl(mimita::render::TextureTarget value) {
-    switch (value) {
-        case mimita::render::TextureTarget::Texture2D: return GL_TEXTURE_2D;
-        case mimita::render::TextureTarget::TextureCube: return GL_TEXTURE_CUBE_MAP;
-        case mimita::render::TextureTarget::CubePositiveX: return GL_TEXTURE_CUBE_MAP_POSITIVE_X;
-        case mimita::render::TextureTarget::CubeNegativeX: return GL_TEXTURE_CUBE_MAP_NEGATIVE_X;
-        case mimita::render::TextureTarget::CubePositiveY: return GL_TEXTURE_CUBE_MAP_POSITIVE_Y;
-        case mimita::render::TextureTarget::CubeNegativeY: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Y;
-        case mimita::render::TextureTarget::CubePositiveZ: return GL_TEXTURE_CUBE_MAP_POSITIVE_Z;
-        case mimita::render::TextureTarget::CubeNegativeZ: return GL_TEXTURE_CUBE_MAP_NEGATIVE_Z;
-    }
-    return GL_TEXTURE_2D;
-}
-
-GLenum toGl(mimita::render::BufferTarget value) {
-    switch (value) {
-        case mimita::render::BufferTarget::Array: return GL_ARRAY_BUFFER;
-        case mimita::render::BufferTarget::ElementArray: return GL_ELEMENT_ARRAY_BUFFER;
-    }
-    return GL_ARRAY_BUFFER;
-}
-
-GLenum toGl(mimita::render::BufferUsage value) {
-    switch (value) {
-        case mimita::render::BufferUsage::Static: return GL_STATIC_DRAW;
-        case mimita::render::BufferUsage::Dynamic: return GL_DYNAMIC_DRAW;
-        case mimita::render::BufferUsage::Stream: return GL_STREAM_DRAW;
-    }
-    return GL_STATIC_DRAW;
-}
-
-GLenum toGl(mimita::render::Capability value) {
-    switch (value) {
-        case mimita::render::Capability::DepthTest: return GL_DEPTH_TEST;
-        case mimita::render::Capability::Blend: return GL_BLEND;
-        case mimita::render::Capability::CullFace: return GL_CULL_FACE;
-        case mimita::render::Capability::ScissorTest: return GL_SCISSOR_TEST;
-        case mimita::render::Capability::StencilTest: return GL_STENCIL_TEST;
-        case mimita::render::Capability::PolygonOffsetFill: return GL_POLYGON_OFFSET_FILL;
-        case mimita::render::Capability::Multisample: return GL_MULTISAMPLE;
-    }
-    return GL_DEPTH_TEST;
-}
-
-GLenum toGl(mimita::render::BlendFactor value) {
-    switch (value) {
-        case mimita::render::BlendFactor::Zero: return GL_ZERO;
-        case mimita::render::BlendFactor::One: return GL_ONE;
-        case mimita::render::BlendFactor::SrcAlpha: return GL_SRC_ALPHA;
-        case mimita::render::BlendFactor::OneMinusSrcAlpha: return GL_ONE_MINUS_SRC_ALPHA;
-        case mimita::render::BlendFactor::DstAlpha: return GL_DST_ALPHA;
-        case mimita::render::BlendFactor::OneMinusDstAlpha: return GL_ONE_MINUS_DST_ALPHA;
-        case mimita::render::BlendFactor::SrcColor: return GL_SRC_COLOR;
-        case mimita::render::BlendFactor::OneMinusSrcColor: return GL_ONE_MINUS_SRC_COLOR;
-        case mimita::render::BlendFactor::DstColor: return GL_DST_COLOR;
-        case mimita::render::BlendFactor::OneMinusDstColor: return GL_ONE_MINUS_DST_COLOR;
-    }
-    return GL_ONE;
-}
-
-GLenum toGl(mimita::render::DepthFunc value) {
-    switch (value) {
-        case mimita::render::DepthFunc::Never: return GL_NEVER;
-        case mimita::render::DepthFunc::Less: return GL_LESS;
-        case mimita::render::DepthFunc::Equal: return GL_EQUAL;
-        case mimita::render::DepthFunc::Lequal: return GL_LEQUAL;
-        case mimita::render::DepthFunc::Greater: return GL_GREATER;
-        case mimita::render::DepthFunc::Notequal: return GL_NOTEQUAL;
-        case mimita::render::DepthFunc::Gequal: return GL_GEQUAL;
-        case mimita::render::DepthFunc::Always: return GL_ALWAYS;
-    }
-    return GL_LESS;
-}
-
-GLenum toGl(mimita::render::CullFaceMode value) {
-    switch (value) {
-        case mimita::render::CullFaceMode::Front: return GL_FRONT;
-        case mimita::render::CullFaceMode::Back: return GL_BACK;
-        case mimita::render::CullFaceMode::FrontAndBack: return GL_FRONT_AND_BACK;
-    }
-    return GL_BACK;
-}
-
-GLenum toGl(mimita::render::PolygonMode value) {
-    switch (value) {
-        case mimita::render::PolygonMode::Point: return GL_POINT;
-        case mimita::render::PolygonMode::Line: return GL_LINE;
-        case mimita::render::PolygonMode::Fill: return GL_FILL;
-    }
-    return GL_FILL;
-}
-
-GLenum toGl(mimita::render::IndexType value) {
-    switch (value) {
-        case mimita::render::IndexType::UInt16: return GL_UNSIGNED_SHORT;
-        case mimita::render::IndexType::UInt32: return GL_UNSIGNED_INT;
-    }
-    return GL_UNSIGNED_INT;
-}
-
-GLenum toGl(mimita::render::TextureFormat value) {
-    switch (value) {
-        case mimita::render::TextureFormat::RGBA: return GL_RGBA;
-        case mimita::render::TextureFormat::RGB: return GL_RGB;
-        case mimita::render::TextureFormat::RGBA8: return GL_RGBA8;
-        case mimita::render::TextureFormat::Depth: return GL_DEPTH_COMPONENT;
-        case mimita::render::TextureFormat::Depth24: return GL_DEPTH_COMPONENT24;
-    }
-    return GL_RGBA;
-}
-
-GLenum toGl(mimita::render::PixelFormat value) {
-    switch (value) {
-        case mimita::render::PixelFormat::RGBA: return GL_RGBA;
-        case mimita::render::PixelFormat::RGB: return GL_RGB;
-        case mimita::render::PixelFormat::RG: return GL_RG;
-        case mimita::render::PixelFormat::Red: return GL_RED;
-        case mimita::render::PixelFormat::Depth: return GL_DEPTH_COMPONENT;
-    }
-    return GL_RGBA;
-}
-
-GLenum toGl(mimita::render::PixelType value) {
-    switch (value) {
-        case mimita::render::PixelType::UnsignedByte: return GL_UNSIGNED_BYTE;
-        case mimita::render::PixelType::Float: return GL_FLOAT;
-    }
-    return GL_UNSIGNED_BYTE;
-}
-
-GLenum toGl(mimita::render::TextureParameter value) {
-    switch (value) {
-        case mimita::render::TextureParameter::MinFilter: return GL_TEXTURE_MIN_FILTER;
-        case mimita::render::TextureParameter::MagFilter: return GL_TEXTURE_MAG_FILTER;
-        case mimita::render::TextureParameter::WrapS: return GL_TEXTURE_WRAP_S;
-        case mimita::render::TextureParameter::WrapT: return GL_TEXTURE_WRAP_T;
-        case mimita::render::TextureParameter::WrapR: return GL_TEXTURE_WRAP_R;
-        case mimita::render::TextureParameter::MaxLevel: return GL_TEXTURE_MAX_LEVEL;
-        case mimita::render::TextureParameter::BorderColor: return GL_TEXTURE_BORDER_COLOR;
-    }
-    return GL_TEXTURE_MIN_FILTER;
-}
-
-GLenum toGl(mimita::render::TextureValue value) {
-    switch (value) {
-        case mimita::render::TextureValue::Nearest: return GL_NEAREST;
-        case mimita::render::TextureValue::Linear: return GL_LINEAR;
-        case mimita::render::TextureValue::LinearMipmapLinear: return GL_LINEAR_MIPMAP_LINEAR;
-        case mimita::render::TextureValue::ClampToEdge: return GL_CLAMP_TO_EDGE;
-        case mimita::render::TextureValue::ClampToBorder: return GL_CLAMP_TO_BORDER;
-        case mimita::render::TextureValue::Repeat: return GL_REPEAT;
-        case mimita::render::TextureValue::MirroredRepeat: return GL_MIRRORED_REPEAT;
-    }
-    return GL_LINEAR;
-}
-
-GLenum toGl(mimita::render::VertexType value) {
-    switch (value) {
-        case mimita::render::VertexType::Float: return GL_FLOAT;
-        case mimita::render::VertexType::UInt32: return GL_UNSIGNED_INT;
-    }
-    return GL_FLOAT;
-}
-
-GLenum toGl(mimita::render::ShaderStage value) {
-    switch (value) {
-        case mimita::render::ShaderStage::Vertex: return GL_VERTEX_SHADER;
-        case mimita::render::ShaderStage::Fragment: return GL_FRAGMENT_SHADER;
-    }
-    return GL_VERTEX_SHADER;
-}
-
-GLenum toGl(mimita::render::ShaderParameter value) {
-    switch (value) {
-        case mimita::render::ShaderParameter::CompileStatus: return GL_COMPILE_STATUS;
-        case mimita::render::ShaderParameter::LinkStatus: return GL_LINK_STATUS;
-        case mimita::render::ShaderParameter::InfoLogLength: return GL_INFO_LOG_LENGTH;
-    }
-    return GL_COMPILE_STATUS;
-}
-
-GLenum toGl(mimita::render::FramebufferTarget value) {
-    switch (value) {
-        case mimita::render::FramebufferTarget::Framebuffer: return GL_FRAMEBUFFER;
-        case mimita::render::FramebufferTarget::Read: return GL_READ_FRAMEBUFFER;
-        case mimita::render::FramebufferTarget::Draw: return GL_DRAW_FRAMEBUFFER;
-    }
-    return GL_FRAMEBUFFER;
-}
-
-GLenum toGl(mimita::render::FramebufferAttachment value) {
-    switch (value) {
-        case mimita::render::FramebufferAttachment::Color0: return GL_COLOR_ATTACHMENT0;
-        case mimita::render::FramebufferAttachment::Color1: return GL_COLOR_ATTACHMENT1;
-        case mimita::render::FramebufferAttachment::Color2: return GL_COLOR_ATTACHMENT2;
-        case mimita::render::FramebufferAttachment::Color3: return GL_COLOR_ATTACHMENT3;
-        case mimita::render::FramebufferAttachment::Depth: return GL_DEPTH_ATTACHMENT;
-        case mimita::render::FramebufferAttachment::Stencil: return GL_STENCIL_ATTACHMENT;
-        case mimita::render::FramebufferAttachment::DepthStencil: return GL_DEPTH_STENCIL_ATTACHMENT;
-    }
-    return GL_COLOR_ATTACHMENT0;
-}
-
-GLenum toGl(mimita::render::RenderbufferFormat value) {
-    switch (value) {
-        case mimita::render::RenderbufferFormat::Depth24: return GL_DEPTH_COMPONENT24;
-        case mimita::render::RenderbufferFormat::Depth24Stencil8: return GL_DEPTH24_STENCIL8;
-        case mimita::render::RenderbufferFormat::RGBA8: return GL_RGBA8;
-    }
-    return GL_DEPTH_COMPONENT24;
-}
-
-GLenum toGl(mimita::render::FramebufferBuffer value) {
-    switch (value) {
-        case mimita::render::FramebufferBuffer::None: return GL_NONE;
-        case mimita::render::FramebufferBuffer::Color0: return GL_COLOR_ATTACHMENT0;
-        case mimita::render::FramebufferBuffer::Color1: return GL_COLOR_ATTACHMENT1;
-        case mimita::render::FramebufferBuffer::Color2: return GL_COLOR_ATTACHMENT2;
-        case mimita::render::FramebufferBuffer::Color3: return GL_COLOR_ATTACHMENT3;
-    }
-    return GL_NONE;
-}
-
-GLenum toGl(mimita::render::PixelStoreParameter value) {
-    switch (value) {
-        case mimita::render::PixelStoreParameter::UnpackAlignment: return GL_UNPACK_ALIGNMENT;
-        case mimita::render::PixelStoreParameter::UnpackRowLength: return GL_UNPACK_ROW_LENGTH;
-    }
-    return GL_UNPACK_ALIGNMENT;
-}
-
 struct HostGlState {
     GLboolean depthTest = GL_FALSE;
     GLboolean blend = GL_FALSE;
@@ -2119,6 +1874,11 @@ HostRuntime& HostRuntime::instance() {
     return runtime;
 }
 
+bool HostRuntime::hotnessStrictMode() const {
+    const char* value = std::getenv("MIMITA_HOTNESS_STRICT");
+    return !value || std::strcmp(value, "0") != 0;
+}
+
 HostRuntime::HostRuntime() : barrier_(hostBarrier()) {}
 
 void* HostRuntime::ensureStateObject(std::uint32_t id, std::uint32_t size,
@@ -2185,7 +1945,6 @@ bool HostRuntime::startFromEnvironment() {
         return false;
     }
 
-    printf("[HOST] candidate load begin\n");
     LoadedGeneration candidate;
     const HostResult loaded = loader_.loadCandidate(widePath, &services_, &candidate);
     if (loaded != HostResult::Ok) {
@@ -2477,8 +2236,6 @@ void HostRuntime::poll() {
     if (ready.value("status", std::string()) != "ready") {
         return;
     }
-    printf("[HOST] ready candidate gen=%llu\n",
-           static_cast<unsigned long long>(ready.value("generation", std::uint64_t{0})));
     const std::uint64_t generation = ready.value("generation", std::uint64_t{0});
     const std::string dll = ready.value("dll", std::string());
     if (generation == 0 || dll.empty() ||
@@ -2490,7 +2247,6 @@ void HostRuntime::poll() {
         return;
     }
     if (!std::filesystem::exists(dll)) {
-        printf("[HOST] candidate missing dll=%s\n", dll.c_str());
         lastFailedGeneration_ = generation;
         lastFailedDll_ = dll;
         lastFailedAt_ = now;
@@ -2500,12 +2256,9 @@ void HostRuntime::poll() {
     }
 
     const std::uint64_t oldGeneration = loader_.activeGeneration();
-    printf("[HOST] swap quiesce begin\n");
     barrier_.beginQuiesce(QuiesceMode::Swap);
     const HostResult quiesced = barrier_.finishQuiesce(2000);
-    printf("[HOST] swap quiesce result=%d\n", static_cast<int>(quiesced));
     if (quiesced != HostResult::Ok) {
-        printf("[HOST] swap refused busy result=%d\n", static_cast<int>(quiesced));
         emitProbeEvent("game.generation.swap-refused", "generation busy", 0,
                        nlohmann::json{{"generation", generation},
                                       {"result", static_cast<int>(quiesced)}});
@@ -2513,14 +2266,10 @@ void HostRuntime::poll() {
         return;
     }
 
-    printf("[HOST] candidate load begin\n");
     LoadedGeneration candidate;
     const HostResult loaded = loader_.loadCandidate(
         widenUtf8(dll.c_str()), &services_, &candidate);
-    printf("[HOST] candidate load result=%d\n", static_cast<int>(loaded));
     if (loaded != HostResult::Ok) {
-        printf("[HOST] candidate rejected result=%d dll=%s\n",
-               static_cast<int>(loaded), dll.c_str());
         lastFailedGeneration_ = generation;
         lastFailedDll_ = dll;
         lastFailedAt_ = now;
@@ -2534,28 +2283,19 @@ void HostRuntime::poll() {
 
     const GameModuleV1* oldApi = loader_.active();
     if (oldApi && oldApi->quiesce) {
-        printf("[HOST] old quiesce begin\n");
         oldApi->quiesce(QuiesceMode::Swap);
-        printf("[HOST] old quiesce end\n");
     }
     if (oldApi && oldApi->shutdown) {
-        printf("[HOST] old shutdown begin\n");
         oldApi->shutdown();
-        printf("[HOST] old shutdown end\n");
     }
     // The ready manifest is the generation identity for the swap; a module may
     // hardcode a local version field that is not the build generation.
     candidate.generation = generation;
-    printf("[HOST] commit begin\n");
     loader_.commit(std::move(candidate));
-    printf("[HOST] commit end\n");
     lastReadyGeneration_ = generation;
     lastFailedGeneration_ = 0;
     lastFailedDll_.clear();
     barrier_.beginGeneration(generation);
-    printf("[HOST] generation activated old=%llu new=%llu\n",
-           static_cast<unsigned long long>(oldGeneration),
-           static_cast<unsigned long long>(generation));
     emitProbeEvent("game.generation.activated", "candidate committed", 0,
                    nlohmann::json{{"old_generation", oldGeneration},
                                   {"generation", generation},
@@ -2769,7 +2509,6 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &renderDeviceShutdown,
             &renderDeviceApplyVideoMode,
             &renderDeviceSetVSync,
-            &renderDeviceReloadWorldShader,
             &renderDeviceSetCursorVisible,
         };
         return &renderDeviceCapability;

@@ -144,6 +144,8 @@ Session date: 2026-11-11 21:57 local. Scope: Stage 0 completed, Stages 1, 3, and
 
 - Reached a stable host-owned full-client menu/frame loop through `game.dll`: generation 120 ran 30 seconds without crashing, repeatedly refreshing the server list, with `frameCapable=1`. Added a transitional Windows GL loader bridge for legacy raw-GL render/effect/debug sites while `CAP_RENDER` migration continues. Migrated font, UI, avatar-preview, media, scissor, and main-systems state setup to `CAP_RENDER`; fixed concurrent server-dispatch/shadow integration breaks. Host server run `20261114_083825` reached world-loaded; generation 120 loaded in PID 27912 (run `20261114_083846`).
 
+- Added host-owned GLFW input callback dispatch with a bounded host queue and active-generation event delivery; game input logic moved to `game-input-module`. Made full-client launches prefer the current game DLL automatically. Proved a same-process live swap from generation 128 to 132; the new generation initialized and printed its startup marker while the process stayed alive. Added deferred module unload for legacy generations whose static C++ destructors can block `FreeLibrary`, and lazy bootstrap on a newly activated generation. Final generation 133 links 0/0, static gate 0/0; default client menu/frame loop stable (PID 19620); host server/world-load evidence recorded. Generation 132 live swap initialized in the same process.
+
 ## Build evidence
 
 The EXE was built through the root dev loop under the human owner's temporary build/run override for this chat. The game-DLL worker builds used the same session exception. `src/host/host-runtime.cpp` was also compiled standalone to verify it; the probe and whole-game DLLs were compiled/linked by the worker.

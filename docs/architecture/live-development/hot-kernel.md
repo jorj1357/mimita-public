@@ -298,3 +298,24 @@ sandboxed evaluator.
 - `docs/architecture/ecs-entity-etc/ecs-migration.md`
 - `docs/architecture/live-development/live-development.md`
 - `docs/specs/hotreload/hotreload.md`
+
+## Total-hot server/transport correction (2026-11-14)
+
+The older wording above that leaves packet schema, transport, or server
+behavior permanently cold is superseded for the target architecture.
+
+- Resident for now: OS/socket/ICE send/recv, framing/encryption primitives,
+  timers, process/loader/barrier, logging sink.
+- Hot: packet IDs, packet schemas, packet layouts, encode/decode, all packet
+  handlers, join/reconnect, session health, server loop behavior, map sync,
+  spawn authority, combat validation, lag compensation, snapshot policy, and
+  outage/error paths.
+- Resident state is not resident code. Session/player records may be host-owned;
+  the server behavior that interprets them is hot.
+- The server initially uses the same whole-game `game.dll` as the client. A
+  later split is allowed only by measured build/activation or isolation need.
+- The OS/socket/ICE primitive is the current cold adapter, not a permanent
+  verdict. The long-term target is a hot transport/backend capability.
+
+The authoritative current contract and cold-boundary ledger are in
+`docs/specs/hotreload/hotreload.md` §11.

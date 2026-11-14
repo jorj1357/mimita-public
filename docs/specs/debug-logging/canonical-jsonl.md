@@ -65,3 +65,64 @@ and any launcher that supplies per-instance paths.
 4. For cross-process work, read each instance journal by UTC time and match
    `run_id`/`instance_id`, actor/entity IDs, and ticks.
 5. Never infer a process or journal from a similarly named older file.
+
+## Agent and scenario records (2026-11-14)
+
+Agent-driven runtime proof uses the same append-only journal and identity rules.
+These records are additive; existing logging categories are unchanged.
+
+Required event names:
+
+| Event | Meaning | Required fields |
+|---|---|---|
+| `agent.command.request` | control side accepted a request | request_id, command, run_id, target instance, build_id |
+| `agent.command.accepted` | target accepted the command | request_id, target PID, scenario_id |
+| `agent.command.dispatched` | command reached the shared action owner | request_id, source, context, action, tick |
+| `agent.command.applied` | action changed state | request_id, tick, before/after or state delta |
+| `agent.command.failed` | command rejected or timed out | request_id, reason, first missing event |
+| `input.normalized` | any source normalized to an action frame | source, context, action, value, request_id, tick |
+| `scenario.started` | runner began a bounded scenario | scenario_id, steps, assertions, map/mode/weapon set |
+| `scenario.step` | one step executed | scenario_id, step index, command, tick, result |
+| `scenario.assert` | one assertion evaluated | scenario_id, assertion, expected, actual, tolerance, passed |
+| `scenario.finished` | exactly one terminal verdict | scenario_id, passed, failure_kind, first failed step/assertion, assertions_evaluated, journals |
+
+Cross-process scenario evidence must identify the server and client journal
+paths separately. A client journal containing server-tagged events is not a
+substitute for the server journal.
+
+`input.normalized` is the common record for keyboard, mouse, controller, touch,
+agent, terminal, replay, and network input adapters. It must not be used to
+hide raw device-specific behavior; it records the normalized action actually
+consumed by the shared owner.
+
+A scenario is not passed unless `assertions_evaluated` is true and every
+required assertion passed.
+
+## 2026-11-14 — Hotness and generation events
+
+This section is append-only. It defines where hot-reload proof appears in the
+canonical journal. The normative event contract is
+`docs/specs/hotreload/hotness-contract.md`.
+
+- Category: `HOT_RELOAD` (or the existing `EXECUTABLE` category when the event is
+  emitted before the logger has a hot-reload category). Normal path events may
+  use the feature category but must include the same fields.
+- Required identity fields on every hotness event: `generation`, `exe_pid`,
+  `exe_build_id`, `dll_build_id`, and `path` where applicable.
+- Build events include the changed/added/removed/renamed source lists, changed
+  headers and dependents, compile/link times, DLL path, revision, and code hash.
+  This is the live source diff.
+- Activation events include old/new generation, old/new DLL, old/new hash,
+  activation boundary, quiesce result, state schema/migration result, and
+  unchanged PID.
+- Runtime path events: `game.transport.handled`, `game.render.path`,
+  `game.input.path`, then a rate-limited `game.hotness.summary`.
+- Lifetime events: job/callback registration and drain, quiesce timeout,
+  unload blocked, and use-after-unload.
+- Violations: `game.hotness.violation` at `Errors`. Strict mode refuses
+  activation and exits nonzero; use-after-unload aborts the dev process.
+- No secrets: never log tokens, passwords, join/progression tickets, or packet
+  payload contents. Log hashes, ids, counts, paths, and reasons only.
+- Reading order for hotness: pick the exact instance journal, read
+  `game.build.candidate` and `game.generation.activated`, then
+  `game.hotness.summary`, then the per-path events for the feature under test.

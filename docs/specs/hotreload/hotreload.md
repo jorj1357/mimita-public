@@ -1,3 +1,6 @@
+2026 11 14 0956 jorj - "like AI should be abel to do every test every feature every behavior  AI can test and fix it using the dev loop running agent commands, events.jsonl showing the result of those commands, and editing raw cpp code live and it compiles live and AI can see it compileld and then test those new changes/compiles -
+"
+
 2026 11 12 1816
 
 "yes do that next stuff much as u can  , as well as tell whats next, as well as explain how close we are to that goal or drem or reality like, npc behavior is off , ic an edit npc behavior cpp, save live, load live, ai sees events and changes again based on that, load live, npc behaivor is better . im snagging on corners, ask ai to fix, it fixes live, i real time stop snagging on corners. weapon recoil fields in json dont work, ai adds fields live, updates live, its working live as i i intended. visuals arent so nice looking, ask ai to add anti aliasing, it adds it liev, i see the pixelized stuff get smooth live. as well as 4d geometry live i can add, packts and networkign all networking related things are hot reloadable, changing rendering backend or adding nrew one live eventually is hot reloadable, cahngign operaitng systems can happen with the same game running e.g. put mimita on a usb stick, it is put into windows pc, linux, mac, android, ios, ps2/3/4/5, xbox, smart tv, etc, and u can play it live, and u can hot reload on any of those live, and play/meet with anuone else on any of those platforms live too , and do live collaboration , acorss not jsut the game but  planned future things like DAW, viedo editor, replay eidotr, live coding together, live note mamangement together, etc, and all stored data is distributed so no central server is needed so it can persist past me  so i dont ahve to maintain it and it just works and can be saved locally like it becomes a super powerful replacement for tools that are typicall closed source  and not easy to fix or maek ebtter, now u can maek them better live and use them to do things too live, etc   - add this stuff to hot reload spec this is what i want to  do " - jorj1357
@@ -30,19 +33,22 @@ deepseek v4.1 flash
 > - Local live C++: probe `game.dll` can be built, activated, rolled back, and
 >   keep the same process, connection, player, and position/tick continuity.
 >   Exact `admincmds` is the first authoritative hot command.
-> - Production coverage: **0% of ordinary game code runs from `game.dll` in
->   production today**. All 616 game sources are now game-owned; the EXE fallback/server path still compiles them. The whole-game
+> - Production coverage: the **full client now prefers `game.dll` by default**
+>   and runs its menu/frame loop there; the dedicated-server and fallback paths
+>   still run from the EXE. All 617 game sources are game-owned. The whole-game
 >   candidate compiles and links with **0 undefined / 0 unique** symbols. The
->   rebuilt host loaded and initialized generation 120 in a dedicated server
->   (PID 27912, `game.host.probe.started`, ABI 1). B-lite resident state is
+>   default full client loaded generation 133 in process 19620. B-lite resident state is
 >   now implemented for menu-critical scalars (`GameState`, freelook/editor
 >   selection, world-loaded) plus resident `Camera`, `activeMapPath`, and
 >   `activeGameMode`, core gameplay/session, and replay objects. `main-init` and
 >   `main-systems` are now game-owned. The host-owned full client reached a
 >   stable 30-second menu/frame loop with `frameCapable=1`; a transitional
 >   Windows GL loader covers legacy raw-GL render/effect/debug sites while their
->   CAP_RENDER migration continues. Gameplay-frame, live-edit, and same-PID swap
->   proofs are still outstanding. Static gate: **0 violations / 0 files**.
+>   CAP_RENDER migration continues. Full-client launches now prefer the DLL
+>   automatically. Host-owned GLFW callback dispatch is active, and a live swap
+>   from generation 128 to 132 activated in the same process and printed the new
+>   generation's startup marker. Gameplay-frame and human-acceptance proofs are
+>   still outstanding. Static gate: **0 violations / 0 files**.
 > - Networking: the opaque envelope and command response work; most packet
 >   handlers are still resident.
 > - Rendering: `CAP_RENDER` is a command-stream skeleton; a resident
@@ -699,8 +705,8 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 788 `.cpp` rows at manifest revision `5a82777128b71ee6fb6d410f5346e33687f7c7cd2a9fa83c6a95803a00c4d86d`. The canonical owner map resolves all 788 rows: game 616, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (616 game sources) and links at generation 120 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The rebuilt host loaded and initialized generation 120 in a dedicated server (PID 27912, run `20261114_083846`). The host-owned full client reached a stable 30-second menu/frame loop; `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. The normal EXE fallback remains active for launches that do not opt into DLL frame ownership. The chosen design keeps the resident host in the EXE.
+Current measured status: 789 `.cpp` rows at manifest revision `59283d0fea784a56a933e3f5053ec26305cea8a271466858f0345dd1fb5d6c11`. The canonical owner map resolves all 789 rows: game 617, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (617 game sources) and links at generation 133 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The default full client loaded and ran generation 133 (process 19620) and a same-process live swap from generation 128 to 132 initialized the new menu generation. `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. Server and fallback paths still run from the EXE. The chosen design keeps the resident host in the EXE.
 
 Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
@@ -818,14 +824,14 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | **0 undefined / 0 unique** (generation 120) | 0 undefined |
-| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 120 loaded/initialized; host-owned menu/frame loop stable for 30s with transitional GL loader | gameplay frame + live edit + swap/coordinator |
-| State continuity | position/tick continuity in probe | resident records + schema migration |
+| Whole-game link | **0 undefined / 0 unique** (generation 133) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 133 loaded/initialized; host-owned menu/frame loop stable; host callbacks active; live edit swap 128→132 succeeded | gameplay frame + human acceptance |
+| State continuity | menu reload reinitializes UI; resident core/session objects survive | gameplay state continuity + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
-| Render/world | ABI skeleton | `CAP_RENDER`/`CAP_WORLD` + GLAD path |
+| Render/world | UI/font path on CAP_RENDER; transitional GLAD bridge for legacy render | remove GLAD bridge; full game/world render |
 | Static gate | **0 violations / 0 files** | 0 |
-| Cutover | not started | 584 game sources moved |
-| Runtime campaign | not started | add/remove/edit/rollback proof |
+| Cutover | full client defaults to game.dll; server/fallback remains EXE | server/fallback cutover or explicit split |
+| Runtime campaign | menu live edit 128→132 succeeded | gameplay edit, compile-failure, rollback, human acceptance |
 
 #### Command response envelope (2026-11-12)
 
@@ -2157,4 +2163,426 @@ own the client world and must not expose a client-world adapter through
 - Durable world state that must survive a generation swap is handled by the
   resident record/schema migration rules, not by moving the client `World`
   object into the host.
+
+## Decisions (2026 11 14 1008)
+
+Append-only decision log. Several agents edit this file. Add your own `D<n>`
+block at the end; do not reorder, rewrite, or delete another agent's block.
+Record your claim in `docs/handoffs/hot-reload-agent-claims-20261113.md` before
+editing, and run `python devscripts/source_manifest.py --write` after source
+changes.
+
+### D1 — Rendering is hot, not cold (owner: Agent C)
+
+All rendering behavior is hot. The resident host owns only the window, the GL
+context and loader, framebuffer size, buffer swap and event poll, video mode,
+cursor, VSync, shutdown, and the `CAP_RENDER`/render-device thunks. Everything
+that decides what to draw — shaders, programs, uniforms, GL state, textures,
+render targets, clear color, viewport, and passes — is game-owned and must
+survive a `game.dll` swap.
+
+Cold rendering is a defect. A renderer file that is not on the cold list in
+`hot-cold-split.md` must not be resident.
+
+### D2 — Absolute hot/cold split (owner: Agent C)
+
+`docs/specs/hotreload/hot-cold-split.md` is the single source of truth for
+which compiled source is resident (cold) and which is replaceable (hot). Every
+compiled `.cpp` appears in exactly one table there; `source_manifest.py`
+validates completeness. When a file moves between tables, update that file and
+the manifest in the same change.
+
+### D3 — Resident shader deletion (owner: Agent C)
+
+The resident main shader is deleted. `Renderer::shaderProgram`,
+`mShaderGeneration`, `shaderGeneration()`, and `reloadWorldShaderIfChanged()`
+are removed from `src/renderer/renderer.*`; the
+`reload_world_shader_if_changed` field is removed from
+`RenderDeviceCapabilityV1`, its host thunk, and the game-side
+`render-device-bridge-module.cpp` shim. Shader creation, reload, and generation
+tracking are owned only by `src/render/world-shader.*`,
+`src/render/shader-program.*`, and `src/shadow/shadow-shader.*`.
+
+### D4 — Legacy rendering lifetime (owner: Agent C)
+
+`src/render/render-command-legacy.cpp` and `src/host/game-*-legacy.cpp` are
+transitional EXE-side implementations that exist only until the whole-game
+cutover. They are allowlisted in the static gate now and deleted at cutover;
+the allowlist then shrinks to zero.
+
+### D5 — Contract enum mapping is single-source (owner: Agent C)
+
+`src/render/render-gl-mapping.h` is the only place that maps contract enums to
+GL enums. `render-command-legacy.cpp` and `src/host/host-runtime.cpp` include
+it and delete their local `toGl` tables. `render-bridge-module.cpp` stays a thin
+integer forwarder and performs no mapping. ABI enum values are frozen with
+`static_assert`s so the EXE and a stale `game.dll` cannot silently disagree.
+
+### D6 — Bridge/adapter naming rule (owner: Agent C)
+
+`*-bridge-module` is game-side code that calls a host capability.
+`host-*-adapter`, `host-*-legacy`, and the `src/host/host-runtime.cpp` thunks
+are resident-side implementations. A bridge plus its adapter is a layered pair,
+not a duplicate; do not merge or delete one because the names look similar.
+
+### D7 — One bridge per capability family (owner: Agent C)
+
+Each capability family has one game-side bridge and one resident owner.
+`network-compat-bridge-module.cpp` folds into `transport-bridge-module`;
+`isServerHost`, `netStartup`, `netShutdown`, and `serverGameOverrides` move to
+the transport bridge. `socket-bridge-module` is resident/legacy-only; hot
+network code uses `transport-bridge-module` and never owns a raw `SOCKET`.
+
+### D8 — One audit pipeline; extend, do not add files (owner: Agent C)
+
+Ownership and classification have one pipeline:
+
+1. `config/source-owners.json` and `config/modules/modules.json` — owner inputs.
+2. `devscripts/module_ownership.py` — shared library.
+3. `devscripts/source_manifest.py` — the only ownership resolver; writes
+   `build/source-manifest.json`.
+4. `devscripts/cpp-source-inventory.py` — the only enumerator; writes the full
+   inventory.
+5. `devscripts/audit_triage.py` — the only classifier; modes
+   `--passes`, `--state-owners`, `--render`, `--query`, `--protocol`.
+
+Folded and deleted: `audit_passes.py`, `state_owner_pass.py`,
+`render_query_inventory.py`, `protocol_inventory.py`.
+
+**Rule:** before adding any audit, inventory, or triage script, read this
+section and extend `audit_triage.py` instead. Do not add a new overlapping
+file.
+
+### D9 — Quality tools (owner: Agent C)
+
+`devscripts/quality/lint.py` is the orchestrator. It runs the reports below,
+parses their counts, and compares them with `devscripts/quality/gate_baseline.json`.
+`--gate` fails when a metric increases, a new report appears, or the baseline is
+missing; without `--gate` it is report-only.
+
+| Tool | What it does | Output | Blocks? |
+| --- | --- | --- | --- |
+| `lint.py` | runs the reports and compares metrics to the baseline | console + exit code | yes with `--gate` |
+| `check_damage_authority.py` | fails when combat damage bypasses `applyActorDamage` | `findings=N` | yes |
+| `check_contact_ownership.py` | flags weapon-id branches and duplicate function names | `weapon_id_branches=N`, `duplicate_function_names=N` | yes |
+| `duplicate_report.py` | hashes normalized 10-line windows and reports repeats | `repeated_windows=N` | yes |
+| `dead_code_report.py` | finds `TODO-DELETE`/`#if 0` markers and runs cppcheck when installed | `markers=N` | yes |
+| `coverage_report.py` | locates coverage artifacts (`lcov.info`, `coverage.json`, `coverage.xml`, `.coverage`) under `.dev`, `logs`, `build` | `artifacts=N` | report-only |
+| `agent-gate.py` | optional full gate: build, self-tests, lint, JSON sync, fast scenarios | exit code | optional |
+
+Known gaps to close:
+
+- `duplicate_report.py` scans only `src/combat`, `src/network`,
+  `src/physics/movement`; expand it to all of `src/` so it can catch contract
+  and bridge duplication.
+- `dead_code_report.py` scans only `src/combat` and `src/network`; expand it to
+  all of `src/`.
+- `coverage_report.py` only locates artifacts. Real line coverage needs a
+  dedicated `--coverage` dev-loop profile; it stays a locator until that
+  profile exists.
+- `lint.py --gate` runs in the build owner's gate (Agent A), not in each code
+  edit.
+
+### D10 — Logging: structured logger only for new code (owner: Agent C)
+
+New code never writes raw diagnostics. Forbidden in new or changed code:
+`printf`, `fprintf`, `fputs`, `vfprintf`, `std::cout`, `std::cerr`, direct
+`ofstream`/`fopen` debug sinks, and ad-hoc files such as `game_server_.txt`.
+Use `StructuredLogger::writeEvent`, the `DBG` macro, or `Debug::log`, which
+already forwards to `StructuredLogger` and the canonical `events.jsonl`.
+
+Existing raw output is removed only when it is non-working or not needed;
+working debug logs are preserved during the migration. When a raw sink cannot
+be removed yet, wrap it with `// TODO-DELETE(raw-sink): <how to remove>`.
+`Debug::` stays as the sanctioned facade for now and migrates to direct
+`StructuredLogger` calls over time.
+
+### D11 — Generated artifacts (owner: Agent C)
+
+`docs/handoffs` holds dated evidence snapshots. `build/` holds live manifests
+and working state. Do not commit a regenerated snapshot except at a review
+milestone. `docs/handoffs/cpp-source-inventory.json` stays tracked for now.
+
+### D12 — Static gate (owner: Agent A)
+
+`config/game-static-gate.json` and `devscripts/game_static_gate.py` reject raw
+lifetime patterns in game-owned sources: raw `gl*` (not only
+`glGen*`/`glDelete*`), raw sockets, raw threads, and persistent file handles.
+Resident files and the cutover-only legacy files are allowlisted; the
+allowlist shrinks to zero at cutover. New raw diagnostic sinks are rejected in
+changed files. The rule is documented in
+`docs/specs/dev-loop/quality-gates.md`.
+
+## 2026-11-14 — Hotness contract, state domains, and live evolution
+
+This section is append-only. It adds the current direction; it does not replace
+the architecture above.
+
+### Companion documents
+
+- `docs/specs/hotreload/status.md` — current hot/cold matrix, blockers, next phases.
+- `docs/specs/hotreload/hotness-contract.md` — no-fake-hot rules, events, strict mode, anti-debt.
+- `docs/specs/hotreload/state-domains.md` — Option A resident domains and codegen.
+- `docs/specs/hotreload/input-layer.md` — cold device input vs hot binds.
+- `docs/specs/hotreload/hot-cold-split.md` — per-source cold/hot classification.
+
+### No fake hot
+
+Fake hot is the primary failure mode: the DLL contains the change, but normal
+play still runs the resident EXE path. A change is not hot because it compiles,
+links, or loads. It is hot only when normal play's exact `events.jsonl` shows
+`path=dll` for it.
+
+Strict mode (`hotness.mode=strict`) is the default:
+
+1. Every runtime path logs `path=dll|resident`, `generation`, and `reason`.
+2. A migrated packet must not silently fall back to resident; it is rejected and
+   logged at `Errors` unless the mechanism is genuinely cold and listed.
+3. EXE and DLL build identity/revision/hash must match; a mismatch refuses
+   activation and logs `game.hotness.stale_dll`.
+4. Events contain no secrets; only paths, ids, hashes, counts, reasons.
+5. Hot is proven with the journal path, shadow parity, canary, and rollback.
+6. A bug's causal chain must be classified; if a cause is cold, the fix is not
+   claimed as hot.
+
+The canonical event names and fields are in `hotness-contract.md`.
+
+### Anti-invisible-debt system
+
+- Generated hotness ledger (no hand-written truth).
+- Decision shadow: the DLL computes, the resident path applies, divergence is logged.
+- Canary edit per batch: the new sentinel must appear with the same EXE PID.
+- Single owner per batch: delete/disable the resident case after parity.
+- Domain state plus codegen: no wide-snapshot lost updates.
+- Build-mask gate: game edits must produce a successful DLL candidate; EXE-only is an error.
+- Generation-tagged jobs/callbacks/resources; loud quiesce/unload/use-after-unload events.
+- Static gate 0/0 is necessary but does not prove hotness.
+
+### State ownership (Option A)
+
+"Everything in `game.dll`" means all replaceable **behavior code**. Durable data
+stays in the resident host. The DLL reads and writes it through versioned domain
+records; the host validates and applies. The wide `EntitySnapshotV1` is
+deprecated and is replaced by per-domain records generated from
+`config/hot-reload/state-schema.json`.
+
+### Input direction
+
+The host owns genuinely cold device/OS polling. The game owns bindings, action
+mapping, deadzones, and sensitivity. Live key rebinding is required now, without
+an EXE rebuild. A normalized device event layer (keyboard/mouse/gamepad/touch/
+pointer, normalized codes) is the later cross-platform direction and must be
+addable live. Direct device calls in gameplay are documented cold exceptions
+with a journal path.
+
+### Dream: add/remove/extend anything live
+
+The goal is that anything owned by the game generation can be added, removed, or
+extended by saving code: packet types, fields, schemas, handlers, session and
+join policy, NPC/actor types (including a new monster with different behavior),
+input bindings, UI, tools, render commands, and world/query policy. Packet IDs
+are tombstones and are never reused. Unknown fields are ignored; missing fields
+get defaults; migrations are validated at activation. The resident host keeps
+only the genuinely cold mechanisms listed in `hot-cold-split.md`.
+
+### Automation
+
+Resident state and packet schema work should be generated, not hand-written:
+`devscripts/resident_state_codegen.py` from the state schema, and a packet-schema
+generator for domain headers and the ID/tombstone registry. Generated files are
+not edited by hand.
+
+## 11. Live-development addendum (2026-11-14, authoritative)
+
+This section is append-only. It records decisions made after the historical
+sections above. Where older wording conflicts, this addendum wins. Do not
+rewrite history to make an old claim look current; append corrections instead.
+
+### 11.1 Resident state is not resident code
+
+The host may own persistent state and still expose all behavior as hot code.
+State residency is not permission to keep a server, network, render, or
+gameplay implementation cold.
+
+- Resident: process lifetime, loader/barrier, capability table, state storage,
+  device/window handles, OS input pump, socket/ICE primitives, logging sink.
+- Hot: packet schemas, packet IDs, encode/decode, handlers, validation,
+  server loop/session policy, join/reconnect, lag compensation, authority,
+  gameplay, rendering policy, UI, tools.
+- “Resident state” means the bytes survive a generation swap. It does not mean
+  the code that reads or writes those bytes is unloadable.
+
+### 11.2 Server and transport are total-hot behavior
+
+The dedicated server is hot, not a cold resident application.
+
+- `src/network/server.cpp` currently contains resident server orchestration and
+  must be split into a minimal resident transport pump and hot server-session
+  behavior.
+- The resident pump may own bind/recv/send, UDP/ICE, framing/encryption
+  primitives, timers, and process lifetime.
+- All server behavior is hot: join/reconnect, session health, map sync, packet
+  catalog, packet layouts, encode/decode, handlers, spawn authority, combat
+  validation, lag compensation, snapshot policy, outage/error paths.
+- `server-*.cpp` packet/domain handlers remain hot and must not become resident
+  merely because their state is host-owned.
+- The server initially uses the same whole-game `game.dll` as the client. A
+  later split is allowed only when measured build/activation time or failure
+  isolation justifies it; it is not the default.
+
+For now the only cold networking seam is the OS/socket/ICE primitive adapter.
+The target is to move even that seam behind a versioned hot backend capability.
+
+### 11.3 Cold-boundary ledger and efficiency goal
+
+Every cold entry must be recorded with owner, reason, replacement target,
+removal gate, and measured cost. The list is expected to shrink over time.
+
+| Boundary | Why cold now | Hot replacement target | Evidence |
+|---|---|---|---|
+| Process entry/loader/barrier | Cannot unload itself | Permanent existential boundary | No restart for ordinary edits |
+| Window/GL context/device | Driver/context lifetime | Hot backend module/capability | Device recreation without process restart |
+| OS input pump | Platform event lifetime | Hot input adapter/routing | Same behavior from keyboard, controller, touch, agent |
+| Socket/ICE/UDP/framing primitive | OS/library mechanism | Hot transport backend | Packet/session changes without host rebuild |
+| Logging sink | Must survive unload | Hot log backend/module | Same journal semantics, no second sink |
+| State allocation/store | Must preserve bytes | Hot storage backend/ECS | Schema migration with old-state fallback |
+
+The efficiency rule is: a hot replacement must preserve the same capability
+while reducing the edit/fix cycle versus the cold version. Measure cold builds
+avoided, edit-to-visible-change time, activation time, restart count, memory
+growth, and state-migration failure rate.
+
+### 11.4 Normalized input and action surface
+
+All input sources normalize into one bounded action/context model before
+reaching behavior:
+
+```text
+keyboard/mouse, controller, touch/mobile, TV remote, agent, terminal,
+replay, network input
+  -> normalized input event/action frame
+  -> context router (gameplay/menu/chat/editor/terminal)
+  -> shared gameplay/UI/editor action owner
+```
+
+Required normalized fields include source, context, action, value/axes,
+duration/tick, request ID, accepted/rejected, and rejection reason.
+
+Agent commands and terminal commands are input adapters, not a second gameplay
+implementation. They must call the same action owner as keyboard, controller,
+GUI, replay, or network input. They must not teleport, bypass server authority,
+or synthesize a private behavior path.
+
+This is the accessibility/portability ideal: the same game behavior works from
+any supported input device, console, mobile, TV, or AI/tool adapter.
+
+### 11.5 AI runtime proof contract
+
+The AI proof loop is:
+
+```text
+edit C++ -> dev-loop build -> candidate activated in same process
+-> agent scenario through dev-loop -> exact events.jsonl
+-> assert expected state -> fix or accept
+```
+
+The scenario runner must:
+
+- ensure one daemon and the correct build/run identity;
+- wait for daemon, server, client, room, and map readiness;
+- execute setup/steps in order;
+- evaluate every assertion with explicit tolerance;
+- stop at the first failed assertion;
+- produce one terminal `scenario.finished` with pass/fail and failure kind;
+- never treat a queued command as a pass.
+
+Required command families include join, readiness, keyboard/mouse move/click,
+GUI click, terminal, chat, snapshot, movement/aim/action/hold/shoot, packet,
+lag compensation, disconnect/reconnect, and wait-for-event.
+
+Required journal records are defined in
+`docs/specs/debug-logging/canonical-jsonl.md` and the scenario contract in
+`docs/specs/dev-loop/dev-loop.md`: `agent.command.*`, `input.normalized`,
+`scenario.started`, `scenario.step`, `scenario.assert`, `scenario.finished`.
+
+`events.jsonl` is the primary runtime evidence. Human visual/feel acceptance is
+still a separate claim.
+
+### 11.6 Schema and size migration
+
+The current B-lite state store rejects a size/alignment mismatch; that is
+fail-closed validation, not migration.
+
+Use the existing ECS mechanism for entity state:
+
+- `EntityRegistry`, `DynamicComponentStore`, existing components and
+  `applySchemaUpdate` migration;
+- legacy `Player`/`Npc`/`ServerPlayer`/`ServerNpc` mirrors remain until systems
+  consume components;
+- migrate one vertical slice at a time: Transform, Movement/Intent, Health,
+  ActorLifecycle, Timers;
+- do not create a second ECS store.
+
+For non-entity objects, add a versioned record contract:
+
+- identity header: type, schema, size, alignment, generation, live/staged;
+- candidate declares accepted old schema(s), target schema, migration/default
+  functions;
+- two-phase staging: copy old bytes, migrate in staging, validate, health check,
+  atomically commit code+state;
+- failure leaves old code and old bytes active;
+- no raw reinterpretation of STL/pointer-owned objects across layout changes;
+  use export/import or ECS components.
+
+### 11.7 Generated ownership and work plans
+
+Do not hand-maintain an exhaustive path table in this spec. Exact paths are
+generated from `config/source-owners.json` and
+`build/source-manifest.json` by the canonical tooling.
+
+- `docs/handoffs/hot-reload-ownership-matrix.md` is generated; do not edit it
+  by hand.
+- `docs/handoffs/hot-reload-work-plans.json` is the machine-readable plan and
+  claim registry.
+- The human work-plan view and claim table are generated from that JSON and the
+  source manifest.
+- `docs/handoffs/hot-reload-agent-claims-20261113.md` is the legacy manual
+  table. Do not add new rows there. It is retained temporarily for history and
+  current active claims, then deleted once the generated registry covers them.
+
+Plan records declare plan ID, owner, status, objective, path prefixes,
+shared contracts, dependencies, exclusions, and evidence. Validation rejects
+overlapping claims, unclaimed edits, duplicate owners, and edits to shared ABI
+or spec paths without the integrator role. One build/run lock applies.
+
+### 11.8 Current status corrections
+
+The source-checked status at this addendum:
+
+- whole-game link: 0 undefined / 0 unique;
+- static gate: 0/0;
+- full client defaults to the DLL and has a stable menu/frame loop;
+- host-owned GLFW callbacks are active;
+- live menu swap 128 -> 132 activated and initialized in the same process;
+- old modules are retired, not safely unloaded yet;
+- server/fallback still run from the EXE;
+- gameplay frame, join, lag compensation, packet-layout live changes, schema
+  migration, failed-build fallback, rollback, and human acceptance are not
+  proven;
+- transitional GLAD/raw-GL paths remain outside the migrated UI path.
+
+Historical counts and old “frameCapable off” statements above are history, not
+current status.
+
+### 11.9 Next order
+
+1. Add the generated plan/ownership registry and validate claims.
+2. Add scenario assertions and join/mouse/click/terminal adapters.
+3. Prove gameplay frame + join + movement.
+4. Split the server into resident transport pump + hot server session.
+5. Migrate ECS/state schema slices using the existing components.
+6. Prove lag compensation, packet-layout live change, failed build, rollback.
+7. Replace deferred module retirement with safe unload.
+8. Finish CAP_RENDER and remove the transitional GL bridge.
+9. Human visual/multiplayer acceptance.
 

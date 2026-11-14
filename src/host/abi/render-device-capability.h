@@ -28,7 +28,6 @@ struct RenderDeviceCapabilityV1 {
     std::int32_t (*apply_video_mode)(void* hostUserData, std::int32_t width,
                                      std::int32_t height, std::int32_t mode);
     void (*set_vsync)(void* hostUserData, std::int32_t enabled);
-    bool (*reload_world_shader_if_changed)(void* hostUserData);
     void (*set_cursor_visible)(void* hostUserData, std::int32_t visible);
 };
 

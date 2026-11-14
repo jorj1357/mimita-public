@@ -63,6 +63,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <array>
 #include <chrono>
@@ -81,6 +82,111 @@ MimitaNet::ListenServerState* getListenServerState();
 namespace MimitaNet {
 
 namespace {
+
+struct HotnessState {
+    std::atomic<std::uint64_t> dllCount{0};
+    std::atomic<std::uint64_t> residentCount{0};
+    std::atomic<std::uint64_t> violationCount{0};
+    std::atomic<std::uint64_t> lastSummaryMs{0};
+    std::array<std::atomic<std::uint64_t>, 256> lastTypeLogMs{};
+
+    HotnessState() {
+        for (auto& value : lastTypeLogMs) {
+            value.store(0, std::memory_order_relaxed);
+        }
+    }
+};
+
+HotnessState& hotnessState() {
+    static HotnessState state;
+    return state;
+}
+
+bool isMigratedPacketType(std::uint8_t type) {
+    switch (type) {
+        case PACKET_PING:
+        case PACKET_SERVER_COMMAND:
+        case PACKET_CHAT_MESSAGE:
+        case PACKET_CHAT_TYPING_STATE_REQUEST:
+        case PACKET_CHAT_REQUEST:
+        case PACKET_SPAWN_NPC_REQUEST:
+        case PACKET_TELEPORT_REQUEST:
+        case PACKET_DISCONNECT:
+        case PACKET_RECONNECT_REQUEST:
+        case PACKET_HELLO:
+        case PACKET_JOIN_REQUEST:
+        case PACKET_GODBALL_STATE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void noteHotnessPath(bool dll, std::uint8_t type, std::uint32_t player,
+                     std::uint32_t tick) {
+    HotnessState& state = hotnessState();
+    (dll ? state.dllCount : state.residentCount)
+        .fetch_add(1, std::memory_order_relaxed);
+    const bool migrated = isMigratedPacketType(type);
+    const bool violation =
+        !dll && migrated &&
+        mimita::host::HostRuntime::instance().probeEnabled();
+    if (violation) {
+        state.violationCount.fetch_add(1, std::memory_order_relaxed);
+    }
+    const std::uint64_t now = nowMs();
+    auto& last = state.lastTypeLogMs[type];
+    if (now - last.load(std::memory_order_relaxed) >= 1000) {
+        last.store(now, std::memory_order_relaxed);
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Executable, StructuredLevel::Important,
+            "game.transport.handled", std::to_string(player),
+            dll ? "packet handled by the game generation"
+                : "packet handled by the resident fallback",
+            tick,
+            {{"type", type},
+             {"player", player},
+             {"path", dll ? "dll" : "resident"},
+             {"migrated", migrated},
+             {"generation",
+              mimita::host::HostRuntime::instance().activeGeneration()}},
+            __FILE__, __LINE__, __func__);
+    }
+    if (violation) {
+        ::StructuredLogger::instance().writeEvent(
+            StructuredCategory::Executable, StructuredLevel::Errors,
+            "game.hotness.violation", std::to_string(player),
+            "migrated packet fell back to the resident handler",
+            tick,
+            {{"kind", "resident-fallback"},
+             {"type", type},
+             {"player", player},
+             {"generation",
+              mimita::host::HostRuntime::instance().activeGeneration()}},
+            __FILE__, __LINE__, __func__);
+    }
+}
+
+void emitHotnessSummary(std::uint32_t tick) {
+    HotnessState& state = hotnessState();
+    const std::uint64_t now = nowMs();
+    const std::uint64_t last =
+        state.lastSummaryMs.load(std::memory_order_relaxed);
+    if (now - last < 1000) {
+        return;
+    }
+    state.lastSummaryMs.store(now, std::memory_order_relaxed);
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::Executable, StructuredLevel::Important,
+        "game.hotness.summary", "", "DLL vs resident packet handling", tick,
+        {{"dll", state.dllCount.load(std::memory_order_relaxed)},
+         {"resident", state.residentCount.load(std::memory_order_relaxed)},
+         {"violations", state.violationCount.load(std::memory_order_relaxed)},
+         {"probe", mimita::host::HostRuntime::instance().probeEnabled()},
+         {"generation",
+          mimita::host::HostRuntime::instance().activeGeneration()}},
+        __FILE__, __LINE__, __func__);
+}
 
 static bool deliverInboundToProbe(
     const TransportReceiveEvent& event,
@@ -1368,6 +1474,14 @@ int runServer(const LaunchOptions& options)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            std::uint8_t eventType = 0;
+            std::uint32_t eventPlayer = 0;
+            if (event.payloadBytes >= static_cast<int>(sizeof(PacketHeader))) {
+                const auto* header =
+                    reinterpret_cast<const PacketHeader*>(event.payload);
+                eventType = header->type;
+                eventPlayer = header->playerId;
+            }
             const bool probeInbound =
                 mimita::host::HostRuntime::instance().probeEnabled();
             auto& transportAdapter =
@@ -1380,10 +1494,12 @@ int runServer(const LaunchOptions& options)
             bool handledInbound = false;
             if (deliverInboundToProbe(event, tick, &probeDispatch)) {
                 noteHandledInbound(event, players);
+                noteHotnessPath(true, eventType, eventPlayer, tick);
                 sendProbeResponse(sock, from, players, probeDispatch);
                 handledInbound = true;
             } else if (deliverInboundToGame(event, tick)) {
                 noteHandledInbound(event, players);
+                noteHotnessPath(true, eventType, eventPlayer, tick);
                 handledInbound = true;
             }
             if (probeInbound) {
@@ -1393,13 +1509,20 @@ int runServer(const LaunchOptions& options)
                 ++totalPacketsIn;
                 continue;
             }
-            processServerPacket(sock, event, players, npcs, projectiles,
-                                nextPlayerId, nextEntityId, nextProjectileId,
-                                world, tick, totalPacketsIn, totalPacketsOut,
-                                &transportStats, &disagreementRetransmit,
-                                nullptr, nullptr, nullptr, &npcSystem);
+            const ServerPacketProcessResult residentResult = processServerPacket(
+                sock, event, players, npcs, projectiles, nextPlayerId,
+                nextEntityId, nextProjectileId, world, tick, totalPacketsIn,
+                totalPacketsOut, &transportStats, &disagreementRetransmit,
+                nullptr, nullptr, nullptr, &npcSystem);
+            if (residentResult.handled) {
+                noteHotnessPath(false, eventType,
+                                residentResult.playerId ? residentResult.playerId
+                                                        : eventPlayer,
+                                tick);
+            }
         }
 
+        emitHotnessSummary(tick);
         ::StructuredLogger::instance().pollConfig();
         ::StructuredLogger::instance().tick();
 
@@ -2207,6 +2330,14 @@ static void simulateOneServerTick(ListenServerState& state)
             event.payloadBytes = bytes;
             event.receivedAtMs = nowMs();
             event.transportKind = TransportKind::Udp;
+            std::uint8_t eventType = 0;
+            std::uint32_t eventPlayer = 0;
+            if (event.payloadBytes >= static_cast<int>(sizeof(PacketHeader))) {
+                const auto* header =
+                    reinterpret_cast<const PacketHeader*>(event.payload);
+                eventType = header->type;
+                eventPlayer = header->playerId;
+            }
             const bool probeInbound =
                 mimita::host::HostRuntime::instance().probeEnabled();
             auto& transportAdapter =
@@ -2219,10 +2350,12 @@ static void simulateOneServerTick(ListenServerState& state)
             bool handledInbound = false;
             if (deliverInboundToProbe(event, state.tick, &probeDispatch)) {
                 noteHandledInbound(event, state.players);
+                noteHotnessPath(true, eventType, eventPlayer, state.tick);
                 sendProbeResponse(state.sock, from, state.players, probeDispatch);
                 handledInbound = true;
             } else if (deliverInboundToGame(event, state.tick)) {
                 noteHandledInbound(event, state.players);
+                noteHotnessPath(true, eventType, eventPlayer, state.tick);
                 handledInbound = true;
             }
             if (probeInbound) {
@@ -2232,15 +2365,22 @@ static void simulateOneServerTick(ListenServerState& state)
                 ++state.totalPacketsIn;
                 continue;
             }
-            processServerPacket(state.sock, event, state.players, state.npcs,
-                                state.projectiles, state.nextPlayerId,
-                                state.nextEntityId, state.nextProjectileId,
-                                state.world, state.tick, state.totalPacketsIn,
-                                state.totalPacketsOut, nullptr,
-                                &state.disagreementRetransmit, nullptr, nullptr,
-                                nullptr, state.npcSystem.get());
+            const ServerPacketProcessResult residentResult = processServerPacket(
+                state.sock, event, state.players, state.npcs, state.projectiles,
+                state.nextPlayerId, state.nextEntityId, state.nextProjectileId,
+                state.world, state.tick, state.totalPacketsIn,
+                state.totalPacketsOut, nullptr,
+                &state.disagreementRetransmit, nullptr, nullptr, nullptr,
+                state.npcSystem.get());
+            if (residentResult.handled) {
+                noteHotnessPath(false, eventType,
+                                residentResult.playerId ? residentResult.playerId
+                                                        : eventPlayer,
+                                state.tick);
+            }
         }
 
+        emitHotnessSummary(state.tick);
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
         for (auto& kv : state.players)
         {

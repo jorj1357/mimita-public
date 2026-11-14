@@ -216,3 +216,37 @@ stops. Playback requires spawn readiness and matching map/weapon/move-set
 identity, and a readiness timeout or substantial divergence invalidates the
 run instead of snapping. The recording/playback contract is
 [docs/specs/dev-loop/scenario-input-recording.md](../../specs/dev-loop/scenario-input-recording.md).
+
+## Agent command adapter contract (2026-11-14)
+
+Agent commands are a first-class input source, not a separate gameplay path.
+
+They must normalize into the same action/context frame as keyboard, mouse,
+controller, touch, replay, and network input. The normalized frame carries
+source, context, action, value, tick/duration, request ID, and accepted/rejected
+result.
+
+Required agent adapter families:
+
+- join/readiness/leave/disconnect/reconnect
+- keyboard and mouse move/click/scroll
+- GUI element click/focus
+- terminal command
+- chat
+- packet test
+- lag/impairment
+- snapshot/assert/wait-for-event
+
+Rules:
+
+- Use the shared action owner and server authority.
+- Do not teleport, directly mutate server-owned state, or spawn effects as a
+  shortcut.
+- A command accepted by the control socket is not gameplay proof. The journal
+  must show dispatch, application, and assertion result.
+- Scenario assertions are required for pass/fail; queued commands are not a
+  pass.
+
+The AI runtime proof contract is in
+`docs/specs/dev-loop/dev-loop.md`; event names are in
+`docs/specs/debug-logging/canonical-jsonl.md`.

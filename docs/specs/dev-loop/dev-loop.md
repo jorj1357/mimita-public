@@ -2964,3 +2964,75 @@ Required behavior:
 The full contract is `docs/specs/dev-loop/multi-instance.md`. Where this
 document's older one-server/one-client or one-shared-journal wording conflicts,
 the multi-instance contract wins for new runs.
+
+## Agent runtime proof addendum (2026-11-14, authoritative)
+
+This section appends the AI-driven runtime proof contract. It does not replace
+the existing scenario recorder; it extends the same command queue and journal.
+
+### Required loop
+
+```text
+edit C++ -> dev-loop build -> candidate activation in the same process
+-> agent scenario -> exact events.jsonl -> assertions -> pass/fail
+-> edit or accept
+```
+
+The runner must ensure one daemon, the correct build/run identity, and readiness
+of the daemon, server, client, room, and map before steps begin.
+
+### Required command families
+
+- movement/aim/action/hold/shoot
+- join, leave, disconnect, reconnect, wait-for-ready
+- keyboard key/action
+- mouse move/click/scroll
+- GUI element click/focus
+- terminal command
+- chat message
+- packet send in a bounded test envelope
+- lag compensation / network impairment
+- snapshot
+- wait-for-event
+- assert
+
+Commands must use the same shared action/input/terminal/network owner as real
+play. They must not teleport, bypass server authority, or invoke a private
+behavior implementation.
+
+### Assertions and verdict
+
+Scenario assertions are mandatory. A queued command is not a pass.
+
+The runner must:
+
+1. evaluate every assertion with an explicit tolerance;
+2. stop at the first failed assertion;
+3. report the last successful step and the first missing event;
+4. emit exactly one terminal `scenario.finished`;
+5. include `passed`, `failure_kind`, `assertions_evaluated`, build ID,
+   generation, server/client journal paths, map/mode/weapon set, and PID;
+6. fail the scenario if a command was rejected, a required event never arrived,
+   or the run identity changed unexpectedly.
+
+### Required journal events
+
+- `agent.command.request`
+- `agent.command.accepted`
+- `agent.command.dispatched`
+- `agent.command.applied`
+- `agent.command.failed`
+- `input.normalized`
+- `scenario.started`
+- `scenario.step`
+- `scenario.assert`
+- `scenario.finished`
+
+The event envelope and correlation fields are defined in
+`docs/specs/debug-logging/canonical-jsonl.md`.
+
+### Current gap
+
+The existing `--scenario-file` queue executes steps but does not evaluate
+assertions and can report `assertions_evaluated=false`. That is a blocking gap
+for AI runtime proof until the runner returns a real verdict.

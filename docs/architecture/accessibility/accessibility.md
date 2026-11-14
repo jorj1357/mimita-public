@@ -140,3 +140,35 @@ command specification after the underlying preset ownership is established.
 See the [Video Editor](../../specs/creator-tools/video-editor.md),
 [Replay](../../specs/replay/replay.md), and
 [Distribution](../../specs/distribution/distribution.md) specifications.
+
+## Normalized input and action model (2026-11-14)
+
+All supported input sources are adapters into one action/context model:
+
+```text
+keyboard/mouse, controller, touch/mobile, smart-TV remote,
+agent command, terminal command, replay, network input
+  -> normalized input/action frame
+  -> context router
+  -> shared gameplay/UI/editor action owner
+```
+
+A normalized frame carries source, context, action, value/axes, duration or
+tick, request ID, and accepted/rejected result.
+
+Rules:
+
+- The same action must behave the same whether it came from a key, gamepad,
+  touch control, terminal command, agent command, replay, or network input.
+- Input context owns routing. Gameplay, menu, chat, editor, and terminal must
+  not receive actions intended for another context.
+- Agent and terminal input are not a second game implementation. They call the
+  shared action owner and preserve server authority.
+- Every important feature must be reachable without a mouse and testable
+  through the normalized action surface.
+- Device-specific code belongs in platform adapters; shared behavior consumes
+  normalized actions.
+
+The terminal command and scenario contracts implement this model. See
+`docs/architecture/terminal-commands/terminal-commands.md` and
+`docs/specs/dev-loop/dev-loop.md`.

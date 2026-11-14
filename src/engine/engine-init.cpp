@@ -58,11 +58,7 @@ void Engine::init(int w, int h, const char* title)
     // block once CAP_RENDER covers the remaining paths.
     if (renderer && renderer->window) {
         glfwMakeContextCurrent(renderer->window);
-        const int gladOk =
-            gladLoadGLLoader(reinterpret_cast<GLADloadproc>(loadWindowsGlProc));
-        printf("[GL BRIDGE] loaded=%d bindTexture=%p drawArrays=%p\n",
-               gladOk, reinterpret_cast<void*>(glad_glBindTexture),
-               reinterpret_cast<void*>(glad_glDrawArrays));
+        gladLoadGLLoader(reinterpret_cast<GLADloadproc>(loadWindowsGlProc));
     }
 #endif
 

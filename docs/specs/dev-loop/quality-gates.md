@@ -116,6 +116,28 @@ combat and network owners.
 Coverage is evidence, not permission to delete. A function may be reached only
 through a mode or configuration not present in the current scenario set.
 
+## Static gate for game-owned sources
+
+`config/game-static-gate.json` and `devscripts/game_static_gate.py` reject raw
+lifetime patterns in game-owned sources. A game source that matches a banned
+pattern must use a host capability instead; a bypass is a build defect, not a
+runtime proof problem.
+
+Banned in game-owned sources:
+
+- raw `gl*` calls (not only `glGen*`/`glDelete*`); use `CAP_RENDER`;
+- raw sockets (`socket`, `WSAStartup`, `closesocket`); use `CAP_TRANSPORT`;
+- raw threads (`std::thread`, `std::async`, `CreateThread`, `.detach()`); use
+  `CAP_JOBS`;
+- persistent file handles (`fopen`, `CreateFile`); use `CAP_RESOURCES`;
+- new raw diagnostic sinks (`printf`, `fprintf`, `std::cout`, `std::cerr`,
+  `ofstream` debug writers); use `StructuredLogger`.
+
+Resident files and the cutover-only legacy files are allowlisted; the
+allowlist shrinks to zero at cutover. The hot/cold split is defined in
+`docs/specs/hotreload/hot-cold-split.md`, and the decisions are recorded in
+`docs/specs/hotreload/hotreload.md` under "Decisions (2026 11 14 1008)".
+
 ## Tool configuration
 
 The repository keeps preset configs for:

@@ -1,5 +1,11 @@
 # Hot-reload agent claims (2026-11-13)
 
+> **LEGACY MANUAL CLAIM TABLE — DO NOT ADD NEW ROWS HERE.**
+> New work must be declared in `docs/handoffs/hot-reload-work-plans.json`.
+> Exact paths, generated ownership, and the human claim view will come from the
+> source manifest. This file is retained temporarily for history and current
+> active A/B/C claims, then deleted when the generated registry covers them.
+
 **Protocol:** add one row before editing; claim the smallest stable prefix.
 Release only after build and verification. Never edit an unclaimed shared path.
 No branches, worktrees, lanes, or second checkouts.
@@ -93,3 +99,45 @@ Only by explicit request to Agent A:
 Only one agent may run the dev-loop host build or the whole-game worker at a
 time. Check `python devscripts/dev-loop.py --status` first and wait for the
 current build to finish.
+
+## Owner-directed writes (2026-11-14)
+
+The owner directed Agent C to write the hot-reload decisions and the hot/cold
+split, which live under Agent A's nominal `docs/specs/hotreload/**` claim:
+
+- `docs/specs/hotreload/hotreload.md` — new append-only
+  `## Decisions (2026 11 14 1008)` section (D1–D12).
+- `docs/specs/hotreload/hot-cold-split.md` — new absolute hot/cold file.
+- `docs/specs/dev-loop/quality-gates.md` — static-gate subsection.
+- `docs/specs/debug-logging/debug-logging.md` — raw-sink rule.
+
+The owner also directed Agent C to own the audit-tooling consolidation
+(`audit_triage.py` absorbs the four folded scripts) and to edit
+`src/host/host-runtime.cpp` for the shared render mapping. These are explicit
+owner exceptions to the lane split, recorded here.
+
+### B append-only spec/docs pass (2026-11-14)
+
+Owner authorized B to add the hotness/state/input spec material. Existing spec
+lines were not rewritten. Added:
+
+- `docs/specs/hotreload/status.md`
+- `docs/specs/hotreload/hotness-contract.md`
+- `docs/specs/hotreload/state-domains.md`
+- `docs/specs/hotreload/input-layer.md`
+- appended a companion/no-fake-hot/anti-debt/live-evolution section to
+  `docs/specs/hotreload/hotreload.md`;
+- appended packet-schema split/live-evolution to
+  `docs/specs/networking/networking.md`;
+- appended hotness/generation events to
+  `docs/specs/debug-logging/canonical-jsonl.md`.
+
+No `docs/ROUTER.md` edit; companion docs are linked from `hotreload.md`.
+
+## Legacy status (2026-11-14)
+
+This manual table is now a compatibility view only. The authoritative plan,
+ownership, claim, and build-lock registry is
+`docs/handoffs/hot-reload-work-plans.json`. Do not add rows here. Do not use
+this file to reserve new paths. Overlapping claims fail validation in the
+generated registry.

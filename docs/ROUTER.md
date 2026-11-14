@@ -137,3 +137,17 @@ cause, and add a careful append-only regression entry.
 ## Spec/doc TODOs
 
 If there is a comment in any document or spec like "todo: explain this better", the agent notes this, and in it's response, it notes the exact file path and line number that has that todo, and then suggests an expansion or a fix for that specific todo, but does not edit the document/spec.
+
+## Live hot-reload work coordination
+
+Before starting hot-reload code work, read:
+
+- `docs/specs/hotreload/hotreload.md` §11 (append-only current contract)
+- `docs/handoffs/hot-reload-work-plans.json` (authoritative plan/claim input)
+- `docs/handoffs/hot-reload-multi-agent-sync-20261113.md`
+- `docs/handoffs/hot-reload-agent-claims-20261113.md` (legacy manual table only;
+  do not add rows)
+
+Exact ownership and generated matrix output come from
+`build/source-manifest.json` and `config/source-owners.json`, never from a
+hand-maintained path list. Generated views are not edited by hand.

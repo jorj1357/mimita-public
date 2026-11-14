@@ -132,3 +132,39 @@ package declares schema (64-bit type id, version)
 components, differing control sources, rocket owner resolution, deterministic
 projectile simulation, the health/death component path, and identity survival
 across a DLL reload cycle. No tuned gameplay constant is pinned.
+
+## Live reload state migration (2026-11-14)
+
+The existing entity/component path is the migration mechanism for entity state.
+Do not add a second ECS store or a parallel schema registry.
+
+Rules:
+
+- `EntityRegistry` owns stable identity and sparse component storage.
+- `DynamicComponentStore.applySchemaUpdate` owns component schema migration.
+- Game systems are hot; entity/component memory may be resident.
+- Legacy `Player`/`Npc`/`ServerPlayer`/`ServerNpc` fields remain authoritative
+  only until the migrated system is the sole reader/writer.
+- Keep the legacy mirror during transition; delete it after the component path
+  is proven through runtime evidence.
+
+First live-state vertical slices:
+
+1. `EntityIdentity`
+2. `Transform`
+3. `Movement`/`MovementIntent`
+4. `Health`
+5. `ActorLifecycle`
+6. `Timers`
+
+Migration rules:
+
+- Code-only reload must preserve all components without migration.
+- Schema change runs as a staged component migration before activation.
+- A failed migration rejects the candidate and keeps old code and old bytes.
+- No raw byte reinterpretation across incompatible layouts.
+- Non-entity state (camera/session/UI) uses versioned resident records, not ECS.
+
+Acceptance evidence: same-PID swap, component values before/after, migration
+plan/version, failed-migration rejection, and gameplay behavior from the exact
+journal. A self-test alone is not gameplay acceptance.

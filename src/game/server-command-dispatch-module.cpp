@@ -1285,32 +1285,58 @@ bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
     }
     const auto* header =
         reinterpret_cast<const MimitaNet::PacketHeader*>(message->payload);
+    bool handled = false;
     switch (header->type) {
         case MimitaNet::PACKET_PING:
-            return dispatchPingMessage(message, services);
+            handled = dispatchPingMessage(message, services);
+            break;
         case MimitaNet::PACKET_CHAT_MESSAGE:
-            return dispatchChatMessage(message, services);
+            handled = dispatchChatMessage(message, services);
+            break;
         case MimitaNet::PACKET_CHAT_TYPING_STATE_REQUEST:
-            return dispatchChatTyping(message, services);
+            handled = dispatchChatTyping(message, services);
+            break;
         case MimitaNet::PACKET_SPAWN_NPC_REQUEST:
-            return dispatchSpawnNpc(message, services);
+            handled = dispatchSpawnNpc(message, services);
+            break;
         case MimitaNet::PACKET_TELEPORT_REQUEST:
-            return dispatchTeleport(message, services);
+            handled = dispatchTeleport(message, services);
+            break;
         case MimitaNet::PACKET_DISCONNECT:
-            return dispatchDisconnect(message, services);
+            handled = dispatchDisconnect(message, services);
+            break;
         case MimitaNet::PACKET_RECONNECT_REQUEST:
-            return dispatchReconnect(message, services);
+            handled = dispatchReconnect(message, services);
+            break;
         case MimitaNet::PACKET_HELLO:
-            return dispatchHello(message, services);
+            handled = dispatchHello(message, services);
+            break;
         case MimitaNet::PACKET_JOIN_REQUEST:
-            return dispatchJoin(message, services);
+            handled = dispatchJoin(message, services);
+            break;
         case MimitaNet::PACKET_CHAT_REQUEST:
-            return dispatchChatRequest(message, services);
+            handled = dispatchChatRequest(message, services);
+            break;
         case MimitaNet::PACKET_GODBALL_STATE:
-            return dispatchGodballState(message, services);
+            handled = dispatchGodballState(message, services);
+            break;
         default:
             return false;
     }
+    if (handled) {
+        return true;
+    }
+    const char* strictValue = std::getenv("MIMITA_HOTNESS_STRICT");
+    const bool strict = !strictValue || std::strcmp(strictValue, "0") != 0;
+    if (services && services->log) {
+        char text[224] = {};
+        std::snprintf(
+            text, sizeof(text),
+            "game.hotness.violation type=%u path=rejected reason=handler-failed strict=%d",
+            static_cast<unsigned>(header->type), strict ? 1 : 0);
+        services->log(services->hostUserData, 1, text);
+    }
+    return strict;
 }
 
 bool dispatchPingMessage(const mimita::host::TransportMessageV1* message,

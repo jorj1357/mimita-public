@@ -177,7 +177,6 @@ extern bool gUnlockCursorOnLaunch;
 void gameInit(int argc, char** argv, Engine& engine)
 {
     printf("[MAIN] start\n");
-    printf("[LIVE EDIT] menu generation initialized\n");
 
     
     StructuredLogger::instance().init();

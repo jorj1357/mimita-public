@@ -18,9 +18,6 @@ struct Renderer {
     int sceneWidth = 0;
     int sceneHeight = 0;
 
-    // mar 6 2026 maibe fix? 
-    GLuint shaderProgram = 0; 
-
     Renderer(int w, int h, const char* title);
     bool installCustomCursor(const char* path, bool centeredHotspot);
     void destroyCustomCursor();
@@ -28,8 +25,6 @@ struct Renderer {
     void endFrame();
     bool shouldClose();
     void shutdown();
-    bool reloadWorldShaderIfChanged();
-    std::uint32_t shaderGeneration() const { return mShaderGeneration; }
     FullscreenMode applyVideoMode(int gameWidth, int gameHeight, FullscreenMode mode);
     bool stretchesWholeFrame() const { return fullscreenModeStretchesWholeFrame(mAppliedVideoMode); }
     void setVSync(bool on);
@@ -48,8 +43,4 @@ private:
     int mDesktopWidth = 0;
     int mDesktopHeight = 0;
     int mDesktopRefreshRate = GLFW_DONT_CARE;
-    std::uint64_t mShaderVertWriteTime = 0;
-    std::uint64_t mShaderFragWriteTime = 0;
-    std::uint32_t mShaderGeneration = 0;
-    bool mShaderObserved = false;
 };

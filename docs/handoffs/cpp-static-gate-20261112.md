@@ -6,15 +6,15 @@ matching fclose are allowed; persistent handles are not. This is not a semantic
 review and not runtime evidence.
 
 - Game sources scanned: 617
-- Violations: 1
-- Files with violations: 1
+- Violations: 0
+- Files with violations: 0
 
 ## Rule counts
 
 | Rule | Capability | Violations |
 |---|---|---:|
 | raw_thread | CAP_JOBS | 0 |
-| raw_gl_resource | CAP_RESOURCES | 1 |
+| raw_gl_resource | CAP_RESOURCES | 0 |
 | raw_socket | CAP_TRANSPORT | 0 |
 | raw_file_handle | CAP_RESOURCES | 0 |
 
@@ -22,4 +22,3 @@ review and not runtime evidence.
 
 | File | Rule | Line | Snippet |
 |---|---|---:|---|
-| `src/render/render-command-legacy.cpp` | raw_gl_resource | 480 | `glGenerateMipmap(toGl(target));` |

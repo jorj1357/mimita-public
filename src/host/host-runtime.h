@@ -54,6 +54,7 @@ public:
     void shutdown();
 
     bool probeEnabled() const { return probeEnabled_.load(std::memory_order_acquire); }
+    bool hotnessStrictMode() const;
 
     // Parity probe: runs the real target-selection decision inside the active
     // game generation. Returns true only when the generation handled the event

@@ -336,6 +336,53 @@ here performs the ownership cutover.
   commented-out dead code; no active GL there.
 - Evidence: EXE build `2026-11-14T14:41:21.629869Z` succeeded.
 
+## Phase 1n decisions and hot/cold split
+
+- Added the append-only `## Decisions (2026 11 14 1008)` section to
+  `docs/specs/hotreload/hotreload.md` with D1–D12 (rendering hot, hot/cold
+  split, resident shader deletion, legacy lifetime, single contract mapping,
+  bridge naming, one bridge per family, one audit pipeline, quality tools,
+  logging rule, generated artifacts, static gate).
+- Added `docs/specs/hotreload/hot-cold-split.md`: absolute cold/hot/not-split/
+  transitional tables, rendering split, and the completeness rule.
+- Added the static-gate subsection to `docs/specs/dev-loop/quality-gates.md`
+  (raw `gl*`, sockets, threads, file handles, raw diagnostic sinks).
+- Added the no-new-raw-sink rule to
+  `docs/specs/debug-logging/debug-logging.md`.
+- Recorded the owner-directed writes and C's audit-tooling ownership in
+  `docs/handoffs/hot-reload-agent-claims-20261113.md`.
+- Documentation-only change; no source or build change.
+
+## Phase 1o contract mapping single-source (C-1)
+
+- Added `src/render/render-gl-mapping.h`: the only enum-to-GL mapping, with ABI
+  `static_assert`s freezing the values that cross `CAP_RENDER`.
+- Deleted the two duplicated `toGl` tables:
+  - `src/render/render-command-legacy.cpp` (23 switches)
+  - `src/host/host-runtime.cpp` (23 switches)
+- Both files now include the header and use `mimita::render::toGl`.
+- `render-bridge-module.cpp` remains a thin integer forwarder (no mapping).
+- Not built here per the owner's split; Agent A builds and reports compiler
+  errors.
+
+## Phase 1p resident shader deletion (C-2)
+
+- Deleted the resident main-shader path:
+  - `Renderer::shaderProgram`, `shaderGeneration()`, `mShaderGeneration`,
+    `mShaderVertWriteTime`, `mShaderFragWriteTime`, `mShaderObserved` removed
+    from `src/renderer/renderer.h`.
+  - `readTextFile`, `compileShader`, `createProgramFromFiles`,
+    `shaderFileWriteTime`, `shaderTextHash`, `absoluteShaderPath`, and
+    `gLastShaderError` removed from `src/renderer/renderer.cpp`.
+  - `Renderer::reloadWorldShaderIfChanged()` removed from the resident
+    renderer, the game-side `render-device-bridge-module.cpp` shim, the host
+    thunk, and `RenderDeviceCapabilityV1`.
+  - Removed the dead `shaderProgram` comment in `src/render/render-player.cpp`.
+- Shader ownership is now only `src/render/world-shader.*`,
+  `src/render/shader-program.*`, and `src/shadow/shadow-shader.*`.
+- Not built here per the owner's split; Agent A builds and reports compiler
+  errors.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls

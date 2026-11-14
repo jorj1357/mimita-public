@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "updated": "2026-11-14",
+  "authority": "docs/specs/hotreload/hotreload.md section 11",
+  "claim_policy": {
+    "one_owner_per_plan": true,
+    "one_build_or_run_at_a_time": true,
+    "reject_overlapping_paths": true,
+    "reject_unclaimed_source_edits": true,
+    "shared_abi_and_spec_require_integrator": true
+  },
+  "generated": {
+    "ownership_matrix": "docs/handoffs/hot-reload-ownership-matrix.md",
+    "work_plan_view": "docs/handoffs/hot-reload-work-plans.md",
+    "generated_claim_view": "docs/handoffs/hot-reload-agent-claims.generated.md",
+    "generator": "devscripts/hot_reload_plan_registry.py",
+    "source_owner_input": "config/source-owners.json",
+    "source_manifest_input": "build/source-manifest.json"
+  },
+  "legacy": {
+    "manual_claims": "docs/handoffs/hot-reload-agent-claims-20261113.md",
+    "status": "deprecated-do-not-add-rows",
+    "replacement": "generated_claim_view"
+  },
+  "plans": [
+    {
+      "plan_id": "spec-and-work-registry",
+      "owner": "agent-a",
+      "status": "active",
+      "objective": "add append-only spec contracts and generated plan/ownership registry",
+      "paths": [
+        "docs/specs/hotreload/**",
+        "docs/handoffs/hot-reload-work-plans.*",
+        "docs/handoffs/hot-reload-ownership-matrix.md",
+        "docs/handoffs/hot-reload-agent-claims*"
+      ],
+      "shared_contracts": [],
+      "depends_on": [],
+      "excludes": ["src/**"],
+      "evidence": ["append-only spec sections added 2026-11-14"]
+    },
+    {
+      "plan_id": "scenario-runner-and-gameplay-proof",
+      "owner": "agent-a",
+      "status": "planned",
+      "objective": "evaluate assertions and prove join/move/click/terminal behavior through events.jsonl",
+      "paths": [
+        "devscripts/dev-loop.py",
+        "devscripts/scenario*",
+        "src/game/game-input-module.*",
+        "src/game/server-command-dispatch-module.*",
+        "src/main-systems.cpp",
+        "src/main-init.cpp"
+      ],
+      "shared_contracts": ["kEventGameInput", "scenario event envelope"],
+      "depends_on": ["spec-and-work-registry"],
+      "excludes": ["src/network/server.cpp", "src/network/server-ice.cpp", "src/render/**", "src/engine/**"],
+      "evidence": []
+    },
+    {
+      "plan_id": "server-hotsplit",
+      "owner": "agent-b",
+      "status": "planned",
+      "objective": "split resident transport pump from hot server session, join, session, packet, lag-comp and error behavior",
+      "paths": [
+        "src/network/server.cpp",
+        "src/network/server-ice.cpp",
+        "src/network/server-*.cpp",
+        "src/network/server.h",
+        "src/host/abi/transport-capability.h",
+        "src/host/transport-adapter.h",
+        "src/host/host-*-transport-adapter.*"
+      ],
+      "shared_contracts": ["CAP_TRANSPORT", "CAP_ENTITY", "CAP_SESSION"],
+      "depends_on": ["scenario-runner-and-gameplay-proof"],
+      "excludes": ["src/engine/**", "src/render/**", "src/game/game-module.cpp"],
+      "evidence": []
+    },
+    {
+      "plan_id": "render-cap-and-gl-bridge-removal",
+      "owner": "agent-c",
+      "status": "active",
+      "objective": "finish CAP_RENDER coverage for menu/gameplay render/effect/avatar/map/debug and remove transitional GLAD bridge",
+      "paths": [
+        "src/engine/**",
+        "src/render/**",
+        "src/gui/**",
+        "src/effects/**",
+        "src/avatar/**",
+        "src/world/streamed-world-layer.cpp",
+        "src/physics/physical-entity.cpp"
+      ],
+      "shared_contracts": ["CAP_RENDER", "CAP_RENDER_DEVICE"],
+      "depends_on": [],
+      "excludes": ["src/network/server.cpp", "src/host/host-runtime.cpp"],
+      "evidence": []
+    },
+    {
+      "plan_id": "ecs-and-state-migration",
+      "owner": "agent-a",
+      "status": "planned",
+      "objective": "use existing EntityRegistry/DynamicComponentStore for actor state and add versioned records for non-entity state",
+      "paths": [
+        "src/ecs/**",
+        "src/host/abi/state-capability.h",
+        "src/game/state-bridge-module.*",
+        "src/main-systems.cpp",
+        "src/game/game-objects-module.cpp"
+      ],
+      "shared_contracts": ["StateCapabilityV1", "DynamicComponentStore migration"],
+      "depends_on": ["scenario-runner-and-gameplay-proof"],
+      "excludes": ["src/render/**", "src/network/server.cpp"],
+      "evidence": []
+    },
+    {
+      "plan_id": "safe-generation-unload",
+      "owner": "agent-a",
+      "status": "planned",
+      "objective": "replace deferred module retirement with safe generation shutdown/arena cleanup",
+      "paths": [
+        "src/host/host-loader.h",
+        "src/host/host-runtime.*",
+        "src/game/game-module.cpp"
+      ],
+      "shared_contracts": ["GameModuleV1 quiesce/shutdown"],
+      "depends_on": ["scenario-runner-and-gameplay-proof"],
+      "excludes": ["src/render/**"],
+      "evidence": []
+    }
+  ]
+}

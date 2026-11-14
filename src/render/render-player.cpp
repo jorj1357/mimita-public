@@ -529,8 +529,6 @@ void renderPlayerInternal(
              {"dead", player.dead}, {"ragdoll_mode_active", player.ragdollModeActive},
              {"position", {player.pos.x, player.pos.y, player.pos.z}}});
 
-    // printf("[RENDER] shaderProgram=%u\n", gRenderer->shaderProgram);
-
     glm::mat4 view = cam.getView();
     glm::mat4 proj = cam.getProj((float)gRenderer->sceneWidth, (float)gRenderer->sceneHeight);
 

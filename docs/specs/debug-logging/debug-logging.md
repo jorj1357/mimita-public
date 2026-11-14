@@ -529,6 +529,16 @@ and relevant fields. Keep deliberate command-line/user-facing text only when
 it is proven not to be a diagnostic log; record those exceptions in the
 inventory. Do not replace a raw print with another hidden file writer.
 
+No new raw diagnostic sink may be added. `Debug::log` is the sanctioned facade
+and already forwards to `StructuredLogger` and the canonical `events.jsonl`;
+new code uses `StructuredLogger::writeEvent`, the `DBG` macro, or
+`Debug::log`, never `printf`/`fprintf`/`std::cout`/`std::cerr` or an ad-hoc
+file such as `game_server_.txt`. Remove an existing raw sink only when it is
+non-working or not needed; preserve working debug logs during migration. When a
+sink cannot be removed yet, wrap it with
+`// TODO-DELETE(raw-sink): <how to remove>`. The static gate rejects new raw
+sinks in changed files; see `docs/specs/dev-loop/quality-gates.md`.
+
 Known raw-output families requiring review include:
 
 - `src/perf/perf.cpp:624-635`, `1238-1293`;

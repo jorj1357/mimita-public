@@ -253,3 +253,23 @@ Required C/A contract:
 
 Agent C owns `src/engine/whole-game-entry.*`; Agent A owns
 `src/game/game-module.cpp`, `src/host/**`, and `main.cpp` transition wiring.
+
+## Work-plan registry update (2026-11-14)
+
+The manual claim table in `hot-reload-agent-claims-20261113.md` is legacy.
+New work must be declared in `docs/handoffs/hot-reload-work-plans.json`.
+
+Rules for all agents:
+
+1. Add or update a JSON plan before editing.
+2. Claim the smallest path prefixes; do not edit unclaimed paths.
+3. Exact paths and ownership expand from `build/source-manifest.json`.
+4. Overlapping plans/claims fail validation.
+5. Shared ABI, spec, source-owner policy, and `docs/handoffs/*` evidence require
+   the integrator role.
+6. One build/run lock at a time.
+7. The generated human view and claim table are outputs, never manually edited.
+
+The append-only architecture decisions are in
+`docs/specs/hotreload/hotreload.md` §11. Do not add rows to the legacy manual
+claims file.

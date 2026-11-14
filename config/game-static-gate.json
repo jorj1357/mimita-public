@@ -27,6 +27,10 @@
     {
       "path": "src/game/probe/npc-target-probe-module.cpp",
       "reason": "validation-only probe generation; reverted before cutover"
+    },
+    {
+      "path": "src/render/render-command-legacy.cpp",
+      "reason": "EXE-only legacy implementation inside #ifndef MIMITA_GAME_DLL; the DLL uses CAP_RENDER"
     }
   ]
 }

@@ -185,4 +185,19 @@ enum class PixelStoreParameter : std::uint32_t {
     UnpackRowLength,
 };
 
+enum class BlitMask : std::uint32_t {
+    Color = 1,
+    Depth,
+    Stencil,
+    ColorDepth,
+    ColorStencil,
+    DepthStencil,
+    All,
+};
+
+enum class BlitFilter : std::uint32_t {
+    Nearest = 1,
+    Linear,
+};
+
 }  // namespace mimita::render

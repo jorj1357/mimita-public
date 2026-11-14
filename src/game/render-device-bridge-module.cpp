@@ -77,9 +77,3 @@ void Renderer::setVSync(bool on) {
         mimita::game::gRenderDevice->set_vsync(
             mimita::game::gHostData, on ? 1 : 0);
 }
-
-bool Renderer::reloadWorldShaderIfChanged() {
-    return mimita::game::gRenderDevice &&
-           mimita::game::gRenderDevice->reload_world_shader_if_changed(
-               mimita::game::gHostData);
-}

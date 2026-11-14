@@ -5232,3 +5232,102 @@ Ideal fix order:
 
 Acceptance: one client joins once, completes map sync, remains connected, and
 does not emit repeated `Reconnecting` transitions while the server is live.
+
+## 2026-11-14 — Packet schema split and live evolution
+
+This section is append-only. It explains why the packet schema will be split and
+how networking grows live. Hot-reload authority remains
+`docs/specs/hotreload/hotreload.md`, `hotness-contract.md`, `state-domains.md`,
+and `status.md`.
+
+### Why split
+
+`src/network/packets.h` is currently one header: about 79 KB, 93 structs, 33
+constants, included by 47 source files (29 network, 5 game, 4 combat, 3 host,
+the rest engine/duel/gamemode/gui/procedural/terminal). Editing one packet
+rebuilds every one of those files. That is header fanout, not runtime fanout.
+
+Split by topic so a change builds only the files that need that topic:
+
+```text
+src/network/schema/packet-ids.h        stable IDs + tombstones (one owner)
+src/network/schema/packet-header.h     magic/version/header
+src/network/schema/packet-session.h    hello/join/reconnect/welcome
+src/network/schema/packet-chat.h
+src/network/schema/packet-input.h
+src/network/schema/packet-combat.h
+src/network/schema/packet-snapshot.h
+src/network/schema/packet-avatar.h
+src/network/schema/packet-vehicle.h
+src/network/schema/packet-gamemode.h
+src/network/schema/packet-terminal.h
+src/network/schema/packet-replay.h
+```
+
+`packets.h` may remain temporarily as an umbrella include. Remove it from each
+file once that file includes only its domain. Do not change existing packet
+IDs; IDs are tombstones and are never reused.
+
+### Live evolution
+
+- **Add/remove a packet type:** add an ID and a domain header plus a handler;
+  unchanged domains do not rebuild. Removed IDs stay reserved.
+- **Add/remove a field:** bump that packet/domain schema version. New readers
+  default missing fields; old readers skip unknown fields. The game generation
+  owns the schema, so the host does not parse payloads.
+- **Add an actor type** (for example a monster with different behavior): add a
+  game-owned behavior source, its schema/registry entry, and any resident state
+  domain. It becomes part of the next `game.dll`; no EXE rebuild and no rebuild
+  of unrelated handlers.
+- **Session/join/reconnect/error policy:** game-owned and hot; the resident host
+  keeps sockets, framing, encryption, reliability mechanics, peer/session
+  records, and timeouts.
+- **Handlers:** game-owned and hot; the host routes opaque
+  `{channel, typeId, bytes}` only.
+
+This extends to anything networking-related. The dream is that packet types,
+fields, handlers, actor behavior, and networking policy can be added, removed,
+or extended by saving code and activating the next generation, with packet IDs
+preserved as tombstones and migrations validated at activation.
+
+### Automation
+
+Generate the domain headers, struct sizes, and the ID/tombstone registry from a
+schema file (for example `config/hot-reload/packet-schema.json`) with a Python
+generator. Do not hand-maintain duplicate ID lists or size asserts.
+
+### C++ version
+
+A newer C++ standard does not remove include fanout in this build. C++20 modules
+are not worth the current toolchain/ABI risk. Split headers, forward
+declarations, and generated schemas are the safe way to reduce rebuild fanout.
+
+### Proof
+
+Packet migration and live evolution follow the hotness contract: path events,
+strict no-fallback, shadow parity, canary, and rollback evidence. See
+`docs/specs/hotreload/hotness-contract.md` and
+`docs/specs/hotreload/status.md`.
+
+## Live hot-server boundary (2026-11-14)
+
+The dedicated server is hot. The current cold networking seam is only the
+OS/socket/ICE primitive adapter: bind/listen, send/recv, UDP/ICE library,
+framing/encryption primitive, and OS timers.
+
+All networking behavior is hot game code:
+
+- packet IDs, schemas, layouts, encode/decode;
+- every packet handler and validation path;
+- server loop/session orchestration, join, reconnect, disconnect, retry;
+- session health, map sync, spawn authority, combat validation;
+- lag compensation and historical-state sampling policy;
+- snapshot policy, timeout, outage, and error behavior.
+
+Resident state is not resident code. Session/player state may be host-owned;
+the code that interprets it must still be replaceable. The server initially
+uses the same whole-game `game.dll` as the client. A later server split is
+allowed only after measured build/activation or isolation evidence justifies it.
+
+The authoritative live-development contract is
+`docs/specs/hotreload/hotreload.md` §11.
