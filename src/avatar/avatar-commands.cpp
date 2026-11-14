@@ -329,10 +329,8 @@ void registerAvatarCommands(Player& player) {
                     printf("[GLBUV]   atlas=%s alpha=%s cutoff=%.2f unlit=%d\n",
                            av.atlasPath.c_str(), av.alphaMode.c_str(),
                            av.alphaCutoff, (int)av.unlit);
-                    int texW = 0, texH = 0;
-                    glBindTexture(GL_TEXTURE_2D, AvatarSystem::instance().uvAtlasTexture());
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &texW);
-                    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &texH);
+                    int texW = AvatarSystem::instance().atlasWidth();
+                    int texH = AvatarSystem::instance().atlasHeight();
                     printf("[GLBUV]   atlas_gl_size=%dx%d\n", texW, texH);
                 }
             }
@@ -382,22 +380,9 @@ void registerAvatarCommands(Player& player) {
                 }
             }
 
-            // Current OpenGL state snapshot
-            printf("  GL state:\n");
-            GLboolean cullEnabled = glIsEnabled(GL_CULL_FACE);
-            GLint cullMode = GL_BACK, frontFace = GL_CCW;
-            glGetIntegerv(GL_CULL_FACE_MODE, &cullMode);
-            glGetIntegerv(GL_FRONT_FACE, &frontFace);
-            printf("    cull_face=%s mode=%s front_face=%s\n",
-                   cullEnabled ? "enabled" : "disabled",
-                   cullMode == GL_BACK ? "back" : "front",
-                   frontFace == GL_CCW ? "CCW" : "CW");
-            GLboolean blendEnabled = glIsEnabled(GL_BLEND);
-            GLint blendSrc = 0, blendDst = 0;
-            glGetIntegerv(GL_BLEND_SRC, &blendSrc);
-            glGetIntegerv(GL_BLEND_DST, &blendDst);
-            printf("    blend=%s src=0x%x dst=0x%x\n",
-                   blendEnabled ? "enabled" : "disabled", blendSrc, blendDst);
+            // Current OpenGL state is reported by the render trace path; this
+            // diagnostic no longer queries raw GL.
+            printf("  GL state: see render trace\n");
 
             // Current avatar info
             if (AvatarSystem::instance().hasAvatar()) {

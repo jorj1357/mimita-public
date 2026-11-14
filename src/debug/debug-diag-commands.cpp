@@ -85,13 +85,13 @@ static void cmdPostFXInfo(const std::vector<std::string>&)
     if (!pf.hasPostShader()) t.addLog("  [FAIL] Post shader not loaded \xe2\x80\x94 post.vert/post.frag compile issue");
 
     if (pf.hasFbo()) {
-        glBindFramebuffer(GL_FRAMEBUFFER, pf.fboId());
-        GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        snprintf(buf, sizeof(buf), "FBO Status: %s (0x%x)",
-                 status == GL_FRAMEBUFFER_COMPLETE ? "COMPLETE" : "INCOMPLETE", status);
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, pf.fboId());
+        const bool complete = r::checkFramebufferStatus();
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+        snprintf(buf, sizeof(buf), "FBO Status: %s",
+                 complete ? "COMPLETE" : "INCOMPLETE");
         t.addLog(buf);
-        if (status != GL_FRAMEBUFFER_COMPLETE) {
+        if (!complete) {
             t.addLog("  [FAIL] FBO is incomplete \xe2\x80\x94 rendering into it produces undefined results");
         }
     }
@@ -109,7 +109,7 @@ static void cmdPostFXTestChecker(const std::vector<std::string>&)
 {
     PostFX& pf = PostFX::instance();
     if (!pf.hasFbo()) { Terminal::instance().addLog("[POSTFX] No FBO"); return; }
-    glBindFramebuffer(GL_FRAMEBUFFER, pf.fboId());
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, pf.fboId());
     int w = pf.fboWidth(), h = pf.fboHeight();
     std::vector<unsigned char> pixels(w * h * 4);
     for (int y = 0; y < h; y++)
@@ -119,9 +119,11 @@ static void cmdPostFXTestChecker(const std::vector<std::string>&)
             int idx = (y * w + x) * 4;
             pixels[idx] = c; pixels[idx+1] = c; pixels[idx+2] = c; pixels[idx+3] = 255;
         }
-    glBindTexture(GL_TEXTURE_2D, pf.colorTexId());
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    r::bindTexture(r::TextureTarget::Texture2D, pf.colorTexId());
+    r::texSubImage2D(r::TextureTarget::Texture2D, 0, 0, 0, w, h,
+                     r::PixelFormat::RGBA, r::PixelType::UnsignedByte,
+                     pixels.data());
+    r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
     Terminal::instance().addLog("[POSTFX] FBO filled with checkerboard. If checkerboard visible, FBO\xe2\x86\x92screen works.");
 }
 
@@ -167,8 +169,9 @@ static void cmdShaderValidate(const std::vector<std::string>&)
     if (pf.hasPostShader()) {
         snprintf(buf, sizeof(buf), "PostFX shader: id=%u", pf.postShaderId());
         Terminal::instance().addLog(buf);
-        GLint status = 0;
-        glGetProgramiv(pf.postShaderId(), GL_LINK_STATUS, &status);
+        std::int32_t status = 0;
+        r::getProgramiv(pf.postShaderId(), r::ShaderParameter::LinkStatus,
+                        &status);
         snprintf(buf, sizeof(buf), "  Link status: %s", status ? "OK" : "FAILED");
         Terminal::instance().addLog(buf);
     } else {

@@ -22,6 +22,9 @@
 #include "config/player-settings.h"
 #include "cosmetic-system.h"
 #include "stb_image.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 
 // Set by applyToPlayer before loadModel for per-avatar body part overrides
 extern nlohmann::json gAvatarBodypartOverrides;
@@ -1406,8 +1409,10 @@ void AvatarSystem::pollHotReload() {
             int w = 0, h = 0, n = 0;
             unsigned char* data = stbi_load(mAvatar.atlasPath.c_str(), &w, &h, &n, 4);
             if (data && mUvAtlasTexture != 0) {
-                glBindTexture(GL_TEXTURE_2D, mUvAtlasTexture);
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+                r::bindTexture(r::TextureTarget::Texture2D, mUvAtlasTexture);
+                r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                              w, h, 0, r::PixelFormat::RGBA,
+                              r::PixelType::UnsignedByte, data);
                 mAtlasWidth = w;
                 mAtlasHeight = h;
                 stbi_image_free(data);

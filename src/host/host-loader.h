@@ -25,12 +25,14 @@
 #include <vector>
 
 #include "host/abi/game-host-abi.h"
+#include "host/abi/game-server-abi.h"
 
 namespace mimita::host {
 
 struct LoadedGeneration {
     HMODULE module = nullptr;
     const GameModuleV1* api = nullptr;
+    const GameServerV1* serverApi = nullptr;
     std::uint64_t generation = 0;
     std::string codeHash;
     std::wstring path;
@@ -40,6 +42,7 @@ struct LoadedGeneration {
     void reset() {
         module = nullptr;
         api = nullptr;
+        serverApi = nullptr;
         generation = 0;
         codeHash.clear();
         path.clear();
@@ -97,8 +100,22 @@ public:
             return initialized;
         }
 
+        const auto resolveServer = reinterpret_cast<GetGameServerFn>(
+            ::GetProcAddress(module, kGetGameServerSymbol));
+        const GameServerV1* serverApi =
+            resolveServer ? resolveServer(kGameServerAbiVersion) : nullptr;
+        if (serverApi &&
+            (serverApi->abiVersion != kGameServerAbiVersion ||
+             serverApi->structSize != sizeof(GameServerV1) ||
+             !serverApi->process_packet || !serverApi->simulate_players ||
+             !serverApi->simulate_world || !serverApi->publish ||
+             !serverApi->gamemode)) {
+            serverApi = nullptr;
+        }
+
         out->module = module;
         out->api = api;
+        out->serverApi = serverApi;
         out->generation = api->generation;
         std::size_t hashLength = 0;
         while (hashLength < kCodeHashHexLength && api->codeHash[hashLength] != '\0') {

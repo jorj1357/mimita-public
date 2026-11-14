@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "abi_version": 1,
+  "handle_type": "u32",
+  "domains": [
+    {
+      "name": "player_core",
+      "version": 1,
+      "owner": "server-player-table",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server/simulatePlayer", "server-command-dispatch"],
+      "readers": ["host-server-entity-adapter", "snapshot-builder"],
+      "fields": [
+        {"name": "id", "type": "u32", "default": 0},
+        {"name": "kind", "type": "u8", "default": 0},
+        {"name": "team", "type": "i32", "default": -1},
+        {"name": "position", "type": "vec3"},
+        {"name": "velocity", "type": "vec3"},
+        {"name": "health", "type": "i32", "default": 100},
+        {"name": "max_health", "type": "i32", "default": 100},
+        {"name": "flags", "type": "u32", "default": 0},
+        {"name": "name", "type": "string", "capacity": 64}
+      ]
+    },
+    {
+      "name": "player_session",
+      "version": 1,
+      "owner": "server-player-session",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server/join", "server/reconnect", "server/disconnect"],
+      "readers": ["host-server-session-events", "snapshot-builder"],
+      "fields": [
+        {"name": "join_token", "type": "string", "capacity": 64},
+        {"name": "reconnect_token", "type": "string", "capacity": 64},
+        {"name": "join_token_validated", "type": "bool", "default": false},
+        {"name": "spawn_generation", "type": "u32", "default": 0},
+        {"name": "spawned", "type": "bool", "default": false},
+        {"name": "last_heard_ms", "type": "u64", "default": 0},
+        {"name": "connection_stale", "type": "bool", "default": false}
+      ]
+    },
+    {
+      "name": "player_chat",
+      "version": 1,
+      "owner": "server-player-chat",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server-command-dispatch/chat"],
+      "readers": ["server-command-dispatch/chat", "snapshot-builder"],
+      "fields": [
+        {"name": "chat_rate_tokens", "type": "f64", "default": 0},
+        {"name": "chat_rate_last_update_tick", "type": "u64", "default": 0},
+        {"name": "last_request_id", "type": "u32", "default": 0},
+        {"name": "cached_event_valid", "type": "bool", "default": false}
+      ]
+    },
+    {
+      "name": "player_vip",
+      "version": 1,
+      "owner": "server-player-vip",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server/join", "server/vip-style"],
+      "readers": ["snapshot-builder", "host-server-entity-adapter"],
+      "fields": [
+        {"name": "account_id", "type": "u32", "default": 0},
+        {"name": "vip_account_id", "type": "i32", "default": 0},
+        {"name": "account_role", "type": "string", "capacity": 32},
+        {"name": "vip_style_epoch", "type": "u32", "default": 0}
+      ]
+    },
+    {
+      "name": "player_combat",
+      "version": 1,
+      "owner": "server-player-combat",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server/combat", "server-command-dispatch/godball"],
+      "readers": ["server/combat", "snapshot-builder"],
+      "fields": [
+        {"name": "equipped_slot", "type": "i32", "default": 0},
+        {"name": "weapon_state", "type": "u8", "default": 0},
+        {"name": "last_shot_serial", "type": "u32", "default": 0},
+        {"name": "last_projectile_fire_serial", "type": "u32", "default": 0},
+        {"name": "projectile_fire_cooldown", "type": "f32", "default": 0},
+        {"name": "godball_state", "type": "u8", "default": 0}
+      ]
+    },
+    {
+      "name": "player_movement",
+      "version": 1,
+      "owner": "server-player-movement",
+      "source": "MimitaNet::ServerPlayer",
+      "writers": ["server/simulatePlayer", "server/movement-report"],
+      "readers": ["server/simulatePlayer", "snapshot-builder"],
+      "fields": [
+        {"name": "input_sequence", "type": "u32", "default": 0},
+        {"name": "simulation_tick", "type": "u64", "default": 0},
+        {"name": "on_ground", "type": "bool", "default": false},
+        {"name": "dash_available", "type": "bool", "default": true}
+      ]
+    },
+    {
+      "name": "npc_core",
+      "version": 1,
+      "owner": "server-npc-table",
+      "source": "Npc",
+      "writers": ["server/npc-spawn", "server/npc-movement"],
+      "readers": ["host-server-entity-adapter", "snapshot-builder"],
+      "fields": [
+        {"name": "id", "type": "u32", "default": 0},
+        {"name": "transform_epoch", "type": "u16", "default": 1},
+        {"name": "difficulty", "type": "f32", "default": 1},
+        {"name": "position", "type": "vec3"},
+        {"name": "velocity", "type": "vec3"},
+        {"name": "health", "type": "i32", "default": 100},
+        {"name": "team", "type": "i32", "default": -1},
+        {"name": "yaw", "type": "f32", "default": 0},
+        {"name": "on_ground", "type": "bool", "default": false}
+      ]
+    },
+    {
+      "name": "npc_combat",
+      "version": 1,
+      "owner": "server-npc-combat",
+      "source": "Npc",
+      "writers": ["server/npc-combat"],
+      "readers": ["server/npc-combat", "snapshot-builder"],
+      "fields": [
+        {"name": "target_id", "type": "u32", "default": 0},
+        {"name": "attack_timer", "type": "f32", "default": 0},
+        {"name": "behavior_revision", "type": "u64", "default": 0},
+        {"name": "ai_state", "type": "u8", "default": 0}
+      ]
+    }
+  ]
+}

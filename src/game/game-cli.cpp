@@ -12,6 +12,8 @@
 #include "combat/weapon-runtime.h"
 #include "network/snapshot-chunks.h"
 #include "network/destruction-replication-selftest.h"
+#include "ecs/entity-slice-selftest.h"
+#include "ecs/dynamic-lifecycle-selftest.h"
 #include "worldproject/world-project-store.h"
 #include "worldproject/world-edit-session.h"
 #include "procedural/procedural-world.h"
@@ -323,6 +325,22 @@ bool handleGameCLI(int argc, char** argv)
         }
         runIceConnect(argv[2], opts);
         return true;
+    }
+
+    if (std::string(argv[1]) == "--entity-slice-selftest") {
+        std::string report;
+        const bool ok = runEntitySliceSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[ENTITY SLICE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
+    }
+
+    if (std::string(argv[1]) == "--dynamic-lifecycle-selftest") {
+        std::string report;
+        const bool ok = runDynamicLifecycleSelfTest(report);
+        printf("%s", report.c_str());
+        printf("[DYNAMIC LIFECYCLE SELFTEST] %s\n", ok ? "PASS" : "FAIL");
+        std::exit(ok ? 0 : 1);
     }
 
     if (std::string(argv[1]) == "--snapshot-chunk-selftest") {

@@ -12,6 +12,8 @@
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include <cstdio>
+#include <chrono>
+#include <cstdint>
 #include <GLFW/glfw3.h>
 #include "camera.h"
 #include "avatar/avatar.h"
@@ -94,6 +96,32 @@ void engineTickUI(Engine& engine, float dt, bool worldPassRan)
     auto& gReplayTimeline = REPLAY_TIMELINE;
 
     const bool replayPlaybackActive = gReplayPlayer.isPlaying();
+
+    // Hotness proof: UI/menu render path identity, throttled to 1/s.
+    {
+        static std::uint64_t lastUiPathMs = 0;
+        static std::uint64_t uiPathFrames = 0;
+        ++uiPathFrames;
+        const std::uint64_t nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        if (nowMs - lastUiPathMs >= 1000) {
+            lastUiPathMs = nowMs;
+#ifdef MIMITA_GAME_DLL
+            const char* renderPath = "dll";
+#else
+            const char* renderPath = "legacy";
+#endif
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "game.render.path", "ui", "ui/menu render path identity", 0,
+                nlohmann::json{{"path", renderPath},
+                               {"subpath", "menu"},
+                               {"frames", uiPathFrames}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     { Perf::ScopedTimer _ui("UI");
     { MIMITA_PERF_SCOPE("UI::Begin"); uiBeginFrame(engine.window(), "game-debug-overlay", true); }

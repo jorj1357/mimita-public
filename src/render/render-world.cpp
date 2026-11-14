@@ -14,7 +14,6 @@
 #include "config/camera-config.h"
 #include "debug/debug-visuals.h"
 #include "debug/debug-diag.h"
-#include "debug/gl-debug.h"
 #include "debug/structured-log.h"
 #include "gamemode/map-config.h"
 #include "hot-reload/module-host.h"
@@ -60,7 +59,6 @@ void renderWorld(const World& world, const Camera& cam)
         return;
     }
 
-    MIMITA_GL_CLEAR_STAGE("renderWorld");
     uploadMeshIfNeeded(world);
 
     r::pushState();
@@ -101,7 +99,6 @@ void renderWorld(const World& world, const Camera& cam)
     r::bindVertexArray(0);
     r::useProgram(0);
 
-    MIMITA_GL_CHECK("renderWorld");
 }
 
 void registerWorldTextureCommands()

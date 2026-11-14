@@ -32,12 +32,17 @@
         "docs/specs/hotreload/**",
         "docs/handoffs/hot-reload-work-plans.*",
         "docs/handoffs/hot-reload-ownership-matrix.md",
-        "docs/handoffs/hot-reload-agent-claims*"
+        "docs/handoffs/hot-reload-agent-claims*",
+        "devscripts/hot_reload_plan_registry.py"
       ],
       "shared_contracts": [],
       "depends_on": [],
-      "excludes": ["src/**"],
-      "evidence": ["append-only spec sections added 2026-11-14"]
+      "excludes": [
+        "src/**"
+      ],
+      "evidence": [
+        "append-only spec sections added 2026-11-14"
+      ]
     },
     {
       "plan_id": "scenario-runner-and-gameplay-proof",
@@ -52,28 +57,48 @@
         "src/main-systems.cpp",
         "src/main-init.cpp"
       ],
-      "shared_contracts": ["kEventGameInput", "scenario event envelope"],
-      "depends_on": ["spec-and-work-registry"],
-      "excludes": ["src/network/server.cpp", "src/network/server-ice.cpp", "src/render/**", "src/engine/**"],
+      "shared_contracts": [
+        "kEventGameInput",
+        "scenario event envelope"
+      ],
+      "depends_on": [
+        "spec-and-work-registry"
+      ],
+      "excludes": [
+        "src/network/server.cpp",
+        "src/network/server-ice.cpp",
+        "src/render/**",
+        "src/engine/**"
+      ],
       "evidence": []
     },
     {
       "plan_id": "server-hotsplit",
       "owner": "agent-b",
-      "status": "planned",
+      "status": "active",
       "objective": "split resident transport pump from hot server session, join, session, packet, lag-comp and error behavior",
       "paths": [
         "src/network/server.cpp",
         "src/network/server-ice.cpp",
         "src/network/server-*.cpp",
         "src/network/server.h",
-        "src/host/abi/transport-capability.h",
         "src/host/transport-adapter.h",
         "src/host/host-*-transport-adapter.*"
       ],
-      "shared_contracts": ["CAP_TRANSPORT", "CAP_ENTITY", "CAP_SESSION"],
-      "depends_on": ["scenario-runner-and-gameplay-proof"],
-      "excludes": ["src/engine/**", "src/render/**", "src/game/game-module.cpp"],
+      "shared_contracts": [
+        "CAP_TRANSPORT",
+        "CAP_ENTITY",
+        "CAP_SESSION",
+        "src/host/abi/transport-capability.h (integrator approval)"
+      ],
+      "depends_on": [
+        "scenario-runner-and-gameplay-proof"
+      ],
+      "excludes": [
+        "src/engine/**",
+        "src/render/**",
+        "src/game/game-module.cpp"
+      ],
       "evidence": []
     },
     {
@@ -90,15 +115,21 @@
         "src/world/streamed-world-layer.cpp",
         "src/physics/physical-entity.cpp"
       ],
-      "shared_contracts": ["CAP_RENDER", "CAP_RENDER_DEVICE"],
+      "shared_contracts": [
+        "CAP_RENDER",
+        "CAP_RENDER_DEVICE"
+      ],
       "depends_on": [],
-      "excludes": ["src/network/server.cpp", "src/host/host-runtime.cpp"],
+      "excludes": [
+        "src/network/server.cpp",
+        "src/host/host-runtime.cpp"
+      ],
       "evidence": []
     },
     {
       "plan_id": "ecs-and-state-migration",
       "owner": "agent-a",
-      "status": "planned",
+      "status": "active",
       "objective": "use existing EntityRegistry/DynamicComponentStore for actor state and add versioned records for non-entity state",
       "paths": [
         "src/ecs/**",
@@ -107,10 +138,22 @@
         "src/main-systems.cpp",
         "src/game/game-objects-module.cpp"
       ],
-      "shared_contracts": ["StateCapabilityV1", "DynamicComponentStore migration"],
-      "depends_on": ["scenario-runner-and-gameplay-proof"],
-      "excludes": ["src/render/**", "src/network/server.cpp"],
-      "evidence": []
+      "shared_contracts": [
+        "StateCapabilityV1",
+        "DynamicComponentStore migration"
+      ],
+      "depends_on": [
+        "scenario-runner-and-gameplay-proof"
+      ],
+      "excludes": [
+        "src/render/**",
+        "src/network/server.cpp"
+      ],
+      "evidence": [
+        "recovered from 202b341b",
+        "entity-slice-selftest PASS",
+        "dynamic-lifecycle-selftest PASS"
+      ]
     },
     {
       "plan_id": "safe-generation-unload",
@@ -122,9 +165,15 @@
         "src/host/host-runtime.*",
         "src/game/game-module.cpp"
       ],
-      "shared_contracts": ["GameModuleV1 quiesce/shutdown"],
-      "depends_on": ["scenario-runner-and-gameplay-proof"],
-      "excludes": ["src/render/**"],
+      "shared_contracts": [
+        "GameModuleV1 quiesce/shutdown"
+      ],
+      "depends_on": [
+        "scenario-runner-and-gameplay-proof"
+      ],
+      "excludes": [
+        "src/render/**"
+      ],
       "evidence": []
     }
   ]

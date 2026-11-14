@@ -1557,6 +1557,7 @@ struct HostGlState {
     GLboolean blend = GL_FALSE;
     GLboolean cullFace = GL_FALSE;
     GLboolean scissorTest = GL_FALSE;
+    GLint scissorBox[4] = {0, 0, 0, 0};
     GLboolean depthMask = GL_TRUE;
     GLint depthFunc = GL_LESS;
     GLint cullFaceMode = GL_BACK;
@@ -1583,6 +1584,7 @@ HostGlState captureHostGlState() {
     state.blend = glIsEnabled(GL_BLEND);
     state.cullFace = glIsEnabled(GL_CULL_FACE);
     state.scissorTest = glIsEnabled(GL_SCISSOR_TEST);
+    glGetIntegerv(GL_SCISSOR_BOX, state.scissorBox);
     glGetBooleanv(GL_DEPTH_WRITEMASK, &state.depthMask);
     glGetIntegerv(GL_DEPTH_FUNC, &state.depthFunc);
     glGetIntegerv(GL_CULL_FACE_MODE, &state.cullFaceMode);
@@ -1624,6 +1626,8 @@ void restoreHostGlState(const HostGlState& state) {
     if (state.blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     if (state.cullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
     if (state.scissorTest) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    glScissor(state.scissorBox[0], state.scissorBox[1], state.scissorBox[2],
+              state.scissorBox[3]);
 }
 
 }  // namespace
@@ -1843,6 +1847,70 @@ std::int32_t renderCheckFramebufferStatus(void*) {
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE
                ? 1
                : 0;
+}
+
+HostResult renderReadPixels(void*, std::int32_t x, std::int32_t y,
+                            std::int32_t width, std::int32_t height,
+                            mimita::render::PixelFormat format,
+                            mimita::render::PixelType type, void* data,
+                            std::uint32_t) {
+    glReadPixels(x, y, width, height, toGl(format), toGl(type), data);
+    return HostResult::Ok;
+}
+
+HostResult renderBlitFramebuffer(
+    void*, std::int32_t srcX0, std::int32_t srcY0, std::int32_t srcX1,
+    std::int32_t srcY1, std::int32_t dstX0, std::int32_t dstY0,
+    std::int32_t dstX1, std::int32_t dstY1, mimita::render::BlitMask mask,
+    mimita::render::BlitFilter filter) {
+    glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1,
+                      toGl(mask), toGl(filter));
+    return HostResult::Ok;
+}
+
+HostResult renderTextureAnisotropy(void*, mimita::render::TextureTarget target,
+                                   float requested) {
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+#ifdef GLAD_GL_EXT_texture_filter_anisotropic
+    if (!GLAD_GL_EXT_texture_filter_anisotropic)
+        return HostResult::Unsupported;
+#endif
+    static float maxAnisotropy = 0.0f;
+    if (maxAnisotropy <= 0.0f) {
+        maxAnisotropy = 1.0f;
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+    }
+    const float level = requested < 1.0f
+                            ? 1.0f
+                            : (requested > maxAnisotropy ? maxAnisotropy
+                                                         : requested);
+    glTexParameterf(toGl(target), GL_TEXTURE_MAX_ANISOTROPY_EXT, level);
+    return HostResult::Ok;
+}
+
+HostResult renderGetViewport(void*, std::int32_t out[4]) {
+    GLint viewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    for (int i = 0; i < 4; ++i)
+        out[i] = static_cast<std::int32_t>(viewport[i]);
+    return HostResult::Ok;
+}
+
+HostResult renderTexSubImage2D(void*, mimita::render::TextureTarget target,
+                               std::int32_t level, std::int32_t x,
+                               std::int32_t y, std::int32_t width,
+                               std::int32_t height,
+                               mimita::render::PixelFormat format,
+                               mimita::render::PixelType type, const void* data,
+                               std::uint32_t) {
+    glTexSubImage2D(toGl(target), level, x, y, width, height, toGl(format),
+                    toGl(type), data);
+    return HostResult::Ok;
 }
 
 LogCapabilityV1 gLogCapability{
@@ -2208,6 +2276,87 @@ bool HostRuntime::dispatchInbound(TransportDispatchV1* dispatch) {
         return false;
     }
     return dispatch->response.payloadSize != 0;
+}
+
+bool HostRuntime::serverApiAvailable() const {
+    return probeEnabled_.load(std::memory_order_acquire) &&
+           loader_.activeGenerationInfo().serverApi != nullptr;
+}
+
+namespace {
+struct ServerApiCall {
+    mimita::host::HostRuntime& runtime;
+    mimita::host::GenerationBarrier& barrier;
+    const mimita::host::GameServerV1* api;
+    std::unique_lock<std::mutex> lock;
+    std::uint64_t generation = 0;
+    bool entered = false;
+
+    ServerApiCall(mimita::host::HostRuntime& host,
+                  std::mutex& mutex,
+                  mimita::host::GenerationBarrier& generationBarrier)
+        : runtime(host), barrier(generationBarrier),
+          api(host.activeServerApi()), lock(mutex) {
+        if (!api) {
+            return;
+        }
+        generation = runtime.activeGeneration();
+        entered = barrier.enter(generation);
+    }
+
+    ~ServerApiCall() {
+        if (entered) {
+            barrier.leave();
+        }
+    }
+
+    bool valid() const { return api != nullptr && entered; }
+};
+}  // namespace
+
+bool HostRuntime::serverProcessPacket(ServerFrameV1* frame, const void* event,
+                                      ServerPacketResultV1* out) {
+    if (!frame || !event || !out ||
+        !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerApiCall call(*this, probeMutex_, barrier_);
+    if (!call.valid()) {
+        return false;
+    }
+    return call.api->process_packet(frame, event, out) != 0;
+}
+
+bool HostRuntime::serverSimulatePlayers(ServerFrameV1* frame) {
+    if (!frame || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerApiCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->simulate_players(frame) != 0;
+}
+
+bool HostRuntime::serverSimulateWorld(ServerFrameV1* frame) {
+    if (!frame || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerApiCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->simulate_world(frame) != 0;
+}
+
+bool HostRuntime::serverPublish(ServerFrameV1* frame) {
+    if (!frame || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerApiCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->publish(frame) != 0;
+}
+
+bool HostRuntime::serverGamemode(ServerFrameV1* frame) {
+    if (!frame || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerApiCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->gamemode(frame) != 0;
 }
 
 void HostRuntime::poll() {
@@ -2652,6 +2801,11 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &renderRenderbufferStorage,
             &renderFramebufferRenderbuffer,
             &renderCheckFramebufferStatus,
+            &renderReadPixels,
+            &renderBlitFramebuffer,
+            &renderTextureAnisotropy,
+            &renderGetViewport,
+            &renderTexSubImage2D,
         };
         return &renderCapability;
     }

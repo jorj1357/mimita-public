@@ -1,0 +1,482 @@
+{
+  "abi_version": 1,
+  "domains": [
+    {
+      "field_count": 9,
+      "fields": [
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "id",
+          "type": "u32"
+        },
+        {
+          "c_type": "std::uint8_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "kind",
+          "type": "u8"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "team",
+          "type": "i32"
+        },
+        {
+          "c_type": "float[3]",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "position",
+          "type": "vec3"
+        },
+        {
+          "c_type": "float[3]",
+          "capacity": null,
+          "mask": "1ull << 4",
+          "name": "velocity",
+          "type": "vec3"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 5",
+          "name": "health",
+          "type": "i32"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 6",
+          "name": "max_health",
+          "type": "i32"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 7",
+          "name": "flags",
+          "type": "u32"
+        },
+        {
+          "c_type": "char[64]",
+          "capacity": 64,
+          "mask": "1ull << 8",
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "name": "player_core",
+      "owner": "server-player-table",
+      "readers": [
+        "host-server-entity-adapter",
+        "snapshot-builder"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/simulatePlayer",
+        "server-command-dispatch"
+      ]
+    },
+    {
+      "field_count": 7,
+      "fields": [
+        {
+          "c_type": "char[64]",
+          "capacity": 64,
+          "mask": "1ull << 0",
+          "name": "join_token",
+          "type": "string"
+        },
+        {
+          "c_type": "char[64]",
+          "capacity": 64,
+          "mask": "1ull << 1",
+          "name": "reconnect_token",
+          "type": "string"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "join_token_validated",
+          "type": "bool"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "spawn_generation",
+          "type": "u32"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 4",
+          "name": "spawned",
+          "type": "bool"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 5",
+          "name": "last_heard_ms",
+          "type": "u64"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 6",
+          "name": "connection_stale",
+          "type": "bool"
+        }
+      ],
+      "name": "player_session",
+      "owner": "server-player-session",
+      "readers": [
+        "host-server-session-events",
+        "snapshot-builder"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/join",
+        "server/reconnect",
+        "server/disconnect"
+      ]
+    },
+    {
+      "field_count": 4,
+      "fields": [
+        {
+          "c_type": "double",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "chat_rate_tokens",
+          "type": "f64"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "chat_rate_last_update_tick",
+          "type": "u64"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "last_request_id",
+          "type": "u32"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "cached_event_valid",
+          "type": "bool"
+        }
+      ],
+      "name": "player_chat",
+      "owner": "server-player-chat",
+      "readers": [
+        "server-command-dispatch/chat",
+        "snapshot-builder"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server-command-dispatch/chat"
+      ]
+    },
+    {
+      "field_count": 4,
+      "fields": [
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "account_id",
+          "type": "u32"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "vip_account_id",
+          "type": "i32"
+        },
+        {
+          "c_type": "char[32]",
+          "capacity": 32,
+          "mask": "1ull << 2",
+          "name": "account_role",
+          "type": "string"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "vip_style_epoch",
+          "type": "u32"
+        }
+      ],
+      "name": "player_vip",
+      "owner": "server-player-vip",
+      "readers": [
+        "snapshot-builder",
+        "host-server-entity-adapter"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/join",
+        "server/vip-style"
+      ]
+    },
+    {
+      "field_count": 6,
+      "fields": [
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "equipped_slot",
+          "type": "i32"
+        },
+        {
+          "c_type": "std::uint8_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "weapon_state",
+          "type": "u8"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "last_shot_serial",
+          "type": "u32"
+        },
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "last_projectile_fire_serial",
+          "type": "u32"
+        },
+        {
+          "c_type": "float",
+          "capacity": null,
+          "mask": "1ull << 4",
+          "name": "projectile_fire_cooldown",
+          "type": "f32"
+        },
+        {
+          "c_type": "std::uint8_t",
+          "capacity": null,
+          "mask": "1ull << 5",
+          "name": "godball_state",
+          "type": "u8"
+        }
+      ],
+      "name": "player_combat",
+      "owner": "server-player-combat",
+      "readers": [
+        "server/combat",
+        "snapshot-builder"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/combat",
+        "server-command-dispatch/godball"
+      ]
+    },
+    {
+      "field_count": 4,
+      "fields": [
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "input_sequence",
+          "type": "u32"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "simulation_tick",
+          "type": "u64"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "on_ground",
+          "type": "bool"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "dash_available",
+          "type": "bool"
+        }
+      ],
+      "name": "player_movement",
+      "owner": "server-player-movement",
+      "readers": [
+        "server/simulatePlayer",
+        "snapshot-builder"
+      ],
+      "source": "MimitaNet::ServerPlayer",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/simulatePlayer",
+        "server/movement-report"
+      ]
+    },
+    {
+      "field_count": 9,
+      "fields": [
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "id",
+          "type": "u32"
+        },
+        {
+          "c_type": "std::uint16_t",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "transform_epoch",
+          "type": "u16"
+        },
+        {
+          "c_type": "float",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "difficulty",
+          "type": "f32"
+        },
+        {
+          "c_type": "float[3]",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "position",
+          "type": "vec3"
+        },
+        {
+          "c_type": "float[3]",
+          "capacity": null,
+          "mask": "1ull << 4",
+          "name": "velocity",
+          "type": "vec3"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 5",
+          "name": "health",
+          "type": "i32"
+        },
+        {
+          "c_type": "std::int32_t",
+          "capacity": null,
+          "mask": "1ull << 6",
+          "name": "team",
+          "type": "i32"
+        },
+        {
+          "c_type": "float",
+          "capacity": null,
+          "mask": "1ull << 7",
+          "name": "yaw",
+          "type": "f32"
+        },
+        {
+          "c_type": "bool",
+          "capacity": null,
+          "mask": "1ull << 8",
+          "name": "on_ground",
+          "type": "bool"
+        }
+      ],
+      "name": "npc_core",
+      "owner": "server-npc-table",
+      "readers": [
+        "host-server-entity-adapter",
+        "snapshot-builder"
+      ],
+      "source": "Npc",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/npc-spawn",
+        "server/npc-movement"
+      ]
+    },
+    {
+      "field_count": 4,
+      "fields": [
+        {
+          "c_type": "std::uint32_t",
+          "capacity": null,
+          "mask": "1ull << 0",
+          "name": "target_id",
+          "type": "u32"
+        },
+        {
+          "c_type": "float",
+          "capacity": null,
+          "mask": "1ull << 1",
+          "name": "attack_timer",
+          "type": "f32"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 2",
+          "name": "behavior_revision",
+          "type": "u64"
+        },
+        {
+          "c_type": "std::uint8_t",
+          "capacity": null,
+          "mask": "1ull << 3",
+          "name": "ai_state",
+          "type": "u8"
+        }
+      ],
+      "name": "npc_combat",
+      "owner": "server-npc-combat",
+      "readers": [
+        "server/npc-combat",
+        "snapshot-builder"
+      ],
+      "source": "Npc",
+      "struct_size": "sizeof(Record)",
+      "version": 1,
+      "writers": [
+        "server/npc-combat"
+      ]
+    }
+  ],
+  "generator": "devscripts/resident_state_codegen.py",
+  "generator_version": 1,
+  "header": "src/host/generated/resident-state-v1.h",
+  "schema_sha256": "e2337c59cc9303825e5ab2733fb8fade42d9d4d6b030a6280e6be1902579fe23",
+  "schema_version": 1
+}

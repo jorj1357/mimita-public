@@ -14,7 +14,6 @@
     "src/game/lifetime-bridge-module.cpp",
     "src/game/render-bridge-module.cpp",
     "src/game/server-command-dispatch-module.cpp",
-    "src/game/network-compat-bridge-module.cpp",
     "src/game/duel-bridge-module.cpp",
     "src/game/persistence-bridge-module.cpp",
     "src/game/json-watch-bridge-module.cpp"

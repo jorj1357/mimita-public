@@ -80,3 +80,19 @@ Delete it when the last handler uses a domain op.
 
 Every domain row records: owner, version, fields, writers, readers, migration,
 and the handler families that use it. The ledger is generated, not hand-written.
+
+## Implemented foundation (2026-11-14)
+
+- `config/hot-reload/state-schema.json` defines eight initial domains:
+  `player_core`, `player_session`, `player_chat`, `player_vip`,
+  `player_combat`, `player_movement`, `npc_core`, `npc_combat`.
+- `devscripts/resident_state_codegen.py` generates the ABI header
+  `src/host/generated/resident-state-v1.h` and the ledger
+  `config/hot-reload/state-ledger.json`.
+- Run `python devscripts/resident_state_codegen.py` after a schema edit and
+  `python devscripts/resident_state_codegen.py --check` as the drift gate.
+- Generated structs expose `structSize`, `version`, `handle`, `fieldMask`,
+  field enum masks, defaults, `initialize`, and `clearFields`.
+- Not yet wired: adapter ops, game bridge wrappers, round-trip tests, and the
+  `EntitySnapshotV1` retirement. No domain is authoritative until an owner
+  adapter uses it.

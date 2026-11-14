@@ -18,7 +18,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kRenderCapabilityVersion = 2u;
+inline constexpr std::uint32_t kRenderCapabilityVersion = 3u;
 inline constexpr std::uint32_t kRenderMaxCommandsPerSubmit = 4096u;
 
 enum class RenderOp : std::uint32_t {
@@ -170,6 +170,28 @@ struct RenderCapabilityV1 {
         void* hostUserData, mimita::render::FramebufferAttachment attachment,
         std::uint32_t renderbuffer);
     std::int32_t (*check_framebuffer_status)(void* hostUserData);
+
+    // Capture, blit, and sampler-extension operations.
+    HostResult (*read_pixels)(void* hostUserData, std::int32_t x,
+                              std::int32_t y, std::int32_t width,
+                              std::int32_t height,
+                              mimita::render::PixelFormat format,
+                              mimita::render::PixelType type, void* data,
+                              std::uint32_t size);
+    HostResult (*blit_framebuffer)(
+        void* hostUserData, std::int32_t srcX0, std::int32_t srcY0,
+        std::int32_t srcX1, std::int32_t srcY1, std::int32_t dstX0,
+        std::int32_t dstY0, std::int32_t dstX1, std::int32_t dstY1,
+        mimita::render::BlitMask mask, mimita::render::BlitFilter filter);
+    HostResult (*texture_anisotropy)(void* hostUserData,
+                                     mimita::render::TextureTarget target,
+                                     float requested);
+    HostResult (*get_viewport)(void* hostUserData, std::int32_t out[4]);
+    HostResult (*tex_sub_image_2d)(
+        void* hostUserData, mimita::render::TextureTarget target,
+        std::int32_t level, std::int32_t x, std::int32_t y, std::int32_t width,
+        std::int32_t height, mimita::render::PixelFormat format,
+        mimita::render::PixelType type, const void* data, std::uint32_t size);
 };
 
 }  // namespace mimita::host

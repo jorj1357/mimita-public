@@ -383,6 +383,93 @@ here performs the ownership cutover.
 - Not built here per the owner's split; Agent A builds and reports compiler
   errors.
 
+## Phase 1q capture, sampler, and diagnostic sweep (C-3)
+
+- Contract additions (CAP_RENDER version 3):
+  - `BlitMask`, `BlitFilter`, `readPixels`, `blitFramebuffer`,
+    `textureAnisotropy`, `getViewport`, `texSubImage2D`.
+- Fully migrated (0 raw GL calls):
+  - `src/replay/replay-export.cpp` (capture blit + readback + viewport)
+  - `src/map/map-loader-material.cpp` (GLB texture upload + anisotropy)
+  - `src/debug/debug-diag-commands.cpp` (FBO status, checker fill, link status)
+  - `src/avatar/cosmetic-system.cpp` (world-shader uniforms, VAO/VBO, draw,
+    state guard)
+- Remaining raw GL in these files is only string text (`glError` labels).
+
+## Phase 1r audit pipeline fold (C-6)
+
+- `devscripts/audit_triage.py` now owns `--passes`, `--state-owners`,
+  `--render`, `--query`, and `--protocol`, delegating to the folded modules.
+- Added `FOLDED 2026-11-14` headers to `audit_passes.py`,
+  `state_owner_pass.py`, `render_query_inventory.py`, and
+  `protocol_inventory.py`: one entry point, no new overlapping scripts.
+- Physical deletion of the four modules is deferred until the next audit
+  refresh so the refresh can run from the single entry point.
+- Not built here per the owner's split; Agent A builds and reports compiler
+  errors.
+
+## Phase 1s remaining render sweep, bridge fold, and dead-code removal
+
+- Migrated to the contract (0 raw GL calls):
+  - `src/avatar/avatar.cpp` (UV atlas hot-reload upload)
+  - `src/avatar/avatar-editor.cpp` (scissor via `Capability::ScissorTest`)
+  - `src/notifications/notifications.cpp` (scissor via `pushState`/`popState`)
+  - `src/debug/debug-diag.cpp` (`getError`)
+  - `src/debug/debug-visuals.cpp` (`polygonMode`)
+- Extended `pushState`/`popState` to save and restore the scissor box in both
+  the host state guard and the legacy EXE state guard.
+- C-4 partial: replaced the all-comments `src/map/map_render.cpp` with an empty
+  translation unit; the raw-GL debug layer (`gl-debug.*`) remains for the
+  resident renderer and will be deleted once its last hot call sites move.
+- C-7: folded `src/game/network-compat-bridge-module.cpp` into
+  `src/game/transport-bridge-module.cpp` (`MimitaNet` compat surface), deleted
+  the compat file, removed it from `config/probe/npc-target.json`, and
+  regenerated `build/source-manifest.json`.
+- C-5: only removed dead/duplicate raw output in touched files; working debug
+  logs were preserved.
+- Active raw-GL call sites outside the render lane dropped from 75 to 35.
+- Build is currently red from another agent's ECS work
+  (`src/ecs/*` missing `live-code/live-journal.h`, `hot-reload/generic-runtime.h`,
+  and `GAME_NET_ALL`), so these changes are not compiler-verified yet.
+
+## Phase 1t render hotness proof event
+
+- Added a throttled `game.render.path` journal record at the render owner
+  (`src/engine/engine-tick-render.cpp`): `path=dll` when built into the whole
+  game DLL, `path=legacy` in the EXE, plus a frame counter. This is the first
+  runtime proof event from the `hotness-contract.md` list.
+- Not built here per the owner's split; Agent A builds and reports compiler
+  errors.
+
+## Phase 1u C-path GLAD/debug bridge removal
+
+- Removed `debug/gl-debug.h` and its `MIMITA_GL_*` calls from the C render/menu
+  paths: `render-world.cpp`, `render-world-mesh.cpp`, `render-world-sky.cpp`,
+  `ui-system.cpp`, `ui-system-render.cpp`, `font-loader.cpp`.
+- Removed the last raw GL from `src/avatar/avatar-commands.cpp`: atlas size now
+  uses `AvatarSystem::atlasWidth()/atlasHeight()`; the GL state dump was
+  replaced with a render-trace pointer.
+- Added the two atlas accessors to `src/avatar/avatar.h`.
+- C-owned paths (`src/engine`, `src/render`, `src/gui`, `src/effects`,
+  `src/avatar`, `src/world/streamed-world-layer.cpp`,
+  `src/physics/physical-entity.cpp`) now have **zero raw GL calls**, excluding
+  the EXE-only `render-command-legacy.cpp` and the enum-mapping header.
+- `gl-debug.*` remains only for non-C owners (entities, debug, map, combat,
+  ragdoll, resident renderer) and is deleted with the cutover.
+
+## Phase 1v menu/map-editor proof and swap-state audit
+
+- Added `game.render.path` coverage for the UI/menu render owner
+  (`src/engine/engine-tick-ui.cpp`, `subpath=menu`) and the map editor
+  (`MapEditor::renderWorld`, `subpath=map-editor`), throttled to 1/s.
+- Added a "Swap-state rules" section and a static-state audit table to
+  `docs/specs/hotreload/hot-cold-split.md`: GL handles, input-edge statics,
+  config caches, per-frame scratch, resident statics, EXE-only statics.
+- Marked `src/host/game-gl-legacy.cpp` and
+  `src/render/render-command-legacy.cpp` with `TODO-DELETE(cutover)`; they stay
+  until normal play runs the DLL.
+- Build is green; A is rebuilding with these changes.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls

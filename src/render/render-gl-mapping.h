@@ -256,6 +256,29 @@ inline GLenum toGl(PixelStoreParameter value) {
     return GL_UNPACK_ALIGNMENT;
 }
 
+inline GLbitfield toGl(BlitMask value) {
+    switch (value) {
+        case BlitMask::Color: return GL_COLOR_BUFFER_BIT;
+        case BlitMask::Depth: return GL_DEPTH_BUFFER_BIT;
+        case BlitMask::Stencil: return GL_STENCIL_BUFFER_BIT;
+        case BlitMask::ColorDepth: return GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT;
+        case BlitMask::ColorStencil: return GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+        case BlitMask::DepthStencil: return GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+        case BlitMask::All:
+            return GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+                   GL_STENCIL_BUFFER_BIT;
+    }
+    return GL_COLOR_BUFFER_BIT;
+}
+
+inline GLenum toGl(BlitFilter value) {
+    switch (value) {
+        case BlitFilter::Nearest: return GL_NEAREST;
+        case BlitFilter::Linear: return GL_LINEAR;
+    }
+    return GL_NEAREST;
+}
+
 // Freeze the ABI values so a stale game.dll cannot silently disagree with the
 // resident host about the integer that crosses CAP_RENDER.
 static_assert(static_cast<std::uint32_t>(Primitive::Points) == 1, "ABI drift");

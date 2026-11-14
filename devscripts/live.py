@@ -46,6 +46,7 @@ WATCH_FILES = (
     "CMakeLists.txt",
     "config/build/source-owners.json",
     "config/modules/modules.json",
+    "config/hot-reload/state-schema.json",
 )
 WATCH_SUFFIXES = (".cpp", ".h", ".hpp", ".hh", ".hxx", ".inl", ".ipp", ".json", ".rc")
 EXCLUDE_DIRS = {".git", ".dev", "build", "dist", "node_modules", ".venv", "__pycache__"}
@@ -104,7 +105,8 @@ def snapshot_path(out_root: Path, revision: str) -> Path:
     return out_root / "snapshots" / revision / "manifest.json"
 
 
-def spawn_build(revision: str, out_root: Path) -> subprocess.Popen:
+def spawn_build(revision: str, out_root: Path,
+                change_report: Path | None = None) -> subprocess.Popen:
     command = [
         sys.executable,
         str(ROOT / "devscripts" / "game_build_worker.py"),
@@ -112,6 +114,8 @@ def spawn_build(revision: str, out_root: Path) -> subprocess.Popen:
         "--out", str(out_root),
         "--revision", revision,
     ]
+    if change_report is not None:
+        command.extend(["--change-report", str(change_report)])
     process = subprocess.Popen(command, cwd=str(ROOT))
     print(f"[LIVE] build start revision={revision} pid={process.pid}")
     return process
@@ -121,20 +125,39 @@ def publish_ready(out_root: Path, revision: str) -> bool:
     current = read_json(out_root / "current.json")
     if not current or current.get("revision") != revision or current.get("status") != "ok":
         return False
-    write_json_atomic(out_root / "ready.json", {
+    ready = {
         "status": "ready",
         "revision": revision,
         "generation": current.get("generation"),
         "dll": current.get("dll"),
         "code_hash": current.get("code_hash"),
         "published_utc": utc_now(),
-    })
+    }
+    if current.get("change_report") is not None:
+        ready["change_report"] = current["change_report"]
+    write_json_atomic(out_root / "ready.json", ready)
     print(f"[LIVE] ready revision={revision} generation={current.get('generation')} "
           f"dll={current.get('dll')}")
     return True
 
 
+def sync_state_codegen(dry_run: bool) -> bool:
+    command = [sys.executable, str(ROOT / "devscripts" / "resident_state_codegen.py")]
+    if dry_run:
+        command.append("--check")
+    result = subprocess.run(command, cwd=str(ROOT), capture_output=True, text=True)
+    output = (result.stdout or "") + (result.stderr or "")
+    for line in output.splitlines():
+        print(f"[LIVE] {line}")
+    if result.returncode != 0:
+        print("[LIVE] state codegen rejected; no build requested", file=sys.stderr)
+        return False
+    return True
+
+
 def run_cycle(out_root: Path, last_manifest_path: Path, dry_run: bool) -> dict | None:
+    if not sync_state_codegen(dry_run):
+        return None
     manifest = build_manifest(ROOT)
     errors, warnings = validate(manifest)
     for warning in warnings:
@@ -161,17 +184,28 @@ def run_cycle(out_root: Path, last_manifest_path: Path, dry_run: bool) -> dict |
         for entry in report["renamed"]:
             print(f"[LIVE]   renamed {entry['from']} -> {entry['to']}")
     else:
+        report = {
+            "old_revision": None,
+            "new_revision": manifest["revision"],
+            "initial": True,
+            "added": [], "removed": [], "renamed": [], "changed": [],
+            "added_headers": [], "removed_headers": [], "changed_headers": [],
+            "changed_owners": [],
+        }
         print(f"[LIVE] initial snapshot revision={manifest['revision']}")
+    report["generated_utc"] = utc_now()
 
     destination = snapshot_path(out_root, manifest["revision"])
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    report_path = destination.parent / "change-report.json"
+    write_json_atomic(report_path, report)
 
     if dry_run:
         print(f"[LIVE] dry-run: would build revision={manifest['revision']}")
         return manifest
 
-    process = spawn_build(manifest["revision"], out_root)
+    process = spawn_build(manifest["revision"], out_root, report_path)
     return {"manifest": manifest, "process": process}
 
 
@@ -195,6 +229,14 @@ def main(argv: list[str] | None = None) -> int:
               f"revision={current.get('revision')} dll={current.get('dll')}")
         print(f"[LIVE] ready generation={ready.get('generation')} "
               f"revision={ready.get('revision')}")
+        report = ready.get("change_report") or current.get("change_report") or {}
+        if report:
+            print(f"[LIVE] change {report.get('old_revision')} -> "
+                  f"{report.get('new_revision')} "
+                  f"added={len(report.get('added', []))} "
+                  f"removed={len(report.get('removed', []))} "
+                  f"changed={len(report.get('changed', []))} "
+                  f"headers={len(report.get('changed_headers', []))}")
         return 0
 
     if args.once:

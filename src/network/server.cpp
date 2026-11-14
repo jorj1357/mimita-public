@@ -53,6 +53,7 @@
 #include "host/host-server-world-adapter.h"
 #include "host/host-server-session-events.h"
 #include "host/host-session-identity.h"
+#include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
 #include "devtools/scenario-server-playback.h"
 #include "devtools/scenario-server-recorder.h"
@@ -183,6 +184,10 @@ void emitHotnessSummary(std::uint32_t tick) {
          {"resident", state.residentCount.load(std::memory_order_relaxed)},
          {"violations", state.violationCount.load(std::memory_order_relaxed)},
          {"probe", mimita::host::HostRuntime::instance().probeEnabled()},
+         {"server_path",
+          mimita::host::HostRuntime::instance().serverApiAvailable()
+              ? "dll"
+              : "resident"},
          {"generation",
           mimita::host::HostRuntime::instance().activeGeneration()}},
         __FILE__, __LINE__, __func__);
@@ -1509,13 +1514,47 @@ int runServer(const LaunchOptions& options)
                 ++totalPacketsIn;
                 continue;
             }
-            const ServerPacketProcessResult residentResult = processServerPacket(
-                sock, event, players, npcs, projectiles, nextPlayerId,
-                nextEntityId, nextProjectileId, world, tick, totalPacketsIn,
-                totalPacketsOut, &transportStats, &disagreementRetransmit,
-                nullptr, nullptr, nullptr, &npcSystem);
+            ServerPacketProcessResult residentResult{};
+            bool handledByDll = false;
+            if (mimita::host::HostRuntime::instance().serverApiAvailable()) {
+                mimita::host::ServerFrameV1 packetFrame{};
+                packetFrame.tick = tick;
+                packetFrame.players = &players;
+                packetFrame.npcs = &npcs;
+                packetFrame.projectiles = &projectiles;
+                packetFrame.npcSystem = &npcSystem;
+                packetFrame.world = &world;
+                packetFrame.npcWorld = &npcWorld;
+                packetFrame.vehicleState = &dedicatedVehicleState;
+                packetFrame.physicalEntityReplication =
+                    &physicalEntityReplication;
+                packetFrame.transportStats = &transportStats;
+                packetFrame.disagreementRetransmit = &disagreementRetransmit;
+                packetFrame.npcIdsAlive = &npcIdsAlive;
+                packetFrame.mirrorPlayer = &mirrorPlayer;
+                packetFrame.nextPlayerId = &nextPlayerId;
+                packetFrame.nextEntityId = &nextEntityId;
+                packetFrame.nextProjectileId = &nextProjectileId;
+                packetFrame.totalPacketsIn = &totalPacketsIn;
+                packetFrame.totalPacketsOut = &totalPacketsOut;
+                packetFrame.socket = static_cast<std::uintptr_t>(sock);
+                mimita::host::ServerPacketResultV1 dllResult{};
+                handledByDll =
+                    mimita::host::HostRuntime::instance().serverProcessPacket(
+                        &packetFrame, &event, &dllResult);
+                residentResult.handled = dllResult.handled != 0;
+                residentResult.playerId = dllResult.playerId;
+            }
+            if (!handledByDll) {
+                residentResult = processServerPacket(
+                    sock, event, players, npcs, projectiles, nextPlayerId,
+                    nextEntityId, nextProjectileId, world, tick,
+                    totalPacketsIn, totalPacketsOut, &transportStats,
+                    &disagreementRetransmit, nullptr, nullptr, nullptr,
+                    &npcSystem);
+            }
             if (residentResult.handled) {
-                noteHotnessPath(false, eventType,
+                noteHotnessPath(handledByDll, eventType,
                                 residentResult.playerId ? residentResult.playerId
                                                         : eventPlayer,
                                 tick);
@@ -1523,6 +1562,7 @@ int runServer(const LaunchOptions& options)
         }
 
         emitHotnessSummary(tick);
+        mimita::host::HostRuntime::instance().poll();
         ::StructuredLogger::instance().pollConfig();
         ::StructuredLogger::instance().tick();
 
@@ -1532,6 +1572,40 @@ int runServer(const LaunchOptions& options)
         while (accumulator >= (double)SERVER_DT && steps < MAX_STEPS)
         {
             const auto tickStart = std::chrono::steady_clock::now();
+            const bool hotServer =
+                mimita::host::HostRuntime::instance().serverApiAvailable();
+            mimita::host::ServerFrameV1 serverFrame{};
+            serverFrame.tick = tick;
+            serverFrame.players = &players;
+            serverFrame.npcs = &npcs;
+            serverFrame.projectiles = &projectiles;
+            serverFrame.npcSystem = &npcSystem;
+            serverFrame.world = &world;
+            serverFrame.npcWorld = &npcWorld;
+            serverFrame.vehicleState = &dedicatedVehicleState;
+            serverFrame.physicalEntityReplication = &physicalEntityReplication;
+            serverFrame.transportStats = &transportStats;
+            serverFrame.disagreementRetransmit = &disagreementRetransmit;
+            serverFrame.npcIdsAlive = &npcIdsAlive;
+            serverFrame.mirrorPlayer = &mirrorPlayer;
+            serverFrame.nextPlayerId = &nextPlayerId;
+            serverFrame.nextEntityId = &nextEntityId;
+            serverFrame.nextProjectileId = &nextProjectileId;
+            serverFrame.totalPacketsIn = &totalPacketsIn;
+            serverFrame.totalPacketsOut = &totalPacketsOut;
+            serverFrame.socket = static_cast<std::uintptr_t>(sock);
+            std::uint64_t npcUs = 0;
+            std::uint64_t projectileUs = 0;
+            std::uint64_t meleeActionsUs = 0;
+            std::uint64_t physicalContactUs = 0;
+            std::uint64_t worldImpactFlushUs = 0;
+            std::uint64_t contactWeaponUs = 0;
+            std::uint64_t snapshotUs = 0;
+            std::uint64_t gamemodeUs = 0;
+            if (hotServer) {
+                mimita::host::HostRuntime::instance().serverSimulatePlayers(
+                    &serverFrame);
+            } else {
             handleClientTimeout(players, sock, tick, totalPacketsOut);
             for (auto& kv : players)
             {
@@ -1555,10 +1629,16 @@ int runServer(const LaunchOptions& options)
             tickWeaponRuntimes(players, tick);
 
             checkVoidDeath(players, npcs);
+            }
 
             // Simulate all NPCs once per tick. simulateSharedNpcs already walks
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
+            if (hotServer) {
+                mimita::host::HostRuntime::instance().serverSimulateWorld(
+                    &serverFrame);
+                npcUs = serverFrame.simulate_world_us;
+            } else {
             const auto npcStart = std::chrono::steady_clock::now();
             ScenarioServerPlayback::instance().tick(tick, players, npcSystem);
             {
@@ -1584,23 +1664,24 @@ int runServer(const LaunchOptions& options)
             for (auto& kv : players)
                 if (!kv.second.connectionStale)
                     pushPositionHistory(kv.second, tick);
-            const uint64_t npcUs = elapsedMicroseconds(npcStart);
+            npcUs = elapsedMicroseconds(npcStart);
             ScenarioServerRecorder::instance().captureTick(
                 players, npcs, npcSystem, projectiles, world, tick);
             const auto projectileStart = std::chrono::steady_clock::now();
             tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
-            const uint64_t projectileUs = elapsedMicroseconds(projectileStart);
+            projectileUs = elapsedMicroseconds(projectileStart);
             const auto contactWeaponStart = std::chrono::steady_clock::now();
             const auto meleeActionsStart = std::chrono::steady_clock::now();
             tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
-            const uint64_t meleeActionsUs = elapsedMicroseconds(meleeActionsStart);
+            meleeActionsUs = elapsedMicroseconds(meleeActionsStart);
             const auto physicalContactStart = std::chrono::steady_clock::now();
             tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
-            const uint64_t physicalContactUs = elapsedMicroseconds(physicalContactStart);
+            physicalContactUs = elapsedMicroseconds(physicalContactStart);
             const auto worldImpactStart = std::chrono::steady_clock::now();
             flushServerWorldImpacts(world, npcWorld, serverGamemodeState().mapId, tick);
-            const uint64_t worldImpactFlushUs = elapsedMicroseconds(worldImpactStart);
-            const uint64_t contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
+            worldImpactFlushUs = elapsedMicroseconds(worldImpactStart);
+            contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
+            }
 
             if (!options.proceduralMode.empty() &&
                 !automaticProceduralStartQueued &&
@@ -1642,17 +1723,23 @@ int runServer(const LaunchOptions& options)
                                     tick, totalPacketsIn, totalPacketsOut,
                                     &transportStats, &disagreementRetransmit);
 
+            if (hotServer) {
+                mimita::host::HostRuntime::instance().serverPublish(
+                    &serverFrame);
+                snapshotUs = serverFrame.publish_us;
+            } else {
             serverTickVehicles(dedicatedVehicleState, players, &npcWorld,
                                nextEntityId, tick);
             const auto snapshotStart = std::chrono::steady_clock::now();
             buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
-            const uint64_t snapshotUs = elapsedMicroseconds(snapshotStart);
+            snapshotUs = elapsedMicroseconds(snapshotStart);
             serverReplicatePhysicalEntities(sock, players, tick, totalPacketsOut,
                                             physicalEntityReplication);
             serverReplicateVehicles(sock, dedicatedVehicleState, players, tick,
                                     totalPacketsOut);
             tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
             tickReliableGameplayEvents(sock, players, totalPacketsOut);
+            }
             if (mimita::host::HostRuntime::instance().probeEnabled()) {
                 const auto& overrides = serverGameOverrides();
                 mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
@@ -1661,6 +1748,11 @@ int runServer(const LaunchOptions& options)
                     overrides.spawnOverridePosition.y,
                     overrides.spawnOverridePosition.z);
             }
+            if (hotServer) {
+                mimita::host::HostRuntime::instance().serverGamemode(
+                    &serverFrame);
+                gamemodeUs = serverFrame.gamemode_us;
+            } else {
             const auto gamemodeStart = std::chrono::steady_clock::now();
             serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
                            npcIdsAlive, tick, totalPacketsOut);
@@ -1681,8 +1773,9 @@ int runServer(const LaunchOptions& options)
                 resetServerWorldDestruction(world, npcWorld, tick);
                 world.lastDestructionMatchId = serverGamemodeState().duelId;
             }
-            const uint64_t gamemodeUs = elapsedMicroseconds(gamemodeStart);
+            gamemodeUs = elapsedMicroseconds(gamemodeStart);
             tickServerProgression(sock, players, true, totalPacketsOut);
+            }
 
             const uint64_t totalTickUs = elapsedMicroseconds(tickStart);
             ++tickTiming.tickCount;
@@ -2365,15 +2458,50 @@ static void simulateOneServerTick(ListenServerState& state)
                 ++state.totalPacketsIn;
                 continue;
             }
-            const ServerPacketProcessResult residentResult = processServerPacket(
-                state.sock, event, state.players, state.npcs, state.projectiles,
-                state.nextPlayerId, state.nextEntityId, state.nextProjectileId,
-                state.world, state.tick, state.totalPacketsIn,
-                state.totalPacketsOut, nullptr,
-                &state.disagreementRetransmit, nullptr, nullptr, nullptr,
-                state.npcSystem.get());
+            ServerPacketProcessResult residentResult{};
+            bool handledByDll = false;
+            if (mimita::host::HostRuntime::instance().serverApiAvailable()) {
+                mimita::host::ServerFrameV1 packetFrame{};
+                packetFrame.tick = state.tick;
+                packetFrame.players = &state.players;
+                packetFrame.npcs = &state.npcs;
+                packetFrame.projectiles = &state.projectiles;
+                packetFrame.npcSystem = state.npcSystem.get();
+                packetFrame.world = &state.world;
+                packetFrame.npcWorld = state.npcWorld.get();
+                packetFrame.vehicleState = &state.vehicleState;
+                packetFrame.physicalEntityReplication =
+                    &state.physicalEntityReplication;
+                packetFrame.transportStats = nullptr;
+                packetFrame.disagreementRetransmit =
+                    &state.disagreementRetransmit;
+                packetFrame.npcIdsAlive = &state.npcIdsAlive;
+                packetFrame.mirrorPlayer = state.mirrorPlayer.get();
+                packetFrame.nextPlayerId = &state.nextPlayerId;
+                packetFrame.nextEntityId = &state.nextEntityId;
+                packetFrame.nextProjectileId = &state.nextProjectileId;
+                packetFrame.totalPacketsIn = &state.totalPacketsIn;
+                packetFrame.totalPacketsOut = &state.totalPacketsOut;
+                packetFrame.socket =
+                    static_cast<std::uintptr_t>(state.sock);
+                mimita::host::ServerPacketResultV1 dllResult{};
+                handledByDll =
+                    mimita::host::HostRuntime::instance().serverProcessPacket(
+                        &packetFrame, &event, &dllResult);
+                residentResult.handled = dllResult.handled != 0;
+                residentResult.playerId = dllResult.playerId;
+            }
+            if (!handledByDll) {
+                residentResult = processServerPacket(
+                    state.sock, event, state.players, state.npcs,
+                    state.projectiles, state.nextPlayerId, state.nextEntityId,
+                    state.nextProjectileId, state.world, state.tick,
+                    state.totalPacketsIn, state.totalPacketsOut, nullptr,
+                    &state.disagreementRetransmit, nullptr, nullptr, nullptr,
+                    state.npcSystem.get());
+            }
             if (residentResult.handled) {
-                noteHotnessPath(false, eventType,
+                noteHotnessPath(handledByDll, eventType,
                                 residentResult.playerId ? residentResult.playerId
                                                         : eventPlayer,
                                 state.tick);
@@ -2381,6 +2509,35 @@ static void simulateOneServerTick(ListenServerState& state)
         }
 
         emitHotnessSummary(state.tick);
+        mimita::host::HostRuntime::instance().poll();
+        const bool hotServer =
+            mimita::host::HostRuntime::instance().serverApiAvailable();
+        mimita::host::ServerFrameV1 serverFrame{};
+        serverFrame.tick = state.tick;
+        serverFrame.flags = mimita::host::kServerFrameHazardScratch;
+        serverFrame.players = &state.players;
+        serverFrame.npcs = &state.npcs;
+        serverFrame.projectiles = &state.projectiles;
+        serverFrame.npcSystem = state.npcSystem.get();
+        serverFrame.world = &state.world;
+        serverFrame.npcWorld = state.npcWorld.get();
+        serverFrame.vehicleState = &state.vehicleState;
+        serverFrame.physicalEntityReplication =
+            &state.physicalEntityReplication;
+        serverFrame.transportStats = nullptr;
+        serverFrame.disagreementRetransmit = &state.disagreementRetransmit;
+        serverFrame.npcIdsAlive = &state.npcIdsAlive;
+        serverFrame.mirrorPlayer = state.mirrorPlayer.get();
+        serverFrame.nextPlayerId = &state.nextPlayerId;
+        serverFrame.nextEntityId = &state.nextEntityId;
+        serverFrame.nextProjectileId = &state.nextProjectileId;
+        serverFrame.totalPacketsIn = &state.totalPacketsIn;
+        serverFrame.totalPacketsOut = &state.totalPacketsOut;
+        serverFrame.socket = static_cast<std::uintptr_t>(state.sock);
+        if (hotServer) {
+            mimita::host::HostRuntime::instance().serverSimulatePlayers(
+                &serverFrame);
+        } else {
         handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
         for (auto& kv : state.players)
         {
@@ -2398,6 +2555,11 @@ static void simulateOneServerTick(ListenServerState& state)
         }
         tickWeaponRuntimes(state.players, state.tick);
         checkVoidDeath(state.players, state.npcs);
+        }
+        if (hotServer) {
+            mimita::host::HostRuntime::instance().serverSimulateWorld(
+                &serverFrame);
+        } else {
         ScenarioServerPlayback::instance().tick(
             state.tick, state.players, *state.npcSystem);
         {
@@ -2459,7 +2621,7 @@ static void simulateOneServerTick(ListenServerState& state)
                                          state.totalPacketsOut);
         flushServerWorldImpacts(state.world, *state.npcWorld,
                                 serverGamemodeState().mapId, state.tick);
-
+        }
 
         // Skip ICE coordinator for local-only servers
         if (state.serverCode.find("LOCAL-") != 0)
@@ -2475,6 +2637,9 @@ static void simulateOneServerTick(ListenServerState& state)
                                 state.totalPacketsOut, nullptr,
                                 &state.disagreementRetransmit);
 
+        if (hotServer) {
+            mimita::host::HostRuntime::instance().serverPublish(&serverFrame);
+        } else {
         serverTickVehicles(state.vehicleState, state.players,
                            state.npcWorld.get(), state.nextEntityId, state.tick);
         buildAndSendSnapshot(state.sock, state.players, state.npcs,
@@ -2490,6 +2655,7 @@ static void simulateOneServerTick(ListenServerState& state)
                                    state.totalPacketsOut);
         tickReliableGameplayEvents(state.sock, state.players,
                                    state.totalPacketsOut);
+        }
         if (mimita::host::HostRuntime::instance().probeEnabled()) {
             const auto& overrides = serverGameOverrides();
             mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
@@ -2498,6 +2664,9 @@ static void simulateOneServerTick(ListenServerState& state)
                 overrides.spawnOverridePosition.y,
                 overrides.spawnOverridePosition.z);
         }
+        if (hotServer) {
+            mimita::host::HostRuntime::instance().serverGamemode(&serverFrame);
+        } else {
         serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
                        state.npcs, *state.npcSystem, state.npcIdsAlive,
                        state.tick, state.totalPacketsOut);
@@ -2519,6 +2688,7 @@ static void simulateOneServerTick(ListenServerState& state)
         }
 
         tickServerProgression(state.sock, state.players, true, state.totalPacketsOut);
+        }
 
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)

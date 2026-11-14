@@ -26,7 +26,6 @@ Call them once at startup.
 #include <string>
 #include <unordered_map>
 #include <glad/glad.h>
-#include "debug/gl-debug.h"
 #include "render/render-command.h"
 
 // do not define stb image implementation here 

@@ -135,8 +135,10 @@ across a DLL reload cycle. No tuned gameplay constant is pinned.
 
 ## Live reload state migration (2026-11-14)
 
-The existing entity/component path is the migration mechanism for entity state.
-Do not add a second ECS store or a parallel schema registry.
+The entity/component path is the migration mechanism for entity state. It was
+recovered from commit `202b341b` on 2026-11-14; both the entity-slice and
+dynamic-lifecycle self-tests pass. Do not add a second ECS store or a parallel
+schema registry.
 
 Rules:
 

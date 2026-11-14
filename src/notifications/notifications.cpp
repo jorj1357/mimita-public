@@ -33,6 +33,9 @@
 #include "gui/font-stuff/font-loader.h"
 #include "utils/tips.h"
 #include "debug/debug-log.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "debug/structured-log.h"
 
 using json = nlohmann::json;
@@ -794,12 +797,10 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
     }
 
     // Scissor the message to its box so scrolled text stays clipped.
-    GLboolean scissorWas = glIsEnabled(GL_SCISSOR_TEST);
-    GLint scissorBox[4];
-    glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((int)sx, (int)((float)UISys::gFbH - sy - clipH),
-              std::max(0, (int)clipW), std::max(0, (int)clipH));
+    r::pushState();
+    r::enable(r::Capability::ScissorTest);
+    r::scissor((int)sx, (int)((float)UISys::gFbH - sy - clipH),
+               std::max(0, (int)clipW), std::max(0, (int)clipH));
 
     glm::vec4 color = textEl->getTextColorVec();
     color.a *= L.alpha;
@@ -844,10 +845,7 @@ void NotificationSystem::drawMessage(size_t index, const UIRect& box,
     }
 
     // Restore scissor.
-    if (!scissorWas)
-        glDisable(GL_SCISSOR_TEST);
-    else
-        glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+    r::popState();
 
     // Scrollbar, drawn only when the content overflows the box.
     if (maxScroll > 0.0f) {

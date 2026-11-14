@@ -435,6 +435,42 @@ bool checkFramebufferStatus() {
                : false;
 }
 
+void readPixels(std::int32_t x, std::int32_t y, std::int32_t width,
+                std::int32_t height, PixelFormat format, PixelType type,
+                void* data) {
+    if (gRender && gRender->read_pixels)
+        gRender->read_pixels(gHostData, x, y, width, height, format, type, data,
+                             0);
+}
+
+void blitFramebuffer(std::int32_t srcX0, std::int32_t srcY0,
+                     std::int32_t srcX1, std::int32_t srcY1,
+                     std::int32_t dstX0, std::int32_t dstY0,
+                     std::int32_t dstX1, std::int32_t dstY1,
+                     BlitMask mask, BlitFilter filter) {
+    if (gRender && gRender->blit_framebuffer)
+        gRender->blit_framebuffer(gHostData, srcX0, srcY0, srcX1, srcY1, dstX0,
+                                  dstY0, dstX1, dstY1, mask, filter);
+}
+
+void textureAnisotropy(TextureTarget target, float requested) {
+    if (gRender && gRender->texture_anisotropy)
+        gRender->texture_anisotropy(gHostData, target, requested);
+}
+
+void getViewport(std::int32_t out[4]) {
+    if (gRender && gRender->get_viewport)
+        gRender->get_viewport(gHostData, out);
+}
+
+void texSubImage2D(TextureTarget target, std::int32_t level, std::int32_t x,
+                   std::int32_t y, std::int32_t width, std::int32_t height,
+                   PixelFormat format, PixelType type, const void* data) {
+    if (gRender && gRender->tex_sub_image_2d)
+        gRender->tex_sub_image_2d(gHostData, target, level, x, y, width, height,
+                                  format, type, data, 0);
+}
+
 }  // namespace render
 
 }  // namespace mimita::game

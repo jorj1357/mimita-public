@@ -12,7 +12,6 @@
 #include "renderer/renderer.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
-#include "debug/gl-debug.h"
 #include "gui/gui-media.h"
 #include "gui/gui-coord.h"
 #include "gui/ui-tooltip.h"

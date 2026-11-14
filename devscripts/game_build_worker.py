@@ -364,6 +364,21 @@ def build(args: argparse.Namespace) -> int:
     if args.revision and args.sources_file and revision != args.revision:
         print(f"[GAME BUILD] revision mismatch: {revision} != {args.revision}", file=sys.stderr)
         return 3
+
+    change_report = None
+    if args.change_report:
+        report_path = Path(args.change_report)
+        if not report_path.is_absolute():
+            report_path = ROOT / report_path
+        change_report = read_json(report_path)
+        if not change_report:
+            print(f"[GAME BUILD] unreadable change report: {report_path}", file=sys.stderr)
+            return 3
+        reported_revision = change_report.get("new_revision", change_report.get("revision"))
+        if reported_revision and revision and reported_revision != revision:
+            print(f"[GAME BUILD] change report revision mismatch: "
+                  f"{reported_revision} != {revision}", file=sys.stderr)
+            return 3
     if not sources:
         print("[GAME BUILD] no game-owned sources in manifest", file=sys.stderr)
         return 3
@@ -591,6 +606,8 @@ def build(args: argparse.Namespace) -> int:
         "slowest_compiles": progress.data["slowest"],
         "generated_utc": utc_now(),
     }
+    if change_report is not None:
+        current["change_report"] = change_report
     write_json_atomic(out_root / "current.json", current)
     write_json_atomic(generation_dir / "generation.json", current)
     progress.finish("ok", compile_s=compile_seconds, link_s=link_seconds,
@@ -601,6 +618,13 @@ def build(args: argparse.Namespace) -> int:
           f"dll={current['dll']}", flush=True)
     for entry in current["slowest_compiles"][:5]:
         print(f"[GAME BUILD] slow {entry['seconds']:.2f}s {entry['path']}", flush=True)
+    if change_report is not None:
+        print(f"[GAME BUILD] change {change_report.get('old_revision')} -> "
+              f"{change_report.get('new_revision')} "
+              f"added={len(change_report.get('added', []))} "
+              f"removed={len(change_report.get('removed', []))} "
+              f"changed={len(change_report.get('changed', []))} "
+              f"headers={len(change_report.get('changed_headers', []))}", flush=True)
     return 0
 
 
@@ -613,6 +637,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--generation", type=int, default=0)
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug")
     parser.add_argument("--revision", default="", help="required manifest revision")
+    parser.add_argument("--change-report", default="",
+                        help="source diff report to attach to current/generation metadata")
     parser.add_argument("--jobs", type=int, default=0, help="compile workers; 0 = all cores")
     parser.add_argument("--priority", choices=tuple(PRIORITY_CLASSES), default="high")
     parser.add_argument("--max-errors", type=int, default=20)

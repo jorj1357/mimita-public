@@ -6,6 +6,9 @@
 * DOES NOT own avatar serialization, atlas baking, GLB rendering, or GUI layout data.
 */
 #include "avatar-editor.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "avatar-editor-helpers.h"
 #include "avatar-editor-library.h"
 #include "avatar-editor-parts.h"
@@ -130,9 +133,10 @@ void drawEditorTabs(GLFWwindow* win)
 
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     UIRect screenClip = cs.designToScreen(clip);
-    glEnable(GL_SCISSOR_TEST);
-    glScissor((int)screenClip.x, (int)(UISys::gFbH - screenClip.y - screenClip.h),
-              (int)screenClip.w, (int)screenClip.h);
+    r::enable(r::Capability::ScissorTest);
+    r::scissor((int)screenClip.x,
+               (int)(UISys::gFbH - screenClip.y - screenClip.h),
+               (int)screenClip.w, (int)screenClip.h);
 
     float x = strip->x - gTabScrollX;
     for (int ti = 0; ti < kTabCount; ++ti) {
@@ -146,7 +150,7 @@ void drawEditorTabs(GLFWwindow* win)
             gEditorTab = ti;
         x += tab->w + 6.0f;
     }
-    glDisable(GL_SCISSOR_TEST);
+    r::disable(r::Capability::ScissorTest);
 }
 
 void drawSaveLoadInput(GLFWwindow* win, const GuiLayout& layout)

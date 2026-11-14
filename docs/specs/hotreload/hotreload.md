@@ -1,3 +1,15 @@
+2026  11 14 1139 jorj - "u are agent C  do agent C things,
+then tell what is left to do after
+
+as well as how far/close we are to hot reload dream like
+i can play the game like normal, any gamemode
+then i find a bug , i can fix it live, no exe rebuild needed
+npc behavior issue live
+map editor issues live
+vehicle phsics editing that live
+collisions npcs falling thru the world i can diagnose and fix live
+all prior bugs and fuutre bugs or additions can get fixed live , how far/close we are to that "
+
 2026 11 14 0956 jorj - "like AI should be abel to do every test every feature every behavior  AI can test and fix it using the dev loop running agent commands, events.jsonl showing the result of those commands, and editing raw cpp code live and it compiles live and AI can see it compileld and then test those new changes/compiles -
 "
 
@@ -35,9 +47,9 @@ deepseek v4.1 flash
 >   Exact `admincmds` is the first authoritative hot command.
 > - Production coverage: the **full client now prefers `game.dll` by default**
 >   and runs its menu/frame loop there; the dedicated-server and fallback paths
->   still run from the EXE. All 617 game sources are game-owned. The whole-game
+>   still run from the EXE. All 624 game sources are game-owned. The whole-game
 >   candidate compiles and links with **0 undefined / 0 unique** symbols. The
->   default full client loaded generation 133 in process 19620. B-lite resident state is
+>   default full client loaded generation 138 in a default full-client smoke run. B-lite resident state is
 >   now implemented for menu-critical scalars (`GameState`, freelook/editor
 >   selection, world-loaded) plus resident `Camera`, `activeMapPath`, and
 >   `activeGameMode`, core gameplay/session, and replay objects. `main-init` and
@@ -705,8 +717,8 @@ Do this next, in order, without changing source ownership early:
 - **Stage 5 cutover (agent prepares; owner builds and proves):** assign every eligible game source exactly once to `game.dll`, remove it from prior targets in the same change, keep documented resident/tool/test/vendor exceptions, and re-enumerate link inputs.
 - **Final proof (root dev-loop owner or human):** existing-source edit, added source, removed source, dependent-header edit, compile failure, recovery, and rollback in one process, with unchanged PID, state continuity, revision, DLL hash/generation, and exact `events.jsonl`.
 
-Current measured status: 789 `.cpp` rows at manifest revision `59283d0fea784a56a933e3f5053ec26305cea8a271466858f0345dd1fb5d6c11`. The canonical owner map resolves all 789 rows: game 617, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
-           `devscripts/source_manifest.py`). The whole-game candidate compiles (617 game sources) and links at generation 133 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The default full client loaded and ran generation 133 (process 19620) and a same-process live swap from generation 128 to 132 initialized the new menu generation. `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. Server and fallback paths still run from the EXE. The chosen design keeps the resident host in the EXE.
+Current measured status: 796 `.cpp` rows at manifest revision `7628451e21194e1c9d2b74545fabeeb75faf4fc9bedf19874fb304bcde3ef551`. The canonical owner map resolves all 796 rows: game 624, resident 32, bootstrap 2, module 12, test 33, tool 4, vendor 88, launcher 1 (`config/source-owners.json`,
+           `devscripts/source_manifest.py`). The whole-game candidate compiles (624 game sources) and links at generation 138 with 0 undefined / 0 unique resident/vendored symbols; a usable candidate DLL exists. The default full client smoke-ran generation 138; ECS self-tests pass and a same-process live swap from generation 128 to 132 initialized the new menu generation. `frameCapable` is 1 and a transitional raw-GL loader covers legacy render/effect/debug call sites while CAP_RENDER migration continues. Server and fallback paths still run from the EXE. The chosen design keeps the resident host in the EXE.
 
 Static audit triage (2026-11-12): 66 rows confirmed static-closed by a full read, 0 static-closable candidates, 41 state-review rows, 183 resident-adapter-required rows, 299 runtime-proof rows, 27 resident-host rows, 135 non-game rows, 0 unresolved. Every lexical-clean row has had a confirmation read. The resident-service dependency map is `docs/handoffs/resident-service-dependencies-20261112.json`. See `docs/handoffs/cpp-audit-static-triage-20261112.md` and the first batch `docs/handoffs/cpp-audit-batch-pure-npc-20261112.md`. No lexical-clean rows remain; every remaining row is explicitly state-review, adapter, runtime-proof, resident-host, or non-game.
 
@@ -824,8 +836,8 @@ same-PID swap, compile-failure, rollback, or state-continuity proof was run. The
 
 | Gate | Current | Needed |
 |---|---:|---|
-| Whole-game link | **0 undefined / 0 unique** (generation 133) | 0 undefined |
-| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 133 loaded/initialized; host-owned menu/frame loop stable; host callbacks active; live edit swap 128→132 succeeded | gameplay frame + human acceptance |
+| Whole-game link | **0 undefined / 0 unique** (generation 138) | 0 undefined |
+| Live activation | probe swap, failed-candidate and failed-compile fallback, rollback, callback resume proved; whole-game generation 138 loaded/initialized; host-owned menu/frame loop stable; host callbacks active; live edit swap 128→132 succeeded | gameplay frame + human acceptance |
 | State continuity | menu reload reinitializes UI; resident core/session objects survive | gameplay state continuity + schema migration |
 | Networking hot | exact `admincmds` authoritative | all packet handlers through the host |
 | Render/world | UI/font path on CAP_RENDER; transitional GLAD bridge for legacy render | remove GLAD bridge; full game/world render |
@@ -2246,8 +2258,11 @@ Ownership and classification have one pipeline:
 5. `devscripts/audit_triage.py` — the only classifier; modes
    `--passes`, `--state-owners`, `--render`, `--query`, `--protocol`.
 
-Folded and deleted: `audit_passes.py`, `state_owner_pass.py`,
-`render_query_inventory.py`, `protocol_inventory.py`.
+Folded into `audit_triage.py` as importable modules behind
+`--passes`, `--state-owners`, `--render`, `--query`, and `--protocol`:
+`audit_passes.py`, `state_owner_pass.py`, `render_query_inventory.py`,
+`protocol_inventory.py`. They no longer have a separate entry point and are
+scheduled for physical deletion after the next audit refresh.
 
 **Rule:** before adding any audit, inventory, or triage script, read this
 section and extend `audit_triage.py` instead. Do not add a new overlapping
@@ -2513,8 +2528,9 @@ still a separate claim.
 The current B-lite state store rejects a size/alignment mismatch; that is
 fail-closed validation, not migration.
 
-Use the existing ECS mechanism for entity state:
+Use the recovered ECS mechanism for entity state:
 
+- `src/ecs/` was recovered from commit `202b341b` on 2026-11-14.
 - `EntityRegistry`, `DynamicComponentStore`, existing components and
   `applySchemaUpdate` migration;
 - legacy `Player`/`Npc`/`ServerPlayer`/`ServerNpc` mirrors remain until systems
@@ -2585,4 +2601,27 @@ current status.
 7. Replace deferred module retirement with safe unload.
 8. Finish CAP_RENDER and remove the transitional GL bridge.
 9. Human visual/multiplayer acceptance.
+
+### 11.10 Implementation checkpoint (2026-11-14)
+
+The coordination writes are installed:
+
+- `devscripts/hot_reload_plan_registry.py` validates the JSON plan registry
+  and generates `hot-reload-work-plans.md`,
+  `hot-reload-ownership-matrix.md`, and
+  `hot-reload-agent-claims.generated.md`.
+- The generated files are marked DO-NOT-EDIT and contain no hand-maintained
+  path inventory.
+- The legacy manual claim file is marked deprecated and is not to receive new
+  rows.
+- The dev-loop already evaluates the supported scenario assertions and emits
+  `scenario.assert`/`scenario.finished`; remaining AI-proof work is join,
+  mouse/click/GUI, terminal/chat/packet/lag-comp adapters, readiness lifecycle,
+  and broader assertions.
+- `src/ecs/` is restored and both the entity-slice and dynamic-lifecycle
+  self-tests pass. Do not create a parallel ECS store.
+
+Next implementation gates are unchanged: scenario adapters, gameplay/join
+proof, server hot split, state migration, safe unload, CAP_RENDER cleanup,
+rollback, and human acceptance.
 

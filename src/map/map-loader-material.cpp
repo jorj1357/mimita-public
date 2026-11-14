@@ -12,29 +12,24 @@
 #include "world/texture-store.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
-#include "debug/gl-debug.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 
 extern TextureStore gTextures;
-
-#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
-#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
-#endif
-#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
-#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
-#endif
 
 namespace {
 
 #define GLB_LOG(...) Debug::logAuto(Debug::Category::GLB, __VA_ARGS__)
 
-GLuint loadExternalImage(const std::string& uri, const std::string& glbDir)
+std::uint32_t loadExternalImage(const std::string& uri, const std::string& glbDir)
 {
     printf("[TEXTURE SEARCH] trying external URI: %s\n", uri.c_str());
 
     std::string tryPath = resolveAssetPath(uri);
     if (!tryPath.empty())
     {
-        GLuint tex = gTextures.getPath(tryPath, false);
+        std::uint32_t tex = gTextures.getPath(tryPath, false);
         if (tex)
         {
             printf("[TEXTURE SEARCH] FOUND %s\n", tryPath.c_str());
@@ -46,7 +41,7 @@ GLuint loadExternalImage(const std::string& uri, const std::string& glbDir)
     {
         std::string relPath = glbDir + "/" + uri;
         printf("[TEXTURE SEARCH] trying %s\n", relPath.c_str());
-        GLuint tex = gTextures.getPath(relPath, false);
+        std::uint32_t tex = gTextures.getPath(relPath, false);
         if (tex)
         {
             printf("[TEXTURE SEARCH] FOUND %s\n", relPath.c_str());
@@ -58,7 +53,7 @@ GLuint loadExternalImage(const std::string& uri, const std::string& glbDir)
     std::string filename = (slashPos != std::string::npos) ? uri.substr(slashPos + 1) : uri;
     std::string texPath = "assets/textures/" + filename;
     printf("[TEXTURE SEARCH] trying %s\n", texPath.c_str());
-    GLuint tex = gTextures.getPath(texPath, false);
+    std::uint32_t tex = gTextures.getPath(texPath, false);
     if (tex)
     {
         printf("[TEXTURE SEARCH] FOUND %s\n", texPath.c_str());
@@ -82,7 +77,7 @@ GLuint loadExternalImage(const std::string& uri, const std::string& glbDir)
     return 0;
 }
 
-GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::string& glbDir)
+std::uint32_t uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::string& glbDir)
 {
     if (!image.uri.empty() && (image.image.empty() || image.width <= 0 || image.height <= 0))
     {
@@ -119,67 +114,49 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::s
         return 0;
     }
 
-    GLuint tex = 0;
-    MIMITA_GL_CLEAR_STAGE("uploadGLBImage");
+    std::uint32_t tex = 0;
     tex = mimita::game::genTexture();
     if (!tex)
     {
         GLB_LOG("[GLB TEXTURE WARNING] texture create returned 0 for image %d\n", imageIndex);
         return 0;
     }
-    MIMITA_GL_CALL(glBindTexture(GL_TEXTURE_2D, tex));
+    r::bindTexture(r::TextureTarget::Texture2D, tex);
 
-    GLenum srcFormat = GL_RGBA;
-    if (image.component == 1) srcFormat = GL_RED;
-    else if (image.component == 2) srcFormat = GL_RG;
-    else if (image.component == 3) srcFormat = GL_RGB;
-    else if (image.component == 4) srcFormat = GL_RGBA;
+    r::PixelFormat srcFormat = r::PixelFormat::RGBA;
+    if (image.component == 1) srcFormat = r::PixelFormat::Red;
+    else if (image.component == 2) srcFormat = r::PixelFormat::RG;
+    else if (image.component == 3) srcFormat = r::PixelFormat::RGB;
+    else if (image.component == 4) srcFormat = r::PixelFormat::RGBA;
 
     GLB_LOG("[GLB] loaded texture image=%d name=%s size=%dx%d components=%d bytes=%zu tex=%u\n",
            imageIndex, image.name.c_str(), image.width, image.height, image.component, image.image.size(), tex);
     Debug::log(Debug::Category::GLB, "[TEXTURE] Uploading GLB image to GPU and generating mipmaps\n");
 
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-    MIMITA_GL_CALL(glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA,
-        image.width,
-        image.height,
-        0,
-        srcFormat,
-        GL_UNSIGNED_BYTE,
-        image.image.data()
-    ));
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 1);
+    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                  image.width, image.height, 0, srcFormat,
+                  r::PixelType::UnsignedByte, image.image.data());
 
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT));
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT));
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                     r::TextureValue::Repeat);
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                     r::TextureValue::Repeat);
 
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                     r::TextureValue::LinearMipmapLinear);
 
-    MIMITA_GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                     r::TextureValue::Linear);
 
-    mimita::game::generateMipmap(GL_TEXTURE_2D);
+    r::generateMipmap(r::TextureTarget::Texture2D);
     Debug::log(Debug::Category::GLB, "[TEXTURE] mipmaps generated for GLB texture tex=%u\n", tex);
 
-    if (GLDebug::extensionSupported("GL_EXT_texture_filter_anisotropic"))
-    {
-        GLfloat maxAniso = 1.0f;
-        MIMITA_GL_CALL(glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso));
-        if (maxAniso > 1.0f)
-        {
-            GLfloat useAniso = maxAniso < 16.0f ? maxAniso : 16.0f;
-            MIMITA_GL_CALL(glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, useAniso));
-            Debug::log(Debug::Category::GLB, "[TEXTURE] anisotropic filtering %.1fx applied to GLB texture\n", useAniso);
-        }
-    }
-    else
-    {
-        Debug::logOnce(Debug::Category::GLB, "anisotropy-unsupported",
-                       "[TEXTURE] GL_EXT_texture_filter_anisotropic unsupported; anisotropic filtering skipped\n");
-    }
+    r::textureAnisotropy(r::TextureTarget::Texture2D, 16.0f);
+    Debug::log(Debug::Category::GLB,
+               "[TEXTURE] anisotropic filtering requested for GLB texture\n");
 
-    MIMITA_GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, 4));
+    r::pixelStorei(r::PixelStoreParameter::UnpackAlignment, 4);
     return tex;
 }
 
@@ -188,9 +165,9 @@ GLuint uploadGLBImage(const tinygltf::Image& image, int imageIndex, const std::s
 void processGLBMaterials(
     tinygltf::Model& model,
     const std::string& glbDir,
-    std::vector<GLuint>& imageTextures,
-    std::vector<GLuint>& materialTextures,
-    std::vector<GLuint>& colorTextures)
+    std::vector<std::uint32_t>& imageTextures,
+    std::vector<std::uint32_t>& materialTextures,
+    std::vector<std::uint32_t>& colorTextures)
 {
     for (size_t i = 0; i < model.images.size(); ++i)
     {
@@ -252,21 +229,27 @@ void processGLBMaterials(
                 printf("[GLB MATERIAL] material=%zu (%s) no texture; generating 1x1 from baseColorFactor (%.2f,%.2f,%.2f,%.2f)\n",
                        i, mat.name.c_str(), r, g, b, a);
 
-                GLuint tex = 0;
+                std::uint32_t tex = 0;
                 tex = mimita::game::genTexture();
                 if (tex)
                 {
-                    glBindTexture(GL_TEXTURE_2D, tex);
+                    r::bindTexture(r::TextureTarget::Texture2D, tex);
                     unsigned char pixels[4];
                     pixels[0] = (unsigned char)(r * 255.0f);
                     pixels[1] = (unsigned char)(g * 255.0f);
                     pixels[2] = (unsigned char)(b * 255.0f);
                     pixels[3] = (unsigned char)(a * 255.0f);
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    r::texImage2D(r::TextureTarget::Texture2D, 0, r::TextureFormat::RGBA,
+                                  1, 1, 0, r::PixelFormat::RGBA,
+                                  r::PixelType::UnsignedByte, pixels);
+                    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapS,
+                                     r::TextureValue::Repeat);
+                    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::WrapT,
+                                     r::TextureValue::Repeat);
+                    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MinFilter,
+                                     r::TextureValue::Linear);
+                    r::texParameteri(r::TextureTarget::Texture2D, r::TextureParameter::MagFilter,
+                                     r::TextureValue::Linear);
                     materialTextures[i] = tex;
                     colorTextures.push_back(tex);
                 }

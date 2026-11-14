@@ -12,8 +12,10 @@
 
 #include "engine/whole-game-entry.h"
 #include "game/server-command-dispatch.h"
+#include "game/server-runtime.h"
 #include "game/game-input-module.h"
 #include "host/abi/game-host-abi.h"
+#include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
 
 namespace mimita::game {
@@ -224,5 +226,24 @@ GetMimitaGameModuleV1(std::uint32_t abiVersion) {
     }
     static const mimita::host::GameModuleV1 api =
         mimita::host::makeWholeGameApi();
+    return &api;
+}
+
+extern "C" __declspec(dllexport) const mimita::host::GameServerV1*
+GetMimitaGameServerV1(std::uint32_t abiVersion) {
+    if (abiVersion != mimita::host::kGameServerAbiVersion) {
+        return nullptr;
+    }
+    static const mimita::host::GameServerV1 api = [] {
+        mimita::host::GameServerV1 server{};
+        server.abiVersion = mimita::host::kGameServerAbiVersion;
+        server.structSize = static_cast<std::uint32_t>(sizeof(server));
+        server.process_packet = &mimita::game::serverRuntimeProcessPacket;
+        server.simulate_players = &mimita::game::serverRuntimeSimulatePlayers;
+        server.simulate_world = &mimita::game::serverRuntimeSimulateWorld;
+        server.publish = &mimita::game::serverRuntimePublish;
+        server.gamemode = &mimita::game::serverRuntimeGamemode;
+        return server;
+    }();
     return &api;
 }

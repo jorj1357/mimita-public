@@ -10,7 +10,6 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "camera.h"
-#include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "world/world.h"
 #include "world/texture-store.h"

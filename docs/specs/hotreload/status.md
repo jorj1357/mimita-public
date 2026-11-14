@@ -72,3 +72,21 @@ unmigrated packets, and the migrated handlers only run when the probe is on.
 
 Append/update only the "Current snapshot", "Networking matrix", "Current risks",
 and "Next phases" sections. Never rewrite history in this file. Keep it short.
+
+## 2026-11-14 hotness instrumentation + change report
+
+- `game.transport.handled`, `game.hotness.summary`, and
+  `game.hotness.violation` now report `path=dll|resident`, packet type,
+  player, and active generation at 1 Hz in both server receive loops.
+- Migrated handlers reject-and-log on failure under `MIMITA_HOTNESS_STRICT`
+  (default on) instead of returning to the resident fallback.
+- `live.py` writes `snapshots/<revision>/change-report.json` and passes
+  `--change-report` to `game_build_worker.py`; `current.json`, `ready.json`,
+  and `generation.json` carry the same added/removed/changed/renamed/header
+  diff.
+- State codegen foundation landed: `config/hot-reload/state-schema.json`,
+  `devscripts/resident_state_codegen.py`, generated
+  `src/host/generated/resident-state-v1.h`, and generated
+  `config/hot-reload/state-ledger.json`. `--check` is the drift gate.
+- Still not hot: server simulation and unmigrated inbound packets remain
+  resident; this pass only makes the fake-hot path visible and strict.

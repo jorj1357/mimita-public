@@ -1,12 +1,14 @@
 // 2026-10-23
 #include "mapeditor/map-editor.h"
 #include "game/resident-state-module.h"
+#include "debug/structured-log.h"
 #include "mapeditor/map-editor-projects.h"
 #include "mapeditor/map-editor-config.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -4434,6 +4436,33 @@ bool MapEditor::routeStartToCartOrigin()
 void MapEditor::renderWorld(Camera& camera)
 {
     if (!mActive) return;
+
+    // Hotness proof: map-editor render path identity, throttled to 1/s.
+    {
+        static std::uint64_t lastEditorPathMs = 0;
+        static std::uint64_t editorPathFrames = 0;
+        ++editorPathFrames;
+        const std::uint64_t nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        if (nowMs - lastEditorPathMs >= 1000) {
+            lastEditorPathMs = nowMs;
+#ifdef MIMITA_GAME_DLL
+            const char* renderPath = "dll";
+#else
+            const char* renderPath = "legacy";
+#endif
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "game.render.path", "map-editor",
+                "map editor render path identity", 0,
+                nlohmann::json{{"path", renderPath},
+                               {"subpath", "map-editor"},
+                               {"frames", editorPathFrames}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     auto& reg = MapConfigRegistry::instance();
     const auto& config = reg.current();
     const MapEditorConfigData& cfg = MapEditorConfig::instance().data();

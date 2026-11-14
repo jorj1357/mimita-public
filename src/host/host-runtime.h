@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "host/abi/game-host-abi.h"
+#include "host/abi/game-server-abi.h"
 #include "host/abi/npc-target-probe-abi.h"
 #include "host/abi/entity-capability.h"
 #include "host/abi/lifetime-capability.h"
@@ -72,6 +73,15 @@ public:
     // endpoint. Returns true only when the generation handled the message.
     bool dispatchInbound(TransportDispatchV1* dispatch);
 
+    // True when the active generation exports the server cutover behavior API.
+    bool serverApiAvailable() const;
+    bool serverProcessPacket(ServerFrameV1* frame, const void* event,
+                             ServerPacketResultV1* out);
+    bool serverSimulatePlayers(ServerFrameV1* frame);
+    bool serverSimulateWorld(ServerFrameV1* frame);
+    bool serverPublish(ServerFrameV1* frame);
+    bool serverGamemode(ServerFrameV1* frame);
+
     // Drive one whole-game fixed tick and render call through the barrier.
     // Safe-point ownership remains with the caller: this does not advance the
     // legacy EXE game loop by itself.
@@ -101,6 +111,9 @@ public:
     void clearWorldAdapter();
 
     std::uint64_t activeGeneration() const { return loader_.activeGeneration(); }
+    const GameServerV1* activeServerApi() const {
+        return loader_.activeGenerationInfo().serverApi;
+    }
 
     // Registered by the active client/server session owner. Cleared on session
     // teardown. The adapter must stay valid while a generation can call it.

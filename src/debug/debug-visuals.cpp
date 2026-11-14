@@ -12,6 +12,9 @@
 #include "physics/config.h"
 #include "entities/player.h"
 #include "renderer/renderer.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "gui/ui-system.h"
 #include "world/world.h"
 #include "debug/debug-log.h"
@@ -81,7 +84,8 @@ void DebugVis::update()
 {
     if (!gWindow) return;
     if (!DebugConfig::DEBUG_VISUALS_MASTER) return;
-    glPolygonMode(GL_FRONT_AND_BACK, DebugConfig::DEBUG_WIREFRAME ? GL_LINE : GL_FILL);
+    r::polygonMode(DebugConfig::DEBUG_WIREFRAME ? r::PolygonMode::Line
+                                                   : r::PolygonMode::Fill);
 }
 
 bool DebugVis::enabled() { return DebugConfig::DEBUG_VISUALS_MASTER && (DebugConfig::DEBUG_PHYSICS || DebugConfig::DEBUG_COLLISION || DebugConfig::DEBUG_BOUNDS || DebugConfig::DEBUG_NORMALS || DebugConfig::DEBUG_PLAYERARCH); }

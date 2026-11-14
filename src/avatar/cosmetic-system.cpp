@@ -7,6 +7,10 @@
 #include "renderer/renderer.h"
 #include "gui/ui-system.h"
 #include "world/texture-store.h"
+#include "render/render-command.h"
+#include "render/world-shader.h"
+
+namespace r = mimita::game::render;
 
 #include <cstdio>
 #include <algorithm>
@@ -127,24 +131,19 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     if (cosmetics.empty())
         return;
 
-    // Get currently active shader (set by the rendering pipeline before Player::render)
-    GLint currentShader = 0;
-    glGetIntegerv(GL_CURRENT_PROGRAM, &currentShader);
-    if (!currentShader)
+    // Cosmetics share the game-owned world shader.
+    if (!r::worldShader().ensureLoaded())
         return;
-
-    // Cosmetics share the main shader with world effects and the viewmodel.
-    // Resolve these once per actor and clear the cosmetic sampling mode below.
-    const GLint modelLoc = glGetUniformLocation(currentShader, "model");
-    const GLint tintLoc = glGetUniformLocation(currentShader, "uTint");
-    const GLint textureLoc = glGetUniformLocation(currentShader, "uTex");
-    const GLint textureEnabledLoc = glGetUniformLocation(currentShader, "uCosmeticTextureEnabled");
-    const GLint offsetLoc = glGetUniformLocation(currentShader, "uCosmeticUvOffset");
-    const GLint scaleLoc = glGetUniformLocation(currentShader, "uCosmeticUvScale");
-    const GLint rotationLoc = glGetUniformLocation(currentShader, "uCosmeticUvRotation");
-    const GLint brightnessLoc = glGetUniformLocation(currentShader, "uCosmeticBrightness");
-    const GLint opacityLoc = glGetUniformLocation(currentShader, "uCosmeticOpacity");
-    const GLint useColorLoc = glGetUniformLocation(currentShader, "uUseColor");
+    const r::Uniform modelLoc = r::worldShader().uniform("model");
+    const r::Uniform tintLoc = r::worldShader().uniform("uTint");
+    const r::Uniform textureLoc = r::worldShader().uniform("uTex");
+    const r::Uniform textureEnabledLoc = r::worldShader().uniform("uCosmeticTextureEnabled");
+    const r::Uniform offsetLoc = r::worldShader().uniform("uCosmeticUvOffset");
+    const r::Uniform scaleLoc = r::worldShader().uniform("uCosmeticUvScale");
+    const r::Uniform rotationLoc = r::worldShader().uniform("uCosmeticUvRotation");
+    const r::Uniform brightnessLoc = r::worldShader().uniform("uCosmeticBrightness");
+    const r::Uniform opacityLoc = r::worldShader().uniform("uCosmeticOpacity");
+    const r::Uniform useColorLoc = r::worldShader().uniform("uUseColor");
 
     // Find attachment point transforms from player skeleton
     auto findNodeTransform = [&](const std::string& name) -> glm::mat4 {
@@ -164,11 +163,7 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     glm::quat rootRot(glm::vec3(0, glm::radians(player.yaw), 0));
     glm::mat4 rootTransform = transformMatrix(player.pos, rootRot);
 
-    const GLboolean blendWas = glIsEnabled(GL_BLEND);
-    GLint blendSrcWas = GL_SRC_ALPHA;
-    GLint blendDstWas = GL_ONE_MINUS_SRC_ALPHA;
-    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcWas);
-    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstWas);
+    r::pushState();
 
     for (const auto& slot : cosmetics)
     {
@@ -203,40 +198,41 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         model = glm::scale(model, slot.scale);
 
         if (modelLoc >= 0)
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            r::uniformMatrix4fv(modelLoc, 1, glm::value_ptr(model));
         if (tintLoc >= 0) {
             const glm::vec3 tint = slot.texture.color == glm::vec3(1.0f)
                 ? slot.color : slot.texture.color;
-            glUniform3f(tintLoc, tint.x, tint.y, tint.z);
+            r::uniform3f(tintLoc, tint.x, tint.y, tint.z);
         }
         if (textureLoc >= 0)
-            glUniform1i(textureLoc, 0);
+            r::uniform1i(textureLoc, 0);
         if (useColorLoc >= 0)
-            glUniform1i(useColorLoc, 0);
+            r::uniform1i(useColorLoc, 0);
         if (textureEnabledLoc >= 0)
-            glUniform1i(textureEnabledLoc, slot.texture.image.empty() ? 0 : 1);
+            r::uniform1i(textureEnabledLoc, slot.texture.image.empty() ? 0 : 1);
         if (offsetLoc >= 0)
-            glUniform2f(offsetLoc, slot.texture.offsetX / 1000.0f,
-                        slot.texture.offsetY / 1000.0f);
+            r::uniform2f(offsetLoc, slot.texture.offsetX / 1000.0f,
+                         slot.texture.offsetY / 1000.0f);
         if (scaleLoc >= 0)
-            glUniform2f(scaleLoc, std::max(slot.texture.scaleX, 0.0001f),
-                        std::max(slot.texture.scaleY, 0.0001f));
+            r::uniform2f(scaleLoc, std::max(slot.texture.scaleX, 0.0001f),
+                         std::max(slot.texture.scaleY, 0.0001f));
         if (rotationLoc >= 0)
-            glUniform1f(rotationLoc, slot.texture.rotation);
+            r::uniform1f(rotationLoc, slot.texture.rotation);
         if (brightnessLoc >= 0)
-            glUniform1f(brightnessLoc, slot.texture.brightness);
+            r::uniform1f(brightnessLoc, slot.texture.brightness);
         if (opacityLoc >= 0)
-            glUniform1f(opacityLoc, slot.texture.opacity);
+            r::uniform1f(opacityLoc, slot.texture.opacity);
 
         const std::string texturePath = cosmeticTexturePath(slot);
-        const GLuint overrideTexture = texturePath.empty()
+        const std::uint32_t overrideTexture = texturePath.empty()
             ? 0 : gTextures.getPath(texturePath);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        r::enable(r::Capability::Blend);
+        r::blendFunc(r::BlendFactor::SrcAlpha,
+                     r::BlendFactor::OneMinusSrcAlpha);
 
         // Upload and render each batch
-        static GLuint cosmeticVAO = 0;
-        static GLuint cosmeticVBO = 0;
+        static r::VertexArray cosmeticVAO = 0;
+        static r::Buffer cosmeticVBO = 0;
         static const Mesh* lastMesh = nullptr;
 
         if (!cosmeticVAO)
@@ -247,38 +243,43 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
             if (!cosmeticVBO)
                 cosmeticVBO = mimita::game::genBuffer();
 
-            glBindVertexArray(cosmeticVAO);
-            glBindBuffer(GL_ARRAY_BUFFER, cosmeticVBO);
-            glBufferData(GL_ARRAY_BUFFER, mesh.verts.size() * sizeof(Vertex), mesh.verts.data(), GL_STATIC_DRAW);
+            r::bindVertexArray(cosmeticVAO);
+            r::bufferData(r::BufferTarget::Array, cosmeticVBO, mesh.verts.data(),
+                          static_cast<std::uint32_t>(mesh.verts.size() * sizeof(Vertex)),
+                          r::BufferUsage::Static);
 
-            glEnableVertexAttribArray(0);
-            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, pos));
-            glEnableVertexAttribArray(1);
-            glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-            glEnableVertexAttribArray(2);
-            glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+            r::enableVertexAttribArray(0);
+            r::vertexAttribPointer(0, 3, r::VertexType::Float, false,
+                                   sizeof(Vertex),
+                                   static_cast<std::uint32_t>(offsetof(Vertex, pos)));
+            r::enableVertexAttribArray(1);
+            r::vertexAttribPointer(1, 2, r::VertexType::Float, false,
+                                   sizeof(Vertex),
+                                   static_cast<std::uint32_t>(offsetof(Vertex, uv)));
+            r::enableVertexAttribArray(2);
+            r::vertexAttribPointer(2, 3, r::VertexType::Float, false,
+                                   sizeof(Vertex),
+                                   static_cast<std::uint32_t>(offsetof(Vertex, normal)));
 
             lastMesh = &mesh;
         }
 
-        glBindVertexArray(cosmeticVAO);
+        r::bindVertexArray(cosmeticVAO);
 
         for (const auto& batch : mesh.batches)
         {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, overrideTexture ? overrideTexture : batch.texture);
-            glDrawArrays(GL_TRIANGLES, (GLint)batch.first, (GLsizei)batch.count);
+            r::activeTexture(0);
+            r::bindTexture(r::TextureTarget::Texture2D,
+                           overrideTexture ? overrideTexture : batch.texture);
+            r::drawArrays(r::Primitive::Triangles, static_cast<std::int32_t>(batch.first),
+                          static_cast<std::int32_t>(batch.count));
         }
 
-        glBindVertexArray(0);
+        r::bindVertexArray(0);
     }
 
     if (textureEnabledLoc >= 0)
-        glUniform1i(textureEnabledLoc, 0);
+        r::uniform1i(textureEnabledLoc, 0);
 
-    if (blendWas)
-        glEnable(GL_BLEND);
-    else
-        glDisable(GL_BLEND);
-    glBlendFunc(blendSrcWas, blendDstWas);
+    r::popState();
 }

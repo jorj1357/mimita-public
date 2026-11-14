@@ -37,6 +37,9 @@
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
 #include "render/post-fx.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "audio/audio-codec.h"
 #include "notifications/notifications.h"
 #include "gui/hud/chat-bubble.h"
@@ -341,14 +344,12 @@ void updateReplayExport()
     uint8_t* pixels = gJob.pixelBuffer.data();
 
     if (gReplayExportVerbose) {
-        // [F] Framebuffer state: log read/draw FBO binding and viewport
-        GLint readFb = 0, drawFb = 0, viewport[4] = {};
-        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFb);
-        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFb);
-        glGetIntegerv(GL_VIEWPORT, viewport);
+        // [F] Framebuffer state: log viewport and the post-FX target.
+        std::int32_t viewport[4] = {};
+        r::getViewport(viewport);
         GLuint postfxFbo = PostFX::instance().fboId();
-        EXPORTLOG("[EXPORT DEBUG] FB state: read=%d draw=%d postfxFbo=%u defaultFbo=0 viewport=%dx%d export=%dx%d",
-                  readFb, drawFb, postfxFbo, viewport[2], viewport[3], w, h);
+        EXPORTLOG("[EXPORT DEBUG] FB state: postfxFbo=%u defaultFbo=0 viewport=%dx%d export=%dx%d",
+                  postfxFbo, viewport[2], viewport[3], w, h);
     }
 
     // engineTickUI has completed before updateReplayExport is called. Copy the
@@ -359,24 +360,24 @@ void updateReplayExport()
     bool capturedPostUiTarget = false;
     if (replayExportTarget().ready()) {
         auto& tgt = replayExportTarget();
-        GLint viewport[4] = {};
-        glGetIntegerv(GL_VIEWPORT, viewport);
+        std::int32_t viewport[4] = {};
+        r::getViewport(viewport);
         const bool sourceMatchesCapture = viewport[2] >= 64 && viewport[3] >= 64;
         if (!sourceMatchesCapture) {
             Debug::warn(Debug::Category::Replay,
                 "[replay-export-ui] frame=%u invalid post-ui source viewport=%dx%d; reading default framebuffer directly\n",
                 frameNum, viewport[2], viewport[3]);
         } else {
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, tgt.fbo);
-            glBlitFramebuffer(
+            r::bindFramebuffer(r::FramebufferTarget::Read, 0);
+            r::bindFramebuffer(r::FramebufferTarget::Draw, tgt.fbo);
+            r::blitFramebuffer(
                 viewport[0], viewport[1], viewport[0] + viewport[2], viewport[1] + viewport[3],
                 0, 0, tgt.width, tgt.height,
-                GL_COLOR_BUFFER_BIT, GL_LINEAR);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+                r::BlitMask::Color, r::BlitFilter::Linear);
+            r::bindFramebuffer(r::FramebufferTarget::Draw, 0);
 
-            const GLenum blitError = glGetError();
-            if (blitError != GL_NO_ERROR) {
+            const std::uint32_t blitError = r::getError();
+            if (blitError != 0) {
                 Debug::warn(Debug::Category::Replay,
                     "[replay-export-ui] frame=%u post-ui blit failed glError=0x%x; reading default framebuffer directly\n",
                     frameNum, blitError);
@@ -396,16 +397,18 @@ void updateReplayExport()
     const double tRead0 = replayExportNowSec();
     if (capturedPostUiTarget) {
         auto& tgt = replayExportTarget();
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, tgt.fbo);
-        glReadPixels(0, 0, tgt.width, tgt.height, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+        r::bindFramebuffer(r::FramebufferTarget::Read, tgt.fbo);
+        r::readPixels(0, 0, tgt.width, tgt.height, r::PixelFormat::RGB,
+                      r::PixelType::UnsignedByte, pixels);
     } else {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-        glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+        r::bindFramebuffer(r::FramebufferTarget::Read, 0);
+        r::readPixels(0, 0, w, h, r::PixelFormat::RGB,
+                      r::PixelType::UnsignedByte, pixels);
     }
     gExportFrameTimings.readPixelsMs += (replayExportNowSec() - tRead0) * 1000.0;
 
-    GLenum glErr = glGetError();
-    if (glErr != GL_NO_ERROR) {
+    const std::uint32_t glErr = r::getError();
+    if (glErr != 0) {
         EXPORTTRACE("Frame %u: glReadPixels GL ERROR=0x%x", frameNum, glErr);
         printf("[RPLX ERROR] glReadPixels failed at frame %u: 0x%x\n", frameNum, glErr);
     } else if (gReplayExportVerbose) {

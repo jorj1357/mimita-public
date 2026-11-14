@@ -1,3 +1,5 @@
+// TODO-DELETE(cutover): EXE-only legacy implementation. Delete when normal
+// play runs the whole-game DLL; the DLL uses the host capability instead.
 // 2026-11-13
 // EXE-side implementation of the render-command contract.
 //
@@ -25,6 +27,7 @@ struct GlState {
     GLboolean blend = GL_FALSE;
     GLboolean cullFace = GL_FALSE;
     GLboolean scissorTest = GL_FALSE;
+    GLint scissorBox[4] = {0, 0, 0, 0};
     GLboolean depthMask = GL_TRUE;
     GLint depthFunc = GL_LESS;
     GLint cullFaceMode = GL_BACK;
@@ -51,6 +54,7 @@ GlState captureState() {
     state.blend = glIsEnabled(GL_BLEND);
     state.cullFace = glIsEnabled(GL_CULL_FACE);
     state.scissorTest = glIsEnabled(GL_SCISSOR_TEST);
+    glGetIntegerv(GL_SCISSOR_BOX, state.scissorBox);
     glGetBooleanv(GL_DEPTH_WRITEMASK, &state.depthMask);
     glGetIntegerv(GL_DEPTH_FUNC, &state.depthFunc);
     glGetIntegerv(GL_CULL_FACE_MODE, &state.cullFaceMode);
@@ -92,6 +96,8 @@ void restoreState(const GlState& state) {
     if (state.blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
     if (state.cullFace) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
     if (state.scissorTest) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    glScissor(state.scissorBox[0], state.scissorBox[1], state.scissorBox[2],
+              state.scissorBox[3]);
 }
 
 }  // namespace
@@ -414,6 +420,58 @@ void readBuffer(FramebufferBuffer buffer) {
 
 bool checkFramebufferStatus() {
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+}
+
+void readPixels(std::int32_t x, std::int32_t y, std::int32_t width,
+                std::int32_t height, PixelFormat format, PixelType type,
+                void* data) {
+    glReadPixels(x, y, width, height, toGl(format), toGl(type), data);
+}
+
+void blitFramebuffer(std::int32_t srcX0, std::int32_t srcY0,
+                     std::int32_t srcX1, std::int32_t srcY1,
+                     std::int32_t dstX0, std::int32_t dstY0,
+                     std::int32_t dstX1, std::int32_t dstY1,
+                     BlitMask mask, BlitFilter filter) {
+    glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1,
+                      toGl(mask), toGl(filter));
+}
+
+void textureAnisotropy(TextureTarget target, float requested) {
+#ifndef GL_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT 0x84FE
+#endif
+#ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT 0x84FF
+#endif
+#ifdef GLAD_GL_EXT_texture_filter_anisotropic
+    if (!GLAD_GL_EXT_texture_filter_anisotropic)
+        return;
+#endif
+    static float maxAnisotropy = 0.0f;
+    if (maxAnisotropy <= 0.0f) {
+        maxAnisotropy = 1.0f;
+        glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAnisotropy);
+    }
+    const float level = requested < 1.0f
+                            ? 1.0f
+                            : (requested > maxAnisotropy ? maxAnisotropy
+                                                         : requested);
+    glTexParameterf(toGl(target), GL_TEXTURE_MAX_ANISOTROPY_EXT, level);
+}
+
+void getViewport(std::int32_t out[4]) {
+    GLint viewport[4] = {0, 0, 0, 0};
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    for (int i = 0; i < 4; ++i)
+        out[i] = static_cast<std::int32_t>(viewport[i]);
+}
+
+void texSubImage2D(TextureTarget target, std::int32_t level, std::int32_t x,
+                   std::int32_t y, std::int32_t width, std::int32_t height,
+                   PixelFormat format, PixelType type, const void* data) {
+    glTexSubImage2D(toGl(target), level, x, y, width, height, toGl(format),
+                    toGl(type), data);
 }
 
 }  // namespace mimita::game::render

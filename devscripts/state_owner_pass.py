@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# FOLDED 2026-11-14: this is an importable module behind
+# `devscripts/audit_triage.py` (--passes/--state-owners/--render/
+# --query/--protocol). Do not add a second entry point or new
+# overlapping script here; extend audit_triage.py.
 # 2026-11-12
 # purpose
 # Pass B: per-symbol state-owner decisions for the 40 STATIC_STATE_REVIEW rows.

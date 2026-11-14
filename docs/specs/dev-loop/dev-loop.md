@@ -1303,6 +1303,13 @@ room. Client arguments are parsed by each command owner. The scenario file is
 a bounded development input, not a gameplay configuration system loaded by
 ordinary players.
 
+> **Update 2026-11-14:** the dev-loop scenario runner now evaluates supported
+> assertion types from the live journals and returns a terminal
+> `scenario.finished` verdict with `assertions_evaluated=true`. The remaining
+> gaps are lifecycle/join readiness and the mouse/click/GUI/terminal/chat/
+> packet/lag-comp command adapters. See the append-only agent contract at the end
+> of this document.
+
 ### Avatar transform scenario
 
 The canonical avatar scenario runs the same steps for Jason/default, a
@@ -3031,8 +3038,17 @@ The runner must:
 The event envelope and correlation fields are defined in
 `docs/specs/debug-logging/canonical-jsonl.md`.
 
-### Current gap
+### Implementation status
 
-The existing `--scenario-file` queue executes steps but does not evaluate
-assertions and can report `assertions_evaluated=false`. That is a blocking gap
-for AI runtime proof until the runner returns a real verdict.
+The current dev-loop now evaluates the supported assertion types from the live
+journals and emits `scenario.assert`/`scenario.finished` with
+`assertions_evaluated=true`.
+
+Remaining gaps for full AI proof:
+
+- readiness/join lifecycle adapters and join commands;
+- mouse move/click, GUI click, keyboard, terminal, chat, packet, and lag-comp
+  command adapters;
+- broader assertion vocabulary for gameplay/network outcomes;
+- server/client journal correlation in the final report;
+- browser/mobile/controller adapter coverage.

@@ -18,8 +18,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib.util
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -443,6 +445,29 @@ def classify(item: dict, text: str) -> tuple[str, list[str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    folded = {
+        "--passes": "audit_passes",
+        "--state-owners": "state_owner_pass",
+        "--render": "render_query_inventory",
+        "--query": "render_query_inventory",
+        "--protocol": "protocol_inventory",
+    }
+    for flag, module_name in folded.items():
+        if flag not in argv:
+            continue
+        module_path = ROOT / "devscripts" / f"{module_name}.py"
+        spec = importlib.util.spec_from_file_location(module_name, module_path)
+        if spec is None or spec.loader is None:
+            print(f"[AUDIT TRIAGE] folded mode missing: {module_path}", flush=True)
+            return 2
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        forwarded = [arg for arg in argv if arg != flag]
+        print(f"[AUDIT TRIAGE] folded mode={module_name} flag={flag}", flush=True)
+        return module.main(forwarded)
+
     parser = argparse.ArgumentParser(description="Static audit triage")
     parser.add_argument("--inventory", default=str(INVENTORY_REL))
     parser.add_argument("--report", default=str(REPORT_REL))

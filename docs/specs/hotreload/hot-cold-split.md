@@ -11,6 +11,18 @@ for the same question. `config/source-owners.json` and
 manifest disagree, the manifest wins and this file is corrected in the same
 change.
 
+## Companion documents
+
+These are complementary, not duplicates:
+
+| File | Owns |
+| --- | --- |
+| `hot-cold-split.md` (this file) | absolute cold/hot/transitional source split |
+| `hotness-contract.md` | runtime proof events, strict mode, reject-not-fallback |
+| `input-layer.md` | input cold/hot split and normalized input direction |
+| `state-domains.md` | resident state domains and codegen |
+| `status.md` | current snapshot, risks, and next phases |
+
 ## Owner vocabulary
 
 | Owner | Meaning |
@@ -121,6 +133,31 @@ owned by `src/render/world-shader.*`.
 | GLAD load call | `src/engine/engine-init.cpp` (hot) | `src/renderer/renderer.cpp` (cold) |
 | `src/main-init.cpp` owner | falls through to `game` default | explicit `bootstrap`/`resident` override |
 | `src/main-systems.cpp` owner | falls through to `game` default | explicit `bootstrap`/`resident` override |
+
+## Swap-state rules
+
+A `static` in a hot file must be one of:
+
+1. `const`/`constexpr` data;
+2. per-frame scratch cleared at the start of each frame;
+3. generation-scoped state created through a host capability (never a raw GL
+   handle held only in a static without host registration).
+
+A new generation starts with zero-initialized statics, so caches rebuild; the
+old generation's resources are released by the host's per-generation registry.
+Input-edge statics (`prevDown`, `escWasDown`) reset on swap and may produce one
+duplicate edge; move them to resident input state only if that is visible.
+
+Audit of C-owned render/menu paths (2026 11 14 1008):
+
+| Category | Examples | Rule |
+| --- | --- | --- |
+| GL handles in statics | `cosmetic-system.cpp` VAO/VBO, `font-loader.cpp` glyph atlas, `post-fx.cpp` FBO/quad | create through `CAP_GL_RESOURCE`; host releases per generation |
+| Input-edge statics | `gui-editor-select.cpp`, `engine-tick-camera.cpp` `*WasDown` | accept one reset edge, or move to resident input |
+| Config caches | `lighting-config.cpp`, `dynamic-light-config.cpp`, `gui-layout.cpp` | reload from resident config on activation |
+| Per-frame scratch | replay vectors, label buffers | clear at frame start |
+| Resident statics | `engine-init.cpp` `Renderer`, `opengl32` | cold, unaffected |
+| EXE-only statics | `render-command-legacy.cpp` anisotropy | deleted at cutover |
 
 ## Completeness rule
 

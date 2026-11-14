@@ -9,6 +9,7 @@
 
 #include "host/abi/transport-capability.h"
 #include "network/packets.h"
+#include "network/server.h"
 
 namespace mimita::game {
 namespace {
@@ -160,3 +161,53 @@ bool sessionIsServerHost() {
 }
 
 }  // namespace mimita::game
+
+// Compatibility surface for resident MimitaNet call sites. Folded here from
+// network-compat-bridge-module.cpp (2026 11 14 1008): the host owns sockets,
+// WSA lifetime, and server player endpoints, so these wrappers stay on the
+// CAP_TRANSPORT bridge instead of opening a second network stack.
+namespace MimitaNet {
+namespace {
+
+std::uint32_t packetTypeId(const void* data, std::size_t size) {
+    if (!data || size < sizeof(PacketHeader)) {
+        return 0;
+    }
+    return static_cast<std::uint32_t>(
+        reinterpret_cast<const PacketHeader*>(data)->type);
+}
+
+}  // namespace
+
+bool netStartup() {
+    // The resident host owns process network lifetime.
+    return true;
+}
+
+void netShutdown() {
+    // The resident host owns process network lifetime.
+}
+
+ServerGameOverrides gServerOverrides;
+
+ServerGameOverrides& serverGameOverrides() {
+    return gServerOverrides;
+}
+
+bool isServerHost() {
+    return mimita::game::sessionIsServerHost();
+}
+
+bool serverSendToPlayer(SOCKET, const ServerPlayer& player, const void* data,
+                        std::size_t size) {
+    return mimita::game::sendToPlayer(player.id, packetTypeId(data, size), data,
+                                      size);
+}
+
+bool serverSendToEndpoint(SOCKET, const sockaddr_in& to, const void* data,
+                          std::size_t size) {
+    return mimita::game::sendToEndpoint(
+        to.sin_addr.s_addr, to.sin_port, packetTypeId(data, size), data, size);
+}
+
+}  // namespace MimitaNet

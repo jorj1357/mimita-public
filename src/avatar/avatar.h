@@ -249,6 +249,8 @@ public:
 
     // ── UV atlas texture access (for glbuvinfo etc.) ─────────
     GLuint uvAtlasTexture() const { return mUvAtlasTexture; }
+    int atlasWidth() const { return mAtlasWidth; }
+    int atlasHeight() const { return mAtlasHeight; }
 
     // Clipboard for copy/paste within the editor session
     FaceSettings clipboardFace;

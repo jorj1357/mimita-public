@@ -453,6 +453,32 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     auto& gReplayPlayer = REPLAY_PLAYER;
     { MIMITA_PERF_SCOPE("Rendering::Prepare::MeleeRules");
       MimitaMeleeRules::Config::instance().pollReload(); }
+
+    // Hotness proof: journal which binary executed the render path. Throttled
+    // to one record per second so the journal stays readable.
+    {
+        static std::uint64_t lastRenderPathMs = 0;
+        static std::uint64_t renderPathFrames = 0;
+        ++renderPathFrames;
+        const std::uint64_t nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        if (nowMs - lastRenderPathMs >= 1000) {
+            lastRenderPathMs = nowMs;
+#ifdef MIMITA_GAME_DLL
+            const char* renderPath = "dll";
+#else
+            const char* renderPath = "legacy";
+#endif
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "game.render.path", "render", "render path identity", 0,
+                nlohmann::json{{"path", renderPath},
+                               {"frames", renderPathFrames}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     const bool meleePresentation =
         MimitaNet::CommunityMatchClient::instance().mode() == "ssbm";
 

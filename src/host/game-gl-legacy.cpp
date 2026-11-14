@@ -1,3 +1,5 @@
+// TODO-DELETE(cutover): EXE-only legacy implementation. Delete when normal
+// play runs the whole-game DLL; the DLL uses the host capability instead.
 // 2026-11-13
 // Transitional EXE-side GL object lifetime for pre-cutover game code.
 

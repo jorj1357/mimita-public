@@ -17,7 +17,6 @@
 #include "debug/debug-visuals.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
-#include "debug/gl-debug.h"
 #include "renderer/renderer.h"
 #include "map/map_common.h"
 #include "world/world.h"
@@ -119,7 +118,6 @@ void uploadMeshIfNeeded(const World& world)
                        {"batch_count", mesh.batches.size()}},
         __FILE__, __LINE__, __FUNCTION__);
 
-    MIMITA_GL_CHECK("uploadMeshIfNeeded complete");
 }
 
 static bool gTexBreatheEnabled = false;

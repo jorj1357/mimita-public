@@ -130,4 +130,19 @@ void drawBuffer(FramebufferBuffer buffer);
 void readBuffer(FramebufferBuffer buffer);
 bool checkFramebufferStatus();
 
+// ---- capture / blit / sampler extensions ----
+void readPixels(std::int32_t x, std::int32_t y, std::int32_t width,
+                std::int32_t height, PixelFormat format, PixelType type,
+                void* data);
+void blitFramebuffer(std::int32_t srcX0, std::int32_t srcY0,
+                     std::int32_t srcX1, std::int32_t srcY1,
+                     std::int32_t dstX0, std::int32_t dstY0,
+                     std::int32_t dstX1, std::int32_t dstY1,
+                     BlitMask mask, BlitFilter filter);
+void textureAnisotropy(TextureTarget target, float requested);
+void getViewport(std::int32_t out[4]);
+void texSubImage2D(TextureTarget target, std::int32_t level, std::int32_t x,
+                   std::int32_t y, std::int32_t width, std::int32_t height,
+                   PixelFormat format, PixelType type, const void* data);
+
 }  // namespace mimita::game::render

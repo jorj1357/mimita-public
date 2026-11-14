@@ -14,7 +14,6 @@
 #include "world/texture-store.h"
 #include "audio/audio.h"
 #include "gui/font-stuff/font-loader.h"
-#include "debug/gl-debug.h"
 #include "stb_image.h"
 #include "render/render-command.h"
 

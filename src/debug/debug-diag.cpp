@@ -8,6 +8,9 @@
 
 #include "devtools/terminal.h"
 #include "render/post-fx.h"
+#include "render/render-command.h"
+
+namespace r = mimita::game::render;
 #include "render/render-world.h"
 #include "renderer/renderer.h"
 #include "world/texture-store.h"
@@ -77,7 +80,7 @@ void diagLogGL(const char* file, int line, const char* op, GLenum error)
 
 void diagCheckGL(const char* file, int line, const char* op)
 {
-    GLenum err = glGetError();
+    const std::uint32_t err = r::getError();
     if (err != GL_NO_ERROR)
     {
         diagLogGL(file, line, op, err);
@@ -132,7 +135,7 @@ void diagRenderStage(int stage)
     if (!gRenderTraceSample || stage < 1 || stage > 9)
         return;
     gRenderStageReached[(size_t)stage - 1] = true;
-    gRenderStageOk[(size_t)stage - 1] = glGetError() == GL_NO_ERROR;
+    gRenderStageOk[(size_t)stage - 1] = r::getError() == 0;
 }
 
 void diagRenderWorldCounts(size_t batches, size_t vertices, size_t drawCalls)
