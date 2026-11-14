@@ -1284,80 +1284,13 @@ bool dispatchInboundMessage(const mimita::host::TransportMessageV1* message,
         message->payloadSize < sizeof(MimitaNet::PacketHeader)) {
         return false;
     }
-    const auto* header =
-        reinterpret_cast<const MimitaNet::PacketHeader*>(message->payload);
-    bool handled = false;
-    switch (header->type) {
-        case MimitaNet::PACKET_PING:
-            handled = dispatchPingMessage(message, services);
-            break;
-        case MimitaNet::PACKET_CHAT_MESSAGE:
-            handled = dispatchChatMessage(message, services);
-            break;
-        case MimitaNet::PACKET_CHAT_TYPING_STATE_REQUEST:
-            handled = dispatchChatTyping(message, services);
-            break;
-        case MimitaNet::PACKET_SPAWN_NPC_REQUEST:
-            handled = dispatchSpawnNpc(message, services);
-            break;
-        case MimitaNet::PACKET_TELEPORT_REQUEST:
-            handled = dispatchTeleport(message, services);
-            break;
-        case MimitaNet::PACKET_DISCONNECT:
-            handled = dispatchDisconnect(message, services);
-            break;
-        case MimitaNet::PACKET_RECONNECT_REQUEST:
-            handled = dispatchReconnect(message, services);
-            break;
-        case MimitaNet::PACKET_HELLO:
-            handled = dispatchHello(message, services);
-            break;
-        case MimitaNet::PACKET_JOIN_REQUEST:
-            handled = dispatchJoin(message, services);
-            break;
-        case MimitaNet::PACKET_CHAT_REQUEST:
-            handled = dispatchChatRequest(message, services);
-            break;
-        case MimitaNet::PACKET_GODBALL_STATE:
-            handled = dispatchGodballState(message, services);
-            break;
-        default:
-            return false;
-    }
-    if (handled) {
-        // Per-handler detail is verbose-only and off by default. The resident
-        // loop owns the aggregate `game.transport.path` record.
-        if (StructuredLogger::instance().shouldLog(StructuredCategory::Network,
-                                                   StructuredLevel::Verbose)) {
-#ifdef MIMITA_GAME_DLL
-            const char* handledPath = "dll";
-#else
-            const char* handledPath = "resident";
-#endif
-            StructuredLogger::instance().writeEvent(
-                StructuredCategory::Network, StructuredLevel::Verbose,
-                "game.transport.dispatch", "transport",
-                "inbound packet handler ran in the generation",
-                message->serverTick,
-                nlohmann::json{
-                    {"type", static_cast<std::uint32_t>(header->type)},
-                    {"peer", message->peer},
-                    {"path", handledPath}},
-                __FILE__, __LINE__, __FUNCTION__);
-        }
-        return true;
-    }
-    const char* strictValue = std::getenv("MIMITA_HOTNESS_STRICT");
-    const bool strict = !strictValue || std::strcmp(strictValue, "0") != 0;
-    if (services && services->log) {
-        char text[224] = {};
-        std::snprintf(
-            text, sizeof(text),
-            "game.hotness.violation type=%u path=rejected reason=handler-failed strict=%d",
-            static_cast<unsigned>(header->type), strict ? 1 : 0);
-        services->log(services->hostUserData, 1, text);
-    }
-    return strict;
+    // Server inbound packet authority is MimitaNet::processServerPacket.
+    // The old capability-bridge packet switch duplicated that hot path and
+    // caused the misleading client_dll packet classification. Keep only the
+    // 722 command surface (dispatchServerCommand) in this module.
+    (void)message;
+    (void)services;
+    return false;
 }
 
 bool dispatchPingMessage(const mimita::host::TransportMessageV1* message,

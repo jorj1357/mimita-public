@@ -11,6 +11,9 @@
 # Task
 
 - Task ID:
+- Session ID:
+- Owner:
+- Focus:
 - Summary:
 - Status:
 - Date, time, timezone: YYYY-MM-DDTHH:MM:SSZ, ISO 8601 
@@ -41,6 +44,34 @@
 - New content or behavior:
 - Reason:
 - Why unrelated behavior is preserved:
+
+# Changed files and reverse steps
+
+| File | Before | After | Why | Reverse |
+|---|---|---|---|---|
+| `path/to/file` |  |  |  |  |
+
+# Contract / ABI changes
+
+- Contract:
+- Version bump:
+- Compatibility:
+- Reverse:
+
+# State / schema changes
+
+- Domain:
+- Old schema:
+- New schema:
+- Migration:
+- Reverse:
+
+# Deleted paths
+
+- Path:
+- Before:
+- Why:
+- Reverse:
 
 # Diagnostics
 
@@ -78,6 +109,35 @@
 - Gameplay review:
 - Multiplayer review:
 - Still unverified:
+
+# Agent handoff context
+
+- Owner:
+- Focus:
+- Files to check:
+- What another agent should not redo:
+- Next exact step:
+
+# Automatic evidence
+
+- Branch/base/final:
+- Git status:
+- Diff stat:
+- Build identity:
+- Generation:
+- Artifact:
+- Journal path:
+- Session ID:
+
+# How to reverse
+
+- Uncommitted source file: `git checkout -- <file>`
+- Deleted file: `git restore --source=<base> -- <file>`
+- Committed change: `git revert <commit>`
+- Generated file: rerun its generator
+- ABI/state/schema change: restore the old generation and state backup; do not
+  assume a migration reverse is automatic.
+- Reverse only files touched by this session. Preserve pre-existing changes.
 
 # Related feature record
 

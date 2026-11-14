@@ -502,6 +502,8 @@ void setServerCoordinatorState(const std::string& code, const std::string& joinT
 
 const std::string& getServerCoordinatorCode()
 {
+    // TODO-DELETE(fallback): the #else host branches are removed with the
+    // resident server fallback. The DLL always uses CAP_SESSION_IDENTITY.
 #if defined(MIMITA_GAME_DLL)
     thread_local std::string cached;
     cached = mimita::game::getSessionText(

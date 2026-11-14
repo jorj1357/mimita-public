@@ -107,7 +107,7 @@ systems first. Use this default order:
 | Merge agent lanes into one EXE, or find pending lane compile/runtime validation | `docs/operations/build-and-exe/agent-lane-integration-and-pending-validation.md`, `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md` |
 | Build duration, phase progress, or compile-time diagnosis | `docs/specs/dev-loop/build-time-observability.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/time-and-formatting/time-and-formatting.md` |
 | Agent work, isolated lanes, or build authority | `docs/specs/dev-loop/agent-lanes-build-authority.md`, `docs/specs/dev-loop/dev-loop.md`, `docs/operations/build-and-exe/build-and-exe.md`, `docs/architecture/live-development/self-contained-workspace.md` |
-| Live code, hot reload, or replaceable game modules | `docs/architecture/live-development/live-development.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/live-development/module-migration-plan.md`, `docs/architecture/live-development/self-contained-workspace.md`, `docs/specs/hotreload/hotreload.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
+| Live code, hot reload, or replaceable game modules | `docs/specs/hotreload/hotreload.md`, `docs/skills/spec-writing-v1.md`, `docs/architecture/time-and-formatting/time-and-formatting.md`, `docs/skills/logging-checker-v1.md` |
 | Entity, component, or ECS migration | `docs/architecture/ecs-entity-etc/ecs.md`, `docs/architecture/ecs-entity-etc/ecs-migration.md`, `docs/architecture/live-development/hot-kernel.md`, `docs/architecture/player-npc-systems/player-npc-systems.md` |
 | Reusable collision/volume queries or soft-fit movement | `docs/architecture/collision/collision.md`, `docs/specs/movement/movement.md`, `docs/specs/gamemodes/gamemodes.md` |
 | VPS inspection or repository-to-production comparison | `docs/operations/vps-audit.md`, `docs/operations/vps-deployment/vps-deployment.md`, `docs/operations/task-completion/task-completion.md` |
@@ -142,12 +142,12 @@ If there is a comment in any document or spec like "todo: explain this better", 
 
 Before starting hot-reload code work, read:
 
-- `docs/specs/hotreload/hotreload.md` §11 (append-only current contract)
-- `docs/handoffs/hot-reload-work-plans.json` (authoritative plan/claim input)
-- `docs/handoffs/hot-reload-multi-agent-sync-20261113.md`
-- `docs/handoffs/hot-reload-agent-claims-20261113.md` (legacy manual table only;
-  do not add rows)
+- `docs/specs/hotreload/hotreload.md` (current specification)
+- `docs/handoffs/hot-reload-agent-focus.md` (temporary coordination only)
+- `build/hot-reload/status.json` after it exists (generated current status)
+- the latest relevant `docs/changelog/` record
 
 Exact ownership and generated matrix output come from
 `build/source-manifest.json` and `config/source-owners.json`, never from a
-hand-maintained path list. Generated views are not edited by hand.
+hand-maintained path list. Generated views are not edited by hand. Do not add
+claims JSON, lock files, or a second status document.

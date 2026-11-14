@@ -5306,8 +5306,8 @@ declarations, and generated schemas are the safe way to reduce rebuild fanout.
 
 Packet migration and live evolution follow the hotness contract: path events,
 strict no-fallback, shadow parity, canary, and rollback evidence. See
-`docs/specs/hotreload/hotness-contract.md` and
-`docs/specs/hotreload/status.md`.
+`docs/specs/hotreload/hotreload.md` and the generated
+`build/hot-reload/status.json`.
 
 ## Live hot-server boundary (2026-11-14)
 
@@ -5342,9 +5342,46 @@ The authoritative live-development contract is
 - The generated table records the server and client path (`dll` or `resident`)
   for every packet id. `src/network/server.cpp` now derives migrated-type
   classification from it instead of a hand-maintained switch.
-- Default: server `dll` (the cutover routes all inbound through
-  `GetMimitaGameServerV1.process_packet`), client `resident` except the 12
-  reviewed `dispatchInboundMessage` handlers.
+- The desired state is server `dll` and client `dll` for every packet. The
+  generated ledger records the current path and is the coverage gate.
 - Adding or moving a packet is a schema edit plus
   `python devscripts/packet_registry_codegen.py`; `--check` is the drift gate.
-  `live.py` runs both codegens before every build.
+  The dev-loop runs both codegens before every build.
+
+## Single authority and packet split (2026-11-14, normative)
+
+All MiMITA networking code is hot and replaceable. Only external mechanisms are
+cold: libjuice and its callbacks/threads, OS socket/WSA syscalls, OS timers, and
+process/window/loader lifetime. Any file under `src/network/` that implements
+MiMITA policy or protocol behavior belongs in `game.dll`, including the server
+loop/session orchestration, ICE wrappers, join/reconnect/retry policy, snapshot
+policy, movement validation, lag compensation, server browser, coordinator
+client, and all packet handling.
+
+There is exactly one authoritative inbound path:
+
+- Server: `MimitaNet::processServerPacket` owns every server packet type.
+  `dispatchInboundMessage` must not contain a second packet switch. The 722
+  `dispatchServerCommand` surface is separate and may remain.
+- Client: `mpTick` -> `processPacket` owns every normal client packet type.
+  `dispatchInboundMessage` is not a normal client path and must not be described
+  as client packet coverage.
+
+The old `client_dll = 12` ledger came from the compatibility dispatcher
+overrides, not from real client coverage. A truthful ledger records direction,
+server handler, client handler, probe handler, and coverage
+(`handled`, `ignored`, `outbound_only`, `reserved`).
+
+### Packet layout split
+
+`src/network/packets.h` is an umbrella only. Packet IDs remain in the umbrella
+until the generated `packet-ids.h` migration lands. Wire header and common
+limits/enums live in:
+
+- `src/network/schema/packet-header.h`
+- `src/network/schema/packet-common.h`
+
+Domain packet headers will move fixed structs by topic without changing IDs,
+packing, or field layouts. IDs are tombstones and are never reused. Field
+changes bump the owning domain schema and provide documented defaults/migration
+at activation. No packet behavior may depend on a cold resident duplicate.

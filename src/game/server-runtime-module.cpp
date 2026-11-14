@@ -20,6 +20,7 @@
 #include "network/server-gamemode.h"
 #include "network/server-infinite-collision.h"
 #include "network/server.h"
+#include "debug/structured-log.h"
 #include "npc/npc.h"
 
 namespace mimita::game {
@@ -102,6 +103,25 @@ int serverRuntimeProcessPacket(void* rawFrame, const void* rawEvent,
     out->handled = result.handled ? 1u : 0u;
     out->transportConsumed = result.transportConsumed ? 1u : 0u;
     out->playerId = result.playerId;
+    // Per-handler hotness proof (verbose, off by default). The resident loop
+    // owns the aggregate `game.transport.path` record.
+    if (event.payload && event.payloadBytes >=
+                             static_cast<int>(sizeof(MimitaNet::PacketHeader)) &&
+        StructuredLogger::instance().shouldLog(StructuredCategory::Network,
+                                               StructuredLevel::Verbose)) {
+        const auto* header = reinterpret_cast<const MimitaNet::PacketHeader*>(
+            event.payload);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Network, StructuredLevel::Verbose,
+            "game.server.handler", "server",
+            "inbound packet handler ran in the generation", frame.tick,
+            nlohmann::json{
+                {"type", static_cast<std::uint32_t>(header->type)},
+                {"handled", result.handled},
+                {"player", result.playerId},
+                {"path", "dll"}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     return out->handled ? 1 : 0;
 }
 

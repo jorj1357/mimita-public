@@ -549,18 +549,6 @@ void countPacketType(ServerTransportStats& stats, uint8_t type)
         ++stats.inputPackets;
 }
 
-bool isKnownPacketType(uint8_t type)
-{
-    // 2026-08-29: TODO use an explicit switch here so future packet types
-    // cannot be silently rejected by an outdated numeric range.
-    if (type >= PACKET_HELLO && type <= PACKET_SERVER_NOTIFICATION)
-        return true;
-    // Newer gameplay packets above the legacy numeric range. Add each here.
-    return type == PACKET_RAGDOLL_STATE ||
-           type == PACKET_VEHICLE_INPUT ||
-           type == PACKET_VEHICLE_SEAT_REQUEST;
-}
-
 void recordServerLoopPerf(ServerLoopPerf& perf, uint64_t loopUs, bool cappedCatchup)
 {
     const double loopMs = (double)loopUs / 1000.0;
@@ -746,13 +734,14 @@ int runServer(const LaunchOptions& options)
     if (!mimita::host::HostRuntime::instance().serverApiAvailable()) {
         const char* disabled = std::getenv("MIMITA_GAME_DISABLE");
         ::StructuredLogger::instance().writeEvent(
-            StructuredCategory::Network, StructuredLevel::Important,
-            "game.server.fallback", "server",
-            "server tick runs in the resident EXE", 0,
+            StructuredCategory::Network, StructuredLevel::Errors,
+            "game.server.hot-required", "server",
+            "server refused to start without the hot server generation", 0,
             {{"reason", (disabled && std::strcmp(disabled, "1") == 0)
                             ? "disabled"
                             : "no-generation"}},
             __FILE__, __LINE__, __func__);
+        return 1;
     }
     auto logStartupStage = [&](const char* stage, const char* result,
                                const char* reason, double elapsedMs = 0.0,
@@ -1561,14 +1550,9 @@ int runServer(const LaunchOptions& options)
                 residentResult.handled = dllResult.handled != 0;
                 residentResult.playerId = dllResult.playerId;
             }
-            if (!handledByDll) {
-                residentResult = processServerPacket(
-                    sock, event, players, npcs, projectiles, nextPlayerId,
-                    nextEntityId, nextProjectileId, world, tick,
-                    totalPacketsIn, totalPacketsOut, &transportStats,
-                    &disagreementRetransmit, nullptr, nullptr, nullptr,
-                    &npcSystem);
-            }
+            // Hot authority only. MimitaNet::processServerPacket owns every
+            // server packet type inside the DLL. Do not fall back to a resident
+            // duplicate when the generation rejects a packet.
             if (residentResult.handled) {
                 noteHotnessPath(handledByDll, eventType,
                                 residentResult.playerId ? residentResult.playerId
@@ -2518,15 +2502,7 @@ static void simulateOneServerTick(ListenServerState& state)
                 residentResult.handled = dllResult.handled != 0;
                 residentResult.playerId = dllResult.playerId;
             }
-            if (!handledByDll) {
-                residentResult = processServerPacket(
-                    state.sock, event, state.players, state.npcs,
-                    state.projectiles, state.nextPlayerId, state.nextEntityId,
-                    state.nextProjectileId, state.world, state.tick,
-                    state.totalPacketsIn, state.totalPacketsOut, nullptr,
-                    &state.disagreementRetransmit, nullptr, nullptr, nullptr,
-                    state.npcSystem.get());
-            }
+            // Hot authority only; see the dedicated loop above.
             if (residentResult.handled) {
                 noteHotnessPath(handledByDll, eventType,
                                 residentResult.playerId ? residentResult.playerId

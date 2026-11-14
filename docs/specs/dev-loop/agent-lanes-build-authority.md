@@ -26,26 +26,22 @@ The detailed Mode 2 procedure below is retained as historical/reference
 documentation and is superseded by this policy. Resume it only after the user
 changes the project policy and the CLI guard is deliberately revised.
 
-## Live build and journal coordination (2026 11 14 1008)
+## Live build and journal coordination
 
-- **One `live.py` per checkout.** It holds `.dev/live.lock`; a second live loop
-  refuses to start. Agent A/integrator runs it. B and C edit code and read
-  journals; they do not start the live loop or the dev-loop.
-- **One game-DLL build at a time.** `live.py` coalesces saves, waits for the
-  active `game_build_worker.py`, and only then starts the next revision.
-- **Owner-aware preflight.** `live.py --agent <owner>` reads
-  `docs/handoffs/hot-reload-work-plans.json`. A changed file claimed by another
-  **active** plan is refused unless the owner marks the plan `ready` or the
-  caller passes `--allow-other-owners`. Shared paths
-  (`src/host/abi/`, `docs/specs/hotreload/`, `docs/handoffs/`,
-  `config/source-owners.json`, `AGENTS.md`) require `--agent integrator`.
+- **The root dev-loop is the only build/run authority.** It owns the build lock,
+  source snapshot, codegen checks, game-DLL request, publication, activation
+  status, and run control. Do not start a second watcher or invoke
+  `game_build_worker.py` directly.
+- **One game-DLL build at a time.** The dev-loop coalesces saves, waits for the
+  active build to finish, and only then starts the next revision.
+- **Agent A owns build requests.** B and C edit and save their areas, then wait
+  for A to build. No claims JSON or lock file is required; use
+  `docs/handoffs/hot-reload-agent-focus.md` plus the latest changelog to avoid
+  overlapping edits.
 - **One journal, many readers.** Each server/client instance writes its own
-  `events.jsonl`. Multiple agents may read the same journal to diagnose a bug,
-  but only the plan owner edits the owning source file. A fix is built by the
-  single `live.py` after the plan is marked `ready`.
-- **Fallback is explicit.** `MIMITA_GAME_DISABLE=1` forces the resident EXE
-  path; otherwise a built generation is loaded by default. The server journals
-  `game.server.fallback` with `reason=disabled|no-generation`.
+  `events.jsonl`. Multiple agents may read the same journal to diagnose a bug.
+- **Fallback is explicit.** Resident fallback is a migration aid, not a hot-path
+  success. Migrated behavior must reject rather than silently use resident code.
 
 **Implementation status (2026-11-09):** the repository-local paths are enforced.
 `devscripts/agent-lane.py` places worktrees under `.dev/agent-lanes/`,

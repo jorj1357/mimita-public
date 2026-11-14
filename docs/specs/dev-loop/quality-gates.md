@@ -134,9 +134,8 @@ Banned in game-owned sources:
   `ofstream` debug writers); use `StructuredLogger`.
 
 Resident files and the cutover-only legacy files are allowlisted; the
-allowlist shrinks to zero at cutover. The hot/cold split is defined in
-`docs/specs/hotreload/hot-cold-split.md`, and the decisions are recorded in
-`docs/specs/hotreload/hotreload.md` under "Decisions (2026 11 14 1008)".
+allowlist shrinks to zero at cutover. The hot/cold split and current decisions
+are defined in `docs/specs/hotreload/hotreload.md`.
 
 ## Tool configuration
 

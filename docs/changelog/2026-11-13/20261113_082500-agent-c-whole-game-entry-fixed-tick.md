@@ -567,6 +567,25 @@ here performs the ownership cutover.
   memory (~750–900 MB free while Roblox/browsers/editors are open); close apps
   or add linker memory flags and rerun the dev-loop.
 
+## Phase 1aa hot server handler proof
+
+- `src/game/server-runtime-module.cpp`: added a verbose `game.server.handler`
+  record after `processServerPacket` with `type`, `handled`, `player`, and
+  `path=dll`. It is off by default (`Network`/`Verbose`) and gives per-handler
+  proof alongside the resident loop's aggregate `game.transport.path`.
+- `src/network/server-packets.cpp`: added a `TODO-DELETE(fallback)` marker on
+  the `#else` host session-identity branches. The include guard
+  (`#if defined(MIMITA_GAME_DLL)`) was already present; the DLL uses
+  `CAP_SESSION_IDENTITY` unconditionally.
+- Verified by source inspection: the hot server handlers already use the
+  game-side bridges (`CAP_SESSION_IDENTITY`, `CAP_MODULES`) and
+  `serverSendToPlayer`/`serverSendToEndpoint`; no raw GL, `sendto`, or
+  `closesocket` calls remain in the handler files. The remaining server work is
+  B's resident pump/fallback and A's cutover.
+- Reverse: remove the `game.server.handler` block in
+  `server-runtime-module.cpp`; remove the TODO marker in `server-packets.cpp`.
+- Build: pending Agent A's dev-loop build.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls

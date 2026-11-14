@@ -570,13 +570,9 @@ void tickServerIceTransports(SOCKET sock,
                 result.playerId = out.playerId;
                 return handled;
             }();
-        if (!handledByDll) {
-            result = processServerPacket(
-                sock, event, players, npcs, projectiles, nextPlayerId,
-                nextEntityId, nextProjectileId, world, tick, totalPacketsIn,
-                totalPacketsOut, stats, retransmitState, authenticated, claimed,
-                removals);
-        }
+        (void)handledByDll;
+        // Hot authority only. ICE packets use the same DLL packet handler;
+        // never fall back to a resident duplicate.
         return result;
     };
 

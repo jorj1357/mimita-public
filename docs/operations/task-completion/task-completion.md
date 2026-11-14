@@ -57,6 +57,11 @@ folder using the universal standard in
 
 `docs/changelog/yyyy-mm-dd/yyyymmdd_hhmmss-three-word-summary.md`
 
+Use `python devscripts/changelog.py --title ... --summary ... --owner ...
+--focus ...` to fill the template with automatic git/build/runtime evidence.
+The narrative sections remain written by the session owner. `--check
+--session-id <id>` verifies exactly one changelog for that session.
+
 Write it at the end of the session. It must describe the final state and 
 include the EST timestamp, branch, commits, pre-existing edits, exact files and
 lines, exact old and new content, reasoning, documents, skills, validation, and

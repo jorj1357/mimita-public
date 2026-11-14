@@ -102,7 +102,7 @@ required assertion passed.
 
 This section is append-only. It defines where hot-reload proof appears in the
 canonical journal. The normative event contract is
-`docs/specs/hotreload/hotness-contract.md`.
+`docs/specs/hotreload/hotreload.md`.
 
 - Category: `HOT_RELOAD` (or the existing `EXECUTABLE` category when the event is
   emitted before the logger has a hot-reload category). Normal path events may

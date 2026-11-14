@@ -23,6 +23,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +33,7 @@ CSV_REL = Path("docs/handoffs/cpp-audit-static-triage-20261112.csv")
 SERVICE_MAP_REL = Path("docs/handoffs/resident-service-dependencies-20261112.json")
 MANIFEST_REL = Path("build/source-manifest.json")
 FAST_PROGRESS_REL = Path("build/audit-triage-progress.json")
+AUDIT_JSON_REL = Path("build/hot-reload/audit.json")
 
 # Source-backed blockers from docs/handoffs/cpp-lifetime-*.md and the lifetime
 # review. These cannot be closed by a lexical scan.
@@ -474,6 +476,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--csv", default=str(CSV_REL))
     parser.add_argument("--service-map", default=str(SERVICE_MAP_REL))
     parser.add_argument("--manifest", default=str(MANIFEST_REL))
+    parser.add_argument("--json", default=str(AUDIT_JSON_REL),
+                        help="machine-readable audit output")
     parser.add_argument("--from-manifest", action="store_true",
                         help="fast mode: use the source manifest; skip depfiles/transitive headers")
     parser.add_argument("--full", action="store_true", help="force the full inventory input")
@@ -534,10 +538,36 @@ def main(argv: list[str] | None = None) -> int:
 
     service_map_path = ROOT / args.service_map
     service_map_path.parent.mkdir(parents=True, exist_ok=True)
-    service_map_path.write_text(json.dumps({
+    service_map_payload = {
         "services": {name: sorted(paths) for name, paths in sorted(service_map.items())},
         "paths": {path: services for path, services in sorted(path_services.items())},
-    }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    }
+    service_map_path.write_text(json.dumps(service_map_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    audit_path = ROOT / args.json
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    high_risk = [
+        row for row in rows
+        if row["class"] in {"RUNTIME_PROOF_REQUIRED", "STATIC_STATE_REVIEW",
+                            "RESIDENT_ADAPTER_REQUIRED", "UNRESOLVED"}
+    ]
+    audit_payload = {
+        "schema_version": 1,
+        "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": source_label,
+        "source_path": args.manifest if use_fast else args.inventory,
+        "counts": dict(sorted(counts.items())),
+        "high_risk_count": len(high_risk),
+        "rows": rows,
+        "high_risk": high_risk,
+        "services": service_map_payload["services"],
+        "limits": [
+            "Static triage is a lead map, not semantic proof.",
+            "No compiler, linker, or runtime invocation occurs here.",
+            "A missing lexical hit can still be unsafe after macro/indirect analysis.",
+        ],
+    }
+    audit_path.write_text(json.dumps(audit_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     report_path = ROOT / args.report
     lines: list[str] = []
@@ -633,6 +663,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[AUDIT TRIAGE] {name}={counts.get(name, 0)}")
     print(f"[AUDIT TRIAGE] report={args.report}", flush=True)
     print(f"[AUDIT TRIAGE] csv={args.csv}", flush=True)
+    print(f"[AUDIT TRIAGE] json={args.json} high_risk={len(high_risk)}", flush=True)
     return 0
 
 
