@@ -21,9 +21,10 @@ Date: 2026-11-14
   `dispatchServerCommand` surface remains separate.
 - `src/network/packets.h`: wire header and common limits/enums moved to
   `src/network/schema/packet-header.h` and
-  `src/network/schema/packet-common.h`. Input and chat structs moved to
-  `src/network/schema/packet-input.h` and `packet-chat.h`. Packet IDs and the
-  remaining structs stay in the umbrella until the generated ID migration lands.
+  `src/network/schema/packet-common.h`. Input, chat, and avatar structs moved to
+  `src/network/schema/packet-input.h`, `packet-chat.h`, and `packet-avatar.h`.
+  Packet IDs and the remaining structs stay in the umbrella until the generated
+  ID migration lands.
 - `src/network/server.cpp`: removed the unused resident `isKnownPacketType`
   duplicate and the resident packet-handler fallback blocks. The hot
   `server-packets.cpp` check remains.
@@ -37,11 +38,14 @@ Date: 2026-11-14
 
 - Packet/state codegen dry-run passes: 78 packet IDs, 8 state domains.
 - Dev-loop artifact source 22 published successfully after the single-authority
-  and schema-header changes.
+  and schema-header changes; source 25 published after the avatar split.
 - Runtime probe on generation 160: `server_hotness_probe.py --client --chat
   packet-split-smoke` returned `ok`; `players=1`, chat `path=dll`,
   `server_failures=0`.
-- A later full rebuild was in progress when this entry was written.
+- Repeat probes after the input/chat/avatar splits returned `ok` with
+  `players=1`, chat `path=dll`, and zero server failures.
+- `runServer` now refuses to start without the hot server API; the resident
+  server fallback path is no longer a supported startup mode.
 
 ## Follow-up
 

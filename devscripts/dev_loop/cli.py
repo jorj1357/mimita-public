@@ -48,9 +48,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ai-map", default="dust2cyberiav4", help="map for --ai-match")
     parser.add_argument("--ai-profile", default="tdm-validation", help="dev profile for --ai-match")
     parser.add_argument("--ai-launch-mode", default="41", help="dev launch mode for --ai-match (default 41 = TDM networking)")
-    parser.add_argument("--request", choices=("launch", "build", "stop-client", "stop-server", "stop"),
+    parser.add_argument("--request", choices=("launch", "build", "game-dll", "stop-client", "stop-server", "stop"),
                         help="send a command to the already-running dev-loop daemon and exit")
-    parser.add_argument("--wait-for-build", action="store_true", help="with --request build, wait for this build request to finish")
+    parser.add_argument("--wait-for-build", action="store_true", help="with --request build/game-dll, wait for this build request to finish")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
                         help="configuration for --request build")
     parser.add_argument("--build-timeout", type=float, default=36000.0,

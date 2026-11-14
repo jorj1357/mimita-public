@@ -5380,8 +5380,11 @@ limits/enums live in:
 
 - `src/network/schema/packet-header.h`
 - `src/network/schema/packet-common.h`
+- `src/network/schema/packet-input.h`
+- `src/network/schema/packet-chat.h`
+- `src/network/schema/packet-avatar.h`
 
-Domain packet headers will move fixed structs by topic without changing IDs,
-packing, or field layouts. IDs are tombstones and are never reused. Field
+Domain packet headers will move the remaining fixed structs by topic without
+changing IDs, packing, or field layouts. IDs are tombstones and are never reused. Field
 changes bump the owning domain schema and provide documented defaults/migration
 at activation. No packet behavior may depend on a cold resident duplicate.

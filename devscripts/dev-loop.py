@@ -117,6 +117,7 @@ from dev_loop.artifacts import (
     published_builds as discover_published_builds,
 )
 from dev_loop.build import run_build as run_build_worker
+from dev_loop.game_build import run_game_build as run_game_build_worker
 from dev_loop.launch import select_launch_artifact
 from dev_loop.instances import (
     RunLayout,
@@ -1206,6 +1207,17 @@ class DevLoop:
         self.build_requests: dict[str, str] = {}
         self.last_build_result = ""
         self.last_build_duration_seconds: float | None = None
+        self.game_build_worker: threading.Thread | None = None
+        self.game_build_completions: Queue[dict] = Queue()
+        self.pending_game_build_request_ids: list[str] = []
+        self.active_game_build_request_ids: list[str] = []
+        self.game_build_requests: dict[str, str] = {}
+        self.game_build_status = "idle"
+        self.game_build_detail = ""
+        self.game_build_started_utc: str | None = None
+        self.game_build_generation: int | None = None
+        self.last_game_build_result = ""
+        self.last_game_build_duration_seconds: float | None = None
         self.launch_after_build = False
         self.shutting_down = False
         self.last_message = (
@@ -1737,6 +1749,13 @@ class DevLoop:
                 "last_build_result": self.last_build_result,
                 "last_build_duration_seconds": self.last_build_duration_seconds,
                 "build_requests": dict(self.build_requests),
+                "game_build_status": self.game_build_status,
+                "game_build_detail": self.game_build_detail,
+                "game_build_started_utc": self.game_build_started_utc,
+                "game_build_generation": self.game_build_generation,
+                "game_build_requests": dict(self.game_build_requests),
+                "last_game_build_result": self.last_game_build_result,
+                "last_game_build_duration_seconds": self.last_game_build_duration_seconds,
             }
         identities_match = bool(
             self.server_exe and client_executable and
@@ -1822,6 +1841,15 @@ class DevLoop:
             "last_build_result": build_snapshot["last_build_result"],
             "last_build_duration_seconds": build_snapshot["last_build_duration_seconds"],
             "build_requests": build_snapshot["build_requests"],
+            "game_build": {
+                "status": build_snapshot["game_build_status"],
+                "detail": build_snapshot["game_build_detail"],
+                "started_utc": build_snapshot["game_build_started_utc"],
+                "generation": build_snapshot["game_build_generation"],
+                "requests": build_snapshot["game_build_requests"],
+                "last_result": build_snapshot["last_game_build_result"],
+                "last_duration_seconds": build_snapshot["last_game_build_duration_seconds"],
+            },
             "message": self.last_message,
             "last_control": dict(getattr(self, "last_control", {})),
             "updated_at": utc_now(),
@@ -2328,6 +2356,91 @@ class DevLoop:
                 if self.active_build_generation is None:
                     self.build_status = "pending"
 
+    def queue_game_dll_request(self, request_id: str) -> bool:
+        request_id = request_id or f"game-dll-{uuid.uuid4().hex[:12]}"
+        with self.lock:
+            if request_id not in self.pending_game_build_request_ids:
+                self.pending_game_build_request_ids.append(request_id)
+            self.game_build_requests[request_id] = "queued"
+            self.game_build_requests = dict(list(self.game_build_requests.items())[-32:])
+        return True
+
+    def _record_game_build_output(self, line: str) -> None:
+        detail = line.rstrip()[-240:]
+        if not detail:
+            return
+        with self.lock:
+            self.game_build_detail = detail
+            self.last_message = detail
+        self.save_state("game_building")
+
+    def start_game_build_worker(self) -> None:
+        with self.lock:
+            if self.game_build_worker is not None or not self.pending_game_build_request_ids:
+                return
+            if self.build_worker is not None or self.active_build_generation is not None:
+                return
+            request_ids = list(self.pending_game_build_request_ids)
+            self.pending_game_build_request_ids.clear()
+            self.active_game_build_request_ids = request_ids
+            self.game_build_status = "building"
+            self.game_build_started_utc = utc_now()
+            self.game_build_detail = "starting whole-game build"
+            self.last_message = "building whole-game DLL generation"
+            for request_id in request_ids:
+                self.game_build_requests[request_id] = "building"
+        self.save_state("game_building")
+        self.game_build_worker = threading.Thread(
+            target=self._run_game_build_worker,
+            args=(request_ids,),
+            name="dev-loop-game-build",
+            daemon=False,
+        )
+        self.game_build_worker.start()
+
+    def _run_game_build_worker(self, request_ids: list[str]) -> None:
+        started = time.monotonic()
+        try:
+            result = run_game_build_worker(
+                ROOT, request_ids, self.pending_build_mode,
+                on_output=self._record_game_build_output)
+        except Exception as error:  # noqa: BLE001 - report through dev-loop state
+            result = {"success": False, "error": str(error), "request_ids": request_ids}
+        result["duration_seconds"] = time.monotonic() - started
+        self.game_build_completions.put(result)
+
+    def drain_game_build_completions(self) -> None:
+        while True:
+            try:
+                result = self.game_build_completions.get_nowait()
+            except Empty:
+                return
+            with self.lock:
+                success = bool(result.get("success"))
+                request_ids = list(dict.fromkeys(
+                    [*result.get("request_ids", []), *self.active_game_build_request_ids]
+                ))
+                self.active_game_build_request_ids = []
+                self.game_build_worker = None
+                self.last_game_build_result = "success" if success else "failed"
+                self.last_game_build_duration_seconds = float(result.get("duration_seconds", 0))
+                for request_id in request_ids:
+                    self.game_build_requests[request_id] = self.last_game_build_result
+                self.game_build_requests = dict(list(self.game_build_requests.items())[-32:])
+                if success:
+                    self.game_build_status = "published"
+                    self.game_build_generation = int(result.get("generation") or 0) or None
+                    self.game_build_detail = (
+                        f"published generation {self.game_build_generation} "
+                        f"{result.get('dll') or ''}")
+                    self.last_message = self.game_build_detail
+                else:
+                    self.game_build_status = "failed"
+                    self.game_build_detail = str(result.get("error") or "game build failed")
+                    self.last_message = self.game_build_detail
+            self.save_state("game_build_succeeded" if success else "game_build_failed")
+            print(f"[DEV GAME] {'published' if success else 'failed'}: {self.game_build_detail}")
+
     def process_control_requests(self) -> None:
         while True:
             try:
@@ -2381,6 +2494,12 @@ class DevLoop:
                 self.last_message = "build request queued through dev-loop"
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("build_queued")
+            elif action == "game-dll":
+                self.queue_game_dll_request(request_id)
+                self.start_game_build_worker()
+                self.last_message = "game-DLL build request queued through dev-loop"
+                self.record_control_event(request, "accepted", self.last_message)
+                self.save_state("game_build_queued")
             elif action == "build-or-launch":
                 if self.latest_build is None or self.latest_stale:
                     self.launch_after_build = True
@@ -4288,7 +4407,9 @@ class DevLoop:
             while not self.stop_event.is_set():
                 self.process_control_requests()
                 self.drain_build_completions()
+                self.drain_game_build_completions()
                 self.maintain_process()
+                self.start_game_build_worker()
                 if self.build_pending and self.active_build_generation is None:
                     self.change_event.clear()
                     time.sleep(DEBOUNCE_SECONDS)
