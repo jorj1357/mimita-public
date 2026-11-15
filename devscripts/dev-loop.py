@@ -1102,8 +1102,10 @@ class DevLoop:
         auto_restart: bool,
         launch_mode: str | None = None,
         launch_visibility: str | None = None,
+        hot_client: bool = False,
     ):
         self.profile = profile
+        self.hot_client = bool(hot_client)
         try:
             self.max_mimita_processes = max(1, int(profile.get("max_mimita_processes", 1)))
         except (TypeError, ValueError):
@@ -1454,13 +1456,21 @@ class DevLoop:
 
     def start_client_instance(self, name: str, badconn_preset: str = "",
                               instance_id: str | None = None,
-                              server_instance_id: str = "server-01") -> dict | None:
+                              server_instance_id: str = "server-01",
+                              hot_client: bool | None = None) -> dict | None:
         """Start one additional client connected to the owned server."""
         if server_instance_id != "server-01":
             self.last_message = f"unknown server instance {server_instance_id}"
             return None
-        if not self.server_health() or not self.launch_executable:
-            self.last_message = "start-client requires a running server and published build"
+        if not self.server_health():
+            self.last_message = "start-client requires a running server"
+            return None
+        artifact_id = str(self.run_metadata.get("artifact_id") or "")
+        candidate = BUILD_ROOT / artifact_id / "mimita.exe" if artifact_id else None
+        executable = (str(candidate) if candidate is not None and candidate.is_file()
+                      else self.launch_executable)
+        if not executable:
+            self.last_message = "start-client requires a published build"
             return None
         self._ensure_run_layout()
         iid = instance_id or self._next_client_instance_id()
@@ -1471,7 +1481,7 @@ class DevLoop:
         journal.parent.mkdir(parents=True, exist_ok=True)
         queue = DEV_ROOT / f"agent-command-{self.run_id}-{iid}.jsonl"
         queue.write_text("", encoding="utf-8")
-        args = [self.launch_executable]
+        args = [executable]
         if self.room_code:
             args.extend(["--room", self.room_code])
         else:
@@ -1496,6 +1506,8 @@ class DevLoop:
             "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
             "MIMITA_PROCESS_ROLE": "client",
         }
+        if bool(self.hot_client if hot_client is None else hot_client):
+            env["MIMITA_GAME_HOT_CLIENT"] = "1"
         try:
             process = subprocess.Popen(
                 args, cwd=ROOT, env=env,
@@ -1824,6 +1836,7 @@ class DevLoop:
             "latest_build_stale": self.latest_stale,
             "auto_restart": self.auto_restart,
             "launch_visibility": self.launch_visibility,
+            "hot_client": self.hot_client,
             "headless": self.launch_visibility == "headless",
             "status": status,
             "build_status": build_snapshot["build_status"],
@@ -2464,6 +2477,8 @@ class DevLoop:
                         continue
                     self.launch_mode_id = str(requested_mode)
                     self.launch_mode = selected
+                if "hot_client" in request:
+                    self.hot_client = bool(request.get("hot_client"))
                 self.override_map = str(request.get("map", "") or "").strip()
                 self.override_weapon_set = str(request.get("weapon_set", "") or "").strip()
                 if self.latest_build is None or self.latest_stale:
@@ -2571,10 +2586,14 @@ class DevLoop:
                 name = str(request.get("name", "") or "").strip()
                 if not name:
                     name = f"Client {len(self.client_instances) + 1}"
+                requested_hot_client = (
+                    bool(request.get("hot_client")) if "hot_client" in request
+                    else self.hot_client)
                 record = self.start_client_instance(
                     name, str(request.get("badconn_preset", "") or ""),
                     str(request.get("instance_id", "") or "") or None,
-                    str(request.get("server_instance_id", "") or "server-01"))
+                    str(request.get("server_instance_id", "") or "server-01"),
+                    hot_client=requested_hot_client)
                 if record:
                     self.record_control_event(request, "completed", self.last_message)
                 else:
@@ -2894,6 +2913,34 @@ class DevLoop:
                         else "published_stale" if self.latest_stale
                         else "published_current"
                     )
+                    try:
+                        cutover = subprocess.run(
+                            [sys.executable,
+                             str(ROOT / "devscripts" / "exe_cutover_gate.py"),
+                             "--report-only"],
+                            cwd=ROOT, text=True, capture_output=True, check=False)
+                        cutover_line = next(
+                            (line for line in cutover.stdout.splitlines()
+                             if "linked_game_sources=" in line), "no cutover report")
+                        self.record_runtime_event(
+                            "dev-loop.exe-cutover", {"result": cutover_line},
+                            "EXE cutover static link report")
+                    except OSError:
+                        pass
+                    try:
+                        cap_render = subprocess.run(
+                            [sys.executable,
+                             str(ROOT / "devscripts" / "cap_render_gate.py"),
+                             "--report-only"],
+                            cwd=ROOT, text=True, capture_output=True, check=False)
+                        cap_line = next(
+                            (line for line in cap_render.stdout.splitlines()
+                             if "raw_gl_sources=" in line), "no CAP_RENDER report")
+                        self.record_runtime_event(
+                            "dev-loop.cap-render", {"result": cap_line},
+                            "CAP_RENDER static coverage report")
+                    except OSError:
+                        pass
                 else:
                     self.last_message = str(result.get("error") or
                                             f"build failed with exit code {result.get('return_code')}")
@@ -3875,6 +3922,9 @@ class DevLoop:
             run_key = self.run_id or Path(self.events_path).parent.name
             self.command_queue_path = str(DEV_ROOT / f"agent-command-{run_key}.jsonl")
             Path(self.command_queue_path).write_text("", encoding="utf-8")
+        if not self.client_journal_path:
+            self.client_journal_path = str(
+                Path(self.events_path).parent / "client-01" / "events.jsonl")
         client_args.extend(["--agent-command-file", self.command_queue_path])
         # The client may run generic leave/queue cleanup that is allowed to
         # stop a server it launched through the GUI. This server belongs to
@@ -3892,6 +3942,8 @@ class DevLoop:
             "MIMITA_RUN_METADATA": json.dumps(self.run_metadata, separators=(",", ":")),
             "MIMITA_PROCESS_ROLE": "client",
         }
+        if self.hot_client:
+            client_env["MIMITA_GAME_HOT_CLIENT"] = "1"
         print(f"[DEV] launching build {selected_build} client")
         print(f"[DEV] client journal: {self.client_journal_path or self.events_path}")
         self.record_runtime_event(
@@ -3903,6 +3955,7 @@ class DevLoop:
                 "args": list(client_args),
                 "console_policy": "CREATE_NO_WINDOW",
                 "window_policy": self.launch_visibility,
+                "hot_client": self.hot_client,
                 "unlock_cursor_requested": "--unlock-cursor" in client_args,
             },
             "dev-loop launching client with hidden console and unlocked-cursor policy",
@@ -4024,6 +4077,22 @@ class DevLoop:
                   stage_started, server_pid=self.server_pid, client_pid=client.pid,
                   timeout_seconds=45)
 
+        hot_gate_ready = True
+        require_hot_client = bool(self.profile.get("require_hot_client", True)) and \
+            bool(self.launch_mode.get("require_hot_client", True))
+        if (hot_gate_ready and require_hot_client and self.client_ready and
+                connection_ready and self.client_journal_path):
+            stage_started = time.monotonic()
+            hot_gate_ready, gate_message = self.wait_for_hot_client_gate(
+                self.client_journal_path)
+            if not hot_gate_ready:
+                self.last_message = (
+                    f"hot-client acceptance gate failed: {gate_message}")
+            stage("hot_client_gate", "ready" if hot_gate_ready else "failed",
+                  self.last_message if not hot_gate_ready
+                  else "path=dll, Connected, frames, activation, and no post-bootstrap stalls proven",
+                  stage_started, client_pid=client.pid, timeout_seconds=45)
+
         self.observe_launch_windows("client_ready" if self.client_ready else "client_logger_missing")
         if self.client_ready:
             self.apply_launch_visibility()
@@ -4031,7 +4100,8 @@ class DevLoop:
                 self.restore_prelaunch_foreground(prelaunch_windows)
             self.monitor_launch_windows()
         launch_succeeded = bool(self.client_ready and self.builds_match and
-                                connection_ready and mode_ready and npcwaves_ready)
+                                connection_ready and mode_ready and
+                                npcwaves_ready and hot_gate_ready)
         if launch_succeeded:
             self.last_message = (
                 f"launched fallback build {artifact_id} (SHA-256 {identity.get('sha256', '')})"
@@ -4111,6 +4181,29 @@ class DevLoop:
                         pass
             time.sleep(0.1)
         return None
+
+    def wait_for_hot_client_gate(self, journal_path: str,
+                                 timeout: float = 45.0) -> tuple[bool, str]:
+        """Poll the hot-client acceptance gate until the journal proves a hot frame."""
+        deadline = time.time() + timeout
+        result_path = Path(self.events_path).parent / "hot-client-gate.json"
+        last_output = "hot-client gate did not run"
+        while time.time() < deadline:
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "devscripts" / "hot_client_gate.py"),
+                     journal_path, "--json", str(result_path)],
+                    cwd=ROOT, text=True, capture_output=True, check=False)
+            except OSError as error:
+                return False, f"hot-client gate failed to start: {error}"
+            lines = [line for line in result.stdout.splitlines() if line.strip()]
+            last_output = lines[-1] if lines else (result.stderr.strip() or "no output")
+            if result.returncode == 0:
+                return True, last_output
+            if result.returncode == 2:
+                return False, last_output
+            time.sleep(2.0)
+        return False, last_output
 
     def wait_for_registered_room_code(self, server_pid: int | None,
                                       room_file_path: Path) -> None:
@@ -4343,6 +4436,7 @@ class DevLoop:
             f"[DEV STATUS] MODE: {snapshot.get('launch_mode')} ({self.launch_mode.get('name', 'unnamed')})",
             f"[DEV STATUS] BUILD: phase={snapshot.get('build_status')} detail={snapshot.get('active_build_phase') or snapshot.get('active_build_detail') or '-'} active-source={snapshot.get('active_build_generation') or '-'} latest-id={snapshot.get('latest_successful_build_id') or '-'} stale={snapshot.get('latest_build_stale')} elapsed={self._duration_text(snapshot.get('active_build_elapsed_seconds'))}",
             f"[DEV STATUS] BUILD DETAIL: {snapshot.get('active_build_detail') or snapshot.get('last_build_result') or '-'}",
+            f"[DEV STATUS] GAME BUILD: phase={(snapshot.get('game_build') or {}).get('status') or '-'} detail={(snapshot.get('game_build') or {}).get('detail') or '-'} generation={(snapshot.get('game_build') or {}).get('generation') or '-'}",
             f"[DEV STATUS] RUNTIME BUILD: {snapshot.get('running_build_id') or snapshot.get('running_build') or '-'} match={snapshot.get('builds_match')}",
             f"[DEV STATUS] RUN: {'RUNNING' if running else 'NOT RUNNING'} uptime={self._duration_text(snapshot.get('run_uptime_seconds'))} visibility={snapshot.get('launch_visibility')}",
             f"[DEV STATUS] PIDS: server={snapshot.get('server_pid') or '-'} client={client_pids or '-'}",
@@ -6155,6 +6249,12 @@ def _print_read_only_status(current: dict, as_json: bool) -> None:
         f"uptime={DevLoop._duration_text(current.get('run_uptime_seconds'))} "
         f"visibility={current.get('launch_visibility', 'unknown')}"
     )
+    game_build = current.get("game_build") or {}
+    print(
+        f"[DEV STATUS] game-build status={game_build.get('status') or '-'} "
+        f"generation={game_build.get('generation') or '-'} "
+        f"detail={game_build.get('detail') or '-'}"
+    )
     print(f"[DEV STATUS] events={_terminal_file_link(current.get('events_path'))}")
     effective = _effective_launch_identity(list(current.get("server_args") or []))
     print(
@@ -6202,13 +6302,18 @@ def wait_for_build_request(request_id: str, timeout: float) -> int:
     while time.monotonic() < deadline:
         current = read_current_run() or {}
         status = (current.get("build_requests") or {}).get(request_id)
+        game_build = current.get("game_build") or {}
+        if status is None:
+            status = (game_build.get("requests") or {}).get(request_id)
         if status == "success":
             print(f"[DEV CONTROL] build request={request_id} result=success "
-                  f"build={current.get('latest_successful_build')}")
+                  f"build={current.get('latest_successful_build')} "
+                  f"game_generation={game_build.get('generation')}")
             return 0
         if status == "failed":
             print(f"[DEV CONTROL] build request={request_id} result=failed "
-                  f"detail={current.get('message')}", file=sys.stderr)
+                  f"detail={game_build.get('detail') or current.get('message')}",
+                  file=sys.stderr)
             return 1
         time.sleep(0.5)
     print(f"[DEV CONTROL] build request={request_id} timed out waiting for completion",
@@ -6348,6 +6453,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         "launch_mode": args.launch_mode,
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
+    if getattr(args, "hot_client", False):
+        request["hot_client"] = True
     if action == "build":
         request["build_mode"] = args.build_mode
     if action == "stop":
@@ -6408,7 +6515,7 @@ def run_control_client(args: argparse.Namespace) -> int:
         print(f"[DEV CONTROL] events={_terminal_file_link(events_path)}")
         return 0 if result["completed"] else 1
 
-    if action == "build" and response.get("accepted") and args.wait_for_build:
+    if action in ("build", "game-dll") and response.get("accepted") and args.wait_for_build:
         return wait_for_build_request(
             request["request_id"], timeout=float(args.build_timeout)
         )
@@ -6438,6 +6545,7 @@ def main() -> int:
                 args.auto_restart,
                 args.launch_mode,
                 args.launch_visibility,
+                hot_client=args.hot_client,
             ).run()
         finally:
             release_dev_loop_lock(owner_pid)

@@ -10,6 +10,8 @@
 #include <unordered_map>
 
 #include "host/abi/entity-capability.h"
+#include "host/abi/entity-domain-capability.h"
+#include "host/generated/resident-state-v1.h"
 #include "network/server.h"
 
 namespace mimita::host {
@@ -22,6 +24,20 @@ public:
     void bindNpcs(std::unordered_map<std::uint32_t, MimitaNet::ServerNpc>* npcs);
     void bindNextIds(std::uint32_t* nextPlayerId, std::uint32_t* nextNpcId);
     void clear();
+
+    HostResult readPlayerCore(EntityHandle handle,
+                              mimita::host::state::player_core::Record* out);
+    HostResult writePlayerCore(EntityHandle handle,
+                               const mimita::host::state::player_core::Record* in);
+    HostResult readPlayerSession(EntityHandle handle,
+                                 mimita::host::state::player_session::Record* out);
+    HostResult writePlayerSession(
+        EntityHandle handle,
+        const mimita::host::state::player_session::Record* in);
+    HostResult readDomain(mimita::host::DomainId domain, EntityHandle handle,
+                          void* record, std::uint32_t recordSize);
+    HostResult writeDomain(mimita::host::DomainId domain, EntityHandle handle,
+                           const void* record, std::uint32_t recordSize);
 
     const EntityAdapterV1* adapter() const { return &adapter_; }
     void* owner() { return this; }

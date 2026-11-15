@@ -106,6 +106,16 @@ agent coordination without claims JSON or lock files.
 - Reason: any agent can see what changed and reverse it.
 - Why unrelated behavior is preserved: existing sections remain.
 
+## File: `docs/handoffs/hot-reload-cutover-checklist-20261114.md`
+
+- Lines/functions/headings: new temporary checklist.
+- Old content or behavior: a concurrent draft appended a Cutover-1 checklist and
+  current blockers directly to the specification.
+- New content or behavior: preserved that checklist as a handoff scratchpad and
+  removed current blockers/ownership from the specification.
+- Reason: keep the spec static and keep current blockers/plans outside it.
+- Why unrelated behavior is preserved: no checklist content was discarded.
+
 ## File: `docs/handoffs/hot-reload-agent-focus.md`
 
 - Lines/functions/headings: new temporary focus scratchpad.
@@ -124,6 +134,88 @@ agent coordination without claims JSON or lock files.
 - New content or behavior: defines what belongs in a spec and what belongs in
   generated status, changelogs, or coordination scratchpads.
 - Reason: prevent status documents from becoming specifications again.
+
+## File: `src/main.cpp` (attempted and reverted)
+
+- Lines/functions/headings: `configureWholeGameHost`.
+- Old content or behavior: normal full client forced the resident frame unless
+  `MIMITA_GAME_HOT_CLIENT`/`MIMITA_GAME_DLL` was set.
+- New content or behavior: attempted a hot-client default, exercised it in run
+  `20261114_225952`, observed a stall after frame 1, then reverted the default.
+- Reason: prove the actual hot-client blocker instead of assuming the code move
+  was sufficient.
+- Why unrelated behavior is preserved: the resident client path is restored.
+- Evidence: `logs/2026-11-14/20261114_225952/client-01/events.jsonl` contains
+  `presentation.framebuffer_probe` with a 1x1 viewport and repeated
+  `performance.stall-watchdog` events (`last_completed_frame=1`).
+
+## File: `docs/specs/hotreload/hotreload.md`
+
+- Added the packet-ledger meaning: `client=dll|resident` counts DLL-side
+  dispatch overrides, not all normal client packet handlers. The normal client
+  handlers are game-owned in `multiplayer-tick.cpp` and
+  `multiplayer-packets.cpp`.
+- Added the 2026-11-14 17:28 provisional-status TODO.
+
+## File: `src/game/host-compat-bridge-module.cpp`
+
+- Removed duplicate `MimitaNet::nowMs`, `normalizeMapId`,
+  `mapIdsReferToSameMap`, `parseAddress`, and `addressToString` definitions.
+- Kept the crash-breadcrumb bridge, which still uses `MimitaNet::nowMs` from the
+  new `net-common-module.cpp` owner.
+- Reason: the dev-loop game-DLL link failed on duplicate net-common symbols.
+- Result: game generation 163 links and publishes; generation 164 was built after the diagnostics below.
+
+## File: `devscripts/dev-loop.py` and `devscripts/dev_loop/cli.py` hot-client flag
+
+- Added `--hot-client` to the dev-loop control surface. It sets
+  `MIMITA_GAME_HOT_CLIENT=1` only on the launched client process, so the hot
+  client can be tested without changing the normal resident default or relying
+  on daemon environment inheritance. It also works with
+  `--request start-client` so a hot client can attach to an existing server.
+- Added `game-dll` to the wait-for-build path so the request can be polled.
+- Documented the deterministic command in
+  `docs/handoffs/hot-reload-agent-focus.md`.
+
+## File: `src/main.cpp` queue polling
+
+- Added a file-size/mtime signature gate around the host-owned agent command
+  queue. The hot-client stack samples showed repeated file open/read frames in
+  `processAgentCommandQueueForDll` while the queue was empty.
+- Reason: avoid hot-path filesystem I/O every frame.
+
+## File: `src/host/host-runtime.cpp` and `.h` published-generation tracking
+
+- Added `activePublishedGeneration_` so `poll()` compares the ready manifest to
+  the last published generation, not the module's local generation field.
+- Added a same-DLL identity guard: when the ready manifest names the DLL that is
+  already active, only update the published generation and do not reload the
+  module. Reloading the same DLL shut down the active generation and left its
+  statics initialized, which caused the hot-client stall.
+- Verified with `client-hot6`: 1,700+ frames, `path=dll`, 1920x1080 viewport,
+  responsive, no stall.
+
+## File: `src/perf/perf-frame.cpp`
+
+- Changed the stall watchdog from one stack capture to a periodic capture every
+  5 seconds while the frame remains stalled.
+- Reason: identify the repeated hot-client hang path. Run `20261115_000136`
+  captured repeated `CreateFileA` / `sopen` / `basic_filebuf` stacks in the
+  queue poll and confirmed `last_completed_frame=1`.
+
+## File: `devscripts/dev-loop.py` and `devscripts/dev_loop/game_build.py`
+
+- Lines/functions/headings: `--request game-dll`, `queue_game_dll_request`,
+  `start_game_build_worker`, `drain_game_build_completions`, game-build status.
+- Old content or behavior: no dev-loop game-DLL request; `live.py` owned the
+  separate game build.
+- New content or behavior: dev-loop snapshots the source manifest, runs codegen
+  checks, invokes `game_build_worker.py` internally, publishes
+  `build/game/ready.json`, and reports game-build state. EXE and game builds are
+  serialized.
+- Reason: make the root dev-loop the intended build authority.
+- Why unrelated behavior is preserved: the existing EXE build path and
+  `live.py` remain temporarily available.
 
 ## File: `devscripts/live.py`
 
@@ -176,12 +268,18 @@ agents. See “Pre-existing changes” for what this session did not touch.
 | `src/network/server-ice.cpp` |  |  |  | git checkout -- src/network/server-ice.cpp |
 | `src/network/server-packets.cpp` |  |  |  | git checkout -- src/network/server-packets.cpp |
 | `src/network/server.cpp` |  |  |  | git checkout -- src/network/server.cpp |
+| `devscripts/dev-loop.py` |  |  |  | git checkout -- devscripts/dev-loop.py |
+| `src/game/host-compat-bridge-module.cpp` |  |  |  | git checkout -- src/game/host-compat-bridge-module.cpp |
+| `devscripts/dev_loop/cli.py` |  |  |  | git checkout -- devscripts/dev_loop/cli.py |
+| `devscripts/dev_loop/game_build.py` |  |  |  | Remove-Item -LiteralPath 'devscripts/dev_loop/game_build.py' |
 | `devscripts/live.py` |  |  |  | git checkout -- devscripts/live.py |
 | `devscripts/changelog.py` |  |  |  | Remove-Item -LiteralPath 'devscripts/changelog.py' |
 | `devscripts/hot_reload_status.py` |  |  |  | Remove-Item -LiteralPath 'devscripts/hot_reload_status.py' |
 | `docs/changelog/2026-11-14/20261114_171448-networking-single-authority-packet-schema-split.md` |  |  |  | Remove-Item -LiteralPath 'docs/changelog/2026-11-14/20261114_171448-networking-single-authority-packet-schema-split.md' |
 | `"docs/handoffs/2026 11 14 1706 .md"` |  |  |  | Remove-Item -LiteralPath '"docs/handoffs/2026 11 14 1706 .md"' |
 | `docs/handoffs/hot-reload-agent-focus.md` |  |  |  | Remove-Item -LiteralPath 'docs/handoffs/hot-reload-agent-focus.md' |
+| `docs/handoffs/hot-reload-cutover-checklist-20261114.md` |  |  |  | Remove-Item -LiteralPath 'docs/handoffs/hot-reload-cutover-checklist-20261114.md' |
+| `docs/handoffs/hot-reload-agent-focus.md` |  |  |  | git checkout -- docs/handoffs/hot-reload-agent-focus.md |
 | `docs/skills/spec-writing-v1.md` |  |  |  | Remove-Item -LiteralPath 'docs/skills/spec-writing-v1.md' |
 | `docs/specs/hotreload/` |  |  |  | Remove-Item -LiteralPath 'docs/specs/hotreload/' |
 | `src/network/schema/` |  |  |  | Remove-Item -LiteralPath 'src/network/schema/' |
@@ -229,11 +327,30 @@ agents. See “Pre-existing changes” for what this session did not touch.
   - `python devscripts/audit_triage.py --from-manifest --json build/hot-reload/audit.json`
   - `python devscripts/hot_reload_status.py`
   - `python devscripts/changelog.py ... --dry-run`
+  - `python -m py_compile devscripts/dev-loop.py devscripts/dev_loop/cli.py devscripts/dev_loop/game_build.py`
+  - `python devscripts/dev-loop.py --help`
+  - `python devscripts/dev-loop.py --status`
   - `git diff --check`
-- Build status: no source build requested by this session.
-- Runtime or hot-reload evidence: none; this is a documentation/tooling change.
+- Build status: EXE build succeeded through the dev-loop
+  (`2026-11-14T23:13:13.529312Z`). A hot-client default experiment was built,
+  run in mode 57, stalled after frame 1, and was reverted; the resident path was
+  rebuilt. The dev-loop `--request game-dll` then published generation 163 after
+  resolving duplicate net-common symbols in `host-compat-bridge-module.cpp`;
+  generation 164 then published.
+- Runtime or hot-reload evidence:
+  - `20261114_225952`: hot client loaded DLL, then stalled after frame 1.
+  - `20261115_003100/client-hot3`: hot client with `MIMITA_GAME_READY` pointed
+    at a missing file reached 1,500+ frames with `path=dll` and a 1920x1080
+    viewport. This proves the hot frame works without a pending swap.
+  - `20261115_005633/client-hot2`: the same hot client activated generation
+    167 during startup and stalled, identifying the live-swap path as the
+    remaining blocker.
+  - `20261115_005633/client-hot6`: after the same-DLL guard, the hot client
+    stayed responsive, rendered from the DLL at 1920x1080, and passed 1,700
+    frames. Connection/room proof is still pending.
 - Output files: `build/hot-reload/status.json`,
-  `build/hot-reload/audit.json`.
+  `build/hot-reload/audit.json`. The status JSON now carries a
+  `validation.validated=false` marker and the 2026-11-14 17:28 TODO note.
 
 # Measured evidence
 
@@ -255,8 +372,8 @@ agents. See “Pre-existing changes” for what this session did not touch.
 - Visual review: not applicable.
 - Gameplay review: not applicable.
 - Multiplayer review: not applicable.
-- Still unverified: dev-loop game-DLL request, live networking coverage, gameplay
-  live-fix acceptance.
+- Still unverified: true different-DLL live swap, hot-client connection/join to
+  the intended server, live networking coverage, gameplay live-fix acceptance.
 
 # Agent handoff context
 
@@ -267,8 +384,11 @@ agents. See “Pre-existing changes” for what this session did not touch.
   `devscripts/hot_reload_status.py`, `devscripts/audit_triage.py`.
 - What another agent should not redo: do not create another hot-reload spec,
   status Markdown, claims JSON, audit script, or build coordinator.
-- Next exact step: implement the dev-loop game-DLL request, then start B/C
-  networking work from the focus doc.
+- Next exact step: restart/reuse the dev-loop, run
+  `--request launch --launch-mode 57 --hot-client`, and verify frame count,
+  `game.render.path path=dll`, and no stall. Then request a game-DLL build and
+  prove same-PID activation. `12/78` is a DLL-dispatch-override count, not a
+  client-handler migration count.
 
 # Automatic evidence
 
@@ -412,3 +532,148 @@ M	src/network/server.cpp
   }
 }
 ```
+
+# Follow-up: hot-client default, join, and live swap
+
+- Date, time, timezone: 2026-11-15T03:00:00+00:00
+- Owner: agent-a
+- Status: live join and default proven; swap proven with a diagnostic follow-up
+
+## Requested behavior
+
+Make the normal hot client reach `Connected`, make hot frame ownership the
+default, prove a different-DLL live swap, and continue toward the EXE cutover.
+
+## Exact implementation changes
+
+- `src/main.cpp`: removed the `MIMITA_GAME_HOT_CLIENT` opt-in gate. A normal
+  client now sets `MIMITA_GAME_DLL`, `MIMITA_GAME_PROBE`, and
+  `MIMITA_GAME_OWN_FRAME=1` whenever a built generation exists.
+  `MIMITA_GAME_DISABLE=1` remains the resident escape hatch.
+- `src/engine/whole-game-entry.cpp`: `shutdownWholeGameEntry()` now calls
+  `perfStopResourceWatchdog()` before the generation is unloaded, so the old
+  module cannot leave a watchdog thread reading unloaded state.
+- `devscripts/dev-loop.py`: added the `--hot-client` client environment path and
+  made `start-client` prefer the run's own published artifact, preventing a
+  latest-build client from being rejected by an older server.
+- `docs/handoffs/hot-reload-agent-focus.md`: recorded the join, default, and
+  swap evidence and the remaining cutover work.
+
+## Runtime evidence
+
+- Normal client, no hot-client flag:
+  `logs/2026-11-15/20261115_020351/client-01/events.jsonl`
+  - `hot_client=false`
+  - `network.connection-state.changed` to `Connected`, local player 1
+  - `game.render.path path=dll`
+  - more than 7,300 rendered frames
+- Correct-build hot client against the current server:
+  `logs/2026-11-15/20261115_005633/client-hot8/events.jsonl`
+  - `Connected`, local player 9
+  - `game.render.path path=dll`
+  - more than 3,500 rendered frames
+- Different-DLL swap:
+  same `client-01` journal, sequence 132388
+  - `game.generation.activated generation=168`
+  - `dll=build\game\generation-168\game-g168.dll`
+  - connection remained active and rendering continued.
+- Build evidence:
+  - EXE `2026-11-15T02:02:51.752618Z` includes the hot-client default change.
+  - Game generation 168 was published at `2026-11-15T02:11:41.584665Z`.
+  - Game generation 169 was published at `2026-11-15T02:49:12.720Z` and
+    includes the watchdog-stop change.
+
+## Remaining work
+
+- Verify the watchdog-stop change on a clean client loaded from generation 169,
+  then swap to a later generation.
+- Refuse silent legacy fallback when a built generation is rejected; the new
+  probe currently logs `game.host.probe.failed` and continues resident.
+- Remove the resident normal-client/server fallback.
+- Add the automatic hot-client acceptance gate.
+- Perform the EXE cutover/link gate.
+- Complete server pump/session split, state-domain wiring, safe unload, and
+  CAP_RENDER cleanup.
+
+## How to reverse
+
+- Revert the `configureWholeGameHost` default in `src/main.cpp`.
+- Remove the `perfStopResourceWatchdog()` call from
+  `src/engine/whole-game-entry.cpp`.
+- Revert the `start-client` artifact preference and `--hot-client` environment
+  handling in `devscripts/dev-loop.py`.
+
+# Follow-up: loud rejection, acceptance gate, cutover report
+
+## Requested behavior
+
+Reject incompatible hot generations instead of silently rendering the legacy
+path, add an automatic hot-client acceptance gate, and add an EXE cutover/link
+gate.
+
+## Exact implementation changes
+
+- `src/main.cpp`: sets `MIMITA_GAME_REQUIRE_HOT=1` when a built generation is
+  selected. If the generation cannot load, the client writes
+  `game.client.hot-required` and exits with status 1 instead of continuing.
+- `devscripts/hot_client_gate.py`: validates a client journal for loaded
+  generation, `path=dll`, `Connected`, frame progression, optional live
+  activation, and no watchdog stalls after the post-activation bootstrap.
+- `devscripts/dev-loop.py`: runs the hot-client gate after mode start, polls
+  until enough frames exist, writes `hot-client-gate.json`, and fails launch
+  readiness when the gate fails. It also records the EXE cutover report after
+  successful builds.
+- `devscripts/exe_cutover_gate.py`: compares `build/source-manifest.json`
+  game-owned sources with the actual EXE source list; writes
+  `build/hot-reload/exe-cutover.json`.
+- `devscripts/hot_reload_status.py`: reports hot-frame default/runtime proof and
+  state-domain wiring from generated/source facts.
+
+## Evidence
+
+- Loud rejection: `logs/2026-11-15/20261115_034509/client-failhot/events.jsonl`
+  - `game.host.inactive`
+  - `game.client.hot-required`
+  - process exit code 1.
+- Gate pass: `python devscripts/hot_client_gate.py
+  logs/2026-11-15/20261115_034509/client-hotlive/events.jsonl`
+  - generation 173, `path=dll`, `Connected`, 3,900+ frames, no
+    post-bootstrap stalls.
+- Gate fail: generation-168 journal fails `no_post_bootstrap_stalls`, proving
+  the gate rejects the old watchdog defect.
+- EXE cutover report: 568 game-owned sources remain linked into the 610-source
+  EXE. The cutover is not complete; the gate correctly fails.
+
+## Remaining work
+
+- Finish the EXE source cutover; the resident client fallback and 568 linked
+  game sources still exist.
+- Verify the dev-loop hot gate on a fresh launch after the active build.
+- Remove the server resident `MIMITA_GAME_DISABLE` fallback blocks.
+
+# Follow-up: acceptance gate, repeated swaps, cutover blockers
+
+## Verified
+
+- Automatic hot gate now runs in the live dev loop. Run
+  `20261115_132451` logged `hot_client_gate result=ready` and launch
+  `complete result=succeeded`.
+- Repeated safe swaps: the same client loaded generations 175, 176, and 177
+  while staying connected and rendering. `hot_client_gate.py --require-swap
+  --min-activations 3` passes at 10,000+ frames with no post-bootstrap stalls.
+  Evidence: `logs/2026-11-15/20261115_132451/client-01/events.jsonl`.
+- State domains: `state_domains_wired=true` from the generated ledger and host
+  adapter coverage.
+- Server fallback: `server_fallback_removed=true`; server startup refuses
+  without the hot server generation and there is no `if (!hotPlayers)` /
+  `if (!hotWorld)` resident simulation branch.
+- CAP_RENDER blocker: `devscripts/cap_render_gate.py` reports 42 game-owned
+  sources that still include raw GLAD/GL.
+
+## Still blocked
+
+- EXE cutover: `exe_cutover_gate.py` still reports 568 game-owned sources linked
+  into the 610-source EXE. The actual source cutover is not complete.
+- CAP_RENDER cleanup: 42 raw-GL game sources remain; the new gate reports them.
+- Full safe-unload leak proof: three swaps pass, but long-run memory/handle
+  leak measurement is not yet recorded.

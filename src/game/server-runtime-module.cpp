@@ -7,6 +7,8 @@
 
 #include "game/server-runtime.h"
 
+#include "game/entity-domain-bridge-module.h"
+
 #include <chrono>
 #include <memory>
 #include <unordered_map>
@@ -22,6 +24,7 @@
 #include "network/server.h"
 #include "debug/structured-log.h"
 #include "npc/npc.h"
+#include "procedural/procedural-world.h"
 
 namespace mimita::game {
 namespace {
@@ -125,6 +128,94 @@ int serverRuntimeProcessPacket(void* rawFrame, const void* rawEvent,
     return out->handled ? 1 : 0;
 }
 
+namespace {
+
+void validatePlayerDomains(Players& players, Npcs& npcs, std::uint32_t tick) {
+    if ((tick % 300) != 0) {
+        return;
+    }
+    std::size_t checked = 0;
+    std::size_t mismatches = 0;
+    for (const auto& entry : players) {
+        const MimitaNet::ServerPlayer& player = entry.second;
+        const auto handle = mimita::host::makeEntityHandle(
+            mimita::host::EntityKind::Player, player.id);
+        mimita::host::state::player_core::Record core{};
+        mimita::host::state::player_session::Record session{};
+        mimita::host::state::player_chat::Record chat{};
+        mimita::host::state::player_vip::Record vip{};
+        mimita::host::state::player_combat::Record combat{};
+        mimita::host::state::player_movement::Record movement{};
+        if (!mimita::game::readDomain(mimita::host::DomainId::PlayerCore, handle, &core) ||
+            !mimita::game::readDomain(mimita::host::DomainId::PlayerSession, handle, &session) ||
+            !mimita::game::readDomain(mimita::host::DomainId::PlayerChat, handle, &chat) ||
+            !mimita::game::readDomain(mimita::host::DomainId::PlayerVip, handle, &vip) ||
+            !mimita::game::readDomain(mimita::host::DomainId::PlayerCombat, handle, &combat) ||
+            !mimita::game::readDomain(mimita::host::DomainId::PlayerMovement, handle, &movement)) {
+            ++mismatches;
+            continue;
+        }
+        ++checked;
+        const bool coreOk =
+            core.id == player.id &&
+            core.health == player.health &&
+            core.max_health == player.maxHealth &&
+            core.position[0] == player.pos.x &&
+            core.position[1] == player.pos.y &&
+            core.position[2] == player.pos.z;
+        const bool sessionOk =
+            session.spawn_generation == player.spawnGeneration &&
+            session.last_heard_ms == player.lastHeardMs;
+        const bool chatOk =
+            chat.chat_rate_tokens == player.chatRateTokens &&
+            chat.last_request_id == player.lastChatRequestId;
+        const bool vipOk =
+            vip.account_id == player.accountId &&
+            vip.vip_account_id == player.vipAccountId;
+        const bool combatOk =
+            combat.equipped_slot == player.equippedSlot &&
+            combat.last_shot_serial == player.lastShotSerial;
+        const bool movementOk =
+            movement.on_ground == player.onGround &&
+            movement.dash_available == player.dashAvailable;
+        if (!coreOk || !sessionOk || !chatOk || !vipOk || !combatOk ||
+            !movementOk) {
+            ++mismatches;
+        }
+    }
+    for (const auto& entry : npcs) {
+        const MimitaNet::ServerNpc& npc = entry.second;
+        const auto handle = mimita::host::makeEntityHandle(
+            mimita::host::EntityKind::Npc, npc.entityId);
+        mimita::host::state::npc_core::Record core{};
+        mimita::host::state::npc_combat::Record combat{};
+        if (!mimita::game::readDomain(mimita::host::DomainId::NpcCore, handle, &core) ||
+            !mimita::game::readDomain(mimita::host::DomainId::NpcCombat, handle, &combat)) {
+            ++mismatches;
+            continue;
+        }
+        ++checked;
+        const bool coreOk =
+            core.id == npc.entityId &&
+            core.health == npc.health &&
+            core.transform_epoch == npc.transformEpoch;
+        const bool combatOk =
+            combat.attack_timer == npc.lastAttackTime &&
+            combat.ai_state == static_cast<std::uint8_t>(npc.aiState);
+        if (!coreOk || !combatOk) {
+            ++mismatches;
+        }
+    }
+    ::StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "game.state.domain-parity", "server",
+        "all resident state domains parity check", tick,
+        {{"players", checked}, {"mismatches", mismatches}},
+        __FILE__, __LINE__, __func__);
+}
+
+}  // namespace
+
 int serverRuntimeSimulatePlayers(void* rawFrame) {
     if (!rawFrame) {
         return 0;
@@ -154,6 +245,7 @@ int serverRuntimeSimulatePlayers(void* rawFrame) {
     }
     MimitaNet::tickWeaponRuntimes(players, frame.tick);
     MimitaNet::checkVoidDeath(players, npcs);
+    validatePlayerDomains(players, npcs, frame.tick);
     frame.simulate_players_us = microsecondsSince(start);
     return 1;
 }
@@ -238,6 +330,35 @@ int serverRuntimeSimulateWorld(void* rawFrame) {
     MimitaNet::flushServerWorldImpacts(
         worldOf(frame), npcWorld, MimitaNet::serverGamemodeState().mapId,
         frame.tick);
+    if (frame.procedural_mode && *frame.procedural_mode &&
+        frame.procedural_start_queued && !*frame.procedural_start_queued &&
+        !MimitaNet::serverGamemodeState().procedural.enabled &&
+        !players.empty()) {
+        if (MimitaProcedural::proceduralWorldConfig().modes.empty()) {
+            MimitaProcedural::loadProceduralWorldConfig();
+        }
+        const auto* mode = MimitaProcedural::proceduralModeById(
+            frame.procedural_mode);
+        auto& gamemode = MimitaNet::serverGamemodeState();
+        if (mode) {
+            const auto firstPlayer = players.begin();
+            gamemode.pendingProcedural.start = true;
+            gamemode.pendingProcedural.modeId = frame.procedural_mode;
+            gamemode.pendingProcedural.seed =
+                frame.procedural_seed != 0
+                    ? frame.procedural_seed
+                    : MimitaProcedural::proceduralWorldConfig().defaultSeed;
+            gamemode.pendingProcedural.requesterId = firstPlayer->first;
+            std::printf("[PROCEDURAL AUTO START] mode=%s seed=%u requesterId=%u\n",
+                        frame.procedural_mode,
+                        gamemode.pendingProcedural.seed,
+                        firstPlayer->first);
+        } else {
+            std::printf("[PROCEDURAL AUTO START] rejected unknown mode=%s\n",
+                        frame.procedural_mode);
+        }
+        *frame.procedural_start_queued = 1;
+    }
     frame.simulate_world_us = microsecondsSince(start);
     return 1;
 }
@@ -272,6 +393,15 @@ int serverRuntimePublish(void* rawFrame) {
             frame.disagreementRetransmit),
         packetsOut);
     MimitaNet::tickReliableGameplayEvents(sock, players, packetsOut);
+    if (frame.set_spawn_override) {
+        const auto& overrides = MimitaNet::serverGameOverrides();
+        frame.set_spawn_override(
+            frame.spawn_override_context,
+            overrides.spawnOverrideEnabled ? 1 : 0,
+            overrides.spawnOverridePosition.x,
+            overrides.spawnOverridePosition.y,
+            overrides.spawnOverridePosition.z);
+    }
     frame.publish_us = microsecondsSince(start);
     return 1;
 }

@@ -211,9 +211,26 @@ void texImage2D(TextureTarget target, std::int32_t level, TextureFormat format,
                               border, pixelFormat, pixelType, data, 0);
 }
 
+namespace {
+std::int32_t textureValueToken(TextureValue value) {
+    // GL enum tokens are the stable host boundary here. Do not forward the
+    // semantic enum number: 2 means Linear semantically, but GL needs 0x2601.
+    switch (value) {
+        case TextureValue::Nearest: return 0x2600;
+        case TextureValue::Linear: return 0x2601;
+        case TextureValue::LinearMipmapLinear: return 0x2703;
+        case TextureValue::ClampToEdge: return 0x812F;
+        case TextureValue::ClampToBorder: return 0x812D;
+        case TextureValue::Repeat: return 0x2901;
+        case TextureValue::MirroredRepeat: return 0x8370;
+    }
+    return 0x2601;
+}
+}  // namespace
+
 void texParameteri(TextureTarget target, TextureParameter parameter,
                    TextureValue value) {
-    texParameteri(target, parameter, static_cast<std::int32_t>(value));
+    texParameteri(target, parameter, textureValueToken(value));
 }
 
 void texParameteri(TextureTarget target, TextureParameter parameter,

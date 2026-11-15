@@ -19,7 +19,7 @@
 
 namespace mimita::host {
 
-inline constexpr std::uint32_t kGameHostAbiVersion = 1u;
+inline constexpr std::uint32_t kGameHostAbiVersion = 2u;
 inline constexpr std::uint32_t kHostServicesVersion = 2u;
 inline constexpr std::uint32_t kGameModuleVersion = 1u;
 
@@ -50,6 +50,7 @@ enum class HostCapabilityId : std::uint32_t {
     SessionIdentity = 23,
     SessionEvents = 24,
     State = 25,
+    EntityDomain = 26,
 };
 
 // Stable entity identity. The low bits are generation-specific; the host owns
@@ -103,7 +104,7 @@ struct EntitySnapshotV1 {
 
     // Session identity/continuity fields. Fixed-width buffers; never a
     // std::string or game-owned pointer.
-    char avatarName[24];
+    char avatarName[32];
     char joinToken[64];
     char reconnectToken[64];
     char previousReconnectToken[64];

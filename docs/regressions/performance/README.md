@@ -88,3 +88,10 @@ Entries: 11
 - Summary: The previous four-job/below-normal policy was replaced with all logical processors at high priority. A later 11m40s cold lane build exposed zero ccache hits and a stale last-file status display; module workers were also missing shared-cache setup. Wide-header fan-out and cold dependency invalidation can still require many compile units.
 - Detail: [build-time-REG-2026-11-08.md](build-time-REG-2026-11-08.md)
 - Gold reference: [Build speed, one dev-loop, and liveable iteration](../../gold/2026-11-09-build-speed-and-diagnosis-reference.md)
+## Entry 12 — Client frame budget remains unmet
+
+- Recorded: 2026-11-15T02:21:00Z
+- Status: OPEN — measured client frame windows are over the 4 ms / 240 FPS target; fix not accepted
+- Summary: Current resident and hot clients complete only about 10–50 ms average frames. 100% of sampled frames exceed 4 ms. The largest measured scopes are simulation lifecycle, actor-pair collision, hot-reload/module polling, weapon containment, shadows, UI, and swap. Cosmetic rendering is not the measured CPU bottleneck.
+- Detail: [fps-frame-budget-REG-2026-11-15.md](fps-frame-budget-REG-2026-11-15.md)
+

@@ -15,6 +15,8 @@ def create_parser() -> argparse.ArgumentParser:
                             const="headless", help="hide the game window while keeping the process and journal running")
     visibility.add_argument("--visible", dest="launch_visibility", action="store_const",
                             const="visible", help="show the game window without leaving it focused")
+    parser.add_argument("--hot-client", action="store_true",
+                        help="launch the full client with MIMITA_GAME_HOT_CLIENT=1")
     parser.add_argument("--status", action="store_true", help="read the current dev-loop status and exit")
     parser.add_argument("--list-instances", action="store_true",
                         help="print the current run's server/client instances and exit")

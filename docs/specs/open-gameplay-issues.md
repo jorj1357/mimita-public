@@ -40,6 +40,42 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ## other issues 
 
+## hot reload after 2026 11 14 2004
+
+also i want to amke it so teh dev dashboard  launch stable latest mimita.exe will launch the latest one so i can test like ensure that the button worksb c i clicekd start client and it staretd mimita.exe but it was  not responding for a ltitle then 
+its like  not respodning off and on adn then it works, connection timed out error wd
+
+and black screen i think is better , just black objects are persisten in the vision in front of me 
+also performance issue i want to log in perofrmance issue doc
+fps still big issue 
+i think its  putting the avatars of actors 
+liketheir cosmetics are bing put in black in front of the scereen
+it happens on alll  fullscreen settings but not if i have a weapon equipped
+
+ 'assets/skybox/space/back.png' exists=1
+[SKYBOX]   LOADED 256x256
+[SKYBOX] Cubemap loaded OK (tex=32)
+[SKYBOX] init: complete (tex=32 shader=15 vao=18 enabled=1)
+[GL TRACE] cleared stale error before Player::render capsule err=0x500 (GL_INVALID_ENUM)
+[TEXTURE] Loading texture assets/textures/greenwirev1.png
+[TEXTURE] Uploading to GPU tex=33 size=64x64 channels=4
+[TEXTURE] Upload complete assets/textures/greenwirev1.png tex=33
+[GUI LAYOUT] Loaded 47 elements from config/gui/hud.json
+[GUI LAYOUT] Loaded 15 elements from config/gui/music-widget.json
+[FONT] Missing glyph codepoint=226
+[FONT] Missing glyph codepoint=153
+[FONT] Missing glyph codepoint=170
+[GUI LAYOUT] Loaded 5 elements from config/gui/notifications.json
+
+server stops runnign here and i cant connect, need to make it so we fix this live we can test networking ifxes live by figuring out what is wrong netowrking that makes it so i cant join 
+
+er::beginFrame err=0x502 (GL_INVALID_OPERATION)
+[GL TRACE] cleared stale error before Renderer::beginFrame err=0x502 (GL_INVALID_OPERATION)
+[GL TRACE] cleared stale error before Renderer::beginFrame err=0x502 (GL_INVALID_OPERATION)
+[GL TRACE] cleared stale error before Renderer
+this spans over and over 2026 11 14 2006 
+
+
 ### techniacl debt
 
 2026 11 14 0921 jorj

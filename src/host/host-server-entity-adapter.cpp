@@ -769,4 +769,328 @@ std::uint32_t HostServerEntityAdapter::listThunk(void* owner, std::int32_t kind,
     return 0;
 }
 
+HostResult HostServerEntityAdapter::readPlayerCore(
+    EntityHandle handle, mimita::host::state::player_core::Record* out) {
+    if (!out || !players_ || entityKind(handle) != EntityKind::Player)
+        return HostResult::InvalidArgument;
+    auto it = players_->find(entityId(handle));
+    if (it == players_->end())
+        return HostResult::NotFound;
+    const MimitaNet::ServerPlayer& player = it->second;
+    using namespace mimita::host::state::player_core;
+    *out = Record{};
+    out->handle = handle;
+    out->fieldMask = kFieldAll;
+    out->id = player.id;
+    out->kind = static_cast<std::uint8_t>(EntityKind::Player);
+    out->team = player.matchTeam;
+    out->position[0] = player.pos.x;
+    out->position[1] = player.pos.y;
+    out->position[2] = player.pos.z;
+    out->velocity[0] = player.vel.x;
+    out->velocity[1] = player.vel.y;
+    out->velocity[2] = player.vel.z;
+    out->health = player.health;
+    out->max_health = player.maxHealth;
+    std::uint32_t flags = 0;
+    if (player.isHost) flags |= static_cast<std::uint32_t>(PlayerFlag::Host);
+    if (player.adminCommandsEnabled) flags |= static_cast<std::uint32_t>(PlayerFlag::AdminEnabled);
+    if (player.adminCommandsGranted) flags |= static_cast<std::uint32_t>(PlayerFlag::AdminGranted);
+    if (player.connectionStale) flags |= static_cast<std::uint32_t>(PlayerFlag::Stale);
+    if (player.dead) flags |= static_cast<std::uint32_t>(PlayerFlag::Dead);
+    if (player.downed) flags |= static_cast<std::uint32_t>(PlayerFlag::Downed);
+    out->flags = flags;
+    copyName(out->name, sizeof(out->name), player.name);
+    return HostResult::Ok;
+}
+
+HostResult HostServerEntityAdapter::writePlayerCore(
+    EntityHandle handle, const mimita::host::state::player_core::Record* in) {
+    if (!in || !players_ || entityKind(handle) != EntityKind::Player)
+        return HostResult::InvalidArgument;
+    if (in->structSize < sizeof(*in) || in->version !=
+            mimita::host::state::player_core::kVersion)
+        return HostResult::Unsupported;
+    auto it = players_->find(entityId(handle));
+    if (it == players_->end())
+        return HostResult::NotFound;
+    MimitaNet::ServerPlayer& player = it->second;
+    using namespace mimita::host::state::player_core;
+    const std::uint64_t mask = in->fieldMask ? in->fieldMask : kFieldAll;
+    if (mask & kFieldTeam) player.matchTeam = in->team;
+    if (mask & kFieldPosition) {
+        player.pos = {in->position[0], in->position[1], in->position[2]};
+    }
+    if (mask & kFieldVelocity) {
+        player.vel = {in->velocity[0], in->velocity[1], in->velocity[2]};
+    }
+    if (mask & kFieldHealth) player.health = in->health;
+    if (mask & kFieldMaxHealth) player.maxHealth = in->max_health;
+    if (mask & kFieldName) copyName(player.name.data(), player.name.size() + 1, in->name);
+    return HostResult::Ok;
+}
+
+HostResult HostServerEntityAdapter::readPlayerSession(
+    EntityHandle handle, mimita::host::state::player_session::Record* out) {
+    if (!out || !players_ || entityKind(handle) != EntityKind::Player)
+        return HostResult::InvalidArgument;
+    auto it = players_->find(entityId(handle));
+    if (it == players_->end())
+        return HostResult::NotFound;
+    const MimitaNet::ServerPlayer& player = it->second;
+    using namespace mimita::host::state::player_session;
+    *out = Record{};
+    out->handle = handle;
+    out->fieldMask = kFieldAll;
+    copyName(out->join_token, sizeof(out->join_token), player.joinToken);
+    copyName(out->reconnect_token, sizeof(out->reconnect_token), player.reconnectToken);
+    out->join_token_validated = player.joinTokenValidated;
+    out->spawn_generation = player.spawnGeneration;
+    out->spawned = player.spawned;
+    out->last_heard_ms = player.lastHeardMs;
+    out->connection_stale = player.connectionStale;
+    return HostResult::Ok;
+}
+
+HostResult HostServerEntityAdapter::writePlayerSession(
+    EntityHandle handle, const mimita::host::state::player_session::Record* in) {
+    if (!in || !players_ || entityKind(handle) != EntityKind::Player)
+        return HostResult::InvalidArgument;
+    if (in->structSize < sizeof(*in) || in->version !=
+            mimita::host::state::player_session::kVersion)
+        return HostResult::Unsupported;
+    auto it = players_->find(entityId(handle));
+    if (it == players_->end())
+        return HostResult::NotFound;
+    MimitaNet::ServerPlayer& player = it->second;
+    using namespace mimita::host::state::player_session;
+    const std::uint64_t mask = in->fieldMask ? in->fieldMask : kFieldAll;
+    if (mask & kFieldJoinToken) copyName(player.joinToken.data(), player.joinToken.size() + 1, in->join_token);
+    if (mask & kFieldReconnectToken) copyName(player.reconnectToken.data(), player.reconnectToken.size() + 1, in->reconnect_token);
+    if (mask & kFieldJoinTokenValidated) player.joinTokenValidated = in->join_token_validated;
+    if (mask & kFieldSpawnGeneration) player.spawnGeneration = in->spawn_generation;
+    if (mask & kFieldSpawned) player.spawned = in->spawned;
+    if (mask & kFieldLastHeardMs) player.lastHeardMs = in->last_heard_ms;
+    if (mask & kFieldConnectionStale) player.connectionStale = in->connection_stale;
+    return HostResult::Ok;
+}
+
+HostResult HostServerEntityAdapter::readDomain(
+    mimita::host::DomainId domain, EntityHandle handle, void* record,
+    std::uint32_t recordSize) {
+    if (!record) return HostResult::InvalidArgument;
+    switch (domain) {
+        case mimita::host::DomainId::PlayerCore:
+            return recordSize >= sizeof(mimita::host::state::player_core::Record)
+                ? readPlayerCore(handle, static_cast<mimita::host::state::player_core::Record*>(record))
+                : HostResult::InvalidArgument;
+        case mimita::host::DomainId::PlayerSession:
+            return recordSize >= sizeof(mimita::host::state::player_session::Record)
+                ? readPlayerSession(handle, static_cast<mimita::host::state::player_session::Record*>(record))
+                : HostResult::InvalidArgument;
+        default:
+            break;
+    }
+    if (entityKind(handle) == EntityKind::Player) {
+        if (!players_) return HostResult::InvalidArgument;
+        auto it = players_->find(entityId(handle));
+        if (it == players_->end()) return HostResult::NotFound;
+        const MimitaNet::ServerPlayer& player = it->second;
+        switch (domain) {
+            case mimita::host::DomainId::PlayerChat: {
+                if (recordSize < sizeof(mimita::host::state::player_chat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_chat;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->chat_rate_tokens = player.chatRateTokens;
+                out->chat_rate_last_update_tick = player.chatRateLastUpdateTick;
+                out->last_request_id = player.lastChatRequestId;
+                out->cached_event_valid = player.hasCachedChatEvent;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerVip: {
+                if (recordSize < sizeof(mimita::host::state::player_vip::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_vip;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->account_id = player.accountId;
+                out->vip_account_id = player.vipAccountId;
+                copyName(out->account_role, sizeof(out->account_role), player.accountRole);
+                out->vip_style_epoch = player.vipStyleEpoch;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerCombat: {
+                if (recordSize < sizeof(mimita::host::state::player_combat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_combat;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->equipped_slot = player.equippedSlot;
+                out->weapon_state = player.weaponState;
+                out->last_shot_serial = player.lastShotSerial;
+                out->last_projectile_fire_serial = player.lastProjectileFireSerial;
+                out->projectile_fire_cooldown = player.projectileFireCooldown;
+                out->godball_state = player.godballActive ? 1 : 0;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerMovement: {
+                if (recordSize < sizeof(mimita::host::state::player_movement::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_movement;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->input_sequence = player.input.tick;
+                out->simulation_tick = player.input.tick;
+                out->on_ground = player.onGround;
+                out->dash_available = player.dashAvailable;
+                return HostResult::Ok;
+            }
+            default: break;
+        }
+    }
+    if (entityKind(handle) == EntityKind::Npc) {
+        if (!npcs_) return HostResult::InvalidArgument;
+        auto it = npcs_->find(entityId(handle));
+        if (it == npcs_->end()) return HostResult::NotFound;
+        const MimitaNet::ServerNpc& npc = it->second;
+        switch (domain) {
+            case mimita::host::DomainId::NpcCore: {
+                if (recordSize < sizeof(mimita::host::state::npc_core::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::npc_core;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->id = npc.entityId;
+                out->transform_epoch = npc.transformEpoch;
+                out->difficulty = npc.difficulty;
+                out->position[0] = npc.pos.x; out->position[1] = npc.pos.y; out->position[2] = npc.pos.z;
+                out->velocity[0] = npc.vel.x; out->velocity[1] = npc.vel.y; out->velocity[2] = npc.vel.z;
+                out->health = npc.health;
+                out->team = npc.matchTeam;
+                out->yaw = npc.yaw;
+                out->on_ground = npc.onGround;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::NpcCombat: {
+                if (recordSize < sizeof(mimita::host::state::npc_combat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::npc_combat;
+                auto* out = static_cast<Record*>(record);
+                *out = Record{}; out->handle = handle; out->fieldMask = kFieldAll;
+                out->target_id = 0;
+                out->attack_timer = npc.lastAttackTime;
+                out->behavior_revision = 0;
+                out->ai_state = static_cast<std::uint8_t>(npc.aiState);
+                return HostResult::Ok;
+            }
+            default: break;
+        }
+    }
+    return HostResult::Unsupported;
+}
+
+HostResult HostServerEntityAdapter::writeDomain(
+    mimita::host::DomainId domain, EntityHandle handle, const void* record,
+    std::uint32_t recordSize) {
+    if (!record) return HostResult::InvalidArgument;
+    switch (domain) {
+        case mimita::host::DomainId::PlayerCore:
+            return recordSize >= sizeof(mimita::host::state::player_core::Record)
+                ? writePlayerCore(handle, static_cast<const mimita::host::state::player_core::Record*>(record))
+                : HostResult::InvalidArgument;
+        case mimita::host::DomainId::PlayerSession:
+            return recordSize >= sizeof(mimita::host::state::player_session::Record)
+                ? writePlayerSession(handle, static_cast<const mimita::host::state::player_session::Record*>(record))
+                : HostResult::InvalidArgument;
+        default:
+            break;
+    }
+    if (entityKind(handle) == EntityKind::Player && players_) {
+        auto it = players_->find(entityId(handle));
+        if (it == players_->end()) return HostResult::NotFound;
+        MimitaNet::ServerPlayer& player = it->second;
+        switch (domain) {
+            case mimita::host::DomainId::PlayerChat: {
+                if (recordSize < sizeof(mimita::host::state::player_chat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_chat;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldChatRateTokens) player.chatRateTokens = in.chat_rate_tokens;
+                if (mask & kFieldChatRateLastUpdateTick) player.chatRateLastUpdateTick = in.chat_rate_last_update_tick;
+                if (mask & kFieldLastRequestId) player.lastChatRequestId = in.last_request_id;
+                if (mask & kFieldCachedEventValid) player.hasCachedChatEvent = in.cached_event_valid;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerVip: {
+                if (recordSize < sizeof(mimita::host::state::player_vip::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_vip;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldAccountId) player.accountId = in.account_id;
+                if (mask & kFieldVipAccountId) player.vipAccountId = in.vip_account_id;
+                if (mask & kFieldAccountRole) {
+                    player.accountRole.assign(
+                        in.account_role,
+                        strnlen(in.account_role, sizeof(in.account_role)));
+                }
+                if (mask & kFieldVipStyleEpoch) player.vipStyleEpoch = in.vip_style_epoch;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerCombat: {
+                if (recordSize < sizeof(mimita::host::state::player_combat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_combat;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldEquippedSlot) player.equippedSlot = in.equipped_slot;
+                if (mask & kFieldWeaponState) player.weaponState = in.weapon_state;
+                if (mask & kFieldLastShotSerial) player.lastShotSerial = in.last_shot_serial;
+                if (mask & kFieldLastProjectileFireSerial) player.lastProjectileFireSerial = in.last_projectile_fire_serial;
+                if (mask & kFieldProjectileFireCooldown) player.projectileFireCooldown = in.projectile_fire_cooldown;
+                if (mask & kFieldGodballState) player.godballActive = in.godball_state != 0;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::PlayerMovement: {
+                if (recordSize < sizeof(mimita::host::state::player_movement::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::player_movement;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldInputSequence) player.input.tick = in.input_sequence;
+                if (mask & kFieldOnGround) player.onGround = in.on_ground;
+                if (mask & kFieldDashAvailable) player.dashAvailable = in.dash_available;
+                return HostResult::Ok;
+            }
+            default: break;
+        }
+    }
+    if (entityKind(handle) == EntityKind::Npc && npcs_) {
+        auto it = npcs_->find(entityId(handle));
+        if (it == npcs_->end()) return HostResult::NotFound;
+        MimitaNet::ServerNpc& npc = it->second;
+        switch (domain) {
+            case mimita::host::DomainId::NpcCore: {
+                if (recordSize < sizeof(mimita::host::state::npc_core::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::npc_core;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldTransformEpoch) npc.transformEpoch = in.transform_epoch;
+                if (mask & kFieldDifficulty) npc.difficulty = in.difficulty;
+                if (mask & kFieldPosition) npc.pos = {in.position[0], in.position[1], in.position[2]};
+                if (mask & kFieldVelocity) npc.vel = {in.velocity[0], in.velocity[1], in.velocity[2]};
+                if (mask & kFieldHealth) npc.health = in.health;
+                if (mask & kFieldTeam) npc.matchTeam = in.team;
+                if (mask & kFieldYaw) npc.yaw = in.yaw;
+                if (mask & kFieldOnGround) npc.onGround = in.on_ground;
+                return HostResult::Ok;
+            }
+            case mimita::host::DomainId::NpcCombat: {
+                if (recordSize < sizeof(mimita::host::state::npc_combat::Record)) return HostResult::InvalidArgument;
+                using namespace mimita::host::state::npc_combat;
+                const auto& in = *static_cast<const Record*>(record);
+                const auto mask = in.fieldMask ? in.fieldMask : kFieldAll;
+                if (mask & kFieldAttackTimer) npc.lastAttackTime = in.attack_timer;
+                if (mask & kFieldAiState) npc.aiState = static_cast<MimitaNet::ServerNpcState>(in.ai_state);
+                return HostResult::Ok;
+            }
+            default: break;
+        }
+    }
+    return HostResult::Unsupported;
+}
+
 }  // namespace mimita::host

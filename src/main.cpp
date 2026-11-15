@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <deque>
+#include <mutex>
 #include <limits>
 #include <memory>
 #include <string>
@@ -297,24 +299,81 @@ void processAgentCommandQueue(const std::string& queuePath,
     deferredLines = std::move(remaining);
 }
 
+struct AgentCommandFileQueue
+{
+    std::mutex mutex;
+    std::deque<std::string> lines;
+    std::string path;
+    bool watcherStarted = false;
+};
+
+AgentCommandFileQueue& agentCommandFileQueue()
+{
+    // Deliberately process-lifetime: the watcher is detached and the resident
+    // host owns this queue for the whole process.
+    static AgentCommandFileQueue* queue = new AgentCommandFileQueue();
+    return *queue;
+}
+
+void startAgentCommandWatcher(const std::string& queuePath)
+{
+    AgentCommandFileQueue& queue = agentCommandFileQueue();
+    if (queue.watcherStarted) return;
+    queue.path = queuePath;
+    queue.watcherStarted = true;
+    std::thread([&queue]() {
+        std::streamoff offset = 0;
+        std::filesystem::file_time_type lastWrite{};
+        std::uintmax_t lastSize = 0;
+        bool haveSignature = false;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            std::error_code signatureError;
+            const std::uintmax_t fileSize =
+                std::filesystem::file_size(queue.path, signatureError);
+            if (signatureError) continue;
+            const auto fileWrite =
+                std::filesystem::last_write_time(queue.path, signatureError);
+            if (signatureError) continue;
+            if (haveSignature && fileSize == lastSize && fileWrite == lastWrite)
+                continue;
+            lastSize = fileSize;
+            lastWrite = fileWrite;
+            haveSignature = true;
+            if (offset > static_cast<std::streamoff>(fileSize)) offset = 0;
+
+            std::ifstream file(queue.path, std::ios::binary);
+            if (!file.is_open()) continue;
+            file.seekg(offset);
+            std::vector<std::string> appended;
+            std::string line;
+            while (std::getline(file, line)) {
+                const std::streampos next = file.tellg();
+                offset = next >= 0 ? static_cast<std::streamoff>(next)
+                                   : static_cast<std::streamoff>(fileSize);
+                if (!line.empty()) appended.push_back(std::move(line));
+            }
+            if (appended.empty()) continue;
+            std::lock_guard<std::mutex> lock(queue.mutex);
+            for (std::string& item : appended)
+                queue.lines.push_back(std::move(item));
+        }
+    }).detach();
+}
+
 void processAgentCommandQueueForDll(const std::string& queuePath,
                                     uint32_t tick)
 {
-    static std::string activePath;
-    static std::streamoff offset = 0;
     if (queuePath.empty()) return;
-    if (activePath != queuePath) {
-        activePath = queuePath;
-        offset = 0;
+    startAgentCommandWatcher(queuePath);
+
+    std::deque<std::string> pending;
+    {
+        AgentCommandFileQueue& queue = agentCommandFileQueue();
+        std::lock_guard<std::mutex> lock(queue.mutex);
+        pending.swap(queue.lines);
     }
-    std::ifstream queue(queuePath, std::ios::binary);
-    if (!queue.is_open()) return;
-    queue.seekg(offset);
-    std::string line;
-    while (std::getline(queue, line)) {
-        const std::streampos next = queue.tellg();
-        offset = next >= 0 ? static_cast<std::streamoff>(next) : 0;
-        if (line.empty()) continue;
+    for (const std::string& line : pending) {
         try {
             const nlohmann::json request = nlohmann::json::parse(line);
             const std::string command = request.value("command", "");
@@ -331,7 +390,7 @@ void processAgentCommandQueueForDll(const std::string& queuePath,
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::General, StructuredLevel::Important,
                 "dev-loop.command.host-read", event.requestId,
-                "host-owned frame read queued agent command", tick,
+                "host-owned frame consumed queued agent command", tick,
                 {{"command", command}}, __FILE__, __LINE__, __func__);
             const bool dispatched =
                 mimita::host::HostRuntime::instance().dispatchAgentCommand(event);
@@ -518,14 +577,12 @@ int main(int argc, char** argv)
         printf("[BOOT MODE] mode=udp-echo-server graphicsInitialized=0 uiInitialized=0\n");
         return MimitaNet::runUdpEchoServer(launchOptions);
     }
-    const auto configureWholeGameHost = [](bool serverMode) {
+    const auto configureWholeGameHost = []() {
         if (std::getenv("MIMITA_GAME_PROBE") ||
             std::getenv("MIMITA_GAME_OWN_FRAME") ||
             std::getenv("MIMITA_GAME_DISABLE") || gExportSubprocessMode) {
             return;
         }
-        const bool explicitDll = std::getenv("MIMITA_GAME_DLL") != nullptr;
-        const bool hotClient = std::getenv("MIMITA_GAME_HOT_CLIENT") != nullptr;
         std::string dllPath;
         if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
             dllPath = configured;
@@ -541,20 +598,14 @@ int main(int argc, char** argv)
                 }
             }
         }
-        if (!dllPath.empty() && std::filesystem::exists(dllPath) &&
-            (serverMode || hotClient || explicitDll)) {
+        if (!dllPath.empty() && std::filesystem::exists(dllPath)) {
             _putenv_s("MIMITA_GAME_DLL", dllPath.c_str());
             _putenv_s("MIMITA_GAME_PROBE", "1");
-            // The hot client frame is opt-in until its render viewport and
-            // GL-state issues are resolved. Normal play uses the visible
-            // resident client frame while the server stays hot.
-            if (hotClient || explicitDll) {
-                _putenv_s("MIMITA_GAME_OWN_FRAME", "1");
-            }
+            _putenv_s("MIMITA_GAME_OWN_FRAME", "1");
+            _putenv_s("MIMITA_GAME_REQUIRE_HOT", "1");
         } else {
-            // A DLL loaded by a normal client without frame ownership still
-            // changes device/module state. Keep normal play on the known-good
-            // resident path until the hot client render is accepted.
+            // No built generation is available. Keep the resident debugging
+            // path rather than claiming a hot frame that cannot load.
             _putenv_s("MIMITA_GAME_DISABLE", "1");
         }
     };
@@ -564,19 +615,17 @@ int main(int argc, char** argv)
         printf("[BOOT MODE] mode=headless-server graphicsInitialized=0 uiInitialized=0\n");
         LogManager::instance().setLogType("Server");
         LogManager::instance().init();
-        configureWholeGameHost(true);
+        configureWholeGameHost();
         int ret = MimitaNet::runServer(launchOptions);
         LogManager::instance().shutdown();
         return ret;
     }
     if (launchOptions.client)
     {
-        printf("[BOOT MODE] mode=standalone-client graphicsInitialized=0 uiInitialized=0\n");
-        LogManager::instance().setLogType("Client");
-        LogManager::instance().init();
-        int ret = MimitaNet::runClient(launchOptions);
-        LogManager::instance().shutdown();
-        return ret;
+        // Standalone --client is retired. Normal clients use the full client
+        // path; the hot server and full client are the supported surfaces.
+        printf("[BOOT MODE] standalone --client is retired; use the full client\n");
+        return 1;
     }
 
     printf("[BOOT MODE] mode=full-client graphicsInitialized=1 uiInitialized=1\n");
@@ -601,9 +650,24 @@ int main(int argc, char** argv)
             LogManager::instance().path().c_str());
     }
 
-    configureWholeGameHost(false);
+    configureWholeGameHost();
 
-    mimita::host::HostRuntime::instance().startFromEnvironment();
+    const bool hotStarted =
+        mimita::host::HostRuntime::instance().startFromEnvironment();
+    const char* requireHot = std::getenv("MIMITA_GAME_REQUIRE_HOT");
+    if (requireHot && std::strcmp(requireHot, "1") == 0 && !hotStarted) {
+        const char* configuredDll = std::getenv("MIMITA_GAME_DLL");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Errors,
+            "game.client.hot-required", "client",
+            "client refused to start without the requested hot generation", 0,
+            {{"dll", configuredDll ? configuredDll : ""},
+             {"reason", "candidate-rejected-or-missing"}},
+            __FILE__, __LINE__, __func__);
+        fprintf(stderr, "[HOTRELOAD] required generation failed to load: %s\n",
+                configuredDll ? configuredDll : "(none)");
+        return 1;
+    }
 
     // The whole-game frame path returns below and never reaches the legacy
     // auto-join block. Queue the launcher request for the DLL before the
@@ -776,4 +840,3 @@ int main(int argc, char** argv)
     
     return 0;
 }
-

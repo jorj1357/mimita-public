@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 33
+Entries: 36
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -258,3 +258,32 @@ Entries: 33
 - Status: MODE-SCOPED FIX IN SOURCE; BUILD/RUNTIME VALIDATION PENDING
 - Summary: `healthall 500` sets actor current/max HP to 500, but damage also drains each body part's independent 100 HP pool. Destroying the torso/head forces death while global HP remains above zero. The command does not restore body-part health.
 - Detail: [healthall-body-part-lethal-REG-2026-11-07.md](healthall-body-part-lethal-REG-2026-11-07.md)
+
+
+## Entry 34 — Unlit cosmetic GLBs render black
+
+- Recorded: 2026-11-15T02:20:00Z
+- Status: OPEN — source fix and logging implemented; visible Jason-mask acceptance pending
+- Summary: Cosmetic GLBs contain geometry but no materials/textures. The cosmetic renderer sampled the default/missing texture and had no solid-color fallback. Remote cosmetic texture paths also used the local avatar name.
+- Detail: [black-cosmetic-glb-REG-2026-11-15.md](black-cosmetic-glb-REG-2026-11-15.md)
+
+## Entry 35 — NPC avatar names truncated on the wire
+
+- Recorded: 2026-11-15T02:20:00Z
+- Status: OPEN — wire capacity and hot prefix resolver implemented; runtime acceptance pending
+- Summary: `MAX_AVATAR_NAME_BYTES` was 24, while `remote_<24 hex>` names are 31 characters. NPC avatar names were truncated into nonexistent avatar folders.
+- Detail: [npc-avatar-name-truncation-REG-2026-11-15.md](npc-avatar-name-truncation-REG-2026-11-15.md)
+
+## Entry 36 — Hot-client world and text sampled black
+
+- Recorded: 2026-11-15T09:05:00-05:00
+- Status: FIXED — generation 182/183 runtime probe and visible world verified
+- Summary: The DLL texture-parameter bridge forwarded semantic `TextureValue` numbers (`Linear=2`) instead of GL tokens (`0x2601`). Min filters became invalid, level-0-only textures sampled black, and the hot client showed a black world with dark HUD text. The bridge now maps texture values before forwarding.
+- Detail: [black-world-texture-filter-REG-2026-11-15.md](black-world-texture-filter-REG-2026-11-15.md)
+
+### Follow-up resolution notes
+
+- Entry 34: the shared texture-filter bug was a second root cause for black
+  cosmetics; see Entry 36.
+- Entry 35: the generation 183 run had no `no_worker` or `worker_queue_full`
+  avatar failures; normal pending loads completed.

@@ -423,6 +423,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     { Perf::ScopedTimer _t("Diag"); diagRenderStage(8); }
 
     if (engine.renderer && engine.renderer->stretchesWholeFrame()) {
+        PostFX::instance().probeScene("before-postfx-stretched");
         { MIMITA_PERF_PROGRESS("PostFX::Unbind");
           MIMITA_PERF_SCOPE("PostFX::Unbind"); PostFX::instance().unbindFBO(); }
         { MIMITA_PERF_PROGRESS("PostFX");

@@ -65,6 +65,26 @@ Cutover-1 is complete when:
 Cutover-1 does not require normalized input, ECS expansion, agent command
 tooling, hot backends for every OS/device, or distributed storage.
 
+2026 11 15 1030 jorj - this means like
+ideal fps: 240, actual fps: 10-100
+we can add logging live, fix it live, change .cpp code live, look at events.jsonl changing live
+ai agents can see results of their cahnges live
+no rebuild of the exe needed, no closing and re opening the exe, no 28 minute build times, that is the worst
+
+npcs arent aggressive enough and .json edits arent fixing? .cpp edit live , fix live
+vehiclel phsics arent accurate to actual what we want? fix live
+want to add swimming physics? add live
+want to remoev swimming physics? done live
+want to edit networking, e.g. tweak lag compensation and rewind logic live? doable live no rebuild
+want to edit GUI issues live? doabel live
+want to add a entirely new system like video editor, audio editor, non euclidean geometry, 4d world, 2d world, quaternion camera instead of 3d fixed axis cant look around 360 degrees? doable live
+edit maps live, with map editor
+make new gamemodes live, with AI and existing code
+refactor live, removing old dead code that is causing inefficiency live 
+all doable without a single .exe rebuild or needing to close the .exe and then open it again 
+
+prediciton: since im not so sure what im doing, this might taek a while, but i think if we do this and stick with it, and keep working on this until this dream and others are doable live, and its consistently live doable, this is a huge step forward for development speed as a whole, so i tink that 2026 11 15 1034 jorj i ts important  that we continue to do this and dont  be less than strict, dont let something that kinda works be an actual solution, build this  with it in mind that once it works, its likely that it keeps working indefinitely, given API changes and underlying technology changes kept up with
+
 ## Cutover-2 and Cutover-3
 
 Cutover-2 is the backend phase:
@@ -165,6 +185,21 @@ Hot:
 Packet IDs are tombstones and are never reused. Unknown fields are ignored;
 missing fields receive documented defaults; schema changes validate at
 activation.
+
+### Packet ledger meaning
+
+`config/hot-reload/packet-ledger.json` records two different things:
+
+- `server=dll|resident` is the server packet-path classification.
+- `client=dll|resident` is the **DLL-side client dispatch override** count. It
+  does not mean the normal client packet handlers are resident.
+
+The normal client packet handlers are already game-owned and compiled into
+`game.dll` through `src/network/multiplayer-tick.cpp` and
+`src/network/multiplayer-packets.cpp`. They execute from the DLL only when the
+full client owns its frame. A low client `dll` count in the ledger means only
+that few packets have a separate `server-command-dispatch` style override; it is
+not a client-handler migration task.
 
 ## Server split
 
@@ -282,6 +317,11 @@ source watcher, codegen checks, game-DLL request, publication, activation
 status, and run control. Agents do not invoke compilers or game build workers
 directly.
 
+The hot-client live-fix phase contract is in
+[hot-client-live-fix.md](hot-client-live-fix.md). It defines the required
+default-client frame ownership, same-PID activation, and cosmetic/avatar live
+fix behavior.
+
 ## Evidence
 
 A build proves compilation. It does not prove configuration, packets, state,
@@ -327,6 +367,11 @@ These paths are architectural roles, not current status.
 
 Do not create a second source inventory, status document, audit script, or build
 coordinator. Extend the existing owners.
+
+> **2026-11-14 17:28 TODO:** the first generated status/audit outputs are
+> provisional. Validate the source manifest, packet/state ledgers, audit
+> classification, build identity, and runtime fields before treating those
+> values as evidence.
 
 ## Non-goals for Cutover-1
 

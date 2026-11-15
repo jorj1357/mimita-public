@@ -333,6 +333,7 @@ private:
     std::mutex resourceMutex_;
     std::string readyPath_;
     std::uint64_t lastReadyGeneration_ = 0;
+    std::uint64_t activePublishedGeneration_ = 0;
     std::uint64_t lastFailedGeneration_ = 0;
     std::string lastFailedDll_;
     std::chrono::steady_clock::time_point lastFailedAt_{};

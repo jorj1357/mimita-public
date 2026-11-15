@@ -62,7 +62,6 @@ struct LaunchOptions
 LaunchOptions parseLaunchOptions(int argc, char** argv);
 void printLaunchUsage();
 int runServer(const LaunchOptions& options);
-int runClient(const LaunchOptions& options);
 
 // Forward declaration
 struct ServerLaunchSettings;

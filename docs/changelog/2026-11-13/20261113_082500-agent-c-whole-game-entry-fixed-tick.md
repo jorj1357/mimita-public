@@ -586,6 +586,18 @@ here performs the ownership cutover.
   `server-runtime-module.cpp`; remove the TODO marker in `server-packets.cpp`.
 - Build: pending Agent A's dev-loop build.
 
+## Phase 1ab Cutover-1 checklist in the spec
+
+- Added `## Cutover-1 checklist (2026-11-14)` to
+  `docs/specs/hotreload/hotreload.md`:
+  - goal, eight gates, source-checked blockers with `file:line`, order, and
+    ownership.
+  - blockers cover the opt-in hot client, the resident client fallback, the
+    server `else`/probe gate, `MIMITA_GAME_DISABLE`, EXE game-source links,
+    legacy renderer, and the fail-closed state store.
+- This is a spec-only change (owner-directed); no source or build change.
+- Reverse: remove the `## Cutover-1 checklist (2026-11-14)` section.
+
 ## Boundary findings (source-checked)
 
 - `renderContext` is the host `Engine*`: `src/main.cpp:550` calls

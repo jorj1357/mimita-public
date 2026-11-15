@@ -28,9 +28,11 @@
 #include "host/abi/global-capability.h"
 #include "host/abi/files-capability.h"
 #include "host/abi/gl-resource-capability.h"
+#include "host/abi/entity-domain-capability.h"
 #include "host/abi/session-events-capability.h"
 #include "host/abi/session-identity-capability.h"
 #include "host/host-server-session-events.h"
+#include "host/host-server-entity-adapter.h"
 #include "host/abi/socket-capability.h"
 #include "host/host-session-identity.h"
 #include "host/abi/ice-capability.h"
@@ -2198,6 +2200,7 @@ bool HostRuntime::startFromEnvironment() {
     readyPath_ = (readyPath && *readyPath) ? readyPath : "build/game/ready.json";
 
     std::string dllPath;
+    std::uint64_t dllGeneration = 0;
     if (const char* configured = std::getenv("MIMITA_GAME_DLL")) {
         dllPath = configured;
     } else {
@@ -2207,6 +2210,7 @@ bool HostRuntime::startFromEnvironment() {
                 nlohmann::json metadata;
                 current >> metadata;
                 dllPath = metadata.value("dll", std::string());
+                dllGeneration = metadata.value("generation", std::uint64_t{0});
             } catch (const std::exception&) {
                 dllPath.clear();
             }
@@ -2255,6 +2259,7 @@ bool HostRuntime::startFromEnvironment() {
     const std::uint64_t generation = candidate.generation != 0 ? candidate.generation : 1;
     barrier_.beginGeneration(generation);
     loader_.commit(std::move(candidate));
+    activePublishedGeneration_ = dllGeneration != 0 ? dllGeneration : generation;
     probeEnabled_.store(true, std::memory_order_release);
     started_ = true;
 
@@ -2665,8 +2670,24 @@ void HostRuntime::poll() {
     const std::uint64_t generation = ready.value("generation", std::uint64_t{0});
     const std::string dll = ready.value("dll", std::string());
     if (generation == 0 || dll.empty() ||
-        generation == loader_.activeGeneration()) {
+        generation == activePublishedGeneration_) {
         return;
+    }
+    {
+        std::error_code pathError;
+        const auto candidatePath = std::filesystem::absolute(dll, pathError);
+        const auto activePath = std::filesystem::path(
+            loader_.activeGenerationInfo().path);
+        if (!pathError && !activePath.empty() &&
+            std::filesystem::equivalent(candidatePath, activePath, pathError) &&
+            !pathError) {
+            // The manifest may name the same DLL with a different generation
+            // label. Reloading it would shut down the active generation and
+            // leave its DLL statics initialized, so only update the identity.
+            activePublishedGeneration_ = generation;
+            lastReadyGeneration_ = generation;
+            return;
+        }
     }
     if (generation == lastFailedGeneration_ && dll == lastFailedDll_ &&
         now - lastFailedAt_ < std::chrono::seconds(5)) {
@@ -2718,6 +2739,7 @@ void HostRuntime::poll() {
     // hardcode a local version field that is not the build generation.
     candidate.generation = generation;
     loader_.commit(std::move(candidate));
+    activePublishedGeneration_ = generation;
     lastReadyGeneration_ = generation;
     lastFailedGeneration_ = 0;
     lastFailedDll_.clear();
@@ -2938,6 +2960,40 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &renderDeviceSetCursorVisible,
         };
         return &renderDeviceCapability;
+    }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::EntityDomain) &&
+        version == kEntityDomainCapabilityVersion) {
+        static EntityDomainCapabilityV1 domainCapability{
+            kEntityDomainCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(EntityDomainCapabilityV1)),
+            [](void*, EntityHandle handle,
+               mimita::host::state::player_core::Record* out) {
+                return HostServerEntityAdapter::instance().readPlayerCore(handle, out);
+            },
+            [](void*, EntityHandle handle,
+               const mimita::host::state::player_core::Record* in) {
+                return HostServerEntityAdapter::instance().writePlayerCore(handle, in);
+            },
+            [](void*, EntityHandle handle,
+               mimita::host::state::player_session::Record* out) {
+                return HostServerEntityAdapter::instance().readPlayerSession(handle, out);
+            },
+            [](void*, EntityHandle handle,
+               const mimita::host::state::player_session::Record* in) {
+                return HostServerEntityAdapter::instance().writePlayerSession(handle, in);
+            },
+            [](void*, DomainId domain, EntityHandle handle, void* record,
+               std::uint32_t recordSize) {
+                return HostServerEntityAdapter::instance().readDomain(
+                    domain, handle, record, recordSize);
+            },
+            [](void*, DomainId domain, EntityHandle handle, const void* record,
+               std::uint32_t recordSize) {
+                return HostServerEntityAdapter::instance().writeDomain(
+                    domain, handle, record, recordSize);
+            },
+        };
+        return &domainCapability;
     }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::State) &&
         version == kStateCapabilityVersion) {

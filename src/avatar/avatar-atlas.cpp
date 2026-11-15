@@ -654,19 +654,70 @@ void AvatarSystem::requestModelLoad(Player& player) {
 
 // ── Per-instance avatar system ────────────────────────────────────────
 
+std::string AvatarSystem::resolveAvatarName(const std::string& name) const {
+    if (name.empty())
+        return name;
+    const std::string direct = AvatarSystem::avatarPath(name);
+    std::error_code directError;
+    if (std::filesystem::exists(direct, directError))
+        return name;
+    // The snapshot wire field is intentionally compact. Remote avatar ids are
+    // longer than the wire field, so resolve a unique local folder by prefix.
+    if (name.rfind("remote_", 0) != 0)
+        return name;
+    std::error_code rootError;
+    const std::filesystem::path root("assets/avatars");
+    if (!std::filesystem::is_directory(root, rootError))
+        return name;
+    std::string match;
+    for (const auto& entry : std::filesystem::directory_iterator(root, rootError)) {
+        if (rootError || !entry.is_directory())
+            continue;
+        const std::string candidate = entry.path().filename().string();
+        if (candidate.size() <= name.size() ||
+            candidate.compare(0, name.size(), name) != 0)
+            continue;
+        if (!match.empty()) {
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Avatar, StructuredLevel::Important,
+                "npc.avatar.resolve", name,
+                "remote avatar prefix matched multiple local folders",
+                0,
+                nlohmann::json{{"requested", name}, {"first", match},
+                               {"second", candidate}, {"resolved", false}},
+                __FILE__, __LINE__, __FUNCTION__);
+            return name;
+        }
+        match = candidate;
+    }
+    if (!match.empty()) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "npc.avatar.resolve", name,
+            "resolved truncated remote avatar name by unique folder prefix",
+            0,
+            nlohmann::json{{"requested", name}, {"resolved_name", match},
+                           {"resolved", true}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return match;
+    }
+    return name;
+}
+
 AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
     if (name.empty()) return nullptr;
-    auto it = mCache.find(name);
+    const std::string resolvedName = resolveAvatarName(name);
+    auto it = mCache.find(resolvedName);
     if (it != mCache.end()) {
         Debug::log(Debug::Category::Avatar, "[AVATAR CACHE] hit: %s atlas=%u\n",
                    name.c_str(), it->second->atlasTexture);
         return it->second.get();
     }
-    auto stateIt = mLoadStates.find(name);
+    auto stateIt = mLoadStates.find(resolvedName);
     if (stateIt != mLoadStates.end())
     {
-        const int attempts = mAvatarLoadAttempts[name];
-        const auto retryIt = mAvatarRetryAfter.find(name);
+        const int attempts = mAvatarLoadAttempts[resolvedName];
+        const auto retryIt = mAvatarRetryAfter.find(resolvedName);
         long long retryInMs = 0;
         if (retryIt != mAvatarRetryAfter.end()) {
             const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -675,20 +726,20 @@ AvatarInstance* AvatarSystem::getOrLoadAvatar(const std::string& name) {
         }
         StructuredLogger::instance().writeEvent(
             StructuredCategory::Avatar, StructuredLevel::Important,
-            "avatar.cache.pending-or-failed", name,
+            "avatar.cache.pending-or-failed", resolvedName,
             "avatar requested while cache state is not ready",
             0,
-            {{"avatar", name},
+            {{"avatar", resolvedName},
              {"load_state", static_cast<int>(stateIt->second)},
              {"cache_ready", false},
              {"attempts", attempts},
              {"retry_in_ms", retryInMs},
-             {"failure_reason", mAvatarLoadFailureReason[name]}},
+             {"failure_reason", mAvatarLoadFailureReason[resolvedName]}},
             __FILE__, __LINE__, __FUNCTION__);
         return nullptr;
     }
-    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (queued)\n", name.c_str());
-    queueAvatarLoad(name, false);
+    Debug::warn(Debug::Category::Avatar, "[AVATAR CACHE] miss: %s (queued)\n", resolvedName.c_str());
+    queueAvatarLoad(resolvedName, false);
     return nullptr;
 }
 
@@ -938,10 +989,11 @@ bool AvatarSystem::applyAtlasFromInstance(AvatarInstance& inst, Player& player) 
 }
 
 bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatarName, bool reloadTextures) {
-    AvatarInstance* inst = getOrLoadAvatar(avatarName);
+    const std::string resolvedAvatar = resolveAvatarName(avatarName);
+    AvatarInstance* inst = getOrLoadAvatar(resolvedAvatar);
     if (!inst) return false;
 
-    player.setAvatarName(avatarName);
+    player.setAvatarName(resolvedAvatar);
     player.avatarInstance = inst;
 
     // A newly-created replica may not have a model yet.  Bind the avatar
@@ -957,7 +1009,16 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
         else
             gAvatarBodypartOverrides = nullptr;
         fillAvatarRigExtraNodes(inst->definition.rig);
-        player.setCosmetics(inst->definition.cosmetics);
+        {
+            std::vector<CosmeticSlot> playerCosmetics = inst->definition.cosmetics;
+            for (CosmeticSlot& slot : playerCosmetics) {
+                if (!slot.texture.image.empty() &&
+                    slot.texture.image.find('/') == std::string::npos &&
+                    slot.texture.image.find('\\') == std::string::npos)
+                    slot.texture.image = inst->basePath + "/" + slot.texture.image;
+            }
+            player.setCosmetics(playerCosmetics);
+        }
         std::string modelPath = !inst->definition.playerModel.empty()
             ? inst->definition.playerModel
             : "assets/entity/player/default/mimita-char-no-animations-v4.glb";

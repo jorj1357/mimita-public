@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <string>
 #include <vector>
+#include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "render/post-fx.h"
 #include "render/render-world.h"
@@ -29,6 +30,32 @@ void registerPostFxCommands()
             }
             PostFX::instance().applyPreset(args[0]);
             Terminal::instance().addLog("[POSTFX] Preset applied: " + args[0]);
+        }
+    });
+    Terminal::instance().registerCommand({
+        "postfx_mode", "Set PostFX mode: full, minimal, or off", "postfx_mode <full|minimal|off>",
+        [](const std::vector<std::string>& args) {
+            if (args.empty()) {
+                const auto mode = PostFX::instance().mode();
+                const char* name = mode == PostFX::Mode::Off ? "off"
+                    : mode == PostFX::Mode::Minimal ? "minimal" : "full";
+                Terminal::instance().addLog(std::string("[POSTFX] mode=") + name);
+                return;
+            }
+            if (args[0] == "off") PostFX::instance().setMode(PostFX::Mode::Off);
+            else if (args[0] == "minimal") PostFX::instance().setMode(PostFX::Mode::Minimal);
+            else if (args[0] == "full") PostFX::instance().setMode(PostFX::Mode::Full);
+            else {
+                Terminal::instance().addLog("[POSTFX] usage: postfx_mode <full|minimal|off>");
+                return;
+            }
+            Terminal::instance().addLog("[POSTFX] mode=" + args[0] + " (temporary; JSON reload wins)");
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "postfx.mode", "render",
+                "PostFX mode changed at runtime", 0,
+                nlohmann::json{{"mode", args[0]}, {"temporary", true}},
+                __FILE__, __LINE__, __FUNCTION__);
         }
     });
     Terminal::instance().registerCommand({

@@ -33,6 +33,7 @@ void initializeHostDuel(const mimita::host::HostServicesV1* services);
 void initializeHostPersistence(const mimita::host::HostServicesV1* services);
 void initializeHostJobsWatch(const mimita::host::HostServicesV1* services);
 void initializeHostEntity(const mimita::host::HostServicesV1* services);
+void initializeHostEntityDomain(const mimita::host::HostServicesV1* services);
 void initializeHostWorld(const mimita::host::HostServicesV1* services);
 void initializeHostSessionIdentity(const mimita::host::HostServicesV1* services);
 void initializeHostSessionEvents(const mimita::host::HostServicesV1* services);
@@ -73,6 +74,7 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostPersistence(services);
     mimita::game::initializeHostJobsWatch(services);
     mimita::game::initializeHostEntity(services);
+    mimita::game::initializeHostEntityDomain(services);
     mimita::game::initializeHostWorld(services);
     mimita::game::initializeHostSessionIdentity(services);
     mimita::game::initializeHostSessionEvents(services);

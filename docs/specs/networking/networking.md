@@ -5383,8 +5383,28 @@ limits/enums live in:
 - `src/network/schema/packet-input.h`
 - `src/network/schema/packet-chat.h`
 - `src/network/schema/packet-avatar.h`
+- `src/network/schema/packet-session.h`
+- `src/network/schema/packet-snapshot.h`
+- `src/network/schema/packet-combat.h`
+- `src/network/schema/packet-player.h`
+- `src/network/schema/packet-gamemode.h`
+- `src/network/schema/packet-physical.h`
+- `src/network/schema/packet-vehicle.h`
 
-Domain packet headers will move the remaining fixed structs by topic without
-changing IDs, packing, or field layouts. IDs are tombstones and are never reused. Field
+`src/network/packets.h` remains an umbrella for those headers, packet IDs, and
+the small set of still-unmoved structs. Domain headers preserve IDs, packing,
+and field layouts. IDs are tombstones and are never reused. Field
 changes bump the owning domain schema and provide documented defaults/migration
 at activation. No packet behavior may depend on a cold resident duplicate.
+
+## Server scheduler boundary (Option A)
+
+For the server, "all networking hot" means all MiMITA networking behavior is
+replaceable. The resident scheduler may still own the blocking receive, send,
+sleep, socket lifetime, and worker/thread mechanism. The generation owns the
+packet decisions and session behavior that consume those mechanisms.
+
+This boundary is intentional and documented so "hot" is not claimed for the
+OS loop. Moving the scheduler into the DLL is Option B and requires a measured
+justification; it is not a prerequisite for adding/removing packet types,
+fields, handlers, session policy, or ICE policy live.

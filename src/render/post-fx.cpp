@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +14,7 @@
 #include "game/gl-resource-bridge-module.h"
 #include "utils/path_utils.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 #include <cstdlib>
 #include <cstddef>
 
@@ -87,6 +89,15 @@ void PostFX::loadConfig(const std::string& path)
         read("edgeGlow", mData.edgeGlow, 0.0f);
         read("outlineBoost", mData.outlineBoost, 0.0f);
         read("shadowBoost", mData.shadowBoost, 0.0f);
+
+        std::string mode = j.value("mode", std::string("full"));
+        if (mode == "off" || (j.contains("enabled") && !j.value("enabled", true))) {
+            mMode = Mode::Off;
+        } else if (mode == "minimal") {
+            mMode = Mode::Minimal;
+        } else {
+            mMode = Mode::Full;
+        }
 
         snprintf(mDebugText, sizeof(mDebugText),
             "POSTFX\nbri=%.2f con=%.2f sat=%.2f gam=%.2f hue=%.2f\n"
@@ -168,6 +179,8 @@ bool PostFX::loadShaders()
 
 bool PostFX::initFBO(int width, int height)
 {
+    if (width <= 0 || height <= 0)
+        return false;
     if (!mPostShader.valid() && !loadShaders())
         return false;
 
@@ -227,7 +240,20 @@ bool PostFX::initFBO(int width, int height)
 void PostFX::bindFBO()
 {
     if (std::getenv("MIMITA_DISABLE_POSTFX")) {
-        mBypass = true;
+        mMode = Mode::Off;
+    }
+    if (mMode == Mode::Off) {
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+        if (gRenderer) r::viewport(0, 0, gRenderer->width, gRenderer->height);
+        return;
+    }
+    if (gRenderer &&
+        (gRenderer->sceneWidth <= 1 || gRenderer->sceneHeight <= 1)) {
+        // Hidden/minimized windows can report a degenerate scene size. Do not
+        // allocate or bind a 1x1 post target; present the direct framebuffer.
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+        r::viewport(0, 0, gRenderer->width, gRenderer->height);
+        return;
     }
     const bool outputScaleRequired = gRenderer &&
         (gRenderer->sceneWidth != gRenderer->width ||
@@ -257,6 +283,48 @@ void PostFX::bindFBO()
 void PostFX::unbindFBO()
 {
     r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+}
+
+void PostFX::probeScene(const char* phase)
+{
+    if (!mFbo || mFboW <= 0 || mFboH <= 0) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Rendering, StructuredLevel::Important,
+            "postfx.fbo-probe", "render",
+            "scene FBO probe skipped because no scene target exists", 0,
+            nlohmann::json{{"phase", phase ? phase : "unknown"},
+                           {"fbo", mFbo},
+                           {"fbo_width", mFboW},
+                           {"fbo_height", mFboH}},
+            __FILE__, __LINE__, __FUNCTION__);
+        return;
+    }
+    static std::uint64_t lastProbeMs = 0;
+    const auto nowMs = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (nowMs - lastProbeMs < 1000) return;
+    lastProbeMs = nowMs;
+
+    unsigned char center[3] = {0, 0, 0};
+    r::bindFramebuffer(r::FramebufferTarget::Read, mFbo);
+    r::readPixels(mFboW / 2, mFboH / 2, 1, 1, r::PixelFormat::RGB,
+                  r::PixelType::UnsignedByte, center);
+    r::bindFramebuffer(r::FramebufferTarget::Read, 0);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::Rendering, StructuredLevel::Important,
+        "postfx.fbo-probe", "render",
+        "scene FBO center pixel before presentation", 0,
+        nlohmann::json{
+            {"phase", phase ? phase : "unknown"},
+            {"fbo", mFbo},
+            {"color_tex", mColorTex},
+            {"fbo_width", mFboW},
+            {"fbo_height", mFboH},
+            {"center_r", center[0]},
+            {"center_g", center[1]},
+            {"center_b", center[2]}},
+        __FILE__, __LINE__, __FUNCTION__);
 }
 
 void PostFX::setUniforms(const PostFXData& data, const char* prefix)
@@ -355,11 +423,61 @@ bool PostFX::isActive() const
 
 void PostFX::render()
 {
+    if (mMode == Mode::Off) return;
     const bool outputScaleRequired = gRenderer &&
         (gRenderer->sceneWidth != gRenderer->width ||
          gRenderer->sceneHeight != gRenderer->height);
+    {
+        static std::uint64_t lastPassLogMs = 0;
+        const auto nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (nowMs - lastPassLogMs >= 1000) {
+            lastPassLogMs = nowMs;
+            std::int32_t viewport[4] = {0, 0, 0, 0};
+            r::getViewport(viewport);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "postfx.pass", "render",
+                "PostFX pass state before presentation", 0,
+                nlohmann::json{
+                    {"mode", static_cast<int>(mMode)},
+                    {"bypass", mBypass},
+                    {"output_scale_required", outputScaleRequired},
+                    {"fbo", mFbo},
+                    {"color_tex", mColorTex},
+                    {"quad_vao", mQuadVao},
+                    {"fbo_width", mFboW},
+                    {"fbo_height", mFboH},
+                    {"shader_valid", mPostShader.valid()},
+                    {"shader_program", mPostShader.program()},
+                    {"viewport", {viewport[0], viewport[1], viewport[2], viewport[3]}},
+                    {"renderer_width", gRenderer ? gRenderer->width : 0},
+                    {"renderer_height", gRenderer ? gRenderer->height : 0},
+                    {"scene_width", gRenderer ? gRenderer->sceneWidth : 0},
+                    {"scene_height", gRenderer ? gRenderer->sceneHeight : 0}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     if (mBypass && !outputScaleRequired) return;
-    if (!mPostShader.valid() || !mFbo || !mQuadVao) {
+    if (!mPostShader.valid() || !mQuadVao) {
+        // The scene may already be rendered into the FBO. Present it directly
+        // instead of leaving the default framebuffer black.
+        if (mFbo && gRenderer) {
+            r::bindFramebuffer(r::FramebufferTarget::Read, mFbo);
+            r::bindFramebuffer(r::FramebufferTarget::Draw, 0);
+            r::viewport(0, 0, gRenderer->width, gRenderer->height);
+            r::blitFramebuffer(0, 0, mFboW, mFboH, 0, 0,
+                               gRenderer->width, gRenderer->height,
+                               r::BlitMask::Color, r::BlitFilter::Nearest);
+        }
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
+        if (gRenderer)
+            r::viewport(0, 0, gRenderer->width, gRenderer->height);
+        return;
+    }
+    if (!mFbo) {
+        r::bindFramebuffer(r::FramebufferTarget::Framebuffer, 0);
         if (gRenderer)
             r::viewport(0, 0, gRenderer->width, gRenderer->height);
         return;
@@ -369,13 +487,30 @@ void PostFX::render()
     if (gRenderer)
         r::viewport(0, 0, gRenderer->width, gRenderer->height);
     r::disable(r::Capability::DepthTest);
+    r::disable(r::Capability::Blend);
+    r::disable(r::Capability::CullFace);
+    r::disable(r::Capability::ScissorTest);
+    r::disable(r::Capability::StencilTest);
+    r::depthMask(false);
 
     // --- Pass 1: full scene post-process ---
     r::useProgram(mPostShader.program());
     r::activeTexture(0);
     r::bindTexture(r::TextureTarget::Texture2D, mColorTex);
-    const PostFXData identity;
-    setUniforms(mBypass ? identity : mData, "");
+    PostFXData data = mData;
+    if (mMode == Mode::Minimal) {
+        // Minimal keeps the visible brightness/gamma response without the
+        // optional screen effects. It still uses the FBO, but the shader work
+        // is limited to the display transform.
+        data = PostFXData{};
+        data.brightness = mData.brightness;
+        data.contrast = mData.contrast;
+        data.saturation = mData.saturation;
+        data.gamma = mData.gamma;
+        data.hueShift = mData.hueShift;
+        data.colorTemperature = mData.colorTemperature;
+    }
+    setUniforms(mBypass ? PostFXData{} : data, "");
 
     renderQuad(mQuadVao);
 

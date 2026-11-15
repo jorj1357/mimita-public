@@ -54,6 +54,8 @@ struct PostFXData
 class PostFX
 {
 public:
+    enum class Mode { Full = 0, Minimal = 1, Off = 2 };
+
     static PostFX& instance();
 
     // Load/save config
@@ -71,8 +73,13 @@ public:
     void bindFBO();
     void unbindFBO();
     void render();
+    void probeScene(const char* phase);
     void setBypass(bool bypass) { mBypass = bypass; }
     bool bypass() const { return mBypass; }
+    Mode mode() const { return mMode; }
+    void setMode(Mode mode) { mMode = mode; }
+    bool enabled() const { return mMode != Mode::Off; }
+
     // Returns true when any PostFX parameter differs from identity.
     // When false, the FBO + fullscreen pass can be skipped entirely.
     bool isActive() const;
@@ -90,6 +97,7 @@ public:
     // Animated time (for psychedelic, dream modes)
     float time() const { return mTime; }
     void advanceTime(float dt) {
+        if (mMode == Mode::Off) return;
         mTime += dt;
         updateRandomAnim(dt);
     }
@@ -144,6 +152,7 @@ private:
     float mTime = 0.0f;
     char mDebugText[512] = {};
     bool mBypass = false;
+    Mode mMode = Mode::Full;
     bool mMagentaTestPending = false;
 
     // Random animation

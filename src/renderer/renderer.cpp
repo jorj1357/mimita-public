@@ -26,6 +26,7 @@ extern bool gAiLaunchMode;
 #include "utils/path_utils.h"
 #include "debug/gl-debug.h"
 #include "debug/debug-log.h"
+#include "debug/structured-log.h"
 
 static bool dimensionsAreValidForCursor(int width, int height)
 {
@@ -217,14 +218,51 @@ float Renderer::beginFrame() {
     if (dt < 0.0f) dt = 0.0f;
     if (dt > 0.1f) dt = 0.1f;
 
-    glfwGetFramebufferSize(window, &width, &height);
-    const bool framebufferValid = width > 0 && height > 0;
-    if (width <= 0) width = 1;
-    if (height <= 0) height = 1;
-    if (framebufferValid &&
-        !fullscreenModeIsStretched(mAppliedVideoMode)) {
-        sceneWidth = width;
-        sceneHeight = height;
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+    const bool framebufferValid =
+        framebufferWidth > 0 && framebufferHeight > 0;
+    if (framebufferValid) {
+        width = framebufferWidth;
+        height = framebufferHeight;
+        if (!fullscreenModeIsStretched(mAppliedVideoMode)) {
+            sceneWidth = width;
+            sceneHeight = height;
+        }
+    }
+    // A hidden or minimized window can report 0x0. Never turn that into a
+    // 1x1 viewport/FBO; keep the last valid presentation size for this frame.
+    if (width <= 0 || height <= 0) {
+        return dt;
+    }
+    {
+        static std::uint64_t lastSizeLogMs = 0;
+        static int lastLoggedWidth = -1;
+        static int lastLoggedHeight = -1;
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if ((!framebufferValid || framebufferWidth != lastLoggedWidth ||
+             framebufferHeight != lastLoggedHeight) &&
+            static_cast<std::uint64_t>(nowMs) - lastSizeLogMs >= 1000) {
+            lastSizeLogMs = static_cast<std::uint64_t>(nowMs);
+            lastLoggedWidth = framebufferWidth;
+            lastLoggedHeight = framebufferHeight;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Rendering, StructuredLevel::Important,
+                "renderer.frame-size", "render",
+                "renderer observed framebuffer and presentation size", 0,
+                nlohmann::json{
+                    {"framebuffer_width", framebufferWidth},
+                    {"framebuffer_height", framebufferHeight},
+                    {"presentation_width", width},
+                    {"presentation_height", height},
+                    {"scene_width", sceneWidth},
+                    {"scene_height", sceneHeight},
+                    {"window_visible", glfwGetWindowAttrib(window, GLFW_VISIBLE)},
+                    {"window_iconified", glfwGetWindowAttrib(window, GLFW_ICONIFIED)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
     }
     MIMITA_GL_CLEAR_STAGE("Renderer::beginFrame");
     MIMITA_GL_CALL(glViewport(0, 0, width, height));

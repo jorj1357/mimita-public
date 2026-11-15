@@ -3,6 +3,8 @@
 #include "render/render-command.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -74,13 +76,45 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
 {
     gWindow = win;
     gOwnsHoverInput = ownsHoverInput;
-    glfwGetFramebufferSize(win, &gFbW, &gFbH);
+    int framebufferWidth = 0;
+    int framebufferHeight = 0;
+    if (win) glfwGetFramebufferSize(win, &framebufferWidth, &framebufferHeight);
     if (gRenderer && gRenderer->stretchesWholeFrame()) {
-        gFbW = gRenderer->sceneWidth;
-        gFbH = gRenderer->sceneHeight;
+        framebufferWidth = gRenderer->sceneWidth;
+        framebufferHeight = gRenderer->sceneHeight;
     }
-    if (gFbW <= 0) gFbW = 1;
-    if (gFbH <= 0) gFbH = 1;
+    if (framebufferWidth <= 0 && gRenderer) framebufferWidth = gRenderer->width;
+    if (framebufferHeight <= 0 && gRenderer) framebufferHeight = gRenderer->height;
+    gFbW = framebufferWidth > 0 ? framebufferWidth : 1;
+    gFbH = framebufferHeight > 0 ? framebufferHeight : 1;
+    {
+        static std::uint64_t lastFbLogMs = 0;
+        static int lastFbW = -1;
+        static int lastFbH = -1;
+        const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if ((framebufferWidth <= 0 || framebufferHeight <= 0 ||
+             gFbW != lastFbW || gFbH != lastFbH) &&
+            static_cast<std::uint64_t>(nowMs) - lastFbLogMs >= 1000) {
+            lastFbLogMs = static_cast<std::uint64_t>(nowMs);
+            lastFbW = gFbW;
+            lastFbH = gFbH;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Gui, StructuredLevel::Important,
+                "ui.framebuffer-size", "UI",
+                "UI presentation size resolved for the current pass", 0,
+                nlohmann::json{
+                    {"pass_name", passName ? passName : "unknown"},
+                    {"framebuffer_width", framebufferWidth},
+                    {"framebuffer_height", framebufferHeight},
+                    {"resolved_width", gFbW},
+                    {"resolved_height", gFbH},
+                    {"renderer_width", gRenderer ? gRenderer->width : 0},
+                    {"renderer_height", gRenderer ? gRenderer->height : 0},
+                    {"window", win != nullptr}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
 
     {
         int winW = 1, winH = 1;

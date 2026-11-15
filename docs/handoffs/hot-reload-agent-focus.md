@@ -12,6 +12,19 @@ save their claimed areas, then wait for A to build. No agent invokes a compiler,
 
 One build at a time. One running generation at a time.
 
+Game-DLL request (after the daemon is restarted with the new action):
+
+```text
+python devscripts/dev-loop.py --request game-dll --wait-for-build
+```
+
+Deterministic hot-client test:
+
+```text
+python devscripts/dev-loop.py --request launch --launch-mode 57 --hot-client
+python devscripts/dev-loop.py --request start-client --hot-client
+```
+
 ## Focus
 
 ### Agent A
@@ -36,11 +49,34 @@ One build at a time. One running generation at a time.
 
 ### Agent C
 
-- client networking;
-- remaining client packet handlers;
-- client packet dispatch and packet coverage;
-- client runtime proof.
-- If the black window reproduces, C handles it before client networking.
+- hot-client default and presentation/render proof first;
+- black screen, viewport, GL-state, and swap acceptance;
+- then client networking proof;
+- do not edit `packets.*` or B's server pump.
+- Client packet handlers already live in game-owned
+  `multiplayer-tick.cpp` / `multiplayer-packets.cpp`; there is no separate
+  handler-copy task.
+- **Hot-client result:** the hot frame and connection work. Run
+  `20261115_030654` launched a normal client (`hot_client=false`) with the latest
+  EXE, loaded generation 169 directly, reached `Connected` as local player 1,
+  rendered `path=dll`, and reached 8,600+ frames. The earlier hot6 disconnect was
+  a build-identity rejection, not a hot-frame defect. Evidence:
+  `logs/2026-11-15/20261115_030654/client-01/events.jsonl`.
+- **Hot client is now the default:** `src/main.cpp` no longer requires
+  `MIMITA_GAME_HOT_CLIENT`; it sets `MIMITA_GAME_OWN_FRAME=1` whenever a valid
+  generation exists. `MIMITA_GAME_DISABLE=1` remains the resident escape hatch.
+- **Different-DLL swap:** proven for generations 168 and 170. Generation 170
+  activated live at sequence 27336 in run `20261115_030654`; the connection
+  stayed active and frames resumed at 2,600+.
+- **Swap diagnostic defect fixed:** generation 168 showed false watchdog stalls
+  after unload because the module-owned watchdog thread survived the swap.
+  `shutdownWholeGameEntry()` now stops the watchdog before unload. Generation
+  170 swapped without the stale `last_completed_frame=44883` reports; only the
+  expected short bootstrap stalls remained.
+- **Next blockers:** rejected hot generations still fall back to legacy
+  rendering. Remove the silent resident fallback, add the automatic hot
+  acceptance gate, and perform the EXE cutover. Server split, state domains, and
+  remaining safe-unload work stay open.
 
 ## Shared rules
 

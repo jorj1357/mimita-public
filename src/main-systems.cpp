@@ -871,11 +871,8 @@ void gameInitSubsystems(Engine& engine)
         mimita::host::StateObjectId::ReplayRecorder);
     ReplayPlayer& gReplayPlayer = requireResident<ReplayPlayer>(
         mimita::host::StateObjectId::ReplayPlayer);
-    ReplaySaveWorker* gReplayWorker = nullptr;
-#ifndef MIMITA_GAME_DLL
-    gReplayWorker = &requireResident<ReplaySaveWorker>(
+    ReplaySaveWorker* gReplayWorker = &requireResident<ReplaySaveWorker>(
         mimita::host::StateObjectId::ReplaySaveWorker);
-#endif
     AvatarSystem::instance().setBackgroundWorker(gReplayWorker);
     ReplayFactory& gReplayFactory = requireResident<ReplayFactory>(
         mimita::host::StateObjectId::ReplayFactory, gReplayRecorder);

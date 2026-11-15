@@ -46,6 +46,12 @@ struct ServerFrameV1 {
     std::uint64_t* totalPacketsIn = nullptr;
     std::uint64_t* totalPacketsOut = nullptr;
     std::uintptr_t socket = 0;
+    const char* procedural_mode = nullptr;
+    std::uint32_t procedural_seed = 0;
+    std::int32_t* procedural_start_queued = nullptr;
+    void (*set_spawn_override)(void* context, std::int32_t enabled,
+                               float x, float y, float z) = nullptr;
+    void* spawn_override_context = nullptr;
     std::uint64_t simulate_players_us = 0;
     std::uint64_t simulate_world_us = 0;
     std::uint64_t publish_us = 0;

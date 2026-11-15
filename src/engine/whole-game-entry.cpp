@@ -7,6 +7,7 @@
 #include "main-init.h"
 #include "engine/engine-tick.h"
 #include "network/multiplayer-context.h"
+#include "perf/perf-frame.h"
 #include "terminal/terminal-state.h"
 #include "devtools/terminal.h"
 
@@ -86,6 +87,9 @@ void renderWholeGame(void* renderContext) {
 }
 
 void shutdownWholeGameEntry() {
+    // Stop the module-owned watchdog before unload so its thread cannot keep
+    // reading this generation's globals after the DLL is replaced.
+    perfStopResourceWatchdog();
     // The resident host owns the device and Renderer. Do not call
     // Engine::shutdown here: in DLL mode it would shut down the resident device.
     delete gWholeGameEngine;

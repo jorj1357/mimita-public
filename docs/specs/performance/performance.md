@@ -141,3 +141,24 @@ results.
 The 0.2 Hz server also blocks client join and hit-claim validation. See the
 networking and contact-authority specifications for the separate acceptance
 items.
+
+
+## Measured client frame budget — 2026-11-15
+
+Current client runs still miss the 240 FPS / approximately 4.17 ms frame target.
+Two steady 60-frame windows in run `20261115_005633` showed:
+
+- 100% of frames over 4 ms on both measured clients;
+- average frame times of about 10–50 ms;
+- p95 of about 15–128 ms;
+- max of about 64–242 ms.
+
+The largest measured scopes were `Simulation::Lifecycle`,
+`ActorPairCollision`, `Setup::HotReloadDLL`, `Combat::PostWeaponContainment`,
+shadow rendering, UI, and swap. `Rendering::Actors::Cosmetics` was about 0.1 ms
+CPU in those windows, so cosmetics are not the measured primary CPU cost.
+
+Required next evidence: a steady 60-second window after the hot client frame
+stops stalling, with GPU timing when available, plus an A/B test with cosmetics
+disabled. Do not treat a cosmetic-only change as proof that the FPS issue is
+fixed.

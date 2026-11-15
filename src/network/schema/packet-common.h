@@ -51,7 +51,7 @@ constexpr int MAX_MAP_ID_BYTES = 64;
 // Avatar folder names are user/content-defined and can exceed the old 15-byte
 // snapshot field (for example, "abusivegirlheadless"). Keep replication from
 // silently truncating a valid avatar into a nonexistent folder name.
-constexpr int MAX_AVATAR_NAME_BYTES = 24;
+constexpr int MAX_AVATAR_NAME_BYTES = 32;
 
 // Safe datagram size: 1200 bytes ensures no IP fragmentation on internet paths.
 // Accounts for IP header (20), UDP header (8), ICE/STUN overhead (~32),
@@ -155,6 +155,8 @@ enum HitBodyPart : uint8_t
 };
 
 constexpr int MAX_NETWORK_PELLETS = 16;
+
+static constexpr uint8_t SPYKNIFE_CONTACT_BATCH_MAX = 6;
 
 enum ShotEffectFlags : uint16_t
 {

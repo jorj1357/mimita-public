@@ -13,6 +13,7 @@
 
 #include "host/abi/game-host-abi.h"
 #include "host/abi/lifetime-capability.h"
+#include "game/job-bridge-module.h"
 #include "replay/replay-factory-worker.h"
 
 namespace mimita::game {
@@ -39,34 +40,19 @@ void initializeHostReplayWorker(const mimita::host::HostServicesV1* services) {
 }
 }  // namespace mimita::game
 
+ReplaySaveWorker::ReplaySaveWorker() = default;
+ReplaySaveWorker::~ReplaySaveWorker() = default;
+
+void ReplaySaveWorker::drain() {
+    // Jobs are dispatched through the resident jobs capability. There is no
+    // generation-owned thread to wait on here.
+}
+
 bool ReplaySaveWorker::enqueue(std::function<void()> job) {
-    std::uint64_t lease = 0;
-    if (mimita::game::gJobs && mimita::game::gJobs->acquire) {
-        lease = mimita::game::gJobs->acquire(mimita::game::gHostData, "replay-save");
-    }
-    {
-        std::lock_guard<std::mutex> lock(mMutex);
-        if (mShutdown || mJobs.size() >= kMaxQueuedJobs) {
-            if (lease && mimita::game::gJobs->release)
-                mimita::game::gJobs->release(mimita::game::gHostData, lease);
-            return false;
-        }
-        mJobs.push([job = std::move(job), lease]() mutable {
-            struct LeaseGuard {
-                std::uint64_t value;
-                ~LeaseGuard() {
-                    if (value && mimita::game::gJobs && mimita::game::gJobs->release)
-                        mimita::game::gJobs->release(mimita::game::gHostData, value);
-                }
-            } guard{lease};
-            if (job) job();
-        });
-    }
-    mCv.notify_one();
-    return true;
+    if (!job) return false;
+    return mimita::game::runDetached(std::move(job), "replay-save");
 }
 
 size_t ReplaySaveWorker::queueDepth() const {
-    std::lock_guard<std::mutex> lock(mMutex);
-    return mJobs.size() + mActiveJobs;
+    return 0;
 }

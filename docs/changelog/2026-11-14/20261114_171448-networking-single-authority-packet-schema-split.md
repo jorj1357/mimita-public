@@ -21,15 +21,19 @@ Date: 2026-11-14
   `dispatchServerCommand` surface remains separate.
 - `src/network/packets.h`: wire header and common limits/enums moved to
   `src/network/schema/packet-header.h` and
-  `src/network/schema/packet-common.h`. Input, chat, and avatar structs moved to
-  `src/network/schema/packet-input.h`, `packet-chat.h`, and `packet-avatar.h`.
-  Packet IDs and the remaining structs stay in the umbrella until the generated
-  ID migration lands.
+  `src/network/schema/packet-common.h`. Input, chat, avatar, session, snapshot,
+  combat, player, gamemode, physical, and vehicle structs moved to their domain
+  headers under `src/network/schema/`.
 - `src/network/server.cpp`: removed the unused resident `isKnownPacketType`
   duplicate and the resident packet-handler fallback blocks. The hot
-  `server-packets.cpp` check remains.
+  `server-packets.cpp` check remains. `runServer` refuses to start without the
+  hot server API.
 - `src/network/server-ice.cpp`: removed the resident `processServerPacket`
   fallback; ICE packets use the DLL handler only.
+- `src/network/net_common.cpp`: now contains only pure endpoint/time/map-id
+  helpers. WinSock startup and socket-option ownership moved to resident
+  `src/host/net-common-host.cpp`. Agent A must remove `src/network/net_common.cpp`
+  from the resident owner list so it is compiled into the generation.
 - `docs/specs/networking/networking.md`: appended the normative single-authority
   and packet-split section. It records that all MiMITA networking behavior is
   hot; only external libraries/OS mechanisms are cold.
@@ -56,3 +60,36 @@ Date: 2026-11-14
 - Remove resident fallback duplicates for server packet/simulation/publish
   paths after the hot-only server is accepted.
 '
+## Follow-up in the same session
+
+- Split the remaining requested packet domains: session, snapshot, combat,
+  player lifecycle, gamemode, physical, and vehicle.
+- Added `src/game/server-authored-rebuild-module.cpp`: the DLL generation uses
+  CAP_JOBS instead of a resident `std::thread`; the EXE keeps the resident
+  thread implementation.
+- Added `EntityDomainCapabilityV1` with generated `player_core` and
+  `player_session` read/write, host adapter methods, host thunk, and a
+  generation bridge module. No handler consumes it yet.
+- Moved WinSock startup/socket-option ownership from `net_common.cpp` into
+  resident `src/host/net-common-host.cpp`; pure helpers remain hot.
+- EXE artifact `2026-11-14T23:13:13Z` published successfully.
+
+## Blocked-item follow-up
+
+- Retired the standalone `--client` path. `main.cpp` now reports it as retired,
+  `runClient` was removed from `net_mode.h`, and `src/network/client.cpp` was
+  deleted. The full client remains the supported client surface.
+- `src/game/net-common-module.cpp` is the DLL-only copy of the pure endpoint
+  helpers, so the generation does not depend on resident `net_common.cpp`.
+- `src/game/server-runtime-module.cpp` now performs a periodic
+  `player_core`/`player_session` parity read through the new domain bridge and
+  emits `game.state.domain-parity`.
+- The first authored-rebuild hot attempt was removed after discovering the
+  existing `authored-rebuild-bridge-module.cpp` already delegates to the host
+  worker; no duplicate worker remains.
+- `server.cpp`, `server-ice.cpp`, and the ICE wrappers still contain the raw
+  socket/thread mechanisms and were not moved.
+
+- Game generation 163 published successfully after the packet-domain split,
+  Option A server-shell cleanup, client retirement, domain parity consumer, and
+  hot net-common copy.

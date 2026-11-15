@@ -108,8 +108,9 @@ double threadCpuMilliseconds(uint32_t threadId)
 void resourceWatchdogMain()
 {
     bool stallReported = false;
-    bool stackAttempted = false;
     uint64_t nextReportNs = 0;
+    uint64_t nextStackNs = 0;
+    uint32_t stackSequence = 0;
     while (!gResourceWatchdogStop.load(std::memory_order_relaxed)) {
         Sleep(250);
         const uint32_t threadId = gResourceWatchdogMainThreadId.load(
@@ -122,7 +123,7 @@ void resourceWatchdogMain()
         const uint64_t ageMs = nowNs >= lastFrameNs ? (nowNs - lastFrameNs) / 1000000 : 0;
         if (ageMs < 1500) {
             stallReported = false;
-            stackAttempted = false;
+            nextStackNs = 0;
             continue;
         }
         if (nowNs < nextReportNs)
@@ -153,14 +154,16 @@ void resourceWatchdogMain()
                     ? (nowNs - progress.startNanoseconds) / 1000000 : 0}},
             __FILE__, __LINE__, __FUNCTION__);
         stallReported = true;
-        if (!stackAttempted) {
-            stackAttempted = true;
+        if (nowNs >= nextStackNs) {
+            nextStackNs = nowNs + 5000000000ULL;
+            ++stackSequence;
             char stackTrace[4096] = {};
             StructuredLogger::instance().tryWriteEvent(
                 StructuredCategory::Performance, StructuredLevel::Important,
                 "performance.stall-stack-capture", "performance",
-                "begin main-thread stack capture", frame,
-                nlohmann::json{{"phase", "begin"}, {"main_thread_id", threadId},
+                "begin periodic main-thread stack capture", frame,
+                nlohmann::json{{"phase", "begin"}, {"sequence", stackSequence},
+                               {"main_thread_id", threadId},
                                {"frame_heartbeat_age_ms", ageMs},
                                {"last_completed_frame", frame},
                                {"main_thread_cpu_ms", cpuMs}},
@@ -170,8 +173,9 @@ void resourceWatchdogMain()
             StructuredLogger::instance().tryWriteEvent(
                 StructuredCategory::Performance, StructuredLevel::Important,
                 "performance.stall-stack-capture", "performance",
-                "finished main-thread stack capture", frame,
-                nlohmann::json{{"phase", "end"}, {"main_thread_id", threadId},
+                "finished periodic main-thread stack capture", frame,
+                nlohmann::json{{"phase", "end"}, {"sequence", stackSequence},
+                               {"main_thread_id", threadId},
                                {"captured", captured}, {"stack", stackTrace}},
                 __FILE__, __LINE__, __FUNCTION__);
         }

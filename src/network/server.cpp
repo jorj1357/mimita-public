@@ -85,6 +85,12 @@ namespace MimitaNet {
 
 namespace {
 
+void setSpawnOverrideThunk(void*, std::int32_t enabled, float x, float y,
+                           float z) {
+    mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
+        enabled != 0, x, y, z);
+}
+
 struct HotnessState {
     std::atomic<std::uint64_t> dllCount{0};
     std::atomic<std::uint64_t> residentCount{0};
@@ -1086,7 +1092,7 @@ int runServer(const LaunchOptions& options)
     // A dev-loop/CLI procedural mode becomes active for the first real client
     // instead of starting before a player exists. This lets the existing
     // procedural command owner perform the normal authoritative teleport.
-    bool automaticProceduralStartQueued = false;
+    std::int32_t automaticProceduralStartQueued = 0;
 
     // ── Dedicated server ICE support ──
     ListenServerState dedicatedIceState;
@@ -1597,6 +1603,10 @@ int runServer(const LaunchOptions& options)
             serverFrame.totalPacketsIn = &totalPacketsIn;
             serverFrame.totalPacketsOut = &totalPacketsOut;
             serverFrame.socket = static_cast<std::uintptr_t>(sock);
+            serverFrame.procedural_mode = options.proceduralMode.c_str();
+            serverFrame.procedural_seed = options.proceduralSeed;
+            serverFrame.procedural_start_queued = &automaticProceduralStartQueued;
+            serverFrame.set_spawn_override = &setSpawnOverrideThunk;
             std::uint64_t npcUs = 0;
             std::uint64_t projectileUs = 0;
             std::uint64_t meleeActionsUs = 0;
@@ -1609,32 +1619,7 @@ int runServer(const LaunchOptions& options)
                 mimita::host::HostRuntime::instance().serverSimulatePlayers(
                     &serverFrame);
             noteServerCall(hotPlayers);
-            if (!hotPlayers) {
-            handleClientTimeout(players, sock, tick, totalPacketsOut);
-            for (auto& kv : players)
-            {
-                kv.second.shotsThisTick = 0;
-                kv.second.attackPktsThisTick = 0;
-            }
-            for (auto& kv : players)
-            {
-                // A disconnected/stale player's body freezes in place (slot kept
-                // alive for the reconnect grace window). No simulation, no death.
-                if (kv.second.connectionStale)
-                    continue;
-                simulatePlayer(kv.second, world);
-                updateServerBroadcastInterp(kv.second, tick);
-                if (kv.second.justRespawned)
-                {
-                    kv.second.justRespawned = false;
-                    completeAuthoritativeSpawn(sock, kv.second, false);
-                }
-            }
-            tickWeaponRuntimes(players, tick);
-
-            checkVoidDeath(players, npcs);
-            }
-
+            
             // Simulate all NPCs once per tick. simulateSharedNpcs already walks
             // the entire NpcSystem; looping over npcs here would advance every
             // NPC once per NPC and make them move N× faster.
@@ -1644,83 +1629,7 @@ int runServer(const LaunchOptions& options)
             noteServerCall(hotWorld);
             if (hotWorld) {
                 npcUs = serverFrame.simulate_world_us;
-            } else {
-            const auto npcStart = std::chrono::steady_clock::now();
-            ScenarioServerPlayback::instance().tick(tick, players, npcSystem);
-            {
-                std::vector<glm::vec3> anchors;
-                anchors.reserve(players.size());
-                for (const auto& kv : players)
-                    if (!kv.second.connectionStale && !kv.second.dead)
-                        anchors.push_back(kv.second.pos);
-                for (const Npc& npc : npcSystem.all())
-                    if (!npc.body.dead)
-                        anchors.push_back(npc.body.pos);
-                serverInfiniteCollisionTick(
-                    anchors, npcWorld,
-                    GamemodeRegistry::instance()
-                        .get(serverGamemodeState().matchMode)
-                        .worldStreaming.enabled);
-            }
-            simulateSharedNpcs(sock, players, npcs, npcSystem, world, npcWorld,
-                               mirrorPlayer, npcIdsAlive, projectiles,
-                               nextProjectileId, tick, totalPacketsOut);
-            // Record the post-collision player pose so hit rewind reads exactly
-            // what the snapshot will broadcast after the actor-pair pass.
-            for (auto& kv : players)
-                if (!kv.second.connectionStale)
-                    pushPositionHistory(kv.second, tick);
-            npcUs = elapsedMicroseconds(npcStart);
-            ScenarioServerRecorder::instance().captureTick(
-                players, npcs, npcSystem, projectiles, world, tick);
-            const auto projectileStart = std::chrono::steady_clock::now();
-            tickServerProjectiles(sock, players, npcs, projectiles, world, SERVER_DT, tick, totalPacketsOut);
-            projectileUs = elapsedMicroseconds(projectileStart);
-            const auto contactWeaponStart = std::chrono::steady_clock::now();
-            const auto meleeActionsStart = std::chrono::steady_clock::now();
-            tickServerMeleeActions(sock, players, npcs, tick, totalPacketsOut);
-            meleeActionsUs = elapsedMicroseconds(meleeActionsStart);
-            const auto physicalContactStart = std::chrono::steady_clock::now();
-            tickServerPhysicalContactWeapons(sock, players, npcs, world, SERVER_DT, tick, totalPacketsOut);
-            physicalContactUs = elapsedMicroseconds(physicalContactStart);
-            const auto worldImpactStart = std::chrono::steady_clock::now();
-            flushServerWorldImpacts(world, npcWorld, serverGamemodeState().mapId, tick);
-            worldImpactFlushUs = elapsedMicroseconds(worldImpactStart);
-            contactWeaponUs = elapsedMicroseconds(contactWeaponStart);
-            }
-
-            if (!options.proceduralMode.empty() &&
-                !automaticProceduralStartQueued &&
-                !serverGamemodeState().procedural.enabled &&
-                !players.empty())
-            {
-                if (MimitaProcedural::proceduralWorldConfig().modes.empty())
-                    MimitaProcedural::loadProceduralWorldConfig();
-                const auto* mode = MimitaProcedural::proceduralModeById(
-                    options.proceduralMode);
-                if (mode)
-                {
-                    auto firstPlayer = players.begin();
-                    ServerGamemodeState& gamemode = serverGamemodeState();
-                    gamemode.pendingProcedural.start = true;
-                    gamemode.pendingProcedural.modeId = options.proceduralMode;
-                    gamemode.pendingProcedural.seed = options.proceduralSeed != 0
-                        ? options.proceduralSeed
-                        : MimitaProcedural::proceduralWorldConfig().defaultSeed;
-                    gamemode.pendingProcedural.requesterId = firstPlayer->first;
-                    automaticProceduralStartQueued = true;
-                    printf("%s [PROCEDURAL AUTO START] mode=%s seed=%u requesterId=%u\n",
-                           serverTimestamp(), options.proceduralMode.c_str(),
-                           gamemode.pendingProcedural.seed, firstPlayer->first);
-                }
-                else
-                {
-                    printf("%s [PROCEDURAL AUTO START] rejected unknown mode=%s\n",
-                           serverTimestamp(), options.proceduralMode.c_str());
-                    automaticProceduralStartQueued = true;
-                }
-            }
-
+            } 
             tickIcePeers(serverCode, dedicatedIceState.iceSessionId,
                          pendingIceTransports);
             tickServerIceTransports(sock, players, npcs, projectiles,
@@ -1736,58 +1645,13 @@ int runServer(const LaunchOptions& options)
             noteServerCall(hotPublish);
             if (hotPublish) {
                 snapshotUs = serverFrame.publish_us;
-            } else {
-            serverTickVehicles(dedicatedVehicleState, players, &npcWorld,
-                               nextEntityId, tick);
-            const auto snapshotStart = std::chrono::steady_clock::now();
-            buildAndSendSnapshot(sock, players, npcs, tick, totalPacketsOut);
-            snapshotUs = elapsedMicroseconds(snapshotStart);
-            serverReplicatePhysicalEntities(sock, players, tick, totalPacketsOut,
-                                            physicalEntityReplication);
-            serverReplicateVehicles(sock, dedicatedVehicleState, players, tick,
-                                    totalPacketsOut);
-            tickDisagreementRetransmit(sock, players, disagreementRetransmit, totalPacketsOut);
-            tickReliableGameplayEvents(sock, players, totalPacketsOut);
-            }
-            if (mimita::host::HostRuntime::instance().probeEnabled()) {
-                const auto& overrides = serverGameOverrides();
-                mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
-                    overrides.spawnOverrideEnabled,
-                    overrides.spawnOverridePosition.x,
-                    overrides.spawnOverridePosition.y,
-                    overrides.spawnOverridePosition.z);
-            }
-            const bool hotGamemode = hotServer &&
+            }             const bool hotGamemode = hotServer &&
                 mimita::host::HostRuntime::instance().serverGamemode(
                     &serverFrame);
             noteServerCall(hotGamemode);
             if (hotGamemode) {
                 gamemodeUs = serverFrame.gamemode_us;
-            } else {
-            const auto gamemodeStart = std::chrono::steady_clock::now();
-            serverGamemodeTick(sock, players, world, npcWorld, npcs, npcSystem,
-                           npcIdsAlive, tick, totalPacketsOut);
-            const std::string& destructionMode =
-                serverGamemodeState().matchMode;
-            const Gamemode& destructionGamemode =
-                GamemodeRegistry::instance().get(destructionMode);
-            const std::string& resetPolicy =
-                destructionGamemode.features.destructibleWorldReset;
-            const bool resetsWorldDestruction =
-                resetPolicy == "match" || resetPolicy == "round" ||
-                (resetPolicy.empty() &&
-                 (destructionMode == "tdm" || destructionMode == "juggernaut" ||
-                  destructionMode == "jugger_horde"));
-            if (resetsWorldDestruction &&
-                world.lastDestructionMatchId != serverGamemodeState().duelId)
-            {
-                resetServerWorldDestruction(world, npcWorld, tick);
-                world.lastDestructionMatchId = serverGamemodeState().duelId;
-            }
-            gamemodeUs = elapsedMicroseconds(gamemodeStart);
-            tickServerProgression(sock, players, true, totalPacketsOut);
-            }
-
+            } 
             const uint64_t totalTickUs = elapsedMicroseconds(tickStart);
             ++tickTiming.tickCount;
             tickTiming.totalUs += totalTickUs;
@@ -2540,97 +2404,16 @@ static void simulateOneServerTick(ListenServerState& state)
         serverFrame.totalPacketsIn = &state.totalPacketsIn;
         serverFrame.totalPacketsOut = &state.totalPacketsOut;
         serverFrame.socket = static_cast<std::uintptr_t>(state.sock);
+        serverFrame.set_spawn_override = &setSpawnOverrideThunk;
         const bool hotPlayers = hotServer &&
             mimita::host::HostRuntime::instance().serverSimulatePlayers(
                 &serverFrame);
         noteServerCall(hotPlayers);
-        if (!hotPlayers) {
-        handleClientTimeout(state.players, state.sock, state.tick, state.totalPacketsOut);
-        for (auto& kv : state.players)
-        {
-            // Disconnected players freeze in place; their slot survives the
-            // reconnect grace window so a returning client is restored.
-            if (kv.second.connectionStale)
-                continue;
-            simulatePlayer(kv.second, state.world);
-            updateServerBroadcastInterp(kv.second, state.tick);
-            if (kv.second.justRespawned)
-            {
-                kv.second.justRespawned = false;
-                completeAuthoritativeSpawn(state.sock, kv.second, false);
-            }
-        }
-        tickWeaponRuntimes(state.players, state.tick);
-        checkVoidDeath(state.players, state.npcs);
-        }
-        const bool hotWorld = hotServer &&
+                const bool hotWorld = hotServer &&
             mimita::host::HostRuntime::instance().serverSimulateWorld(
                 &serverFrame);
         noteServerCall(hotWorld);
-        if (!hotWorld) {
-        ScenarioServerPlayback::instance().tick(
-            state.tick, state.players, *state.npcSystem);
-        {
-            std::vector<glm::vec3> anchors;
-            anchors.reserve(state.players.size());
-            for (const auto& kv : state.players)
-                if (!kv.second.connectionStale && !kv.second.dead)
-                    anchors.push_back(kv.second.pos);
-            for (const Npc& npc : state.npcSystem->all())
-                if (!npc.body.dead)
-                    anchors.push_back(npc.body.pos);
-            serverInfiniteCollisionTick(
-                anchors, *state.npcWorld,
-                GamemodeRegistry::instance()
-                    .get(serverGamemodeState().matchMode)
-                    .worldStreaming.enabled);
-        }
-        simulateSharedNpcs(state.sock, state.players, state.npcs,
-                           *state.npcSystem, state.world, *state.npcWorld,
-                           *state.mirrorPlayer, state.npcIdsAlive,
-                           state.projectiles, state.nextProjectileId,
-                           state.tick, state.totalPacketsOut);
-        for (auto& kv : state.players)
-            if (!kv.second.connectionStale)
-                pushPositionHistory(kv.second, state.tick);
-        ScenarioServerRecorder::instance().captureTick(
-            state.players, state.npcs, *state.npcSystem, state.projectiles,
-            state.world, state.tick);
-        tickServerProjectiles(state.sock, state.players, state.npcs, state.projectiles,
-                              state.world, SERVER_DT, state.tick,
-                              state.totalPacketsOut);
-        if (state.npcSystem) {
-            // Live frag projectiles are hazards before they detonate. Rebuild
-            // one small snapshot per tick; do not rescan projectiles per NPC.
-            projectileHazardScratch.clear();
-            for (const auto& kv : state.projectiles) {
-                const ServerProjectile& projectile = kv.second;
-                if (projectile.exploded) continue;
-                const std::string* id =
-                    weaponIdForDefNetworkId(projectile.weaponDefNetworkId);
-                if (!id || *id != "frag") continue;
-                AreaEffect hazard;
-                hazard.kind = AreaEffectKind::Danger;
-                hazard.position = projectile.position;
-                hazard.radius = projectile.splashRadius;
-                hazard.height = 0.0f;
-                hazard.durationTicks = 30;
-                hazard.alive = true;
-                projectileHazardScratch.push_back(hazard);
-            }
-            state.npcSystem->setProjectileHazards(projectileHazardScratch);
-        }
-
-        tickServerMeleeActions(state.sock, state.players, state.npcs,
-                               state.tick, state.totalPacketsOut);
-
-        tickServerPhysicalContactWeapons(state.sock, state.players, state.npcs,
-                                         state.world, SERVER_DT, state.tick,
-                                         state.totalPacketsOut);
-        flushServerWorldImpacts(state.world, *state.npcWorld,
-                                serverGamemodeState().mapId, state.tick);
-        }
-
+        
         // Skip ICE coordinator for local-only servers
         if (state.serverCode.find("LOCAL-") != 0)
         {
@@ -2649,58 +2432,10 @@ static void simulateOneServerTick(ListenServerState& state)
         const bool hotPublish = hotServer &&
             mimita::host::HostRuntime::instance().serverPublish(&serverFrame);
         noteServerCall(hotPublish);
-        if (!hotPublish) {
-        serverTickVehicles(state.vehicleState, state.players,
-                           state.npcWorld.get(), state.nextEntityId, state.tick);
-        buildAndSendSnapshot(state.sock, state.players, state.npcs,
-                             state.tick, state.totalPacketsOut);
-        serverReplicatePhysicalEntities(state.sock, state.players, state.tick,
-                                        state.totalPacketsOut,
-                                        state.physicalEntityReplication);
-        serverReplicateVehicles(state.sock, state.vehicleState, state.players,
-                                state.tick, state.totalPacketsOut);
-
-        tickDisagreementRetransmit(state.sock, state.players,
-                                   state.disagreementRetransmit,
-                                   state.totalPacketsOut);
-        tickReliableGameplayEvents(state.sock, state.players,
-                                   state.totalPacketsOut);
-        }
-        if (mimita::host::HostRuntime::instance().probeEnabled()) {
-            const auto& overrides = serverGameOverrides();
-            mimita::host::HostServerWorldAdapter::instance().setSpawnOverride(
-                overrides.spawnOverrideEnabled,
-                overrides.spawnOverridePosition.x,
-                overrides.spawnOverridePosition.y,
-                overrides.spawnOverridePosition.z);
-        }
-        const bool hotGamemode = hotServer &&
+                const bool hotGamemode = hotServer &&
             mimita::host::HostRuntime::instance().serverGamemode(&serverFrame);
         noteServerCall(hotGamemode);
-        if (!hotGamemode) {
-        serverGamemodeTick(state.sock, state.players, state.world, *state.npcWorld,
-                       state.npcs, *state.npcSystem, state.npcIdsAlive,
-                       state.tick, state.totalPacketsOut);
-        const std::string& destructionMode = serverGamemodeState().matchMode;
-        const Gamemode& destructionGamemode =
-            GamemodeRegistry::instance().get(destructionMode);
-        const std::string& resetPolicy =
-            destructionGamemode.features.destructibleWorldReset;
-        const bool resetsWorldDestruction =
-            resetPolicy == "match" || resetPolicy == "round" ||
-            (resetPolicy.empty() &&
-             (destructionMode == "tdm" || destructionMode == "juggernaut" ||
-              destructionMode == "jugger_horde"));
-        if (resetsWorldDestruction &&
-            state.world.lastDestructionMatchId != serverGamemodeState().duelId)
-        {
-            resetServerWorldDestruction(state.world, *state.npcWorld, state.tick);
-            state.world.lastDestructionMatchId = serverGamemodeState().duelId;
-        }
-
-        tickServerProgression(state.sock, state.players, true, state.totalPacketsOut);
-        }
-
+        
         uint64_t now = nowMs();
         if (now - state.lastLog >= 1000)
         {

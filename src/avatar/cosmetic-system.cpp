@@ -9,12 +9,16 @@
 #include "world/texture-store.h"
 #include "render/render-command.h"
 #include "render/world-shader.h"
+#include "debug/structured-log.h"
 
 namespace r = mimita::game::render;
 
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
+#include <string>
+#include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -31,14 +35,17 @@ const std::string& cosmeticAnchor(const CosmeticSlot& slot)
     return slot.anchorPart.empty() ? slot.attachTo : slot.anchorPart;
 }
 
-std::string cosmeticTexturePath(const CosmeticSlot& slot)
+std::string cosmeticTexturePath(const CosmeticSlot& slot,
+                                const std::string& actorAvatar)
 {
     if (slot.texture.image.empty())
         return {};
     if (slot.texture.image.find('/') != std::string::npos ||
         slot.texture.image.find('\\') != std::string::npos)
         return slot.texture.image;
-    return "assets/avatars/" + AvatarSystem::instance().currentName() + "/" + slot.texture.image;
+    const std::string& owner = actorAvatar.empty()
+        ? AvatarSystem::instance().currentName() : actorAvatar;
+    return "assets/avatars/" + owner + "/" + slot.texture.image;
 }
 
 } // namespace
@@ -144,6 +151,8 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     const r::Uniform brightnessLoc = r::worldShader().uniform("uCosmeticBrightness");
     const r::Uniform opacityLoc = r::worldShader().uniform("uCosmeticOpacity");
     const r::Uniform useColorLoc = r::worldShader().uniform("uUseColor");
+    const r::Uniform colorLoc = r::worldShader().uniform("uColor");
+    const std::string actorAvatar = player.avatarName();
 
     // Find attachment point transforms from player skeleton
     auto findNodeTransform = [&](const std::string& name) -> glm::mat4 {
@@ -206,10 +215,6 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         }
         if (textureLoc >= 0)
             r::uniform1i(textureLoc, 0);
-        if (useColorLoc >= 0)
-            r::uniform1i(useColorLoc, 0);
-        if (textureEnabledLoc >= 0)
-            r::uniform1i(textureEnabledLoc, slot.texture.image.empty() ? 0 : 1);
         if (offsetLoc >= 0)
             r::uniform2f(offsetLoc, slot.texture.offsetX / 1000.0f,
                          slot.texture.offsetY / 1000.0f);
@@ -223,9 +228,57 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         if (opacityLoc >= 0)
             r::uniform1f(opacityLoc, slot.texture.opacity);
 
-        const std::string texturePath = cosmeticTexturePath(slot);
+        const std::string texturePath = cosmeticTexturePath(slot, actorAvatar);
         const std::uint32_t overrideTexture = texturePath.empty()
             ? 0 : gTextures.getPath(texturePath);
+        // Cosmetic GLBs often contain geometry only (no material/texture).
+        // Never sample a missing/default texture in that case; render the
+        // authored color instead of black geometry.
+        const bool solidFallback = overrideTexture == 0;
+        if (useColorLoc >= 0)
+            r::uniform1i(useColorLoc, solidFallback ? 1 : 0);
+        if (solidFallback && colorLoc >= 0) {
+            const glm::vec3 color = slot.texture.color == glm::vec3(1.0f)
+                ? slot.color : slot.texture.color;
+            r::uniform4f(colorLoc, color.r, color.g, color.b,
+                         std::clamp(slot.texture.opacity, 0.0f, 1.0f));
+        }
+        if (textureEnabledLoc >= 0)
+            r::uniform1i(textureEnabledLoc, solidFallback ? 0 : 1);
+
+        {
+            static std::unordered_map<std::string, std::uint64_t> lastLogMs;
+            const std::string key = actorAvatar + "|" + choice + "|" +
+                texturePath + "|" + (solidFallback ? "solid" : "texture");
+            const auto nowMs = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            auto& last = lastLogMs[key];
+            if (last == 0 || nowMs - last >= 5000) {
+                last = nowMs;
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "cosmetic.render", "cosmetic",
+                    solidFallback
+                        ? "cosmetic rendered with solid-color fallback"
+                        : "cosmetic rendered with texture",
+                    0,
+                    nlohmann::json{
+                        {"actor_avatar", actorAvatar},
+                        {"glb", choice},
+                        {"anchor", attachTarget},
+                        {"texture_path", texturePath},
+                        {"texture_id", overrideTexture},
+                        {"solid_fallback", solidFallback},
+                        {"tint", {slot.color.r, slot.color.g, slot.color.b}},
+                        {"brightness", slot.texture.brightness},
+                        {"opacity", slot.texture.opacity},
+                        {"uv_offset", {slot.texture.offsetX, slot.texture.offsetY}},
+                        {"uv_scale", {slot.texture.scaleX, slot.texture.scaleY}},
+                        {"uv_rotation", slot.texture.rotation}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
         r::enable(r::Capability::Blend);
         r::blendFunc(r::BlendFactor::SrcAlpha,
                      r::BlendFactor::OneMinusSrcAlpha);
@@ -269,9 +322,12 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         for (const auto& batch : mesh.batches)
         {
             r::activeTexture(0);
-            r::bindTexture(r::TextureTarget::Texture2D,
-                           overrideTexture ? overrideTexture : batch.texture);
-            r::drawArrays(r::Primitive::Triangles, static_cast<std::int32_t>(batch.first),
+            if (!solidFallback) {
+                r::bindTexture(r::TextureTarget::Texture2D,
+                               overrideTexture ? overrideTexture : batch.texture);
+            }
+            r::drawArrays(r::Primitive::Triangles,
+                          static_cast<std::int32_t>(batch.first),
                           static_cast<std::int32_t>(batch.count));
         }
 
@@ -280,6 +336,8 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
 
     if (textureEnabledLoc >= 0)
         r::uniform1i(textureEnabledLoc, 0);
+    if (useColorLoc >= 0)
+        r::uniform1i(useColorLoc, 0);
 
     r::popState();
 }

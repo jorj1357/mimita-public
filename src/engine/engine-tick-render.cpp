@@ -983,6 +983,7 @@ void engineTickRender(Engine& engine, float dt, bool& worldPassRan)
     PostFX::instance().advanceTime(dt);
     const bool fullFrameStretched = engine.renderer->stretchesWholeFrame();
     if (!fullFrameStretched) {
+        PostFX::instance().probeScene("before-postfx");
         PostFX::instance().unbindFBO();
         diagRenderStage(6);
         // PostFX hot-reload gated by master hot-reload config
