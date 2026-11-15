@@ -151,3 +151,23 @@ A phase is not complete because code compiles. Each phase requires:
 - human visual acceptance for presentation changes.
 
 Build evidence, runtime evidence, and human acceptance are separate claims.
+
+
+## Input cold gap
+
+The current game DLL links its own static GLFW copy. That copy cannot observe
+the resident window's GLFW state, so `glfwGetKey`, `glfwGetMouseButton`,
+`glfwGetCursorPos`, and game-installed GLFW callbacks do not see resident input.
+
+The desired end state is a resident normalized input capability (`CAP_INPUT`)
+that exposes focus, key, mouse-button, cursor, and text state to the hot
+generation. That replaces direct GLFW calls in game code and removes the
+per-DLL GLFW dependency. It is a cold host/ABI change because it adds a host
+capability and changes window/input ownership.
+
+Until then, the hot fallback must:
+- consume resident-dispatched key/char/scroll events through `on_event`;
+- use a documented Win32 fallback for the resident window handle, cursor, and
+  mouse buttons;
+- journal that it is a transitional direct-device exception;
+- never install a game-DLL callback that outlives its generation.

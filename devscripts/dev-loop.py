@@ -47,6 +47,7 @@ from build_toolchain import compiler as resolve_compiler
 from build_toolchain import glfw_lib as resolve_glfw_lib
 from jsonc import load as load_jsonc
 from devscripts.module_ownership import module_source_paths, read_catalog
+from devscripts.source_manifest import OwnerResolver
 from devscripts.path_containment import (
     repository_temp_dir,
     resolve_coordinator_root,
@@ -499,6 +500,69 @@ def snapshot_inputs() -> dict[str, tuple[int, int] | None]:
     result.update(snapshot_watch_files())
     result.update(snapshot_watch_directories())
     return result
+
+
+def changed_input_paths(previous: dict[str, tuple[int, int] | None],
+                        current: dict[str, tuple[int, int] | None]) -> list[str]:
+    """Return paths whose signature changed, including additions/removals."""
+    paths = [path for path, signature in current.items()
+             if previous.get(path) != signature]
+    paths.extend(path for path in previous if path not in current)
+    return sorted(set(paths))
+
+
+_OWNER_RESOLVER: OwnerResolver | None = None
+
+
+def source_target_for_path(path_text: str) -> str:
+    """Classify one watched file as a cold EXE input or a game-DLL input.
+
+    .cpp files use the same owner resolver as source_manifest.py. Headers under
+    src/host are ABI/cold until the boundary is versioned; other game headers
+    rebuild the game generation. External, build, and resource inputs are cold.
+    """
+    global _OWNER_RESOLVER
+    path = Path(path_text)
+    try:
+        relative = path.resolve().relative_to(ROOT.resolve()).as_posix()
+    except (OSError, ValueError):
+        return "cold"
+    if relative.startswith(("external/", "include/", "tools/")):
+        return "cold"
+    if relative.startswith("src/host/"):
+        return "cold"
+    if path.suffix.lower() in {".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"}:
+        return "game" if relative.startswith("src/") else "cold"
+    if path.suffix.lower() in {".c", ".rc"}:
+        return "cold"
+    if path.suffix.lower() not in {".cc", ".cpp", ".cxx"}:
+        return "cold"
+    try:
+        if _OWNER_RESOLVER is None:
+            _OWNER_RESOLVER = OwnerResolver(ROOT)
+        owner, _ = _OWNER_RESOLVER.resolve(relative)
+    except (OSError, ValueError):
+        owner = ""
+    if owner == "game":
+        return "game"
+    if owner == "unresolved" and relative.startswith("src/"):
+        return "game"
+    return "cold"
+
+
+def classify_changed_paths(paths: list[str]) -> tuple[set[str], list[dict]]:
+    """Return targets and a compact build-decision record for changed files."""
+    targets: set[str] = set()
+    rows: list[dict] = []
+    for path_text in paths:
+        target = source_target_for_path(path_text)
+        targets.add(target)
+        try:
+            relative = Path(path_text).resolve().relative_to(ROOT.resolve()).as_posix()
+        except (OSError, ValueError):
+            relative = path_text
+        rows.append({"path": relative, "target": target})
+    return targets, rows
 
 
 def snapshot_watch_files() -> dict[str, tuple[int, int] | None]:
@@ -1144,6 +1208,7 @@ class DevLoop:
         self.lock = threading.Lock()
         self.generation = 0
         self.last_snapshot = snapshot_inputs()
+        self.last_changed_paths: list[dict] = []
         self.processes: list[subprocess.Popen] = []
         # Durable independent-server record, mirroring the GUI external-server
         # contract. This is intentionally NOT part of self.processes (which is
@@ -2019,8 +2084,15 @@ class DevLoop:
                 self.record_control_event(request, "rejected", message)
                 self.save_state("command_rejected")
                 return {"accepted": False, "queued": False, "error": message}
-            queue_path = str(self.command_queue_path or "")
-            journal_path = self.client_journal_path
+            # Use the primary client's recorded queue, not only the legacy
+            # run-level path. The launch path can create a client with a
+            # per-instance queue; writing to the other file would be accepted
+            # by the daemon but never read by the client.
+            primary = self.client_instances.get("client-01") or {}
+            queue_path = str(primary.get("command_queue") or
+                             self.command_queue_path or "")
+            journal_path = str(primary.get("journal_path") or
+                               self.client_journal_path)
         if not queue_path:
             message = "client command queue is not configured"
             self.record_control_event(request, "rejected", message)
@@ -2515,6 +2587,27 @@ class DevLoop:
                 self.last_message = "game-DLL build request queued through dev-loop"
                 self.record_control_event(request, "accepted", self.last_message)
                 self.save_state("game_build_queued")
+            elif action == "cold-link-trial":
+                trial = subprocess.run(
+                    [sys.executable,
+                     str(ROOT / "devscripts" / "exe_cold_link_trial.py"),
+                     "--link"],
+                    cwd=ROOT, text=True, capture_output=True, check=False,
+                    env={**os.environ, "MIMITA_DEV_LOOP_BUILD": "1"})
+                report = read_json(ROOT / "build" / "hot-reload" / "cold-link-trial.json")
+                self.last_message = (
+                    f"cold link trial undefined={report.get('undefined_symbol_count', '?')} "
+                    f"removed={report.get('removed_objects', '?')}")
+                self.record_runtime_event(
+                    "dev-loop.cold-link-trial",
+                    {"returncode": trial.returncode,
+                     "undefined_symbol_count": report.get("undefined_symbol_count"),
+                     "removed_objects": report.get("removed_objects")},
+                    "cold-only EXE link trial completed")
+                self.record_control_event(
+                    request, "completed" if trial.returncode == 0 else "failed",
+                    self.last_message)
+                self.save_state("cold_link_trial")
             elif action == "build-or-launch":
                 if self.latest_build is None or self.latest_stale:
                     self.launch_after_build = True
@@ -2712,58 +2805,91 @@ class DevLoop:
                 self.record_control_event(request, "rejected", self.last_message)
                 self.save_state("request_rejected")
 
+    def record_source_change(self, paths: list[str]) -> None:
+        """Classify a save and start the correct automatic build target."""
+        targets, rows = classify_changed_paths(paths)
+        game_target = "game" in targets
+        cold_target = "cold" in targets
+        with self.lock:
+            self.generation += 1
+            self.last_changed_paths = rows
+            if cold_target:
+                self.latest_stale = self.latest_build is not None
+                self.build_pending = True
+                self.build_status = "pending"
+            if game_target and cold_target:
+                self.last_message = (
+                    f"source changed, generation {self.generation}: game + cold")
+            elif game_target:
+                self.last_message = (
+                    f"game source changed, generation {self.generation}: game DLL")
+            else:
+                self.last_message = (
+                    f"cold source changed, generation {self.generation}: EXE")
+        self.record_runtime_event(
+            "hot.build.plan",
+            {
+                "generation": self.generation,
+                "targets": sorted(targets),
+                "game_auto": game_target,
+                "cold_auto": cold_target,
+                "changed": rows[:64],
+            },
+            "automatic hot/cold build decision",
+        )
+        if game_target:
+            self.queue_game_dll_request(f"auto-{self.generation}")
+        self.change_event.set()
+        self.save_state("source_changed")
+
     def watch(self) -> None:
         notifications = DirectoryChangeNotifications(WATCH_DIRECTORIES)
         notifications.start()
 
-        def record_source_change() -> None:
-            with self.lock:
-                self.generation += 1
-                self.latest_stale = self.latest_build is not None
-                self.last_message = f"source changed, generation {self.generation}"
-            self.change_event.set()
-            self.save_state("source_changed")
+        def record_source_change(paths: list[str]) -> None:
+            self.record_source_change(paths)
 
         # Catch any input changed between daemon initialization and watcher start.
         current = snapshot_inputs()
-        changed = current != self.last_snapshot
+        changed_paths = changed_input_paths(self.last_snapshot, current)
         self.last_snapshot = current
-        if changed:
-            record_source_change()
+        if changed_paths:
+            record_source_change(changed_paths)
         while not self.stop_event.is_set():
             if notifications.available and not notifications.failed.is_set():
                 directory_changed = notifications.changed.wait(POLL_SECONDS)
                 notifications.changed.clear()
+                before = dict(self.last_snapshot)
                 explicit = snapshot_watch_files()
-                changed = any(self.last_snapshot.get(path) != signature
-                              for path, signature in explicit.items())
                 self.last_snapshot.update(explicit)
                 if directory_changed:
                     directories = snapshot_watch_directories()
                     previous = {path: signature for path, signature in self.last_snapshot.items()
                                 if any(path.startswith(str(root) + os.sep)
                                        for root in WATCH_DIRECTORIES)}
-                    changed = changed or previous != directories
                     for path in previous:
                         self.last_snapshot.pop(path, None)
                     self.last_snapshot.update(directories)
+                changed_paths = changed_input_paths(before, self.last_snapshot)
             else:
                 if notifications.failed.is_set():
                     notifications.available = False
                 if self.stop_event.wait(POLL_SECONDS):
                     break
                 current = snapshot_inputs()
-                changed = current != self.last_snapshot
+                changed_paths = changed_input_paths(self.last_snapshot, current)
                 self.last_snapshot = current
 
-            if changed:
-                record_source_change()
-                changed = False
+            if changed_paths:
+                record_source_change(changed_paths)
+                changed_paths = []
         notifications.close()
 
     def start_build_worker(self) -> None:
         with self.lock:
             if self.active_build_generation is not None:
+                return
+            if self.game_build_worker is not None:
                 return
             requested_generation = self.generation
             request_ids: list[str] = []
@@ -4510,10 +4636,7 @@ class DevLoop:
                     self.start_build_worker()
                     continue
                 if self.change_event.wait(0.20):
-                    with self.lock:
-                        self.build_pending = True
-                        if self.active_build_generation is None:
-                            self.build_status = "pending"
+                    self.change_event.clear()
                 self.print_status()
                 if time.monotonic() - self.last_state_save_monotonic >= 1.0:
                     self.last_state_save_monotonic = time.monotonic()
@@ -5891,7 +6014,11 @@ def run_dashboard(args: argparse.Namespace) -> int:
         term = None
 
     title = f"MiMITA Coordinator Dashboard — {ROOT.name}"
-    if term is not None and not args.no_terminal_relaunch:
+    # One dashboard per checkout. A normal/scripted invocation attaches or
+    # renders in place; only an explicit opt-in may create a Windows Terminal
+    # window. This prevents repeated Python windows from taking over the desk.
+    if (term is not None and args.relaunch_terminal and
+            not args.no_terminal_relaunch and not existing_dashboard_pid()):
         if term.relaunch_in_windows_terminal(title):
             return 0
     # Acquire after any terminal handoff, so the original process does not
@@ -6415,9 +6542,12 @@ def run_control_client(args: argparse.Namespace) -> int:
 
     if action in ("command", "scenario-file", "launch", "build", "start-server",
                   "start-client", "stop-instance", "restart-instance") or args.ensure_running:
+        # Control/status/command invocations are headless. Only the explicit
+        # dashboard entry point may open a visible window; recovery here must
+        # not spawn a second Python/Terminal window.
         current, ensure_events = ensure_running(
             args.profile, args.launch_mode, visibility,
-            open_dashboard=not args.no_dashboard)
+            open_dashboard=False)
         for event in ensure_events:
             print(f"[DEV CONTROL] recovery action={event.get('action')} "
                   f"pid={event.get('pid')} ok={event.get('ok')}")

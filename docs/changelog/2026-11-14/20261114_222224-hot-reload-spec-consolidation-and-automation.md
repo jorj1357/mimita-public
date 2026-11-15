@@ -677,3 +677,144 @@ gate.
 - CAP_RENDER cleanup: 42 raw-GL game sources remain; the new gate reports them.
 - Full safe-unload leak proof: three swaps pass, but long-run memory/handle
   leak measurement is not yet recorded.
+
+# Follow-up: automatic game-source hot builds
+
+## Implemented
+
+- `devscripts/dev-loop.py` now classifies changed watched files as `game` or
+  `cold` before requesting a build.
+- A game-owned `.cpp` or game header automatically queues a whole-game DLL
+  build; it does not set the EXE build pending flag.
+- Cold, ABI, external, resource, and bootstrap changes still queue the cold EXE
+  build.
+- Mixed changes queue the game build first and serialize the cold build.
+- The dev-loop journals `hot.build.plan` with generation, targets, changed
+  paths, and whether the game/cold target was automatic.
+- `build.py` and `game_build_worker.py` remain the private low-level engines;
+  the dev-loop is the orchestration entry point.
+
+## Evidence
+
+- Touching `src/perf/perf-frame.cpp` produced:
+  `hot.build.plan targets=["game"] game_auto=true cold_auto=false`.
+- Generation 195 was published automatically without a new EXE build.
+- The running client activated generation 195 in the same PID (`26648`), with
+  `path=dll` and continued rendering.
+- The existing EXE identity remained unchanged.
+
+## Next
+
+- Add the cold-core allowlist and make the cold target reject game sources.
+- Fold the module catalog into the single game DLL.
+- Add terminal/tips live views over `hot.build.*` events.
+
+## Build target gate
+
+- Added `devscripts/build_target_gate.py`.
+- It reports `exe_sources`, `cold_core_sources`, `test_sources`,
+  `game_sources_in_exe`, and legacy bridge files.
+- Current result remains intentionally failing: 568 game-owned EXE inputs.
+- `--require-cold` makes the gate fail; report-only remains the default while
+  the cutover is in progress.
+- This is the enforcement point for the future cold-core allowlist.
+
+## Cold-link trial harness
+
+- Added `devscripts/exe_cold_link_trial.py`.
+- Added a dev-loop-only `--request cold-link-trial` action.
+- The harness reuses the last normal `build/link.rsp`, removes game-owned object
+  files, links a separate `build/out/mimita-cold-trial.exe`, and writes
+  `build/hot-reload/cold-link-trial.json`.
+- Current run removed 591 game-owned objects and attempted the trial link.
+- The compiler driver currently returns `collect2.exe: error: ld returned 53
+  exit status` with no linker diagnostics. The harness therefore records no
+  undefined symbols yet. This is a tooling blocker, not evidence that the cold
+  link is clean.
+- The normal EXE is untouched; no canonical build behavior changed.
+
+## Next
+
+- Diagnose the trial linker invocation (likely response-file/driver handling),
+  then use the undefined-symbol output to remove the first game cluster.
+- Test/selftest source removal remains separate from the game-source count.
+
+# Follow-up: cold-link symbol parsing and first resident→game slice
+
+## Cold-link report
+
+- Fixed the undefined-symbol parser in `devscripts/exe_cold_link_trial.py`: it
+  now captures the full linker symbol instead of truncating at the escaped
+  newline, and records the referring object, source, and source owner.
+- The report now includes `undefined_by_referrer_owner`,
+  `undefined_by_referrer_combination`, `unknown_referrers`, and
+  `undefined_referrers`.
+- Baseline trial: 411 unique undefined symbols (1,282 refs), 591 removed
+  game-owned objects, referrers 216 resident / 156 bootstrap / 74 test;
+  185 were resident-only.
+- The first resident boundary defect chosen was `src/hot-reload/module-host.cpp`
+  directly owning 36 `MapEditor` calls. The host may not link or call game
+  implementation once the game source leaves the EXE.
+
+## MapEditor host bridge
+
+- Added `mimita::host::kEventMapEditorHost` and bounded
+  `MapEditorHostCallV1` / `MapEditorHostOp` to
+  `src/host/abi/game-host-abi.h`.
+- Added `HostRuntime::invokeMapEditorHost()` to deliver one editor callback to
+  the active generation without re-entering the host barrier (the callback can
+  be reached from an already-entered game tick).
+- Converted the resident `EditorServicesV1` callbacks in
+  `src/hot-reload/module-host.cpp` to forward bounded requests instead of
+  calling `MapEditor` directly.
+- Added game-owned `src/game/map-editor-host-bridge.cpp` implementing those
+  operations against `MapEditor`, and dispatched them from
+  `src/game/game-module.cpp`.
+- Fixed the game-side module startup bridge in
+  `src/game/module-host-bridge-module.cpp`: it now forwards
+  `ModuleOp::Startup` to the resident host instead of doing nothing. Without
+  this, hot-client runs never started the module catalog, so `map-editor` and
+  the other modules stayed unloaded.
+
+## Evidence
+
+- Build: EXE artifact `2026-11-15T20:00:25.068387Z`
+  (`376a5d5a...`) published current; game generation 219 published.
+- Hot client PID `24668` in run `20261115_200646` loaded
+  `generation-219`, `path=dll`.
+- Module startup after the forward-the-startup fix: `module.host.started`,
+  8 modules; `map-editor` activated at generation 41, boundary
+  `main_thread_editor_boundary`.
+- MapEditor bridge runtime proof:
+  `map-editor.command command=set_position handled_by_module=true`, followed by
+  `map-editor.module.position` `handled_by_module=true` with object
+  `ci_bridge_probe3`, before `[0,0,1.75]`, after `[239,-89,408]`.
+- Journal: `logs/2026-11-15/20261115_200646/client-01/events-0039.jsonl`
+  (rotated 100 MB segment; the active `events.jsonl` has since rotated past
+  these startup/module records).
+- Cold trial after the bridge: 375 unique undefined symbols (down 36), 592
+  removed game objects, referrers 180 resident / 156 bootstrap / 74 test;
+  resident-only 149 (down 36). No `MapEditor` symbols remain in the undefined
+  list. Report: `build/hot-reload/cold-link-trial.json`.
+- Cleanup: loaded the client map from disk after the probe chunks; no map save
+  was issued.
+
+## Rejected experiment
+
+- Re-owning `src/debug/debug-log.cpp` and `src/utils/path_utils.cpp` as
+  resident links them into the EXE but not into `game.dll`. The game build
+  failed with undefined `Debug::*` and `resolveAssetPath` references. Reverted;
+  generation 210 restored. Shared services need an EXE export/import or a host
+  capability before they can move resident.
+
+## Caveats and next slice
+
+- The hot-client gate on the rotated journal fails `connected`: this run
+  disconnected at `20:08:26` (`ReconnectFailed`), before the module startup and
+  MapEditor probe. The disconnect is not caused by the bridge, but the run is
+  not a full connected acceptance pass.
+- Next resident-only cluster: 23 `EffectPartSystem` calls in
+  `src/host/host-runtime.cpp`, then the `MimitaNet::*` server policy calls in
+  `src/network/server.cpp`.
+- Test/bootstrap-only undefined symbols remain prerequisites for a truly cold
+  link, not reductions in `game_in_exe`.

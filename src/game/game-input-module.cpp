@@ -2,8 +2,14 @@
 // Host-dispatched input handlers for the active game generation.
 
 #include "game/game-input-module.h"
+#include "input/input-commands.h"
+#include "renderer/renderer.h"
+extern Renderer* gRenderer;
+#include "debug/structured-log.h"
 
 #include <string>
+#include <nlohmann/json.hpp>
+#include <chrono>
 
 #include <GLFW/glfw3.h>
 
@@ -16,6 +22,8 @@
 #include "gui/menus/sign-in-menu.h"
 #include "gui/menus/server-info-menu.h"
 #include "gui/menus/online-menu.h"
+#include "gui/menus/pause-menu.h"
+#include "gui/password-popup.h"
 #include "mapeditor/map-editor.h"
 #include "avatar/avatar-editor.h"
 
@@ -24,8 +32,48 @@ void requestSendChatMessage(const std::string& message);
 namespace mimita::game {
 
 void handleGameInputKey(int key, int scancode, int action, int mods) {
-    (void)scancode;
+    InputCommandSystem::instance().ingestHostKey(key, scancode, action, mods);
+    {
+        static std::uint64_t lastKeyLogMs = 0;
+        const auto nowMs = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (action == GLFW_PRESS && nowMs - lastKeyLogMs >= 250) {
+            lastKeyLogMs = nowMs;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::General, StructuredLevel::Important,
+                "input.host-key", "input", "resident key event reached game DLL", 0,
+                nlohmann::json{{"key", key}, {"action", action}, {"mods", mods}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+    }
     if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
+
+    // The hot DLL has its own static GLFW copy, so the frame-level
+    // glfwGetKey() edge handlers cannot see the resident window. Handle the
+    // two global modal keys on the host-dispatched event path.
+    if (action == GLFW_PRESS && key == GLFW_KEY_GRAVE_ACCENT) {
+        if (!PauseMenu::isOpen()) {
+            Terminal::instance().toggle();
+            return;
+        }
+    }
+    if (action == GLFW_PRESS && key == GLFW_KEY_ESCAPE) {
+        GLFWwindow* window = gRenderer ? gRenderer->window : nullptr;
+        if (PasswordPopup::isOpen()) {
+            if (window) PasswordPopup::handleKey(window, GLFW_KEY_ESCAPE, GLFW_PRESS);
+            return;
+        }
+        if (PauseMenu::isOpen()) {
+            if (window) PauseMenu::handleKey(window, GLFW_KEY_ESCAPE, GLFW_PRESS);
+            return;
+        }
+        if (Terminal::instance().isOpen()) {
+            Terminal::instance().toggle();
+            return;
+        }
+    }
+
     authPopupHandleKey(key, action);
     signInMenuHandleKey(key, action);
     if (avatarEditorHandleKey(key, action, mods)) return;

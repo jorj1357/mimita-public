@@ -19,6 +19,8 @@ extern nlohmann::json gAvatarBodypartOverrides;
 extern bool gAvatarUseModelTransforms;
 extern bool gAvatarCanonicalizePlayerModel;
 extern std::vector<std::pair<std::string, std::string>> gAvatarRigExtraNodes;
+struct Renderer;
+extern Renderer* gRenderer;
 
 static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 {
@@ -49,7 +51,7 @@ static void fillAvatarRigExtraNodes(const AvatarRig& rig)
 namespace r = mimita::game::render;
 
 AvatarInstance::~AvatarInstance() {
-    if (atlasTexture && glfwGetCurrentContext()) {
+    if (atlasTexture && gRenderer) {
         mimita::game::deleteTexture(atlasTexture);
     }
     atlasTexture = 0;
@@ -446,8 +448,10 @@ bool AvatarSystem::buildAtlas(Player& player, bool reloadTextures) {
 
     std::vector<unsigned char> atlasPixels = buildAtlasPixels(mAvatar, mBasePath);
 
-    // Dedicated servers have no OpenGL context — skip GPU texture upload.
-    if (!glfwGetCurrentContext()) {
+    // Dedicated servers have no resident renderer — skip GPU texture upload.
+    // The hot DLL's static GLFW cannot see the resident context, so gRenderer is
+    // the reliable availability signal.
+    if (!gRenderer) {
         printf("[AVATAR ATLAS] headless server, skipping GL texture upload for %s\n", mAvatarName.c_str());
         return true;
     }
@@ -921,7 +925,7 @@ bool AvatarSystem::buildAtlasForInstance(AvatarInstance& inst, bool reloadTextur
     if (atlasPixels.empty())
         atlasPixels = buildAtlasPixels(inst.definition, inst.basePath);
 
-    if (!glfwGetCurrentContext()) return true;
+    if (!gRenderer) return true;
 
     if (inst.atlasTexture) {
         mimita::game::deleteTexture(inst.atlasTexture);
@@ -995,6 +999,7 @@ bool AvatarSystem::applyAvatarToPlayer(Player& player, const std::string& avatar
 
     player.setAvatarName(resolvedAvatar);
     player.avatarInstance = inst;
+    player.avatarAtlasFinalizeAttempted = false;
 
     // A newly-created replica may not have a model yet.  Bind the avatar
     // identity now, but defer model/texture/cosmetic loading to the existing
@@ -1079,10 +1084,21 @@ bool AvatarSystem::finalizeAvatarForPlayer(Player& player)
     AvatarInstance* inst = player.avatarInstance;
     if (!inst || !player.modelLoaded)
         return false;
-    if (!buildAtlasForInstance(*inst, false))
+    const bool built = buildAtlasForInstance(*inst, false);
+    if (!built || !inst->atlasTexture) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Avatar, StructuredLevel::Important,
+            "avatar.atlas.finalize.failed", player.username,
+            "avatar atlas finalize could not create a texture", 0,
+            {{"player", player.username}, {"avatar", inst->name},
+             {"atlas", inst->atlasTexture}, {"built", built},
+             {"gl_context", gRenderer != nullptr}},
+            __FILE__, __LINE__, __FUNCTION__);
         return false;
+    }
     if (!applyAtlasFromInstance(*inst, player))
         return false;
+    player.avatarAtlasFinalizeAttempted = true;
 
     // Bind the per-avatar rig + animation set for the visible player.
     {

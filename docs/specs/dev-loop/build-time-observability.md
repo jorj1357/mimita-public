@@ -216,3 +216,31 @@ For each run, reconcile phase durations with total monotonic elapsed time,
 confirm the final result belongs to the recorded source generation, and verify
 the dashboard updates during the active phase. These are build-process claims;
 they do not prove runtime behavior or gameplay acceptance.
+
+
+## Header fan-out and incremental build budget (2026-11-15)
+
+The build worker already has a source+hash object cache and `.d` dependency
+files. The missing operational view is header fan-out.
+
+Required reporting:
+
+- top headers by dependent translation-unit count;
+- PCH dependents and whether a PCH rebuild invalidated all objects;
+- exact objects affected by a header edit;
+- whether a build was incremental or forced a cold object set;
+- any `cold-link-trial` object deletion, with the deleted count and requester.
+
+Rules:
+
+- No automatic object deletion during ordinary live work. A cold-link trial
+  must be explicit and recorded.
+- A header edit may rebuild its dependents; record the fan-out before treating
+  the build as unexpectedly slow.
+- Do not infer a hang from one slow translation unit; use live phase progress.
+- Store persisted timing per `.dev/build-timings/<attempt-id>.json` as already
+  specified. Aggregate history must not be committed to git.
+- The goal is not "one header changes one file". The goal is one header with
+  one owner and a measured, shrinking dependent set.
+
+See `docs/architecture/live-development/incremental-build-and-header-fanout.md`.

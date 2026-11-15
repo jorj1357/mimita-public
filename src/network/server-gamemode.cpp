@@ -1129,7 +1129,18 @@ static uint32_t payloadSpawnCart(ServerGamemodeState& d)
     const uint32_t id = system.add(triangles, d.payloadRuntime.cartTransform,
                                    PhysicalEntityMotion::Kinematic, 0);
     PhysicalEntity* entity = system.find(id);
-    if (!entity) return 0;
+    if (!entity) {
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::Duel, StructuredLevel::Errors,
+            "payload.cart-spawn-failed", d.mapId,
+            "payload cart physical entity could not be created",
+            d.currentServerTick,
+            nlohmann::json{{"map", d.mapId}, {"size", {size.x, size.y, size.z}},
+                           {"position", {d.payloadRuntime.cartPosition.x,
+                                         d.payloadRuntime.cartPosition.y,
+                                         d.payloadRuntime.cartPosition.z}}});
+        return 0;
+    }
     entity->networkId = id;
     entity->replicate = true;
     entity->renderModel = true;

@@ -8,6 +8,8 @@
 */
 #include "input/mouse-lock.h"
 #include "debug/structured-log.h"
+#include "input/input-router.h"
+#include "game/render-device-bridge-module.h"
 
 #include <nlohmann/json.hpp>
 
@@ -25,11 +27,15 @@ bool locked()
 void set(GLFWwindow* win, bool on)
 {
     gGameplayMouseLocked = on;
+    mimita::game::setHostCursorVisible(!on);
+    InputRouter::setPointerLock(on);
     if (!win) return;
 
     const int requestedMode = on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
     const int modeBefore = glfwGetInputMode(win, GLFW_CURSOR);
-    glfwSetInputMode(win, GLFW_CURSOR, requestedMode);
+    // The hot DLL cannot change the resident window's GLFW cursor mode. Route
+    // visibility through the host render-device capability and keep clipping in
+    // the input router.
     const int modeAfter = glfwGetInputMode(win, GLFW_CURSOR);
 
     auto& logger = StructuredLogger::instance();

@@ -1,6 +1,7 @@
 #include "input/scenario-input.h"
 
 #include "input/input-frame.h"
+#include "input/input-router.h"
 
 #include <GLFW/glfw3.h>
 
@@ -41,7 +42,7 @@ bool mouseButton(GLFWwindow* window, int button)
             return gFrame->secondaryHeld;
         return false;
     }
-    return glfwGetMouseButton(window, button) == GLFW_PRESS;
+    return InputRouter::mouseDown(button);
 }
 
 bool keyDown(GLFWwindow* window, int key)
@@ -61,7 +62,7 @@ bool keyDown(GLFWwindow* window, int key)
             return gFrame->jump;
         return false;
     }
-    return glfwGetKey(window, key) == GLFW_PRESS;
+    return InputRouter::keyDown(key);
 }
 
 void clear()

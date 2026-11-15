@@ -1,4 +1,5 @@
 #include "gui/ui-system.h"
+#include "input/input-router.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
 
@@ -131,7 +132,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
         gBatchVertices.reserve(8192);
     if (gOwnsHoverInput)
         gHoverOwnerKey.clear();
-    gMouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    gMouseDown = InputRouter::mouseDown(0);
     // Mouse edge state belongs to the one interactive UI pass. Rendering-only
     // passes must observe the edge without consuming it before buttons run.
     if (gOwnsHoverInput)
@@ -227,7 +228,7 @@ void uiEndFrame()
     {
         GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
         double mx, my;
-        glfwGetCursorPos(gWindow, &mx, &my);
+        InputRouter::cursorPos(gWindow, &mx, &my);
         double fbx, fby;
         cs.cursorWindowToScreen(mx, my, fbx, fby);
 

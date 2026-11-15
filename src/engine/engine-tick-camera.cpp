@@ -44,6 +44,7 @@
 #include "devtools/terminal.h"
 #include "input/input-commands.h"
 #include "input/mouse-lock.h"
+#include "input/input-router.h"
 #include "game/game-state.h"
 #include "physics/config.h"
 #include "combat/projectile-render.h"
@@ -240,6 +241,28 @@ void engineTickCamera(Engine& engine, float dt)
     auto& mpContext = MP_CONTEXT;
 
     MapEditor::instance().updateInput(engine.window(), dt);
+    {
+        static bool previousLock = MouseLock::locked();
+        static bool initialLockApplied = false;
+        const bool nowLocked = MouseLock::locked();
+        if (!initialLockApplied) {
+            initialLockApplied = true;
+            InputRouter::setPointerLock(nowLocked);
+        }
+        if (nowLocked != previousLock) {
+            previousLock = nowLocked;
+            camera.firstMouse = true;
+            InputRouter::setPointerLock(nowLocked);
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Camera, StructuredLevel::Important,
+                "input.pointer-lock", "input", "L toggled gameplay pointer lock", 0,
+                nlohmann::json{{"locked", nowLocked},
+                               {"cursor_mode", glfwGetInputMode(engine.window(), GLFW_CURSOR)}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
+        camera.ignoreHostMouse = !nowLocked;
+    }
+    InputRouter::applyPendingLook(camera);
 
     if (InputCommandSystem::instance().isKeyboardEnabled())
         applyDebugMovement(player, engine.window(), camera, dt);
@@ -360,7 +383,7 @@ void engineTickCamera(Engine& engine, float dt)
         if (InputCommandSystem::instance().isKeyboardEnabled() && gReplayEditor.keyframePromptStage > 0) {
             // Escape cancels prompt
             static bool escWasDown = false;
-            bool escDown = glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+            bool escDown = InputRouter::keyDown(GLFW_KEY_ESCAPE);
             if (escDown && !escWasDown) {
                 gReplayEditor.keyframePromptStage = 0;
                 Terminal::instance().addLog("[RPLE] Keyframe creation canceled");
@@ -370,8 +393,8 @@ void engineTickCamera(Engine& engine, float dt)
             static bool promptKeyConsumed = false;
             if (!promptKeyConsumed) {
                 if (gReplayEditor.keyframePromptStage == 1) {
-                    if (glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
-                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                    if (InputRouter::keyDown(GLFW_KEY_1) ||
+                        InputRouter::keyDown(GLFW_KEY_KP_1)) {
                         glm::vec3 pos = gReplayEditor.freecam
                             ? gReplayEditor.freecamPos : camera.pos;
                         glm::quat rot = gReplayEditor.freecam
@@ -387,12 +410,12 @@ void engineTickCamera(Engine& engine, float dt)
                             std::to_string(gReplayEditor.keyframePromptTick));
                         gReplayEditor.keyframePromptStage = 0;
                         promptKeyConsumed = true;
-                    } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
-                               glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
+                    } else if (InputRouter::keyDown(GLFW_KEY_2) ||
+                               InputRouter::keyDown(GLFW_KEY_KP_2)) {
                         gReplayEditor.keyframePromptStage = 2;
                         promptKeyConsumed = true;
-                    } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
-                               glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
+                    } else if (InputRouter::keyDown(GLFW_KEY_3) ||
+                               InputRouter::keyDown(GLFW_KEY_KP_3)) {
                         gReplayEditor.keyframePromptStage = 3;
                         gReplayEditor.pbspeedInputBuf[0] = '\0';
                         gReplayEditor.pbspeedInputLen = 0;
@@ -400,19 +423,19 @@ void engineTickCamera(Engine& engine, float dt)
                     }
                 } else if (gReplayEditor.keyframePromptStage == 2) {
                     ReplayEditorCamMode mode = ReplayEditorCamMode::ThirdPerson;
-                    if (glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
-                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                    if (InputRouter::keyDown(GLFW_KEY_1) ||
+                        InputRouter::keyDown(GLFW_KEY_KP_1)) {
                         mode = ReplayEditorCamMode::ThirdPerson;
-                    } else if (glfwGetKey(win, GLFW_KEY_2) == GLFW_PRESS ||
-                               glfwGetKey(win, GLFW_KEY_KP_2) == GLFW_PRESS) {
+                    } else if (InputRouter::keyDown(GLFW_KEY_2) ||
+                               InputRouter::keyDown(GLFW_KEY_KP_2)) {
                         mode = ReplayEditorCamMode::Freecam;
-                    } else if (glfwGetKey(win, GLFW_KEY_3) == GLFW_PRESS ||
-                               glfwGetKey(win, GLFW_KEY_KP_3) == GLFW_PRESS) {
+                    } else if (InputRouter::keyDown(GLFW_KEY_3) ||
+                               InputRouter::keyDown(GLFW_KEY_KP_3)) {
                         mode = ReplayEditorCamMode::FirstPerson;
                     }
                     if (mode != ReplayEditorCamMode::ThirdPerson ||
-                        glfwGetKey(win, GLFW_KEY_1) == GLFW_PRESS ||
-                        glfwGetKey(win, GLFW_KEY_KP_1) == GLFW_PRESS) {
+                        InputRouter::keyDown(GLFW_KEY_1) ||
+                        InputRouter::keyDown(GLFW_KEY_KP_1)) {
                         gReplayEditor.addCameraModeKeyframe(
                             gReplayEditor.keyframePromptTick, mode);
                         Terminal::instance().addLog(
@@ -439,8 +462,8 @@ void engineTickCamera(Engine& engine, float dt)
                     }
 
                     // Enter
-                    bool enterDown = glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS ||
-                                     glfwGetKey(win, GLFW_KEY_KP_ENTER) == GLFW_PRESS;
+                    bool enterDown = InputRouter::keyDown(GLFW_KEY_ENTER) ||
+                                     InputRouter::keyDown(GLFW_KEY_KP_ENTER);
                     if (enterDown && !enterWasDown) {
                         if (ed.pbspeedInputLen > 0) {
                             float speed = 1.0f;
@@ -460,7 +483,7 @@ void engineTickCamera(Engine& engine, float dt)
                     enterWasDown = enterDown;
 
                     // Backspace
-                    bool backspaceDown = glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS;
+                    bool backspaceDown = InputRouter::keyDown(GLFW_KEY_BACKSPACE);
                     if (backspaceDown && !backspaceWasDown) {
                         if (ed.pbspeedInputLen > 0) {
                             ed.pbspeedInputBuf[--ed.pbspeedInputLen] = '\0';
@@ -470,8 +493,8 @@ void engineTickCamera(Engine& engine, float dt)
                     backspaceWasDown = backspaceDown;
 
                     // Period (keyboard and numpad)
-                    bool periodDown = glfwGetKey(win, GLFW_KEY_PERIOD) == GLFW_PRESS ||
-                                      glfwGetKey(win, GLFW_KEY_KP_DECIMAL) == GLFW_PRESS;
+                    bool periodDown = InputRouter::keyDown(GLFW_KEY_PERIOD) ||
+                                      InputRouter::keyDown(GLFW_KEY_KP_DECIMAL);
                     if (periodDown && !periodWasDown) {
                         if (ed.pbspeedInputLen < 15) {
                             bool hasDot = false;
@@ -490,8 +513,8 @@ void engineTickCamera(Engine& engine, float dt)
                     {
                         int digitKey = -1;
                         for (int d = 0; d <= 9; d++) {
-                            if (glfwGetKey(win, GLFW_KEY_0 + d) == GLFW_PRESS ||
-                                glfwGetKey(win, GLFW_KEY_KP_0 + d) == GLFW_PRESS) {
+                            if (InputRouter::keyDown(GLFW_KEY_0 + d) ||
+                                InputRouter::keyDown(GLFW_KEY_KP_0 + d)) {
                                 digitKey = d;
                                 break;
                             }
@@ -507,12 +530,12 @@ void engineTickCamera(Engine& engine, float dt)
                     }
                 }
             }
-            if (glfwGetKey(win, GLFW_KEY_1) != GLFW_PRESS &&
-                glfwGetKey(win, GLFW_KEY_2) != GLFW_PRESS &&
-                glfwGetKey(win, GLFW_KEY_3) != GLFW_PRESS &&
-                glfwGetKey(win, GLFW_KEY_KP_1) != GLFW_PRESS &&
-                glfwGetKey(win, GLFW_KEY_KP_2) != GLFW_PRESS &&
-                glfwGetKey(win, GLFW_KEY_KP_3) != GLFW_PRESS) {
+            if (!InputRouter::keyDown(GLFW_KEY_1) &&
+                !InputRouter::keyDown(GLFW_KEY_2) &&
+                !InputRouter::keyDown(GLFW_KEY_3) &&
+                !InputRouter::keyDown(GLFW_KEY_KP_1) &&
+                !InputRouter::keyDown(GLFW_KEY_KP_2) &&
+                !InputRouter::keyDown(GLFW_KEY_KP_3)) {
                 promptKeyConsumed = false;
             }
         }
@@ -520,7 +543,7 @@ void engineTickCamera(Engine& engine, float dt)
         // F key: toggle freecam
         if (gReplayEditor.keyframePromptStage == 0) {
             static bool fWasDown = false;
-            bool fDown = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS;
+            bool fDown = InputRouter::keyDown(GLFW_KEY_F);
             if (fDown && !fWasDown) {
                 gReplayEditor.freecam = !gReplayEditor.freecam;
                 if (gReplayEditor.freecam) {
@@ -546,11 +569,11 @@ void engineTickCamera(Engine& engine, float dt)
         // Shift+Up/Down: keyframe navigation
         // IMPORTANT: must never change playback state.
         if (gReplayEditor.keyframePromptStage == 0 &&
-            (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-             glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)) {
+            (InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+             InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT))) {
             static bool upWasDown = false, downWasDown = false;
-            bool upDown = glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS;
-            bool downDown = glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS;
+            bool upDown = InputRouter::keyDown(GLFW_KEY_UP);
+            bool downDown = InputRouter::keyDown(GLFW_KEY_DOWN);
 
             if (upDown && !upWasDown) {
                 bool wasPlaying = gReplayEditor.playing;
@@ -616,9 +639,9 @@ void engineTickCamera(Engine& engine, float dt)
         // Ctrl+Z: undo via autosave
         if (gReplayEditor.keyframePromptStage == 0) {
             static bool zWasDown = false;
-            bool ctrlDown = glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                            glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
-            bool zDown = glfwGetKey(win, GLFW_KEY_Z) == GLFW_PRESS;
+            bool ctrlDown = InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+                            InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL);
+            bool zDown = InputRouter::keyDown(GLFW_KEY_Z);
             if (ctrlDown && zDown && !zWasDown) {
                 if (gReplayEditor.undoLastAutosave())
                     Terminal::instance().addLog("[RPLE] Undo: restored previous state");
@@ -631,7 +654,7 @@ void engineTickCamera(Engine& engine, float dt)
         // K: create keyframe with type selection (visual popup drawn in HUD)
         if (gReplayEditor.keyframePromptStage == 0) {
             static bool kWasDown = false;
-            bool kDown = glfwGetKey(win, GLFW_KEY_K) == GLFW_PRESS;
+            bool kDown = InputRouter::keyDown(GLFW_KEY_K);
             if (kDown && !kWasDown) {
                 int tick = (int)std::round(gReplayEditor.movieTick);
                 if (REPLAY_PLAYER.totalTicks() > 0)
@@ -925,39 +948,6 @@ void engineTickCamera(Engine& engine, float dt)
     }
 
     if (anyFreecam) {
-        // Mouse look: rely on existing camera.updateMouse() callback
-        const int cursorBefore = glfwGetInputMode(engine.window(), GLFW_CURSOR);
-        if (!MapEditor::instance().active() &&
-            MouseLock::locked() && cursorBefore != GLFW_CURSOR_DISABLED) {
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            camera.firstMouse = true;
-            if (StructuredLogger::instance().shouldLog(
-                    StructuredCategory::Gui, StructuredLevel::Important)) {
-                const auto& match = MimitaNet::CommunityMatchClient::instance();
-                const uint8_t localTeam = match.localTeam(mpContext.localPlayerId);
-                nlohmann::json fields = {
-                    {"cursor_before", cursorBefore},
-                    {"cursor_after", glfwGetInputMode(engine.window(), GLFW_CURSOR)},
-                    {"mouse_lock_locked", MouseLock::locked()},
-                    {"pause_open", PauseMenu::isOpen()},
-                    {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
-                    {"freecam_enabled", freecamEnabled},
-                    {"any_freecam", anyFreecam},
-                    {"match_active", match.active()},
-                    {"mode", match.mode()},
-                    {"local_team", localTeam},
-                    {"local_team_name", localTeam < 3 ? match.teamName(localTeam) : ""},
-                    {"spectator_team", localTeam == 2},
-                    {"local_actor_state", match.localActorState(mpContext.localPlayerId)}
-                };
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::Gui, StructuredLevel::Important,
-                    "cursor.freecam_override", "CURSOR_FREECAM",
-                    "Freecam forced the cursor disabled after another owner requested visibility", 0,
-                    fields, __FILE__, __LINE__, __FUNCTION__);
-            }
-        }
-
         // WASD + QE movement
         glm::vec3 flatForward = camera.front;
         flatForward.z = 0.0f;
@@ -967,28 +957,28 @@ void engineTickCamera(Engine& engine, float dt)
         float speed = GetPlayerSettings().freecamSpeed;
         if (MapEditor::instance().active())
             speed *= MapEditor::instance().cameraSpeedMultiplier();
-        if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-            glfwGetKey(engine.window(), GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) speed *= 3.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-            glfwGetKey(engine.window(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) speed *= 0.3f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS) move += flatForward;
-        if (glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS) move -= flatForward;
-        if (glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS) move += flatRight;
-        if (glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
-        if (glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
-        if (glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+        if (InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+            InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT)) speed *= 3.0f;
+        if (InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+            InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL)) speed *= 0.3f;
+        if (InputRouter::keyDown(GLFW_KEY_W)) move += flatForward;
+        if (InputRouter::keyDown(GLFW_KEY_S)) move -= flatForward;
+        if (InputRouter::keyDown(GLFW_KEY_D)) move += flatRight;
+        if (InputRouter::keyDown(GLFW_KEY_A)) move -= flatRight;
+        if (InputRouter::keyDown(GLFW_KEY_E)) move.z += 1.0f;
+        if (InputRouter::keyDown(GLFW_KEY_Q)) move.z -= 1.0f;
 
         Debug::log(Debug::Category::Replay,
             "[RPLE INPUT] tick=%d paused=%d freecamEnabled=%d"
             " w=%d a=%d s=%d d=%d q=%d e=%d moveDelta=(%.2f %.2f %.2f)\n",
             gReplayPlayer.currentTick(),
             (int)gReplayPlayer.isPaused(), (int)(gReplayEditor.isLoaded() && gReplayEditor.freecam),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_W) == GLFW_PRESS),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_A) == GLFW_PRESS),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_S) == GLFW_PRESS),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_D) == GLFW_PRESS),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_Q) == GLFW_PRESS),
-            (int)(glfwGetKey(engine.window(), GLFW_KEY_E) == GLFW_PRESS),
+            (int)(InputRouter::keyDown(GLFW_KEY_W)),
+            (int)(InputRouter::keyDown(GLFW_KEY_A)),
+            (int)(InputRouter::keyDown(GLFW_KEY_S)),
+            (int)(InputRouter::keyDown(GLFW_KEY_D)),
+            (int)(InputRouter::keyDown(GLFW_KEY_Q)),
+            (int)(InputRouter::keyDown(GLFW_KEY_E)),
             move.x, move.y, move.z);
 
         if (glm::length(move) > 0.001f)

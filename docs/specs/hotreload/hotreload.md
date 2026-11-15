@@ -145,6 +145,35 @@ These are intentionally cold for Cutover-1:
 Every cold entry must name its owner, reason, hot replacement target, and removal
 gate. The list is expected to shrink.
 
+## Cold-to-hot promotion pattern
+
+Promoting a behavior out of the cold core follows one repeatable sequence:
+
+1. Resolve every target source in `build/source-manifest.json`. Stop if the
+   owner is `resident`, `bootstrap`, or `launcher`; those are cold changes.
+2. Separate the immutable mechanism from editable policy. The resident side may
+   keep the window, OS event pump, socket, device, file watcher, or worker. The
+   game side owns routing, bindings, validation, decisions, and presentation.
+3. Define the narrow boundary. Prefer an existing versioned capability or a
+   plain fixed-size event. Do not pass STL containers, vtables, or generation
+   pointers across the ABI.
+4. Add the hot consumer in the game DLL. It must be safe to replace on every
+   generation activation.
+5. Register and unregister callbacks/jobs through the host. A callback pointer
+   into a game DLL must not remain installed after that generation unloads.
+6. Add one owner-level diagnostic event that proves the hot path ran, plus a
+   bounded failure reason when it did not.
+7. Build only the game DLL through the root dev loop. A successful compile is
+   not activation evidence.
+8. Exercise the exact behavior in the same PID and inspect `events.jsonl`.
+9. Prove rollback, then remove the duplicate cold behavior.
+10. Update the cold-entry record with owner, reason, replacement target, and
+    removal gate.
+
+A new source file under `src/**/*.cpp` defaults to owner `game`. If a proposed
+fix adds a source outside that rule, resolve its owner before writing code; do
+not assume a new file will be hot.
+
 ## Hot behavior
 
 All ordinary behavior is hot:

@@ -3,6 +3,10 @@
 
 #include <new>
 
+#include <GLFW/glfw3.h>
+#include <nlohmann/json.hpp>
+#include "debug/structured-log.h"
+
 #include "engine/engine.h"
 #include "main-init.h"
 #include "engine/engine-tick.h"
@@ -57,6 +61,21 @@ bool initializeWholeGameEntry(int width, int height, const char* title) {
     }
     gWholeGameFrameState = EngineFrameState{};
     gameInit(0, nullptr, *gWholeGameEngine);
+    if (GLFWwindow* window = gWholeGameEngine->window()) {
+        const bool focusedBefore =
+            glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+        if (!focusedBefore) glfwFocusWindow(window);
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Important,
+            "input.window-focus", "input",
+            "hot client focused its gameplay window after generation init", 0,
+            nlohmann::json{
+                {"focused_before", focusedBefore},
+                {"focused_after", glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0},
+                {"iconified", glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0},
+                {"visible", glfwGetWindowAttrib(window, GLFW_VISIBLE) != 0}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     gWholeGameReady = true;
     return true;
 }

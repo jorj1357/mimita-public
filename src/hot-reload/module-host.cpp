@@ -25,7 +25,7 @@
 #include "debug/structured-log.h"
 #include "devtools/terminal.h"
 #include "gamemode/map-config.h"
-#include "mapeditor/map-editor.h"
+#include "host/host-runtime.h"
 #include "npc/npc-world-query.h"
 #include "modules/api/actor-contact-policy-api.h"
 #include "modules/api/chunk-collision-api.h"
@@ -48,6 +48,13 @@ using mimita_module::ModuleV1;
 
 constexpr std::uint64_t kPollIntervalMs = 250;
 constexpr std::size_t kMaxConcurrentModuleBuilds = 2;
+
+bool invokeMapEditorHost(mimita::host::MapEditorHostOp op,
+                         mimita::host::MapEditorHostCallV1& call)
+{
+    call.op = op;
+    return mimita::host::HostRuntime::instance().invokeMapEditorHost(&call);
+}
 
 std::uint64_t fileWriteTime(const std::filesystem::path& path)
 {
@@ -128,27 +135,34 @@ std::string readTextFile(const std::filesystem::path& path)
 int MIMITA_MODULE_CALL hostGetPrimarySelection(
     char* id, std::uint32_t idCapacity, int* kind, float* position)
 {
-    glm::vec3 value(0.0f);
-    if (!MapEditor::instance().modulePrimarySelection(id, idCapacity, kind, value))
+    if (!id || !kind || !position)
         return 0;
-    position[0] = value.x;
-    position[1] = value.y;
-    position[2] = value.z;
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.ptr0 = id;
+    call.u0 = idCapacity;
+    call.ptr1 = kind;
+    call.ptr2 = position;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::GetPrimarySelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostApplyPrimaryPosition(const float* position)
 {
     if (!position)
         return 0;
-    return MapEditor::instance().moduleApplyPrimaryPosition(
-        glm::vec3(position[0], position[1], position[2])) ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.ptr0 = const_cast<float*>(position);
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::ApplyPrimaryPosition, call) ? 1 : 0;
 }
 
 void MIMITA_MODULE_CALL hostNotify(const char* message)
 {
-    if (message)
-        MapEditor::instance().notify(message);
+    if (!message)
+        return;
+    mimita::host::MapEditorHostCallV1 call;
+    std::snprintf(call.s0, sizeof(call.s0), "%s", message);
+    invokeMapEditorHost(mimita::host::MapEditorHostOp::Notify, call);
 }
 
 void MIMITA_MODULE_CALL hostLogEvent(
@@ -180,24 +194,36 @@ std::uint64_t MIMITA_MODULE_CALL hostRevision()
 
 int MIMITA_MODULE_CALL hostSelectObject(const char* id)
 {
-    return id && MapEditor::instance().selectObject(id) ? 1 : 0;
+    if (!id)
+        return 0;
+    mimita::host::MapEditorHostCallV1 call;
+    std::snprintf(call.s0, sizeof(call.s0), "%s", id);
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SelectObject, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSelectKind(const char* kind)
 {
-    return kind && MapEditor::instance().selectKind(kind) ? 1 : 0;
+    if (!kind)
+        return 0;
+    mimita::host::MapEditorHostCallV1 call;
+    std::snprintf(call.s0, sizeof(call.s0), "%s", kind);
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SelectKind, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSelectAll()
 {
-    MapEditor::instance().selectAllEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SelectAll, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostClearSelection()
 {
-    MapEditor::instance().moduleClearSelection();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::ClearSelection, call) ? 1 : 0;
 }
 
 void MIMITA_MODULE_CALL hostLogLine(const char* message)
@@ -208,146 +234,203 @@ void MIMITA_MODULE_CALL hostLogLine(const char* message)
 
 int MIMITA_MODULE_CALL hostCopySelection()
 {
-    MapEditor::instance().copyEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::CopySelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostPasteClipboard()
 {
-    MapEditor::instance().pasteEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::PasteClipboard, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostCutSelection()
 {
-    MapEditor::instance().cutEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::CutSelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostDuplicateSelection()
 {
-    MapEditor::instance().duplicateEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::DuplicateSelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostDeleteSelection()
 {
-    MapEditor::instance().deleteEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::DeleteSelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostUndo()
 {
-    MapEditor::instance().undoEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::Undo, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostRedo()
 {
-    MapEditor::instance().redoEdit();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::Redo, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSave()
 {
-    return MapEditor::instance().save() ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(mimita::host::MapEditorHostOp::Save, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostReload()
 {
-    return MapEditor::instance().reload() ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(mimita::host::MapEditorHostOp::Reload, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostAutosave()
 {
-    return MapEditor::instance().autosave() ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(mimita::host::MapEditorHostOp::Autosave, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostRebuildCollision()
 {
-    MapEditor::instance().flushCollisionNow();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::RebuildCollision, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetFreezeWorld(int freeze)
 {
-    MapEditor::instance().setFreezeWorld(freeze != 0);
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.u0 = freeze != 0 ? 1u : 0u;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetFreezeWorld, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostFocusSelection()
 {
-    MapEditor::instance().focusSelection();
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::FocusSelection, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostNudge(float dx, float dy, float dz)
 {
-    MapEditor::instance().nudgeSelection(glm::vec3(dx, dy, dz));
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = dx;
+    call.f1 = dy;
+    call.f2 = dz;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::Nudge, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetPosition(float x, float y, float z)
 {
-    return MapEditor::instance().setSelectedPosition(glm::vec3(x, y, z)) ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = x;
+    call.f1 = y;
+    call.f2 = z;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetPosition, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetRotation(float x, float y, float z)
 {
-    return MapEditor::instance().setSelectedRotation(glm::vec3(x, y, z)) ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = x;
+    call.f1 = y;
+    call.f2 = z;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetRotation, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetScale(float x, float y, float z)
 {
-    return MapEditor::instance().setSelectedScale(glm::vec3(x, y, z)) ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = x;
+    call.f1 = y;
+    call.f2 = z;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetScale, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetSize(float x, float y, float z)
 {
-    return MapEditor::instance().setSelectedSize(glm::vec3(x, y, z)) ? 1 : 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = x;
+    call.f1 = y;
+    call.f2 = z;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetSize, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetBombSiteRadius(float radius)
 {
-    MapEditor::instance().setSelectedBombSiteRadius(radius);
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.f0 = radius;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetBombSiteRadius, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostRenameSelection(const char* name)
 {
-    return name && MapEditor::instance().setSelectedName(name) ? 1 : 0;
+    if (!name)
+        return 0;
+    mimita::host::MapEditorHostCallV1 call;
+    std::snprintf(call.s0, sizeof(call.s0), "%s", name);
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::RenameSelection, call) ? 1 : 0;
 }
 
 std::uint32_t MIMITA_MODULE_CALL hostGetSelectionCount()
 {
-    return MapEditor::instance().moduleSelectionCount();
+    mimita::host::MapEditorHostCallV1 call;
+    if (!invokeMapEditorHost(
+            mimita::host::MapEditorHostOp::GetSelectionCount, call))
+        return 0;
+    return call.u0;
 }
 
 int MIMITA_MODULE_CALL hostGetSelectionItem(
     std::uint32_t index, int* kind, char* id, std::uint32_t idCapacity)
 {
-    return MapEditor::instance().moduleSelectionAt(
-        index, kind, id, idCapacity) ? 1 : 0;
+    if (!kind || !id)
+        return 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.u0 = index;
+    call.ptr0 = kind;
+    call.ptr1 = id;
+    call.u1 = idCapacity;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::GetSelectionItem, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostSetSelection(
     std::uint32_t count, const mimita_map_editor::EditorSelectionRefV1* refs)
 {
-    std::vector<EditorObjectRef> selection;
-    selection.reserve(count);
-    for (std::uint32_t i = 0; i < count; ++i) {
-        EditorObjectRef ref;
-        ref.kind = static_cast<EditorObjectKind>(refs[i].kind);
-        ref.id = refs[i].id;
-        selection.push_back(std::move(ref));
-    }
-    MapEditor::instance().moduleSetSelection(selection);
-    return 1;
+    if (!refs && count != 0)
+        return 0;
+    mimita::host::MapEditorHostCallV1 call;
+    call.u0 = count;
+    call.ptr0 = const_cast<mimita_map_editor::EditorSelectionRefV1*>(refs);
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::SetSelection, call) ? 1 : 0;
 }
 
 std::uint32_t MIMITA_MODULE_CALL hostGetWorldObjectCount()
 {
-    return MapEditor::instance().moduleWorldObjectCount();
+    mimita::host::MapEditorHostCallV1 call;
+    if (!invokeMapEditorHost(
+            mimita::host::MapEditorHostOp::GetWorldObjectCount, call))
+        return 0;
+    return call.u0;
 }
 
 int MIMITA_MODULE_CALL hostGetWorldObjectInfo(
@@ -355,36 +438,22 @@ int MIMITA_MODULE_CALL hostGetWorldObjectInfo(
 {
     if (!out)
         return 0;
-    MapEditorWorldObjectView view;
-    if (!MapEditor::instance().moduleWorldObjectAt(index, view))
-        return 0;
-    std::snprintf(out->id, sizeof(out->id), "%s", view.id);
-    std::snprintf(out->name, sizeof(out->name), "%s", view.name);
-    out->nodeIndex = view.nodeIndex;
-    out->vertexCount = view.vertexCount;
-    for (int i = 0; i < 3; ++i) {
-        out->basePosition[i] = view.basePosition[i];
-        out->boundsMin[i] = view.boundsMin[i];
-        out->boundsMax[i] = view.boundsMax[i];
-    }
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.u0 = index;
+    call.ptr0 = out;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::GetWorldObjectInfo, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostGetMapBounds(float outMin[3], float outMax[3])
 {
     if (!outMin || !outMax)
         return 0;
-    glm::vec3 minValue(0.0f);
-    glm::vec3 maxValue(0.0f);
-    if (!MapEditor::instance().moduleMapBounds(minValue, maxValue))
-        return 0;
-    outMin[0] = minValue.x;
-    outMin[1] = minValue.y;
-    outMin[2] = minValue.z;
-    outMax[0] = maxValue.x;
-    outMax[1] = maxValue.y;
-    outMax[2] = maxValue.z;
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.ptr0 = outMin;
+    call.ptr1 = outMax;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::GetMapBounds, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostGetProfileFootprint(float outFootprint[3])
@@ -411,42 +480,46 @@ int MIMITA_MODULE_CALL hostCreateChunk(
 {
     if (!outId || outCapacity == 0)
         return 0;
-    const glm::vec3 size = footprint
-        ? glm::vec3(footprint[0], footprint[1], footprint[2])
-        : glm::vec3(10.0f, 10.0f, 4.0f);
-    const std::string created = MapEditor::instance().addChunkWithFootprint(
-        requestedId ? requestedId : "", size);
-    if (created.empty())
-        return 0;
-    std::snprintf(outId, outCapacity, "%s", created.c_str());
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    if (requestedId)
+        std::snprintf(call.s0, sizeof(call.s0), "%s", requestedId);
+    call.ptr0 = const_cast<float*>(footprint);
+    call.ptr1 = outId;
+    call.u0 = outCapacity;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::CreateChunk, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostCreateChunkPart(
     const char* chunkId, const char* kind, char* outId, std::uint32_t outCapacity)
 {
-    (void)chunkId;
     if (!outId || outCapacity == 0)
         return 0;
-    const std::string created = MapEditor::instance().addChunkPart(
-        kind ? kind : "box");
-    if (created.empty())
-        return 0;
-    std::snprintf(outId, outCapacity, "%s", created.c_str());
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    if (chunkId)
+        std::snprintf(call.s0, sizeof(call.s0), "%s", chunkId);
+    if (kind)
+        std::snprintf(call.s1, sizeof(call.s1), "%s", kind);
+    call.ptr0 = outId;
+    call.u0 = outCapacity;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::CreateChunkPart, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostCreateConnector(
     const char* chunkId, const char* side, char* outId, std::uint32_t outCapacity)
 {
-    (void)chunkId;
     if (!outId || outCapacity == 0)
         return 0;
-    const std::string sideValue = side ? side : "east";
-    if (!MapEditor::instance().addConnector(sideValue))
-        return 0;
-    std::snprintf(outId, outCapacity, "%s", sideValue.c_str());
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    if (chunkId)
+        std::snprintf(call.s0, sizeof(call.s0), "%s", chunkId);
+    if (side)
+        std::snprintf(call.s1, sizeof(call.s1), "%s", side);
+    call.ptr0 = outId;
+    call.u0 = outCapacity;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::CreateConnector, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostPreviewConnections(
@@ -454,9 +527,11 @@ int MIMITA_MODULE_CALL hostPreviewConnections(
 {
     if (!report || reportCapacity == 0)
         return 0;
-    const std::string text = MapEditor::instance().previewConnectionsReport();
-    std::snprintf(report, reportCapacity, "%s", text.c_str());
-    return 1;
+    mimita::host::MapEditorHostCallV1 call;
+    call.ptr0 = report;
+    call.u0 = reportCapacity;
+    return invokeMapEditorHost(
+        mimita::host::MapEditorHostOp::PreviewConnections, call) ? 1 : 0;
 }
 
 int MIMITA_MODULE_CALL hostEvaluateConnectorPair(

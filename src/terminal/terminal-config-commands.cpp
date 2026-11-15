@@ -292,7 +292,7 @@ void registerConfigCommands()
             }
 
             InputCommandSystem::instance().bindAction(action, key);
-            InputCommandSystem::instance().saveBinds("config/accounts/default.json");
+            InputCommandSystem::instance().saveBinds("config/input/binds.json");
             DevOverlay::instance().showNotification("Input bind: " + action + " = " + keyStr, 3.0f);
             Terminal::instance().addLog("[OK] Input bind updated: " + action + " = " + keyStr);
         }
@@ -303,9 +303,11 @@ void registerConfigCommands()
         "Save input binds to account config",
         "input.save [account_name]",
         [](const std::vector<std::string>& args) {
-            std::string account = args.empty() ? "default" : args[0];
-            InputCommandSystem::instance().saveBinds("config/accounts/" + account + ".json");
-            Terminal::instance().addLog("[OK] Input binds saved to account: " + account);
+            std::string path = args.empty()
+                ? "config/input/binds.json"
+                : "config/accounts/" + args[0] + "/binds.json";
+            InputCommandSystem::instance().saveBinds(path);
+            Terminal::instance().addLog("[OK] Input binds saved to " + path);
         }
     });
 
@@ -318,7 +320,9 @@ void registerConfigCommands()
                 Terminal::instance().addLog("[ERROR] Usage: input.load <account_name>");
                 return;
             }
-            InputCommandSystem::instance().loadBinds("config/accounts/" + args[0] + ".json");
+            InputCommandSystem::instance().loadBinds(
+                args[0] == "default" ? "config/input/binds.json" :
+                "config/accounts/" + args[0] + "/binds.json");
             Terminal::instance().addLog("[OK] Input binds loaded from account: " + args[0]);
         }
     });

@@ -1302,6 +1302,35 @@ void Perf::endFrame(float currentFrameMs)
                 (uint32_t)s.frameNumber, fields, __FILE__, __LINE__,
                 "Perf::endFrame");
 
+            nlohmann::json fpsFields{
+                {"window_s", secs},
+                {"frames", w.frames},
+                {"fps", frames / secs},
+                {"avg_frame_ms", w.sumFrame / frames},
+                {"max_frame_ms", w.maxFrame},
+                {"frame_budget_ms", targetMs},
+                {"frames_over_budget", w.overBudget},
+                {"npcs_active", gState.npcCount},
+                {"effects_alive", gState.effectCount}};
+            if (w.sampleCount > 0) {
+                std::array<float, 300> sorted = w.frameSamples;
+                std::sort(sorted.begin(), sorted.begin() + w.sampleCount);
+                auto fpsPct = [&](double p) {
+                    const size_t idx = std::min<size_t>(
+                        w.sampleCount - 1,
+                        (size_t)(p * (double)(w.sampleCount - 1)));
+                    return sorted[idx];
+                };
+                fpsFields["p50_frame_ms"] = fpsPct(0.50);
+                fpsFields["p95_frame_ms"] = fpsPct(0.95);
+                fpsFields["p99_frame_ms"] = fpsPct(0.99);
+            }
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Performance, StructuredLevel::Important,
+                "performance.fps", "performance", "1s always-on fps summary",
+                (uint32_t)s.frameNumber, fpsFields, __FILE__, __LINE__,
+                "Perf::endFrame");
+
             static uint32_t sFiveSecondWindow = 0;
             ++sFiveSecondWindow;
             if (sFiveSecondWindow % 5 == 0) {

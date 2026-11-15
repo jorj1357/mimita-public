@@ -5,6 +5,7 @@
 #include "camera.h"
 #include "config/camera-config.h"
 #include <algorithm>
+#include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
@@ -15,6 +16,13 @@
 #include "debug/structured-log.h"
 
 void Camera::updateMouse(double xpos, double ypos) {
+    if (ignoreHostMouse) {
+        firstMouse = true;
+        return;
+    }
+    lastMouseInputTime = static_cast<double>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     if (firstMouse) { lastX = xpos; lastY = ypos; firstMouse = false; }
 
     float xoff = float(xpos - lastX);

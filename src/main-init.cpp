@@ -214,7 +214,6 @@ void gameInit(int argc, char** argv, Engine& engine)
     });
     glfwSetKeyCallback(engine.window(), [](GLFWwindow* win, int key, int scancode, int action, int mods) {
         (void)scancode;
-        (void)win;
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             authPopupHandleKey(key, action);
             signInMenuHandleKey(key, action);
@@ -223,7 +222,7 @@ void gameInit(int argc, char** argv, Engine& engine)
             onlineMenuHandleKey(key, action);
             std::string chatMsg;
             bool consumed = handleChatWindowKey(gChatWindowState, key, action, mods,
-                glfwGetCurrentContext(), gChatUiTickClock, chatMsg);
+                win, gChatUiTickClock, chatMsg);
             if (!chatMsg.empty())
                 requestSendChatMessage(chatMsg);
             if (consumed) return;

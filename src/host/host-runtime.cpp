@@ -2546,6 +2546,19 @@ bool HostRuntime::dispatchInbound(TransportDispatchV1* dispatch) {
     return dispatch->response.payloadSize != 0;
 }
 
+bool HostRuntime::invokeMapEditorHost(MapEditorHostCallV1* call) {
+    if (!probeEnabled_.load(std::memory_order_acquire) || !call) return false;
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->on_event) return false;
+    call->version = kMapEditorHostVersion;
+    call->structSize = static_cast<std::uint32_t>(sizeof(MapEditorHostCallV1));
+    call->result = 0;
+    std::int32_t handled = 0;
+    const HostResult result = api->on_event(
+        kEventMapEditorHost, call, sizeof(MapEditorHostCallV1), &handled);
+    return result == HostResult::Ok && handled != 0 && call->result != 0;
+}
+
 bool HostRuntime::dispatchAgentCommand(const AgentCommandV1& command) {
     if (!probeEnabled_.load(std::memory_order_acquire)) return false;
     const GameModuleV1* api = loader_.active();

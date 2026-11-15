@@ -1,4 +1,5 @@
 // 08 16 2026, 01 35
+#include "input/input-router.h"
 /* purpose
 * Implements the in-game notification popup system. Rendering is driven by JSON:
 * config/gui/notifications.json controls GUI (anchor/offsets/spacing/slide plus
@@ -148,6 +149,12 @@ void NotificationSystem::loadConfig()
         if (mCharsPerTick < 1) mCharsPerTick = 1;
         mTypewriterDelayTicks = j.value("typewriter_delay_ticks", 4u);
         mHotReloadNotice = j.value("hot_reload_notice", true);
+        if (j.contains("hot_reload") && j["hot_reload"].is_object()) {
+            const auto& hot = j["hot_reload"];
+            mHotReloadVerbosity = hot.value("verbosity", mHotReloadVerbosity);
+            mHotReloadShowFiles = hot.value("show_files", mHotReloadShowFiles);
+            mHotReloadNotice = hot.value("enabled", mHotReloadNotice);
+        }
         float hours = j.value("temp_mute_hours", 0.0f);
         mTempMuteUntilTick = hours > 0.0f
             ? nowTick() + (uint64_t)(hours * 3600.0 * 60.0)
@@ -178,6 +185,10 @@ void NotificationSystem::saveConfig()
         j["show_in_game"] = mShowInGame;
         j["typewriter_enabled"] = mTypewriterEnabled;
         j["hot_reload_notice"] = mHotReloadNotice;
+        j["hot_reload"] = {
+            {"enabled", mHotReloadNotice},
+            {"verbosity", mHotReloadVerbosity},
+            {"show_files", mHotReloadShowFiles}};
         j["chars_per_tick"] = mCharsPerTick;
         j["typewriter_delay_ticks"] = mTypewriterDelayTicks;
         j["temp_mute_hours"] = (float)tempMuteRemainingTicks() / (3600.0f * 60.0f);
@@ -557,6 +568,17 @@ void NotificationSystem::pushHotReloadFailure(const std::string& title,
     pushWithAccent(title, message, durationTicks, {}, Accent::Critical);
 }
 
+void NotificationSystem::setHotReloadVerbosity(const std::string& verbosity)
+{
+    mHotReloadVerbosity = (verbosity == "minimal" || verbosity == "none")
+        ? verbosity : "all";
+}
+
+void NotificationSystem::setHotReloadShowFiles(bool show)
+{
+    mHotReloadShowFiles = show;
+}
+
 void NotificationSystem::pushBuildNotice()
 {
     char exePath[MAX_PATH];
@@ -891,7 +913,7 @@ void NotificationSystem::render(bool inGameplay)
     double mx = 0.0, my = 0.0;
     double cursorX = 0.0, cursorY = 0.0;
     if (win && mouseUnlocked) {
-        glfwGetCursorPos(win, &mx, &my);
+        InputRouter::cursorPos(win, &mx, &my);
         cs.cursorWindowToScreen(mx, my, cursorX, cursorY);
     }
 

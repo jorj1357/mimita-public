@@ -74,6 +74,10 @@ public:
     // endpoint. Returns true only when the generation handled the message.
     bool dispatchInbound(TransportDispatchV1* dispatch);
 
+    // Resident module-host callbacks for editor services. The active game
+    // generation owns MapEditor and returns the bounded result.
+    bool invokeMapEditorHost(MapEditorHostCallV1* call);
+
     // True when the active generation exports the server cutover behavior API.
     bool dispatchAgentCommand(const AgentCommandV1& command);
     bool serverApiAvailable() const;

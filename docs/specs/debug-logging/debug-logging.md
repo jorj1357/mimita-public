@@ -2096,3 +2096,44 @@ logs/<yyyy-mm-dd>/<run-id>/
   client-01/events.jsonl
 ``n
 Every record carries `run_id`, `instance_id`, `role`, `pid`, `launch_id`, and `build_id`. `run.json` is the manifest that maps instances to journals, ports, rooms, and states. Readers must not assume two processes share one `events.jsonl`. See `docs/specs/debug-logging/canonical-jsonl.md` and `docs/specs/dev-loop/multi-instance.md`. The older single-shared-file wording in this document remains historical context for runs before this date.
+
+
+## Logging catalog for live input and rendering diagnosis
+
+`config/debuglogger.json` is the runtime authority. Agents and contributors may
+enable categories while investigating and disable them afterward. Categories
+grow over time under the configured quota; do not create parallel log files.
+
+| Event | Category | Default | Key fields |
+|---|---|---:|---|
+| `input.window-focus` | `general` | important | focused_before, focused_after, visible |
+| `input.host-key` | `general` | important | key, action, mods |
+| `input.state` | `general` | important | focused, keyboard_enabled, terminal_open, raw keys, callback_count |
+| `input.look` | `camera` | off | source, delta, yaw, pitch, cursor mode |
+| `input.mouse` | `general` | off | source, buttons, cursor, foreground |
+| `ui.mouse_transition` | `gui` | important | pass, down, click_edge, cursor_mode |
+| `ui.button` | `gui` | off | id, hovered, clicked, bounds |
+| `avatar.texture.bind` | `avatar` | important | actor, part, texture_id, source_texture_id |
+| `avatar.texture.missing` | `avatar` | important | actor, part, fallback_texture_id |
+| `avatar.atlas` | `avatar` | important | atlas id, width, height, upload result |
+| `cosmetic.transform` | `rendering` | important | glb, anchor, attach/model scale, reset uniforms |
+| `map.object.stability` | `world` | important | object id, positions before/after, generations |
+| `payload.cart.bind` | `world` | important | origin, size, model/glb, loaded |
+| `npc.module.activation` | `general` | important | module, generation, previous, result |
+| `npc.collision.stuck` | `collision` | important | actor, penetration, normal, world triangle |
+| `npc.anim.bind` | `animation` | important | avatar, set, authored/runtime count, valid |
+| `npc.anim.playback` | `animation` | off | clip, speed, playback rate |
+| `effect.freeze` / `effect.down_dash` | `rendering` | important | actor, effect id, spawned, culled |
+| `performance.fps` | `performance` | important | fps, frame quantiles, budget, over-budget frames |
+| `hot-status.notice` | `general` | important | generation, result, phase, files |
+
+AI workflow:
+
+1. Edit `config/debuglogger.json` and set the category to
+   `verbose`/`trace` and, if needed, `file_output`.
+2. Exercise the live behavior through `agent.input`/dev-loop commands.
+3. Read the active run's `events.jsonl`.
+4. Return the category to its prior level.
+
+Enabling a category only filters records the feature already emits; it does not
+create new diagnostics.

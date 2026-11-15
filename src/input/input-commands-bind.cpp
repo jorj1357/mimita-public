@@ -116,6 +116,12 @@ void InputCommandSystem::loadBinds(const std::string& path) {
     try {
         json j;
         j = nlohmann::json::parse(file, nullptr, true, true);
+        const int bindsVersion = j.value("version", 1);
+        const int inputVersion = j.value("input_version", 1);
+        if (bindsVersion != 1 || inputVersion != 1) {
+            printf("[INPUT COMMANDS] Unsupported binds version=%d input_version=%d in %s\n",
+                   bindsVersion, inputVersion, path.c_str());
+        }
 
         auto binds = j.value("binds", json::object());
         for (auto& [action, keyStr] : binds.items()) {

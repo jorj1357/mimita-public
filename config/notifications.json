@@ -10,5 +10,15 @@
   "chars_per_tick": 1,
   "typewriter_delay_ticks": 4,
   "hot_reload_notice": true,
+  "hot_reload": {
+    "enabled": true,
+    "verbosity": "all",
+    "show_files": true,
+    "max_files": 6,
+    "show_detected": true,
+    "show_building": true,
+    "show_ready": true,
+    "show_failure": true
+  },
   "temp_mute_hours": 0
 }

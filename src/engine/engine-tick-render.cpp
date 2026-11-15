@@ -318,7 +318,7 @@ static void renderReplayActors(
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
                   actor->renderCurrentPose(shader.programObject(), view, proj); }
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
-                  CosmeticSystem::instance().renderCosmetics(*actor); }
+                  CosmeticSystem::instance().renderCosmetics(*actor, view, proj); }
                 r::uniform1i(shader.uniform("uUseColor"), 0);
             } else {
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Mesh");
@@ -326,7 +326,7 @@ static void renderReplayActors(
                       r::worldShader().programObject(),
                       view, proj); }
                 { MIMITA_PERF_SCOPE("Rendering::ReplayActors::Cosmetics");
-                  CosmeticSystem::instance().renderCosmetics(*actor); }
+                  CosmeticSystem::instance().renderCosmetics(*actor, view, proj); }
             }
         }
 

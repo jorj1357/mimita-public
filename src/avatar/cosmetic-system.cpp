@@ -132,7 +132,9 @@ const CosmeticInstance* CosmeticSystem::find(const std::string& choice) const
     return nullptr;
 }
 
-void CosmeticSystem::renderCosmetics(const Player& player) const
+void CosmeticSystem::renderCosmetics(const Player& player,
+                                     const glm::mat4& view,
+                                     const glm::mat4& projection) const
 {
     const auto& cosmetics = player.getCosmetics();
     if (cosmetics.empty())
@@ -152,7 +154,27 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
     const r::Uniform opacityLoc = r::worldShader().uniform("uCosmeticOpacity");
     const r::Uniform useColorLoc = r::worldShader().uniform("uUseColor");
     const r::Uniform colorLoc = r::worldShader().uniform("uColor");
+    const r::Uniform viewLoc = r::worldShader().uniform("view");
+    const r::Uniform projectionLoc = r::worldShader().uniform("projection");
+    const r::Uniform usePartModelsLoc = r::worldShader().uniform("uUsePartModels");
+    const r::Uniform useInstanceModelLoc = r::worldShader().uniform("uUseInstanceModel");
+    const r::Uniform outlinePassLoc = r::worldShader().uniform("uOutlinePass");
+    const r::Uniform alphaCutoffLoc = r::worldShader().uniform("uAlphaCutoff");
+    const r::Uniform debugViewLoc = r::worldShader().uniform("uDebugView");
     const std::string actorAvatar = player.avatarName();
+
+    // Cosmetics use the shared world shader, so the previous body/outline/world
+    // pass can leave matrix-selection and outline uniforms active. pushState()
+    // restores GL state, not program uniforms; set the complete cosmetic state.
+    r::useProgram(r::worldShader().program());
+    if (viewLoc >= 0) r::uniformMatrix4fv(viewLoc, 1, &view[0][0]);
+    if (projectionLoc >= 0)
+        r::uniformMatrix4fv(projectionLoc, 1, &projection[0][0]);
+    if (usePartModelsLoc >= 0) r::uniform1i(usePartModelsLoc, 0);
+    if (useInstanceModelLoc >= 0) r::uniform1i(useInstanceModelLoc, 0);
+    if (outlinePassLoc >= 0) r::uniform1i(outlinePassLoc, 0);
+    if (alphaCutoffLoc >= 0) r::uniform1f(alphaCutoffLoc, 0.0f);
+    if (debugViewLoc >= 0) r::uniform1i(debugViewLoc, 0);
 
     // Find attachment point transforms from player skeleton
     auto findNodeTransform = [&](const std::string& name) -> glm::mat4 {
@@ -318,6 +340,48 @@ void CosmeticSystem::renderCosmetics(const Player& player) const
         }
 
         r::bindVertexArray(cosmeticVAO);
+
+        {
+            static std::unordered_map<std::string, std::uint64_t> lastTransformLogMs;
+            const std::string key = actorAvatar + "|" + choice + "|" + attachTarget;
+            const auto nowMs = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count());
+            auto& last = lastTransformLogMs[key];
+            if (last == 0 || nowMs - last >= 5000) {
+                last = nowMs;
+                auto translation = [](const glm::mat4& m) {
+                    return glm::vec3(m[3]);
+                };
+                auto scale = [](const glm::mat4& m) {
+                    return glm::vec3(glm::length(glm::vec3(m[0])),
+                                     glm::length(glm::vec3(m[1])),
+                                     glm::length(glm::vec3(m[2])));
+                };
+                const glm::vec3 attachPos = translation(attachTransform);
+                const glm::vec3 attachScale = scale(attachTransform);
+                const glm::vec3 modelPos = translation(model);
+                const glm::vec3 modelScale = scale(model);
+                StructuredLogger::instance().writeEvent(
+                    StructuredCategory::Rendering, StructuredLevel::Important,
+                    "cosmetic.transform", "cosmetic",
+                    "cosmetic attachment and model transform", 0,
+                    nlohmann::json{
+                        {"actor_avatar", actorAvatar},
+                        {"glb", choice},
+                        {"anchor", attachTarget},
+                        {"mesh_vertices", mesh.verts.size()},
+                        {"attach_position", {attachPos.x, attachPos.y, attachPos.z}},
+                        {"attach_scale", {attachScale.x, attachScale.y, attachScale.z}},
+                        {"model_position", {modelPos.x, modelPos.y, modelPos.z}},
+                        {"model_scale", {modelScale.x, modelScale.y, modelScale.z}},
+                        {"slot_scale", {slot.scale.x, slot.scale.y, slot.scale.z}},
+                        {"use_part_models", 0},
+                        {"use_instance_model", 0},
+                        {"outline_pass", 0}},
+                    __FILE__, __LINE__, __FUNCTION__);
+            }
+        }
 
         for (const auto& batch : mesh.batches)
         {

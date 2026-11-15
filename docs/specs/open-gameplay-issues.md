@@ -491,3 +491,17 @@ Reopen an archived report when a new user observation, scenario, or journal
 shows the behavior again. Link the new evidence and compare it with the owner
 spec before deciding whether the requirement is missing, the implementation
 violates it, or the original report was not reproduced.
+
+
+## 2026-11-15 gameplay gaps
+
+- NPCs use slow/default animation instead of the new authored keyframes; bind
+  authored sets per NPC avatar and scale playback by movement speed.
+- Freeze and down-dash effects are missing for local movement.
+- NPCs still get stuck inside world geometry; a last-resort closed-solid push
+  and `npc.collision.stuck` evidence are implemented, pending live proof.
+- Avatar body textures are missing while world textures work.
+- Payload cart GLB is missing; spawn-failure evidence is now emitted.
+- Map GLB objects shift when a new DLL is ready for activation.
+- All NPC behavior/collision/animation work must be game-DLL hot; modules are
+  being converted to the single game DLL.

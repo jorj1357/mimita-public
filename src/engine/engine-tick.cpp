@@ -31,6 +31,8 @@ namespace r = mimita::game::render;
 #include "persistence/persistence-queue.h"
 #include "input/mouse-lock.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
+#include "game/hot-status-tips.h"
 #include "devtools/dev-overlay.h"
 #include "devtools/terminal.h"
 #include "debug/debug-diag.h"
@@ -111,6 +113,8 @@ void engineTickSimulate(Engine& engine, EngineFrameState& state)
     { MIMITA_PERF_PROGRESS("EngineTick::Preamble");
       MIMITA_PERF_SCOPE("EngineTick::Preamble");
     EffectPartSystem::instance().beginFrame();
+    InputCommandSystem::instance().beginFrame();
+    mimita::game::updateHotStatusTips();
     const uint64_t rewardTicks = gChatUiTickClock.tick();
     updateChatTypingHeartbeat(gChatWindowState, gChatUiTickClock);
     NotificationSystem::instance().advanceTicks();
@@ -290,7 +294,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
             printf("[MAINMENU] switching to replay menu\n");
             gGuiMenuState = GUI_MENU_REPLAY;
             GAME_STATE = GAME_MENU;
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            MouseLock::set(engine.window(), false);
         } else if (GAME_STATE == GAME_MENU && gGuiMenuState == GUI_MENU_REPLAY) {
             printf("[MAINMENU] switching to main menu\n");
             gGuiMenuState = GUI_MENU_MAIN;
@@ -338,7 +342,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
 
     // L key toggles gameplay mouse lock so the cursor can click notifications.
     static bool mouseLockKeyPrev = false;
-    bool mouseLockKeyDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
+    bool mouseLockKeyDown = InputRouter::keyDown(GLFW_KEY_L);
     if (mouseLockKeyDown && !mouseLockKeyPrev) {
         const bool accepted = GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() &&
             InputCommandSystem::instance().isKeyboardEnabled() && !REPLAY_PLAYER.isPlaying();

@@ -2,7 +2,7 @@
 
 Domain regression index. Each linked record owns its chronology and evidence.
 
-Entries: 36
+Entries: 41
 ---
 
 ## Evidence-backed recurring problems and fixes
@@ -287,3 +287,35 @@ Entries: 36
   cosmetics; see Entry 36.
 - Entry 35: the generation 183 run had no `no_worker` or `worker_queue_full`
   avatar failures; normal pending loads completed.
+
+## Entry 37 — Black boxes around font glyphs
+
+- Recorded: 2026-11-15T16:20:00-05:00
+- Status: RESOLVED / not currently reproducing — documentation-only record
+- Summary: The DLL texture-parameter bridge forwarded semantic `TextureValue` numbers instead of GL tokens. Invalid min filters left level-0-only font pages incomplete, so glyph quads sampled black. The texture-token fix also resolved the black world/cosmetic symptoms.
+- Detail: [black-font-glyph-boxes-REG-2026-11-15.md](black-font-glyph-boxes-REG-2026-11-15.md)
+- Changelog: [20261115_090500-hot-client-texture-filter-world-visible.md](../../changelog/2026-11-15/20261115_090500-hot-client-texture-filter-world-visible.md), [20261114_222000-hot-client-live-default-cosmetic-avatar-fixes.md](../../changelog/2026-11-14/20261114_222000-hot-client-live-default-cosmetic-avatar-fixes.md)
+
+## Entry 38 — Hot-client input and mouse look
+
+- Recorded: 2026-11-15T17:30:00-05:00
+- Status: PARTIALLY FIXED — host keys/terminal/equip/agent input verified; physical mouse-look and all UI buttons pending human acceptance
+- Detail: [input-hot-client-REG-2026-11-15.md](input-hot-client-REG-2026-11-15.md)
+
+## Entry 39 — Avatar body textures missing
+
+- Recorded: 2026-11-15T17:30:00-05:00
+- Status: OPEN — diagnostics/fallback added; root cause pending
+- Detail: [avatar-textures-missing-REG-2026-11-15.md](avatar-textures-missing-REG-2026-11-15.md)
+
+## Entry 40 — Map objects shift on generation activation
+
+- Recorded: 2026-11-15T17:30:00-05:00
+- Status: OPEN — idempotent authored-geometry fix required
+- Detail: [map-object-activation-REG-2026-11-15.md](map-object-activation-REG-2026-11-15.md)
+
+## Entry 41 — NPC collision and authored animation
+
+- Recorded: 2026-11-15T17:30:00-05:00
+- Status: OPEN — both must be fixed hot
+- Detail: [npc-collision-stuck-REG-2026-11-15.md](npc-collision-stuck-REG-2026-11-15.md), [npc-authored-animation-REG-2026-11-15.md](npc-authored-animation-REG-2026-11-15.md)

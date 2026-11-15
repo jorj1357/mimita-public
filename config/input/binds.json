@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "input_version": 1,
+  "default": {},
+  "binds": {
+    "walkforward": "W",
+    "walkback": "S",
+    "walkleft": "A",
+    "walkright": "D",
+    "jump": "SPACE",
+    "dash": "LEFT_SHIFT",
+    "down_dash": "Q",
+    "freeze": "E",
+    "crouch": "LEFT_CONTROL",
+    "reload": "R"
+  },
+  "accounts": {}
+}

@@ -6,6 +6,7 @@
 #include <vector>
 #include <functional>
 #include <chrono>
+#include <cstdint>
 
 struct GLFWwindow;
 
@@ -42,7 +43,9 @@ public:
     static InputCommandSystem& instance();
 
     void init(GLFWwindow* window);
+    void beginFrame();
     void update(float dt);
+    bool updatedThisFrame() const { return mUpdatedThisFrame; }
     void pulseAction(const std::string& actionName);
     // Schedule an action to be presented once per fixed simulation tick.
     // This is for bounded runtime scenarios, not a second gameplay path.
@@ -50,9 +53,14 @@ public:
     bool consumeScheduledActionTick(const std::string& actionName);
     void setKeyboardEnabled(bool enabled);
     bool isKeyboardEnabled() const { return mKeyboardEnabled; }
+    bool focused() const { return mFocused; }
+    std::uint64_t keyCallbackCount() const { return mKeyCallbackCount; }
 
     // GLFW key callback — captures every key event, not just polling snapshots
     static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+    // Host-dispatched key event path. The game DLL's static GLFW copy cannot
+    // observe the resident window, so resident input must feed this owner.
+    void ingestHostKey(int key, int scancode, int action, int mods);
 
     // Query command state
     const InputCommandState& getState(InputAction action) const;
@@ -110,6 +118,10 @@ private:
     std::unordered_map<std::string, uint32_t> mScheduledActionTicks;
     bool mKeyboardEnabled = true;
     bool mFocused = true;
+    std::uint64_t mKeyCallbackCount = 0;
+    bool mUpdatedThisFrame = false;
+    bool mHostKeySeen = false;
+    bool mHostKeyDown[512] = {false};
 
     // Per-key callback timestamps (for accurate edge detection)
     double mKeyPressTime[512] = {0.0};

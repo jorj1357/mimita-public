@@ -61,8 +61,9 @@ ModuleHost& ModuleHost::instance() {
 ModuleHost::~ModuleHost() = default;
 
 void ModuleHost::startup() {
-    // The resident host owns module startup. A game generation must not start
-    // a second module set.
+    // The resident host owns module startup. Forward the request instead of
+    // starting a second module set in the game generation.
+    mimita::game::invoke(mimita::host::ModuleOp::Startup, nullptr, 0, nullptr, 0);
 }
 
 void ModuleHost::shutdown() {}

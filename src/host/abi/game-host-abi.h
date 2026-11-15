@@ -230,6 +230,69 @@ struct GameStartupV1 {
 // launch options; the DLL owns the GUI/connect state that consumes them.
 inline constexpr std::uint32_t kEventStartupConnect = 724u;
 inline constexpr std::uint32_t kEventAgentCommand = 725u;
+inline constexpr std::uint32_t kEventMapEditorHost = 726u;
+inline constexpr std::uint32_t kMapEditorHostVersion = 1u;
+
+enum class MapEditorHostOp : std::uint32_t {
+    GetPrimarySelection = 1,
+    ApplyPrimaryPosition = 2,
+    Notify = 3,
+    SelectObject = 4,
+    SelectKind = 5,
+    SelectAll = 6,
+    ClearSelection = 7,
+    CopySelection = 8,
+    PasteClipboard = 9,
+    CutSelection = 10,
+    DuplicateSelection = 11,
+    DeleteSelection = 12,
+    Undo = 13,
+    Redo = 14,
+    Save = 15,
+    Reload = 16,
+    Autosave = 17,
+    RebuildCollision = 18,
+    SetFreezeWorld = 19,
+    FocusSelection = 20,
+    Nudge = 21,
+    SetPosition = 22,
+    SetRotation = 23,
+    SetScale = 24,
+    SetSize = 25,
+    SetBombSiteRadius = 26,
+    RenameSelection = 27,
+    GetSelectionCount = 28,
+    GetSelectionItem = 29,
+    SetSelection = 30,
+    GetWorldObjectCount = 31,
+    GetWorldObjectInfo = 32,
+    GetMapBounds = 33,
+    CreateChunk = 34,
+    CreateChunkPart = 35,
+    CreateConnector = 36,
+    PreviewConnections = 37,
+};
+
+struct MapEditorHostCallV1 {
+    std::uint32_t version = kMapEditorHostVersion;
+    std::uint32_t structSize = sizeof(MapEditorHostCallV1);
+    MapEditorHostOp op = MapEditorHostOp::GetPrimarySelection;
+    std::int32_t result = 0;
+    std::uint32_t u0 = 0;
+    std::uint32_t u1 = 0;
+    std::uint32_t u2 = 0;
+    float f0 = 0.0f;
+    float f1 = 0.0f;
+    float f2 = 0.0f;
+    void* ptr0 = nullptr;
+    void* ptr1 = nullptr;
+    void* ptr2 = nullptr;
+    char s0[256] = {};
+    char s1[256] = {};
+    char s2[256] = {};
+    char s3[256] = {};
+    std::uint64_t value = 0;
+};
 
 struct AgentCommandV1 {
     std::uint32_t version = 1;

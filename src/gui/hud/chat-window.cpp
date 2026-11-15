@@ -1,4 +1,5 @@
 // 07 30 2026, 13 26
+#include "input/input-router.h"
 /* purpose
 * Implements the 2D chat window renderer at top-left of the screen.
 * Uses the existing UI system for scrolling, text input, and text rendering.
@@ -126,9 +127,7 @@ void openChatWindow(ChatWindowState& state)
     state.textInput.value.clear();
     state.textInput.cursorPos = 0;
     InputCommandSystem::instance().setKeyboardEnabled(false);
-    GLFWwindow* win = glfwGetCurrentContext();
-    if (win && glfwGetInputMode(win, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
-        glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    MouseLock::set(nullptr, false);
     Debug::log(Debug::Category::Chat, "[CHAT INPUT OPEN] key=/\n");
 
     // Set local typing state for above-head indicator
@@ -175,9 +174,7 @@ void closeChatWindow(ChatWindowState& state)
     state.textInput.cursorPos = 0;
     state.hovered = false;
     InputCommandSystem::instance().setKeyboardEnabled(true);
-    GLFWwindow* win = glfwGetCurrentContext();
-    if (win)
-        MouseLock::set(win, true);
+    MouseLock::set(nullptr, true);
 }
 
 void setChatMouseUnlocked(ChatWindowState& state, bool unlocked)

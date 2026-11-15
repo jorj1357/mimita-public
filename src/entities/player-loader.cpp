@@ -34,6 +34,9 @@
 
 namespace r = mimita::game::render;
 
+struct Renderer;
+extern Renderer* gRenderer;
+
 // Global avatar bodypart overrides, set by AvatarSystem before loadModel.
 // Used by applyBodypartConfigOverrides to layer per-avatar overrides on
 // top of the global config/bodyparts.json defaults.
@@ -132,7 +135,7 @@ static std::uint32_t getOpaqueWhiteTexture() {
     if (tex) return tex;
     // Model jobs run on a worker. Only the GL owner thread may create the
     // shared white texture; requestModelLoad prewarms it before dispatching.
-    if (!glfwGetCurrentContext()) return 0;
+    if (!gRenderer) return 0;
     tex = mimita::game::genTexture();
     if (!tex) return 0;
     r::bindTexture(r::TextureTarget::Texture2D, tex);

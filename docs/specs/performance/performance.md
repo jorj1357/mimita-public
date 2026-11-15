@@ -162,3 +162,17 @@ Required next evidence: a steady 60-second window after the hot client frame
 stops stalling, with GPU timing when available, plus an A/B test with cosmetics
 disabled. Do not treat a cosmetic-only change as proof that the FPS issue is
 fixed.
+
+
+## Always-on 1 Hz FPS journal event (2026-11-15)
+
+`PERFORMANCE_FRAME` remains the rich 1-second frame record. Add a compact
+`performance.fps` event at the same boundary containing at least: `fps`,
+`avg_frame_ms`, `p50_frame_ms`, `p95_frame_ms`, `p99_frame_ms`,
+`max_frame_ms`, `frame_budget_ms`, `frames_over_budget`, `npcs_active`, and
+`effects_alive`.
+
+Tradeoff: per-frame FPS logging would add I/O and distortion. The event is
+aggregated over one second and rate-limited to one record per second; it is not
+a substitute for a frame profiler. It is always emitted at `Important` under
+the `performance` category so a live reader can see FPS change over time.

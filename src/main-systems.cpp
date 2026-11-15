@@ -36,6 +36,8 @@
 #include "input/input-poll.h"
 #include "input/input-frame.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
+#include "gui/menus/pause-menu.h"
 #include "render/render-command.h"
 #include "render/render-world.h"
 #include "render/post-fx.h"
@@ -628,6 +630,73 @@ void registerAgentCommands()
                  {"action", "mouse_click"}, {"button", button == GLFW_MOUSE_BUTTON_RIGHT ? "right" : "left"}});
         }, "2026-11-14", CommandCategory::Debug
     });
+
+    Terminal::instance().registerCommand({
+        "agent.input", "Drive normalized input without window focus.",
+        "agent.input <look dx dy|key <name> <tap|down|up>|action <name> <tap>|mouse_button <left|right> <click|down|up>|terminal_toggle|menu_toggle|equip <slot>>",
+        [](const std::vector<std::string>& args) {
+            auto keyCode = [](const std::string& name) -> int {
+                if (name == "W" || name == "w") return GLFW_KEY_W;
+                if (name == "A" || name == "a") return GLFW_KEY_A;
+                if (name == "S" || name == "s") return GLFW_KEY_S;
+                if (name == "D" || name == "d") return GLFW_KEY_D;
+                if (name == "SPACE" || name == "Space") return GLFW_KEY_SPACE;
+                if (name == "ESCAPE" || name == "Escape") return GLFW_KEY_ESCAPE;
+                if (name == "GRAVE" || name == "Grave") return GLFW_KEY_GRAVE_ACCENT;
+                if (name.size() == 1 && name[0] >= '0' && name[0] <= '9')
+                    return GLFW_KEY_0 + (name[0] - '0');
+                return -1;
+            };
+            if (args.empty()) {
+                Terminal::instance().addLog("[AGENT] Usage: agent.input <look|key|action|mouse_button|terminal_toggle|menu_toggle|equip>");
+                return;
+            }
+            if (args[0] == "look" && args.size() >= 3) {
+                try {
+                    InputRouter::ingestLookDelta(
+                        static_cast<float>(std::stod(args[1])),
+                        static_cast<float>(std::stod(args[2])),
+                        InputRouter::Source::Agent);
+                } catch (...) { return; }
+                writeAgentCommandEvent("input.normalized", "agent.input look applied",
+                    {{"source", "agent"}, {"action", "look"},
+                     {"dx", args[1]}, {"dy", args[2]}});
+            } else if (args[0] == "key" && args.size() >= 3) {
+                const int key = keyCode(args[1]);
+                if (key < 0) return;
+                const bool down = args[2] != "up";
+                InputRouter::ingestKey(key, 0, down ? GLFW_PRESS : GLFW_RELEASE,
+                                       0, InputRouter::Source::Agent);
+                writeAgentCommandEvent("input.normalized", "agent.input key applied",
+                    {{"source", "agent"}, {"action", "key"}, {"key", args[1]},
+                     {"down", down}});
+            } else if (args[0] == "action" && args.size() >= 2) {
+                InputCommandSystem::instance().pulseAction(args[1]);
+                writeAgentCommandEvent("input.normalized", "agent.input action applied",
+                    {{"source", "agent"}, {"action", args[1]}});
+            } else if (args[0] == "mouse_button" && args.size() >= 3) {
+                const int button = args[1] == "right" ? GLFW_MOUSE_BUTTON_RIGHT
+                                                      : GLFW_MOUSE_BUTTON_LEFT;
+                const bool down = args[2] != "up";
+                InputRouter::ingestMouseButton(button, down ? GLFW_PRESS : GLFW_RELEASE,
+                                               InputRouter::Source::Agent);
+                writeAgentCommandEvent("input.normalized", "agent.input mouse_button applied",
+                    {{"source", "agent"}, {"action", "mouse_button"},
+                     {"button", args[1]}, {"down", down}});
+            } else if (args[0] == "shoot") {
+                InputRouter::ingestMouseButton(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS,
+                                               InputRouter::Source::Agent);
+                writeAgentCommandEvent("input.normalized", "agent.input shoot applied",
+                    {{"source", "agent"}, {"action", "shoot"}});
+            } else if (args[0] == "terminal_toggle") {
+                Terminal::instance().toggle();
+            } else if (args[0] == "menu_toggle") {
+                PauseMenu::toggle(InputRouter::window());
+            } else if (args[0] == "equip" && args.size() >= 2) {
+                Terminal::instance().execute("equipslot" + args[1]);
+            }
+        }, "2026-11-15", CommandCategory::Debug
+    });
 }
 
 } // namespace
@@ -800,7 +869,7 @@ void gameInitSubsystems(Engine& engine)
     // PostFX FBO is lazily initialized on first bindFBO() call
 
     InputCommandSystem::instance().init(engine.window());
-    InputCommandSystem::instance().loadBinds("config/accounts/default.json");
+    InputCommandSystem::instance().loadBinds("config/input/binds.json");
     initChatWindowState(gChatWindowState);
     RegisterTeleportCommands();
     Terminal::instance().init(engine.window());

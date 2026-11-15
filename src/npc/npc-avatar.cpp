@@ -28,6 +28,9 @@
 
 #include <GLFW/glfw3.h>
 
+struct Renderer;
+extern Renderer* gRenderer;
+
 namespace {
 constexpr const char* kConfigPath = "config/npc-avatar.json";
 struct NpcAvatarConfig { bool forceAvatar = false; std::string forceAvatarPath; };
@@ -110,7 +113,7 @@ bool applyAvatar(Npc& npc, const std::string& name)
         npc.avatarName.clear();
         return false;
     }
-    if (glfwGetCurrentContext() &&
+    if (gRenderer &&
         !AvatarSystem::instance().applyAvatarToPlayer(npc.body, name)) {
         npc.avatarName.clear();
         Debug::warn(Debug::Category::Avatar,

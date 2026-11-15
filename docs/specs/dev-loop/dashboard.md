@@ -166,3 +166,17 @@ launch path; discovery itself does not adopt or relabel an external process.
   when known; a process without role evidence remains unverified.
 - Daemon source changes are distinguishable by source identity after its
   controlled restart; no claim of in-place Python hot reload is made.
+
+
+## Single dashboard and explicit terminal relaunch (2026-11-15)
+
+- A normal or scripted invocation must not create a Windows Terminal window.
+- The dashboard is opened in place, or an existing dashboard is reused.
+- Only an explicit `--relaunch-terminal` (or explicit environment opt-in) may
+  start Windows Terminal.
+- Before relaunching, the entry point checks for an existing dashboard PID and
+  attaches/reuses it.
+- AI command/scenario calls must create no dashboard and no Python console
+  window.
+- Acceptance: repeated `python devscripts/dev-loop.py --command ...` calls leave
+  the number of Python/Terminal windows unchanged.

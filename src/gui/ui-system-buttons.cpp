@@ -1,4 +1,5 @@
 #include "gui/ui-system.h"
+#include "input/input-router.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
 
@@ -37,7 +38,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
     UIRect fbR = cs.designToScreen(r);
 
     double mx = 0.0, my = 0.0;
-    glfwGetCursorPos(win, &mx, &my);
+    InputRouter::cursorPos(win, &mx, &my);
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
 
@@ -144,7 +145,7 @@ bool uiSlider(GLFWwindow* win, const char* label, UIRect r, float* value, float 
     UIRect fbR = cs.designToScreen(r);
 
     double mx = 0.0, my = 0.0;
-    glfwGetCursorPos(win, &mx, &my);
+    InputRouter::cursorPos(win, &mx, &my);
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
 
@@ -193,7 +194,7 @@ void handleScrollbarInput(UIRect fbArea, float contentHeight,
 
     double mx = 0.0;
     double my = 0.0;
-    glfwGetCursorPos(gWindow, &mx, &my);
+    InputRouter::cursorPos(gWindow, &mx, &my);
     double fbx = mx;
     double fby = my;
     GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
@@ -257,7 +258,7 @@ void beginScreenScrollArea(GLFWwindow* win, UIRect area, float contentHeight,
 
     double mx = 0.0;
     double my = 0.0;
-    glfwGetCursorPos(win, &mx, &my);
+    InputRouter::cursorPos(win, &mx, &my);
     double fbx = mx;
     double fby = my;
     GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
@@ -311,7 +312,7 @@ void uiBeginScrollArea(GLFWwindow* win, UIRect area, float contentHeight, UIScro
 
     double mx = 0.0;
     double my = 0.0;
-    glfwGetCursorPos(win, &mx, &my);
+    InputRouter::cursorPos(win, &mx, &my);
     double fbx = mx;
     double fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);

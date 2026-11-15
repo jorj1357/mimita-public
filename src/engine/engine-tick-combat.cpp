@@ -27,6 +27,7 @@
 #include "input/input-commands.h"
 #include "input/input-frame.h"
 #include "input/input-poll.h"
+#include "input/input-router.h"
 #include "input/scenario-input.h"
 #include "perf/perf.h"
 #include "perf/perf-spike.h"
@@ -486,7 +487,7 @@ void engineTickCombat(Engine& engine, float dt)
     {
         static std::unordered_map<int, bool> bindPrev;
         for (const auto& pair : G_COMMAND_BINDS) {
-            bool down = glfwGetKey(engine.window(), pair.first) == GLFW_PRESS;
+            bool down = InputRouter::keyDown(pair.first) == GLFW_PRESS;
             if (down && !bindPrev[pair.first] && gameplayInputAllowed && InputCommandSystem::instance().isKeyboardEnabled())
                 Terminal::instance().execute(pair.second);
             bindPrev[pair.first] = down;
@@ -496,7 +497,7 @@ void engineTickCombat(Engine& engine, float dt)
     // Replay playback keyboard shortcuts (only while replay is active)
     if (replayPlaybackActive && InputCommandSystem::instance().isKeyboardEnabled()) {
         static bool spacePrev = false;
-        bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+        bool spaceDown = InputRouter::keyDown(GLFW_KEY_SPACE) == GLFW_PRESS;
         if (spaceDown && !spacePrev) {
             if (gReplayPlayer.isPaused()) {
                 gReplayPlayer.resume();
@@ -510,8 +511,8 @@ void engineTickCombat(Engine& engine, float dt)
         }
         spacePrev = spaceDown;
 
-        bool ctrlHeld = glfwGetKey(engine.window(), GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                        glfwGetKey(engine.window(), GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+        bool ctrlHeld = InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                        InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
 
         // ── Ctrl+Left/Right: tick-by-tick with hold-to-repeat ──────
         // Initial delay 250ms, then repeat every 100ms.
@@ -519,7 +520,7 @@ void engineTickCombat(Engine& engine, float dt)
         {
             static float leftHoldTimer = 0.0f;
             static bool leftRepeating = false;
-            bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
+            bool leftDown = InputRouter::keyDown(GLFW_KEY_LEFT) == GLFW_PRESS;
             if (ctrlHeld && leftDown) {
                 bool doSeek = false;
                 if (leftHoldTimer == 0.0f) {
@@ -557,7 +558,7 @@ void engineTickCombat(Engine& engine, float dt)
 
             static float rightHoldTimer = 0.0f;
             static bool rightRepeating = false;
-            bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+            bool rightDown = InputRouter::keyDown(GLFW_KEY_RIGHT) == GLFW_PRESS;
             if (ctrlHeld && rightDown) {
                 bool doSeek = false;
                 if (rightHoldTimer == 0.0f) {
@@ -597,7 +598,7 @@ void engineTickCombat(Engine& engine, float dt)
         // ── Left/Right (no Ctrl): seek 5 seconds ───────────────────
         {
             static bool leftPrev = false;
-            bool leftDown = glfwGetKey(engine.window(), GLFW_KEY_LEFT) == GLFW_PRESS;
+            bool leftDown = InputRouter::keyDown(GLFW_KEY_LEFT) == GLFW_PRESS;
             if (leftDown && !leftPrev && !ctrlHeld) {
                 bool wasPaused = gReplayPlayer.isPaused();
                 uint32_t t = gReplayPlayer.currentTick();
@@ -615,7 +616,7 @@ void engineTickCombat(Engine& engine, float dt)
 
         {
             static bool rightPrev = false;
-            bool rightDown = glfwGetKey(engine.window(), GLFW_KEY_RIGHT) == GLFW_PRESS;
+            bool rightDown = InputRouter::keyDown(GLFW_KEY_RIGHT) == GLFW_PRESS;
             if (rightDown && !rightPrev && !ctrlHeld) {
                 bool wasPaused = gReplayPlayer.isPaused();
                 uint32_t t = gReplayPlayer.currentTick();
@@ -633,7 +634,7 @@ void engineTickCombat(Engine& engine, float dt)
         }
 
         static bool lPrev = false;
-        bool lDown = glfwGetKey(engine.window(), GLFW_KEY_L) == GLFW_PRESS;
+        bool lDown = InputRouter::keyDown(GLFW_KEY_L) == GLFW_PRESS;
         if (lDown && !lPrev) {
             mimita::game::replayCinematicModeRef() = !mimita::game::replayCinematicModeRef();
             printf("[CINEMATIC] %s\n", mimita::game::replayCinematicModeRef() ? "Enabled" : "Disabled");

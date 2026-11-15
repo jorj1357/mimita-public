@@ -505,8 +505,9 @@ std::string mapIdFromAssetPath(const std::string& path)
     return std::filesystem::path(path).stem().string();
 }
 
-void applyGLBObjectOverrides(World& world,
-                             const std::vector<MapGLBObjectOverride>& overrides)
+static void applyGLBObjectOverridesWithRecovery(
+    World& world, const std::vector<MapGLBObjectOverride>& overrides,
+    bool recoveringBases)
 {
     std::vector<bool> claimed(overrides.size(), false);
     std::vector<std::string> objectIds;
@@ -520,21 +521,6 @@ void applyGLBObjectOverrides(World& world,
         glm::vec3 scale(1.0f);
         GLBObjectAuthoredV2& state = MapGLBAuthoredState::instance().ensure(
             &world.mesh, object.id, object.transform, object.basePosition);
-        if (state.basePositions.size() != object.vertexCount) {
-            state.basePositions.clear();
-            state.baseNormals.clear();
-            state.basePositions.reserve(object.vertexCount);
-            state.baseNormals.reserve(object.vertexCount);
-            const size_t firstBase = std::min(object.vertexFirst,
-                                              world.mesh.verts.size());
-            const size_t lastBase = std::min(
-                object.vertexFirst + object.vertexCount,
-                world.mesh.verts.size());
-            for (size_t i = firstBase; i < lastBase; ++i) {
-                state.basePositions.push_back(world.mesh.verts[i].pos);
-                state.baseNormals.push_back(world.mesh.verts[i].normal);
-            }
-        }
         const int matchedIndex = resolveGLBOverrideIndex(
             object.id, object.name, object.nodeIndex, overrides, claimed,
             objectIds);
@@ -575,6 +561,36 @@ void applyGLBObjectOverrides(World& world,
         transform = glm::scale(transform, scale);
         transform = transform * glm::translate(glm::mat4(1.0f),
                                                -object.basePosition);
+        if (state.basePositions.size() != object.vertexCount) {
+            state.basePositions.clear();
+            state.baseNormals.clear();
+            state.basePositions.reserve(object.vertexCount);
+            state.baseNormals.reserve(object.vertexCount);
+            const bool recover = recoveringBases && matched;
+            const glm::mat4 inverse = recover ? glm::inverse(transform)
+                                              : glm::mat4(1.0f);
+            const glm::mat3 inverseNormal = recover
+                ? glm::transpose(glm::inverse(glm::mat3(transform)))
+                : glm::mat3(1.0f);
+            if (recover)
+                state.baseTransform = inverse * object.transform;
+            const size_t firstBase = std::min(object.vertexFirst,
+                                              world.mesh.verts.size());
+            const size_t lastBase = std::min(
+                object.vertexFirst + object.vertexCount,
+                world.mesh.verts.size());
+            for (size_t i = firstBase; i < lastBase; ++i) {
+                const Vertex& current = world.mesh.verts[i];
+                state.basePositions.push_back(
+                    recover ? glm::vec3(inverse * glm::vec4(current.pos, 1.0f))
+                            : current.pos);
+                const glm::vec3 normal = recover
+                    ? inverseNormal * current.normal : current.normal;
+                state.baseNormals.push_back(
+                    glm::dot(normal, normal) > 0.000001f
+                        ? glm::normalize(normal) : normal);
+            }
+        }
         object.transform = transform * state.baseTransform;
         object.boundsMin = glm::vec3(std::numeric_limits<float>::max());
         object.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());
@@ -637,6 +653,15 @@ void applyGLBObjectOverrides(World& world,
     logUnmatchedGLBOverrides(overrides, claimed, "client");
     if (geometryChanged)
         world.renderRevision++;
+}
+
+void applyGLBObjectOverrides(World& world,
+                             const std::vector<MapGLBObjectOverride>& overrides)
+{
+    // This public path is also used by the map editor. If the authored state was
+    // lost across a hot generation swap, recover pristine bases before applying.
+    applyGLBObjectOverridesWithRecovery(
+        world, overrides, world.authoredGeometryApplied);
 }
 
 void applyGLBObjectClones(World& world,
@@ -928,6 +953,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
     if (!ensureMapLoaded(mapId)) return false;
     const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
 
+    const bool recoveringBases = world.authoredGeometryApplied;
     if (world.authoredGeometryApplied)
         clearAuthoredMapGeometry(world);
     else {
@@ -936,7 +962,7 @@ bool applyAuthoredMapGeometry(World& world, const std::string& mapId,
         world.authoredGeometryApplied = true;
     }
 
-    applyGLBObjectOverrides(world, config.glbObjects);
+    applyGLBObjectOverridesWithRecovery(world, config.glbObjects, recoveringBases);
     applyGLBObjectClones(world, config.glbObjects);
 
     size_t added = 0;

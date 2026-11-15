@@ -1055,7 +1055,7 @@ void renderPlayerInternal(
 
     // Render attached cosmetic meshes (hats etc.) on top of the body.
     { MIMITA_PERF_SCOPE("Rendering::Actors::Cosmetics");
-      CosmeticSystem::instance().renderCosmetics(player); }
+      CosmeticSystem::instance().renderCosmetics(player, view, proj); }
 
     // Reset ghost color
     if (player.renderGhost)

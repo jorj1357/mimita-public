@@ -74,9 +74,25 @@ static bool containServerNpcFinalPose(Npc& npc, const World& world,
                                       const char* stage)
 {
     ActorFinalPoseResult result;
-    const bool clear = containActorFinalPose(
+    bool clear = containActorFinalPose(
         npc.body, world, npc.finalPose, result, 0.02f, stage);
     const uint32_t tick = static_cast<uint32_t>(npc.body.movementSimulationTick);
+
+    // Last-resort recovery for a root trapped inside a closed authored solid.
+    // The normal solver already handles ordinary penetration; this bounded push
+    // only runs when the root is actually inside a closed volume and still
+    // unclear after the normal pass.
+    bool safetyPush = false;
+    uint32_t safetySolidId = 0;
+    glm::vec3 safetyCorrection(0.0f);
+    if (!clear && result.rootInsideClosedSolid &&
+        pushActorRootOutOfSolid(npc.body, world, 0.05f,
+                                &safetyCorrection, &safetySolidId)) {
+        safetyPush = true;
+        npc.body.updateModelWorldTransforms();
+        clear = containActorFinalPose(
+            npc.body, world, npc.finalPose, result, 0.02f, stage);
+    }
     if (result.pushedOut &&
         tick - npc.finalPoseLastPushoutLogTick >= 30)
     {
@@ -96,9 +112,30 @@ static bool containServerNpcFinalPose(Npc& npc, const World& world,
     }
     const bool reset = result.restored || result.usedSafePoint || result.failed;
     const bool penetration = result.initialPenetration > 0.02f;
+    const bool stuck = !clear || result.rootInsideClosedSolid;
     if (!reset && !result.budgetExceeded &&
-        (!penetration || tick - npc.finalPoseLastPenetrationLogTick < 30))
+        (!penetration || tick - npc.finalPoseLastPenetrationLogTick < 30)) {
+        if (stuck && tick - npc.finalPoseLastPushoutLogTick >= 30) {
+            npc.finalPoseLastPushoutLogTick = tick;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::NpcMovement, StructuredLevel::Important,
+                "npc.collision.stuck", std::to_string(npc.id), stage, tick,
+                {{"npc_id", npc.id},
+                 {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+                 {"clear", clear},
+                 {"root_inside_closed_solid", result.rootInsideClosedSolid},
+                 {"initial_penetration_m", result.initialPenetration},
+                 {"final_penetration_m", result.finalPenetration},
+                 {"iterations", result.iterations},
+                 {"reset_reason", result.resetReason},
+                 {"safety_push", safetyPush},
+                 {"safety_solid_id", safetySolidId},
+                 {"contact_count", result.contacts.size()},
+                 {"stage", stage}},
+                __FILE__, __LINE__, __FUNCTION__);
+        }
         return clear;
+    }
 
     nlohmann::json parts = nlohmann::json::array();
     for (const ActorFinalPoseContact& contact : result.contacts)
@@ -134,11 +171,36 @@ static bool containServerNpcFinalPose(Npc& npc, const World& world,
          {"budget_exceeded", result.budgetExceeded},
          {"reset_reason", result.resetReason},
          {"root_inside_closed_solid", result.rootInsideClosedSolid},
+         {"safety_push", safetyPush},
+         {"safety_solid_id", safetySolidId},
+         {"safety_correction", {safetyCorrection.x, safetyCorrection.y,
+                                 safetyCorrection.z}},
          {"part_count", result.partCount},
          {"extra_part_count", result.extraPartCount},
          {"skip_reason", result.skipReason},
          {"parts", std::move(parts)}},
         __FILE__, __LINE__, __FUNCTION__);
+
+    if ((!clear || result.rootInsideClosedSolid) &&
+        tick - npc.finalPoseLastPushoutLogTick >= 30) {
+        npc.finalPoseLastPushoutLogTick = tick;
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::NpcMovement, StructuredLevel::Important,
+            "npc.collision.stuck", std::to_string(npc.id), stage, tick,
+            {{"npc_id", npc.id},
+             {"position", {npc.body.pos.x, npc.body.pos.y, npc.body.pos.z}},
+             {"clear", clear},
+             {"root_inside_closed_solid", result.rootInsideClosedSolid},
+             {"initial_penetration_m", result.initialPenetration},
+             {"final_penetration_m", result.finalPenetration},
+             {"iterations", result.iterations},
+             {"reset_reason", result.resetReason},
+             {"safety_push", safetyPush},
+             {"safety_solid_id", safetySolidId},
+             {"contact_count", result.contacts.size()},
+             {"stage", stage}},
+            __FILE__, __LINE__, __FUNCTION__);
+    }
     return clear;
 }
 

@@ -1,4 +1,5 @@
 #include "gui/ui-text-input.h"
+#include "input/input-router.h"
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
@@ -465,7 +466,7 @@ static bool renderTextInput(GLFWwindow* window, const char* id,
     if (opts.interactive)
     {
     double mx, my;
-    glfwGetCursorPos(window, &mx, &my);
+    InputRouter::cursorPos(window, &mx, &my);
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
     const bool rawHovered = pointIn(fbx, fby, screenRect);

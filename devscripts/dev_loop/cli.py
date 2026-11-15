@@ -50,7 +50,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ai-map", default="dust2cyberiav4", help="map for --ai-match")
     parser.add_argument("--ai-profile", default="tdm-validation", help="dev profile for --ai-match")
     parser.add_argument("--ai-launch-mode", default="41", help="dev launch mode for --ai-match (default 41 = TDM networking)")
-    parser.add_argument("--request", choices=("launch", "build", "game-dll", "stop-client", "stop-server", "stop"),
+    parser.add_argument("--request", choices=("launch", "build", "game-dll", "cold-link-trial", "stop-client", "stop-server", "stop"),
                         help="send a command to the already-running dev-loop daemon and exit")
     parser.add_argument("--wait-for-build", action="store_true", help="with --request build/game-dll, wait for this build request to finish")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
@@ -66,6 +66,8 @@ def create_parser() -> argparse.ArgumentParser:
                         help="stable role marker recorded in the process command line")
     parser.add_argument("--no-terminal-relaunch", action="store_true",
                         help="do not prefer Windows Terminal; render in the current console")
+    parser.add_argument("--relaunch-terminal", action="store_true",
+                        help="explicitly relaunch the dashboard inside Windows Terminal")
     parser.add_argument("--no-tk", action="store_true", help="use the terminal dashboard even when Tkinter is available")
     parser.add_argument("--dashboard-frames", type=int, default=0,
                         help="render this many dashboard frames then exit (0 = run until quit)")

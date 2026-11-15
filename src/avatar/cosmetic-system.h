@@ -29,7 +29,8 @@ public:
     std::vector<std::string> scanAvailableCosmetics() const;
 
     // Render all currently loaded cosmetics on a player
-    void renderCosmetics(const Player& player) const;
+    void renderCosmetics(const Player& player, const glm::mat4& view,
+                         const glm::mat4& projection) const;
 
     // Get runtime instance by choice name
     const CosmeticInstance* find(const std::string& choice) const;

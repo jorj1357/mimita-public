@@ -888,6 +888,7 @@ public:
     std::string mAvatarName;
     std::string mRenderModelKey;
     bool avatarAtlasUvs = false;
+    bool avatarAtlasFinalizeAttempted = false;
     struct AvatarInstance* avatarInstance = nullptr;
     std::unordered_map<std::string, WeaponRuntime> weaponRuntimes;
 

@@ -1,4 +1,5 @@
 #include "input-commands.h"
+#include "input/input-router.h"
 #include "gui/ui-system.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
@@ -38,6 +39,7 @@ void InputCommandSystem::init(GLFWwindow* window) {
         return;
     }
     mWindow = window;
+    InputRouter::setWindow(window);
 
     // Install GLFW key callback for reliable edge capture
     glfwSetKeyCallback(window, keyCallback);
@@ -70,6 +72,8 @@ void InputCommandSystem::setKeyboardEnabled(bool enabled) {
 void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     (void)scancode;
     auto& sys = instance();
+    InputRouter::ingestKey(key, scancode, action, mods, InputRouter::Source::Win32);
+    ++sys.mKeyCallbackCount;
 
     if (key >= 0 && key < 512) {
         double now = glfwGetTime();
@@ -106,7 +110,7 @@ void InputCommandSystem::keyCallback(GLFWwindow* window, int key, int scancode, 
         // Chat window key handling (open on /, send on Enter, cancel on Escape)
         std::string chatMsg;
         bool chatConsumed = handleChatWindowKey(gChatWindowState, key, action, mods,
-            glfwGetCurrentContext(), gChatUiTickClock, chatMsg);
+            window, gChatUiTickClock, chatMsg);
         if (!chatMsg.empty())
             requestSendChatMessage(chatMsg);
         if (chatConsumed) return;
@@ -163,9 +167,33 @@ void InputCommandSystem::setupDefaultBinds() {
     mActionStates["reload"] = {};
 }
 
+void InputCommandSystem::ingestHostKey(int key, int scancode, int action,
+                                       int mods) {
+    (void)scancode;
+    (void)mods;
+    if (key < 0 || key >= 512) return;
+    InputRouter::ingestKey(key, scancode, action, mods, InputRouter::Source::Host);
+    mHostKeySeen = true;
+    mFocused = true;
+    ++mKeyCallbackCount;
+    const double now = glfwGetTime();
+    if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+        mHostKeyDown[key] = true;
+        mKeyPressTime[key] = now;
+    } else if (action == GLFW_RELEASE) {
+        mHostKeyDown[key] = false;
+        mKeyReleaseTime[key] = now;
+    }
+}
+
+void InputCommandSystem::beginFrame() {
+    mUpdatedThisFrame = false;
+}
+
 void InputCommandSystem::update(float dt) {
     (void)dt;
     if (!mWindow) return;
+    mUpdatedThisFrame = true;
 
     mCurrentTime = glfwGetTime();
 
@@ -180,7 +208,9 @@ void InputCommandSystem::update(float dt) {
 
         // Use callback timestamps for press/release edges instead of polling,
         // fall back to glfwGetKey for held state (which works across frames)
-        bool currDown = mKeyboardEnabled && glfwGetKey(mWindow, key) == GLFW_PRESS;
+        bool currDown = mKeyboardEnabled &&
+            ((mHostKeySeen && InputRouter::keyDown(key)) ||
+             (!mHostKeySeen && glfwGetKey(mWindow, key) == GLFW_PRESS));
         bool prevDown = mPrevKeyStates[key];
 
         // Callback-based press detection: a press occurred if the callback
@@ -295,8 +325,10 @@ const InputCommandState& InputCommandSystem::getState(const std::string& actionN
 }
 
 bool InputCommandSystem::isKeyHeld(int key) const {
-    if (!mWindow || !mKeyboardEnabled || !mFocused)
+    if (!mWindow || !mKeyboardEnabled || (!mFocused && !mHostKeySeen))
         return false;
+    if (mHostKeySeen || InputRouter::hasHostKeys())
+        return InputRouter::keyDown(key);
     return glfwGetKey(mWindow, key) == GLFW_PRESS;
 }
 

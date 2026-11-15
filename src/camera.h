@@ -37,8 +37,10 @@ float fov = 100.0f;
     float roll = 0.0f;
     CameraSwayState sway;
 bool firstMouse = true;
+bool ignoreHostMouse = false;
 // dec 19 2025 make this work with main.cpp window dimensions 
 double lastX = 400, lastY = 300;
+double lastMouseInputTime = -1.0;
 
     bool thirdPerson = true;
 

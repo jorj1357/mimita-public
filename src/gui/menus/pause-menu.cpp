@@ -1,4 +1,5 @@
 // 09 01 2026, 00 00
+#include "input/input-router.h"
 /* purpose
 * Implements the in-game ESC modal with resume, settings, Discord, invite, leave, and quick controls.
 * Uses config/gui/pause-menu.json for every visual rectangle, label, color, and row cadence.

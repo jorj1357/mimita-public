@@ -51,6 +51,7 @@ void initializeHostSocket(const mimita::host::HostServicesV1* services);
 void initializeHostGlResources(const mimita::host::HostServicesV1* services);
 void initializeHostState(const mimita::host::HostServicesV1* services);
 void initializeResidentState(const mimita::host::HostServicesV1* services);
+bool handleMapEditorHostCall(mimita::host::MapEditorHostCallV1& call);
 }  // namespace mimita::game
 
 namespace mimita::host {
@@ -212,6 +213,19 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
                                                   command->requestId);
         if (handled) *handled = 1;
         return HostResult::Ok;
+    }
+    if (eventId == kEventMapEditorHost) {
+        if (!payload || payloadSize < sizeof(MapEditorHostCallV1)) {
+            return HostResult::InvalidArgument;
+        }
+        auto* call = static_cast<MapEditorHostCallV1*>(payload);
+        if (call->version != kMapEditorHostVersion ||
+            call->structSize != sizeof(MapEditorHostCallV1)) {
+            return HostResult::InvalidArgument;
+        }
+        const bool ok = mimita::game::handleMapEditorHostCall(*call);
+        if (handled) *handled = ok ? 1 : 0;
+        return ok ? HostResult::Ok : HostResult::NotFound;
     }
     if (eventId == kEventTransportMessage) {
         if (!payload || payloadSize < sizeof(TransportMessageV1)) {

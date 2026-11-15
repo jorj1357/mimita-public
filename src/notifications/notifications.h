@@ -89,6 +89,11 @@ public:
     void pushHotReloadFailure(const std::string& title, const std::string& message,
                               uint64_t durationTicks = 0);
     bool hotReloadNoticeEnabled() const { return mHotReloadNotice; }
+    const std::string& hotReloadVerbosity() const { return mHotReloadVerbosity; }
+    bool hotReloadShowFiles() const { return mHotReloadShowFiles; }
+    void setHotReloadVerbosity(const std::string& verbosity);
+    void setHotReloadShowFiles(bool show);
+    void saveConfigNow() { saveConfig(); }
     void pushBuildNotice();
     void pushTip(bool force = false);
     bool devTimerTipsEnabled() const { return mDevTimerTipsEnabled; }
@@ -182,6 +187,8 @@ private:
     std::vector<float> mHotReloadTitleColor{0.55f, 1.0f, 0.65f};
     std::vector<float> mHotReloadTextColor{0.65f, 1.0f, 0.72f};
     bool mHotReloadNotice = true;
+    std::string mHotReloadVerbosity = "all";
+    bool mHotReloadShowFiles = true;
 
     int mMaxCount = 3;
     uint64_t mDefaultDurationTicks = 300;

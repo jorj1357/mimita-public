@@ -15,6 +15,7 @@
 #include "actor/player-ai.h"
 #include <cstdint>
 #include <cstdio>
+#include <chrono>
 #include <string>
 #include <unordered_set>
 #include <nlohmann/json.hpp>
@@ -23,6 +24,7 @@
 #include "input/input-frame.h"
 #include "input/input-poll.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
 #include "input/scenario-input.h"
 #include "audio/audio.h"
 #include "config/weapon-hitfx-config.h"
@@ -41,6 +43,8 @@
 #include "physics/movement/physics-collision.h"
 #include "replay/replay.h"
 #include "gui/hud/chat-bubble.h"
+#include "gui/hud/chat-window.h"
+#include "gui/menus/pause-menu.h"
 #include "network/multiplayer-context.h"
 #include "network/community-server-config.h"
 #include "network/community-match-client.h"
@@ -60,6 +64,89 @@
 
 extern DuelManager gDuelManager;
 
+namespace {
+
+void focusGameplayWindowOnce(GLFWwindow* window) {
+    (void)window;
+    static bool focusAttempted = false;
+    if (focusAttempted) return;
+    if (!InputRouter::window()) return;
+    focusAttempted = true;
+    const bool before = InputRouter::gameWindowFocused();
+    const bool after = before || InputRouter::focusGameWindow();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.window-focus-visible", "input",
+        "focused the gameplay window after it became visible", 0,
+        nlohmann::json{
+            {"focused_before", before},
+            {"focused_after", after},
+            {"visible", true}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void logInputState(Engine& engine, InputCommandSystem& cmd) {
+    static std::uint64_t lastLogMs = 0;
+    const auto nowMs = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (nowMs - lastLogMs < 1000) return;
+    lastLogMs = nowMs;
+    GLFWwindow* window = engine.window();
+    if (!window) return;
+    focusGameplayWindowOnce(window);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.state", "input", "per-frame input ownership and raw key state", 0,
+        nlohmann::json{
+            {"focused", glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0},
+            {"win32_focused", InputRouter::gameWindowFocused()},
+            {"input_frame_id", InputRouter::frameId()},
+            {"input_client_tick", InputRouter::clientTick()},
+            {"input_server_tick", InputRouter::serverTick()},
+            {"iconified", glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0},
+            {"cursor_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"keyboard_enabled", cmd.isKeyboardEnabled()},
+            {"input_focused", cmd.focused()},
+            {"terminal_open", Terminal::instance().isOpen()},
+            {"chat_open", isChatOpen()},
+            {"pause_open", PauseMenu::isOpen()},
+            {"scenario_active", ScenarioInput::active()},
+            {"ai_active", PlayerAiController::active()},
+            {"replay_playing", REPLAY_PLAYER.isPlaying()},
+            {"key_callback_count", cmd.keyCallbackCount()},
+            {"w", glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS},
+            {"a", glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS},
+            {"s", glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS},
+            {"d", glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS},
+            {"escape", glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS},
+            {"grave", glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS},
+            {"walkforward_held", cmd.getState("walkforward").held},
+            {"walkback_held", cmd.getState("walkback").held},
+            {"walkleft_held", cmd.getState("walkleft").held},
+            {"walkright_held", cmd.getState("walkright").held}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+void recoverStuckKeyboardGate(InputCommandSystem& cmd) {
+    if (cmd.isKeyboardEnabled()) return;
+    if (Terminal::instance().isOpen() || isChatOpen() || PauseMenu::isOpen() ||
+        REPLAY_PLAYER.isPlaying() || ScenarioInput::active()) {
+        return;
+    }
+    cmd.setKeyboardEnabled(true);
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "input.keyboard-recovered", "input",
+        "re-enabled keyboard actions because no modal input owner was active", 0,
+        nlohmann::json{{"terminal_open", false}, {"chat_open", false},
+                       {"pause_open", false}, {"scenario_active", false},
+                       {"replay_playing", false}},
+        __FILE__, __LINE__, __FUNCTION__);
+}
+
+}  // namespace
+
 void engineTickNet(Engine& engine, float dt)
 {
     Player& player = THE_PLAYER;
@@ -71,6 +158,17 @@ void engineTickNet(Engine& engine, float dt)
     auto& mpContext = MP_CONTEXT;
     auto& gReplayRecorder = REPLAY_RECORDER;
     auto& gReplayFactory = REPLAY_FACTORY;
+
+    InputCommandSystem& inputCommands = InputCommandSystem::instance();
+    InputRouter::setWindow(engine.window());
+    InputRouter::beginFrame(
+        static_cast<std::uint64_t>(player.movementSimulationTick),
+        static_cast<std::uint64_t>(mpContext.latestServerTick));
+    recoverStuckKeyboardGate(inputCommands);
+    logInputState(engine, inputCommands);
+    if (!inputCommands.updatedThisFrame()) {
+        inputCommands.update(dt);
+    }
 
     { Perf::ScopedTimer _net("Networking");
     if (mpContext.active) {
@@ -169,7 +267,7 @@ void engineTickNet(Engine& engine, float dt)
             cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
         mpInput.interactHeld =
             cmd.isKeyboardEnabled() &&
-            glfwGetKey(engine.window(), GLFW_KEY_F) == GLFW_PRESS;
+            InputRouter::keyDown(GLFW_KEY_F);
         bool scheduledInteractHeld = false;
         if (peekTerminalInteract(scheduledInteractHeld))
             mpInput.interactHeld = scheduledInteractHeld;
@@ -178,7 +276,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.flyFast = cmd.getState("dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
             glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
-            glfwGetMouseButton(engine.window(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
         {
             const MimitaNet::CommunityMatchClient& match =
                 MimitaNet::CommunityMatchClient::instance();
