@@ -1,4 +1,5 @@
 // 2026-10-27
+#include "input/input-router.h"
 
 #include "interaction/interaction-system.h"
 
@@ -200,7 +201,7 @@ bool InteractionSystem::handleKey(GLFWwindow* window, const Camera& camera)
     if (!window)
         return false;
 
-    const bool held = glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS;
+    const bool held = InputRouter::keyDown(GLFW_KEY_F);
     const bool pressed = held && !mPreviousKeyHeld;
     mPreviousKeyHeld = held;
     mHoldKeyDown = held;

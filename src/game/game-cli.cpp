@@ -1,4 +1,5 @@
 // 08 16 2026, 01 35
+#include "game/window-bridge-module.h"
 /* purpose
 * Owns lightweight command-line self-tests and diagnostic launch paths.
 * Runs requested checks before normal graphics or gameplay startup.
@@ -230,9 +231,7 @@ void forceMainMenu()
     cancelReplayExport();
 
     // 9. Force cursor visible
-    GLFWwindow* win = glfwGetCurrentContext();
-    if (win)
-        glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mimita::game::hostSetCursorMode(0);
 
     // 10. Transition to menu
     printf("[MAINMENU] switching scene\n");

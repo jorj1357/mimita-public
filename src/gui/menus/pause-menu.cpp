@@ -28,6 +28,7 @@
 #include "game/game-state.h"
 #include "game/duel.h"
 #include "gui/gui-element-render.h"
+#include "game/window-bridge-module.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-main.h"
 #include "gui/menus/settings-menu.h"
@@ -51,8 +52,8 @@ View gView = View::Main;
 
 void restoreGameplayCursor(GLFWwindow* window)
 {
-    const int requestedMode = MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
-    glfwSetInputMode(window, GLFW_CURSOR, requestedMode);
+    const int requestedMode = MouseLock::locked() ? 2 : 0;
+    mimita::game::hostSetCursorMode(requestedMode);
     if (StructuredLogger::instance().shouldLog(
             StructuredCategory::Gui, StructuredLevel::Important)) {
         const auto& match = MimitaNet::CommunityMatchClient::instance();
@@ -62,7 +63,7 @@ void restoreGameplayCursor(GLFWwindow* window)
             {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
             {"mouse_lock_locked", MouseLock::locked()},
             {"requested_mode", requestedMode},
-            {"actual_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"actual_mode", mimita::game::hostCursorMode()},
             {"match_active", match.active()},
             {"mode", match.mode()},
             {"local_team", localTeam},
@@ -161,7 +162,7 @@ void leaveRoom(GLFWwindow* window)
     gOpen = false;
     gView = View::Main;
     InputCommandSystem::instance().setKeyboardEnabled(true);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mimita::game::hostSetCursorMode(0);
 }
 
 } // namespace
@@ -175,7 +176,7 @@ void toggle(GLFWwindow* window)
     gOpen = true;
     gView = View::Main;
     InputCommandSystem::instance().setKeyboardEnabled(false);
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mimita::game::hostSetCursorMode(0);
     if (StructuredLogger::instance().shouldLog(
             StructuredCategory::Gui, StructuredLevel::Important)) {
         const auto& match = MimitaNet::CommunityMatchClient::instance();
@@ -185,7 +186,7 @@ void toggle(GLFWwindow* window)
             {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
             {"mouse_lock_locked", MouseLock::locked()},
             {"requested_mode", GLFW_CURSOR_NORMAL},
-            {"actual_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"actual_mode", mimita::game::hostCursorMode()},
             {"match_active", match.active()},
             {"mode", match.mode()},
             {"local_team", localTeam},
@@ -271,7 +272,7 @@ void render(GLFWwindow* window)
     if (const GuiElement* invite = layout.get("inviteButton"); invite && drawGuiElement(window, *invite).clicked) {
         const GuiElement* url = layout.get("inviteUrl");
         const std::string value = url && !url->text.empty() ? url->text : "https://www.mimita.fun/download";
-        glfwSetClipboardString(window, value.c_str());
+        mimita::game::hostClipboardSet(value);
         NotificationSystem::instance().push("Code copied!", "Code: " + value, 180, {});
     }
     if (const GuiElement* reset = layout.get("resetButton"); reset && drawGuiElement(window, *reset).clicked)

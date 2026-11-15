@@ -7,24 +7,26 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/ui-system.h"
+#include "game/window-bridge-module.h"
+#include "input/input-router.h"
 
 void GuiEditor::handleInput(GLFWwindow* win)
 {
-    double mx, my;
-    glfwGetCursorPos(win, &mx, &my);
+    double mx = 0.0, my = 0.0;
+    mimita::game::hostCursorPos(mx, my);
     double fbx, fby;
     GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, fbx, fby);
     double dx = GuiCoordinateSystem::instance().screenToDesignX((float)fbx);
     double dy = GuiCoordinateSystem::instance().screenToDesignY((float)fby);
 
-    bool mouseDown = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    bool mouseDown = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     static bool prevDown = false;
     bool pressed = mouseDown && !prevDown;
     bool released = !mouseDown && prevDown;
     prevDown = mouseDown;
 
-    bool shiftHeld = glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                     glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    bool shiftHeld = InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+                     InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT);
 
     static int dragSlider = -1;
     if (dragSlider >= 0) {
@@ -291,9 +293,9 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     if (mSelectedId.empty() || mActiveLayoutFile.empty()) return;
 
     // Ctrl+S: save immediately
-    if ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-         glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
-        glfwGetKey(win, GLFW_KEY_S) == GLFW_PRESS) {
+    if ((InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+         InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL)) &&
+        InputRouter::keyDown(GLFW_KEY_S)) {
         static bool savePrev = false;
         if (!savePrev) {
             GuiLayoutManager::instance().saveAll();
@@ -303,18 +305,18 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     } else { static bool savePrev = false; (void)savePrev; }
 
     if (mFilterFocused) {
-        if (glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS) {
+        if (InputRouter::keyDown(GLFW_KEY_BACKSPACE)) {
             static bool fbPrev = false;
             if (!mHierarchyFilter.empty() && !fbPrev) mHierarchyFilter.pop_back();
             fbPrev = true;
         } else { static bool fbPrev = false; (void)fbPrev; }
-        if (glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS) { mFilterFocused = false; return; }
-        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) { mFilterFocused = false; mHierarchyFilter.clear(); return; }
+        if (InputRouter::keyDown(GLFW_KEY_ENTER)) { mFilterFocused = false; return; }
+        if (InputRouter::keyDown(GLFW_KEY_ESCAPE)) { mFilterFocused = false; mHierarchyFilter.clear(); return; }
         return;
     }
 
     if (mEditingText) {
-        if (glfwGetKey(win, GLFW_KEY_BACKSPACE) == GLFW_PRESS) {
+        if (InputRouter::keyDown(GLFW_KEY_BACKSPACE)) {
             static bool bsPrev = false;
             if (!mTextEditBuffer.empty() && !bsPrev) {
                 mTextEditBuffer.pop_back();
@@ -324,13 +326,13 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
             }
             bsPrev = true;
         } else { static bool bsPrev = false; (void)bsPrev; }
-        if (glfwGetKey(win, GLFW_KEY_ENTER) == GLFW_PRESS) {
+        if (InputRouter::keyDown(GLFW_KEY_ENTER)) {
             mEditingText = false;
             printf("[GUI EDIT] text editing ended for \"%s\": \"%s\"\n",
                    mSelectedId.c_str(), mTextEditBuffer.c_str());
             return;
         }
-        if (glfwGetKey(win, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        if (InputRouter::keyDown(GLFW_KEY_ESCAPE)) {
             mEditingText = false;
             return;
         }
@@ -338,9 +340,9 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     }
 
     // Ctrl+D: duplicate
-    if ((glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-         glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) &&
-        glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS) {
+    if ((InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+         InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL)) &&
+        InputRouter::keyDown(GLFW_KEY_D)) {
         static bool dupPrev = false;
         if (!dupPrev && !mSelectedId.empty()) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
@@ -359,7 +361,7 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
         }
     } else { static bool dupPrev = false; (void)dupPrev; }
 
-    if (glfwGetKey(win, GLFW_KEY_DELETE) == GLFW_PRESS && !mSelectedId.empty()) {
+    if (InputRouter::keyDown(GLFW_KEY_DELETE) && !mSelectedId.empty()) {
         static bool delPrev = false;
         if (!delPrev) {
             GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
@@ -377,25 +379,25 @@ void GuiEditor::handleKeyboard(GLFWwindow* win)
     } else { static bool delPrev = false; (void)delPrev; }
 
     float step = 1.0f;
-    if (glfwGetKey(win, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-        glfwGetKey(win, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) step = 10.0f;
-    if (glfwGetKey(win, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-        glfwGetKey(win, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) step = 50.0f;
+    if (InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+        InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT)) step = 10.0f;
+    if (InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+        InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL)) step = 50.0f;
 
     float dkx = 0, dky = 0;
-    if (glfwGetKey(win, GLFW_KEY_LEFT) == GLFW_PRESS) dkx -= step;
-    if (glfwGetKey(win, GLFW_KEY_RIGHT) == GLFW_PRESS) dkx += step;
-    if (glfwGetKey(win, GLFW_KEY_UP) == GLFW_PRESS) dky -= step;
-    if (glfwGetKey(win, GLFW_KEY_DOWN) == GLFW_PRESS) dky += step;
+    if (InputRouter::keyDown(GLFW_KEY_LEFT)) dkx -= step;
+    if (InputRouter::keyDown(GLFW_KEY_RIGHT)) dkx += step;
+    if (InputRouter::keyDown(GLFW_KEY_UP)) dky -= step;
+    if (InputRouter::keyDown(GLFW_KEY_DOWN)) dky += step;
     if (dkx == 0 && dky == 0) return;
 
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
     GuiElement* elem = const_cast<GuiElement*>(layout.get(mSelectedId));
     if (!elem) return;
-    if (glfwGetKey(win, GLFW_KEY_T) == GLFW_PRESS) {
+    if (InputRouter::keyDown(GLFW_KEY_T)) {
         elem->textOffsetX += dkx; elem->textOffsetY += dky;
-    } else if (glfwGetKey(win, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
-               glfwGetKey(win, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
+    } else if (InputRouter::keyDown(GLFW_KEY_LEFT_ALT) ||
+               InputRouter::keyDown(GLFW_KEY_RIGHT_ALT)) {
         elem->w = std::max(10.0f, elem->w + dkx);
         elem->h = std::max(10.0f, elem->h + dky);
     } else {

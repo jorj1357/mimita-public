@@ -1,4 +1,5 @@
 // 07 21 2026, 17 10
+#include "game/window-bridge-module.h"
 /* purpose
 * Owns per-frame multiplayer integration between engine state, local player state, and network tick.
 * Builds client movement input packets from shared physics results and presentation serials.
@@ -99,13 +100,17 @@ void logInputState(Engine& engine, InputCommandSystem& cmd) {
         StructuredCategory::General, StructuredLevel::Important,
         "input.state", "input", "per-frame input ownership and raw key state", 0,
         nlohmann::json{
-            {"focused", glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0},
+            {"focused", mimita::game::hostWindowFocused()},
             {"win32_focused", InputRouter::gameWindowFocused()},
             {"input_frame_id", InputRouter::frameId()},
             {"input_client_tick", InputRouter::clientTick()},
             {"input_server_tick", InputRouter::serverTick()},
-            {"iconified", glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0},
-            {"cursor_mode", glfwGetInputMode(window, GLFW_CURSOR)},
+            {"iconified", mimita::game::hostWindowIconified()},
+            {"cursor_mode", mimita::game::hostCursorMode()},
+            {"host_cursor", InputRouter::hostCursorActive()},
+            {"look_source", InputRouter::lookSource()},
+            {"cursor_x", InputRouter::cursorX()},
+            {"cursor_y", InputRouter::cursorY()},
             {"keyboard_enabled", cmd.isKeyboardEnabled()},
             {"input_focused", cmd.focused()},
             {"terminal_open", Terminal::instance().isOpen()},
@@ -115,12 +120,12 @@ void logInputState(Engine& engine, InputCommandSystem& cmd) {
             {"ai_active", PlayerAiController::active()},
             {"replay_playing", REPLAY_PLAYER.isPlaying()},
             {"key_callback_count", cmd.keyCallbackCount()},
-            {"w", glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS},
-            {"a", glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS},
-            {"s", glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS},
-            {"d", glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS},
-            {"escape", glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS},
-            {"grave", glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS},
+            {"w", InputRouter::keyDown(GLFW_KEY_W)},
+            {"a", InputRouter::keyDown(GLFW_KEY_A)},
+            {"s", InputRouter::keyDown(GLFW_KEY_S)},
+            {"d", InputRouter::keyDown(GLFW_KEY_D)},
+            {"escape", InputRouter::keyDown(GLFW_KEY_ESCAPE)},
+            {"grave", InputRouter::keyDown(GLFW_KEY_GRAVE_ACCENT)},
             {"walkforward_held", cmd.getState("walkforward").held},
             {"walkback_held", cmd.getState("walkback").held},
             {"walkleft_held", cmd.getState("walkleft").held},
@@ -275,7 +280,7 @@ void engineTickNet(Engine& engine, float dt)
         mpInput.flyDown = cmd.getState("down_dash").held;
         mpInput.flyFast = cmd.getState("dash").held;
         mpInput.attackPressed = InputCommandSystem::instance().isKeyboardEnabled() &&
-            glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED &&
+            mimita::game::hostCursorMode() == 2 &&
             InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
         {
             const MimitaNet::CommunityMatchClient& match =
@@ -1411,9 +1416,9 @@ void engineTickNet(Engine& engine, float dt)
         if (!InputCommandSystem::instance().isKeyboardEnabled()) {
             mpContext.showPlayerList = false;
         } else {
-            mpContext.showPlayerList = glfwGetKey(engine.window(), GLFW_KEY_TAB) == GLFW_PRESS;
+            mpContext.showPlayerList = InputRouter::keyDown(GLFW_KEY_TAB);
             static bool f3Prev = false;
-            bool f3Down = glfwGetKey(engine.window(), GLFW_KEY_F3) == GLFW_PRESS;
+            bool f3Down = InputRouter::keyDown(GLFW_KEY_F3);
             if (f3Down && !f3Prev)
                 mpContext.showDebugOverlay = !mpContext.showDebugOverlay;
             f3Prev = f3Down;

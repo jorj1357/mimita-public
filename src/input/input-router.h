@@ -41,5 +41,7 @@ bool gameWindowFocused();
 bool focusGameWindow();
 void setPointerLock(bool locked);
 bool pointerLocked();
+bool hostCursorActive();
+int lookSource();
 
 }  // namespace InputRouter

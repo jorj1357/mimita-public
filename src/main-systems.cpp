@@ -37,6 +37,7 @@
 #include "input/input-frame.h"
 #include "input/input-commands.h"
 #include "input/input-router.h"
+#include "game/window-bridge-module.h"
 #include "gui/menus/pause-menu.h"
 #include "render/render-command.h"
 #include "render/render-world.h"
@@ -165,12 +166,6 @@ void writeAgentCommandEvent(const std::string& eventName,
 
 namespace {
 
-GLFWwindow* agentWindow()
-{
-    GLFWwindow* window = glfwGetCurrentContext();
-    return window ? window : Terminal::instance().window();
-}
-
 void postAgentMouseButton(int button, bool down)
 {
     const DWORD flag = button == GLFW_MOUSE_BUTTON_RIGHT
@@ -181,15 +176,11 @@ void postAgentMouseButton(int button, bool down)
 
 bool postAgentMousePosition(double x, double y)
 {
-    GLFWwindow* window = agentWindow();
-    if (!window) return false;
-    glfwFocusWindow(window);
-    glfwSetCursorPos(window, x, y);
+    if (!mimita::game::hostFocusWindow() ||
+        !mimita::game::hostSetCursorPos(x, y)) return false;
     int wx = 0, wy = 0;
-    glfwGetWindowPos(window, &wx, &wy);
-    if (!SetCursorPos(wx + static_cast<int>(x), wy + static_cast<int>(y)))
-        return false;
-    return true;
+    if (!mimita::game::hostWindowPosition(wx, wy)) return false;
+    return SetCursorPos(wx + static_cast<int>(x), wy + static_cast<int>(y)) != 0;
 }
 
 }  // namespace
@@ -562,8 +553,7 @@ void registerAgentCommands()
                 Terminal::instance().addLog("[AGENT] invalid mouse coordinates");
                 return;
             }
-            if (GLFWwindow* window = agentWindow()) {
-                glfwSetCursorPos(window, x, y);
+            if (mimita::game::hostSetCursorPos(x, y)) {
                 writeAgentCommandEvent("input.normalized", "agent.mouse_move applied",
                                        {{"source", "agent"}, {"context", "menu_or_gameplay"},
                                         {"action", "mouse_move"}, {"x", x}, {"y", y}});

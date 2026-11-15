@@ -127,6 +127,7 @@ void World::clear()
     selectedSpawnIndex = -1;
     authoredGeometryApplied = false;
     authoredObjects.clear();
+    authoredGLBBases.clear();
     authoredBaseVertexCount = 0;
     authoredBaseBatchCount = 0;
     mesh = Mesh{};

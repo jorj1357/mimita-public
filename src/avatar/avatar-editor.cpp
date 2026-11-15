@@ -1,4 +1,5 @@
 // 08 20 2026, 12 00
+#include "game/window-bridge-module.h"
 /* purpose
 * Orchestrates the five-tab avatar editor and the right-side preview frame.
 * Owns tab scrolling, SaveLoad controls, avatar-name input, and tab overlays.
@@ -105,7 +106,7 @@ std::vector<std::string> scanPlayerModels()
 bool cursorInDesignRect(GLFWwindow* win, UIRect designRect)
 {
     double mx = 0.0, my = 0.0;
-    glfwGetCursorPos(win, &mx, &my);
+    mimita::game::hostCursorPos(mx, my);
     double sx = mx, sy = my;
     GuiCoordinateSystem::instance().cursorWindowToScreen(mx, my, sx, sy);
     return pointIn(sx, sy, GuiCoordinateSystem::instance().designToScreen(designRect));
@@ -353,7 +354,7 @@ bool avatarEditorHandleKey(int key, int action, int mods)
 {
     if (action != GLFW_PRESS && action != GLFW_REPEAT) return false;
     if (gSaveNameState.focused) {
-        uiTextInputHandleKey(glfwGetCurrentContext(), gSaveNameState, key, action, mods,
+        uiTextInputHandleKey(nullptr, gSaveNameState, key, action, mods,
                              {.maxLength = 63});
         return true;
     }

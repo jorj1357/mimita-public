@@ -1154,9 +1154,19 @@ write_json_atomic(LINK_PENDING, {
 print("[LINK] using build/link.rsp", flush=True)
 cmd = ccache_cmd() + ["@" + link_response]
 
-result = run_tool(cmd)
+result = run_tool(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                  text=True)
 
 if result.returncode != 0:
+    if result.stdout:
+        try:
+            with open(os.path.join(ROOT, ".dev", "link-output.log"),
+                      "a", encoding="utf-8") as link_log:
+                link_log.write(result.stdout)
+                link_log.write("\n")
+        except OSError:
+            pass
+        print(result.stdout, flush=True)
     write_json_atomic(LINK_PENDING, {
         "status": "failed",
         "reason": link_reason,

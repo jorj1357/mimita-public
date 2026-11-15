@@ -1,4 +1,5 @@
 // 08 21 2026, 12 00
+#include "game/window-bridge-module.h"
 /* purpose
 * Orchestrates menu rendering, menu transitions, and menu-specific 3D previews.
 * Draws the avatar creator preview through the shared preview camera owner.
@@ -1736,7 +1737,7 @@ void guiMain(GLFWwindow* win, GameState& state)
                 GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/avatar-creator.json");
                 const GuiElement* prevPanel = layout.get("panelPreview");
                 int fbW = 0, fbH = 0;
-                glfwGetFramebufferSize(win, &fbW, &fbH);
+                mimita::game::hostFramebufferSize(fbW, fbH);
                 float scaleX = (float)fbW / 1920.0f;
                 float scaleY = (float)fbH / 1080.0f;
 

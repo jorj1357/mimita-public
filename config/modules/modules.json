@@ -13,34 +13,6 @@
       "capabilities": []
     },
     {
-      "name": "map-editor",
-      "abi": 2,
-      "state_schema": 1,
-      "activation": "main_thread_editor_boundary",
-      "sources": [
-        "src/mapeditor/map-editor-module.cpp"
-      ],
-      "headers": [
-        "src/modules/api/module-abi.h",
-        "src/modules/api/map-editor-api.h"
-      ],
-      "events": [
-        100,
-        101,
-        102,
-        103,
-        104,
-        105,
-        106,
-        107,
-        108,
-        109
-      ],
-      "capabilities": [
-        1
-      ]
-    },
-    {
       "name": "map-geometry",
       "abi": 2,
       "state_schema": 1,

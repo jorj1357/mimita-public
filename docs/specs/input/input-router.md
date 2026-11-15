@@ -85,4 +85,9 @@ See the Logging Catalog in `docs/specs/debug-logging/debug-logging.md`.
 - Unlocked: clipping and hiding are removed, and `firstMouse` is reset once.
 - The router is the only look owner. Do not apply host callback deltas and Win32
   deltas in the same frame.
-- Host callback deltas are ignored while pointer lock is off.
+- The resident cursor callback feeds `GameInputKind::Cursor` events into the
+  router. After the first host cursor event, the Win32 absolute-position
+  fallback is disabled for the process.
+- Look deltas are applied only while pointer lock is on.
+- Pointer-lock and focus transitions reset the cursor baseline, so no delta is
+  carried across a warp, lock change, or alt-tab.

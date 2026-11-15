@@ -1,5 +1,6 @@
 #include "gui/ui-system.h"
 #include "input/input-router.h"
+#include "game/window-bridge-module.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
 
@@ -58,10 +59,9 @@ extern Renderer* gRenderer;
 using namespace UISys;
 
 bool uiCanPlayUISound() {
-    if (!gWindow) return false;
-    if (glfwGetWindowAttrib(gWindow, GLFW_FOCUSED) == 0) return false;
-    if (glfwGetWindowAttrib(gWindow, GLFW_ICONIFIED) != 0) return false;
-    if (glfwGetInputMode(gWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) return false;
+    if (!mimita::game::hostWindowFocused()) return false;
+    if (mimita::game::hostWindowIconified()) return false;
+    if (mimita::game::hostCursorMode() == 2) return false;
     return true;
 }
 
@@ -79,7 +79,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
     gOwnsHoverInput = ownsHoverInput;
     int framebufferWidth = 0;
     int framebufferHeight = 0;
-    if (win) glfwGetFramebufferSize(win, &framebufferWidth, &framebufferHeight);
+    mimita::game::hostFramebufferSize(framebufferWidth, framebufferHeight);
     if (gRenderer && gRenderer->stretchesWholeFrame()) {
         framebufferWidth = gRenderer->sceneWidth;
         framebufferHeight = gRenderer->sceneHeight;
@@ -119,7 +119,10 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
 
     {
         int winW = 1, winH = 1;
-        glfwGetWindowSize(win, &winW, &winH);
+        if (!mimita::game::hostWindowSize(winW, winH)) {
+            winW = gFbW;
+            winH = gFbH;
+        }
         GuiCoordinateSystem::instance().update(gFbW, gFbH, winW, winH);
     }
 
@@ -147,7 +150,7 @@ void uiBeginFrame(GLFWwindow* win, const char* passName, bool ownsHoverInput)
             {"mouse_down", gMouseDown},
             {"mouse_prev", gMousePrev},
             {"click_edge", gMouseClickEdge},
-            {"cursor_mode", glfwGetInputMode(win, GLFW_CURSOR)},
+            {"cursor_mode", mimita::game::hostCursorMode()},
             {"transition", gMouseDown ? "press" : "release"}
         };
         StructuredLogger::instance().writeEvent(

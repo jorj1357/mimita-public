@@ -38,6 +38,8 @@
 #include "gui/ui-system.h"
 #include "hot-reload/module-host.h"
 #include "input/mouse-lock.h"
+#include "input/input-router.h"
+#include "game/window-bridge-module.h"
 #include "modules/api/map-editor-api.h"
 #include "map/map-authored-geometry.h"
 #include "map/map-loader-collision.h"
@@ -117,7 +119,7 @@ glm::vec2 cursorScreen(GLFWwindow* window, double mouseX, double mouseY)
 {
     int winW = 1;
     int winH = 1;
-    if (window) glfwGetWindowSize(window, &winW, &winH);
+    mimita::game::hostWindowSize(winW, winH);
     const float w = screenWidth();
     const float h = screenHeight();
     return {
@@ -214,12 +216,9 @@ bool MapEditor::setActive(bool enabled)
         DebugVis::setMasterEnabled(true);
         DebugConfig::DEBUG_RENDER = true;
         THE_CAMERA.firstMouse = true;
-        GLFWwindow* window = glfwGetCurrentContext();
         mPrevMouseLock = MouseLock::locked();
-        if (window) {
-            MouseLock::set(window, false);
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        }
+        MouseLock::set(nullptr, false);
+        mimita::game::hostSetCursorMode(0);
         registry();
         notify("enabled map=" + mapId() + " objects=" +
                std::to_string(registry().current().entities.size()) + "/" +
@@ -237,12 +236,9 @@ bool MapEditor::setActive(bool enabled)
     mHoverValid = false;
     mHoverAxis = -1;
     FREECAM_ENABLED = mPrevFreecam;
-    GLFWwindow* window = glfwGetCurrentContext();
-    if (window) {
-        MouseLock::set(window, mPrevMouseLock);
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        THE_CAMERA.firstMouse = true;
-    }
+    MouseLock::set(nullptr, mPrevMouseLock);
+    mimita::game::hostSetCursorMode(0);
+    THE_CAMERA.firstMouse = true;
     notify("disabled; unsaved changes remain in memory");
     return true;
 }
@@ -754,7 +750,7 @@ bool MapEditor::rayFromCursor(glm::vec3& origin, glm::vec3& direction) const
     const float h = screenHeight();
     if (w <= 1.0f || h <= 1.0f) return false;
 
-    const glm::vec2 screenCursor = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    const glm::vec2 screenCursor = cursorScreen(nullptr, mMouseX, mMouseY);
     const float mx = screenCursor.x;
     const float my = screenCursor.y;
     const float ndcX = (2.0f * mx / w) - 1.0f;
@@ -985,7 +981,7 @@ bool MapEditor::handleAtCursor(EditorObjectRef& out, int& axis) const
 {
     if (mSelection.empty()) return false;
     const glm::vec3 center = selectionCenter();
-    const glm::vec2 screenCursor = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    const glm::vec2 screenCursor = cursorScreen(nullptr, mMouseX, mMouseY);
     const float px = screenCursor.x;
     const float py = screenCursor.y;
 
@@ -1106,10 +1102,9 @@ glm::vec3 MapEditor::applySnap(const glm::vec3& position)
             return vertex;
         }
     }
-    GLFWwindow* window = glfwGetCurrentContext();
-    const bool ctrl = window &&
-        (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+    const bool ctrl =
+        InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+        InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL);
     if (mGridSnap || ctrl) {
         const float grid = std::max(0.01f, mSnapGrid);
         const glm::vec3 snapped = glm::round(position / grid) * grid;
@@ -1128,7 +1123,7 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
     mDrag.primary = primary;
     mDrag.startPoint = startPoint;
     mDrag.startCenter = selectionCenter();
-    mDrag.startMouse = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    mDrag.startMouse = cursorScreen(nullptr, mMouseX, mMouseY);
     mDrag.refs = mSelection;
     if (mDrag.refs.empty()) mDrag.refs.push_back(primary);
     for (const auto& ref : mDrag.refs) {
@@ -1151,7 +1146,7 @@ void MapEditor::beginDrag(const EditorObjectRef& primary, DragMode mode,
 void MapEditor::updateDrag()
 {
     if (mDrag.mode == DragMode::None) return;
-    const glm::vec2 cursor = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    const glm::vec2 cursor = cursorScreen(nullptr, mMouseX, mMouseY);
     const glm::vec2 mouseDelta = cursor - mDrag.startMouse;
     const float viewDepth = std::max(0.1f,
         glm::dot(mDrag.startCenter - THE_CAMERA.pos, THE_CAMERA.front));
@@ -2307,7 +2302,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         UITextInputOptions options;
         options.maxLength = 80;
         options.placeholder = "search objects";
-        uiTextInputHandleKey(glfwGetCurrentContext(), mOutlinerSearch, key, action, mods, options);
+        uiTextInputHandleKey(nullptr, mOutlinerSearch, key, action, mods, options);
         mOutlinerFilter = mOutlinerSearch.value;
         mOutlinerScroll.scrollY = 0.0f;
         return true;
@@ -2320,7 +2315,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         UITextInputOptions options;
         options.maxLength = 64;
         options.submitOnEnter = false;
-        uiTextInputHandleKey(glfwGetCurrentContext(), mPropertyName, key, action,
+        uiTextInputHandleKey(nullptr, mPropertyName, key, action,
                              mods, options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
@@ -2339,7 +2334,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         options.maxLength = 24;
         options.submitOnEnter = false;
         options.characterFilter = isNumberChar;
-        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods, options);
+        uiTextInputHandleKey(nullptr, field, key, action, mods, options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
             for (UITextInputState& other : mPropertyPosition) other.focused = false;
@@ -2357,7 +2352,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         options.maxLength = 24;
         options.submitOnEnter = false;
         options.characterFilter = isNumberChar;
-        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods, options);
+        uiTextInputHandleKey(nullptr, field, key, action, mods, options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) && action == GLFW_PRESS) {
             for (UITextInputState& other : mPropertySize) other.focused = false;
             applyPropertySize();
@@ -2374,7 +2369,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         options.maxLength = 24;
         options.submitOnEnter = false;
         options.characterFilter = isNumberChar;
-        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+        uiTextInputHandleKey(nullptr, field, key, action, mods,
                              options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
@@ -2393,7 +2388,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         options.maxLength = 24;
         options.submitOnEnter = false;
         options.characterFilter = isNumberChar;
-        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+        uiTextInputHandleKey(nullptr, field, key, action, mods,
                              options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
@@ -2410,7 +2405,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         UITextInputOptions options;
         options.maxLength = 64;
         options.submitOnEnter = false;
-        uiTextInputHandleKey(glfwGetCurrentContext(), mPropertyMaterial, key,
+        uiTextInputHandleKey(nullptr, mPropertyMaterial, key,
                              action, mods, options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
@@ -2429,7 +2424,7 @@ bool MapEditor::handleTextKey(int key, int mods, int action)
         options.maxLength = 24;
         options.submitOnEnter = false;
         options.characterFilter = isNumberChar;
-        uiTextInputHandleKey(glfwGetCurrentContext(), field, key, action, mods,
+        uiTextInputHandleKey(nullptr, field, key, action, mods,
                              options);
         if ((key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER) &&
             action == GLFW_PRESS) {
@@ -2719,11 +2714,11 @@ void MapEditor::setCameraSpeedMultiplier(float multiplier)
 void MapEditor::updateInput(GLFWwindow* window, float dt)
 {
     (void)dt;
-    if (!window) return;
+    (void)window;
     if (!mActive) {
         if (mLooking) {
             mLooking = false;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
         }
         return;
     }
@@ -2732,16 +2727,16 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
     if (blocked) {
         if (mLooking) {
             mLooking = false;
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
             THE_CAMERA.firstMouse = true;
         }
         return;
     }
 
-    glfwGetCursorPos(window, &mMouseX, &mMouseY);
+    mimita::game::hostCursorPos(mMouseX, mMouseY);
     int windowW = 0, windowH = 0, framebufferW = 0, framebufferH = 0;
-    glfwGetWindowSize(window, &windowW, &windowH);
-    glfwGetFramebufferSize(window, &framebufferW, &framebufferH);
+    mimita::game::hostWindowSize(windowW, windowH);
+    mimita::game::hostFramebufferSize(framebufferW, framebufferH);
     glm::vec2 screenCursor = cursorScreen(window, mMouseX, mMouseY);
     if (ModuleHost::instance().mapEditorLoaded()) {
         mimita_map_editor::EditorInputV1 input{};
@@ -2808,7 +2803,7 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
-    const bool right = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    const bool right = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
     if (right && !mRightPrev) {
         const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
@@ -2823,23 +2818,23 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         }
         mContextMenuOpen = false;
         mLooking = true;
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        mimita::game::hostSetCursorMode(2);
         THE_CAMERA.firstMouse = true;
     } else if (!right && mRightPrev) {
         mLooking = false;
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        mimita::game::hostSetCursorMode(0);
         THE_CAMERA.firstMouse = true;
     }
-    if (!mLooking && glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_NORMAL)
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    if (!mLooking && mimita::game::hostCursorMode() != 0)
+        mimita::game::hostSetCursorMode(0);
     mRightPrev = right;
 
     if (mLooking) {
-        mLeftPrev = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        mLeftPrev = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
         return;
     }
 
-    const bool left = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    const bool left = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     if (left && !mLeftPrev) {
         const int row = outlinerRowAt(screenCursor.x, screenCursor.y);
         if (row >= 0) {
@@ -2847,10 +2842,10 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
             collectEditorObjects(objects);
             const int index = row;
             if (index >= 0 && index < (int)objects.size()) {
-                const bool ctrl = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                                  glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
-                const bool shift = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                                   glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+                const bool ctrl = InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+                                  InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL);
+                const bool shift = InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+                                   InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT);
                 if (shift) {
                     int anchorIndex = -1;
                     for (size_t i = 0; i < objects.size(); ++i)
@@ -2915,10 +2910,10 @@ void MapEditor::updateInput(GLFWwindow* window, float dt)
         }
     }
     const glm::vec2 cursorNow = screenCursor;
-    const bool shiftNow = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                          glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
-    const bool ctrlNow = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                         glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    const bool shiftNow = InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+                          InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT);
+    const bool ctrlNow = InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+                         InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL);
     if (left && !mLeftPrev && mDrag.mode == DragMode::None) {
         EditorObjectRef handleRef;
         int axis = -1;
@@ -3520,7 +3515,7 @@ void MapEditor::openContextMenu(const EditorObjectRef& target)
 {
     mContextMenuTarget = target;
     mContextMenuOpen = true;
-    mContextMenuPos = cursorScreen(glfwGetCurrentContext(), mMouseX, mMouseY);
+    mContextMenuPos = cursorScreen(nullptr, mMouseX, mMouseY);
     StructuredLogger::instance().writeEvent(
         StructuredCategory::World, StructuredLevel::Important,
         "map-editor.context_menu", target.id, "object context menu opened", 0,

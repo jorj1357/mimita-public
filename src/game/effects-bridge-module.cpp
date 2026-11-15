@@ -1,13 +1,12 @@
 // 2026-11-12
-// Game-DLL-side partial effects bridge for CAP_EFFECTS.
+// Game-DLL-side effects host bridge.
 //
-// The resident EffectPartSystem owns the pool; this generation only forwards
-// spawn/control requests. Pointer results are resident-owned and must not be
-// retained across effect recycling or a generation swap.
+// The game generation owns EffectPartSystem in the whole-game DLL. The
+// resident host forwards bounded EffectsOp requests here for module DLLs and
+// any remaining host consumers. Pointer results are game-owned and valid only
+// while the effect remains in the pool.
 
 #include <cstdint>
-#include <cstring>
-#include <string>
 
 #include "effects/effect-part.h"
 #include "host/abi/effects-capability.h"
@@ -15,306 +14,182 @@
 
 namespace mimita::game {
 
-void initializeHostEffects(const mimita::host::HostServicesV1* services);
+void initializeHostEffects(const mimita::host::HostServicesV1*) {}
 
-namespace {
-const mimita::host::EffectsCapabilityV1* gEffects = nullptr;
-void* gHostData = nullptr;
-
-bool invoke(mimita::host::EffectsOp op, const void* input, std::uint32_t inputSize,
-            void* output, std::uint32_t outputSize) {
-    if (!gEffects || !gEffects->invoke) {
-        return false;
+bool handleEffectsHostCall(mimita::host::EffectsHostCallV1& call) {
+    auto& effects = ::EffectPartSystem::instance();
+    const auto writePointer = [&](::EffectPart* value) {
+        if (call.output && call.outputSize >= sizeof(std::uintptr_t)) {
+            *static_cast<std::uintptr_t*>(call.output) =
+                reinterpret_cast<std::uintptr_t>(value);
+        }
+    };
+    const auto payload = [&]() -> const mimita::host::EffectsSpawnPayload* {
+        if (!call.input || call.inputSize <
+                               sizeof(mimita::host::EffectsSpawnPayload)) {
+            return nullptr;
+        }
+        return static_cast<const mimita::host::EffectsSpawnPayload*>(call.input);
+    };
+    const auto vec = [](const mimita::host::EffectsVec3& value) {
+        return glm::vec3(value.x, value.y, value.z);
+    };
+    switch (call.op) {
+        case mimita::host::EffectsOp::Spawn: {
+            const auto* effect = static_cast<const ::EffectPart*>(call.input);
+            if (!effect || call.inputSize < sizeof(::EffectPart)) return false;
+            writePointer(effects.spawn(*effect));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnFootstep: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnFootstep(vec(p->a), p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnDash: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnDash(vec(p->a), p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnFreeze: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnFreeze(vec(p->a), p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnDamageImpactSphere: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnDamageImpactSphere(vec(p->a), vec(p->b), p->s0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnMuzzleFlash: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnMuzzleFlash(vec(p->a), p->s0, p->f0, p->s1,
+                                                   p->b0 != 0, p->b1 != 0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnTracer: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnTracer(vec(p->a), vec(p->b), p->s0, p->f0,
+                                              p->s1));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnBulletImpact: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnBulletImpact(vec(p->a), vec(p->b), p->f0,
+                                                    p->f1, p->f2));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnDeathEllipsoid: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnDeathEllipsoid(vec(p->a), vec(p->b), p->f0,
+                                                     p->f1, p->f2, p->f3));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnImpactSphereTickCfg: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnImpactSphereTickCfg(vec(p->a)));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnImpactSphereTick: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnImpactSphereTick(vec(p->a), vec(p->b), p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnFreezeTrail: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnFreezeTrail(vec(p->a)));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnDownDash: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnDownDash(vec(p->a)));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnBodyContactSpark: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnBodyContactSpark(vec(p->a), vec(p->b),
+                                                       vec(p->c), p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnWorldCracks: {
+            const auto* p = payload();
+            if (!p) return false;
+            effects.spawnWorldCracks(vec(p->a), vec(p->b), vec(p->c), p->f0, p->f1,
+                                     p->f2);
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnExplosionMark: {
+            const auto* p = payload();
+            if (!p) return false;
+            effects.spawnExplosionMark(vec(p->a), vec(p->b));
+            return true;
+        }
+        case mimita::host::EffectsOp::QueueWorldHit: {
+            const auto* p = payload();
+            if (!p) return false;
+            effects.queueWorldHit(vec(p->a), vec(p->b), vec(p->c), p->f0, p->s0,
+                                  p->s1);
+            return true;
+        }
+        case mimita::host::EffectsOp::DrainPendingWorldHits: {
+            if (!call.input || call.inputSize < sizeof(std::int32_t)) return false;
+            effects.drainPendingWorldHits(
+                *static_cast<const std::int32_t*>(call.input));
+            return true;
+        }
+        case mimita::host::EffectsOp::DestroyOwner: {
+            if (!call.input || call.inputSize < sizeof(std::uint32_t)) return false;
+            effects.destroyOwner(*static_cast<const std::uint32_t*>(call.input));
+            return true;
+        }
+        case mimita::host::EffectsOp::PushSurfaceDecal:
+            return false;
+        case mimita::host::EffectsOp::SpawnEntityImpact: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnEntityImpact(vec(p->a), vec(p->b), p->s0,
+                                                    p->s1, p->f0));
+            return true;
+        }
+        case mimita::host::EffectsOp::SpawnWorldImpact: {
+            const auto* p = payload();
+            if (!p) return false;
+            writePointer(effects.spawnWorldImpact(vec(p->a), vec(p->b), p->f0,
+                                                   vec(p->c), p->f1));
+            return true;
+        }
+        case mimita::host::EffectsOp::CollectAlive: {
+            if (!call.input ||
+                call.inputSize <
+                    sizeof(mimita::host::EffectsCollectAlivePayload)) {
+                return false;
+            }
+            const auto* p =
+                static_cast<const mimita::host::EffectsCollectAlivePayload*>(
+                    call.input);
+            const int count = effects.collectAlive(
+                reinterpret_cast<::EffectPartSystem::PartSnapshot*>(p->out),
+                p->maxCount, p->minAlpha);
+            if (call.output && call.outputSize >= sizeof(std::int32_t)) {
+                *static_cast<std::int32_t*>(call.output) = count;
+            }
+            return true;
+        }
     }
-    return gEffects->invoke(gHostData, op, input, inputSize, output, outputSize) != 0;
-}
-
-void copyString(char* destination, std::size_t capacity, const std::string& value) {
-    if (!destination || capacity == 0) {
-        return;
-    }
-    const std::size_t count = value.size() < capacity - 1 ? value.size() : capacity - 1;
-    std::memcpy(destination, value.data(), count);
-    destination[count] = 0;
-}
-
-void setVec(mimita::host::EffectsVec3& out, const glm::vec3& value) {
-    out.x = value.x;
-    out.y = value.y;
-    out.z = value.z;
-}
-
-mimita::host::EffectsSpawnPayload makePayload() {
-    return mimita::host::EffectsSpawnPayload{};
-}
-
-EffectPart* receivePointer(mimita::host::EffectsOp op,
-                           const mimita::host::EffectsSpawnPayload& payload) {
-    std::uintptr_t pointer = 0;
-    invoke(op, &payload, sizeof(payload), &pointer, sizeof(pointer));
-    return reinterpret_cast<EffectPart*>(pointer);
-}
-}  // namespace
-
-void initializeHostEffects(const mimita::host::HostServicesV1* services) {
-    gEffects = nullptr;
-    gHostData = services ? services->hostUserData : nullptr;
-    if (!services || !services->get_capability) {
-        return;
-    }
-    auto* capability = static_cast<const mimita::host::EffectsCapabilityV1*>(
-        services->get_capability(
-            services->hostUserData,
-            static_cast<std::uint32_t>(mimita::host::HostCapabilityId::Effects),
-            mimita::host::kEffectsCapabilityVersion));
-    if (capability &&
-        capability->version == mimita::host::kEffectsCapabilityVersion &&
-        capability->structSize >= sizeof(mimita::host::EffectsCapabilityV1)) {
-        gEffects = capability;
-    }
+    return false;
 }
 
 }  // namespace mimita::game
-
-#ifdef MIMITA_PROBE_BRIDGE
-// The whole-game DLL includes effect-part-system.cpp, which owns instance().
-// The probe source set needs this bridge's instance().
-EffectPartSystem& EffectPartSystem::instance() {
-    static EffectPartSystem system;
-    return system;
-}
-#endif
-
-EffectPart* EffectPartSystem::spawn(const EffectPart& effect) {
-    std::uintptr_t pointer = 0;
-    mimita::game::invoke(mimita::host::EffectsOp::Spawn, &effect, sizeof(effect),
-                         &pointer, sizeof(pointer));
-    return reinterpret_cast<EffectPart*>(pointer);
-}
-
-EffectPart* EffectPartSystem::spawnFootstep(glm::vec3 position, float sizeScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    payload.f0 = sizeScale;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnFootstep,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnDash(glm::vec3 position, float sizeScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    payload.f0 = sizeScale;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnDash, payload);
-}
-
-EffectPart* EffectPartSystem::spawnFreeze(glm::vec3 position, float freezeDuration) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    payload.f0 = freezeDuration;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnFreeze, payload);
-}
-
-EffectPart* EffectPartSystem::spawnDamageImpactSphere(glm::vec3 position,
-                                                      glm::vec3 direction,
-                                                      const std::string& victim) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, direction);
-    mimita::game::copyString(payload.s0, sizeof(payload.s0), victim);
-    return mimita::game::receivePointer(
-        mimita::host::EffectsOp::SpawnDamageImpactSphere, payload);
-}
-
-EffectPart* EffectPartSystem::spawnMuzzleFlash(glm::vec3 position,
-                                               const std::string& sourceActorId,
-                                               float sizeScale,
-                                               const std::string& weaponId,
-                                               bool spawnVisual,
-                                               bool spawnLighting) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::copyString(payload.s0, sizeof(payload.s0), sourceActorId);
-    payload.f0 = sizeScale;
-    mimita::game::copyString(payload.s1, sizeof(payload.s1), weaponId);
-    payload.b0 = spawnVisual ? 1 : 0;
-    payload.b1 = spawnLighting ? 1 : 0;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnMuzzleFlash,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnTracer(glm::vec3 start, glm::vec3 end,
-                                          const std::string& sourceActorId,
-                                          float sizeScale,
-                                          const std::string& weaponId) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, start);
-    mimita::game::setVec(payload.b, end);
-    mimita::game::copyString(payload.s0, sizeof(payload.s0), sourceActorId);
-    payload.f0 = sizeScale;
-    mimita::game::copyString(payload.s1, sizeof(payload.s1), weaponId);
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnTracer, payload);
-}
-
-EffectPart* EffectPartSystem::spawnBulletImpact(glm::vec3 position, glm::vec3 normal,
-                                                float sizeScale,
-                                                float lifetimeScale,
-                                                float alphaScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    payload.f0 = sizeScale;
-    payload.f1 = lifetimeScale;
-    payload.f2 = alphaScale;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnBulletImpact,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnDeathEllipsoid(glm::vec3 position,
-                                                  glm::vec3 direction, float length,
-                                                  float radius, float lifetime,
-                                                  float sizeScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, direction);
-    payload.f0 = length;
-    payload.f1 = radius;
-    payload.f2 = lifetime;
-    payload.f3 = sizeScale;
-    return mimita::game::receivePointer(
-        mimita::host::EffectsOp::SpawnDeathEllipsoid, payload);
-}
-
-EffectPart* EffectPartSystem::spawnImpactSphereTickCfg(glm::vec3 position) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    return mimita::game::receivePointer(
-        mimita::host::EffectsOp::SpawnImpactSphereTickCfg, payload);
-}
-
-EffectPart* EffectPartSystem::spawnImpactSphereTick(glm::vec3 position,
-                                                    glm::vec3 color, float radius) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, color);
-    payload.f0 = radius;
-    return mimita::game::receivePointer(
-        mimita::host::EffectsOp::SpawnImpactSphereTick, payload);
-}
-
-EffectPart* EffectPartSystem::spawnFreezeTrail(glm::vec3 position) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnFreezeTrail,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnDownDash(glm::vec3 position) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnDownDash,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnBodyContactSpark(glm::vec3 playerPos,
-                                                    glm::vec3 contactPoint,
-                                                    glm::vec3 velocity,
-                                                    float partRadius) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, playerPos);
-    mimita::game::setVec(payload.b, contactPoint);
-    mimita::game::setVec(payload.c, velocity);
-    payload.f0 = partRadius;
-    return mimita::game::receivePointer(
-        mimita::host::EffectsOp::SpawnBodyContactSpark, payload);
-}
-
-void EffectPartSystem::spawnWorldCracks(glm::vec3 position, glm::vec3 normal,
-                                        const glm::vec3& direction, float sizeScale,
-                                        float lifetimeScale, float alphaScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    mimita::game::setVec(payload.c, direction);
-    payload.f0 = sizeScale;
-    payload.f1 = lifetimeScale;
-    payload.f2 = alphaScale;
-    mimita::game::invoke(mimita::host::EffectsOp::SpawnWorldCracks, &payload,
-                         sizeof(payload), nullptr, 0);
-}
-
-void EffectPartSystem::spawnExplosionMark(glm::vec3 position, glm::vec3 normal) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    mimita::game::invoke(mimita::host::EffectsOp::SpawnExplosionMark, &payload,
-                         sizeof(payload), nullptr, 0);
-}
-
-void EffectPartSystem::queueWorldHit(glm::vec3 position, glm::vec3 normal,
-                                     glm::vec3 direction, float debrisForce,
-                                     const std::string& attacker,
-                                     const std::string& weaponSource) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    mimita::game::setVec(payload.c, direction);
-    payload.f0 = debrisForce;
-    mimita::game::copyString(payload.s0, sizeof(payload.s0), attacker);
-    mimita::game::copyString(payload.s1, sizeof(payload.s1), weaponSource);
-    mimita::game::invoke(mimita::host::EffectsOp::QueueWorldHit, &payload,
-                         sizeof(payload), nullptr, 0);
-}
-
-void EffectPartSystem::drainPendingWorldHits(int maxCount) {
-    mimita::game::invoke(mimita::host::EffectsOp::DrainPendingWorldHits, &maxCount,
-                         sizeof(maxCount), nullptr, 0);
-}
-
-void EffectPartSystem::destroyOwner(unsigned int ownerId) {
-    mimita::game::invoke(mimita::host::EffectsOp::DestroyOwner, &ownerId,
-                         sizeof(ownerId), nullptr, 0);
-}
-
-void EffectPartSystem::pushSurfaceDecal(const SurfaceDecal&, int, const char*,
-                                        const std::string&, const std::string&) {
-    // Private resident operation; game code cannot call it directly.
-}
-
-EffectPart* EffectPartSystem::spawnEntityImpact(glm::vec3 position, glm::vec3 normal,
-                                                const std::string& sourceActorId,
-                                                const std::string& targetActorId,
-                                                float sizeScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    mimita::game::copyString(payload.s0, sizeof(payload.s0), sourceActorId);
-    mimita::game::copyString(payload.s1, sizeof(payload.s1), targetActorId);
-    payload.f0 = sizeScale;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnEntityImpact,
-                                        payload);
-}
-
-EffectPart* EffectPartSystem::spawnWorldImpact(glm::vec3 position, glm::vec3 normal,
-                                               float sizeScale, glm::vec3 direction,
-                                               float lifetimeScale) {
-    auto payload = mimita::game::makePayload();
-    mimita::game::setVec(payload.a, position);
-    mimita::game::setVec(payload.b, normal);
-    payload.f0 = sizeScale;
-    mimita::game::setVec(payload.c, direction);
-    payload.f1 = lifetimeScale;
-    return mimita::game::receivePointer(mimita::host::EffectsOp::SpawnWorldImpact,
-                                        payload);
-}
-
-int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount,
-                                   float minAlpha) const {
-    mimita::host::EffectsCollectAlivePayload payload{};
-    payload.out = out;
-    payload.maxCount = maxCount;
-    payload.minAlpha = minAlpha;
-    std::int32_t count = 0;
-    mimita::game::invoke(mimita::host::EffectsOp::CollectAlive, &payload,
-                         sizeof(payload), &count, sizeof(count));
-    return count;
-}

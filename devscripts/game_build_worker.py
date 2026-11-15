@@ -418,6 +418,16 @@ def build(args: argparse.Namespace) -> int:
     dll_path = generation_dir / f"game-g{generation}.dll"
     staging = generation_dir / f"game-g{generation}.build.dll"
 
+    identity_dir = out_root / "identity"
+    identity_dir.mkdir(parents=True, exist_ok=True)
+    identity_revision = str(manifest.get("revision") or ("0" * 64))
+    (identity_dir / "module-identity.h").write_text(
+        "#pragma once\n"
+        f"#define MIMITA_MODULE_GENERATION {generation}u\n"
+        f'#define MIMITA_MODULE_SOURCE_HASH "{identity_revision}"\n'
+        "#define MIMITA_MODULE_STATE_SCHEMA 1\n",
+        encoding="utf-8")
+
     base_flags = [
         "-std=c++17",
         "-O2" if args.build_mode == "release" else "-Og",
@@ -505,10 +515,14 @@ def build(args: argparse.Namespace) -> int:
     def compile_one(item: dict, obj: Path, dep: Path) -> tuple[str, dict, float, str]:
         if stop_event.is_set():
             return ("skipped", item, 0.0, "")
+        source_path = str(item["path"]).replace("\\", "/")
+        extra_flags = ([f"-I{identity_dir}"]
+                       if source_path.endswith("map-editor-module.cpp") else [])
         command = [
             *ccache_prefix,
             cxx,
             *base_flags,
+            *extra_flags,
             "-MF", str(dep),
             "-c", str(ROOT / item["path"]),
             "-o", str(obj),

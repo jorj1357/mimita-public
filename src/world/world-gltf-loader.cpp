@@ -137,6 +137,7 @@ bool loadWorldFromGLB(World& world, const char* path)
     // A new map reuses that address, so stale entries from the previous map
     // would otherwise move the new map's nodes to the old map's coordinates.
     MapGLBAuthoredState::instance().clear(&world.mesh);
+    world.authoredGLBBases.clear();
     applyAuthoredMapGeometry(world, mapIdFromAssetPath(path ? path : ""));
     const auto finished = std::chrono::steady_clock::now();
     timing.world_commit = std::chrono::duration<double, std::milli>(finished - unloadStarted).count();

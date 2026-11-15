@@ -1,4 +1,5 @@
 // 2026-11-13
+#include "game/window-bridge-module.h"
 #include "engine/whole-game-entry.h"
 
 #include <new>
@@ -63,17 +64,17 @@ bool initializeWholeGameEntry(int width, int height, const char* title) {
     gameInit(0, nullptr, *gWholeGameEngine);
     if (GLFWwindow* window = gWholeGameEngine->window()) {
         const bool focusedBefore =
-            glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
-        if (!focusedBefore) glfwFocusWindow(window);
+            mimita::game::hostWindowFocused();
+        if (!focusedBefore) mimita::game::hostFocusWindow();
         StructuredLogger::instance().writeEvent(
             StructuredCategory::General, StructuredLevel::Important,
             "input.window-focus", "input",
             "hot client focused its gameplay window after generation init", 0,
             nlohmann::json{
                 {"focused_before", focusedBefore},
-                {"focused_after", glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0},
-                {"iconified", glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0},
-                {"visible", glfwGetWindowAttrib(window, GLFW_VISIBLE) != 0}},
+                {"focused_after", mimita::game::hostWindowFocused()},
+                {"iconified", mimita::game::hostWindowIconified()},
+                {"visible", true}},
             __FILE__, __LINE__, __FUNCTION__);
     }
     gWholeGameReady = true;

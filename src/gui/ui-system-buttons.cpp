@@ -1,5 +1,6 @@
 #include "gui/ui-system.h"
 #include "input/input-router.h"
+#include "game/window-bridge-module.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
 
@@ -98,7 +99,7 @@ UIButtonState uiButton(GLFWwindow* win, const char* text, UIRect r, glm::vec4 co
             {"mouse_click_edge", gMouseClickEdge},
             {"ui_edit_mode", gUiEditMode},
             {"dropdown_modal_active", gDropdownModalActive},
-            {"cursor_mode", glfwGetInputMode(win, GLFW_CURSOR)},
+            {"cursor_mode", mimita::game::hostCursorMode()},
             {"decision", s.clicked ? "accepted" : "rejected"},
             {"rejection_reason", rejectionReason}
         };

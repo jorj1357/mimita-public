@@ -1,4 +1,5 @@
 #include "engine/engine-tick.h"
+#include "game/window-bridge-module.h"
 #include "game/resident-state-module.h"
 #include "engine/engine-tick-setup.h"
 #include "engine/engine-tick-audio.h"
@@ -268,7 +269,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     { MIMITA_PERF_PROGRESS("InputKeys");
       MIMITA_PERF_SCOPE("InputKeys");
     static bool escapePrev = false;
-    bool escapeDown = glfwGetKey(engine.window(), GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    bool escapeDown = InputRouter::keyDown(GLFW_KEY_ESCAPE);
     if (escapeDown && !escapePrev)
     {
         if (PasswordPopup::isOpen()) {
@@ -280,9 +281,9 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
         } else if (Terminal::instance().isOpen()) {
             Terminal::instance().toggle();
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd;
-            glfwSetInputMode(engine.window(), GLFW_CURSOR,
+            mimita::game::hostSetCursorMode(
                 GAME_STATE == GAME_PLAYING && !duelMatchOver && MouseLock::locked()
-                    ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+                    ? 2 : 0);
         } else if (MapEditor::instance().active() && !isChatOpen()) {
             MapEditor::instance().handleEscape();
         } else if (REPLAY_PLAYER.isPlaying()) {
@@ -316,7 +317,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 NotificationSystem::instance().push(
                     "Left the queue", "Back to the main menu", 180, {});
                 GAME_STATE = GAME_MENU;
-                glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                mimita::game::hostSetCursorMode(0);
                 Debug::log(Debug::Category::Duel, "[DUEL QUEUE] escape from queue — to main menu\n");
             }
         } else {
@@ -335,7 +336,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
             onlineMenuSetServerRunning(false);
             Debug::log(Debug::Category::Duel, "[DUEL] escape: transitioning to main menu");
             GAME_STATE = GAME_MENU;
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
         }
     }
     escapePrev = escapeDown;
@@ -357,7 +358,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
                 {"keyboard_enabled", InputCommandSystem::instance().isKeyboardEnabled()},
                 {"replay_playing", REPLAY_PLAYER.isPlaying()},
                 {"mouse_lock_before", MouseLock::locked()},
-                {"cursor_mode_before", glfwGetInputMode(engine.window(), GLFW_CURSOR)},
+                {"cursor_mode_before", mimita::game::hostCursorMode()},
                 {"match_active", match.active()},
                 {"mode", match.mode()},
                 {"local_team", localTeam},
@@ -381,7 +382,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
 
     // Space on the duel win/lose screen → skip the rematch timer.
     static bool spacePrev = false;
-    bool spaceDown = glfwGetKey(engine.window(), GLFW_KEY_SPACE) == GLFW_PRESS;
+    bool spaceDown = InputRouter::keyDown(GLFW_KEY_SPACE);
     if (GAME_STATE == GAME_PLAYING && !PauseMenu::isOpen() && spaceDown && !spacePrev &&
         InputCommandSystem::instance().isKeyboardEnabled() &&
         DuelQueue::instance().state() == DuelQueueState::MatchEnd)
@@ -391,7 +392,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     spacePrev = spaceDown;
 
     static bool f10Prev = false;
-    bool f10Down = glfwGetKey(engine.window(), GLFW_KEY_F10) == GLFW_PRESS;
+    bool f10Down = InputRouter::keyDown(GLFW_KEY_F10);
     if (!PauseMenu::isOpen() && InputCommandSystem::instance().isKeyboardEnabled() && f10Down && !f10Prev) {
         ShellExecuteA(NULL, "open", "replays", NULL, NULL, SW_SHOWNORMAL);
         Debug::log(Debug::Category::General, "[MAIN] opened replays folder");
@@ -399,7 +400,7 @@ void engineTickRenderFrame(Engine& engine, EngineFrameState& state)
     f10Prev = f10Down;
 
     static bool f12Prev = false;
-    bool f12Down = glfwGetKey(engine.window(), GLFW_KEY_F12) == GLFW_PRESS;
+    bool f12Down = InputRouter::keyDown(GLFW_KEY_F12);
     if (!PauseMenu::isOpen() && f12Down && !f12Prev && InputCommandSystem::instance().isKeyboardEnabled()) {
         Debug::log(Debug::Category::General, "[MAINMENU] F12 pressed — forcing main menu");
         forceMainMenu();

@@ -179,6 +179,8 @@ struct World {
     // capture the base so an editor rebuild removes only its own tail.
     bool authoredGeometryApplied = false;
     std::vector<MapGLBObject> authoredObjects;
+    // Keyed by stable GLB object id; persists across hot generation swaps.
+    std::unordered_map<std::string, AuthoredGLBBase> authoredGLBBases;
     size_t authoredBaseVertexCount = 0;
     size_t authoredBaseBatchCount = 0;
 

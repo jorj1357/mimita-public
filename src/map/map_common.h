@@ -43,6 +43,15 @@ struct MapGLBObject {
     size_t vertexCount = 0;
 };
 
+// Pristine authored-GLB bases owned by the resident World. These survive hot
+// generation swaps so overrides never have to be recovered by inverting an
+// already-applied transform.
+struct AuthoredGLBBase {
+    glm::mat4 transform{1.0f};
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> normals;
+};
+
 struct Mesh {
     std::vector<Face> faces;
     std::vector<Vertex> verts; // keep legacy for VAO creation

@@ -55,6 +55,33 @@ Agent: DeepSeek v4.1 Flash
   transform, so authored overrides are reapplied idempotently. The public
   two-argument entry point was preserved for the map editor and self-test.
 
+- `src/host/abi/window-capability.h` + `HostCapabilityId::Window`: new resident
+  window/input capability for size, framebuffer size, position, cursor, focus,
+  iconified, cursor mode, mouse/key state, and bounded clipboard copy.
+- `src/host/host-runtime.cpp`: resident implementation using the host-owned
+  window, registered as capability 27; installs a resident cursor callback and
+  coalesces cursor events before dispatching them to the game.
+- `GameInputEventV1` now carries `Cursor` position events (version 2), and
+  `game-input-module.cpp` feeds them into `InputRouter`.
+- `InputRouter` now owns mouse look: it applies cursor deltas only while pointer
+  lock is active, disables the Win32 fallback after the first host cursor event,
+  and resets its baseline on lock/focus transitions.
+- `src/game/window-bridge-module.{h,cpp}`: game-side capability/facade with
+  `InputRouter` fallbacks, initialized from `game-module.cpp`.
+- GUI/editor/chat/notification/avatar-editor paths now use that facade instead
+  of passing a resident GLFW window into the DLL-local GLFW. This includes
+  cursor position, window/framebuffer size, mouse/key state, cursor mode,
+  focus/iconified checks, and clipboard.
+- `src/world/world.h` + `src/map/map_common.h`: resident `AuthoredGLBBase`
+  storage keyed by GLB object id. Authored overrides prefer these pristine bases
+  across hot generation swaps, so the inverse-transform recovery is only a
+  legacy fallback.
+- `config/game-static-gate.json`: added the hot-window GLFW rule; all game
+  sources pass. The three explicit exceptions are documented in
+  `docs/specs/input/host-window-capability.md`.
+- Remaining game-owned key/cursor/window probes were routed through
+  `InputRouter` or `game/window-bridge-module`.
+
 ## Documentation
 
 - `docs/specs/dev-loop/dashboard.md`: one dashboard per checkout; no implicit
@@ -66,11 +93,16 @@ Agent: DeepSeek v4.1 Flash
 - `docs/specs/input/input-router.md`: L pointer lock, cursor clipping, and
   single look-owner rule.
 - `docs/specs/debug-logging/debug-logging.md`: `performance.fps` catalog entry.
+- `docs/specs/input/host-window-capability.md`: resident window/input boundary
+  and the no-resident-GLFW-pointer rule.
+- `docs/architecture/live-development/resident-authored-glb-bases.md`: why GLB
+  bases live in the resident `World` and how hot swaps use them.
 
 ## Source/build evidence
 
-No build was invoked for the final renderer/NPC-avatar, L/queue, and cursor
-ownership changes; they are waiting for the other agent's build. Earlier
+No build was invoked for the final renderer/NPC-avatar, L/queue, cursor
+ownership, host-window event, static-gate, or resident-GLB-base changes; they
+are waiting for the other agent's cold/game build. Earlier
 generation evidence below is from before that request.
 
 - Game generation 215 published and activated in PID 24736 at 19:54:43.

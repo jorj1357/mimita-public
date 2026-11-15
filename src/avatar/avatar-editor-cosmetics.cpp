@@ -1,4 +1,5 @@
 // 08 20 2026, 00 00
+#include "game/window-bridge-module.h"
 /* purpose
 * Draws the editable cosmetic-instance list and cosmetic controls.
 * Keeps GLB discovery, selection, transforms, and image settings live.
@@ -60,7 +61,7 @@ static void suppressTabScrollForOpenDropdowns(GLFWwindow* win)
     };
 
     double mx = 0, my = 0;
-    glfwGetCursorPos(win, &mx, &my);
+    mimita::game::hostCursorPos(mx, my);
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
 

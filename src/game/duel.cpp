@@ -1,4 +1,5 @@
 #include "game/duel.h"
+#include "game/window-bridge-module.h"
 #include "combat/weapon-runtime.h"
 #include "game/spawn-override.h"
 
@@ -284,7 +285,7 @@ DuelMenuAction DuelManager::renderMatchOverScreen(GLFWwindow* win)
         return DuelMenuAction::None;
 
     uiSetEditMode(false);
-    glfwSetInputMode(win, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mimita::game::hostSetCursorMode(0);
 
     float sw = uiScreenW();
     float sh = uiScreenH();

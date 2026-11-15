@@ -78,6 +78,10 @@ public:
     // generation owns MapEditor and returns the bounded result.
     bool invokeMapEditorHost(MapEditorHostCallV1* call);
 
+    // Resident effects capability calls. The active game generation owns the
+    // effect pool; pointers in the request are valid only for this call.
+    bool invokeEffectsHost(EffectsHostCallV1* call);
+
     // True when the active generation exports the server cutover behavior API.
     bool dispatchAgentCommand(const AgentCommandV1& command);
     bool serverApiAvailable() const;
@@ -284,6 +288,7 @@ private:
     static void resourceReleaseThunk(void* userData, std::uint64_t resource);
     static std::uint32_t resourceBusyThunk(void* userData);
 
+    static void inputCursorCallback(GLFWwindow* window, double x, double y);
     static void inputKeyCallback(GLFWwindow* window, int key, int scancode,
                                  int action, int mods);
     static void inputCharCallback(GLFWwindow* window, unsigned int codepoint);

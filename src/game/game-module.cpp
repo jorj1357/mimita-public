@@ -41,6 +41,7 @@ void initializeHostLifetime(const mimita::host::HostServicesV1* services);
 void initializeHostRender(const mimita::host::HostServicesV1* services);
 void initializeHostReplayWorker(const mimita::host::HostServicesV1* services);
 void initializeHostRenderDevice(const mimita::host::HostServicesV1* services);
+void initializeHostWindow(const mimita::host::HostServicesV1* services);
 void initializeHostDiagnostics(const mimita::host::HostServicesV1* services);
 void initializeHostIce(const mimita::host::HostServicesV1* services);
 void initializeHostTransportSession(const mimita::host::HostServicesV1* services);
@@ -52,6 +53,7 @@ void initializeHostGlResources(const mimita::host::HostServicesV1* services);
 void initializeHostState(const mimita::host::HostServicesV1* services);
 void initializeResidentState(const mimita::host::HostServicesV1* services);
 bool handleMapEditorHostCall(mimita::host::MapEditorHostCallV1& call);
+bool handleEffectsHostCall(mimita::host::EffectsHostCallV1& call);
 }  // namespace mimita::game
 
 namespace mimita::host {
@@ -83,6 +85,7 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostRender(services);
     mimita::game::initializeHostReplayWorker(services);
     mimita::game::initializeHostRenderDevice(services);
+    mimita::game::initializeHostWindow(services);
     mimita::game::initializeHostDiagnostics(services);
     mimita::game::initializeHostIce(services);
     mimita::game::initializeHostTransportSession(services);
@@ -148,7 +151,7 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
             return HostResult::InvalidArgument;
         }
         auto* input = static_cast<GameInputEventV1*>(payload);
-        if (input->version != 1 || input->structSize < sizeof(GameInputEventV1)) {
+        if (input->version != 2 || input->structSize < sizeof(GameInputEventV1)) {
             return HostResult::InvalidArgument;
         }
         mimita::game::handleGameInputEvent(*input);
@@ -224,6 +227,19 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
             return HostResult::InvalidArgument;
         }
         const bool ok = mimita::game::handleMapEditorHostCall(*call);
+        if (handled) *handled = ok ? 1 : 0;
+        return ok ? HostResult::Ok : HostResult::NotFound;
+    }
+    if (eventId == kEventEffectsHost) {
+        if (!payload || payloadSize < sizeof(EffectsHostCallV1)) {
+            return HostResult::InvalidArgument;
+        }
+        auto* call = static_cast<EffectsHostCallV1*>(payload);
+        if (call->version != kEffectsHostVersion ||
+            call->structSize != sizeof(EffectsHostCallV1)) {
+            return HostResult::InvalidArgument;
+        }
+        const bool ok = mimita::game::handleEffectsHostCall(*call);
         if (handled) *handled = ok ? 1 : 0;
         return ok ? HostResult::Ok : HostResult::NotFound;
     }

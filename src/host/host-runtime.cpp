@@ -7,6 +7,7 @@
 #include "render/render-gl-mapping.h"
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <malloc.h>
@@ -39,6 +40,7 @@
 #include "host/abi/transport-session-capability.h"
 #include "host/abi/diagnostics-capability.h"
 #include "host/abi/render-device-capability.h"
+#include "host/abi/window-capability.h"
 #include "host/abi/state-capability.h"
 #include "game/state-bridge-module.h"
 #include "host/abi/persistence-capability.h"
@@ -47,7 +49,6 @@
 #include "audio/audio.h"
 #include "audio/music-manager.h"
 #include "duel/duel-queue.h"
-#include "effects/effect-part.h"
 #include "persistence/persistence-queue.h"
 #include "utils/json-file-watch.h"
 #include "hot-reload/module-host.h"
@@ -950,169 +951,13 @@ std::int32_t audioInvoke(void*, AudioOp op, const void* input,
 std::int32_t effectsInvoke(void*, EffectsOp op, const void* input,
                            std::uint32_t inputSize, void* output,
                            std::uint32_t outputSize) {
-    auto& effects = ::EffectPartSystem::instance();
-    const auto writePointer = [&](::EffectPart* value) {
-        if (output && outputSize >= sizeof(std::uintptr_t)) {
-            *static_cast<std::uintptr_t*>(output) =
-                reinterpret_cast<std::uintptr_t>(value);
-        }
-    };
-    const auto payload = [&]() -> const EffectsSpawnPayload* {
-        if (!input || inputSize < sizeof(EffectsSpawnPayload)) return nullptr;
-        return static_cast<const EffectsSpawnPayload*>(input);
-    };
-    const auto vec = [](const EffectsVec3& value) {
-        return glm::vec3(value.x, value.y, value.z);
-    };
-    switch (op) {
-        case EffectsOp::Spawn: {
-            const auto* effect = static_cast<const ::EffectPart*>(input);
-            if (!effect || inputSize < sizeof(::EffectPart)) return 0;
-            writePointer(effects.spawn(*effect));
-            return 1;
-        }
-        case EffectsOp::SpawnFootstep: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnFootstep(vec(p->a), p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnDash: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnDash(vec(p->a), p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnFreeze: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnFreeze(vec(p->a), p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnDamageImpactSphere: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnDamageImpactSphere(vec(p->a), vec(p->b), p->s0));
-            return 1;
-        }
-        case EffectsOp::SpawnMuzzleFlash: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnMuzzleFlash(vec(p->a), p->s0, p->f0, p->s1,
-                                                   p->b0 != 0, p->b1 != 0));
-            return 1;
-        }
-        case EffectsOp::SpawnTracer: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnTracer(vec(p->a), vec(p->b), p->s0, p->f0, p->s1));
-            return 1;
-        }
-        case EffectsOp::SpawnBulletImpact: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnBulletImpact(vec(p->a), vec(p->b), p->f0, p->f1,
-                                                   p->f2));
-            return 1;
-        }
-        case EffectsOp::SpawnDeathEllipsoid: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnDeathEllipsoid(vec(p->a), vec(p->b), p->f0, p->f1,
-                                                     p->f2, p->f3));
-            return 1;
-        }
-        case EffectsOp::SpawnImpactSphereTickCfg: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnImpactSphereTickCfg(vec(p->a)));
-            return 1;
-        }
-        case EffectsOp::SpawnImpactSphereTick: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnImpactSphereTick(vec(p->a), vec(p->b), p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnFreezeTrail: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnFreezeTrail(vec(p->a)));
-            return 1;
-        }
-        case EffectsOp::SpawnDownDash: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnDownDash(vec(p->a)));
-            return 1;
-        }
-        case EffectsOp::SpawnBodyContactSpark: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnBodyContactSpark(vec(p->a), vec(p->b), vec(p->c),
-                                                       p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnWorldCracks: {
-            const auto* p = payload();
-            if (!p) return 0;
-            effects.spawnWorldCracks(vec(p->a), vec(p->b), vec(p->c), p->f0, p->f1,
-                                     p->f2);
-            return 1;
-        }
-        case EffectsOp::SpawnExplosionMark: {
-            const auto* p = payload();
-            if (!p) return 0;
-            effects.spawnExplosionMark(vec(p->a), vec(p->b));
-            return 1;
-        }
-        case EffectsOp::QueueWorldHit: {
-            const auto* p = payload();
-            if (!p) return 0;
-            effects.queueWorldHit(vec(p->a), vec(p->b), vec(p->c), p->f0, p->s0,
-                                  p->s1);
-            return 1;
-        }
-        case EffectsOp::DrainPendingWorldHits: {
-            if (!input || inputSize < sizeof(std::int32_t)) return 0;
-            effects.drainPendingWorldHits(*static_cast<const std::int32_t*>(input));
-            return 1;
-        }
-        case EffectsOp::DestroyOwner: {
-            if (!input || inputSize < sizeof(std::uint32_t)) return 0;
-            effects.destroyOwner(*static_cast<const std::uint32_t*>(input));
-            return 1;
-        }
-        case EffectsOp::PushSurfaceDecal:
-            // Private resident operation; game code cannot call it directly.
-            return 0;
-        case EffectsOp::SpawnEntityImpact: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnEntityImpact(vec(p->a), vec(p->b), p->s0, p->s1,
-                                                    p->f0));
-            return 1;
-        }
-        case EffectsOp::SpawnWorldImpact: {
-            const auto* p = payload();
-            if (!p) return 0;
-            writePointer(effects.spawnWorldImpact(vec(p->a), vec(p->b), p->f0, vec(p->c),
-                                                   p->f1));
-            return 1;
-        }
-        case EffectsOp::CollectAlive: {
-            if (!input || inputSize < sizeof(EffectsCollectAlivePayload)) return 0;
-            const auto* p = static_cast<const EffectsCollectAlivePayload*>(input);
-            const int count = effects.collectAlive(
-                reinterpret_cast<::EffectPartSystem::PartSnapshot*>(p->out),
-                p->maxCount, p->minAlpha);
-            if (output && outputSize >= sizeof(std::int32_t)) {
-                *static_cast<std::int32_t*>(output) = count;
-            }
-            return 1;
-        }
-    }
-    return 0;
+    EffectsHostCallV1 call;
+    call.op = op;
+    call.input = input;
+    call.inputSize = inputSize;
+    call.output = output;
+    call.outputSize = outputSize;
+    return HostRuntime::instance().invokeEffectsHost(&call) ? 1 : 0;
 }
 
 void* jsonWatchCreate(void*, const char* const* roots, std::uint32_t rootCount,
@@ -1235,6 +1080,93 @@ void renderDeviceSetCursorVisible(void*, std::int32_t visible) {
     if (!gRenderDevice || !gRenderDevice->window) return;
     glfwSetInputMode(gRenderDevice->window, GLFW_CURSOR,
                      visible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+}
+
+std::int32_t windowGetSize(void*, std::int32_t* width, std::int32_t* height) {
+    if (!gRenderDevice || !gRenderDevice->window || !width || !height) return 0;
+    glfwGetWindowSize(gRenderDevice->window, width, height);
+    return 1;
+}
+
+std::int32_t windowGetFramebufferSize(void*, std::int32_t* width,
+                                      std::int32_t* height) {
+    if (!gRenderDevice || !gRenderDevice->window || !width || !height) return 0;
+    glfwGetFramebufferSize(gRenderDevice->window, width, height);
+    return 1;
+}
+
+std::int32_t windowGetPosition(void*, std::int32_t* x, std::int32_t* y) {
+    if (!gRenderDevice || !gRenderDevice->window || !x || !y) return 0;
+    glfwGetWindowPos(gRenderDevice->window, x, y);
+    return 1;
+}
+
+std::int32_t windowGetCursorPos(void*, double* x, double* y) {
+    if (!gRenderDevice || !gRenderDevice->window || !x || !y) return 0;
+    glfwGetCursorPos(gRenderDevice->window, x, y);
+    return 1;
+}
+
+std::int32_t windowSetCursorPos(void*, double x, double y) {
+    if (!gRenderDevice || !gRenderDevice->window) return 0;
+    glfwSetCursorPos(gRenderDevice->window, x, y);
+    return 1;
+}
+
+std::int32_t windowFocus(void*) {
+    if (!gRenderDevice || !gRenderDevice->window) return 0;
+    glfwFocusWindow(gRenderDevice->window);
+    return 1;
+}
+
+std::int32_t windowGetCursorMode(void*) {
+    if (!gRenderDevice || !gRenderDevice->window) return -1;
+    return glfwGetInputMode(gRenderDevice->window, GLFW_CURSOR);
+}
+
+std::int32_t windowGetFocused(void*) {
+    if (!gRenderDevice || !gRenderDevice->window) return 0;
+    return glfwGetWindowAttrib(gRenderDevice->window, GLFW_FOCUSED) ? 1 : 0;
+}
+
+std::int32_t windowGetIconified(void*) {
+    if (!gRenderDevice || !gRenderDevice->window) return 0;
+    return glfwGetWindowAttrib(gRenderDevice->window, GLFW_ICONIFIED) ? 1 : 0;
+}
+
+std::int32_t windowSetCursorMode(void*, std::int32_t mode) {
+    if (!gRenderDevice || !gRenderDevice->window || mode < 0 || mode > 2) return 0;
+    glfwSetInputMode(gRenderDevice->window, GLFW_CURSOR, mode);
+    return 1;
+}
+
+std::int32_t windowMouseButtonDown(void*, std::int32_t button) {
+    if (!gRenderDevice || !gRenderDevice->window || button < 0 ||
+        button > GLFW_MOUSE_BUTTON_LAST) return 0;
+    return glfwGetMouseButton(gRenderDevice->window, button) == GLFW_PRESS ? 1 : 0;
+}
+
+std::int32_t windowKeyDown(void*, std::int32_t key) {
+    if (!gRenderDevice || !gRenderDevice->window || key < 0 ||
+        key > GLFW_KEY_LAST) return 0;
+    return glfwGetKey(gRenderDevice->window, key) == GLFW_PRESS ? 1 : 0;
+}
+
+std::int32_t windowClipboardGet(void*, char* out, std::int32_t capacity) {
+    if (!gRenderDevice || !gRenderDevice->window || !out || capacity <= 0) return -1;
+    const char* text = glfwGetClipboardString(gRenderDevice->window);
+    if (!text) return -1;
+    const std::int32_t length = static_cast<std::int32_t>(std::strlen(text));
+    const std::int32_t copy = std::min(length, capacity - 1);
+    if (copy > 0) std::memcpy(out, text, static_cast<std::size_t>(copy));
+    out[copy] = '\0';
+    return copy;
+}
+
+std::int32_t windowClipboardSet(void*, const char* text) {
+    if (!gRenderDevice || !gRenderDevice->window || !text) return 0;
+    glfwSetClipboardString(gRenderDevice->window, text);
+    return 1;
 }
 
 std::int32_t diagnosticsCaptureStack(void*, std::uint32_t threadId, char* out,
@@ -2377,12 +2309,20 @@ void HostRuntime::installInputCallbacks(GLFWwindow* window) {
     if (!window) return;
     glfwSetKeyCallback(window, &HostRuntime::inputKeyCallback);
     glfwSetCharCallback(window, &HostRuntime::inputCharCallback);
+    glfwSetCursorPosCallback(window, &HostRuntime::inputCursorCallback);
     glfwSetScrollCallback(window, &HostRuntime::inputScrollCallback);
     glfwSetDropCallback(window, &HostRuntime::inputDropCallback);
 }
 
 void HostRuntime::enqueueInput(const GameInputEventV1& event) {
     std::lock_guard<std::mutex> lock(inputMutex_);
+    // Mouse movement is high-frequency. Keep only the newest cursor position
+    // between dispatches; key/button events must remain ordered.
+    if (event.kind == GameInputKind::Cursor && !inputQueue_.empty() &&
+        inputQueue_.back().kind == GameInputKind::Cursor) {
+        inputQueue_.back() = event;
+        return;
+    }
     inputQueue_.push_back(event);
 }
 
@@ -2405,10 +2345,20 @@ void HostRuntime::dispatchQueuedInput() {
     barrier_.leave();
 }
 
+void HostRuntime::inputCursorCallback(GLFWwindow*, double x, double y) {
+    GameInputEventV1 event{};
+    event.version = 2;
+    event.structSize = static_cast<std::uint32_t>(sizeof(event));
+    event.kind = GameInputKind::Cursor;
+    event.cursorX = x;
+    event.cursorY = y;
+    instance().enqueueInput(event);
+}
+
 void HostRuntime::inputKeyCallback(GLFWwindow*, int key, int scancode,
                                    int action, int mods) {
     GameInputEventV1 event{};
-    event.version = 1;
+    event.version = 2;
     event.structSize = static_cast<std::uint32_t>(sizeof(event));
     event.kind = GameInputKind::Key;
     event.key = key;
@@ -2420,7 +2370,7 @@ void HostRuntime::inputKeyCallback(GLFWwindow*, int key, int scancode,
 
 void HostRuntime::inputCharCallback(GLFWwindow*, unsigned int codepoint) {
     GameInputEventV1 event{};
-    event.version = 1;
+    event.version = 2;
     event.structSize = static_cast<std::uint32_t>(sizeof(event));
     event.kind = GameInputKind::Char;
     event.codepoint = codepoint;
@@ -2430,7 +2380,7 @@ void HostRuntime::inputCharCallback(GLFWwindow*, unsigned int codepoint) {
 void HostRuntime::inputScrollCallback(GLFWwindow*, double xOffset,
                                       double yOffset) {
     GameInputEventV1 event{};
-    event.version = 1;
+    event.version = 2;
     event.structSize = static_cast<std::uint32_t>(sizeof(event));
     event.kind = GameInputKind::Scroll;
     event.scrollX = xOffset;
@@ -2440,7 +2390,7 @@ void HostRuntime::inputScrollCallback(GLFWwindow*, double xOffset,
 
 void HostRuntime::inputDropCallback(GLFWwindow*, int count, const char** paths) {
     GameInputEventV1 event{};
-    event.version = 1;
+    event.version = 2;
     event.structSize = static_cast<std::uint32_t>(sizeof(event));
     event.kind = GameInputKind::Drop;
     const int accepted = count < 8 ? (count > 0 ? count : 0) : 8;
@@ -2557,6 +2507,18 @@ bool HostRuntime::invokeMapEditorHost(MapEditorHostCallV1* call) {
     const HostResult result = api->on_event(
         kEventMapEditorHost, call, sizeof(MapEditorHostCallV1), &handled);
     return result == HostResult::Ok && handled != 0 && call->result != 0;
+}
+
+bool HostRuntime::invokeEffectsHost(EffectsHostCallV1* call) {
+    if (!probeEnabled_.load(std::memory_order_acquire) || !call) return false;
+    const GameModuleV1* api = loader_.active();
+    if (!api || !api->on_event) return false;
+    call->version = kEffectsHostVersion;
+    call->structSize = static_cast<std::uint32_t>(sizeof(EffectsHostCallV1));
+    std::int32_t handled = 0;
+    const HostResult result = api->on_event(
+        kEventEffectsHost, call, sizeof(EffectsHostCallV1), &handled);
+    return result == HostResult::Ok && handled != 0;
 }
 
 bool HostRuntime::dispatchAgentCommand(const AgentCommandV1& command) {
@@ -2974,6 +2936,28 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
         };
         return &renderDeviceCapability;
     }
+    if (capability == static_cast<std::uint32_t>(HostCapabilityId::Window) &&
+        version == kWindowCapabilityVersion) {
+        static WindowCapabilityV1 windowCapability{
+            kWindowCapabilityVersion,
+            static_cast<std::uint32_t>(sizeof(WindowCapabilityV1)),
+            &windowGetSize,
+            &windowGetFramebufferSize,
+            &windowGetPosition,
+            &windowGetCursorPos,
+            &windowSetCursorPos,
+            &windowFocus,
+            &windowGetCursorMode,
+            &windowGetFocused,
+            &windowGetIconified,
+            &windowSetCursorMode,
+            &windowMouseButtonDown,
+            &windowKeyDown,
+            &windowClipboardGet,
+            &windowClipboardSet,
+        };
+        return &windowCapability;
+    }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::EntityDomain) &&
         version == kEntityDomainCapabilityVersion) {
         static EntityDomainCapabilityV1 domainCapability{
@@ -3220,6 +3204,11 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &moduleInvoke,
         };
         return &moduleCapability;
+    }
+    if (capability ==
+        static_cast<std::uint32_t>(HostCapabilityId::EditorServices)) {
+        return const_cast<void*>(ModuleHost::instance().capability(
+            mimita_module::CAPABILITY_EDITOR, version));
     }
     return nullptr;
 }

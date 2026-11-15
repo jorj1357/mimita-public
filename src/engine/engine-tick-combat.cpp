@@ -1,4 +1,5 @@
 // 07 21 2026, 21 30
+#include "game/window-bridge-module.h"
 /* purpose
 * Runs frame-level combat, weapon, duel, replay, and gameplay input orchestration.
 * Bridges hotkeys and mouse actions into shared terminal/weapon/network command paths.
@@ -320,7 +321,7 @@ void engineTickCombat(Engine& engine, float dt)
     const bool inputEnabled = !aftermathInputFrozen && (scenarioInputActive ||
         InputCommandSystem::instance().isKeyboardEnabled());
     const bool cursorCaptured = scenarioInputActive ||
-        glfwGetInputMode(engine.window(), GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+        mimita::game::hostCursorMode() == 2;
     bool mouseDown = effectiveGameplayMouseButton(
         engine.window(), GLFW_MOUSE_BUTTON_LEFT);
     // Local/offline duel only for DuelManager checks; also check DuelQueue for network duels.

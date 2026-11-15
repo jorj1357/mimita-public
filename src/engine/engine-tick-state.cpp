@@ -1,4 +1,6 @@
 #include "engine/engine-tick-state.h"
+#include "game/window-bridge-module.h"
+#include "input/input-router.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
 #include "gui/menus/pause-menu.h"
@@ -273,14 +275,13 @@ void engineTickState(Engine& engine, float dt)
             // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
                 DuelQueue::instance().matchOver();
-            glfwSetInputMode(engine.window(), GLFW_CURSOR,
+            mimita::game::hostSetCursorMode(
                 gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !PauseMenu::isOpen() && !duelMatchOver && MouseLock::locked()
-                    ? GLFW_CURSOR_DISABLED
-                    : GLFW_CURSOR_NORMAL);
+                    ? 2 : 0);
         }
         else
         {
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
         }
         prevState = gameState;
     }
@@ -474,10 +475,9 @@ void engineTickState(Engine& engine, float dt)
             // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
             bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
                 DuelQueue::instance().matchOver();
-            glfwSetInputMode(engine.window(), GLFW_CURSOR,
+            mimita::game::hostSetCursorMode(
                 gameState == GAME_PLAYING && !Terminal::instance().isOpen() && !isChatOpen() && !PauseMenu::isOpen() && !duelMatchOver && MouseLock::locked()
-                    ? GLFW_CURSOR_DISABLED
-                    : GLFW_CURSOR_NORMAL);
+                    ? 2 : 0);
         }
     }
 
@@ -485,15 +485,15 @@ void engineTickState(Engine& engine, float dt)
     NpcSelectionManager::instance().update();
 
     static bool gravePrev = false;
-    bool graveDown = glfwGetKey(engine.window(), GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS;
+    bool graveDown = InputRouter::keyDown(GLFW_KEY_GRAVE_ACCENT);
     if (!PauseMenu::isOpen() && graveDown && !gravePrev) {
         Terminal::instance().toggle();
         // Local/offline duel only for DuelManager; also check DuelQueue for network duels.
         bool duelMatchOver = gDuelManager.phase() == DuelPhase::MatchEnd ||
             DuelQueue::instance().matchOver();
-        glfwSetInputMode(engine.window(), GLFW_CURSOR,
-            Terminal::instance().isOpen() || isChatOpen() ? GLFW_CURSOR_NORMAL :
-            (gameState == GAME_PLAYING && !duelMatchOver && MouseLock::locked() ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL));
+        mimita::game::hostSetCursorMode(
+            Terminal::instance().isOpen() || isChatOpen() ? 0 :
+            (gameState == GAME_PLAYING && !duelMatchOver && MouseLock::locked() ? 2 : 0));
     }
     gravePrev = graveDown;
 
@@ -501,7 +501,7 @@ void engineTickState(Engine& engine, float dt)
     // It runs the same terminal command as typing `bookmark`, so the command
     // and shortcut share one capture point and one JSONL event owner.
     static bool bookmarkPrev = false;
-    bool bookmarkDown = glfwGetKey(engine.window(), GLFW_KEY_BACKSLASH) == GLFW_PRESS;
+    bool bookmarkDown = InputRouter::keyDown(GLFW_KEY_BACKSLASH);
     if (!PauseMenu::isOpen() && !Terminal::instance().isOpen() &&
         !isChatOpen() &&
         InputCommandSystem::instance().isKeyboardEnabled() &&

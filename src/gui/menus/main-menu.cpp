@@ -1,4 +1,5 @@
 // 08 03 2026, 17 20
+#include "game/window-bridge-module.h"
 /* purpose
 * Renders the main menu background, avatar preview, account panel, and actions.
 * Uses GUI layout data for menu button placement and authenticated account display.
@@ -48,7 +49,7 @@ MainMenuResult drawMainMenu(GLFWwindow* win)
     AuthSystem& auth = AuthSystem::instance();
 
     int fbW = 0, fbH = 0;
-    glfwGetFramebufferSize(win, &fbW, &fbH);
+    mimita::game::hostFramebufferSize(fbW, fbH);
     GuiLayout& layout = GuiLayoutManager::instance().getLayout("config/gui/main-menu.json");
 
     const char* bgPath = "assets/ui/backgrounds/main-menu-bg.png";

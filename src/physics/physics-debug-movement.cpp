@@ -1,4 +1,5 @@
 // C:\important\quiet\n\mimita-public\mimita-public\src\physics\physics-debug-movement.cpp
+#include "input/input-router.h"
 // dec 17 2025
 /**
  * purpose
@@ -40,22 +41,22 @@ void applyDebugMovement(Player& p, GLFWwindow* win, const Camera& cam, float dt)
     // --------------------------------------------------
 
     // up
-    if (glfwGetKey(win, GLFW_KEY_T))
+    if (InputRouter::keyDown(GLFW_KEY_T))
         p.vel.z = speed;
 
     // down
-    if (glfwGetKey(win, GLFW_KEY_B))
+    if (InputRouter::keyDown(GLFW_KEY_B))
         p.vel.z = -speed;
 
     // reset position
-    if (glfwGetKey(win, GLFW_KEY_R))
+    if (InputRouter::keyDown(GLFW_KEY_R))
         p.pos = glm::vec3(0.0f, 0.0f, 80.0f);
 
     // stop velocity
-    if (glfwGetKey(win, GLFW_KEY_V))
+    if (InputRouter::keyDown(GLFW_KEY_V))
         p.vel = glm::vec3(0.0f);
 
     // move forward
-    if (glfwGetKey(win, GLFW_KEY_H))
+    if (InputRouter::keyDown(GLFW_KEY_H))
         p.pos += forward * speed * dt;
 }

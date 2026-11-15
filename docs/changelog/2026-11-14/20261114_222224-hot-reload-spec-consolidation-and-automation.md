@@ -818,3 +818,118 @@ gate.
   `src/network/server.cpp`.
 - Test/bootstrap-only undefined symbols remain prerequisites for a truly cold
   link, not reductions in `game_in_exe`.
+
+# Follow-up: effects host boundary
+
+## Implemented
+
+- Added `kEventEffectsHost`, `kEffectsHostVersion`, and bounded
+  `EffectsHostCallV1` to `src/host/abi/game-host-abi.h`.
+- Added `HostRuntime::invokeEffectsHost()`; it delivers `EffectsOp`, input, and
+  output pointers to the active game generation without re-entering the host
+  barrier.
+- Resident `effectsInvoke()` in `src/host/host-runtime.cpp` now forwards; the
+  old direct `EffectPartSystem` body is compiled out pending deletion.
+- `src/game/effects-bridge-module.cpp` now provides the game-side
+  `handleEffectsHostCall()` implementation against the real `EffectPartSystem`
+  and no longer forwards `EffectPartSystem::spawn*` back to the host.
+- `src/effects/effect-part.cpp` compiles the real effect implementation for
+  both the EXE and the whole-game DLL; the old `GameAPI` shim remains
+  `MIMITA_GAME_DLL`-only.
+- `src/game/game-module.cpp` dispatches `kEventEffectsHost`.
+
+## Evidence
+
+- Cold-link trial: 375 → 352 unique undefined symbols; resident referrers
+  180 → 157; resident-only 149 → 128. No `EffectPartSystem` symbols remain in
+  `undefined_symbols`. 592 game objects removed.
+- Game generation 229 is published and activated in client PID `24668`
+  (`game.generation.activated`, `generation-229`). The client stayed alive
+  after activation.
+- `hitfx_test 25` completed with `terminal.command.completed success=true` and
+  no crash; the game generation now owns the effect pool.
+
+## Link-failure diagnosis
+
+- The silent link was not caused by the effects slice. Reverting
+  `host-runtime.cpp` and `effect-part.cpp` to HEAD reproduced the same failure;
+  restoring them changed nothing.
+- Disk pressure was real: the checkout had ~1.36 GB free. Removing old
+  `build/game/generation-*` artifacts ≤ 219 and the stale
+  `build/mimita-check.exe` raised free space to ~8.57 GB.
+- The actual EXE linker failure is an unrelated concurrent input/window bridge
+  change:
+  - `input_mouse-lock.o` references undefined
+    `mimita::game::setHostCursorVisible(bool)` from `src/input/mouse-lock.cpp`.
+  - `src/input/mouse-lock.cpp` also uses undeclared
+    `mimita::game::hostCursorMode()`.
+  - `src/input/input-poll.cpp` uses undeclared `InputRouter`.
+  - `src/audio/music-manager-widget.cpp` uses undeclared `win` in a lambda.
+- `src/game/window-bridge-module.cpp`, `src/game/window-bridge-module.h`, and
+  `src/host/abi/window-capability.h` are new untracked files from the concurrent
+  input/window work. That work must finish before the EXE can link.
+- The previously published EXE artifact (`2026-11-15T20:00:25.068387Z`) remains
+  current; the dev-loop is running that EXE plus generation 229. Do not claim a
+  clean cold build or cutover yet.
+
+## Cleanup
+
+- Deleted the compiled-out old `effectsInvoke` body (`#if 0` block) from
+  `src/host/host-runtime.cpp`; only the forwarding call remains.
+
+## Build unblock and permanent linker diagnostics
+
+- Added `src/host/window-host-fallback.cpp`: EXE-side implementations of the
+  window/input capability using the resident `InputRouter` window. This covers
+  the window functions the game DLL now calls, plus `setHostCursorVisible`.
+- Fixed the incomplete input/window bridge compile errors:
+  `mouse-lock.cpp` now includes the window bridge header; `input-poll.cpp`
+  includes `input-router.h`; `music-manager-widget.cpp` uses `nullptr` instead
+  of the removed `win` local.
+- `build.py` now captures linker stdout/stderr, appends it to
+  `.dev/link-output.log`, and prints it on failure. This permanently removes the
+  silent-link failure mode.
+- Normal EXE build succeeded and published current:
+  `2026-11-15T22:35:50.214260Z:dbed60fa...`.
+- Fresh launch `20261115_223719`: client PID `30780`, game generation 233,
+  `path=dll`, `Connected`; `hot_client_gate.py --latest` passes all checks
+  (6,056+ frames, no post-bootstrap stalls).
+
+## Follow-up: build stable and map-editor folded
+
+- The normal EXE build now succeeds and publishes current:
+  `2026-11-15T23:25:37.026076Z:a077efd7...`.
+- Permanent linker diagnostics are active in `build.py`; the failure output is
+  appended to `.dev/link-output.log`.
+- `config/modules/modules.json` no longer declares `map-editor` as a separate
+  module. `src/mapeditor/map-editor-module.cpp` is now a game-owned source in
+  the whole-game DLL.
+- `devscripts/game_build_worker.py` writes a game-build
+  `module-identity.h` (`MIMITA_MODULE_GENERATION`,
+  `MIMITA_MODULE_SOURCE_HASH`, `MIMITA_MODULE_STATE_SCHEMA`) and adds it only
+  to the map-editor module compile include path.
+- The game-side `ModuleHost` bridge initializes the folded map-editor module and
+  dispatches its editor events locally. The editor host services still come
+  from the resident module host capability through the new
+  `HostCapabilityId::EditorServices`, whose callbacks forward to the game-owned
+  MapEditor bridge.
+- Evidence: fresh launch `20261115_232617`, client PID `1212`, generation 241;
+  `module.host.started` lists 6 modules and no separate `map-editor`
+  activation. `mapeditor add chunk mapfold_probe` created the chunk;
+  `mapeditor select` and `set_position` both logged
+  `handled_by_module=true` with `generation=241`. The map was reloaded after the
+  probe and the probe chunks were removed.
+- `hot_client_gate.py --latest` passes: `path=dll`, `Connected`, 9,154+ frames,
+  no post-bootstrap stalls.
+
+## Remaining
+
+- `MimitaNet::*` server-policy split (55 undefined symbols, mostly in
+  `src/network/server.cpp`) is not started. It needs an explicit cold
+  socket/session pump and policy calls through `GameServerV1`.
+- Test/self-test separation into a separate tool is not started; its 74
+  test-referenced symbols and 156 bootstrap-referenced symbols still block a
+  truly cold link.
+- The map-editor fold removes the separate module activation, but the resident
+  EXE fallback no longer has a map-editor module. That is intentional for the
+  one-DLL end state and should be documented in the cold-entry record.

@@ -4,6 +4,7 @@
 #include <algorithm>
 
 #include "gui/ui-system.h"
+#include "game/window-bridge-module.h"
 #include "gui/gui-coord.h"
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
@@ -41,7 +42,7 @@ void MusicManager::drawNowPlayingPopup()
     if (ppEl) {
         GuiElement tmp = *ppEl;
         if (tmp.backgroundColor.size() >= 4) tmp.backgroundColor[3] = mPopupAlpha * 0.92f;
-        drawGuiElement(glfwGetCurrentContext(), tmp, nullptr, &popupRect);
+        drawGuiElement(nullptr, tmp, nullptr, &popupRect);
     }
 
     UIRect hdrRect = {px + 14.0f, py + 8.0f, 200, 20};
@@ -49,7 +50,7 @@ void MusicManager::drawNowPlayingPopup()
     if (hdrEl) {
         GuiElement tmp = *hdrEl;
         tmp.textColor = {0.5f, 0.8f, 1.0f, mPopupAlpha};
-        drawGuiElement(glfwGetCurrentContext(), tmp, nullptr, &hdrRect);
+        drawGuiElement(nullptr, tmp, nullptr, &hdrRect);
     }
 
     UIRect trkRect = {px + 14.0f, py + 36.0f, 300, 20};
@@ -58,19 +59,18 @@ void MusicManager::drawNowPlayingPopup()
         GuiElement tmp = *trkEl;
         tmp.text = currentTrackInfo();
         tmp.textColor = {0.9f, 0.9f, 1.0f, mPopupAlpha};
-        drawGuiElement(glfwGetCurrentContext(), tmp, nullptr, &trkRect);
+        drawGuiElement(nullptr, tmp, nullptr, &trkRect);
     }
 }
 
 void MusicManager::drawMusicWidget()
 {
-    GLFWwindow* win = glfwGetCurrentContext();
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     GuiLayout& mLayout = GuiLayoutManager::instance().getLayout("config/gui/music-widget.json");
 
     // Get cursor in design coordinates
-    double mx, my;
-    glfwGetCursorPos(win, &mx, &my);
+    double mx = 0.0, my = 0.0;
+    mimita::game::hostCursorPos(mx, my);
     double fbx, fby;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
     float cdx = cs.screenToDesignX((float)fbx);
@@ -109,25 +109,25 @@ void MusicManager::drawMusicWidget()
     // Helpers: draw element with dynamic position
     auto dynEl = [&](const std::string& id, UIRect designRect) -> bool {
         const GuiElement* el = mLayout.get(id);
-        return el && drawGuiElement(win, *el, nullptr, &designRect).clicked;
+        return el && drawGuiElement(nullptr, *el, nullptr, &designRect).clicked;
     };
     auto dynText = [&](const std::string& id, UIRect designRect, const std::string& text) {
         const GuiElement* el = mLayout.get(id);
         if (!el) return;
         GuiElement tmp = *el;
         tmp.text = text;
-        drawGuiElement(win, tmp, nullptr, &designRect);
+        drawGuiElement(nullptr, tmp, nullptr, &designRect);
     };
 
     // Icon
-    drawGuiElement(win, *mLayout.get("icon"), nullptr, &iconRect);
+    drawGuiElement(nullptr, *mLayout.get("icon"), nullptr, &iconRect);
     uiDrawText("♪", uiScaleX(iconX + 7.0f), uiScaleY(iconY + 5.0f), 0.5f,
                {0.7f, 0.85f, 1.0f, 0.9f});
 
     if (!mWidgetPanelOpen) return;
 
     // Panel
-    drawGuiElement(win, *mLayout.get("panel"), nullptr, &panelRect);
+    drawGuiElement(nullptr, *mLayout.get("panel"), nullptr, &panelRect);
 
     float y = panelY + 10.0f;
     UIRect headerRect = {panelX + 12.0f, y, 200, 24};
@@ -153,7 +153,7 @@ void MusicManager::drawMusicWidget()
     y += btnH + 14.0f;
 
     // Volume slider
-    if (uiSlider(win, "", {panelX + 12.0f, y, panelW - 24.0f, 20.0f}, &mVolume, 0.0f, 1.0f))
+    if (uiSlider(nullptr, "", {panelX + 12.0f, y, panelW - 24.0f, 20.0f}, &mVolume, 0.0f, 1.0f))
         applyVolume();
     y += 28.0f;
 
@@ -164,7 +164,7 @@ void MusicManager::drawMusicWidget()
         if (muteEl) {
             GuiElement tmp = *muteEl;
             tmp.text = mMuted ? "MUTED" : "MUTE ON";
-            if (drawGuiElement(win, tmp, nullptr, &muteRect).clicked)
+            if (drawGuiElement(nullptr, tmp, nullptr, &muteRect).clicked)
                 setMuted(!mMuted);
         }
     }
@@ -174,7 +174,7 @@ void MusicManager::drawMusicWidget()
         if (orderEl) {
             GuiElement tmp = *orderEl;
             tmp.text = playlistMode() == PlaylistMode::Shuffle ? "SHUFFLE" : "LINEAR";
-            if (drawGuiElement(win, tmp, nullptr, &orderRect).clicked)
+            if (drawGuiElement(nullptr, tmp, nullptr, &orderRect).clicked)
                 setPlaylistMode(playlistMode() == PlaylistMode::Shuffle
                     ? PlaylistMode::Linear : PlaylistMode::Shuffle);
         }
@@ -185,7 +185,7 @@ void MusicManager::drawMusicWidget()
         if (personalEl) {
             GuiElement tmp = *personalEl;
             tmp.text = personalMusicOverride() ? "PERSONAL" : "MODE MUSIC";
-            if (drawGuiElement(win, tmp, nullptr, &personalRect).clicked)
+            if (drawGuiElement(nullptr, tmp, nullptr, &personalRect).clicked)
                 setPersonalMusicOverride(!personalMusicOverride());
         }
     }

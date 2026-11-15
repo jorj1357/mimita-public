@@ -41,6 +41,7 @@ std::uint64_t gServerTick = 0;
 double gLastMouseInputMs = -1.0;
 Source gLookSource = Source::Unknown;
 bool gPointerLocked = false;
+bool gHostCursorActive = false;
 
 double nowMs() {
     return static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -60,7 +61,14 @@ void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick) {
     ++gFrameId;
     gClientTick = clientTick;
     gServerTick = serverTick;
-    gFocused = HostInputFallback::gameWindowFocused();
+    const bool focusedNow = HostInputFallback::gameWindowFocused();
+    if (focusedNow && !gFocused) {
+        gHasCursor = false;
+        gPendingLookX = 0.0f;
+        gPendingLookY = 0.0f;
+        gLookSource = Source::Unknown;
+    }
+    gFocused = focusedNow;
     for (int button = 0; button < kMouseCount; ++button) {
         if (!gMouseInjected[button])
             gMouseDown[button] = HostInputFallback::mouseDown(button);
@@ -70,6 +78,11 @@ void beginFrame(std::uint64_t clientTick, std::uint64_t serverTick) {
         gHasCursor = false;
         return;
     }
+
+    // Once the resident cursor callback is delivering events, it is the only
+    // look source. Sampling Win32 absolute position here would overwrite the
+    // callback baseline and cause the cursor-inside-window snap/jitter.
+    if (gHostCursorActive) return;
 
     double x = 0.0;
     double y = 0.0;
@@ -116,19 +129,37 @@ void ingestMouseButton(int button, int action, Source) {
     if (action == GLFW_PRESS) gMouseInjected[button] = true;
 }
 
-void ingestCursor(double x, double y, Source) {
-    if (!gHasCursor) {
-        gLastCursorX = x;
-        gLastCursorY = y;
-        gHasCursor = true;
-    }
+void ingestCursor(double x, double y, Source source) {
+    const double dx = gHasCursor ? x - gLastCursorX : 0.0;
+    const double dy = gHasCursor ? y - gLastCursorY : 0.0;
+    gLastCursorX = x;
+    gLastCursorY = y;
     gCursorX = x;
     gCursorY = y;
+    gHasCursor = true;
+    if (source != Source::Host) return;
+
+    gHostCursorActive = true;
+    if (!gPointerLocked || (!gFocused &&
+                            !HostInputFallback::gameWindowFocused())) {
+        return;
+    }
+    if (dx == 0.0 && dy == 0.0) return;
+    gPendingLookX += static_cast<float>(dx);
+    gPendingLookY += static_cast<float>(dy);
+    gLookSource = Source::Host;
 }
 
 void ingestText(unsigned int, Source) {}
 
 void ingestFocus(bool focused, Source source) {
+    if (focused && !gFocused) {
+        // Never carry a cursor delta across a focus transition.
+        gHasCursor = false;
+        gPendingLookX = 0.0f;
+        gPendingLookY = 0.0f;
+        gLookSource = Source::Unknown;
+    }
     gFocused = focused;
     if (source == Source::Host) gHasHostKeys = true;
 }
@@ -165,13 +196,6 @@ std::uint64_t serverTick() { return gServerTick; }
 
 void applyPendingLook(Camera& camera) {
     if (gPendingLookX == 0.0f && gPendingLookY == 0.0f) return;
-    if (gLookSource != Source::Agent &&
-        camera.lastMouseInputTime >= 0.0 &&
-        nowMs() - camera.lastMouseInputTime < 50.0) {
-        gPendingLookX = 0.0f;
-        gPendingLookY = 0.0f;
-        return;
-    }
     const float sensitivity = CAMERA_SENS;
     camera.yaw -= gPendingLookX * sensitivity;
     camera.pitch += gPendingLookY * sensitivity;
@@ -190,6 +214,8 @@ void applyPendingLook(Camera& camera) {
                            {"dy", gPendingLookY},
                            {"yaw", camera.yaw},
                            {"pitch", camera.pitch},
+                           {"host_cursor", gHostCursorActive},
+                           {"pointer_locked", gPointerLocked},
                            {"third_person", camera.thirdPerson}},
             __FILE__, __LINE__, __FUNCTION__);
     }
@@ -202,6 +228,12 @@ bool gameWindowFocused() { return HostInputFallback::gameWindowFocused(); }
 bool focusGameWindow() { return HostInputFallback::focusGameWindow(); }
 
 void setPointerLock(bool locked) {
+    if (gPointerLocked != locked) {
+        gHasCursor = false;
+        gPendingLookX = 0.0f;
+        gPendingLookY = 0.0f;
+        gLookSource = Source::Unknown;
+    }
     gPointerLocked = locked;
     HWND window = static_cast<HWND>(HostInputFallback::gameWindowHandle());
     if (!window) return;
@@ -222,5 +254,7 @@ void setPointerLock(bool locked) {
 }
 
 bool pointerLocked() { return gPointerLocked; }
+bool hostCursorActive() { return gHostCursorActive; }
+int lookSource() { return static_cast<int>(gLookSource); }
 
 }  // namespace InputRouter

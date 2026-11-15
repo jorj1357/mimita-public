@@ -1,4 +1,5 @@
 // 08 16 2026, 01 35
+#include "game/window-bridge-module.h"
 /* purpose
 * Renders gameplay UI overlays such as pause state, player list, and network debug panels.
 * Uses active engine, multiplayer, and replay state to draw lightweight HUD overlays.
@@ -163,7 +164,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
         if (isCompetitiveMatchActive())
         {
             gameState = GAME_MENU;
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
             gGuiMenuState = GUI_MENU_COMPETITIVE_RESULT;
             gDuelManager.stopDuel();
             gGamemodeManager.stop();
@@ -183,7 +184,7 @@ void engineTickUIOverlays(Engine& engine, float dt, bool worldPassRan)
             gDuelManager.stopDuel();
             gGamemodeManager.stop();
             npcSystem.destroyAll();
-            glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            mimita::game::hostSetCursorMode(0);
             gameState = GAME_MENU;
         } else if (action == DuelMenuAction::SaveReplay) {
             if (!gDuelManager.finalKillReplayPath.empty()) {

@@ -1,4 +1,5 @@
 // 08 15 2026, 15 30
+#include "game/window-bridge-module.h"
 /* purpose
 * Implements shared editor state, slider widget and layout helpers.
 * Implements preview refresh, outfit load, and cosmetics apply.
@@ -190,7 +191,7 @@ bool drawEditorSlider(GLFWwindow* win, const char* label, float x, float y,
         return false;
 
     double mx, my;
-    glfwGetCursorPos(win, &mx, &my);
+    mimita::game::hostCursorPos(mx, my);
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
     double fbx = mx, fby = my;
     cs.cursorWindowToScreen(mx, my, fbx, fby);

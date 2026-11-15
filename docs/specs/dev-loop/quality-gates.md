@@ -126,6 +126,10 @@ runtime proof problem.
 Banned in game-owned sources:
 
 - raw `gl*` calls (not only `glGen*`/`glDelete*`); use `CAP_RENDER`;
+- hot-window GLFW probes (`glfwGetCurrentContext`, cursor/window size/position,
+  focus/iconified, cursor mode, mouse/key, clipboard); use
+  `HostCapabilityId::Window` or `InputRouter`; the three explicit exceptions are
+  documented in `docs/specs/input/host-window-capability.md`;
 - raw sockets (`socket`, `WSAStartup`, `closesocket`); use `CAP_TRANSPORT`;
 - raw threads (`std::thread`, `std::async`, `CreateThread`, `.detach()`); use
   `CAP_JOBS`;

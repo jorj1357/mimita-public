@@ -7,6 +7,8 @@
 #include "gui/gui-layout.h"
 #include "gui/gui-element-render.h"
 #include "gui/ui-system.h"
+#include "game/window-bridge-module.h"
+#include "input/input-router.h"
 
 void GuiEditor::renderSelectionHandles(const GuiElement& elem)
 {
@@ -140,8 +142,8 @@ void GuiEditor::renderDebugOverlay()
 {
     GuiCoordinateSystem& cs = GuiCoordinateSystem::instance();
 
-    double mx, my;
-    glfwGetCursorPos(glfwGetCurrentContext(), &mx, &my);
+    double mx = 0.0, my = 0.0;
+    mimita::game::hostCursorPos(mx, my);
     double fbx, fby;
     cs.cursorWindowToScreen(mx, my, fbx, fby);
     double dx = cs.screenToDesignX((float)fbx);
@@ -160,8 +162,8 @@ void GuiEditor::renderDebugOverlay()
 
     uiDrawText("GUI DEBUG", x + 6.0f, iy, 0.28f, {0.4f, 1.0f, 0.6f, 1.0f}); iy += lineH;
 
-    int winW, winH;
-    glfwGetWindowSize(glfwGetCurrentContext(), &winW, &winH);
+    int winW = 0, winH = 0;
+    mimita::game::hostWindowSize(winW, winH);
     snprintf(buf, sizeof(buf), "Window: %dx%d", winW, winH);
     uiDrawText(buf, x + 6.0f, iy, 0.24f, {0.8f, 0.9f, 1.0f, 1.0f}); iy += lineH;
 
@@ -400,11 +402,11 @@ void GuiEditor::renderColorPicker()
         uiDrawRectOutline({sx, sy, ss, ss}, {0.3f, 0.3f, 0.3f, 0.7f}, "pal-border");
     }
 
-    double mx, my; glfwGetCursorPos(glfwGetCurrentContext(), &mx, &my);
+    double mx = 0.0, my = 0.0; mimita::game::hostCursorPos(mx, my);
     double fbx, fby; cs.cursorWindowToScreen(mx, my, fbx, fby);
     double dx = cs.screenToDesignX((float)fbx);
     double dy = cs.screenToDesignY((float)fby);
-    bool mouseDown = glfwGetMouseButton(glfwGetCurrentContext(), GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    bool mouseDown = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
     static bool prevDown = false;
     bool pressed = mouseDown && !prevDown;
     prevDown = mouseDown;

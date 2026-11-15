@@ -53,3 +53,6 @@ Run `20261115_172313`, PID `24736`:
 - Dev-loop command queue writes must target the primary client's recorded
   per-instance queue; writing the legacy run-level file was accepted but not
   observed as delivered.
+- GUI/editor/chat input now uses `HostCapabilityId::Window`; resident GLFW window
+  pointers are no longer passed into DLL-local GLFW for cursor, size, focus,
+  cursor mode, mouse/key, or clipboard queries.

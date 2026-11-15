@@ -1,5 +1,6 @@
 #include "gui/ui-text-input.h"
 #include "input/input-router.h"
+#include "game/window-bridge-module.h"
 #include "gui/ui-system.h"
 #include "gui/ui-system-internal.h"
 #include "render/render-command.h"
@@ -166,10 +167,10 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
         {
         case GLFW_KEY_V:
         {
-            const char* clip = glfwGetClipboardString(window);
-            if (clip)
+            std::string text = mimita::game::hostClipboardGet();
+            if (!text.empty())
             {
-                std::string text = clip;
+
                 for (auto& ch : text)
                     if (ch == '\n' || ch == '\r') ch = ' ';
 
@@ -198,14 +199,14 @@ bool uiTextInputHandleKey(GLFWwindow* window, UITextInputState& state,
         case GLFW_KEY_C:
         {
             if (uiTextInputHasSelection(state))
-                glfwSetClipboardString(window, uiTextInputSelectedText(state).c_str());
+                mimita::game::hostClipboardSet(uiTextInputSelectedText(state));
             return true;
         }
         case GLFW_KEY_X:
         {
             if (uiTextInputHasSelection(state))
             {
-                glfwSetClipboardString(window, uiTextInputSelectedText(state).c_str());
+                mimita::game::hostClipboardSet(uiTextInputSelectedText(state));
                 uiTextInputDeleteSelection(state);
                 state.lastActivityMs = (uint64_t)(glfwGetTime() * 1000.0);
             }

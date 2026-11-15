@@ -10,6 +10,7 @@
 #include "debug/structured-log.h"
 #include "input/input-router.h"
 #include "game/render-device-bridge-module.h"
+#include "game/window-bridge-module.h"
 
 #include <nlohmann/json.hpp>
 
@@ -31,12 +32,12 @@ void set(GLFWwindow* win, bool on)
     InputRouter::setPointerLock(on);
     if (!win) return;
 
-    const int requestedMode = on ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
-    const int modeBefore = glfwGetInputMode(win, GLFW_CURSOR);
+    const int requestedMode = on ? 2 : 0;
+    const int modeBefore = mimita::game::hostCursorMode();
     // The hot DLL cannot change the resident window's GLFW cursor mode. Route
     // visibility through the host render-device capability and keep clipping in
     // the input router.
-    const int modeAfter = glfwGetInputMode(win, GLFW_CURSOR);
+    const int modeAfter = mimita::game::hostCursorMode();
 
     auto& logger = StructuredLogger::instance();
     if (logger.shouldLog(StructuredCategory::Gui, StructuredLevel::Important)) {

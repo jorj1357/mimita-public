@@ -11,6 +11,7 @@
 #include "input/input-state.h"
 #include "input/input-poll.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
 #include "input/input-frame.h"
 #include "input/scenario-input.h"
 #include "combat/melee-client.h"
@@ -168,7 +169,7 @@ bool effectiveGameplayMouseButton(GLFWwindow* window, int button)
 {
     if (ScenarioInput::active())
         return ScenarioInput::mouseButton(window, button);
-    const bool physical = glfwGetMouseButton(window, button) == GLFW_PRESS;
+    const bool physical = InputRouter::mouseDown(button);
     if (button == GLFW_MOUSE_BUTTON_LEFT)
         return physical || gTerminalPrimaryHold.ticksRemaining > 0 ||
             gTerminalPrimaryHold.appliedThisTick;
@@ -340,7 +341,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
     in.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld();
     const bool vehicleInteraction =
         InteractionSystem::instance().handleKey(win, cam);
-    in.interactHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS;
+    in.interactHeld = InputRouter::keyDown(GLFW_KEY_F);
     {
         bool scheduledHeld = false;
         if (peekTerminalInteract(scheduledHeld))
@@ -349,7 +350,7 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
             advanceTerminalInteractFixedTick();
         }
     }
-    in.reviveHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS &&
+    in.reviveHeld = InputRouter::keyDown(GLFW_KEY_F) &&
                     !vehicleInteraction &&
                     !VehicleSystem::instance().hasLocalDriver();
 
@@ -357,19 +358,19 @@ InputState pollInput(GLFWwindow* win, const Camera& cam)
         printf("[INPUT] Dash pressed\n");
 
     // Ragdoll mode inputs
-    in.ragdollTogglePressed = glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS;
-    in.grabLeftHeld = glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS;
-    in.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
-    in.extendLeftMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    in.extendRightMouse = glfwGetMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    in.ragdollTogglePressed = InputRouter::keyDown(GLFW_KEY_G);
+    in.grabLeftHeld = InputRouter::keyDown(GLFW_KEY_A);
+    in.grabRightHeld = InputRouter::keyDown(GLFW_KEY_D);
+    in.extendLeftMouse = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_LEFT);
+    in.extendRightMouse = InputRouter::mouseDown(GLFW_MOUSE_BUTTON_RIGHT);
 
     static bool fisterFistPrev = false;
     const bool fisterFist = in.extendLeftMouse;
-    in.fisterTogglePressed = glfwGetKey(win, GLFW_KEY_F8) == GLFW_PRESS;
+    in.fisterTogglePressed = InputRouter::keyDown(GLFW_KEY_F8);
     in.fisterFistHeld = fisterFist;
     in.fisterFistPressed = fisterFist && !fisterFistPrev;
     in.fisterParryHeld = in.extendRightMouse;
-    in.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+    in.fisterGrabHeld = InputRouter::keyDown(GLFW_KEY_E);
     fisterFistPrev = fisterFist;
 
     return in;
@@ -448,7 +449,7 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.freezePressed = cmd.getState("freeze").pressed || gTerminalInputOverride.freezePressed;
     frame.crouchHeld = cmd.isCrouchHeld() || MimitaMelee::debugCrouchHeld() ||
         gTerminalInputOverride.crouchHeld;
-    frame.interactHeld = glfwGetKey(win, GLFW_KEY_F) == GLFW_PRESS ||
+    frame.interactHeld = InputRouter::keyDown(GLFW_KEY_F) ||
         gTerminalInputOverride.interactHeld;
     bool scheduledInteractHeld = false;
     if (peekTerminalInteract(scheduledInteractHeld))
@@ -465,16 +466,16 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.lookPitch = (gTerminalInputOverride.lookPitch != 0.0f) ? gTerminalInputOverride.lookPitch : cam.pitch;
 
     // Ragdoll mode inputs
-    frame.ragdollTogglePressed = glfwGetKey(win, GLFW_KEY_G) == GLFW_PRESS;
-    frame.grabLeftHeld = glfwGetKey(win, GLFW_KEY_A) == GLFW_PRESS;
-    frame.grabRightHeld = glfwGetKey(win, GLFW_KEY_D) == GLFW_PRESS;
+    frame.ragdollTogglePressed = InputRouter::keyDown(GLFW_KEY_G);
+    frame.grabLeftHeld = InputRouter::keyDown(GLFW_KEY_A);
+    frame.grabRightHeld = InputRouter::keyDown(GLFW_KEY_D);
     frame.extendLeftMouse = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_LEFT);
     frame.extendRightMouse = effectiveGameplayMouseButton(win, GLFW_MOUSE_BUTTON_RIGHT);
 
-    frame.fisterTogglePressed = glfwGetKey(win, GLFW_KEY_F8) == GLFW_PRESS;
+    frame.fisterTogglePressed = InputRouter::keyDown(GLFW_KEY_F8);
     frame.fisterFistHeld = frame.extendLeftMouse;
     frame.fisterParryHeld = frame.extendRightMouse;
-    frame.fisterGrabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+    frame.fisterGrabHeld = InputRouter::keyDown(GLFW_KEY_E);
 
     // Camera-relative axes for the authoritative input packet. moveX/moveY
     // remain the world-space movement consumed by local simulation.
@@ -529,13 +530,13 @@ InputFrame buildInputFrame(GLFWwindow* win, Camera& cam)
     frame.extendRightMouse = frame.extendRightMouse || scheduledSecondary;
     frame.fisterFistHeld = frame.extendLeftMouse;
     frame.fisterParryHeld = frame.extendRightMouse;
-    frame.shieldHeld = glfwGetKey(win, GLFW_KEY_Q) == GLFW_PRESS;
-    frame.grabHeld = glfwGetKey(win, GLFW_KEY_E) == GLFW_PRESS;
+    frame.shieldHeld = InputRouter::keyDown(GLFW_KEY_Q);
+    frame.grabHeld = InputRouter::keyDown(GLFW_KEY_E);
     frame.slotHeldMask = 0;
     for (int slot = 0; slot <= 9; ++slot)
     {
         const int key = slot == 0 ? GLFW_KEY_0 : GLFW_KEY_0 + slot;
-        if (glfwGetKey(win, key) == GLFW_PRESS)
+        if (InputRouter::keyDown(key))
             frame.slotHeldMask |= static_cast<uint16_t>(1u << slot);
     }
 

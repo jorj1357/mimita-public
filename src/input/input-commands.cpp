@@ -54,7 +54,7 @@ void InputCommandSystem::setKeyboardEnabled(bool enabled) {
     mKeyboardEnabled = enabled;
     if (mWindow && enabled) {
         for (int i = 0; i < 512; i++) {
-            mPrevKeyStates[i] = glfwGetKey(mWindow, i) == GLFW_PRESS;
+            mPrevKeyStates[i] = InputRouter::keyDown(i);
             mKeyPressTime[i] = 0.0;
             mKeyReleaseTime[i] = 0.0;
         }
@@ -198,7 +198,7 @@ void InputCommandSystem::update(float dt) {
     mCurrentTime = glfwGetTime();
 
     // Track focus: when unfocused, held keys stay as they were (don't force-release)
-    mFocused = glfwGetWindowAttrib(mWindow, GLFW_FOCUSED) != 0;
+    mFocused = InputRouter::focused();
 
     for (auto& [actionName, state] : mActionStates) {
         auto it = mActionToKey.find(actionName);
@@ -207,10 +207,10 @@ void InputCommandSystem::update(float dt) {
         int key = it->second;
 
         // Use callback timestamps for press/release edges instead of polling,
-        // fall back to glfwGetKey for held state (which works across frames)
+        // fall back to the normalized held state (which works across frames)
         bool currDown = mKeyboardEnabled &&
             ((mHostKeySeen && InputRouter::keyDown(key)) ||
-             (!mHostKeySeen && glfwGetKey(mWindow, key) == GLFW_PRESS));
+             (!mHostKeySeen && InputRouter::keyDown(key)));
         bool prevDown = mPrevKeyStates[key];
 
         // Callback-based press detection: a press occurred if the callback
@@ -329,7 +329,7 @@ bool InputCommandSystem::isKeyHeld(int key) const {
         return false;
     if (mHostKeySeen || InputRouter::hasHostKeys())
         return InputRouter::keyDown(key);
-    return glfwGetKey(mWindow, key) == GLFW_PRESS;
+    return InputRouter::keyDown(key);
 }
 
 glm::vec2 InputCommandSystem::getMoveVector() const {
@@ -412,7 +412,7 @@ void InputCommandSystem::drawInputDebug()
     drawLine(buf, {0.3f, 1.0f, 0.5f, 1});
 
     for (auto& k : keys) {
-        bool held = glfwGetKey(mWindow, k.glfwKey) == GLFW_PRESS;
+        bool held = InputRouter::keyDown(k.glfwKey);
         bool pressed = mKeyPressTime[k.glfwKey] > mKeyReleaseTime[k.glfwKey] &&
                        (mCurrentTime - mKeyPressTime[k.glfwKey]) < 0.1;
         snprintf(buf, sizeof(buf), "%s: held=%s  pressed=%s  callback=%.3fs",

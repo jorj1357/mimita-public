@@ -1,4 +1,5 @@
 #include "gui/gui-editor.h"
+#include "game/window-bridge-module.h"
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <cstdio>
@@ -76,7 +77,7 @@ void GuiEditor::renderHierarchyView()
     addBtn.text = "+";
     addBtn.textColor = {1,1,1,1};
     addBtn.backgroundColor = {0.2f, 0.4f, 0.2f, 1.0f};
-    if (drawGuiElement(glfwGetCurrentContext(), addBtn, nullptr, &addBtnRect).clicked) {
+    if (drawGuiElement(nullptr, addBtn, nullptr, &addBtnRect).clicked) {
         GuiLayout& lay = GuiLayoutManager::instance().getLayout(mActiveLayoutFile);
         int seq = 0;
         std::string newId = "newElement";

@@ -1,4 +1,5 @@
 #include "engine/engine-tick-camera.h"
+#include "game/window-bridge-module.h"
 #include "game/resident-state-module.h"
 #include "engine/engine.h"
 #include "terminal/terminal-state.h"
@@ -257,7 +258,7 @@ void engineTickCamera(Engine& engine, float dt)
                 StructuredCategory::Camera, StructuredLevel::Important,
                 "input.pointer-lock", "input", "L toggled gameplay pointer lock", 0,
                 nlohmann::json{{"locked", nowLocked},
-                               {"cursor_mode", glfwGetInputMode(engine.window(), GLFW_CURSOR)}},
+                               {"cursor_mode", mimita::game::hostCursorMode()}},
                 __FILE__, __LINE__, __FUNCTION__);
         }
         camera.ignoreHostMouse = !nowLocked;

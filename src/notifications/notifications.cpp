@@ -1,5 +1,6 @@
 // 08 16 2026, 01 35
 #include "input/input-router.h"
+#include "input/mouse-lock.h"
 /* purpose
 * Implements the in-game notification popup system. Rendering is driven by JSON:
 * config/gui/notifications.json controls GUI (anchor/offsets/spacing/slide plus
@@ -888,7 +889,6 @@ void NotificationSystem::render(bool inGameplay)
     pruneExpired();
     if (tempMuted() || mNotifications.empty()) return;
 
-    GLFWwindow* win = glfwGetCurrentContext();
     GuiLayout& layout = GuiLayoutManager::instance().getLayout(mGuiConfigPath);
     const GuiElement* panelEl = layout.get("notifPanel");
     const GuiElement* titleEl = layout.get("notifTitle");
@@ -906,14 +906,13 @@ void NotificationSystem::render(bool inGameplay)
 
     // Only honor clicks when the mouse is unlocked (menus/chat open). During
     // gameplay the locked cursor sits at screen center, far from these boxes.
-    const bool mouseUnlocked = win &&
-        glfwGetInputMode(win, GLFW_CURSOR) != GLFW_CURSOR_DISABLED;
+    const bool mouseUnlocked = !MouseLock::locked();
 
     // Cursor position in screen space for hover detection.
     double mx = 0.0, my = 0.0;
     double cursorX = 0.0, cursorY = 0.0;
-    if (win && mouseUnlocked) {
-        InputRouter::cursorPos(win, &mx, &my);
+    if (mouseUnlocked) {
+        InputRouter::cursorPos(nullptr, &mx, &my);
         cs.cursorWindowToScreen(mx, my, cursorX, cursorY);
     }
 
@@ -980,7 +979,7 @@ void NotificationSystem::render(bool inGameplay)
             }
             if (hovered && tmp.outlineColor.size() >= 4)
                 tmp.outlineColor[3] = 1.0f;
-            drawGuiElement(win, tmp, nullptr, &box);
+            drawGuiElement(nullptr, tmp, nullptr, &box);
         }
 
         if (titleEl) {
@@ -1013,7 +1012,7 @@ void NotificationSystem::render(bool inGameplay)
             }
             UIRect r = {box.x + padX, box.y + padY,
                         w - padX * 2.0f - closeW - 6.0f, titleH};
-            drawGuiElement(win, tmp, nullptr, &r);
+            drawGuiElement(nullptr, tmp, nullptr, &r);
         }
 
         // Message area: scissored box, wheel scroll, and auto-follow while the
@@ -1023,7 +1022,7 @@ void NotificationSystem::render(bool inGameplay)
         if (closeEl) {
             GuiElement tmp = *closeEl;
             UIRect r = {box.x + w - padX - closeW, box.y + padY, closeW, closeH};
-            UIButtonState s = drawGuiElement(win, tmp, nullptr, &r);
+            UIButtonState s = drawGuiElement(nullptr, tmp, nullptr, &r);
             if (mouseUnlocked && s.clicked) toRemove.push_back(i);
         }
 
@@ -1032,7 +1031,7 @@ void NotificationSystem::render(bool inGameplay)
             tmp.text = notif.action.label.empty() ? "OPEN" : notif.action.label;
             UIRect r = {box.x + w - padX - actionW,
                         box.y + L.panelH - padY - actionH, actionW, actionH};
-            UIButtonState s = drawGuiElement(win, tmp, nullptr, &r);
+            UIButtonState s = drawGuiElement(nullptr, tmp, nullptr, &r);
             if (mouseUnlocked && s.clicked) {
                 if (notif.action.type == ActionType::OpenUrl && !notif.action.payload.empty())
                     ShellExecuteA(nullptr, "open", notif.action.payload.c_str(),

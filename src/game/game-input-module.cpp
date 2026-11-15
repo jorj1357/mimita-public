@@ -3,6 +3,7 @@
 
 #include "game/game-input-module.h"
 #include "input/input-commands.h"
+#include "input/input-router.h"
 #include "renderer/renderer.h"
 extern Renderer* gRenderer;
 #include "debug/structured-log.h"
@@ -49,9 +50,9 @@ void handleGameInputKey(int key, int scancode, int action, int mods) {
     }
     if (action != GLFW_PRESS && action != GLFW_REPEAT) return;
 
-    // The hot DLL has its own static GLFW copy, so the frame-level
-    // glfwGetKey() edge handlers cannot see the resident window. Handle the
-    // two global modal keys on the host-dispatched event path.
+    // The hot DLL has its own static GLFW copy, so frame-level key polling
+    // cannot see the resident window. Handle the two global modal keys on the
+    // host-dispatched event path.
     if (action == GLFW_PRESS && key == GLFW_KEY_GRAVE_ACCENT) {
         if (!PauseMenu::isOpen()) {
             Terminal::instance().toggle();
@@ -81,7 +82,7 @@ void handleGameInputKey(int key, int scancode, int action, int mods) {
     onlineMenuHandleKey(key, action);
     std::string chatMsg;
     const bool consumed = handleChatWindowKey(
-        gChatWindowState, key, action, mods, glfwGetCurrentContext(),
+        gChatWindowState, key, action, mods, nullptr,
         gChatUiTickClock, chatMsg);
     if (!chatMsg.empty()) requestSendChatMessage(chatMsg);
     if (consumed) return;
@@ -113,7 +114,7 @@ void handleGameInputDrop(int count, const char** paths) {
 }
 
 void handleGameInputEvent(const mimita::host::GameInputEventV1& event) {
-    if (event.version != 1 ||
+    if (event.version != 2 ||
         event.structSize < sizeof(mimita::host::GameInputEventV1)) {
         return;
     }
@@ -126,6 +127,10 @@ void handleGameInputEvent(const mimita::host::GameInputEventV1& event) {
             break;
         case mimita::host::GameInputKind::Scroll:
             handleGameInputScroll(event.scrollX, event.scrollY);
+            break;
+        case mimita::host::GameInputKind::Cursor:
+            InputRouter::ingestCursor(event.cursorX, event.cursorY,
+                                      InputRouter::Source::Host);
             break;
         case mimita::host::GameInputKind::Drop: {
             const char* paths[8] = {};

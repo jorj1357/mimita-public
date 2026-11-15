@@ -17,6 +17,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "host/abi/effects-capability.h"
+
 namespace mimita::host {
 
 inline constexpr std::uint32_t kGameHostAbiVersion = 2u;
@@ -51,6 +53,8 @@ enum class HostCapabilityId : std::uint32_t {
     SessionEvents = 24,
     State = 25,
     EntityDomain = 26,
+    Window = 27,
+    EditorServices = 28,
 };
 
 // Stable entity identity. The low bits are generation-specific; the host owns
@@ -201,6 +205,7 @@ enum class GameInputKind : std::uint32_t {
     Char = 2,
     Scroll = 3,
     Drop = 4,
+    Cursor = 5,
 };
 
 struct GameInputEventV1 {
@@ -216,6 +221,8 @@ struct GameInputEventV1 {
     double scrollY;
     std::uint32_t pathCount;
     char paths[8][260];
+    double cursorX;
+    double cursorY;
 };
 
 struct GameStartupV1 {
@@ -292,6 +299,19 @@ struct MapEditorHostCallV1 {
     char s2[256] = {};
     char s3[256] = {};
     std::uint64_t value = 0;
+};
+
+inline constexpr std::uint32_t kEventEffectsHost = 727u;
+inline constexpr std::uint32_t kEffectsHostVersion = 1u;
+
+struct EffectsHostCallV1 {
+    std::uint32_t version = kEffectsHostVersion;
+    std::uint32_t structSize = sizeof(EffectsHostCallV1);
+    EffectsOp op = EffectsOp::Spawn;
+    const void* input = nullptr;
+    std::uint32_t inputSize = 0;
+    void* output = nullptr;
+    std::uint32_t outputSize = 0;
 };
 
 struct AgentCommandV1 {

@@ -521,6 +521,24 @@ static void applyGLBObjectOverridesWithRecovery(
         glm::vec3 scale(1.0f);
         GLBObjectAuthoredV2& state = MapGLBAuthoredState::instance().ensure(
             &world.mesh, object.id, object.transform, object.basePosition);
+
+        // Resident bases survive hot generation swaps. Prefer them over the
+        // hot DLL's MapGLBAuthoredState, which is recreated empty on unload.
+        AuthoredGLBBase& residentBase = world.authoredGLBBases[object.id];
+        if (residentBase.positions.size() == object.vertexCount &&
+            !residentBase.positions.empty()) {
+            if (state.basePositions.size() != object.vertexCount) {
+                state.basePositions = residentBase.positions;
+                state.baseNormals = residentBase.normals;
+                state.baseTransform = residentBase.transform;
+            }
+        } else if (state.basePositions.size() == object.vertexCount &&
+                   !state.basePositions.empty()) {
+            residentBase.positions = state.basePositions;
+            residentBase.normals = state.baseNormals;
+            residentBase.transform = state.baseTransform;
+        }
+
         const int matchedIndex = resolveGLBOverrideIndex(
             object.id, object.name, object.nodeIndex, overrides, claimed,
             objectIds);
@@ -591,6 +609,9 @@ static void applyGLBObjectOverridesWithRecovery(
                         ? glm::normalize(normal) : normal);
             }
         }
+        residentBase.positions = state.basePositions;
+        residentBase.normals = state.baseNormals;
+        residentBase.transform = state.baseTransform;
         object.transform = transform * state.baseTransform;
         object.boundsMin = glm::vec3(std::numeric_limits<float>::max());
         object.boundsMax = glm::vec3(std::numeric_limits<float>::lowest());

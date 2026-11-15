@@ -1,4 +1,5 @@
 #include "main-init.h"
+#include "game/window-bridge-module.h"
 #include "main-systems.h"
 #include "host/host-runtime.h"
 #include "gui/ui-system-internal.h"
@@ -195,7 +196,7 @@ void gameInit(int argc, char** argv, Engine& engine)
         printf("[MAIN] after engine.init\n");
     }
 
-    glfwSetInputMode(engine.window(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+    mimita::game::hostSetCursorMode(0);
 
     guiBindingsSetWindow(engine.window());
     glfwSetWindowUserPointer(engine.window(), &engine);
@@ -267,7 +268,7 @@ void gameInit(int argc, char** argv, Engine& engine)
             nlohmann::json fields = {
                 {"unlock_cursor_on_launch", true},
                 {"mouse_lock_locked", MouseLock::locked()},
-                {"cursor_mode", glfwGetInputMode(engine.window(), GLFW_CURSOR)}
+                {"cursor_mode", mimita::game::hostCursorMode()}
             };
             StructuredLogger::instance().writeEvent(
                 StructuredCategory::Gui, StructuredLevel::Important,

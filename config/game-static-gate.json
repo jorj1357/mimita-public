@@ -21,6 +21,11 @@
       "pattern": "\\bfopen\\s*\\(|\\bCreateFileW?\\b",
       "capability": "CAP_RESOURCES",
       "reason": "persistent file handles need a host owner; per-call RAII is fine"
+    },
+    "hot_window_glfw": {
+      "pattern": "\\bglfw(GetCurrentContext|GetCursorPos|GetWindowSize|GetFramebufferSize|GetWindowPos|GetWindowAttrib|GetInputMode|SetInputMode|SetCursorPos|GetMouseButton|GetKey|SetClipboardString|GetClipboardString|FocusWindow)\\s*\\(",
+      "capability": "CAP_INPUT / HostCapabilityId::Window",
+      "reason": "hot game code must use game/window-bridge-module or InputRouter; resident GLFW owns the window"
     }
   },
   "allowed": [
@@ -31,6 +36,18 @@
     {
       "path": "src/render/render-command-legacy.cpp",
       "reason": "EXE-only legacy implementation inside #ifndef MIMITA_GAME_DLL; the DLL uses CAP_RENDER"
+    },
+    {
+      "path": "src/game/game-cli.cpp",
+      "reason": "hidden replay-export FBO self-test intentionally creates its own GLFW context; it is not the live game window path"
+    },
+    {
+      "path": "src/replay/replay-export-subprocess.cpp",
+      "reason": "replay export subprocess owns a separate hidden capture window/context; keep this explicit tradeoff until export is migrated to a host export capability"
+    },
+    {
+      "path": "src/physics/movement/actor-triangle-spike.cpp",
+      "reason": "legacy diagnostic probe; it is not gameplay/UI and is scheduled for removal or conversion to gRenderer"
     }
   ]
 }

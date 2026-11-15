@@ -1,4 +1,6 @@
 // 08 03 2026, 17 20
+#include "input/input-router.h"
+#include "game/window-bridge-module.h"
 /* purpose
 * Owns the animated avatar preview shown in game menus.
 * Loads preview layout config and renders the preview player camera pass.
@@ -222,19 +224,19 @@ void MenuAvatarPreview::updateAvatarFreecamInput(GLFWwindow* window, float dt, b
 {
     if (!window || !mAvatarFreecamEnabled) return;
     if (!acceptsInput) {
-        if (glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_NORMAL)
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        if (mimita::game::hostCursorMode() != 0)
+            mimita::game::hostSetCursorMode(0);
         mAvatarFreecamCamera.firstMouse = true;
         return;
     }
 
-    if (glfwGetInputMode(window, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    if (mimita::game::hostCursorMode() != 2) {
+        mimita::game::hostSetCursorMode(2);
         mAvatarFreecamCamera.firstMouse = true;
     }
 
     double mouseX = 0.0, mouseY = 0.0;
-    glfwGetCursorPos(window, &mouseX, &mouseY);
+    mimita::game::hostCursorPos(mouseX, mouseY);
     mAvatarFreecamCamera.updateMouse(mouseX, mouseY);
 
     glm::vec3 flatForward = mAvatarFreecamCamera.front;
@@ -244,16 +246,16 @@ void MenuAvatarPreview::updateAvatarFreecamInput(GLFWwindow* window, float dt, b
     glm::vec3 flatRight = glm::normalize(glm::cross(flatForward, glm::vec3(0.0f, 0.0f, 1.0f)));
     glm::vec3 move(0.0f);
     float speed = GetPlayerSettings().freecamSpeed;
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-        glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) speed *= 3.0f;
-    if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-        glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS) speed *= 0.3f;
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) move += flatForward;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) move -= flatForward;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) move += flatRight;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) move -= flatRight;
-    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) move.z += 1.0f;
-    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) move.z -= 1.0f;
+    if (InputRouter::keyDown(GLFW_KEY_LEFT_SHIFT) ||
+        InputRouter::keyDown(GLFW_KEY_RIGHT_SHIFT)) speed *= 3.0f;
+    if (InputRouter::keyDown(GLFW_KEY_LEFT_CONTROL) ||
+        InputRouter::keyDown(GLFW_KEY_RIGHT_CONTROL)) speed *= 0.3f;
+    if (InputRouter::keyDown(GLFW_KEY_W)) move += flatForward;
+    if (InputRouter::keyDown(GLFW_KEY_S)) move -= flatForward;
+    if (InputRouter::keyDown(GLFW_KEY_D)) move += flatRight;
+    if (InputRouter::keyDown(GLFW_KEY_A)) move -= flatRight;
+    if (InputRouter::keyDown(GLFW_KEY_E)) move.z += 1.0f;
+    if (InputRouter::keyDown(GLFW_KEY_Q)) move.z -= 1.0f;
     if (glm::length(move) > 0.001f)
         mAvatarFreecamCamera.pos += glm::normalize(move) * speed * dt;
 }

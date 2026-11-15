@@ -78,7 +78,11 @@ MIMITA_GAME_EXPORT bool MIMITA_GAME_CALL GetGameAPI(
     return true;
 }
 
-#else
+#endif
+
+// The real EffectPartSystem implementation is compiled into the resident EXE
+// and the whole-game DLL. The game DLL owns the effect pool; it no longer
+// forwards spawns through the host capability.
 
 #include "effect-part.h"
 #include "combat/actor-preset-weapons.h"
@@ -830,5 +834,3 @@ int EffectPartSystem::collectAlive(PartSnapshot* out, int maxCount, float minAlp
     }
     return count;
 }
-
-#endif
