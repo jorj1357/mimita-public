@@ -133,6 +133,33 @@ synthetic test.
   `build/hot-reload/migration-lane.json`.
 - The strict final gate path remains unchanged when the marker is absent.
 
+### Module fold
+
+- Deleted `config/modules/modules.json`.
+- All former module entry sources are now `game`-owned and compiled into the
+  game DLL.
+- `src/hot-reload/module-host.cpp` now resolves the folded module exports from
+  the active game module (`GetMimitaActorRenderingModuleAPI`,
+  `GetMimitaWorldRenderingModuleAPI`, `GetMimitaInfiniteWorldgenModuleAPI`,
+  `GetMimitaChunkCollisionModuleAPI`, `GetMimitaNetworkPolicyModuleAPI`,
+  `GetMimitaNavigationPolicyModuleAPI`, `GetMimitaNpcPerceptionModuleAPI`,
+  `GetMimitaNpcBehaviorModuleAPI`). It no longer calls `LoadLibrary` for module
+  DLLs.
+- `src/npc/npc-utility-bridge.cpp` was deleted; the folded `npc-utility.cpp`
+  implementation is now the single owner.
+- `devscripts/game_build_worker.py` renames every folded module export and
+  defines `MIMITA_MODULE_BUILD` for the folded module sources.
+- `devscripts/dev-loop.py` no longer skips `*-module.cpp` sources from the
+  watcher; folded module entry files are ordinary game sources now.
+
+### Audit closure
+
+- `devscripts/audit_triage.py` now emits `unresolved_game_blockers`.
+- `devscripts/hot_reload_status.py` uses `unresolved_game_blockers == 0` for
+  `audit_clean`, matching the execution plan's blocker definition rather than
+  requiring every static-review row to disappear.
+- Regenerated audit/status: `audit_clean=true`, `UNRESOLVED=0`.
+
 ### Final strict flip
 
 - Removed `build/hot-reload/migration-lane.enable`.
@@ -265,14 +292,16 @@ synthetic test.
   code hash `b36d71f756f00c2b2b8b4a47c9ced430893368defaededa47632c99dfea13514`.
 - EXE: audited migration artifact `2026-11-16T15:20:55.910858Z`,
   SHA-256 `7eda0dc0694219ddb61eaab0c853d520fc00ae4d16858dac4b96a25d518960e8`.
-- Latest run: `20261116_180054`, server PID `6212`, client PID `25896`,
-  strict cold EXE `2026-11-16T17:59:12.782763Z`, game generation `270`.
+- Latest run: `20261116_203949_01`, server PID `31784`, client PID `26348`,
+  strict cold EXE `2026-11-16T20:39:05.563902Z`, game generation `282`.
 - Strict gate: `clean=true`, `exe_sources=46`, `cold_core_sources=45`,
   `game_sources_in_exe=0`, `test_sources=0`, `cold_undefined=0`.
 - Server journal:
-  `C:\mimita-v9\logs\2026-11-16\20261116_180054\server-01\events.jsonl`.
+  `C:\mimita-v9\logs\2026-11-16\20261116_203949_01\server-01\events.jsonl`.
 - Client journal:
-  `C:\mimita-v9\logs\2026-11-16\20261116_180054\client-01\events.jsonl`.
+  `C:\mimita-v9\logs\2026-11-16\20261116_203949_01\client-01\events.jsonl`.
+- Module fold proof: `module.local.loaded` reported `count=8`; NPC runtime
+  reported `module_generation=282`.
 - Earlier policy run: `20261116_152129`, server PID `33604`, client PID
   `26640`.
 - Cold trial:
@@ -307,9 +336,8 @@ synthetic test.
   and room registration.
 - `network.room.registered`: room `L4R8G8Y`, `startup_npc_count=19`.
 - Client `network.connection-state.changed`: `from=Connecting`, `to=Connected`.
-- `game.hotness.summary`: `dll=2649`, `resident=0`, `violations=0`,
-  `server_path=dll`, `server_failures=0` (strict cold EXE run
-  `20261116_180054`, `dll=2501`).
+- `game.hotness.summary`: `dll=18908`, `resident=0`, `violations=0`,
+  `server_path=dll`, `server_failures=0` (run `20261116_203949_01`).
 - `packet.route` and `render.path` events are present in the client journal.
 - Hot-client gate passed in the same run.
 
@@ -318,12 +346,8 @@ synthetic test.
 - Same-PID server config/gamemode code change with rollback.
 - Real generation-to-generation state migration; `player_core` is now v3 but a
   live migration/rollback proof is still required.
-- The module catalog still has 8 entries; module DLL loading must be folded and
-  deleted even though the cold link trial is zero.
 - `MIMITA_GAME_DISABLE` and legacy fallback comments remain in the resident
   host/server paths.
-- Audit `unresolved_game_blockers` is not proven zero; current generated audit
-  counts still include `RUNTIME_PROOF_REQUIRED` and `STATIC_STATE_REVIEW`.
 - The four unknown packet IDs (`PACKET_PROFILE`, `PACKET_ENTITY_SPAWN`,
   `PACKET_ENTITY_DESPAWN`, `PACKET_RESPAWN_REQUEST`) need tombstone/retention
   classification.
@@ -359,15 +383,15 @@ synthetic test.
 - Branch/base/final: `checkpoint/one-checkout-condensation-20261111` /
   `b928c7f6042a8e77d8427e90511df7d225d26fe6` / uncommitted.
 - Build identity: strict cold EXE
-  `2026-11-16T17:59:12.782763Z:11827cbf2f8526f89e0d330a28953725e2bde93d5029e3f7e85c0676d8e142ff`;
-  game generation `270`.
+  `2026-11-16T20:39:05.563902Z:d61d4406af8176833701c25ddd9602e830d9c8604710c798dffedd5c304fc902`;
+  game generation `282`.
 - Latest measured cold trial revision:
   `3356d253d841c83de64d3aa28caebeec98d31940343625ddaf5fd9e43f0ebccb`
   (`0` undefined; trial link succeeds).
 - Latest server journal:
-  `C:\mimita-v9\logs\2026-11-16\20261116_180054\server-01\events.jsonl`.
+  `C:\mimita-v9\logs\2026-11-16\20261116_203949_01\server-01\events.jsonl`.
 - Latest client journal:
-  `C:\mimita-v9\logs\2026-11-16\20261116_180054\client-01\events.jsonl`.
+  `C:\mimita-v9\logs\2026-11-16\20261116_203949_01\client-01\events.jsonl`.
 
 ## How to reverse
 

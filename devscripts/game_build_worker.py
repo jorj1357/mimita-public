@@ -545,10 +545,14 @@ def build(args: argparse.Namespace) -> int:
         if source_path in folded_module_symbols:
             extra_flags.extend([
                 f"-I{identity_dir}",
+                "-DMIMITA_MODULE_BUILD",
                 f"-DGetMimitaModuleAPI={folded_module_symbols[source_path]}",
             ])
         elif source_path in identity_only_sources:
-            extra_flags.append(f"-I{identity_dir}")
+            extra_flags.extend([
+                f"-I{identity_dir}",
+                "-DMIMITA_MODULE_BUILD",
+            ])
         command = [
             *ccache_prefix,
             cxx,

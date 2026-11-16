@@ -6,19 +6,19 @@ still needs a confirmation read of its declarations, call graph, and resources.
 
 - Source: `manifest-fast` (`build\source-manifest.json`)
 - Machine table: `docs\handoffs\cpp-audit-static-triage-20261112.csv`
-- Rows: 794
+- Rows: 807
 
 ## Classification counts
 
 | Class | Rows | Meaning |
 |---|---:|---|
-| STATIC_CLOSED | 66 | confirmation read closed; see batch record |
-| STATIC_CLOSABLE_CANDIDATE | 5 | no lexical hit; confirmation read still required |
-| STATIC_STATE_REVIEW | 71 | mutable static/extern state; read and assign owner |
-| RESIDENT_ADAPTER_REQUIRED | 213 | calls a resident service or holds thread_local host state |
-| RUNTIME_PROOF_REQUIRED | 275 | threads/jobs/callbacks/resources/network state |
-| RESIDENT_HOST | 34 | host/bootstrap/loader/device/transport; not game.dll |
-| NON_GAME | 130 | vendor/tool/test/launcher/module; explicit exception |
+| STATIC_CLOSED | 64 | confirmation read closed; see batch record |
+| STATIC_CLOSABLE_CANDIDATE | 12 | no lexical hit; confirmation read still required |
+| STATIC_STATE_REVIEW | 74 | mutable static/extern state; read and assign owner |
+| RESIDENT_ADAPTER_REQUIRED | 215 | calls a resident service or holds thread_local host state |
+| RUNTIME_PROOF_REQUIRED | 277 | threads/jobs/callbacks/resources/network state |
+| RESIDENT_HOST | 45 | host/bootstrap/loader/device/transport; not game.dll |
+| NON_GAME | 120 | vendor/tool/test/launcher/module; explicit exception |
 | UNRESOLVED | 0 | unknown owner; blocking |
 
 ## Confirmed static closures
@@ -100,6 +100,16 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/map/map_render.cpp`
 - `src/map/texture_manager.cpp`
 
+### npc (2)
+
+- `src/npc/npc-perception-module.cpp`
+- `src/npc/npc-utility.cpp`
+
+### render (2)
+
+- `src/render/actor-rendering-module.cpp`
+- `src/render/world-rendering-module.cpp`
+
 ### ecs (1)
 
 - `src/ecs/actor-entities.cpp`
@@ -111,6 +121,18 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 ### game (1)
 
 - `src/game/net-common-module.cpp`
+
+### navigation (1)
+
+- `src/navigation/navigation-policy-module.cpp`
+
+### network (1)
+
+- `src/network/network-policy-module.cpp`
+
+### worldgen (1)
+
+- `src/worldgen/infinite-worldgen-module.cpp`
 
 ## STATIC_STATE_REVIEW rows
 
@@ -142,10 +164,10 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/effects/zombie-tower-effects.cpp` - mutable static candidates=1
 - `src/entities/player-render-mesh.cpp` - file-scope globals=1
 - `src/fister/sim/Ragdoll.cpp` - global/extern keyword mentions=1
-- `src/game/authored-rebuild-bridge-module.cpp` - file-scope globals=2
 - `src/game/diagnostics-bridge-module.cpp` - file-scope globals=1
 - `src/game/entity-domain-bridge-module.cpp` - file-scope globals=1
 - `src/game/file-bridge-module.cpp` - file-scope globals=1
+- `src/game/game-export-module.cpp` - global/extern keyword mentions=2
 - `src/game/game-objects-module.cpp` - file-scope globals=3
 - `src/game/gl-resource-bridge-module.cpp` - file-scope globals=1
 - `src/game/json-watch-bridge-module.cpp` - file-scope globals=2
@@ -173,7 +195,9 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/mapeditor/map-editor-module.cpp` - file-scope globals=1
 - `src/network/badconn/badconn-registry.cpp` - global/extern keyword mentions=1
 - `src/network/server-contact.cpp` - mutable static candidates=2
+- `src/npc/npc-behavior-module.cpp` - file-scope globals=1
 - `src/npc/npc-nav-graph.cpp` - file-scope globals=2
+- `src/physics/movement/actor-contact-policy-module.cpp` - global/extern keyword mentions=1
 - `src/physics/movement/physics-collision-glb-sweep.cpp` - global/extern keyword mentions=2
 - `src/physics/movement/physics-collision-stress.cpp` - global/extern keyword mentions=6
 - `src/render/procedural-cylinder.cpp` - file-scope globals=1
@@ -184,6 +208,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/shadow/shadow-shader.cpp` - mutable static candidates=1
 - `src/ui/hitmarker.cpp` - file-scope globals=1
 - `src/website/api-client.cpp` - global/extern keyword mentions=5
+- `src/world/chunk-collision-module.cpp` - global/extern keyword mentions=3
 - `src/world/world.cpp` - global/extern keyword mentions=2
 
 ## RESIDENT_ADAPTER_REQUIRED rows
@@ -269,10 +294,13 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/game/audio-analysis-bridge-module.cpp` - resident services: StructuredLogger
 - `src/game/bomb-tag-state.cpp` - resident services: TerminalState
 - `src/game/duel-state.cpp` - resident services: DebugLog
-- `src/game/game-module.cpp` - resident services: StructuredLogger, Terminal
+- `src/game/game-module.cpp` - resident services: AuthSystem, LocalProfileSystem, StructuredLogger, Terminal
 - `src/game/gamemode-manager.cpp` - resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, TerminalState
 - `src/game/main-menu-command-module.cpp` - resident services: DebugLog, TerminalState
+- `src/game/module-host-query-module.cpp` - resident services: MapConfigRegistry
 - `src/game/persistence-bridge-module.cpp` - resident services: PersistenceQueue
+- `src/game/player-core-migration.cpp` - resident services: StructuredLogger
+- `src/game/server-policy-module.cpp` - resident services: AuthSystem, BehaviorProfileRegistry, GamemodeRegistry, MapConfigRegistry, MovementJsonConfig, NpcDifficultyConfig, StructuredLogger, VehicleSystem
 - `src/game/spawn-override.cpp` - resident services: DebugLog
 - `src/game/spawn-utils.cpp` - resident services: DebugLog
 - `src/gamemode/arena-ball.cpp` - resident services: PhysicalEntitySystem, StructuredLogger
@@ -316,7 +344,6 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/npc/npc-state-machine.cpp` - ModuleHost hold-pursuit calls (services: ModuleHost)
 - `src/npc/npc-states.cpp` - NpcDifficultyConfig::instance config owner (services: NpcDifficultyConfig)
 - `src/npc/npc-traversal.cpp` - ModuleHost policy calls + MovementJsonConfig::instance (services: DebugLog, ModuleHost, MovementJsonConfig)
-- `src/npc/npc-utility-bridge.cpp` - ModuleHost behavior calls (services: ModuleHost)
 - `src/npc/npc-world-query.cpp` - thread_local const World* host pointer
 - `src/npc/npc.cpp` - thread_local host state (services: BehaviorProfileRegistry, DebugLog, DebugVis, ModuleHost, NpcDifficultyConfig, Perf, StructuredLogger, WeaponRegistry)
 - `src/npc/recast-navigation.cpp` - resident services: ModuleHost, Perf, StructuredLogger
@@ -409,7 +436,9 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/analytics/analytics-events-impl.cpp` - resource hits=file
 - `src/analytics/analytics-manager.cpp` - resource hits=gl,file,os
 - `src/analytics/analytics-uploader.cpp` - known handoff blocker
+- `src/audio/audio.cpp` - thread/job hits=2; resource hits=audio,file
 - `src/audio/hitmarker-audio.cpp` - resource hits=file
+- `src/audio/music-manager.cpp` - known handoff blocker; thread/job hits=1; resource hits=audio,file,os
 - `src/auth/auth-popup.cpp` - resource hits=gl,os
 - `src/auth/auth-system.cpp` - resource hits=os
 - `src/auth/auth-token.cpp` - resource hits=file
@@ -487,6 +516,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/devtools/terminal-input.cpp` - resource hits=file
 - `src/devtools/terminal.cpp` - callback hits=5; resource hits=gl,file
 - `src/duel/duel-history.cpp` - resource hits=file
+- `src/duel/duel-queue.cpp` - known handoff blocker; thread/job hits=1; callback hits=1; network context
 - `src/duel/duel-ui.cpp` - resource hits=gl
 - `src/effects/hit-effects-config.cpp` - resource hits=file
 - `src/effects/muzzle-flash-config.cpp` - resource hits=file
@@ -505,7 +535,6 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/entities/player-config.cpp` - resource hits=file
 - `src/entities/player-loader.cpp` - known handoff blocker; callback hits=1; resource hits=file
 - `src/game/bomb-tag-config.cpp` - resource hits=gl
-- `src/game/duel-bridge-module.cpp` - network context
 - `src/game/duel.cpp` - resource hits=gl
 - `src/game/game-globals.cpp` - network context
 - `src/game/game-input-module.cpp` - resource hits=gl
@@ -595,6 +624,7 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/network/reconnect-visuals.cpp` - network context
 - `src/network/reliable-gameplay-events.cpp` - resource hits=net; network context
 - `src/network/server-attack.cpp` - resource hits=net; network context
+- `src/network/server-authored-rebuild.cpp` - known handoff blocker; thread/job hits=2
 - `src/network/server-avatar-network.cpp` - resource hits=net
 - `src/network/server-body-template.cpp` - resource hits=file
 - `src/network/server-browser.cpp` - known handoff blocker; resource hits=net; network context
@@ -612,7 +642,6 @@ callback, GL/audio/network/file/OS, main, or mutable-static hit.
 - `src/network/server-projectiles.cpp` - resource hits=net; network context
 - `src/network/server-world.cpp` - callback hits=1; resource hits=file
 - `src/network/snapshot-chunks.cpp` - network context
-- `src/network/udp-echo.cpp` - resource hits=net,file; network context
 - `src/network/vehicle-networking.cpp` - callback hits=1; resource hits=net; network context
 - `src/network/weapon-runtime-reconciliation.cpp` - network context
 - `src/notifications/notifications.cpp` - callback hits=6; resource hits=file,os
@@ -686,7 +715,7 @@ Services a game source calls directly. Each one needs a host-service
 adapter (or the source stays resident with a thin bridge) before the
 all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-20261112.json`.
 
-### DebugLog (197)
+### DebugLog (194)
 
 - `src/audio/audio.cpp`
 - `src/audio/hitmarker-audio.cpp`
@@ -732,7 +761,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/config/weapon-tracers-config.cpp`
 - `src/debug/debug-log.cpp`
 - `src/debug/npckillfeed-log.cpp`
-- `src/debug/structured-log.cpp`
 - `src/devtools/dev-overlay-commands.cpp`
 - `src/devtools/dev-teleport.cpp`
 - `src/duel/duel-history.cpp`
@@ -763,7 +791,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/fister/fister-port.cpp`
 - `src/game/duel-state.cpp`
 - `src/game/duel.cpp`
-- `src/game/game-cli.cpp`
 - `src/game/gamemode-manager.cpp`
 - `src/game/main-menu-command-module.cpp`
 - `src/game/spawn-override.cpp`
@@ -785,7 +812,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/impact/impact-system.cpp`
 - `src/killfeed/killfeed.cpp`
 - `src/main-systems.cpp`
-- `src/main.cpp`
 - `src/map/map-loader-material.cpp`
 - `src/map/map_loader.cpp`
 - `src/network/actor-lifecycle.cpp`
@@ -886,7 +912,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/world/texture-store.cpp`
 - `src/world/world-gltf-loader.cpp`
 
-### StructuredLogger (176)
+### StructuredLogger (179)
 
 - `src/actor/player-ai.cpp`
 - `src/audio/audio.cpp`
@@ -951,6 +977,8 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/game/host-compat-bridge-module.cpp`
 - `src/game/host-log-bridge-module.cpp`
 - `src/game/hot-status-tips.cpp`
+- `src/game/player-core-migration.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/game/server-runtime-module.cpp`
 - `src/gamemode/arena-ball.cpp`
 - `src/gamemode/gamemode.cpp`
@@ -963,6 +991,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/gui/ui-system-buttons.cpp`
 - `src/gui/ui-system.cpp`
 - `src/host/host-runtime.cpp`
+- `src/host/host-server-ice-fallback.cpp`
 - `src/hot-reload/module-host.cpp`
 - `src/impact/destructible-async-cut.cpp`
 - `src/impact/impact-system.cpp`
@@ -1065,7 +1094,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/worldgen/worldgen-commands.cpp`
 - `src/worldgen/worldgen-library.cpp`
 
-### Terminal (104)
+### Terminal (103)
 
 - `src/actor/player-ai.cpp`
 - `src/analytics/analytics-manager.cpp`
@@ -1112,7 +1141,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/gui/gui-editor-commands.cpp`
 - `src/gui/gui-main.cpp`
 - `src/gui/menus/pause-menu.cpp`
-- `src/hot-reload/module-host.cpp`
 - `src/input/input-commands.cpp`
 - `src/interaction/interaction-commands.cpp`
 - `src/interaction/world-interaction-runtime.cpp`
@@ -1264,7 +1292,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/vehicles/vehicle-system.cpp`
 - `src/video/video-commands.cpp`
 
-### WeaponRegistry (52)
+### WeaponRegistry (51)
 
 - `src/actor/player-ai.cpp`
 - `src/combat/actor-preset-weapons.cpp`
@@ -1308,7 +1336,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/network/server-physical-contact.cpp`
 - `src/network/server-players.cpp`
 - `src/network/server-projectiles.cpp`
-- `src/network/server.cpp`
 - `src/network/weapon-runtime-reconciliation.cpp`
 - `src/npc/npc-combat.cpp`
 - `src/npc/npc-spawn.cpp`
@@ -1413,7 +1440,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/mapeditor/map-editor.cpp`
 - `src/notifications/notifications.cpp`
 
-### ModuleHost (39)
+### ModuleHost (37)
 
 - `src/engine/engine-tick-net.cpp`
 - `src/engine/engine-tick-replay.cpp`
@@ -1422,7 +1449,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/game/module-host-bridge-module.cpp`
 - `src/host/host-runtime.cpp`
 - `src/hot-reload/module-host.cpp`
-- `src/main.cpp`
 - `src/map/map-authored-geometry.cpp`
 - `src/map/map-loader-gltf-nodes.cpp`
 - `src/mapeditor/map-editor-commands.cpp`
@@ -1442,7 +1468,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/npc/npc-perception.cpp`
 - `src/npc/npc-state-machine.cpp`
 - `src/npc/npc-traversal.cpp`
-- `src/npc/npc-utility-bridge.cpp`
 - `src/npc/npc.cpp`
 - `src/npc/recast-navigation.cpp`
 - `src/physics/movement/actor-final-pose.cpp`
@@ -1455,7 +1480,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/render/world-box-mesh.cpp`
 - `src/world/streamed-world-layer.cpp`
 
-### Perf (35)
+### Perf (36)
 
 - `src/audio/audio.cpp`
 - `src/combat/weapon-fire-hit.cpp`
@@ -1469,6 +1494,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/engine/engine-tick-ui-overlays.cpp`
 - `src/engine/engine-tick-ui.cpp`
 - `src/engine/engine-tick.cpp`
+- `src/host/host-perf-fallback.cpp`
 - `src/impact/impact-system.cpp`
 - `src/network/server-gamemode.cpp`
 - `src/network/server-npcs.cpp`
@@ -1524,7 +1550,7 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/vehicles/vehicle-render.cpp`
 - `src/vehicles/vehicle-system.cpp`
 
-### GamemodeRegistry (26)
+### GamemodeRegistry (25)
 
 - `src/combat/melee-client.cpp`
 - `src/engine/engine-tick-camera.cpp`
@@ -1533,8 +1559,8 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/engine/engine-tick-ui-game-hud.cpp`
 - `src/engine/engine-tick-ui-overlays.cpp`
 - `src/entities/player-animation.cpp`
-- `src/game/game-cli.cpp`
 - `src/game/gamemode-manager.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/game/server-runtime-module.cpp`
 - `src/gamemode/gamemode.cpp`
 - `src/gamemode/map-config.cpp`
@@ -1547,7 +1573,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/network/server-npcs.cpp`
 - `src/network/server-packet-chat.cpp`
 - `src/network/server-world-destruction.cpp`
-- `src/network/server.cpp`
 - `src/procedural/infinite-world-runtime.cpp`
 - `src/render/render-world-mesh.cpp`
 - `src/terminal/actor-commands.cpp`
@@ -1559,9 +1584,10 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/engine/engine-tick-setup.cpp`
 - `src/engine/engine-tick-ui-overlays.cpp`
 - `src/game/gamemode-manager.cpp`
+- `src/game/module-host-query-module.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/gamemode/map-config.cpp`
 - `src/gamemode/map-edit-applier.cpp`
-- `src/hot-reload/module-host.cpp`
 - `src/interaction/world-interaction-runtime.cpp`
 - `src/map/map-authored-geometry.cpp`
 - `src/mapeditor/map-editor-commands.cpp`
@@ -1571,7 +1597,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/network/multiplayer-context.cpp`
 - `src/network/server-gamemode.cpp`
 - `src/network/server-infinite-collision.cpp`
-- `src/network/server.cpp`
 - `src/network/vehicle-networking.cpp`
 - `src/procedural/infinite-world-runtime.cpp`
 - `src/render/render-world.cpp`
@@ -1591,22 +1616,22 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/duel/duel-queue.cpp`
 - `src/duel/duel-ui.cpp`
 - `src/engine/engine-tick-state.cpp`
+- `src/game/game-module.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/gui/gui-main.cpp`
 - `src/gui/menus/account-panel.cpp`
 - `src/gui/menus/main-menu.cpp`
 - `src/gui/menus/menu-avatar-preview.cpp`
 - `src/gui/menus/play-menu.cpp`
 - `src/main-systems.cpp`
-- `src/main.cpp`
 - `src/network/community-match-client.cpp`
 - `src/network/multiplayer-tick.cpp`
-- `src/network/server.cpp`
 - `src/terminal/auth-commands.cpp`
 - `src/terminal/debug-commands.cpp`
 - `src/terminal/network-commands.cpp`
 - `src/terminal/vip-commands.cpp`
 
-### serverGamemodeState (21)
+### serverGamemodeState (20)
 
 - `src/devtools/scenario-server-playback.cpp`
 - `src/devtools/scenario-server-recorder.cpp`
@@ -1623,7 +1648,6 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/network/server-players.cpp`
 - `src/network/server-projectiles.cpp`
 - `src/network/server-world-destruction.cpp`
-- `src/network/server.cpp`
 - `src/network/vehicle-networking.cpp`
 - `src/procedural/procedural-world.cpp`
 - `src/terminal/actor-commands.cpp`
@@ -1634,13 +1658,13 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 
 - `src/engine/engine-tick-camera.cpp`
 - `src/engine/engine-tick-setup.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/input/input-poll.cpp`
 - `src/main-systems.cpp`
 - `src/mapeditor/map-editor.cpp`
 - `src/network/multiplayer-physical-entities.cpp`
 - `src/network/multiplayer-reconcile.cpp`
 - `src/network/server-players.cpp`
-- `src/network/server.cpp`
 - `src/network/vehicle-networking.cpp`
 - `src/physics/runtime-objects-commands.cpp`
 - `src/physics/runtime-objects.cpp`
@@ -1673,11 +1697,11 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 
 - `src/engine/engine-tick-setup.cpp`
 - `src/game/game-cli.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/main-systems.cpp`
 - `src/network/server-npcs.cpp`
 - `src/network/server-packet-chat.cpp`
 - `src/network/server-projectiles.cpp`
-- `src/network/server.cpp`
 - `src/npc/npc-combat.cpp`
 - `src/npc/npc-difficulty-config.cpp`
 - `src/npc/npc-navigation.cpp`
@@ -1692,18 +1716,18 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/config/movement-config.cpp`
 - `src/debug/debug-visuals-scene.cpp`
 - `src/engine/engine-tick-setup.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/gamemode/match-roles.cpp`
 - `src/main-systems.cpp`
 - `src/network/community-match-client.cpp`
 - `src/network/server-melee-actions.cpp`
-- `src/network/server.cpp`
 - `src/npc/npc-difficulty-config.cpp`
 - `src/npc/npc-navigator.cpp`
 - `src/npc/npc-traversal.cpp`
 - `src/physics/movement/movement-conversion.cpp`
 - `src/terminal/movement-commands.cpp`
 
-### AnalyticsManager (10)
+### AnalyticsManager (9)
 
 - `src/analytics/analytics-manager.cpp`
 - `src/combat/weapon-system.cpp`
@@ -1712,18 +1736,17 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/gui/menus/settings-menu.cpp`
 - `src/main-init.cpp`
 - `src/main-systems.cpp`
-- `src/main.cpp`
 - `src/profile/local-profile-system.cpp`
 - `src/world/world-gltf-loader.cpp`
 
 ### BehaviorProfileRegistry (8)
 
 - `src/engine/engine-tick-setup.cpp`
+- `src/game/server-policy-module.cpp`
 - `src/main-systems.cpp`
 - `src/network/server-gamemode.cpp`
 - `src/network/server-melee-actions.cpp`
 - `src/network/server-npcs.cpp`
-- `src/network/server.cpp`
 - `src/npc/npc-behavior.cpp`
 - `src/npc/npc.cpp`
 
@@ -1781,9 +1804,9 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 
 ### LocalProfileSystem (4)
 
+- `src/game/game-module.cpp`
 - `src/gui/menus/sign-in-menu.cpp`
 - `src/main-init.cpp`
-- `src/main.cpp`
 - `src/profile/local-profile-system.cpp`
 
 ### LogManager (4)
@@ -1793,10 +1816,9 @@ all-files cutover. Machine table: `docs\handoffs\resident-service-dependencies-2
 - `src/main-init.cpp`
 - `src/main.cpp`
 
-### HotReloadSystem (2)
+### HotReloadSystem (1)
 
 - `src/hot-reload/hot-reload-system.cpp`
-- `src/main.cpp`
 
 ## Limits
 

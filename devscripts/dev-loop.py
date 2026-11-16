@@ -582,8 +582,6 @@ def snapshot_watch_directories() -> dict[str, tuple[int, int] | None]:
                 # files that are not yet cataloged.
                 if path.resolve() in module_sources:
                     continue
-                if path.name.endswith("-module.cpp"):
-                    continue
                 result[str(path)] = file_signature(path)
     return result
 
@@ -2533,6 +2531,21 @@ class DevLoop:
             action = str(request.get("action", "")).strip().lower()
             request_id = str(request.get("request_id", ""))
             print(f"[DEV CONTROL] request={request_id or '(none)'} action={action}")
+            if action in _MANUAL_BUILD_ACTIONS:
+                requested_by = str(request.get("requested_by", "ai")).strip().lower()
+                if not _build_request_authorized(requested_by):
+                    self.last_message = (
+                        "Build requests are human-only; save source and let the "
+                        "dev-loop auto-build"
+                    )
+                    self.record_control_event(request, "rejected", self.last_message)
+                    self.record_runtime_event(
+                        "dev-loop.build-request.refused",
+                        {"action": action, "requested_by": requested_by},
+                        self.last_message,
+                    )
+                    self.save_state("request_rejected")
+                    continue
             if action in ("launch", "build-or-launch") and not self.events_path:
                 self._ensure_run_layout()
             if action == "launch":
@@ -6494,8 +6507,33 @@ def run_ai_match(args: argparse.Namespace) -> int:
     return run_scenario_file(args, scenario)
 
 
+_MANUAL_BUILD_ACTIONS = frozenset({"build", "game-dll", "cold-link-trial"})
+
+
+def _manual_build_override_enabled() -> bool:
+    return os.environ.get("MIMITA_BUILD_OVERRIDE", "").strip() == "1"
+
+
+def _build_request_authorized(requested_by: str) -> bool:
+    return str(requested_by or "ai").strip().lower() in ("human", "dashboard")
+
+
+def _refuse_agent_build_request(action: str) -> int:
+    print(
+        f"[DEV CONTROL] refused action={action}: build requests are human-only. "
+        "Agents edit and save; the dev-loop auto-builds. Use --status or "
+        "--ensure-running and keep working.",
+        file=sys.stderr,
+    )
+    return 3
+
+
 def run_control_client(args: argparse.Namespace) -> int:
     action = _control_action(args)
+    if action in _MANUAL_BUILD_ACTIONS and not _manual_build_override_enabled():
+        return _refuse_agent_build_request(action)
+    if getattr(args, "wait_for_build", False) and not _manual_build_override_enabled():
+        return _refuse_agent_build_request("wait-for-build")
 
     if action == "list-instances":
         current = read_current_run()
@@ -6581,6 +6619,8 @@ def run_control_client(args: argparse.Namespace) -> int:
         "launch_mode": args.launch_mode,
         "request_id": f"{utc_now()}-{uuid.uuid4().hex[:8]}",
     }
+    if action in _MANUAL_BUILD_ACTIONS:
+        request["requested_by"] = "human"
     if getattr(args, "hot_client", False):
         request["hot_client"] = True
     if action == "build":

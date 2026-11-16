@@ -51,8 +51,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ai-profile", default="tdm-validation", help="dev profile for --ai-match")
     parser.add_argument("--ai-launch-mode", default="41", help="dev launch mode for --ai-match (default 41 = TDM networking)")
     parser.add_argument("--request", choices=("launch", "build", "game-dll", "cold-link-trial", "stop-client", "stop-server", "stop"),
-                        help="send a command to the already-running dev-loop daemon and exit")
-    parser.add_argument("--wait-for-build", action="store_true", help="with --request build/game-dll, wait for this build request to finish")
+                        help="send a command to the already-running dev-loop daemon and exit; build/game-dll/cold-link-trial are human-only and require MIMITA_BUILD_OVERRIDE=1")
+    parser.add_argument("--wait-for-build", action="store_true", help="human-only with MIMITA_BUILD_OVERRIDE=1; agents never wait for builds")
     parser.add_argument("--build-mode", choices=("debug", "release"), default="debug",
                         help="configuration for --request build")
     parser.add_argument("--build-timeout", type=float, default=36000.0,

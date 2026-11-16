@@ -1,6 +1,8 @@
 // 2026-11-13
 // Whole-game GameModuleV1 entry point.
 //
+// Module entry sources are compiled into this DLL with their folded exports;
+// resident ModuleHost resolves those exports from the active game module.
 // This is the real whole-game export, not the probe export. It initializes the
 // resident capability bridges and exposes the inbound command dispatch. Full
 // engine tick/render orchestration is the next migration step; this entry keeps

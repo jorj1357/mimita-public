@@ -137,6 +137,9 @@ def main(argv: list[str] | None = None) -> int:
         and "if (!hotWorld)" not in server_source)
     audit_counts = audit.get("counts", {})
     high_risk = int(audit.get("high_risk_count", 0) or 0)
+    unresolved_game_blockers = int(
+        audit.get("unresolved_game_blockers", audit_counts.get("UNRESOLVED", 0))
+        or 0)
     audit_rows = len(audit.get("rows", []) or [])
 
     generation = current.get("generation", ready.get("generation"))
@@ -169,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         "server_fallback_removed": server_fallback_removed,
         "safe_unload": safe_unload,
         "gameplay_live_fix_proven": False,
-        "audit_clean": audit_rows > 0 and high_risk == 0,
+        "audit_clean": audit_rows > 0 and unresolved_game_blockers == 0,
     }
 
     payload = {

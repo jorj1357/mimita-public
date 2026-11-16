@@ -1,5 +1,6 @@
 // 2026-11-16
 // Game-owned queries used by the resident ModuleHost bridge.
+// Module entry exports are game-owned and resolved locally by the host.
 
 #include "host/abi/game-host-abi.h"
 

@@ -1,5 +1,7 @@
 // 2026-11-07
 /* purpose
+* resolve folded module implementations from the active game DLL and dispatch
+* their versioned ABI without separate module DLLs;
 * implement the generic host side of the versioned module ABI: catalog loading,
 * background build requests, event dispatch, candidate validation, activation,
 * and rollback

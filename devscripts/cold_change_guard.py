@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATH = ROOT / "build" / "source-manifest.json"
 
 COLD_OWNERS = {"resident", "bootstrap", "launcher"}
-NON_PRODUCT_PREFIXES = ("tests/", "external/", "docs/", "logs/")
+IGNORE_PREFIXES = ("tests/", "external/", "docs/", "logs/")
 TOOLING_PATHS = {
     "build.py",
     "config/source-owners.json",
@@ -57,8 +57,8 @@ def load_manifest() -> dict:
 def classify(path: str, owners: dict[str, str]) -> tuple[str, str]:
     if path in TOOLING_PATHS or path.startswith("devscripts/"):
         return "TOOLING", "development tooling"
-    if path.startswith(NON_PRODUCT_PREFIXES):
-        return "NON_PRODUCT", "documentation, log, test, or vendored path"
+    if path.startswith(IGNORE_PREFIXES):
+        return "IGNORE", "documentation, log, test, or vendored path"
     if path.startswith("config/"):
         return "CONFIG", "configuration/data; hotness depends on its owner"
     if path.startswith("src/host/abi/"):

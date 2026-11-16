@@ -6,16 +6,18 @@ of truth. The current specification is
 
 ## Build authority
 
-Agent A owns the build. Only A triggers the root dev-loop build. B and C edit and
-save their claimed areas, then wait for A to build. No agent invokes a compiler,
-`game_build_worker.py`, or a second watcher directly.
+The root dev-loop is the only build loop. No agent owns, requests, or waits for
+a build. Every agent edits and saves; the dev-loop watcher queues the build. No
+agent invokes a compiler, `game_build_worker.py`, a build request, or a second
+watcher directly.
 
 One build at a time. One running generation at a time.
 
-Game-DLL request (after the daemon is restarted with the new action):
+Allowed agent checks:
 
 ```text
-python devscripts/dev-loop.py --request game-dll --wait-for-build
+python devscripts/dev-loop.py --status
+python devscripts/dev-loop.py --ensure-running
 ```
 
 Deterministic hot-client test:
@@ -31,7 +33,7 @@ python devscripts/dev-loop.py --request start-client --hot-client
 
 - specification and documentation cleanup;
 - ABI and host boundary;
-- dev-loop game-DLL build request;
+- ensure the single root dev-loop is online and observe its status;
 - status/audit/changelog tooling;
 - integration;
 - runtime acceptance;

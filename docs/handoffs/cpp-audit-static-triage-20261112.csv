@@ -145,11 +145,11 @@ src/analytics/analytics-manager.cpp,game,RUNTIME_PROOF_REQUIRED,"resource hits=g
 src/analytics/analytics-uploader.cpp,game,RUNTIME_PROOF_REQUIRED,known handoff blocker,158,9b35b32802610425d05618c419cb8583d4c560041d0920ef203246461de0dcf9
 src/audio/audio-acoustics.cpp,game,RESIDENT_ADAPTER_REQUIRED,thread_local host state,139,e38a21aee63ee198e040dbeb18f491f57ebbe08e062ee5bfe55c8a9d897800d9
 src/audio/audio-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: Terminal,82,defda40a952feb063190ef64e035f6d0f4587103b634b30b1d9e3ffb7ff0b949
-src/audio/audio.cpp,resident,RESIDENT_HOST,owner=resident,1063,f04d20a4981b3232c63ae52cbe6d0e0b0aa43cc3ed7bd28bdaed6ed72d3f11dc
+src/audio/audio.cpp,game,RUNTIME_PROOF_REQUIRED,"thread/job hits=2; resource hits=audio,file",1079,7a80ac90da0348e81a0cb8ffdec715d45ce754353617ccfb27d5dbb4ca1e5aa7
 src/audio/hitmarker-audio.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,224,046de3e2702d620a552e1c4bb7ca8dbcb884973a7e1612326b3a93843112fa1c
 src/audio/music-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, Terminal",235,f973c0898ae5bb1e022ad73a7f2337c7d927ff47da6a7582db3be4e3814e0b02
 src/audio/music-manager-widget.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: GuiLayoutManager,220,e6eb17a6a8ab2fd03621317ff31464f5da9423dc50a1f166e7f5ad40bdd272d8
-src/audio/music-manager.cpp,resident,RESIDENT_HOST,owner=resident,960,a0b520a3edea9a859ac6ff21ea5fb5cc656cb91766c5e7c23f348d1b8869d489
+src/audio/music-manager.cpp,game,RUNTIME_PROOF_REQUIRED,"known handoff blocker; thread/job hits=1; resource hits=audio,file,os",960,544a49de70107b29a579f5d21325e077bb7d10106c4d6ca1c9b62aad57725364
 src/auth/auth-controller.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: AuthSystem, DebugLog",292,e4cb705a8b11630f14d182502bd23827633f8f6674ca42b075efc1e2253595e1
 src/auth/auth-popup.cpp,game,RUNTIME_PROOF_REQUIRED,"resource hits=gl,os",515,a984a5c82f7eaa1d50d6ba13a2f5031c30ed1d89291c1bdc3c10f5e3aa8332c0
 src/auth/auth-system.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=os,469,86b4041bb3bb2fdea7bb8d1892692d6665b45185369c4e3bec2f85716ec15d83
@@ -269,7 +269,7 @@ src/debug/entity-visibility.cpp,game,STATIC_STATE_REVIEW,file-scope globals=2,64
 src/debug/gl-debug.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=1,82,499511e39269b365860dff198f019de89a7c7c0fd708dd0d6718ae47d9485e2e
 src/debug/log-manager.cpp,resident,RESIDENT_HOST,owner=resident,348,5ef624b1c2dae46304cc40c3ca7381ed389f2e5bb1005d886dccad1672abcb17
 src/debug/npckillfeed-log.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,21,53bbe22ff1d37b3d605d555044a04a29cab09f6f5913593263a217cad0665a5d
-src/debug/structured-log.cpp,resident,RESIDENT_HOST,owner=resident,2102,3f6646d9c49a155d1fcb45f46abf9181cc96b77e69cc6def0927bf8dd393c5e3
+src/debug/structured-log.cpp,resident,RESIDENT_HOST,owner=resident,2100,bd44b96c3e7e892f0928072c2827a7b95275f12183207d4e3120b98a829149e1
 src/debug/transform-debug-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: Terminal,60,6b2ea9f67ee5684a4088a586346d666c77c9b21291b7b0977510a65ad65e97cc
 src/debug/transform-debug.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=1,61,394b26a4d55faf86a2da81ba250f6cc1972edf70e727be1219b2e96186e2b465
 src/debug/validate-assets.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,138,a5a66c8bf0b43fe79e46dc906acf18e5b41002ee5b9ab64e292b3f2ee21650e9
@@ -294,7 +294,7 @@ src/devtools/terminal-input.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,3
 src/devtools/terminal-render.cpp,game,RESIDENT_ADAPTER_REQUIRED,implements the resident Terminal service render path,248,82aaa709bac52162119428027e83fb6635b67e53efb6f97f6f66c45dd367ef9a
 src/devtools/terminal.cpp,game,RUNTIME_PROOF_REQUIRED,"callback hits=5; resource hits=gl,file",1022,9b313ca03d2bf7f59f1c11116ddccb7df1ef54ac9de34d71aef950a3ec37af27
 src/duel/duel-history.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,112,545b8b096bc33ef85314c7230abf3502856a8cdd0f84385d6a5901c6f1439aee
-src/duel/duel-queue.cpp,resident,RESIDENT_HOST,owner=resident,907,71f59f3cd210b82edba636bc864f29e3acdd2b38ac34366d2ab66895b47907ff
+src/duel/duel-queue.cpp,game,RUNTIME_PROOF_REQUIRED,known handoff blocker; thread/job hits=1; callback hits=1; network context,914,9df52ea093d42b0aa96c69abf82426fe52ffd2116feefd5aec3a4e76f468aa3e
 src/duel/duel-ui.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,306,4239be6d8d14632692428c9f99e8b8478ab1daccdbd658df9471a3e6611aac50
 src/ecs/actor-entities.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,179,882b5b5cf3c25ac286d6b64eee2741d1eaa79f29eb308ce59b993e908ca6921a
 src/ecs/dynamic-components.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=1,398,1b20eae5a5966487b70568a74f46203716abdc4ec4b273a4f39ec087fe086ce6
@@ -316,7 +316,7 @@ src/effects/muzzle-flash-config.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=fi
 src/effects/rain-system.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugVis,55,d7c917b6a5510019269446d66816177a2e53de1669d3ceccf77eac0f9b6ff9b3
 src/effects/zombie-tower-effects.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=1,8,f55b05012521d8d86f415066a1f78ee66f5028c372bc0a0ca93d54e3db59b55a
 src/engine/engine-frame.cpp,game,RESIDENT_ADAPTER_REQUIRED,delegates to the resident Renderer/device,23,bdabce7d1cfca38eaa0370f928f21d3219e8502a218d504a873fe5de069cbf68
-src/engine/engine-init.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,99,3c95960bec55d6819d6021e853538451094f41912238e2fa51eace4b0a0bbd8f
+src/engine/engine-init.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,70,3d60c40edeb6754cb5b3735d232722a629e02dddff5a8872d5e790bb7c751ec1
 src/engine/engine-tick-audio.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: Perf, TerminalState",13,ca36b5706777a51fadedde53d3dc33941f8976dfde1cc5c5e800973228eb22c7
 src/engine/engine-tick-camera.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl; network context,1562,e508149e59152c0b855c5cf26b701e046ce2564e263f7ee14d660192796d8b5c
 src/engine/engine-tick-combat.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, Perf, PhysicalEntitySystem, StructuredLogger, Terminal, TerminalState",646,6a2fe69c6f35762d341ec49c3715027b5c39e5d35b3abd0caf200c3bc6267d14
@@ -332,7 +332,7 @@ src/engine/engine-tick-ui-replay-hud.cpp,game,RUNTIME_PROOF_REQUIRED,resource hi
 src/engine/engine-tick-ui.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: DebugLog, DebugVis, Perf, StructuredLogger, TerminalState)",226,5b3e19f2c07b02681083fac2b5f799c4c6a1e625bfe22944d535595d651b41da
 src/engine/engine-tick.cpp,game,RUNTIME_PROOF_REQUIRED,"callback hits=2; resource hits=file,os",562,7b06a2f0b4bbe713150e321e7631704c06ba4ff9346ac61af08297fb75421f38
 src/engine/fixed-tick-clock.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,12,9f10cfe7bfcc123dec14780b023dbab8549da94ed22e7d5a2275644e454a64bf
-src/engine/whole-game-entry.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,121,9a89b43d6cce19386a737ab2ecf419878cda1948ee7380936b8639f2c37ea2c8
+src/engine/whole-game-entry.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,125,d319cf08397077baf102db5b55b685b1f23464f228653f3779d375e05e5160d0
 src/entities/actor-body.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,169,643a314cb24eecaf67747ee567c50bb2d4155a74bdfa2b5f93d31b43c6bddeb5
 src/entities/aim-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: Terminal,109,9fdde31acefef55e52c1bbcc836bd962d60fc00f75c5132143f61e04b796e580
 src/entities/aim-fov.cpp,game,STATIC_CLOSED,pure FOV blend/easing/application over caller values; no state,75,15c9017ac42e76a6387612ace33ddf271a0e3f6e4df7af5326e3e80002026fc9
@@ -351,22 +351,20 @@ src/fister/sim/FisterSim.cpp,game,STATIC_CLOSED,pure fister simulation math over
 src/fister/sim/Pose.cpp,game,STATIC_CLOSED,pure pose math over caller-owned state; no global/async/resource,442,a6dc9aacc005b41dbc140e96ce943b40bb7280549b09430f43c0ec2db84d8a83
 src/fister/sim/Ragdoll.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=1,213,d85d7780c34ab931097b8d13a77648cd4fbaa114a760bf757fd18ade134b8e19
 src/game/audio-analysis-bridge-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: StructuredLogger,119,cdf3660da18d83e48952d7793979a06d6579a11dbc69bf2ffab9d75d890397c6
-src/game/audio-bridge-module.cpp,game,STATIC_CLOSED,CAP_AUDIO bridge; generation-scoped capability pointer; no device/voice ownership,455,d4ccb6c9d01da3b9e337bd85f6d51753f13d71cf2ab0b76f535704c703f1ab51
-src/game/authored-rebuild-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=2,96,8536c6a442b7f32b84169b222574c0f9a39bc8d3e3e5bdd237abbf579b0c3430
 src/game/bomb-tag-config.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,93,933c168e90b5806732a730ec25e5b9f470c992a8b365d2086250b4d9aebcf87d
 src/game/bomb-tag-state.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: TerminalState,60,3211ee95e45b5991721d63f2c9f573fd1bb1f72ab01d9b56eda40c3303ae35bb
 src/game/diagnostics-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,43,a1f0335fad821a2d00804d8cd0369cf4dffba1e39c75381e3b46144fff5be989
-src/game/duel-bridge-module.cpp,game,RUNTIME_PROOF_REQUIRED,network context,146,8c1ec24ad4dd804068a2398de79f71a0eb7f23d4e51a2fe3cdf05ed002ca97ed
 src/game/duel-state.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,211,2b0be9b3b88ecddd3554df7ac7cc216b5b9d809e23bf001ef081b1dbc82e09f9
 src/game/duel.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,501,9464077b454b209274ca1ca45f213a3b1d40442c2643caf496aca6222d1af3a4
 src/game/effects-bridge-module.cpp,game,STATIC_CLOSED,CAP_EFFECTS bridge; generation-scoped capability pointer; host owns the effect pool,195,79b4b28a661c961f51dc74974105bc7e177a81b4b49181a7d1a590118fdb51cb
 src/game/entity-bridge-module.cpp,game,STATIC_CLOSED,CAP_ENTITY bridge; bounded snapshots and stable handles only; no state ownership,123,e02354ffcd6f7443634baeb9bfba595a59c7a6c5f15099cf7d1945748ec75519
 src/game/entity-domain-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,69,481d4b78c730b7f203c1bef83b23011f3a372a5215b1e9adc5ec8bb841379643
 src/game/file-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,43,027251d7c6bf00eb9c34f6be109907a549aad8c69e07b933da90242ba3e1cde9
-src/game/game-cli.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,676,40a95ff96dd3ff2ec3223b3182aa561e4939eb908c0d52c076b616dd893bac94
+src/game/game-cli.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,294,04e5e2e6c3e8d9427c208818f05a695a5b92940385e343975347d1d1eed74b62
+src/game/game-export-module.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=2,40,b93512ea9d7ed2f1808f8803fe5f7305393fb0e2e8c15ce79c810ff617897d80
 src/game/game-globals.cpp,game,RUNTIME_PROOF_REQUIRED,network context,63,2bb032fbb337c34e8a6508435aaff1f7722542222e259034fe8e5db3bfb62c5f
 src/game/game-input-module.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,145,542a71c688f3b855379b3ada14464db5ea01e8902531e83b393b0ca714e07573
-src/game/game-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: StructuredLogger, Terminal",346,5ec746c03405116bc9facf8c035b159b510d4ca3b9d6d4ae4fd27832ea9ca81d
+src/game/game-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: AuthSystem, LocalProfileSystem, StructuredLogger, Terminal",356,43e97b9d6e5a5bbda07b9998304a0d42a02bf5a1e0020b858ecd7d86ba529702
 src/game/game-objects-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=3,10,941eee14cfd93f962c37fd135838219b23bc971201c2454cff2039c5bcd2954e
 src/game/gamemode-manager.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, DebugVis, GamemodeRegistry, GuiLayoutManager, MapConfigRegistry, TerminalState",371,936030d64ca5e26427e824c4e5bf951f5a44370fb9438a1e3d1baa59acc11bd1
 src/game/gl-resource-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,58,0e8007a2a5e41560f0d5448d3560265d0fc112d736f0e12f7a807a5bb0a71804
@@ -380,15 +378,18 @@ src/game/lifetime-bridge-module.cpp,game,STATIC_CLOSED,CAP_JOBS/CAP_CALLBACKS/CA
 src/game/main-menu-command-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, TerminalState",98,ad8dc6abd10616335ad03dc1cf6988a313a8a6028ce0fbc0b23e429788319196
 src/game/map-editor-host-bridge.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1,309,304c49a3a2ee5094f16e275b7fa8ab7b9b2a87e5cc393b173f1b794257bee183
 src/game/module-host-bridge-module.cpp,game,STATIC_CLOSED,partial CAP_MODULES bridge; generation-scoped capability pointer; no module state ownership,653,a88eb56841b23d379d565876c5506512ff246817aee0c8580f09403f0276fff0
+src/game/module-host-query-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: MapConfigRegistry,82,416e5ca07dcd991c33531d4db137509e925635add4c487e29406311f54c432c0
 src/game/net-common-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,97,60c55b8055547c3a7b3e1cf0ec381cd623931a27e6eb334523b022e8bfe71ea4
 src/game/objective-state.cpp,game,STATIC_CLOSED,pure objective-state helpers over caller values; no global/async/resource,214,2f74b4d28e6e7808ccb9f01676807032d3194d31efdcea940f56d542250efe77
 src/game/persistence-bridge-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: PersistenceQueue,131,b76fdd5eae1d45cc28109fd3e25216ebf36f0c6f9c500fd8930bc734b6a3c1e7
-src/game/probe/npc-target-probe-module.cpp,game,STATIC_CLOSED,validation-only probe module; no persistent state/resource,188,efca6c51a86c68a94a01c870a05ac868009ed2a06b416c95c922cb3018fd425d
+src/game/player-core-migration.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: StructuredLogger,302,b24feda8bee1d158b21aa287e3dc4fa68fbf4cbf9b67e13efbc9761b30cae8a2
+src/game/probe/npc-target-probe-module.cpp,game,STATIC_CLOSED,validation-only probe module; no persistent state/resource,184,7039e230393e4c0668734625cf8074ef8f7e34630574432006a355f412937035
 src/game/render-bridge-module.cpp,game,STATIC_CLOSED,CAP_RENDER bridge; bounded command stream only; no device ownership,493,9acb52ff29e0a6cd332377f60ec9f52c51fd7950d64fa0b1534483731fe796ba
 src/game/render-device-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,79,dc8a6d5d88bc0af5f3d505729cb1c2ac9f4e4d41e01993c16d082acd24038d53
 src/game/replay-worker-bridge-module.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1,58,c3559f0875c6cc5d875b73fd241d876d944689f42531c289da13a686e5300d24
 src/game/resident-state-module.cpp,game,RUNTIME_PROOF_REQUIRED,network context,256,9bc576301db85625296a1dcc22866bbeaf0481f729c007ac0983504948187ad4
 src/game/server-command-dispatch-module.cpp,game,RUNTIME_PROOF_REQUIRED,network context,1330,5842d0f7227ef2dffd5956c6032d49c7a1aad1f6c3dbe444dcff9646e5c38d41
+src/game/server-policy-module.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: AuthSystem, BehaviorProfileRegistry, GamemodeRegistry, MapConfigRegistry, MovementJsonConfig, NpcDifficultyConfig, StructuredLogger, VehicleSystem",533,438fb72dde04531203edd1aceb8f0a5f8737515f39f12647018cf9d8f35ffcd8
 src/game/server-runtime-module.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net,448,893d822b45679a697e137c5a0f730158c3a990483a6a7befa806213574804531
 src/game/session-events-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,78,8fa44373c2fde5fe28049da5e50fafdb57f2f3d536195a59e54e9754312de03f
 src/game/session-identity-bridge-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,87,be8a9b14540fda947dc10e33f4900a12f24b9062c3e964b7005053fb6178987c
@@ -459,18 +460,31 @@ src/gui/ui-system.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,317,1650d1d24
 src/gui/ui-text-input.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,542,2d2ff92c4cb3313a7b2c03ccaf72f05bdaee371e52caaaf87268c2bb7d6d434a
 src/gui/ui-tooltip.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=5,98,cb871098e7386f9e6a174b444a2e339a0e6a78a6797c2cf8ca63e4530cd74483
 src/host/game-state-bridge-legacy.cpp,resident,RESIDENT_HOST,owner=resident,39,dce1ac5bbed12f283e7dcf9d8178f52c0dcd460467103c49bf957524e8663cdd
-src/host/host-runtime.cpp,resident,RESIDENT_HOST,owner=resident,4103,ea1368ad891ac7d89b7ef95b7d220a35c4854acda696b074537f489fcec337b7
-src/host/host-server-entity-adapter.cpp,resident,RESIDENT_HOST,owner=resident,1096,e1a35d7eef18179534fc324b6885ef53f6257d296d4d06f3c9be49d9959e174f
+src/host/host-actor-body.cpp,resident,RESIDENT_HOST,owner=resident,14,30f17f379142a7cee4c3a1d6ce72ebdd6bbb7d4a9727910a98090d317ddf4ce1
+src/host/host-asset-path.cpp,resident,RESIDENT_HOST,owner=resident,42,0e655d52a80da3f7bee9bd126a9e1207a6b195ae73fa541ef0c8e121331198ee
+src/host/host-badconn-fallback.cpp,resident,RESIDENT_HOST,owner=resident,44,541d68813f8ef50b61b03b950d6ad9002a89026c0cd536af129d1aaafd1ebfa6
+src/host/host-coordinator-fallback.cpp,resident,RESIDENT_HOST,owner=resident,42,a1ffdc4ae23051d7503fa2eb1cba6f9c11d9419972467b740b68f4cd136f5768
+src/host/host-debug-facade.cpp,resident,RESIDENT_HOST,owner=resident,19,d0ea68d4a25613922d3652a70ee72c7b9168206fc33599e233c8918499f24f31
+src/host/host-image-decode.cpp,resident,RESIDENT_HOST,owner=resident,52,37da9d61bf20911edf7dc116e61d54d2c16d37164863bad9b79ccf06ec7d5d42
+src/host/host-perf-fallback.cpp,resident,RESIDENT_HOST,owner=resident,20,7ae0a496ea1fbdf6b2d9349e25a29fbcb5ee2aeeae9cd9120c8e2b9983e16300
+src/host/host-persistence-fallback.cpp,resident,RESIDENT_HOST,owner=resident,11,aa4eeb0d81809e77de4118614d777db613ecc688febabc923a1d46fe52a04d37
+src/host/host-persistence-http.cpp,resident,RESIDENT_HOST,owner=resident,114,d9acee0168c27564b68b8de892add9dab5c44cdcdd8a050feb8dda22478e65fc
+src/host/host-runtime.cpp,resident,RESIDENT_HOST,owner=resident,3839,92eef5c8ec51f15914600b44bbe4b511c85aa1b99b2091c2ec225a6f02c3f28a
+src/host/host-server-entity-adapter.cpp,resident,RESIDENT_HOST,owner=resident,1092,b5cbdc6da6227459a7f31ad28565ec5a771271773c5311fece536ceafb0d43c3
+src/host/host-server-ice-fallback.cpp,resident,RESIDENT_HOST,owner=resident,64,36dd39da9694ed718aa20a557d48c0850cc741a32a21c2cb78f38e40d49e57f6
 src/host/host-server-session-events.cpp,resident,RESIDENT_HOST,owner=resident,205,798290299718db1ac7675a35290463b465c65c788d6e0173ff0fb2ecd4f10247
 src/host/host-server-spawn.cpp,resident,RESIDENT_HOST,owner=resident,349,a6822a188708927d9282bea0e93711efa1fc4a27dc87ab1fd5c163f9c5a5a93b
 src/host/host-server-transport-adapter.cpp,resident,RESIDENT_HOST,owner=resident,175,463d7d0dea483069c1823a486ee9010aba8f76ac01caa14d81acb10a7421f2ea
 src/host/host-server-world-adapter.cpp,resident,RESIDENT_HOST,owner=resident,188,f28159251bb684561ca5973f98f8db7124be0a038a3d679ac98da106392e5ea1
 src/host/host-session-identity.cpp,resident,RESIDENT_HOST,owner=resident,78,f76e5d89c37ff36ecad4003db4f8533317d554a378662a752ca7896352548d23
+src/host/host-snapshot-fallback.cpp,resident,RESIDENT_HOST,owner=resident,17,4b32aff79836af4480a353842fe621111c615f737cd4af7718a2f59b3795842f
+src/host/host-socket-fallback.cpp,resident,RESIDENT_HOST,owner=resident,85,372ed6d75d3efc99f8700d04ade85a016e9c4ecce6b7401d84d7f14d70057467
 src/host/host-transport-adapter.cpp,resident,RESIDENT_HOST,owner=resident,85,fe4f89ba4343081dfd574f1b46be05a115dad774bfee70636ad16bded7e379a9
+src/host/host-window-registry.cpp,resident,RESIDENT_HOST,owner=resident,16,3564debc791507f1eea329e49b2162f175fd8070a84ce2dabe30acd41fb92e9b
 src/host/net-common-host.cpp,resident,RESIDENT_HOST,owner=resident,56,d36b02815b9358e85c719fedcbf6fe3c718961fa3f87b826fe2a5833391f95db
-src/host/window-host-fallback.cpp,resident,RESIDENT_HOST,owner=resident,121,be60b7045d1e180d83a9d30fd5a9a4e0e539bf0747c5ccf7ca58c565773352ff
+src/host/window-host-fallback.cpp,resident,RESIDENT_HOST,owner=resident,121,ca040bf40a7eebabb927a4ae6aa43f5f053a9f62170b4e8a82d87bc9ef088f19
 src/hot-reload/hot-reload-system.cpp,resident,RESIDENT_HOST,owner=resident,235,698c64283678ba8c67f6238d02ba0295cf30b5fc1d8ee0ffb9c025aaa5e54692
-src/hot-reload/module-host.cpp,resident,RESIDENT_HOST,owner=resident,2522,61d0b2ef078767e849c172446d336fbc61becb55364ea2c3b61f3ef9283304ba
+src/hot-reload/module-host.cpp,resident,RESIDENT_HOST,owner=resident,2622,4162aa7327dfa77b1fc591bdcbbeaaf1006a1d5a9487411c6c93857b0d13cb75
 src/hot-reload/quick-hit-debug-visual.cpp,resident,RESIDENT_HOST,owner=resident,19,ee3a0667d53fa7205a47e96d45e725a827cf8f300c1086d4806406e36250efb9
 src/impact/boolean-mesh.cpp,game,STATIC_STATE_REVIEW,file-scope globals=3,790,9066638fa4a24543ad47c8bff2e080004bdd53ea2c0ba6e29f92672368f71eef
 src/impact/destructible-async-cut.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: PhysicalEntitySystem, StructuredLogger",206,7f3df86e22547f0a8340eaf6b2900409d82bb79d5231d07f2227e711598988aa
@@ -492,8 +506,8 @@ src/interaction/world-interaction-runtime.cpp,game,RESIDENT_ADAPTER_REQUIRED,"re
 src/killfeed/killfeed.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, TerminalState, WeaponRegistry",331,16432945e0ed3e1547b65bd0a87794ad1ebd5904e5066b3a2fc8c8fb4b9776e7
 src/leaderboard/leaderboard-ui.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,140,a03092390c1c5a6ed7628b5a17d5d1f18148bfa81d522082f2b68bfb70de2f95
 src/main-init.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl; network context,291,eddd3836d2b0674eac83af8e8afb937de3bc9f7fdc1a816cbc450be5181fc83a
-src/main-systems.cpp,game,RUNTIME_PROOF_REQUIRED,network context,1348,1238d44e5ec1b697fc53d7abb66cc757b0242d1e6e68fa4dcd77288fa3f53151
-src/main.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,842,0d1339e43d99981e2d6e003cb7363b573bb3bb851960cad37ae0e44433365879
+src/main-systems.cpp,game,RUNTIME_PROOF_REQUIRED,network context,1394,188b11b9d2a8ff63bddcad0b040862d2d492559ffa92a35dbfaa70de3f685492
+src/main.cpp,bootstrap,RESIDENT_HOST,owner=bootstrap,759,e73ce604663d919626187927099eae68a43af94180e481676ccd003ac78ba3c4
 src/map/map-authored-geometry.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,1659,1bd6087e45050b199b3157afe34685ab27c1fd21cec3d739bb72c5a4f2e537cc
 src/map/map-catalog.cpp,game,STATIC_CLOSED,pure filesystem catalog scan; no persistent handle or service,130,bf893829cee2657d57c842cd251530e9b52c013ed4770b0ed6bf91a6fd1a5b47
 src/map/map-geometry-module.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=1,157,31338bbf3e7084c6e2f9e8f467d66d48500986bc5b420ce7a2affb90feaf2a63
@@ -520,7 +534,7 @@ src/mapeditor/map-editor-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=
 src/mapeditor/map-editor-projects.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,334,68c2b5c93d397b76c211229902975c18bd4cd7507b6a98544f4ce531cb3cd742
 src/mapeditor/map-editor.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=gl,5171,843f21b73b56d47ebcaba7f3d8161f0fc07d0c4950d66d0466884c6378e9e337
 src/mapeditor/world-edit-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: MapConfigRegistry, StructuredLogger, Terminal",494,39cc3c6aceacd1b693cd8e7f8cb4a85cbc4805ed5a0e7462427f9ce83da1bfab
-src/navigation/navigation-policy-module.cpp,module:navigation-policy,NON_GAME,existing subsystem module,87,3da70a92846155b2b6b19422f7e064ff4534d0a092c56d5f92c51be68f332f11
+src/navigation/navigation-policy-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,87,3da70a92846155b2b6b19422f7e064ff4534d0a092c56d5f92c51be68f332f11
 src/network/actor-lifecycle.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,36,e46c994da83d8325bba23e3309f06425899d76342c4ffc94077eddbbf311423e
 src/network/avatar-network-client.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file; network context,464,90d6dbc1775fd6c642354bf49f2e88c4ce84e1f562238c0815b1e21934487dcc
 src/network/avatar-transfer.cpp,game,STATIC_CLOSED,pure avatar transfer encoding helpers over caller values,87,19f22d516a4aa7db660132941d51dd62a89a6a8f0f8a219f332975f2451e3c1a
@@ -553,8 +567,8 @@ src/network/multiplayer-reconcile.cpp,game,RUNTIME_PROOF_REQUIRED,network contex
 src/network/multiplayer-shots.cpp,game,RUNTIME_PROOF_REQUIRED,network context,929,8e0401fb47b6f3953752674d65ebb1ce167c4191efc67b28cf22f20b24d7d118
 src/network/multiplayer-tick.cpp,game,RUNTIME_PROOF_REQUIRED,network context,3282,41d41406ad1f9c0af5795fb268f67cbbc2390f0622d9db47e5a2ce9fb26e8a3d
 src/network/net_common.cpp,resident,RESIDENT_HOST,owner=resident,97,60c55b8055547c3a7b3e1cf0ec381cd623931a27e6eb334523b022e8bfe71ea4
-src/network/net_mode.cpp,game,STATIC_CLOSED,pure launch-mode parsing; no global/async/resource,132,9d620b475137391cfb016b0b66cf9bf5a1d281b2e702537d2464d6905d6048fa
-src/network/network-policy-module.cpp,module:network-policy,NON_GAME,existing subsystem module,334,3217fbf93a9434c0c27e3145d4d3eecba44518e07e7e3f68357070341c1bd0c7
+src/network/net_mode.cpp,resident,RESIDENT_HOST,owner=resident,132,9d620b475137391cfb016b0b66cf9bf5a1d281b2e702537d2464d6905d6048fa
+src/network/network-policy-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,334,3217fbf93a9434c0c27e3145d4d3eecba44518e07e7e3f68357070341c1bd0c7
 src/network/network-weapons.cpp,game,RUNTIME_PROOF_REQUIRED,network context,202,6a3d7945709fb489e26cc6200996558e504fb460b11e976e16f21fe6b93a52a9
 src/network/packet-route.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: StructuredLogger,42,eff1848e4c9d77c63e24cb8283e64fd41f5fa210533d62ff7b5e69ea55d7fd87
 src/network/packets.cpp,game,RUNTIME_PROOF_REQUIRED,network context,22,d62acac794d9d53b93b2d7c03f2ea9b85720e23357dba758b7aee73b88c7b918
@@ -564,14 +578,14 @@ src/network/reconnect-visuals.cpp,game,RUNTIME_PROOF_REQUIRED,network context,19
 src/network/reliable-gameplay-events.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,412,1e1854427014ee6e4a54ed3f507e17bdfb280b887f43ca81a7ee9a4bd5a9f096
 src/network/remote-entity-lifecycle.cpp,game,RESIDENT_ADAPTER_REQUIRED,takes Player& host state,61,e6dc60e7647047bfbc31c18da766ebc5f38d5d4144968d3fcb4b48b6c8a94e00
 src/network/server-attack.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,1586,777fb2a6a7f584cbff1145836d505b16188b5a4370a399a39b14c19e0f06b752
-src/network/server-authored-rebuild.cpp,resident,RESIDENT_HOST,owner=resident,214,1650b55eddc84bf14f6136eb2847fdafcc730a56526c21ddd12216c4a3939616
+src/network/server-authored-rebuild.cpp,game,RUNTIME_PROOF_REQUIRED,known handoff blocker; thread/job hits=2,214,1650b55eddc84bf14f6136eb2847fdafcc730a56526c21ddd12216c4a3939616
 src/network/server-avatar-network.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net,333,9e1a6b05eed6415e3575a6ec918645da02b1178f3e3b27bc92bdeadc0918ae18
 src/network/server-body-template.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,307,001b09b102804cc0ec040739ca3e9d6ce4123c2a0b7a7af22bc7dccb2c407eeb
 src/network/server-browser.cpp,game,RUNTIME_PROOF_REQUIRED,known handoff blocker; resource hits=net; network context,226,52ec98ce37b7fea4610375e7b1ea22103a2ba96ea36840cc438c1b61f3aa4b4a
 src/network/server-contact.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=2,508,ad85b77b67c06f9d5a512ecba7cf68d44094fd3e5774d620b626eb21bb791c6b
 src/network/server-damage.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,663,209d0499d4a1f1064457b884cda0b64c77bed8f548156c3b039f0ff9a53eeeab
 src/network/server-gamemode.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,10967,d44c6a521528794e7cc057bdc034e96018c25bfd7808af9951ad7263d73b07f4
-src/network/server-ice.cpp,resident,RESIDENT_HOST,owner=resident,740,8c5f3016fe65a9323a783c52e76985171b61a725033b01016a1b99a78127f53b
+src/network/server-ice.cpp,resident,RESIDENT_HOST,owner=resident,787,a60c79392c54c69d9f8d41750125d5ad8384890d0a9b2c970b0cfb8efefe541d
 src/network/server-infinite-collision.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: MapConfigRegistry, ModuleHost, StructuredLogger",756,7088255dd48445d84e48ec1f68c030a5b4eb0fe4134c5abec010a85e25176e56
 src/network/server-melee-actions.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,1398,77a6e46023a1c31761996cc1732ef7be628a9e5f7722735f699c619d36266418
 src/network/server-npcs.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,3061,0f56db14ca26635ccb25e98aac13fa5b87212d3f69ad55d76881860fa6f26cee
@@ -585,15 +599,15 @@ src/network/server-presets.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,95
 src/network/server-projectiles.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,2178,2827c65d5ed716db3073a7c78d6c7db6be49192be3cb61f53311acc89c9b77a0
 src/network/server-world-destruction.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: GamemodeRegistry, PhysicalEntitySystem, StructuredLogger, serverGamemodeState",511,82adabdbf36fca23b881a0c5881c1c990395fbcda2cc084b39f128d23d754922
 src/network/server-world.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1; resource hits=file,577,7d6217cb58073d2fc7914cd8f316b1c1134ffa0b097191b4c8cd494aa0819cc9
-src/network/server.cpp,resident,RESIDENT_HOST,owner=resident,2619,f36f030b21642e5a2e4698afab83de69038b13e57d767d2e9ac3ec911bf72eac
+src/network/server.cpp,resident,RESIDENT_HOST,owner=resident,2507,49ac2ae70b9442f27e1d3aa2d57a9cab08f382e584b1d06081584e6ab5e63b20
 src/network/snapshot-chunks.cpp,game,RUNTIME_PROOF_REQUIRED,network context,639,24678812f53b97ce9ffeae902142692f791af499bb1dbb5a319cb52580405d8f
-src/network/udp-echo.cpp,game,RUNTIME_PROOF_REQUIRED,"resource hits=net,file; network context",169,c0d88d11884a9e777a5ad26291fc2bde6cb9eec851f8dcd1624f9484b86c2256
+src/network/udp-echo.cpp,resident,RESIDENT_HOST,owner=resident,169,c0d88d11884a9e777a5ad26291fc2bde6cb9eec851f8dcd1624f9484b86c2256
 src/network/vehicle-networking.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1; resource hits=net; network context,1175,aff10e884cf22c8ead4c17f2bb30ce2a2c3ca83029a5e7d57c0c03d76e0e8ce2
 src/network/weapon-runtime-reconciliation.cpp,game,RUNTIME_PROOF_REQUIRED,network context,239,123cf6a063f21ae29519227c6dde2b1c56aa96096d92635dfab7200b07e54d2b
 src/notifications/notification-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: Terminal,193,0684885f43316f1784ffa957e586e9e15608a3af118538729bec6b8015538383
 src/notifications/notifications.cpp,game,RUNTIME_PROOF_REQUIRED,"callback hits=6; resource hits=file,os",1050,be85aa2870e9c3428a5a7095044f00c105358be1392aee6c7870c3eaaf2c37a0
 src/npc/npc-avatar.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,201,ed0010280040e49d2d3d663be9321a06c7b83dab6691151342c37902eb9da550
-src/npc/npc-behavior-module.cpp,module:npc-behavior,NON_GAME,existing subsystem module,960,0862d1337141f951895b25338bd11ab98c55e989113345ebaa0d9033dc919816
+src/npc/npc-behavior-module.cpp,game,STATIC_STATE_REVIEW,file-scope globals=1,960,0862d1337141f951895b25338bd11ab98c55e989113345ebaa0d9033dc919816
 src/npc/npc-behavior.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,721,894733c8c5ccf6f5655cc1c6407595c395a94ebd28572f7aeffe2f32291f627e
 src/npc/npc-combat.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: DebugLog, ModuleHost, NpcDifficultyConfig, StructuredLogger, WeaponRegistry)",762,4bc79f011ef4ee6a9d2fcf8ce18d07ce63b83be75e2761fb4a4a468ea9a35620
 src/npc/npc-difficulty-config.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,411,8c1d894e7b1c6d6e833b3dabfcb05c1d4cfe3516ffb6a0aaac3e84a86db275db
@@ -604,7 +618,7 @@ src/npc/npc-nav-request.cpp,game,STATIC_CLOSED,pure request-to-goal and segment 
 src/npc/npc-navigation-settings.cpp,game,STATIC_CLOSED,pure JSON schema parse/clamp; no state/callback/thread/resource,190,4b7131291aca0006187f113eaddd13a1b20534c2e31744ed66b747130397bf0a
 src/npc/npc-navigation.cpp,game,RESIDENT_ADAPTER_REQUIRED,thread_local host state (services: NpcDifficultyConfig),467,43cd1fd5e2dbc5ddd3650731060bec77184f3e021761e788b602c0a1fc6c4d32
 src/npc/npc-navigator.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: DebugLog, MovementJsonConfig, NpcDifficultyConfig, Perf)",1367,a98e6400742a0524dba6dbd07c6684527c92cc7b1da5bf48b9c2ca274f7194de
-src/npc/npc-perception-module.cpp,module:npc-perception,NON_GAME,existing subsystem module,369,d7e9714f492985569fb800ef9f8e58e7f39a4319b6bc149b5a7db7f0ddc70825
+src/npc/npc-perception-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,369,d7e9714f492985569fb800ef9f8e58e7f39a4319b6bc149b5a7db7f0ddc70825
 src/npc/npc-perception.cpp,game,RESIDENT_ADAPTER_REQUIRED,ModuleHost perception calls (services: ModuleHost),414,5c4eb0b347e468b8ddd044dd54eae78223c42cefb13e9dc3fba3a7a80056200e
 src/npc/npc-spawn.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, NpcDifficultyConfig, Perf, WeaponRegistry",425,5deb25d317d5dbdd5ca6457a57a7b27b84eded71337c5395ef8ab300ac440ff5
 src/npc/npc-state-machine.cpp,game,RESIDENT_ADAPTER_REQUIRED,ModuleHost hold-pursuit calls (services: ModuleHost),376,19b34eeec9129ac16d73b2030baa2b26de0a1aa6b84e988ced2990677e8a7725
@@ -612,8 +626,7 @@ src/npc/npc-states.cpp,game,RESIDENT_ADAPTER_REQUIRED,NpcDifficultyConfig::insta
 src/npc/npc-surface.cpp,game,STATIC_CLOSED,pure surface/capability naming and normal classification; no state,89,2e50ec6ffa7debf6538a50573dbe460ae682df0b979282ef45f4d2e4aaf746ee
 src/npc/npc-targeting.cpp,game,STATIC_CLOSED,pure policy; no state/callback/thread/resource; callers are game-owned,178,cc463556e4b9b2bf40c4fb336966ab5817621b7dc914cc65101888e979c8599f
 src/npc/npc-traversal.cpp,game,RESIDENT_ADAPTER_REQUIRED,"ModuleHost policy calls + MovementJsonConfig::instance (services: DebugLog, ModuleHost, MovementJsonConfig)",255,3ce5aca04c70a9283fa813eb982fa9fe57f2aa8863e020b4be3c9a86e8432b53
-src/npc/npc-utility-bridge.cpp,game,RESIDENT_ADAPTER_REQUIRED,ModuleHost behavior calls (services: ModuleHost),322,8a8cb73494c60899f170845ac08d26618f94378793e7bc3e83d374ee03c515e7
-src/npc/npc-utility.cpp,module:npc-behavior,NON_GAME,existing subsystem module,538,a8b09d5d1208cac86f8679b4824d0708ba302f4a1c9425b2eca410a9f64dff54
+src/npc/npc-utility.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,538,a8b09d5d1208cac86f8679b4824d0708ba302f4a1c9425b2eca410a9f64dff54
 src/npc/npc-world-query.cpp,game,RESIDENT_ADAPTER_REQUIRED,thread_local const World* host pointer,57,8bff832f9cb000b6c1236da11dbf26dcea2c3d1142a825f10cc94ed4cf6c23b7
 src/npc/npc.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: BehaviorProfileRegistry, DebugLog, DebugVis, ModuleHost, NpcDifficultyConfig, Perf, StructuredLogger, WeaponRegistry)",3871,e10435e5f9e2e9c6654e32c165730ddad1e888b8d876f5a50896a39b87742dc1
 src/npc/recast-navigation.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: ModuleHost, Perf, StructuredLogger",1465,9a569535faba58429a48bfe573cd7c16fd164e5bf906098875e28b72ca287bf4
@@ -621,11 +634,11 @@ src/npc/team-brain.cpp,game,RESIDENT_ADAPTER_REQUIRED,StructuredLogger host logg
 src/perf/perf-allocator.cpp,game,RESIDENT_ADAPTER_REQUIRED,global operator new/delete and allocation counters must stay resident,62,8f9258a27b022247b66dc460ae55be15fa4b242198b1aab3b3c3a4a73855303c
 src/perf/perf-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: Perf, StructuredLogger, Terminal",453,1c7fc2c568e5aa8494076aa513986e5acaf1dbbb3df4faf45c2675b11a16503d
 src/perf/perf-frame.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, Perf, StructuredLogger",999,0292287c7509197a1cb96f21f1fdffdabdcc919b941abdb35adab26a5ccd6aaa
-src/perf/perf-gpu.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,167,69e5d9090d5fe201b286ff5d713d2d76ba31e61e8e8d3ef97293383a824149d4
-src/perf/perf-overlay.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, Perf",482,e98cf9142834c37628622fd199528d119d867ee5563a0241d08ef45a60c14f43
+src/perf/perf-gpu.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,167,1c5d5ff8d297b267a59ca1635121bab4618d532a4e3c044137bea493ceeab1a1
+src/perf/perf-overlay.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, Perf",507,8f1412a543f7ea094d9477f2e3bcdc4a64ca8a81ba8b0772354208243cffaee6
 src/perf/perf-spike.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: DebugLog, Perf, StructuredLogger)",674,f720461f9629a59dd9c36b2389138faae7c1aeb3a328c4c52cd670e0fb1dbe23
 src/perf/perf-visualize.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,184,822c7f4bf664db22d4770821affeea2ff200c4d7ecd066643a8b0705867f808f
-src/perf/perf.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,1739,a9b4e918f5cca053e606a3981a16c889000f5746d257dd643c6f377292b80a3f
+src/perf/perf.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,1851,e3adc1e92266ca7297e0124df4ca8eda36de0ecd7720607c380744873fff85ad
 src/persistence/persistence-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: PersistenceQueue,37,825ece204c9dcbe5ce57956050fdec67ce1c166f6e28ccddefffa51d092d846b
 src/persistence/persistence-emit.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=net; network context,179,656017f3f4f512741a1a48e107cbbcbed76372ec2a2db763435c82bbdb7b2a6b
 src/persistence/persistence-level.cpp,game,STATIC_CLOSED,pure XP-to-level math; no state/async/resource,30,557517040c4c25af2b08d53ea6acd85eafa08edcaf1722c694aea0335586d25b
@@ -636,7 +649,7 @@ src/physics/constraints/constraint-debug.cpp,game,RESIDENT_ADAPTER_REQUIRED,"res
 src/physics/constraints/constraint-system.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: ConstraintSystem, PhysicalEntitySystem",393,ab3e90dc12fca865214866ee813c7d71d2c026d4e6e8e941c68b0e4461bf64c7
 src/physics/mesh-mass-properties.cpp,game,STATIC_CLOSED,pure mesh volume/moment integrator; no state/callback/thread/resource,88,9ed0642f0cdefd2d01e8dbe8d07b67090c16cf08ea803355e48ebb0caaeeb622
 src/physics/movement/actor-collision-mesh.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: WeaponRegistry,475,d935069cda4752e599b41772f8b4de0102f62ab3cee1308c382d23d3c239ee95
-src/physics/movement/actor-contact-policy-module.cpp,module:chunk-collision,NON_GAME,existing subsystem module,273,db3c383a616879b100df1c1026314603669c298f1dd80a6e3a31c885efca0825
+src/physics/movement/actor-contact-policy-module.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=1,273,db3c383a616879b100df1c1026314603669c298f1dd80a6e3a31c885efca0825
 src/physics/movement/actor-final-pose.cpp,game,RESIDENT_ADAPTER_REQUIRED,thread_local host state (services: ModuleHost),766,cae9adc9642fa29c437a9709e07f61c4210cf6f6699273a8455c65088a93e289
 src/physics/movement/actor-pair-collision.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: ModuleHost, StructuredLogger)",988,f3e43554b34f8d4ed9c43611767a8b0c25e74f5a31cd149759c3fd1bbbbf1f89
 src/physics/movement/actor-triangle-solver.cpp,game,RESIDENT_ADAPTER_REQUIRED,"thread_local host state (services: ModuleHost, PhysicalEntitySystem, StructuredLogger)",2211,9ffd41ce83c83dff91247ea89b014a752d1a0c6eb2b474a643cfb472ebe47aa9
@@ -681,7 +694,7 @@ src/profile/local-profile-system.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=f
 src/ragdoll/ragdoll-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: Terminal, TerminalState",145,d273f8ed1c9288fc4dd5020bbf91a14b4760f4ff16b82bf2e7e1bcc12af655b4
 src/ragdoll/ragdoll-mode-config.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,369,1874fae60afcc15a320c16b5a01f6040133124238e5348668425692a47b5ae20
 src/ragdoll/ragdoll-mode.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: DebugLog, DebugVis, StructuredLogger",3226,6f2c565d94c625fc0939778c19ff7f02f97923764b1d6a5bd4059edf871e94e2
-src/render/actor-rendering-module.cpp,module:actor-rendering,NON_GAME,existing subsystem module,110,a033397281aee75a30a9af0d070f30f0f80232480a43fef0965e807c56e5d6d5
+src/render/actor-rendering-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,110,a033397281aee75a30a9af0d070f30f0f80232480a43fef0965e807c56e5d6d5
 src/render/dynamic-light-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: Terminal,57,d31bb3bdd5310e6da488acef0783a59f65c224519b1ade48e689fbd70ee46111
 src/render/dynamic-light-config.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,160,ff912f3fa340a59f5b37b683b4c2b48abf008354f9580468106da3bfb9bd5cdc
 src/render/dynamic-light.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: DebugLog,240,03dddbfe48471b57fc05eef5ccd21e1076d4784400ebc1d07d6de00f69321c9b
@@ -698,9 +711,9 @@ src/render/render-world.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: D
 src/render/shader-program.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,181,26057d2f1d19ec1f1242b04b3e16e5212c2bf5a6f1e8bdd9ee713355ba278868
 src/render/skybox.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,379,412e8195d669348848d5cc1f13ab56ce6b15428415a68c3a77a3512d336f9758
 src/render/world-box-mesh.cpp,game,RESIDENT_ADAPTER_REQUIRED,resident services: ModuleHost,86,44d01487b16a1ec7fffa029f1ccb703409ffda90b66f565462b645153321adf9
-src/render/world-rendering-module.cpp,module:world-rendering,NON_GAME,existing subsystem module,220,cdb819f06a667f37fa67d56e2931c8913806ae78c8e6eb83d192f49d17bf36c5
+src/render/world-rendering-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,220,cdb819f06a667f37fa67d56e2931c8913806ae78c8e6eb83d192f49d17bf36c5
 src/render/world-shader.cpp,game,STATIC_STATE_REVIEW,mutable static candidates=1,23,9687a10c1fabeaa57b1b92cd653db39c8b8fffc6b4ab4d9236b1725b0c144b5e
-src/renderer/renderer.cpp,resident,RESIDENT_HOST,owner=resident,426,5731049afbee963ca5acd75d508b316c9d78e4a366503bd0ae3b12cccbd3c95f
+src/renderer/renderer.cpp,resident,RESIDENT_HOST,owner=resident,417,6c9cc4a126567c13374f64626d69ada8d32fe9dc966641a39e4919dbcb3fc8a5
 src/replay/replay-camera-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: Terminal, TerminalState",153,3e974f1f0787d56052553c8c15e770a3789c86f515421a71576a20a84ca38b36
 src/replay/replay-camera.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,200,0b0e9648176c4656f7895615d83064682177248a20763ad175b99558181c68f3
 src/replay/replay-capture-commands.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,311,4b533fa758422c96b467cde66504c0ee48a6bdde9eabeb01229e9c8210898d92
@@ -778,12 +791,12 @@ src/vip/vip-name-render.cpp,game,STATIC_CLOSED,pure VIP name/visual value helper
 src/void-death/void-death-commands.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,65,c08f5ea80fccfcf8590979779fff30747cab6d2273d563901b472d73a939d434
 src/void-death/void-death.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,107,21b42e76efb7c1024ff32fef9f6795bcb106aa0a1a093089744328d302eb7d40
 src/website/api-client.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=5,1183,dc0cac442745cc78b585beab2970681ba6c2ae8cc64e4a3533f63b1c5760b84b
-src/world/chunk-collision-module.cpp,module:chunk-collision,NON_GAME,existing subsystem module,294,b2e547645ff0727ad637b966675438d25233c000cbb987fada703cb60e4bb46a
+src/world/chunk-collision-module.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=3,294,b2e547645ff0727ad637b966675438d25233c000cbb987fada703cb60e4bb46a
 src/world/streamed-world-layer.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: MapConfigRegistry, ModuleHost, StructuredLogger",1152,f420e33a26b21f6a7505d002928178a12e4d3eb6a45862d2cc3f271fc643a39c
 src/world/texture-store.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,67,a29d3087756c2455d4ee4fc7c091f1d95cf6a8445f4f5b979a5227baf952e19b
 src/world/world-gltf-loader.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=1; resource hits=file,516,c6b92377a178b087488dc3e58957261c500f76b95708461e17bf83d73825fb2c
 src/world/world.cpp,game,STATIC_STATE_REVIEW,global/extern keyword mentions=2,161,263f3c6058c963b25a1264db331b372829343bffb18282e74f687d12c8e82ff3
-src/worldgen/infinite-worldgen-module.cpp,module:infinite-worldgen,NON_GAME,existing subsystem module,679,c9db903cd3b865eee749a73feaa340e4c38e29691d1e8ad9f75a60cefb70dd06
+src/worldgen/infinite-worldgen-module.cpp,game,STATIC_CLOSABLE_CANDIDATE,no lexical lifetime hit; confirmation read required,679,c9db903cd3b865eee749a73feaa340e4c38e29691d1e8ad9f75a60cefb70dd06
 src/worldgen/worldgen-commands.cpp,game,RESIDENT_ADAPTER_REQUIRED,"resident services: MapConfigRegistry, StructuredLogger, Terminal",550,b1e5c12e46594dfa2e63c0760f76a05667eb4e5061747a9a120cf4bd1a5b21c0
 src/worldgen/worldgen-library.cpp,game,RUNTIME_PROOF_REQUIRED,resource hits=file,650,8d0887c9e06f852bec1b55a867f7ada1ab86e73b8e5190f4acf53df94e32da91
 src/worldproject/world-edit-session.cpp,game,RUNTIME_PROOF_REQUIRED,callback hits=2,488,443331074cf34087e1fef615810c21207ee2c291bdf12755d6cd3ee720aba6c0

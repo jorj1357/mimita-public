@@ -558,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
         "source_path": args.manifest if use_fast else args.inventory,
         "counts": dict(sorted(counts.items())),
         "high_risk_count": len(high_risk),
+        "unresolved_game_blockers": int(counts.get("UNRESOLVED", 0)),
         "rows": rows,
         "high_risk": high_risk,
         "services": service_map_payload["services"],

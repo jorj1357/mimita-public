@@ -1,5 +1,10 @@
 # Hot-reload multi-agent synchronization handoff (2026-11-13)
 
+> Historical handoff. Current build authority is
+> `docs/specs/dev-loop/agent-lanes-build-authority.md` and
+> `docs/specs/hotreload/hotreload.md`. Agents never request or wait for builds;
+> the root dev-loop watcher is the only build trigger.
+
 ## Purpose
 
 This is the copy-paste coordination brief for **Agent B** and **Agent C**. They
@@ -116,23 +121,17 @@ If a file is not claimed, it is not yours. Never “quickly” edit a shared fil
 
 ## Build and verification loop
 
-All agents share one dev loop. **Only one may request a build at a time.**
+All agents share one dev loop. No agent requests or waits for a build; saving a
+compiler input is the normal build trigger.
 
 ```powershell
 # Read-only status
 python devscripts/dev-loop.py --status
 
-# Host build request; wait for completion
-python devscripts/dev-loop.py --request build --wait-for-build --build-timeout 900
+# Ensure the single root dev-loop is online (does not request a build)
+python devscripts/dev-loop.py --ensure-running
 
-# Whole-game candidate build (owner-authorized build/run exception in this session)
-python devscripts/source_manifest.py --write
-$rev = python -c "import json; print(json.load(open('build/source-manifest.json'))['revision'])"
-python devscripts/game_build_worker.py --manifest build/source-manifest.json --revision $rev --jobs 8
-
-# Required gates
-python devscripts/game_static_gate.py
-python devscripts/source_manifest.py --check
+# Then edit and save. Read status/journal once when evidence is needed.
 ```
 
 Never run the host build and the game worker at the same time.

@@ -289,8 +289,9 @@ No map coordinates are invented by this slice.
 ## Validation plan
 
 1. Inspect `git status`/`git diff` before every overlapping edit.
-2. Build through `python devscripts/dev-loop.py --request build
-   --wait-for-build`.
+2. Confirm the single root dev-loop is online with
+   `python devscripts/dev-loop.py --status` or `--ensure-running`; save the
+   source and let the dev-loop auto-build. Agents do not request builds or wait.
 3. Launch ZT through the existing dev loop (launch mode 10 or a ZT profile).
 4. Record the exact executable and `EVENTS_JSONL_PATH`.
 5. Exercise lobby intermission, countdown/freeze, roster, `zt_team`, checkpoint

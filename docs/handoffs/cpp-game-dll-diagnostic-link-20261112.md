@@ -1,5 +1,9 @@
 # Whole-game DLL diagnostic link (2026-11-12)
 
+> Historical handoff. Current build authority is
+> `docs/specs/dev-loop/agent-lanes-build-authority.md`: agents never run
+> `game_build_worker.py` or any other build command.
+
 **Status:** diagnostic only. The whole-game `game.dll` candidate compiled and linked far enough to enumerate missing symbols; it did not produce a usable DLL. This is not runtime evidence.
 
 **Build-authority exception:** this chat's human owner explicitly authorized the game-DLL worker builds for this investigation. This is a session exception, not a standing agent-build permission. The standing target is Option C (a dev-loop `game-dll` request), which is documented but not implemented.

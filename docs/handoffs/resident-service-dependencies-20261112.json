@@ -1295,9 +1295,6 @@
       "ModuleHost",
       "MovementJsonConfig"
     ],
-    "src/npc/npc-utility-bridge.cpp": [
-      "ModuleHost"
-    ],
     "src/npc/npc.cpp": [
       "BehaviorProfileRegistry",
       "DebugLog",
@@ -2304,7 +2301,6 @@
       "src/npc/npc-perception.cpp",
       "src/npc/npc-state-machine.cpp",
       "src/npc/npc-traversal.cpp",
-      "src/npc/npc-utility-bridge.cpp",
       "src/npc/npc.cpp",
       "src/npc/recast-navigation.cpp",
       "src/physics/movement/actor-final-pose.cpp",
