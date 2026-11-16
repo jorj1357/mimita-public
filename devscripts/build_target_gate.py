@@ -25,7 +25,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", dest="json_path",
                         default="build/hot-reload/build-target-gate.json")
     parser.add_argument("--require-cold", action="store_true",
-                        help="fail if any game-owned source is in the EXE")
+                        help="compatibility alias for strict cold validation")
+    parser.add_argument("--report-only", action="store_true",
+                        help="write the report but do not fail")
     parser.add_argument("--max-list", type=int, default=40)
     args = parser.parse_args(argv)
 
@@ -66,7 +68,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[BUILD TARGET] LEGACY_BRIDGE {path}")
     print(f"[BUILD TARGET] {'PASS' if not game else 'FAIL'} "
           f"report={output.relative_to(ROOT)}")
-    return 0 if not game or not args.require_cold else 1
+    clean = not game and not tests
+    if args.report_only:
+        return 0
+    return 0 if clean else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())

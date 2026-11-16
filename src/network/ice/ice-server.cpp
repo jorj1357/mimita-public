@@ -15,7 +15,7 @@
 #include "network/packets.h"
 #include "network/movement-validation.h"
 #include "network/snapshot-chunks.h"
-#include "network/test-events.h"
+#include "network/ice/ice-events.h"
 #include "network/badconn/badconn.h"
 #include "debug/debug-log.h"
 
@@ -494,7 +494,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
     printf("[ICE CLIENT] connected!\n");
     agent.logSelectedPath();
     badconn::noteConnectionEstablished();
-    MimitaNet::emitTestEvent("ice_connected",
+    MimitaNet::emitIceEvent("ice_connected",
         "\"role\":\"client\",\"clientIndex\":" + std::to_string(opts.clientIndex));
 
     // Drain pending events
@@ -513,7 +513,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         if (!sendIcePacket(agent, &req, sizeof(req))) {
             printf("[ICE CLIENT] reconnect send failed\n"); return 1;
         }
-        MimitaNet::emitTestEvent("reconnect_request_sent",
+        MimitaNet::emitIceEvent("reconnect_request_sent",
             "\"clientIndex\":" + std::to_string(opts.clientIndex));
     }
     else
@@ -531,7 +531,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         if (!sendIcePacket(agent, &joinReq, sizeof(joinReq))) {
             printf("[ICE CLIENT] join send failed\n"); return 1;
         }
-        MimitaNet::emitTestEvent("join_request_sent",
+        MimitaNet::emitIceEvent("join_request_sent",
             "\"clientIndex\":" + std::to_string(opts.clientIndex));
     }
 
@@ -596,12 +596,12 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         reconnectToken = accept->reconnectToken;
         gameplayActive = true;
         printf("[ICE CLIENT] reconnected as player %u\n", myId);
-        MimitaNet::emitTestEvent("reconnect_confirmed",
+        MimitaNet::emitIceEvent("reconnect_confirmed",
             "\"clientIndex\":" + std::to_string(opts.clientIndex) +
             ",\"playerId\":" + std::to_string(myId) +
             ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
             ",\"transformEpoch\":" + std::to_string(transformEpoch) +
-            ",\"reconnectToken\":\"" + MimitaNet::testEventJsonEscape(reconnectToken) + "\"");
+            ",\"reconnectToken\":\"" + MimitaNet::iceEventJsonEscape(reconnectToken) + "\"");
     }
     else
     {
@@ -617,12 +617,12 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         transformEpoch = accept->header.transformEpoch;
         reconnectToken = accept->reconnectToken;
         printf("[ICE CLIENT] joined as player %u\n", myId);
-        MimitaNet::emitTestEvent("join_accepted",
+        MimitaNet::emitIceEvent("join_accepted",
             "\"clientIndex\":" + std::to_string(opts.clientIndex) +
             ",\"playerId\":" + std::to_string(myId) +
             ",\"protocolVersion\":" + std::to_string(MimitaNet::PROTOCOL_VERSION) +
-            ",\"map\":\"" + MimitaNet::testEventJsonEscape(accept->mapId) + "\"" +
-            ",\"reconnectToken\":\"" + MimitaNet::testEventJsonEscape(reconnectToken) + "\"");
+            ",\"map\":\"" + MimitaNet::iceEventJsonEscape(accept->mapId) + "\"" +
+            ",\"reconnectToken\":\"" + MimitaNet::iceEventJsonEscape(reconnectToken) + "\"");
 
         MimitaNet::ClientMapReadyPacket ready{};
         ready.header.magic = MimitaNet::PROTOCOL_MAGIC;
@@ -635,10 +635,10 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
         if (!sendIcePacket(agent, &ready, sizeof(ready))) {
             printf("[ICE CLIENT] map-ready send failed\n"); return 1;
         }
-        MimitaNet::emitTestEvent("map_ready_sent",
+        MimitaNet::emitIceEvent("map_ready_sent",
             "\"clientIndex\":" + std::to_string(opts.clientIndex) +
             ",\"playerId\":" + std::to_string(myId) +
-            ",\"map\":\"" + MimitaNet::testEventJsonEscape(ready.mapId) + "\"");
+            ",\"map\":\"" + MimitaNet::iceEventJsonEscape(ready.mapId) + "\"");
     }
 
     float clientPx = 1.0f + (float)std::max(0, opts.clientIndex - 1) * 1.5f;
@@ -706,7 +706,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                     sendIcePacket(agent, &evAck, sizeof(evAck));
                 }
 
-                MimitaNet::emitTestEvent("spawn_sent",
+                MimitaNet::emitIceEvent("spawn_sent",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
@@ -722,7 +722,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 ack.spawnGeneration = spawnGeneration;
                 ack.transformEpoch = transformEpoch;
                 sendIcePacket(agent, &ack, sizeof(ack));
-                MimitaNet::emitTestEvent("spawn_ack",
+                MimitaNet::emitIceEvent("spawn_ack",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
@@ -735,7 +735,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                     deathConfirmed = false;
                     pendingRespawnSerial = 0;
                     nextDeathAtMs = GetTickCount64() + 250;
-                    MimitaNet::emitTestEvent("respawn_confirmed",
+                    MimitaNet::emitIceEvent("respawn_confirmed",
                         "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                         ",\"playerId\":" + std::to_string(myId) +
                         ",\"cycle\":" + std::to_string(completedDeathCycles) +
@@ -751,7 +751,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 if (act->spawnGeneration == spawnGeneration)
                 {
                     gameplayActive = true;
-                    MimitaNet::emitTestEvent("spawn_activated",
+                    MimitaNet::emitIceEvent("spawn_activated",
                         "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                         ",\"playerId\":" + std::to_string(myId) +
                         ",\"spawnGeneration\":" + std::to_string(act->spawnGeneration) +
@@ -792,7 +792,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                         {
                             deathConfirmed = true;
                             pendingRespawnSerial = ++respawnSerial;
-                            MimitaNet::emitTestEvent("death_confirmed",
+                            MimitaNet::emitIceEvent("death_confirmed",
                                 "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                                 ",\"playerId\":" + std::to_string(myId) +
                                 ",\"cycle\":" + std::to_string(completedDeathCycles + 1) +
@@ -805,14 +805,14 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                              !remoteSnapshotReported)
                     {
                         remoteSnapshotReported = true;
-                        MimitaNet::emitTestEvent("remote_snapshot_received",
+                        MimitaNet::emitIceEvent("remote_snapshot_received",
                             "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                             ",\"playerId\":" + std::to_string(myId) +
                             ",\"remotePlayerId\":" + std::to_string(e.ownerClientId) +
                             ",\"serverTick\":" + std::to_string(snap.serverTick));
                     }
                 }
-                MimitaNet::emitTestEvent("snapshot_received",
+                MimitaNet::emitIceEvent("snapshot_received",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"serverTick\":" + std::to_string(snap.serverTick) +
@@ -839,7 +839,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 deathPending = true;
                 deathConfirmed = false;
                 deathSpawnGeneration = spawnGeneration;
-                MimitaNet::emitTestEvent("death_requested",
+                MimitaNet::emitIceEvent("death_requested",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"cycle\":" + std::to_string(completedDeathCycles + 1) +
@@ -899,7 +899,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
             if (!movementReported)
             {
                 movementReported = true;
-                MimitaNet::emitTestEvent("movement_sent",
+                MimitaNet::emitIceEvent("movement_sent",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"spawnGeneration\":" + std::to_string(spawnGeneration) +
@@ -909,7 +909,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
                 !postRespawnMovementReported)
             {
                 postRespawnMovementReported = true;
-                MimitaNet::emitTestEvent("post_respawn_movement",
+                MimitaNet::emitIceEvent("post_respawn_movement",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId) +
                     ",\"cycle\":" + std::to_string(completedDeathCycles));
@@ -917,7 +917,7 @@ int runIceClient(const std::string& roomCode, const IceServerOptions& opts)
             if (reconnectMode && gameplayActive && !postReconnectMovementReported)
             {
                 postReconnectMovementReported = true;
-                MimitaNet::emitTestEvent("post_reconnect_movement",
+                MimitaNet::emitIceEvent("post_reconnect_movement",
                     "\"clientIndex\":" + std::to_string(opts.clientIndex) +
                     ",\"playerId\":" + std::to_string(myId));
             }

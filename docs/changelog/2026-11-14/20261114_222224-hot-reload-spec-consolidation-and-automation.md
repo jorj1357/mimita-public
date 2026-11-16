@@ -933,3 +933,42 @@ gate.
 - The map-editor fold removes the separate module activation, but the resident
   EXE fallback no longer has a map-editor module. That is intentional for the
   one-DLL end state and should be documented in the cold-entry record.
+
+## Cold trial after map-editor fold
+
+- `build/hot-reload/cold-link-trial.json`: 353 unique undefined symbols,
+  592 removed game-owned objects, resident referrers 158 / bootstrap 156 /
+  test 74; resident-only 127.
+- **No `MapEditor` symbols remain.** The fold did not reduce the count further:
+  the map-editor module was not linked into the EXE to begin with, so folding it
+  removed module activation state rather than EXE link inputs.
+- Remaining largest clusters: `MimitaNet::*` in `server.cpp`, resident
+  bootstrap/test-only references, and the remaining module catalog surface.
+
+## Test surfaces removed and strict gate enabled
+
+- Deleted the self-test translation units and headers, including ICE test,
+  test-events, destructible selftest, destruction replication selftest,
+  ECS selftests, and world-project selftests.
+- Split production ICE helpers:
+  - `network/ice/ice-connect.cpp` / `.h` for `--ice-connect`
+  - `network/ice/ice-events.cpp` / `.h` for structured ICE lifecycle events
+- `ice-server` now emits `network.ice.*` events through `StructuredLogger`
+  instead of stdout test events.
+- Removed 67 `--*-selftest` / `--ice-test` blocks and their includes from
+  `src/game/game-cli.cpp`; production still keeps normal launch and
+  `--ice-connect` paths.
+- `src/ecs/*-selftest.cpp` were deleted; source-owner test rule for deleted
+  files was removed.
+- `build_target_gate.py` now fails by default when any `game` or `test` source
+  remains in the EXE. `--report-only` is explicit.
+- `build.py` now runs the strict gate before replacing/publishing the EXE and
+  refuses publication on failure.
+- Current gate: `exe=609 cold=39 tests=0 game_in_exe=570` → **strict FAIL**.
+- Cold-link trial: **353 → 198** undefined symbols; bootstrap **156 → 56**;
+  test **74 → 0**; resident remains 158. `removed_objects=590`.
+- Normal EXE build published current: `2026-11-16T06:27:41.263623Z:ebc4f741...`.
+- Fresh launch `20261116_063013_01`: client PID `25204`, generation 247,
+  hot-client gate PASS (`path=dll`, `Connected`, 1,831+ frames).
+- Remaining strict-zero work is the 570 game sources and 198 cold refs,
+  starting with the server policy split.

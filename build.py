@@ -1193,6 +1193,22 @@ if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
                    link_reason=link_reason)
     sys.exit(1)
 
+cold_gate = subprocess.run(
+    [sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py")],
+    cwd=ROOT)
+if cold_gate.returncode != 0:
+    print("[COLD CORE] strict gate failed; refusing to publish EXE",
+          file=sys.stderr, flush=True)
+    write_json_atomic(LINK_PENDING, {
+        "status": "failed",
+        "reason": "cold_core_gate_failed",
+        "pid": os.getpid(),
+        "exit_code": cold_gate.returncode,
+        "failed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+    write_progress("failed", phase_name="cold_core_gate", result="failed")
+    sys.exit(1)
+
 try:
     os.replace(link_candidate, exe_path)
 except OSError as error:

@@ -93,18 +93,6 @@
       ]
     },
     {
-      "owner": "test",
-      "reason": "self-test translation units compiled into the EXE; explicit test exception, not game.dll",
-      "include": [
-        "src/impact/destructible-selftest.cpp",
-        "src/network/destruction-replication-selftest.cpp",
-        "src/network/ice/ice-test.cpp",
-        "src/network/test-events.cpp",
-        "src/worldproject/world-edit-session-selftest.cpp",
-        "src/worldproject/world-project-selftest.cpp"
-      ]
-    },
-    {
       "owner": "game",
       "reason": "ordinary game implementation default; replaceable in one game.dll",
       "include": [
@@ -164,7 +152,17 @@
     {
       "path": "src/game/game-cli.cpp",
       "owner": "bootstrap",
-      "reason": "CLI/self-test launch surface owned by process bootstrap, not game.dll"
+      "reason": "CLI launch surface owned by process bootstrap, not game.dll"
+    },
+    {
+      "path": "src/network/ice/ice-connect.cpp",
+      "owner": "bootstrap",
+      "reason": "production ICE connect CLI wrapper; resident transport, not game.dll"
+    },
+    {
+      "path": "src/network/ice/ice-events.cpp",
+      "owner": "resident",
+      "reason": "ICE lifecycle events are emitted by the resident ICE/server session"
     }
   ],
   "link_inputs": {
