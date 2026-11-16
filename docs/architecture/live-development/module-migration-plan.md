@@ -108,7 +108,6 @@ Do not claim process cleanup unless the repair launcher confirms it.
 ## Related documents
 
 - [Hot-reload specification](../../specs/hotreload/hotreload.md)
-- [Live-development invariant](live-development.md)
 - [Hot kernel](hot-kernel.md)
 - [Agent lanes and build authority](../../specs/dev-loop/agent-lanes-build-authority.md)
 - [Build and EXE](../../operations/build-and-exe/build-and-exe.md)

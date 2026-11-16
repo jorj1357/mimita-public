@@ -46,6 +46,24 @@ deployment.
 - Packaging and platform setup: `package-release.py` and
   `build-minimal-ffmpeg.sh`.
 
+## Script inventory and cold-change preflight
+
+The complete description of every current script, its outputs, authority,
+run cadence, and suggested keep/combine/archive disposition is:
+
+- [Development script inventory](../docs/operations/devscripts/script-inventory.md)
+
+Use the cold-change guard before saving a group of source edits:
+
+```text
+python devscripts/cold_change_guard.py --report-only
+python devscripts/cold_change_guard.py
+```
+
+A `COLD`, `COLD_ABI`, `HEADER_REVIEW`, or `UNKNOWN` finding needs an explicit
+decision before building. A `HOT` finding is the normal game-DLL path. See
+[Cold-change guard](../docs/operations/devscripts/cold-change-guard.md).
+
 ## Placement rule
 
 Scripts that build, inspect, validate, migrate, launch, or package the

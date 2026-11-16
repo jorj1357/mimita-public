@@ -541,29 +541,30 @@ time.
 
 ### 5.2.1 One build process per checkout at a time
 
-Before requesting a build, an agent or tool must query the existing daemon and
-build state. If a build is already `pending` or `building`, it must **not**
-submit another build request and must **not** start a competing compiler or
-linker. It waits for that single build to finish, or returns to other
-non-conflicting code edits and checks the state again later. A waiting command
-must not block so long that the agent cannot continue useful work.
+The daemon owns all build queuing. Agents and tools edit and observe; they do
+not submit build requests, do not start a competing compiler or linker, and do
+not wait for a build. A saved compiler input is the normal build trigger. The
+daemon coalesces changes and runs at most one follow-up build for the newest
+source generation.
 
-The ideal workflow is:
+The agent workflow is:
 
-1. ask the daemon for status;
-2. if no build is active and a build is needed, submit exactly one request;
-3. if a build is active, do not request another one;
-4. continue source edits, reviews, or documentation work while it runs;
-5. re-check status after the active build finishes, then request the next
-   build only if the source changed again.
+1. confirm the single root daemon is online with `--status`, or start/verify it
+   with `--ensure-running`;
+2. edit and save source files;
+3. continue reviews, documentation, or other non-conflicting work while the
+   daemon builds;
+4. read status and the journal once when build identity or runtime evidence is
+   needed. Do not poll in a loop.
 
-Multiple simultaneous builds in one checkout, build processes launched outside
-that checkout's daemon, and queued duplicate requests for the same source
-generation are invalid. Independent agent worktrees have separate daemons, but
-shared OS build-slot limits still apply. The daemon may coalesce a source change into at most
-one subsequent build per checkout, but it must never run two compiler/linker
-jobs in one worktree at once. Status or control commands must remain responsive
-during the active build.
+Only a human may explicitly request a manual build with
+`MIMITA_BUILD_OVERRIDE=1`. Multiple simultaneous builds in one checkout, build
+processes launched outside that checkout's daemon, and queued duplicate
+requests for the same source generation are invalid. Independent agent worktrees
+have separate daemons, but shared OS build-slot limits still apply. The daemon
+may coalesce a source change into at most one subsequent build per checkout, but
+it must never run two compiler/linker jobs in one worktree at once. Status or
+control commands must remain responsive during the active build.
 
 A dev-loop publish can block when an older dev-loop-owned server or client is
 still running from `.dev/current/mimita.exe`. When that happens, the agent may

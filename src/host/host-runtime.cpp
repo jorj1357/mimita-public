@@ -2515,8 +2515,8 @@ void HostRuntime::poll() {
         readyPending_.store(false, std::memory_order_release);
     }
     if (snapshot.invalid) {
-        emitProbeEvent("game.generation.ready-invalid", snapshot.error, 0,
-                       nlohmann::json{{"path", readyPath_}});
+        emitProbeEvent("game.generation.ready-invalid", snapshot.error.c_str(),
+                       0, nlohmann::json{{"path", readyPath_}});
         return;
     }
     const std::uint64_t generation = snapshot.generation;

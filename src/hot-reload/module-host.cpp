@@ -786,6 +786,11 @@ bool ModuleHost::loadLocalModules(bool /*serverProcess*/)
         mimita::host::HostRuntime::instance().activeGameModule());
     if (!game) {
         rememberError("no active game module for local modules");
+        StructuredLogger::instance().writeEvent(
+            StructuredCategory::General, StructuredLevel::Errors,
+            "module.local.failed", "module-host",
+            "no active game module for local modules", 0, {},
+            __FILE__, __LINE__, __FUNCTION__);
         return false;
     }
 
@@ -865,6 +870,14 @@ bool ModuleHost::loadLocalModules(bool /*serverProcess*/)
         mModules.push_back(std::move(entry));
     }
     mLocalModules = true;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Important,
+        "module.local.loaded", "module-host",
+        "module implementations resolved from the active game module", 0,
+        nlohmann::json{{"count", mModules.size()},
+                       {"generation",
+                        mimita::host::HostRuntime::instance().activeGeneration()}},
+        __FILE__, __LINE__, __FUNCTION__);
     return !mModules.empty();
 }
 

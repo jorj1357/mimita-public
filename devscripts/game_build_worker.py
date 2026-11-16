@@ -538,12 +538,17 @@ def build(args: argparse.Namespace) -> int:
             "src/npc/npc-behavior-module.cpp":
                 "GetMimitaNpcBehaviorModuleAPI",
         }
+        identity_only_sources = {
+            "src/physics/movement/actor-contact-policy-module.cpp",
+        }
         extra_flags = []
         if source_path in folded_module_symbols:
             extra_flags.extend([
                 f"-I{identity_dir}",
                 f"-DGetMimitaModuleAPI={folded_module_symbols[source_path]}",
             ])
+        elif source_path in identity_only_sources:
+            extra_flags.append(f"-I{identity_dir}")
         command = [
             *ccache_prefix,
             cxx,

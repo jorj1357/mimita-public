@@ -290,14 +290,13 @@ sandboxed evaluator.
 
 ## Related
 
-- `docs/architecture/live-development/live-development.md`
+- `docs/specs/hotreload/hotreload.md`
+- `docs/specs/dev-loop/agent-lanes-build-authority.md`
 - `docs/architecture/live-development/project-layer.md`
 - `docs/architecture/live-development/hot-kernel-next-steps.md`
 - `docs/gold/2026-09-12-live-code-hot-reload-journey.md`
 - `docs/architecture/ecs-entity-etc/ecs.md`
 - `docs/architecture/ecs-entity-etc/ecs-migration.md`
-- `docs/architecture/live-development/live-development.md`
-- `docs/specs/hotreload/hotreload.md`
 
 ## Total-hot server/transport correction (2026-11-14)
 

@@ -34,8 +34,9 @@ changes the project policy and the CLI guard is deliberately revised.
   `game_build_worker.py` directly.
 - **One game-DLL build at a time.** The dev-loop coalesces saves, waits for the
   active build to finish, and only then starts the next revision.
-- **Agent A owns build requests.** B and C edit and save their areas, then wait
-  for A to build. No claims JSON or lock file is required; use
+- **No agent owns or issues build requests.** The root dev-loop watcher queues
+  builds from saved compiler inputs. Every agent edits, saves, and keeps
+  working; nobody requests a build and nobody waits for one. Use
   `docs/handoffs/hot-reload-agent-focus.md` plus the latest changelog to avoid
   overlapping edits.
 - **One journal, many readers.** Each server/client instance writes its own
@@ -288,8 +289,9 @@ build. From this point, saved source edits are detected automatically.
   Coordinate it with the human.
 - JSON/config edit: the owning reload path applies it.
 
-Do not block on `--wait-for-build`. Poll status occasionally and keep working.
-An agent that waits is wasting the time the dev-loop is already using.
+Do not run `--wait-for-build` and do not poll in a loop. Read status once when
+needed, then keep working. An agent that waits is wasting the time the dev-loop
+is already using.
 
 ### 4.4 Get the lane executable and test
 

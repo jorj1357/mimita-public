@@ -18,10 +18,11 @@ auto-detects saved edits. Lane creation rejects paths, metadata, symlinks,
 junctions, schedulers, and caches that escape this checkout. See
 [`docs/specs/dev-loop/agent-lanes-build-authority.md`](../../specs/dev-loop/agent-lanes-build-authority.md).
 
-A human may submit an explicit build or use the emergency override:
+A human may submit an explicit build or use the emergency override. Agents
+must never run either command:
 
 ```text
-python devscripts/dev-loop.py --request build --wait-for-build
+MIMITA_BUILD_OVERRIDE=1 python devscripts/dev-loop.py --request build --wait-for-build
 MIMITA_BUILD_OVERRIDE=1 python build.py build-only
 ```
 
@@ -115,10 +116,17 @@ processors. Each build also records its lane's
 source revision, submodule revisions, dirty-tree fingerprint, and whether the
 source changed while it was building.
 
-Build entry:
+Automatic build entry:
+
+The root dev-loop watches saved compiler inputs and queues the incremental
+build itself. Agents do not run a build command and do not wait. A saved edit
+is the only normal build trigger.
+
+A human may use a manual request only when the automatic path cannot produce the
+required artifact:
 
 ```
-python devscripts/dev-loop.py --request build --wait-for-build
+MIMITA_BUILD_OVERRIDE=1 python devscripts/dev-loop.py --request build --wait-for-build
 ```
 
 Use `--build-mode release` when a release configuration is specifically
@@ -160,10 +168,22 @@ exists) is the current one. If a build is expected to change code but reports
 
 ## Running a build
 
-All contributors:
+Agents:
+
+1. Confirm the single root dev-loop is online with
+   `python devscripts/dev-loop.py --status`, or start/verify it with
+   `python devscripts/dev-loop.py --ensure-running`.
+2. Save source files. The dev-loop detects the change and queues the build.
+3. Keep working. Do not run `--request build`, `--request game-dll`,
+   `--wait-for-build`, or a compiler, and do not poll in a loop.
+4. Read status and the journal once when build identity or runtime evidence is
+   needed.
+
+Humans only may submit an explicit manual request when the automatic path
+cannot produce the required artifact:
 
 ```
-python devscripts/dev-loop.py --request build --wait-for-build
+MIMITA_BUILD_OVERRIDE=1 python devscripts/dev-loop.py --request build --wait-for-build
 ```
 
 Use the dev-loop launch request to run the selected published artifact. For an
@@ -221,7 +241,7 @@ edit may affect many. Linking and artifact publication still take place.
 
 Mode 3 is the future save-to-live-code direction described in
 `docs/specs/dev-loop/dev-loop.md` and
-`docs/architecture/live-development/live-development.md`. It is not currently
+`docs/specs/hotreload/hotreload.md`. It is not currently
 a selectable command or a guarantee that arbitrary C++ changes can be loaded
 into a running process. Until code has a safe replaceable boundary, use the
 executable build and run path. For agents, the repository-local mode 2 lane

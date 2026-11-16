@@ -11,11 +11,16 @@ Read these gates before doing anything else:
    Do not create or use mode 2 lanes, extra worktrees, branches, or a second
    checkout for normal agent work. Preserve existing lane data; do not delete
    or merge it as part of an unrelated task. Only one agent should edit shared
-   source files at a time. Agents must not invoke build scripts, direct
-   compiler/`ccache` commands, or a dev-loop build request. For gameplay,
-   source changes are built and run by the existing root dev-loop. Reuse its
-   status/control path rather than starting a competing loop or launching a
-   stale executable. Read
+   source files at a time. Agents edit and observe; they never run builds.
+   Forbidden: `build.py`, `build_agent.py`, `buildv2.py`,
+   `module-build-worker.py`, `ccache`, a compiler, `dev-loop.py --request
+   build`, `dev-loop.py --request game-dll`, `dev-loop.py
+   --request cold-link-trial`, and `--wait-for-build`. Allowed: `dev-loop.py
+   --status`, `--list-instances`, `--inspect`, and `--ensure-running`.
+   A saved compiler input is the only normal build trigger; the root dev-loop
+   queues and runs it. Do not start a second loop, do not poll in a loop, and
+   do not wait for a build. Only a human may set `MIMITA_BUILD_OVERRIDE=1` for
+   an explicit manual build. Read
    `docs/specs/dev-loop/agent-lanes-build-authority.md` before any edit.
 
 1. ROUTER CHAIN: This file is not the complete instruction set. Read

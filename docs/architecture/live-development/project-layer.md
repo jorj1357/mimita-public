@@ -4,7 +4,7 @@
 * change sets, history, dependency graph, state schemas, and the shared
 * authoring surface for humans and agents.
 * this file DOES NOT define gameplay or the runtime generation model
-* this file DOES NOT replace hot-kernel.md or live-development.md
+* this file DOES NOT replace hot-kernel.md or hotreload.md
 * this file DOES NOT edit project files; it defines the model
 */
 
