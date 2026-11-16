@@ -332,7 +332,6 @@
       "DebugLog"
     ],
     "src/debug/structured-log.cpp": [
-      "DebugLog",
       "LogManager",
       "StructuredLogger"
     ],
@@ -623,8 +622,6 @@
       "GuiLayoutManager"
     ],
     "src/game/game-cli.cpp": [
-      "DebugLog",
-      "GamemodeRegistry",
       "NpcDifficultyConfig",
       "StructuredLogger",
       "TerminalState"
@@ -637,6 +634,8 @@
       "Terminal"
     ],
     "src/game/game-module.cpp": [
+      "AuthSystem",
+      "LocalProfileSystem",
       "StructuredLogger",
       "Terminal"
     ],
@@ -665,8 +664,24 @@
     "src/game/module-host-bridge-module.cpp": [
       "ModuleHost"
     ],
+    "src/game/module-host-query-module.cpp": [
+      "MapConfigRegistry"
+    ],
     "src/game/persistence-bridge-module.cpp": [
       "PersistenceQueue"
+    ],
+    "src/game/player-core-migration.cpp": [
+      "StructuredLogger"
+    ],
+    "src/game/server-policy-module.cpp": [
+      "AuthSystem",
+      "BehaviorProfileRegistry",
+      "GamemodeRegistry",
+      "MapConfigRegistry",
+      "MovementJsonConfig",
+      "NpcDifficultyConfig",
+      "StructuredLogger",
+      "VehicleSystem"
     ],
     "src/game/server-runtime-module.cpp": [
       "GamemodeRegistry",
@@ -827,20 +842,24 @@
     "src/gui/ui-text-input.cpp": [
       "DebugLog"
     ],
+    "src/host/host-perf-fallback.cpp": [
+      "Perf"
+    ],
     "src/host/host-runtime.cpp": [
       "ModuleHost",
       "MultiplayerContextGlobal",
       "PersistenceQueue",
       "StructuredLogger"
     ],
+    "src/host/host-server-ice-fallback.cpp": [
+      "StructuredLogger"
+    ],
     "src/hot-reload/hot-reload-system.cpp": [
       "HotReloadSystem"
     ],
     "src/hot-reload/module-host.cpp": [
-      "MapConfigRegistry",
       "ModuleHost",
-      "StructuredLogger",
-      "Terminal"
+      "StructuredLogger"
     ],
     "src/impact/destructible-async-cut.cpp": [
       "PhysicalEntitySystem",
@@ -921,13 +940,7 @@
       "VehicleSystem"
     ],
     "src/main.cpp": [
-      "AnalyticsManager",
-      "AuthSystem",
-      "DebugLog",
-      "HotReloadSystem",
-      "LocalProfileSystem",
       "LogManager",
-      "ModuleHost",
       "MultiplayerContextGlobal",
       "StructuredLogger",
       "Terminal",
@@ -1211,18 +1224,9 @@
       "StructuredLogger"
     ],
     "src/network/server.cpp": [
-      "AuthSystem",
-      "BehaviorProfileRegistry",
-      "GamemodeRegistry",
-      "MapConfigRegistry",
       "ModuleHost",
-      "MovementJsonConfig",
-      "NpcDifficultyConfig",
       "PersistenceQueue",
-      "StructuredLogger",
-      "VehicleSystem",
-      "WeaponRegistry",
-      "serverGamemodeState"
+      "StructuredLogger"
     ],
     "src/network/vehicle-networking.cpp": [
       "MapConfigRegistry",
@@ -1865,7 +1869,6 @@
       "src/gui/menus/settings-menu.cpp",
       "src/main-init.cpp",
       "src/main-systems.cpp",
-      "src/main.cpp",
       "src/profile/local-profile-system.cpp",
       "src/world/world-gltf-loader.cpp"
     ],
@@ -1878,16 +1881,16 @@
       "src/duel/duel-queue.cpp",
       "src/duel/duel-ui.cpp",
       "src/engine/engine-tick-state.cpp",
+      "src/game/game-module.cpp",
+      "src/game/server-policy-module.cpp",
       "src/gui/gui-main.cpp",
       "src/gui/menus/account-panel.cpp",
       "src/gui/menus/main-menu.cpp",
       "src/gui/menus/menu-avatar-preview.cpp",
       "src/gui/menus/play-menu.cpp",
       "src/main-systems.cpp",
-      "src/main.cpp",
       "src/network/community-match-client.cpp",
       "src/network/multiplayer-tick.cpp",
-      "src/network/server.cpp",
       "src/terminal/auth-commands.cpp",
       "src/terminal/debug-commands.cpp",
       "src/terminal/network-commands.cpp",
@@ -1895,11 +1898,11 @@
     ],
     "BehaviorProfileRegistry": [
       "src/engine/engine-tick-setup.cpp",
+      "src/game/server-policy-module.cpp",
       "src/main-systems.cpp",
       "src/network/server-gamemode.cpp",
       "src/network/server-melee-actions.cpp",
       "src/network/server-npcs.cpp",
-      "src/network/server.cpp",
       "src/npc/npc-behavior.cpp",
       "src/npc/npc.cpp"
     ],
@@ -1962,7 +1965,6 @@
       "src/config/weapon-tracers-config.cpp",
       "src/debug/debug-log.cpp",
       "src/debug/npckillfeed-log.cpp",
-      "src/debug/structured-log.cpp",
       "src/devtools/dev-overlay-commands.cpp",
       "src/devtools/dev-teleport.cpp",
       "src/duel/duel-history.cpp",
@@ -1993,7 +1995,6 @@
       "src/fister/fister-port.cpp",
       "src/game/duel-state.cpp",
       "src/game/duel.cpp",
-      "src/game/game-cli.cpp",
       "src/game/gamemode-manager.cpp",
       "src/game/main-menu-command-module.cpp",
       "src/game/spawn-override.cpp",
@@ -2015,7 +2016,6 @@
       "src/impact/impact-system.cpp",
       "src/killfeed/killfeed.cpp",
       "src/main-systems.cpp",
-      "src/main.cpp",
       "src/map/map-loader-material.cpp",
       "src/map/map_loader.cpp",
       "src/network/actor-lifecycle.cpp",
@@ -2173,8 +2173,8 @@
       "src/engine/engine-tick-ui-game-hud.cpp",
       "src/engine/engine-tick-ui-overlays.cpp",
       "src/entities/player-animation.cpp",
-      "src/game/game-cli.cpp",
       "src/game/gamemode-manager.cpp",
+      "src/game/server-policy-module.cpp",
       "src/game/server-runtime-module.cpp",
       "src/gamemode/gamemode.cpp",
       "src/gamemode/map-config.cpp",
@@ -2187,7 +2187,6 @@
       "src/network/server-npcs.cpp",
       "src/network/server-packet-chat.cpp",
       "src/network/server-world-destruction.cpp",
-      "src/network/server.cpp",
       "src/procedural/infinite-world-runtime.cpp",
       "src/render/render-world-mesh.cpp",
       "src/terminal/actor-commands.cpp",
@@ -2237,13 +2236,12 @@
       "src/notifications/notifications.cpp"
     ],
     "HotReloadSystem": [
-      "src/hot-reload/hot-reload-system.cpp",
-      "src/main.cpp"
+      "src/hot-reload/hot-reload-system.cpp"
     ],
     "LocalProfileSystem": [
+      "src/game/game-module.cpp",
       "src/gui/menus/sign-in-menu.cpp",
       "src/main-init.cpp",
-      "src/main.cpp",
       "src/profile/local-profile-system.cpp"
     ],
     "LogManager": [
@@ -2257,9 +2255,10 @@
       "src/engine/engine-tick-setup.cpp",
       "src/engine/engine-tick-ui-overlays.cpp",
       "src/game/gamemode-manager.cpp",
+      "src/game/module-host-query-module.cpp",
+      "src/game/server-policy-module.cpp",
       "src/gamemode/map-config.cpp",
       "src/gamemode/map-edit-applier.cpp",
-      "src/hot-reload/module-host.cpp",
       "src/interaction/world-interaction-runtime.cpp",
       "src/map/map-authored-geometry.cpp",
       "src/mapeditor/map-editor-commands.cpp",
@@ -2269,7 +2268,6 @@
       "src/network/multiplayer-context.cpp",
       "src/network/server-gamemode.cpp",
       "src/network/server-infinite-collision.cpp",
-      "src/network/server.cpp",
       "src/network/vehicle-networking.cpp",
       "src/procedural/infinite-world-runtime.cpp",
       "src/render/render-world.cpp",
@@ -2287,7 +2285,6 @@
       "src/game/module-host-bridge-module.cpp",
       "src/host/host-runtime.cpp",
       "src/hot-reload/module-host.cpp",
-      "src/main.cpp",
       "src/map/map-authored-geometry.cpp",
       "src/map/map-loader-gltf-nodes.cpp",
       "src/mapeditor/map-editor-commands.cpp",
@@ -2324,11 +2321,11 @@
       "src/config/movement-config.cpp",
       "src/debug/debug-visuals-scene.cpp",
       "src/engine/engine-tick-setup.cpp",
+      "src/game/server-policy-module.cpp",
       "src/gamemode/match-roles.cpp",
       "src/main-systems.cpp",
       "src/network/community-match-client.cpp",
       "src/network/server-melee-actions.cpp",
-      "src/network/server.cpp",
       "src/npc/npc-difficulty-config.cpp",
       "src/npc/npc-navigator.cpp",
       "src/npc/npc-traversal.cpp",
@@ -2346,11 +2343,11 @@
     "NpcDifficultyConfig": [
       "src/engine/engine-tick-setup.cpp",
       "src/game/game-cli.cpp",
+      "src/game/server-policy-module.cpp",
       "src/main-systems.cpp",
       "src/network/server-npcs.cpp",
       "src/network/server-packet-chat.cpp",
       "src/network/server-projectiles.cpp",
-      "src/network/server.cpp",
       "src/npc/npc-combat.cpp",
       "src/npc/npc-difficulty-config.cpp",
       "src/npc/npc-navigation.cpp",
@@ -2373,6 +2370,7 @@
       "src/engine/engine-tick-ui-overlays.cpp",
       "src/engine/engine-tick-ui.cpp",
       "src/engine/engine-tick.cpp",
+      "src/host/host-perf-fallback.cpp",
       "src/impact/impact-system.cpp",
       "src/network/server-gamemode.cpp",
       "src/network/server-npcs.cpp",
@@ -2518,6 +2516,8 @@
       "src/game/host-compat-bridge-module.cpp",
       "src/game/host-log-bridge-module.cpp",
       "src/game/hot-status-tips.cpp",
+      "src/game/player-core-migration.cpp",
+      "src/game/server-policy-module.cpp",
       "src/game/server-runtime-module.cpp",
       "src/gamemode/arena-ball.cpp",
       "src/gamemode/gamemode.cpp",
@@ -2530,6 +2530,7 @@
       "src/gui/ui-system-buttons.cpp",
       "src/gui/ui-system.cpp",
       "src/host/host-runtime.cpp",
+      "src/host/host-server-ice-fallback.cpp",
       "src/hot-reload/module-host.cpp",
       "src/impact/destructible-async-cut.cpp",
       "src/impact/impact-system.cpp",
@@ -2678,7 +2679,6 @@
       "src/gui/gui-editor-commands.cpp",
       "src/gui/gui-main.cpp",
       "src/gui/menus/pause-menu.cpp",
-      "src/hot-reload/module-host.cpp",
       "src/input/input-commands.cpp",
       "src/interaction/interaction-commands.cpp",
       "src/interaction/world-interaction-runtime.cpp",
@@ -2841,13 +2841,13 @@
     "VehicleSystem": [
       "src/engine/engine-tick-camera.cpp",
       "src/engine/engine-tick-setup.cpp",
+      "src/game/server-policy-module.cpp",
       "src/input/input-poll.cpp",
       "src/main-systems.cpp",
       "src/mapeditor/map-editor.cpp",
       "src/network/multiplayer-physical-entities.cpp",
       "src/network/multiplayer-reconcile.cpp",
       "src/network/server-players.cpp",
-      "src/network/server.cpp",
       "src/network/vehicle-networking.cpp",
       "src/physics/runtime-objects-commands.cpp",
       "src/physics/runtime-objects.cpp",
@@ -2900,7 +2900,6 @@
       "src/network/server-physical-contact.cpp",
       "src/network/server-players.cpp",
       "src/network/server-projectiles.cpp",
-      "src/network/server.cpp",
       "src/network/weapon-runtime-reconciliation.cpp",
       "src/npc/npc-combat.cpp",
       "src/npc/npc-spawn.cpp",
@@ -2927,7 +2926,6 @@
       "src/network/server-players.cpp",
       "src/network/server-projectiles.cpp",
       "src/network/server-world-destruction.cpp",
-      "src/network/server.cpp",
       "src/network/vehicle-networking.cpp",
       "src/procedural/procedural-world.cpp",
       "src/terminal/actor-commands.cpp",

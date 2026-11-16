@@ -24,6 +24,7 @@
 #include "host/host-runtime.h"
 #include "host/abi/state-capability.h"
 #include "game/state-bridge-module.h"
+#include "game/player-core-migration.h"
 #include "host/host-transport-adapter.h"
 #include "world/world.h"
 #include "world/world-loader.h"
@@ -788,6 +789,35 @@ void registerAgentCommands()
         [](const std::vector<std::string>&) { runStateMigrationSelfTest(); },
         "2026-11-16", CommandCategory::Debug
     });
+    Terminal::instance().registerCommand({
+        "state.player-core-seed", "Seed player_core v1/v2 state for a live migration proof.",
+        "state.player-core-seed <1|2> [reject]",
+        [](const std::vector<std::string>& args) {
+            const int version = args.empty() ? 0 : std::atoi(args[0].c_str());
+            const bool reject = args.size() > 1 && args[1] == "reject";
+            if (version != 1 && version != 2) {
+                Terminal::instance().addLog(
+                    "[STATE] usage: state.player-core-seed <1|2> [reject]");
+                return;
+            }
+            const bool ok = mimita::game::seedPlayerCoreState(version, reject);
+            Terminal::instance().addLog(
+                ok ? "[STATE] player_core seed PASS"
+                   : "[STATE] player_core seed FAIL");
+        },
+        "2026-11-16", CommandCategory::Debug
+    });
+    Terminal::instance().registerCommand({
+        "state.player-core-migrate", "Migrate the resident player_core domain to v3.",
+        "state.player-core-migrate",
+        [](const std::vector<std::string>&) {
+            const bool ok = mimita::game::migratePlayerCoreState();
+            Terminal::instance().addLog(
+                ok ? "[STATE] player_core migration PASS"
+                   : "[STATE] player_core migration FAIL");
+        },
+        "2026-11-16", CommandCategory::Debug
+    });
 }
 
 } // namespace
@@ -934,6 +964,10 @@ void gameInitSubsystems(Engine& engine)
     bool& editorMode = menuState->editorMode;
     int& selectedEditorObject = menuState->selectedEditorObject;
     bool& freecamEnabled = menuState->freecamEnabled;
+
+    // Create or migrate the resident player_core domain before gameplay reads
+    // it. A rejected migration leaves the previous resident block committed.
+    mimita::game::ensurePlayerCoreState();
 
     DevConfig::instance().load("config/dev_controls.txt");
     DevOverlay::instance().init(engine.window());

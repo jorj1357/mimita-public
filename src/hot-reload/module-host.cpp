@@ -23,7 +23,6 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/structured-log.h"
-#include "devtools/terminal.h"
 #include "gamemode/map-config.h"
 #include "host/host-runtime.h"
 #include "npc/npc-world-query.h"
@@ -33,7 +32,6 @@
 #include "modules/api/map-editor-api.h"
 #include "modules/api/world-rendering-api.h"
 #include "modules/api/worldgen-api.h"
-#include "notifications/notifications.h"
 #include "worldgen/worldgen-library.h"
 
 namespace {
@@ -189,7 +187,7 @@ void MIMITA_MODULE_CALL hostLogEvent(
 
 std::uint64_t MIMITA_MODULE_CALL hostRevision()
 {
-    return MapConfigRegistry::instance().revision();
+    return mimita::host::HostRuntime::instance().moduleHostMapRevision();
 }
 
 int MIMITA_MODULE_CALL hostSelectObject(const char* id)
@@ -228,8 +226,11 @@ int MIMITA_MODULE_CALL hostClearSelection()
 
 void MIMITA_MODULE_CALL hostLogLine(const char* message)
 {
-    if (message)
-        Terminal::instance().addLog(message);
+    if (!message) return;
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Verbose,
+        "module.host.log", "", "module host text line", 0,
+        nlohmann::json{{"message", message}}, __FILE__, __LINE__, __func__);
 }
 
 int MIMITA_MODULE_CALL hostCopySelection()
@@ -458,19 +459,12 @@ int MIMITA_MODULE_CALL hostGetMapBounds(float outMin[3], float outMax[3])
 
 int MIMITA_MODULE_CALL hostGetProfileFootprint(float outFootprint[3])
 {
-    outFootprint[0] = 10.0f;
-    outFootprint[1] = 10.0f;
-    outFootprint[2] = 4.0f;
-    const std::string mapId = MapConfigRegistry::instance().mapId();
-    if (mapId.empty())
-        return 1;
-    MimitaWorldGen::WorldGenMode profile;
-    std::string error;
-    if (!MimitaWorldGen::WorldGenLibrary::instance().loadMode(mapId, profile, &error))
-        return 1;
-    outFootprint[0] = std::max(0.25f, profile.grid.chunkSize.x);
-    outFootprint[1] = std::max(0.25f, profile.grid.chunkSize.y);
-    outFootprint[2] = std::max(0.25f, profile.grid.chunkSize.z);
+    if (!mimita::host::HostRuntime::instance().moduleHostProfileFootprint(
+            outFootprint)) {
+        outFootprint[0] = 10.0f;
+        outFootprint[1] = 10.0f;
+        outFootprint[2] = 4.0f;
+    }
     return 1;
 }
 
@@ -541,7 +535,15 @@ int MIMITA_MODULE_CALL hostEvaluateConnectorPair(
 {
     if (reason && reasonCapacity)
         reason[0] = '\0';
-    const MapObjectiveConfig& config = MapConfigRegistry::instance().current();
+    const void* configPtr =
+        mimita::host::HostRuntime::instance().moduleHostMapObjectiveConfig();
+    if (!configPtr) {
+        if (reason && reasonCapacity)
+            std::snprintf(reason, reasonCapacity, "map config unavailable");
+        return 0;
+    }
+    const MapObjectiveConfig& config =
+        *static_cast<const MapObjectiveConfig*>(configPtr);
     std::vector<mimita_worldgen::ChunkV1> chunkViews;
     std::vector<mimita_worldgen::PartV1> partViews;
     std::vector<mimita_worldgen::ConnectorV1> connectorViews;
@@ -710,15 +712,16 @@ const void* MIMITA_MODULE_CALL hostGetCapability(
 int MIMITA_MODULE_CALL hostNpcLineOfSightBlocked(
     const float from[3], const float to[3])
 {
-    return npcWorldLineOfSightBlocked(from, to) ? 1 : 0;
+    return mimita::host::HostRuntime::instance().moduleHostNpcLineOfSightBlocked(
+        from, to);
 }
 
 int MIMITA_MODULE_CALL hostNpcRaycastBlocked(
     const float from[3], const float direction[3], float maxDistance,
     float* outDistance)
 {
-    return npcWorldRaycastBlocked(from, direction, maxDistance, outDistance)
-        ? 1 : 0;
+    return mimita::host::HostRuntime::instance().moduleHostNpcRaycastBlocked(
+        from, direction, maxDistance, outDistance);
 }
 
 const mimita_npc_perception::NpcWorldServicesV1* npcWorldServices()
@@ -1673,7 +1676,7 @@ bool ModuleHost::npcPerceptionLoaded() const
 
 void ModuleHost::setNpcWorldQueryContext(const World* world)
 {
-    setNpcWorldQueryWorld(world);
+    mimita::host::HostRuntime::instance().moduleHostSetNpcWorld(world);
 }
 
 bool ModuleHost::navigationPolicy(
@@ -2459,8 +2462,6 @@ void ModuleHost::notifyActivation(const ModuleEntry& entry,
         message += " (replaced " + std::to_string(previousGeneration) + ")";
     if (!paths.empty())
         message += "\n" + paths;
-    const std::string title = "Hot reload: " + entry.name;
-    NotificationSystem::instance().pushHotReload(title, message);
     writeEvent("module.notice.shown", "successful hot reload notice",
                entry.name,
                nlohmann::json{{"module", entry.name},
@@ -2504,8 +2505,6 @@ void ModuleHost::notifyBuildFailure(const ModuleEntry& entry,
         message += "\n" + details.substr(0, std::min<size_t>(details.size(), 1200));
     if (failedPath.empty())
         failedPath = joinedPaths(entry);
-    const std::string title = "Hot reload failed: " + entry.name;
-    NotificationSystem::instance().pushHotReloadFailure(title, message);
     writeEvent("module.notice.shown", "hot reload failure notice",
                entry.name,
                nlohmann::json{{"module", entry.name},

@@ -19,6 +19,8 @@
 #include "devtools/terminal.h"
 #include "game/server-runtime.h"
 #include "game/game-input-module.h"
+#include "profile/local-profile-system.h"
+#include "auth/auth-system.h"
 #include "host/abi/game-host-abi.h"
 #include "host/abi/game-server-abi.h"
 #include "host/abi/transport-capability.h"
@@ -27,9 +29,7 @@ namespace mimita::game {
 void initializeHostLog(const mimita::host::HostServicesV1* services);
 void initializeHostTransport(const mimita::host::HostServicesV1* services);
 void initializeHostModules(const mimita::host::HostServicesV1* services);
-void initializeHostAudio(const mimita::host::HostServicesV1* services);
 void initializeHostEffects(const mimita::host::HostServicesV1* services);
-void initializeHostDuel(const mimita::host::HostServicesV1* services);
 void initializeHostPersistence(const mimita::host::HostServicesV1* services);
 void initializeHostJobsWatch(const mimita::host::HostServicesV1* services);
 void initializeHostEntity(const mimita::host::HostServicesV1* services);
@@ -45,7 +45,6 @@ void initializeHostWindow(const mimita::host::HostServicesV1* services);
 void initializeHostDiagnostics(const mimita::host::HostServicesV1* services);
 void initializeHostIce(const mimita::host::HostServicesV1* services);
 void initializeHostTransportSession(const mimita::host::HostServicesV1* services);
-void initializeHostAuthoredRebuild(const mimita::host::HostServicesV1* services);
 void initializeHostJobs(const mimita::host::HostServicesV1* services);
 void initializeHostFiles(const mimita::host::HostServicesV1* services);
 void initializeHostSocket(const mimita::host::HostServicesV1* services);
@@ -71,9 +70,7 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostLog(services);
     mimita::game::initializeHostTransport(services);
     mimita::game::initializeHostModules(services);
-    mimita::game::initializeHostAudio(services);
     mimita::game::initializeHostEffects(services);
-    mimita::game::initializeHostDuel(services);
     mimita::game::initializeHostPersistence(services);
     mimita::game::initializeHostJobsWatch(services);
     mimita::game::initializeHostEntity(services);
@@ -89,7 +86,6 @@ HostResult gameInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostDiagnostics(services);
     mimita::game::initializeHostIce(services);
     mimita::game::initializeHostTransportSession(services);
-    mimita::game::initializeHostAuthoredRebuild(services);
     mimita::game::initializeHostJobs(services);
     mimita::game::initializeHostFiles(services);
     mimita::game::initializeHostSocket(services);
@@ -109,10 +105,18 @@ HostResult gameShutdown() {
     return HostResult::Ok;
 }
 
+namespace {
+void ensureStartupIdentity(const char* sessionToken) {
+    LocalProfileSystem::instance().init();
+    AuthSystem::instance().init(sessionToken ? sessionToken : "");
+}
+}  // namespace
+
 HostResult gameBootstrap(const GameStartupV1* startup) {
     if (!startup || startup->structSize < sizeof(GameStartupV1)) {
         return HostResult::InvalidArgument;
     }
+    ensureStartupIdentity(startup->sessionToken);
     return mimita::game::initializeWholeGameEntry(
                startup->width > 0 ? startup->width : 1024,
                startup->height > 0 ? startup->height : 768,
@@ -127,6 +131,7 @@ std::int32_t gameShouldClose() {
 HostResult gameTick(double deltaSeconds) {
     static bool frameInitialized = false;
     if (!frameInitialized) {
+        ensureStartupIdentity(nullptr);
         if (!mimita::game::initializeWholeGameEntry(1024, 768, "MiMITA Game")) {
             return HostResult::InternalError;
         }
@@ -172,6 +177,9 @@ HostResult gameEvent(std::uint32_t eventId, void* payload, std::size_t payloadSi
         info.directAddress = request->directAddress;
         info.roomCode = request->roomCode;
         info.playerName = request->playerName;
+        if (info.playerName.empty()) {
+            info.playerName = AuthSystem::instance().displayName();
+        }
         info.mapName = request->mapName;
         info.password = request->password;
         info.serverName = request->serverName;

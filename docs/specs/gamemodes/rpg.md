@@ -1,3 +1,114 @@
+2026 11 16 1232 jorj
+
+ok i 
+the map 
+the map 
+
+ok the things u make i think the dtnahve to be the pro best hting at the start... that means
+u must keep refinigin iti
+BUT
+
+OK 
+
+RPG FOR ME
+
+bandit level 5
+kill with 
+REVOVLER
+AND IM RUNNIGN AROUND THE BANDINT
+AND THE BANDIT HAS LIKE COOL MOEVMENT AND COOL ANIMATIONS
+EACH MONSTR HAS COOL ANIMATIONS MATBE 
+
+revovler kill
+rocket laucnher kill
+SWORDS
+ABOSLUTEL WE NEED
+Wwe literallt
+we need swords
+we need an actual swrodsword
+bc swordsowrd rightnow sucking dick
+
+actuallt we jsut need better melee overall
+
+i want to do its touching = it does damage
+per tick 60hz 
+but 
+
+i also know we could do
+BC THIS IS SO BROINGGGGGG
+
+ok
+click = start atatck anim
+live for 15 ticks
+its a sphere volume from the weapon itself
+must intersect with sphere olume
+voluem lke hitbox in smash
+
+but use that
+to kill
+
+and make all the motners super satisfting to kill and gegt xp 
+and do blood nad gore
+and be usper ultra powerful
+but slower?
+idk
+spee
+
+whatever spede u want
+also put vehicles
+
+i know im killing bandits and goblins right now
+what if i w
+
+gta is a RPG i think
+
+so we can have cars and guns and helicotpers etc
+it jsut maeks it more compexl BUT
+MAHIC
+
+MAGIC IS A BIG THING
+
+not a revovler... a MAGICAL GUN 
+
+a magical sword...
+a shadow sword
+
+a
+AN EXPLOSIVE SPELL LAUNCHER
+THAT IS RHE ROCKET LAUNCHER
+
+ITS JUST  UES USE THE SAME WEPAONS AND MAKE IT SO U CAN SHOOT WITH THEM AND DO NPCS THINGS 
+
+BUT
+the worlds
+hmmmmmm
+it takes lowk like 20 sec 
+to cross
+like 
+idk
+its seems pret far awaw
+but
+its big
+
+so 
+isnce mimimt
+
+miita moev faster
+that means we need like idk
+
+idk how to do meters not running around per second
+its like not fun to go slow
+but
+BUT
+ALSO
+
+MAP EDIOTR
++
+THIS SI AHUGE PART FOR MAP EDITOR
+AND HOT RELOAD
+
+ADD HOT RELOADABLE THINGS LIVE LIKE WE CAN MAKE MAP THINGS AND STUFF AND WE AN MAKE MAP SAND WE CAN SAVE IT AND ETC AND PLA  IT AND STUFF 
+
 2026 10 06 1728 jorj todo 
 
 OK RPG LIKE

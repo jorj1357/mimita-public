@@ -103,11 +103,29 @@ public:
     bool serverPolicyMakeUdpConnectionId(std::uint32_t addressNetwork,
                                          std::uint16_t portNetwork,
                                          ServerConnectionIdV1* out);
+    bool serverPolicyAllocateIceConnectionId(ServerConnectionIdV1* out);
+    bool serverPolicyLegacyEndpoint(const ServerConnectionIdV1* id,
+                                    std::uint32_t* addressNetwork,
+                                    std::uint16_t* portNetwork);
+    bool serverPolicyClearActorPreset(std::uint32_t playerId);
     bool serverPolicyPollReload(void* npcSystem, std::uint32_t tick);
     bool serverPolicyAuthIdentity(ServerAuthIdentityV1* out);
     bool serverPolicyProjectilePerf(ServerProjectilePerfV1* out);
     bool serverPolicyClearRuntimeObjects(const char* reason);
     bool serverPolicyCoordinatorIceDone(const char* roomCode);
+    bool gameExportAvailable() const;
+    int gameRunExport(const char* clipPath, const char* outputPath,
+                      int width, int height, int visible, int verbose);
+    bool moduleHostQueryAvailable() const;
+    std::uint64_t moduleHostMapRevision();
+    const void* moduleHostMapObjectiveConfig();
+    bool moduleHostProfileFootprint(float outFootprint[3]);
+    int moduleHostNpcLineOfSightBlocked(const float from[3],
+                                        const float to[3]);
+    int moduleHostNpcRaycastBlocked(const float from[3],
+                                    const float direction[3],
+                                    float maxDistance, float* outDistance);
+    void moduleHostSetNpcWorld(const void* world);
 
     // Drive one whole-game fixed tick and render call through the barrier.
     // Safe-point ownership remains with the caller: this does not advance the

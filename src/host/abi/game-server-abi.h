@@ -100,6 +100,7 @@ struct ServerStartupV1 {
     const char* serverName = nullptr;
     const char* hostPlayerName = nullptr;
     const char* password = nullptr;
+    const char* sessionToken = nullptr;
     const char* proceduralMode = nullptr;
     std::uint32_t proceduralSeed = 0;
     std::uint32_t npcCount = 0;
@@ -211,6 +212,11 @@ struct GameServerPolicyV1 {
     int (*make_udp_connection_id)(std::uint32_t addressNetwork,
                                   std::uint16_t portNetwork,
                                   ServerConnectionIdV1* out) = nullptr;
+    int (*allocate_ice_connection_id)(ServerConnectionIdV1* out) = nullptr;
+    int (*legacy_endpoint_for_connection)(const ServerConnectionIdV1* id,
+                                          std::uint32_t* addressNetwork,
+                                          std::uint16_t* portNetwork) = nullptr;
+    int (*clear_actor_preset)(std::uint32_t playerId) = nullptr;
     int (*poll_reload)(void* npcSystem, std::uint32_t tick) = nullptr;
     int (*auth_identity)(ServerAuthIdentityV1* out) = nullptr;
     int (*projectile_perf)(ServerProjectilePerfV1* out) = nullptr;

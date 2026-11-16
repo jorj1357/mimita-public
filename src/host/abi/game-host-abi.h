@@ -231,6 +231,7 @@ struct GameStartupV1 {
     std::int32_t width;
     std::int32_t height;
     const char* title;
+    char sessionToken[256];
 };
 
 // Bootstrap -> DLL handoff for launcher auto-join. The resident EXE owns the
@@ -389,6 +390,41 @@ struct GameModuleV1 {
 using GetGameModuleFn = const GameModuleV1* (*)(std::uint32_t abiVersion);
 
 inline constexpr const char* kGetGameModuleSymbol = "GetMimitaGameModuleV1";
+
+// Optional bounded replay-export entry for the resident export subprocess.
+inline constexpr std::uint32_t kGameExportAbiVersion = 1;
+inline constexpr char kGetGameExportSymbol[] = "GetMimitaGameExportV1";
+
+struct GameExportV1 {
+    std::uint32_t abiVersion = kGameExportAbiVersion;
+    std::uint32_t structSize = sizeof(GameExportV1);
+    int (*run_export)(const char* clipPath, const char* outputPath,
+                      int width, int height, int visible, int verbose) = nullptr;
+};
+
+using GetGameExportFn = const GameExportV1* (*)(std::uint32_t abiVersion);
+
+// Optional game-owned queries used by the resident ModuleHost bridge.
+inline constexpr std::uint32_t kGameModuleHostQueryAbiVersion = 1;
+inline constexpr char kGetGameModuleHostQuerySymbol[] =
+    "GetMimitaGameModuleHostQueryV1";
+
+struct GameModuleHostQueryV1 {
+    std::uint32_t abiVersion = kGameModuleHostQueryAbiVersion;
+    std::uint32_t structSize = sizeof(GameModuleHostQueryV1);
+    std::uint64_t (*map_revision)() = nullptr;
+    const void* (*map_objective_config)() = nullptr;
+    int (*profile_footprint)(float outFootprint[3]) = nullptr;
+    int (*npc_line_of_sight_blocked)(const float from[3],
+                                     const float to[3]) = nullptr;
+    int (*npc_raycast_blocked)(const float from[3],
+                               const float direction[3], float maxDistance,
+                               float* outDistance) = nullptr;
+    void (*set_npc_world)(const void* world) = nullptr;
+};
+
+using GetGameModuleHostQueryFn =
+    const GameModuleHostQueryV1* (*)(std::uint32_t abiVersion);
 
 inline bool is_valid_host_result(HostResult result) {
     const auto value = static_cast<std::int32_t>(result);

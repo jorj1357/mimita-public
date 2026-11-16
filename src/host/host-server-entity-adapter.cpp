@@ -792,14 +792,10 @@ HostResult HostServerEntityAdapter::readPlayerCore(
     out->velocity[2] = player.vel.z;
     out->health = player.health;
     out->max_health = player.maxHealth;
-    std::uint32_t flags = 0;
-    if (player.isHost) flags |= static_cast<std::uint32_t>(PlayerFlag::Host);
-    if (player.adminCommandsEnabled) flags |= static_cast<std::uint32_t>(PlayerFlag::AdminEnabled);
-    if (player.adminCommandsGranted) flags |= static_cast<std::uint32_t>(PlayerFlag::AdminGranted);
-    if (player.connectionStale) flags |= static_cast<std::uint32_t>(PlayerFlag::Stale);
-    if (player.dead) flags |= static_cast<std::uint32_t>(PlayerFlag::Dead);
-    if (player.downed) flags |= static_cast<std::uint32_t>(PlayerFlag::Downed);
-    out->flags = flags;
+    // v3 removed the packed presentation flags; entity state now uses the
+    // dedicated player_session/player_vip domains for those values.
+    out->migration_epoch = 1;
+    out->migration_revision = 3;
     copyName(out->name, sizeof(out->name), player.name);
     return HostResult::Ok;
 }

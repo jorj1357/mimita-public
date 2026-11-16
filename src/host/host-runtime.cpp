@@ -22,10 +22,7 @@
 #include "debug/crash-handler.h"
 #include "debug/structured-log.h"
 #include "host/abi/log-capability.h"
-#include "host/abi/audio-capability.h"
-#include "host/abi/authored-rebuild-capability.h"
 #include "host/abi/effects-capability.h"
-#include "host/abi/gamemode-capability.h"
 #include "host/abi/global-capability.h"
 #include "host/abi/files-capability.h"
 #include "host/abi/gl-resource-capability.h"
@@ -46,9 +43,6 @@
 #include "host/abi/persistence-capability.h"
 #include "host/abi/module-capability.h"
 #include "host/abi/transport-capability.h"
-#include "audio/audio.h"
-#include "audio/music-manager.h"
-#include "duel/duel-queue.h"
 #include "persistence/persistence-queue.h"
 #include "utils/json-file-watch.h"
 #include "hot-reload/module-host.h"
@@ -65,7 +59,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "network/server-authored-rebuild.h"
 
 extern void* gpPlayer;
 extern void* gpCamera;
@@ -500,454 +493,6 @@ std::int32_t persistenceInvoke(void*, PersistenceOp op, const void* input,
     return 0;
 }
 
-std::int32_t duelInvoke(void*, GamemodeOp op, const void* input,
-                        std::uint32_t inputSize, void* output,
-                        std::uint32_t outputSize) {
-    auto& duel = DuelQueue::instance();
-    const auto args = [&]() -> const GamemodeTextArgs* {
-        if (!input || inputSize < sizeof(GamemodeTextArgs)) return nullptr;
-        return static_cast<const GamemodeTextArgs*>(input);
-    };
-    const auto writeInt = [&](std::int32_t value) {
-        if (output && outputSize >= sizeof(std::int32_t)) {
-            *static_cast<std::int32_t*>(output) = value;
-        }
-    };
-    const auto writeFloat = [&](float value) {
-        if (output && outputSize >= sizeof(float)) {
-            *static_cast<float*>(output) = value;
-        }
-    };
-    const auto writeString = [&](const std::string& value) {
-        if (!output || outputSize == 0) return;
-        const std::size_t count =
-            value.size() < outputSize - 1 ? value.size() : outputSize - 1;
-        std::memcpy(output, value.data(), count);
-        static_cast<char*>(output)[count] = 0;
-    };
-    switch (op) {
-        case GamemodeOp::DuelStopQueue:
-            duel.stopQueue();
-            return 1;
-        case GamemodeOp::DuelCountdownActive:
-            writeInt(duel.countdownActive() ? 1 : 0);
-            return 1;
-        case GamemodeOp::DuelCountdownLeft:
-            writeFloat(duel.countdownLeft());
-            return 1;
-        case GamemodeOp::DuelDefaultProfileId:
-            writeString(DuelQueue::defaultProfileId());
-            return 1;
-        case GamemodeOp::DuelOnEnemySpawn:
-            if (!input || inputSize < sizeof(MimitaNet::DuelEnemySpawnPacket)) return 0;
-            duel.onDuelEnemySpawn(
-                *static_cast<const MimitaNet::DuelEnemySpawnPacket*>(input));
-            return 1;
-        case GamemodeOp::DuelOnState:
-            if (!input || inputSize < sizeof(MimitaNet::DuelStatePacket)) return 0;
-            duel.onDuelState(*static_cast<const MimitaNet::DuelStatePacket*>(input));
-            return 1;
-        case GamemodeOp::DuelOnMapChange: {
-            const auto* a = args();
-            if (!a) return 0;
-            duel.onMapChange(a->s0, a->u0, a->u1);
-            return 1;
-        }
-        case GamemodeOp::DuelRequestRematchNow:
-            duel.requestRematchNow();
-            return 1;
-        case GamemodeOp::DuelRequestRematchWith: {
-            const auto* a = args();
-            if (!a) return 0;
-            duel.requestRematchWith(a->s0);
-            return 1;
-        }
-        case GamemodeOp::DuelReturnToQueue:
-            duel.returnToQueue();
-            return 1;
-        case GamemodeOp::DuelStartQueue: {
-            const auto* a = args();
-            if (!a) return 0;
-            std::vector<std::string> maps;
-            const std::uint32_t count = a->mapCount < 32 ? a->mapCount : 32;
-            for (std::uint32_t i = 0; i < count; ++i) {
-                if (a->maps[i][0]) maps.emplace_back(a->maps[i]);
-            }
-            duel.startQueue(a->s0, a->s1, a->s2, maps);
-            return 1;
-        }
-        case GamemodeOp::DuelUpdate: {
-            if (!input || inputSize < sizeof(float)) return 0;
-            duel.update(*static_cast<const float*>(input));
-            return 1;
-        }
-    }
-    return 0;
-}
-
-std::int32_t audioInvoke(void*, AudioOp op, const void* input,
-                         std::uint32_t inputSize, void* output,
-                         std::uint32_t outputSize) {
-    auto& audio = ::AudioManager::instance();
-    auto& music = ::MusicManager::instance();
-    const auto readFloat = [&](float& value) {
-        if (!input || inputSize < sizeof(float)) return false;
-        value = *static_cast<const float*>(input);
-        return true;
-    };
-    const auto readInt = [&](std::int32_t& value) {
-        if (!input || inputSize < sizeof(std::int32_t)) return false;
-        value = *static_cast<const std::int32_t*>(input);
-        return true;
-    };
-    const auto readU32 = [&](std::uint32_t& value) {
-        if (!input || inputSize < sizeof(std::uint32_t)) return false;
-        value = *static_cast<const std::uint32_t*>(input);
-        return true;
-    };
-    const auto writeInt = [&](std::int32_t value) {
-        if (output && outputSize >= sizeof(std::int32_t)) {
-            *static_cast<std::int32_t*>(output) = value;
-        }
-    };
-    const auto writeFloat = [&](float value) {
-        if (output && outputSize >= sizeof(float)) {
-            *static_cast<float*>(output) = value;
-        }
-    };
-    const auto writeU32 = [&](std::uint32_t value) {
-        if (output && outputSize >= sizeof(std::uint32_t)) {
-            *static_cast<std::uint32_t*>(output) = value;
-        }
-    };
-    const auto readString = [&]() -> std::string {
-        return input ? std::string(static_cast<const char*>(input)) : std::string();
-    };
-    const auto textPayload = [&]() -> const AudioTextPayload* {
-        if (!input || inputSize < sizeof(AudioTextPayload)) return nullptr;
-        return static_cast<const AudioTextPayload*>(input);
-    };
-    const auto writeString = [&](const std::string& value) {
-        if (!output || outputSize == 0) return;
-        const std::size_t count =
-            value.size() < outputSize - 1 ? value.size() : outputSize - 1;
-        std::memcpy(output, value.data(), count);
-        static_cast<char*>(output)[count] = 0;
-    };
-    switch (op) {
-        case AudioOp::AudioPlay: {
-            const auto* p = static_cast<const AudioEventPayload*>(input);
-            if (!p || inputSize < sizeof(AudioEventPayload)) return 0;
-            ::AudioEvent event;
-            event.name = p->name;
-            event.category = static_cast<::AudioCategory>(p->category);
-            event.world = p->world != 0;
-            event.position = glm::vec3(p->position[0], p->position[1], p->position[2]);
-            event.volume = p->volume;
-            event.pitch = p->pitch;
-            event.maxDistance = p->maxDistance;
-            event.ownerId = p->ownerId;
-            event.startSeconds = p->startSeconds;
-            event.endSeconds = p->endSeconds;
-            event.retrigger = p->retrigger != 0;
-            audio.play(event);
-            return 1;
-        }
-        case AudioOp::AudioStopOwner: {
-            std::uint32_t owner = 0;
-            if (!readU32(owner)) return 0;
-            audio.stopOwner(owner);
-            return 1;
-        }
-        case AudioOp::AudioStopAll:
-            audio.stopAll();
-            return 1;
-        case AudioOp::AudioSetDebug: {
-            std::int32_t enabled = 0;
-            if (!readInt(enabled)) return 0;
-            audio.setDebug(enabled != 0);
-            return 1;
-        }
-        case AudioOp::AudioDebug:
-            writeInt(audio.debug() ? 1 : 0);
-            return 1;
-        case AudioOp::MusicUpdate: {
-            float dt = 0.0f;
-            if (!readFloat(dt)) return 0;
-            music.update(dt);
-            return 1;
-        }
-        case AudioOp::MusicEnterMenuMode:
-            music.enterMenuMode();
-            return 1;
-        case AudioOp::MusicEnterGameMode:
-            music.enterGameMode();
-            return 1;
-        case AudioOp::MusicPlayModeTrack:
-            writeInt(music.playModeTrack(readString()) ? 1 : 0);
-            return 1;
-        case AudioOp::MusicStopModeTrack:
-            music.stopModeTrack();
-            return 1;
-        case AudioOp::MusicPause:
-            music.pause();
-            return 1;
-        case AudioOp::MusicResume:
-            music.resume();
-            return 1;
-        case AudioOp::MusicSkip:
-            music.skip();
-            return 1;
-        case AudioOp::MusicPrevious:
-            music.previous();
-            return 1;
-        case AudioOp::MusicSetPlaylistMode: {
-            std::int32_t mode = 0;
-            if (!readInt(mode)) return 0;
-            music.setPlaylistMode(static_cast<::MusicManager::PlaylistMode>(mode));
-            return 1;
-        }
-        case AudioOp::MusicSetPersonalMusicOverride: {
-            std::int32_t enabled = 0;
-            if (!readInt(enabled)) return 0;
-            music.setPersonalMusicOverride(enabled != 0);
-            return 1;
-        }
-        case AudioOp::MusicStop:
-            music.stop();
-            return 1;
-        case AudioOp::MusicReload:
-            music.reload();
-            return 1;
-        case AudioOp::MusicSetVolume: {
-            float volume = 1.0f;
-            if (!readFloat(volume)) return 0;
-            music.setVolume(volume);
-            return 1;
-        }
-        case AudioOp::MusicVolume:
-            writeFloat(music.volume());
-            return 1;
-        case AudioOp::MusicSetPlaybackSpeed: {
-            float speed = 1.0f;
-            if (!readFloat(speed)) return 0;
-            music.setPlaybackSpeed(speed);
-            return 1;
-        }
-        case AudioOp::MusicPlaybackSpeed:
-            writeFloat(music.playbackSpeed());
-            return 1;
-        case AudioOp::MusicSetMuted: {
-            std::int32_t muted = 0;
-            if (!readInt(muted)) return 0;
-            music.setMuted(muted != 0);
-            return 1;
-        }
-        case AudioOp::MusicMuted:
-            writeInt(music.muted() ? 1 : 0);
-            return 1;
-        case AudioOp::MusicIsPlaying:
-            writeInt(music.isPlaying() ? 1 : 0);
-            return 1;
-        case AudioOp::MusicCurrentTrackInfo: {
-            const std::string info = music.currentTrackInfo();
-            if (output && outputSize > 0) {
-                const std::size_t count =
-                    info.size() < outputSize - 1 ? info.size() : outputSize - 1;
-                std::memcpy(output, info.data(), count);
-                static_cast<char*>(output)[count] = 0;
-            }
-            return 1;
-        }
-        case AudioOp::AudioOwnerKey: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            writeU32(::audioOwnerKey(p->u0, p->text));
-            return 1;
-        }
-        case AudioOp::PlaySound: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            ::playSound(p->text, p->f0);
-            return 1;
-        }
-        case AudioOp::PlayEventSound: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            ::playEventSound(p->text, p->f0);
-            return 1;
-        }
-        case AudioOp::PlaySoundPitched: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            ::playSoundPitched(p->text, p->f0, p->f1);
-            return 1;
-        }
-        case AudioOp::AudioUpdate: {
-            float dt = 0.0f;
-            if (!readFloat(dt)) return 0;
-            ::audioUpdate(dt);
-            return 1;
-        }
-        case AudioOp::SetGlobalDuck: {
-            float duck = 0.0f;
-            if (!readFloat(duck)) return 0;
-            ::setGlobalDuck(duck);
-            return 1;
-        }
-        case AudioOp::GetGlobalDuck:
-            writeFloat(::getGlobalDuck());
-            return 1;
-        case AudioOp::AudioListenerForward: {
-            const glm::vec3 forward = ::audioListenerForward();
-            if (output && outputSize >= 3 * sizeof(float)) {
-                auto* out = static_cast<float*>(output);
-                out[0] = forward.x;
-                out[1] = forward.y;
-                out[2] = forward.z;
-            }
-            return 1;
-        }
-        case AudioOp::SetAudioListener: {
-            if (!input || inputSize < sizeof(AudioVec3PairPayload)) return 0;
-            const auto* p = static_cast<const AudioVec3PairPayload*>(input);
-            ::setAudioListener(glm::vec3(p->a[0], p->a[1], p->a[2]),
-                               glm::vec3(p->b[0], p->b[1], p->b[2]));
-            return 1;
-        }
-        case AudioOp::ResolveSoundPath: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            writeString(::resolveSoundPath(p->text));
-            return 1;
-        }
-        case AudioOp::GetAudioFileDuration: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            writeFloat(::getAudioFileDuration(p->text));
-            return 1;
-        }
-        case AudioOp::PlayReplayMusicPreview: {
-            const auto* p = textPayload();
-            if (!p) return 0;
-            writeInt(::playReplayMusicPreview(p->text, p->f0) ? 1 : 0);
-            return 1;
-        }
-        case AudioOp::StopReplayMusicPreview:
-            ::stopReplayMusicPreview();
-            return 1;
-        case AudioOp::PauseReplayMusicPreview:
-            ::pauseReplayMusicPreview();
-            return 1;
-        case AudioOp::ResumeReplayMusicPreview:
-            ::resumeReplayMusicPreview();
-            return 1;
-        case AudioOp::SeekReplayMusicPreview: {
-            float seconds = 0.0f;
-            if (!readFloat(seconds)) return 0;
-            writeInt(::seekReplayMusicPreview(seconds) ? 1 : 0);
-            return 1;
-        }
-        case AudioOp::IsReplayMusicPreviewPlaying:
-            writeInt(::isReplayMusicPreviewPlaying() ? 1 : 0);
-            return 1;
-        case AudioOp::SetReplayMusicPreviewSpeed: {
-            float speed = 1.0f;
-            if (!readFloat(speed)) return 0;
-            ::setReplayMusicPreviewSpeed(speed);
-            return 1;
-        }
-        case AudioOp::SetReplayMusicPreviewVolume: {
-            float volume = 1.0f;
-            if (!readFloat(volume)) return 0;
-            ::setReplayMusicPreviewVolume(volume);
-            return 1;
-        }
-        case AudioOp::GetReplayMusicPreviewDuration:
-            writeFloat(::getReplayMusicPreviewDuration());
-            return 1;
-        case AudioOp::SetAudioSpatialWorld: {
-            if (!input || inputSize < sizeof(const void*)) return 0;
-            ::setAudioSpatialWorld(*static_cast<const ::World* const*>(input));
-            return 1;
-        }
-        case AudioOp::DecodeAudioToPCM: {
-            const auto* request = static_cast<const AudioDecodeRequest*>(input);
-            auto* result = static_cast<AudioDecodeResult*>(output);
-            if (!request || inputSize < sizeof(AudioDecodeRequest) ||
-                !result || outputSize < sizeof(AudioDecodeResult)) return 0;
-            std::vector<std::int16_t> decoded;
-            std::uint32_t rate = 0;
-            std::uint32_t channels = 0;
-            const bool ok = ::decodeAudioToPCM(
-                request->path, decoded, rate, channels,
-                request->targetSampleRate, request->targetChannels);
-            result->sampleRate = rate;
-            result->channels = channels;
-            result->sampleCount = static_cast<std::uint32_t>(decoded.size());
-            result->ok = ok ? 1 : 0;
-            if (!ok) return 0;
-            if (request->capacitySamples < decoded.size() || !request->out) {
-                return 1;
-            }
-            std::memcpy(request->out, decoded.data(), decoded.size() * sizeof(std::int16_t));
-            return 1;
-        }
-        case AudioOp::PlayAirJumpSound:
-            ::playAirJumpSound();
-            return 1;
-        case AudioOp::PlayMenuClick:
-            ::playMenuClick();
-            return 1;
-        case AudioOp::PlayMenuHover:
-            ::playMenuHover();
-            return 1;
-        case AudioOp::PlayWorldSound: {
-            const auto* p = static_cast<const WorldSoundPayload*>(input);
-            if (!p || inputSize < sizeof(WorldSoundPayload)) return 0;
-            ::playWorldSound(p->name,
-                             glm::vec3(p->position[0], p->position[1], p->position[2]),
-                             p->volume, p->pitch, p->maxDistance,
-                             static_cast<::AudioCategory>(p->category));
-            return 1;
-        }
-        case AudioOp::PlayWorldSoundOwned: {
-            const auto* p = static_cast<const WorldSoundPayload*>(input);
-            if (!p || inputSize < sizeof(WorldSoundPayload)) return 0;
-            ::playWorldSoundOwned(p->name,
-                                  glm::vec3(p->position[0], p->position[1], p->position[2]),
-                                  p->volume, p->pitch, p->maxDistance, p->ownerId,
-                                  p->retrigger != 0,
-                                  static_cast<::AudioCategory>(p->category));
-            return 1;
-        }
-        case AudioOp::AudioListenerPosition: {
-            const glm::vec3 position = ::audioListenerPosition();
-            if (output && outputSize >= 3 * sizeof(float)) {
-                auto* out = static_cast<float*>(output);
-                out[0] = position.x;
-                out[1] = position.y;
-                out[2] = position.z;
-            }
-            return 1;
-        }
-        case AudioOp::ComputeImpactAudio: {
-            const auto* p = static_cast<const ImpactAudioPayload*>(input);
-            if (!p || inputSize < sizeof(ImpactAudioPayload)) return 0;
-            float volume = 0.0f;
-            float pitch = 0.0f;
-            ::computeImpactAudio(p->baseVolume, p->distance, p->severity, volume, pitch);
-            if (output && outputSize >= 2 * sizeof(float)) {
-                auto* out = static_cast<float*>(output);
-                out[0] = volume;
-                out[1] = pitch;
-            }
-            return 1;
-        }
-    }
-    return 0;
-}
-
 std::int32_t effectsInvoke(void*, EffectsOp op, const void* input,
                            std::uint32_t inputSize, void* output,
                            std::uint32_t outputSize) {
@@ -1308,33 +853,6 @@ std::uint32_t transportServerHostPlayerId(void*) {
 
 void transportServerSetHostPlayerId(void*, std::uint32_t playerId) {
     MimitaNet::gServerHostPlayerId = playerId;
-}
-
-void* authoredRebuildWorker(void*) {
-    return &MimitaNet::AuthoredWorldRebuildWorker::instance();
-}
-
-void authoredRebuildSubmit(void*, void* worker, const void* request) {
-    auto* target = static_cast<MimitaNet::AuthoredWorldRebuildWorker*>(worker);
-    const auto* value = static_cast<const MimitaNet::AuthoredRebuildRequest*>(request);
-    if (target && value) target->submit(*value);
-}
-
-void authoredRebuildTryTake(void*, void* worker, void* outSharedPtr) {
-    auto* target = static_cast<MimitaNet::AuthoredWorldRebuildWorker*>(worker);
-    auto* output = static_cast<std::shared_ptr<MimitaNet::AuthoredRebuildResult>*>(outSharedPtr);
-    if (target && output) *output = target->tryTakeResult();
-}
-
-void authoredRebuildRetire(void*, void* worker, void* inoutSharedPtr) {
-    auto* target = static_cast<MimitaNet::AuthoredWorldRebuildWorker*>(worker);
-    auto* value = static_cast<std::shared_ptr<MimitaNet::AuthoredRebuildResult>*>(inoutSharedPtr);
-    if (target && value) target->retire(std::move(*value));
-}
-
-void authoredRebuildCancel(void*, void* worker) {
-    if (auto* target = static_cast<MimitaNet::AuthoredWorldRebuildWorker*>(worker))
-        target->cancelAndWait();
 }
 
 std::unordered_map<std::uint64_t, std::ofstream> gFileHandles;
@@ -2729,6 +2247,36 @@ bool HostRuntime::serverPolicyMakeUdpConnectionId(
            call.api->make_udp_connection_id(addressNetwork, portNetwork, out) != 0;
 }
 
+bool HostRuntime::serverPolicyAllocateIceConnectionId(
+    ServerConnectionIdV1* out) {
+    if (!out || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->allocate_ice_connection_id(out) != 0;
+}
+
+bool HostRuntime::serverPolicyLegacyEndpoint(
+    const ServerConnectionIdV1* id, std::uint32_t* addressNetwork,
+    std::uint16_t* portNetwork) {
+    if (!id || !addressNetwork || !portNetwork ||
+        !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() &&
+           call.api->legacy_endpoint_for_connection(id, addressNetwork,
+                                                    portNetwork) != 0;
+}
+
+bool HostRuntime::serverPolicyClearActorPreset(std::uint32_t playerId) {
+    if (!probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    ServerPolicyCall call(*this, probeMutex_, barrier_);
+    return call.valid() && call.api->clear_actor_preset(playerId) != 0;
+}
+
 bool HostRuntime::serverPolicyPollReload(void* npcSystem, std::uint32_t tick) {
     if (!probeEnabled_.load(std::memory_order_acquire)) {
         return false;
@@ -2767,6 +2315,127 @@ bool HostRuntime::serverPolicyCoordinatorIceDone(const char* roomCode) {
     }
     ServerPolicyCall call(*this, probeMutex_, barrier_);
     return call.valid() && call.api->coordinator_ice_done(roomCode) != 0;
+}
+
+bool HostRuntime::gameExportAvailable() const {
+    return probeEnabled_.load(std::memory_order_acquire) &&
+           loader_.activeGenerationInfo().exportApi != nullptr;
+}
+
+bool HostRuntime::moduleHostQueryAvailable() const {
+    return probeEnabled_.load(std::memory_order_acquire) &&
+           loader_.activeGenerationInfo().moduleHostQuery != nullptr;
+}
+
+std::uint64_t HostRuntime::moduleHostMapRevision() {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return 0;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return 0;
+    }
+    const std::uint64_t revision = api->map_revision();
+    barrier_.leave();
+    return revision;
+}
+
+const void* HostRuntime::moduleHostMapObjectiveConfig() {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return nullptr;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return nullptr;
+    }
+    const void* config = api->map_objective_config();
+    barrier_.leave();
+    return config;
+}
+
+bool HostRuntime::moduleHostProfileFootprint(float outFootprint[3]) {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return false;
+    }
+    const bool ok = api->profile_footprint(outFootprint) != 0;
+    barrier_.leave();
+    return ok;
+}
+
+int HostRuntime::moduleHostNpcLineOfSightBlocked(const float from[3],
+                                                 const float to[3]) {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return 0;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return 0;
+    }
+    const int blocked = api->npc_line_of_sight_blocked(from, to);
+    barrier_.leave();
+    return blocked;
+}
+
+int HostRuntime::moduleHostNpcRaycastBlocked(const float from[3],
+                                             const float direction[3],
+                                             float maxDistance,
+                                             float* outDistance) {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return 0;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return 0;
+    }
+    const int blocked = api->npc_raycast_blocked(
+        from, direction, maxDistance, outDistance);
+    barrier_.leave();
+    return blocked;
+}
+
+void HostRuntime::moduleHostSetNpcWorld(const void* world) {
+    const GameModuleHostQueryV1* api =
+        loader_.activeGenerationInfo().moduleHostQuery;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return;
+    }
+    api->set_npc_world(world);
+    barrier_.leave();
+}
+
+int HostRuntime::gameRunExport(const char* clipPath, const char* outputPath,
+                               int width, int height, int visible,
+                               int verbose) {
+    const GameExportV1* api = loader_.activeGenerationInfo().exportApi;
+    if (!api || !probeEnabled_.load(std::memory_order_acquire)) {
+        return 1;
+    }
+    const std::uint64_t generation = activeGeneration();
+    if (!barrier_.enter(generation)) {
+        return 1;
+    }
+    const int result = api->run_export(clipPath, outputPath, width, height,
+                                       visible, verbose);
+    barrier_.leave();
+    return result;
 }
 
 void HostRuntime::poll() {
@@ -2968,19 +2637,6 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &effectsInvoke,
         };
         return &effectsCapability;
-    }
-    if (capability == static_cast<std::uint32_t>(HostCapabilityId::AuthoredRebuild) &&
-        version == kAuthoredRebuildCapabilityVersion) {
-        static AuthoredRebuildCapabilityV1 authoredRebuildCapability{
-            kAuthoredRebuildCapabilityVersion,
-            static_cast<std::uint32_t>(sizeof(AuthoredRebuildCapabilityV1)),
-            &authoredRebuildWorker,
-            &authoredRebuildSubmit,
-            &authoredRebuildTryTake,
-            &authoredRebuildRetire,
-            &authoredRebuildCancel,
-        };
-        return &authoredRebuildCapability;
     }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::TransportSession) &&
         version == kTransportSessionCapabilityVersion) {
@@ -3187,15 +2843,6 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
         };
         return &persistenceCapability;
     }
-    if (capability == static_cast<std::uint32_t>(HostCapabilityId::Gamemode) &&
-        version == kGamemodeCapabilityVersion) {
-        static GamemodeCapabilityV1 gamemodeCapability{
-            kGamemodeCapabilityVersion,
-            static_cast<std::uint32_t>(sizeof(GamemodeCapabilityV1)),
-            &duelInvoke,
-        };
-        return &gamemodeCapability;
-    }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Entity) &&
         version == kEntityCapabilityVersion) {
         static EntityCapabilityV1 entityCapability{
@@ -3341,15 +2988,6 @@ void* HostRuntime::getCapabilityThunk(void*, std::uint32_t capability,
             &HostRuntime::resourceBusyThunk,
         };
         return &resourcesCapability;
-    }
-    if (capability == static_cast<std::uint32_t>(HostCapabilityId::Audio) &&
-        version == kAudioCapabilityVersion) {
-        static AudioCapabilityV1 audioCapability{
-            kAudioCapabilityVersion,
-            static_cast<std::uint32_t>(sizeof(AudioCapabilityV1)),
-            &audioInvoke,
-        };
-        return &audioCapability;
     }
     if (capability == static_cast<std::uint32_t>(HostCapabilityId::Modules) &&
         version == kModuleCapabilityVersion) {

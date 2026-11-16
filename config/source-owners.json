@@ -46,20 +46,11 @@
     },
     {
       "owner": "resident",
-      "reason": "audio device engine and decode worker lifetime",
-      "include": [
-        "src/audio/audio.cpp",
-        "src/audio/music-manager.cpp"
-      ]
-    },
-    {
-      "owner": "resident",
-      "reason": "socket, ICE, per-session server loop, and authored-world rebuild worker",
+      "reason": "socket, ICE, and per-session server loop",
       "include": [
         "src/network/net_common.cpp",
         "src/network/server.cpp",
         "src/network/server-ice.cpp",
-        "src/network/server-authored-rebuild.cpp",
         "src/network/ice/ice-agent.cpp",
         "src/network/ice/ice-server.cpp"
       ]
@@ -73,9 +64,9 @@
     },
     {
       "owner": "resident",
-      "reason": "matchmaking poll thread and session state",
+      "reason": "bounded UDP echo transport diagnostic",
       "include": [
-        "src/duel/duel-queue.cpp"
+        "src/network/udp-echo.cpp"
       ]
     },
     {
@@ -163,6 +154,11 @@
       "path": "src/network/ice/ice-events.cpp",
       "owner": "resident",
       "reason": "ICE lifecycle events are emitted by the resident ICE/server session"
+    },
+    {
+      "path": "src/network/net_mode.cpp",
+      "owner": "resident",
+      "reason": "process CLI parsing and usage text; only the cold bootstrap calls it"
     }
   ],
   "link_inputs": {

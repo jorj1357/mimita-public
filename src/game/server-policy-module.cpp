@@ -20,6 +20,7 @@
 #include "network/community-server-config.h"
 #include "network/coordinator-client.h"
 #include "physics/runtime-objects.h"
+#include "audio/audio.h"
 #include "vehicles/vehicle-system.h"
 #include "vehicles/vehicle-config.h"
 #include "combat/weapon-data.h"
@@ -123,6 +124,9 @@ int serverPolicyStartup(const mimita::host::ServerStartupV1* request,
         return 0;
     }
 
+    AuthSystem::instance().init(
+        request->sessionToken ? request->sessionToken : "");
+    setServerAudioMode(true);
     VehicleSystem::instance().setServerProcess(true);
     VehicleSystem::instance().loadConfig("config/vehicles");
     VehicleSystem::instance().registerFixedTick();
@@ -373,6 +377,39 @@ int serverPolicyMakeUdpConnectionId(std::uint32_t addressNetwork,
     return 1;
 }
 
+int serverPolicyAllocateIceConnectionId(
+    mimita::host::ServerConnectionIdV1* result) {
+    if (!result) {
+        return 0;
+    }
+    const MimitaNet::TransportConnectionId id =
+        MimitaNet::allocateIceConnectionId();
+    result->kind = static_cast<std::uint32_t>(id.kind);
+    result->reserved = 0;
+    result->value = id.value;
+    return 1;
+}
+
+int serverPolicyLegacyEndpoint(
+    const mimita::host::ServerConnectionIdV1* id,
+    std::uint32_t* addressNetwork, std::uint16_t* portNetwork) {
+    if (!id || !addressNetwork || !portNetwork) {
+        return 0;
+    }
+    const MimitaNet::TransportConnectionId connection{
+        static_cast<MimitaNet::TransportKind>(id->kind), id->value};
+    const sockaddr_in endpoint =
+        MimitaNet::legacyEndpointForTransportConnection(connection);
+    *addressNetwork = endpoint.sin_addr.s_addr;
+    *portNetwork = endpoint.sin_port;
+    return 1;
+}
+
+int serverPolicyClearActorPreset(std::uint32_t playerId) {
+    MimitaNet::serverClearActorPreset(playerId);
+    return 1;
+}
+
 int serverPolicyPollReload(void* npcSystem, std::uint32_t tick) {
     NetworkingConfig::instance().pollReload();
     NpcDifficultyConfig::instance().pollReload();
@@ -477,6 +514,11 @@ const mimita::host::GameServerPolicyV1* GetMimitaGameServerPolicyV1(
         policy.destroy_player = &mimita::game::serverPolicyDestroyPlayer;
         policy.make_udp_connection_id =
             &mimita::game::serverPolicyMakeUdpConnectionId;
+        policy.allocate_ice_connection_id =
+            &mimita::game::serverPolicyAllocateIceConnectionId;
+        policy.legacy_endpoint_for_connection =
+            &mimita::game::serverPolicyLegacyEndpoint;
+        policy.clear_actor_preset = &mimita::game::serverPolicyClearActorPreset;
         policy.poll_reload = &mimita::game::serverPolicyPollReload;
         policy.auth_identity = &mimita::game::serverPolicyAuthIdentity;
         policy.projectile_perf = &mimita::game::serverPolicyProjectilePerf;

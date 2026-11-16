@@ -2,7 +2,7 @@
   "abi_version": 1,
   "domains": [
     {
-      "field_count": 9,
+      "field_count": 10,
       "fields": [
         {
           "c_type": "std::uint32_t",
@@ -54,18 +54,25 @@
           "type": "i32"
         },
         {
-          "c_type": "std::uint32_t",
-          "capacity": null,
-          "mask": "1ull << 7",
-          "name": "flags",
-          "type": "u32"
-        },
-        {
           "c_type": "char[64]",
           "capacity": 64,
-          "mask": "1ull << 8",
+          "mask": "1ull << 7",
           "name": "name",
           "type": "string"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 8",
+          "name": "migration_epoch",
+          "type": "u64"
+        },
+        {
+          "c_type": "std::uint64_t",
+          "capacity": null,
+          "mask": "1ull << 9",
+          "name": "migration_revision",
+          "type": "u64"
         }
       ],
       "name": "player_core",
@@ -76,7 +83,7 @@
       ],
       "source": "MimitaNet::ServerPlayer",
       "struct_size": "sizeof(Record)",
-      "version": 1,
+      "version": 3,
       "writers": [
         "server/simulatePlayer",
         "server-command-dispatch"
@@ -477,6 +484,6 @@
   "generator": "devscripts/resident_state_codegen.py",
   "generator_version": 1,
   "header": "src/host/generated/resident-state-v1.h",
-  "schema_sha256": "e2337c59cc9303825e5ab2733fb8fade42d9d4d6b030a6280e6be1902579fe23",
+  "schema_sha256": "7cbd10de393c4afcd2e909feac51e622072daabf2f5c03051f633ad770b9f297",
   "schema_version": 1
 }

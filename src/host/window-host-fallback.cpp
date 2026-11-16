@@ -12,12 +12,12 @@
 
 #include "game/render-device-bridge-module.h"
 #include "game/window-bridge-module.h"
-#include "input/input-router.h"
+#include "host/host-window-registry.h"
 
 namespace mimita::game {
 namespace {
 GLFWwindow* residentWindow() {
-    return InputRouter::window();
+    return mimita::host::residentWindow();
 }
 }  // namespace
 

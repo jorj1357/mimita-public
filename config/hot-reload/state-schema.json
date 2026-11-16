@@ -5,7 +5,7 @@
   "domains": [
     {
       "name": "player_core",
-      "version": 1,
+      "version": 3,
       "owner": "server-player-table",
       "source": "MimitaNet::ServerPlayer",
       "writers": ["server/simulatePlayer", "server-command-dispatch"],
@@ -18,8 +18,9 @@
         {"name": "velocity", "type": "vec3"},
         {"name": "health", "type": "i32", "default": 100},
         {"name": "max_health", "type": "i32", "default": 100},
-        {"name": "flags", "type": "u32", "default": 0},
-        {"name": "name", "type": "string", "capacity": 64}
+        {"name": "name", "type": "string", "capacity": 64},
+        {"name": "migration_epoch", "type": "u64", "default": 1},
+        {"name": "migration_revision", "type": "u64", "default": 3}
       ]
     },
     {

@@ -114,6 +114,7 @@ public:
 
 private:
     DuelQueue() = default;
+    ~DuelQueue();
     DuelQueue(const DuelQueue&) = delete;
     DuelQueue& operator=(const DuelQueue&) = delete;
 

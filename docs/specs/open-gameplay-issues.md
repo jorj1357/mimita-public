@@ -40,6 +40,54 @@ if we make things hot reloadable, for these next bugs, we can see the effects of
 
 ## other issues 
 
+### distributed data and map eidotr
+
+map editor should be the first things about 
+
+map editor  distbutiuin
+
+u download a game or pla a agame = u get that version
+u get all scripts
+all code
+all assets
+u get the entire thing
+u can do edits to it
+and u can make imrpovemtns
+
+OR
+BIG THINGS IS NOTE MAEK NOTES
+TAHT PERSIST THRU THE WHOLE TIME REALITT
+A EZ METHOD TO WRITE Bro this is brokennnn
+bro this feedaack
+etc etc 
+
+and a method to make i tso ppl get
+ppl get the notif even with no email  no pc  no mimtia on cmputer etc 
+
+### movement mode and sizing 2026 11 16 1242 jorj
+
+ok bc 20 m/s is reallt fast
+
+new movemetn mode
+
+
+we need matbe a diffrent movement modelike
+
+new movemetn source json tihng
+
+like
+
+new one that has idk
+
+in air = bhop, on ground = wasd instant walk?
+and hitting thr ground u have grace period or
+it slow moves to becoming wasd instant
+like  tick 1 hit ground, tick 5 full wasd power 
+
+goals here:
+1. a movement mode that is fun but based on realistic movement speeds , like under 10m/s? 
+2. sizing using the map editor making maps that are size for that speed of walking/traverrsal 
+
 ## hot reload after 2026 11 14 2004
 
 also i want to amke it so teh dev dashboard  launch stable latest mimita.exe will launch the latest one so i can test like ensure that the button worksb c i clicekd start client and it staretd mimita.exe but it was  not responding for a ltitle then 

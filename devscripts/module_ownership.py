@@ -124,8 +124,7 @@ def exe_source_relpaths(root: Path, catalog: dict | None = None) -> list[str]:
     root = Path(root).resolve()
     catalog = catalog if catalog is not None else read_catalog(root)
     manifest_path = root / "build" / "source-manifest.json"
-    migration_lane = root / "build" / "hot-reload" / "migration-lane.enable"
-    if manifest_path.is_file() and not migration_lane.is_file():
+    if manifest_path.is_file():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             result = []
@@ -147,14 +146,6 @@ def exe_source_relpaths(root: Path, catalog: dict | None = None) -> list[str]:
     for path in sorted(src.rglob("*.cpp")):
         relative = normalize(root, path)
         if path.name.endswith(ENTRY_SUFFIX):
-            if (migration_lane.is_file() and relative in {
-                    "src/game/gl-resource-bridge-module.cpp",
-                    "src/game/render-bridge-module.cpp",
-                    "src/game/resident-state-module.cpp",
-                    "src/game/file-bridge-module.cpp",
-                    "src/game/job-bridge-module.cpp",
-                    "src/game/socket-bridge-module.cpp"}):
-                result.append(relative)
             continue
         if relative in module_owned and relative not in shared:
             continue

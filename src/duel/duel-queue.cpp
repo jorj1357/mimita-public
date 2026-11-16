@@ -84,6 +84,13 @@ DuelQueue& DuelQueue::instance()
     return queue;
 }
 
+DuelQueue::~DuelQueue()
+{
+    // The queue poll thread is generation-owned. Join it before the game DLL
+    // unloads so no callback can enter unloaded code.
+    endPolling();
+}
+
 void DuelQueue::beginPolling()
 {
     endPolling();

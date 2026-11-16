@@ -16,8 +16,8 @@ using Handle = std::uint32_t;
 
 namespace player_core {
 
-inline constexpr std::uint16_t kVersion = 1;
-inline constexpr std::size_t kFieldCount = 9;
+inline constexpr std::uint16_t kVersion = 3;
+inline constexpr std::size_t kFieldCount = 10;
 
 enum Field : std::uint64_t {
     kFieldId = 1ull << 0,
@@ -27,9 +27,10 @@ enum Field : std::uint64_t {
     kFieldVelocity = 1ull << 4,
     kFieldHealth = 1ull << 5,
     kFieldMaxHealth = 1ull << 6,
-    kFieldFlags = 1ull << 7,
-    kFieldName = 1ull << 8,
-    kFieldAll = (1ull << 9) - 1ull,
+    kFieldName = 1ull << 7,
+    kFieldMigrationEpoch = 1ull << 8,
+    kFieldMigrationRevision = 1ull << 9,
+    kFieldAll = (1ull << 10) - 1ull,
 };
 
 struct Record {
@@ -45,8 +46,9 @@ struct Record {
     float velocity[3] = {0.0f, 0.0f, 0.0f};
     std::int32_t health = 100u;
     std::int32_t max_health = 100u;
-    std::uint32_t flags = 0u;
     char name[64] = {};
+    std::uint64_t migration_epoch = 1ull;
+    std::uint64_t migration_revision = 3ull;
 };
 
 inline constexpr std::size_t kStructSize = sizeof(Record);
@@ -82,11 +84,14 @@ inline void clearFields(Record& record, std::uint64_t mask) {
     if (mask & kFieldMaxHealth) {
         record.max_health = 100u;
     }
-    if (mask & kFieldFlags) {
-        record.flags = 0u;
-    }
     if (mask & kFieldName) {
         std::memset(record.name, 0, sizeof(record.name));
+    }
+    if (mask & kFieldMigrationEpoch) {
+        record.migration_epoch = 1ull;
+    }
+    if (mask & kFieldMigrationRevision) {
+        record.migration_revision = 3ull;
     }
 }
 

@@ -1047,6 +1047,22 @@ float getAudioFileDuration(const std::string& path)
     return (float)totalFrames / 48000.0f;
 }
 
+void shutdownAudio()
+{
+    gSoundLoadStop.store(true, std::memory_order_relaxed);
+    gSoundLoadCv.notify_all();
+    if (gSoundLoadThread.joinable())
+        gSoundLoadThread.join();
+    for (auto& sound : gActiveSounds) {
+        if (sound) uninitVoice(*sound);
+    }
+    gActiveSounds.clear();
+    if (gAudioInit) {
+        ma_engine_uninit(&gEngine);
+        gAudioInit = false;
+    }
+}
+
 void setServerAudioMode(bool enabled)
 {
     gServerMode = enabled;

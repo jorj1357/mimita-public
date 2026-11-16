@@ -1,0 +1,52 @@
+// Resident image decoder used by host-owned window/device code.
+//
+// The migration EXE also links the game-owned stb_image implementation. Rename
+// this copy's public entry points so both can coexist until the strict cold
+// source set is enabled.
+
+#define STB_IMAGE_IMPLEMENTATION
+#define stbi_load hostStbiLoad
+#define stbi_failure_reason hostStbiFailureReason
+#define stbi_image_free hostStbiImageFree
+#define stbi_load_from_memory hostStbiLoadFromMemory
+#define stbi_load_from_callbacks hostStbiLoadFromCallbacks
+#define stbi_load_from_file hostStbiLoadFromFile
+#define stbi_load_from_file_16 hostStbiLoadFromFile16
+#define stbi_load_gif_from_memory hostStbiLoadGifFromMemory
+#define stbi_load_16 hostStbiLoad16
+#define stbi_load_16_from_memory hostStbiLoad16FromMemory
+#define stbi_load_16_from_callbacks hostStbiLoad16FromCallbacks
+#define stbi_loadf hostStbiLoadf
+#define stbi_loadf_from_memory hostStbiLoadfFromMemory
+#define stbi_loadf_from_callbacks hostStbiLoadfFromCallbacks
+#define stbi_loadf_from_file hostStbiLoadfFromFile
+#define stbi_info hostStbiInfo
+#define stbi_info_from_memory hostStbiInfoFromMemory
+#define stbi_info_from_callbacks hostStbiInfoFromCallbacks
+#define stbi_info_from_file hostStbiInfoFromFile
+#define stbi_is_16_bit hostStbiIs16Bit
+#define stbi_is_16_bit_from_memory hostStbiIs16BitFromMemory
+#define stbi_is_16_bit_from_callbacks hostStbiIs16BitFromCallbacks
+#define stbi_is_16_bit_from_file hostStbiIs16BitFromFile
+#define stbi_is_hdr hostStbiIsHdr
+#define stbi_is_hdr_from_memory hostStbiIsHdrFromMemory
+#define stbi_is_hdr_from_callbacks hostStbiIsHdrFromCallbacks
+#define stbi_is_hdr_from_file hostStbiIsHdrFromFile
+#define stbi_set_unpremultiply_on_load hostStbiSetUnpremultiplyOnLoad
+#define stbi_convert_iphone_png_to_rgb hostStbiConvertIphonePngToRgb
+#define stbi_set_flip_vertically_on_load hostStbiSetFlipVerticallyOnLoad
+#define stbi_set_unpremultiply_on_load_thread hostStbiSetUnpremultiplyOnLoadThread
+#define stbi_convert_iphone_png_to_rgb_thread hostStbiConvertIphonePngToRgbThread
+#define stbi_set_flip_vertically_on_load_thread hostStbiSetFlipVerticallyOnLoadThread
+#define stbi_zlib_decode_buffer hostStbiZlibDecodeBuffer
+#define stbi_zlib_decode_noheader_buffer hostStbiZlibDecodeNoheaderBuffer
+#define stbi_zlib_decode_malloc hostStbiZlibDecodeMalloc
+#define stbi_zlib_decode_malloc_guesssize hostStbiZlibDecodeMallocGuesssize
+#define stbi_zlib_decode_malloc_guesssize_headerflag hostStbiZlibDecodeMallocGuesssizeHeaderflag
+#define stbi_zlib_decode_noheader_malloc hostStbiZlibDecodeNoheaderMalloc
+#define stbi_hdr_to_ldr_gamma hostStbiHdrToLdrGamma
+#define stbi_hdr_to_ldr_scale hostStbiHdrToLdrScale
+#define stbi_ldr_to_hdr_gamma hostStbiLdrToHdrGamma
+#define stbi_ldr_to_hdr_scale hostStbiLdrToHdrScale
+#define stbi_convert_wchar_to_utf8 hostStbiConvertWcharToUtf8
+#include "stb_image.h"

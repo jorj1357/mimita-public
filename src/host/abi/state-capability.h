@@ -55,6 +55,7 @@ enum class StateObjectId : std::uint32_t {
     ReplaySaveWorker = 23,
     ServerGamemode = 24,
     MigrationProbe = 25,
+    PlayerCore = 26,
 };
 
 // Called by the host when a resident record must grow. The game owns the

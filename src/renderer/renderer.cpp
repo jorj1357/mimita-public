@@ -19,12 +19,12 @@ extern bool gAiLaunchMode;
 #include <string>
 
 // need camera here
-#include "camera.h"
 #include "config.h"
 #include "renderer.h"
 #include "stb_image.h"
-#include "utils/path_utils.h"
-#include "debug/gl-debug.h"
+#include "host/host-image-decode.h"
+#include "host/host-asset-path.h"
+#include "host/host-window-registry.h"
 #include "debug/debug-log.h"
 #include "debug/structured-log.h"
 
@@ -66,6 +66,7 @@ Renderer::Renderer(int w, int h, const char* title) {
         glfwTerminate();
         return;
     }
+    mimita::host::setResidentWindow(window);
 
     glfwGetWindowPos(window, &mWindowedX, &mWindowedY);
     mHasWindowedPosition = true;
@@ -77,17 +78,8 @@ Renderer::Renderer(int w, int h, const char* title) {
         glfwIconifyWindow(window);
     }
 
-    glfwSetCursorPosCallback(window,
-    [](GLFWwindow* win, double x, double y)
-    {
-        Camera* cam = reinterpret_cast<Camera*>(glfwGetWindowUserPointer(win));
-        if (!cam) return;
-        if (glfwGetInputMode(win, GLFW_CURSOR) != GLFW_CURSOR_DISABLED) {
-            cam->firstMouse = true;
-            return;
-        }
-        cam->updateMouse(x, y);
-    });
+    // Look input is routed by the host InputRouter into the game generation.
+    // The resident renderer owns only the window and GL device.
 
     if (CursorConfig::CUSTOM_CURSOR_ENABLED) {
         installCustomCursor(CursorConfig::CUSTOM_CURSOR_PATH, CursorConfig::CUSTOM_CURSOR_HOTSPOT_CENTERED);
@@ -112,8 +104,7 @@ Renderer::Renderer(int w, int h, const char* title) {
     }
 
     printf("OpenGL %s\n", glGetString(GL_VERSION));
-    MIMITA_GL_CLEAR_STAGE("Renderer::Renderer after GLAD");
-    MIMITA_GL_CALL(glEnable(GL_DEPTH_TEST));
+    glEnable(GL_DEPTH_TEST);
 
 }
 
@@ -129,21 +120,21 @@ bool Renderer::installCustomCursor(const char* path, bool centeredHotspot)
         return false;
     }
 
-    std::string resolvedPath = resolveAssetPath(path);
+    std::string resolvedPath = hostResolveAssetPath(path);
 
     int width = 0;
     int height = 0;
     int sourceChannels = 0;
-    unsigned char* pixels = stbi_load(resolvedPath.c_str(), &width, &height, &sourceChannels, STBI_rgb_alpha);
+    unsigned char* pixels = hostStbiLoad(resolvedPath.c_str(), &width, &height, &sourceChannels, STBI_rgb_alpha);
     if (!pixels) {
-        const char* reason = stbi_failure_reason();
+        const char* reason = hostStbiFailureReason();
         printf("[CURSOR] failed to load cursor.png path=%s reason=%s\n", resolvedPath.c_str(), reason ? reason : "unknown");
         return false;
     }
 
     if (!dimensionsAreValidForCursor(width, height)) {
         printf("[CURSOR] invalid cursor dimensions %dx%d path=%s\n", width, height, resolvedPath.c_str());
-        stbi_image_free(pixels);
+        hostStbiImageFree(pixels);
         return false;
     }
 
@@ -157,14 +148,14 @@ bool Renderer::installCustomCursor(const char* path, bool centeredHotspot)
     if (hotspotX < 0 || hotspotX >= width || hotspotY < 0 || hotspotY >= height) {
         printf("[CURSOR] invalid hotspot %d,%d for cursor %dx%d path=%s\n",
                hotspotX, hotspotY, width, height, resolvedPath.c_str());
-        stbi_image_free(pixels);
+        hostStbiImageFree(pixels);
         return false;
     }
 
     const char* oldDescription = nullptr;
     glfwGetError(&oldDescription);
     GLFWcursor* nextCursor = glfwCreateCursor(&image, hotspotX, hotspotY);
-    stbi_image_free(pixels);
+    hostStbiImageFree(pixels);
 
     if (!nextCursor) {
         const char* description = nullptr;
@@ -264,10 +255,9 @@ float Renderer::beginFrame() {
                 __FILE__, __LINE__, __FUNCTION__);
         }
     }
-    MIMITA_GL_CLEAR_STAGE("Renderer::beginFrame");
-    MIMITA_GL_CALL(glViewport(0, 0, width, height));
-    MIMITA_GL_CALL(glClearColor(0.1f, 0.1f, 0.12f, 1.0f));
-    MIMITA_GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
+    glViewport(0, 0, width, height);
+    glClearColor(0.1f, 0.1f, 0.12f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     return dt;
 }
@@ -285,6 +275,7 @@ void Renderer::shutdown() {
     destroyCustomCursor();
 
     if (window) {
+        mimita::host::setResidentWindow(nullptr);
         glfwDestroyWindow(window);
         window = nullptr;
     }

@@ -43,7 +43,7 @@ MusicManager& MusicManager::instance()
 
 MusicManager::~MusicManager()
 {
-    stopMusicPredecode();
+    shutdown();
 }
 
 static bool hasMusicExt(const std::string& name)

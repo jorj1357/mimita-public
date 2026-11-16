@@ -31,6 +31,34 @@ std::vector<std::unique_ptr<PendingIcePeer>> gPendingIcePeers;
 
 namespace {
 
+TransportConnectionId residentAllocateIceConnectionId() {
+    mimita::host::ServerConnectionIdV1 id{};
+    if (mimita::host::HostRuntime::instance().serverPolicyAllocateIceConnectionId(
+            &id)) {
+        return {static_cast<TransportKind>(id.kind), id.value};
+    }
+    return {TransportKind::Ice, 0};
+}
+
+sockaddr_in residentLegacyEndpoint(TransportConnectionId id) {
+    mimita::host::ServerConnectionIdV1 request{};
+    request.kind = static_cast<std::uint32_t>(id.kind);
+    request.value = id.value;
+    std::uint32_t address = 0;
+    std::uint16_t port = 0;
+    if (mimita::host::HostRuntime::instance().serverPolicyLegacyEndpoint(
+            &request, &address, &port)) {
+        sockaddr_in endpoint{};
+        endpoint.sin_family = AF_INET;
+        endpoint.sin_addr.s_addr = address;
+        endpoint.sin_port = port;
+        return endpoint;
+    }
+    sockaddr_in endpoint{};
+    endpoint.sin_family = AF_INET;
+    return endpoint;
+}
+
 IceConfiguration loadIceConfigForTurnCredentials(const TurnCredentials& credentials)
 {
     if (credentials.disabled)
@@ -483,9 +511,9 @@ void tickIcePeers(const std::string& serverCode, const std::string& iceSessionId
                 peer.state = PendingIcePeer::State::Connected;
 
                 PendingServerTransport pending{};
-                pending.connectionId = allocateIceConnectionId();
+                pending.connectionId = residentAllocateIceConnectionId();
                 pending.diagnosticEndpoint =
-                    legacyEndpointForTransportConnection(pending.connectionId);
+                    residentLegacyEndpoint(pending.connectionId);
                 pending.connectedAtMs = now;
                 pending.transport =
                     std::make_unique<IceTransport>(std::move(peer.agent));
@@ -591,9 +619,9 @@ void tickServerIceTransports(SOCKET sock,
             continue;
         if (!player.hasConnectionId)
         {
-            player.connectionId = allocateIceConnectionId();
+            player.connectionId = residentAllocateIceConnectionId();
             player.hasConnectionId = true;
-            player.addr = legacyEndpointForTransportConnection(player.connectionId);
+            player.addr = residentLegacyEndpoint(player.connectionId);
         }
 
         std::vector<ReceivedPacket> pkts;
@@ -667,11 +695,30 @@ void tickServerIceTransports(SOCKET sock,
         auto it = players.find(id);
         if (it != players.end())
         {
-            serverLogPlayerSessionRemoval(it->second, "client_explicit_disconnect",
-                                          nowMs(), tick, players.size());
+            const ServerPlayer& removed = it->second;
+            const std::uint64_t removalTimeMs = nowMs();
+            const std::uint64_t silentMs =
+                removalTimeMs >= removed.lastHeardMs
+                    ? removalTimeMs - removed.lastHeardMs : 0;
+            StructuredLogger::instance().writeEvent(
+                StructuredCategory::Network, StructuredLevel::Important,
+                "network.player.session.removed", std::to_string(removed.id),
+                "client_explicit_disconnect", tick,
+                nlohmann::json{
+                    {"player_id", removed.id},
+                    {"removal_reason", "client_explicit_disconnect"},
+                    {"last_heard_ms", removed.lastHeardMs},
+                    {"silent_ms", silentMs},
+                    {"connection_stale", removed.connectionStale},
+                    {"disconnect_notice_sent", removed.connectionStateNotified},
+                    {"reconnect_token_retained", !removed.reconnectToken.empty()},
+                    {"players_before", players.size()},
+                    {"players_after", players.size() > 0 ? players.size() - 1 : 0},
+                    {"server_pid", GetCurrentProcessId()}},
+                __FILE__, __LINE__, __FUNCTION__);
             printf("[DEFERRED REMOVE] removing id=%u — players left: %zu\n",
                    id, players.size() - 1);
-            serverClearActorPreset(id);
+            mimita::host::HostRuntime::instance().serverPolicyClearActorPreset(id);
             players.erase(it);
         }
     }

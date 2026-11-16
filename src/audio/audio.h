@@ -44,6 +44,7 @@ public:
 };
 
 void audioUpdate(float dt);
+void shutdownAudio();
 
 void playFreezeBeginSound();
 void playFreezeHoldSound();

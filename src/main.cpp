@@ -499,6 +499,7 @@ bool gReplayCinematicMode = false;
 // --export-replay subprocess mode globals
 static bool gExportSubprocessMode = false;
 static bool gExportVisible = true;
+static bool gExportVerbose = false;
 static std::string gExportClipPath;
 static std::string gExportOutputPath;
 static int gExportWidth = 1920;
@@ -539,7 +540,7 @@ int main(int argc, char** argv)
         } else if (strcmp(argv[i], "--visible") == 0) {
             gExportVisible = true;
         } else if (strcmp(argv[i], "--replay-export-verbose") == 0) {
-            gReplayExportVerbose = true;
+            gExportVerbose = true;
         }
     }
 
@@ -558,14 +559,10 @@ int main(int argc, char** argv)
     printf("[BUILD] compiled on %s at %s\n", __DATE__, __TIME__);
     printf("[BUILD] commit=64b085c\n");
 
-    LocalProfileSystem::instance().init();
     MimitaNet::LaunchOptions launchOptions = MimitaNet::parseLaunchOptions(argc, argv);
     installCrashHandler();
     if (launchOptions.server)
         setCrashHandlerShowDialog(false);
-    AuthSystem::instance().init(launchOptions.sessionToken);
-    if (launchOptions.name.empty())
-        launchOptions.name = AuthSystem::instance().displayName();
     if (launchOptions.server && launchOptions.client)
     {
         printf("[MAIN] choose only one mode: --server or --client\n");
@@ -580,7 +577,7 @@ int main(int argc, char** argv)
     const auto configureWholeGameHost = []() {
         if (std::getenv("MIMITA_GAME_PROBE") ||
             std::getenv("MIMITA_GAME_OWN_FRAME") ||
-            std::getenv("MIMITA_GAME_DISABLE") || gExportSubprocessMode) {
+            std::getenv("MIMITA_GAME_DISABLE")) {
             return;
         }
         std::string dllPath;
@@ -603,11 +600,9 @@ int main(int argc, char** argv)
             _putenv_s("MIMITA_GAME_PROBE", "1");
             _putenv_s("MIMITA_GAME_OWN_FRAME", "1");
             _putenv_s("MIMITA_GAME_REQUIRE_HOT", "1");
-        } else {
-            // No built generation is available. Keep the resident debugging
-            // path rather than claiming a hot frame that cannot load.
-            _putenv_s("MIMITA_GAME_DISABLE", "1");
         }
+        // No generation means the client/server fails closed below. Resident
+        // gameplay is no longer a fallback.
     };
 
     if (launchOptions.server)
@@ -648,6 +643,27 @@ int main(int argc, char** argv)
         Debug::warn(Debug::Category::Replay,
             "[EXPORT-SUBPROCESS-LOG] path=%s\n",
             LogManager::instance().path().c_str());
+    }
+
+    // Export subprocess mode is a bounded production diagnostic. The resident
+    // entry loads the generation and calls its export entry.
+    if (gExportSubprocessMode) {
+        if (gExportClipPath.empty()) {
+            printf("[MAIN] --export-replay requires a clip path\n");
+            return 1;
+        }
+        configureWholeGameHost();
+        if (!mimita::host::HostRuntime::instance().startFromEnvironment() ||
+            !mimita::host::HostRuntime::instance().gameExportAvailable()) {
+            fprintf(stderr, "[HOTRELOAD] replay export requires a game generation\n");
+            return 1;
+        }
+        const int status = mimita::host::HostRuntime::instance().gameRunExport(
+            gExportClipPath.c_str(), gExportOutputPath.c_str(),
+            gExportWidth, gExportHeight, gExportVisible ? 1 : 0,
+            gExportVerbose ? 1 : 0);
+        mimita::host::HostRuntime::instance().shutdown();
+        return status;
     }
 
     configureWholeGameHost();
@@ -711,6 +727,8 @@ int main(int argc, char** argv)
         startup.width = 1024;
         startup.height = 768;
         startup.title = "mimita.exe";
+        std::snprintf(startup.sessionToken, sizeof(startup.sessionToken), "%s",
+                      launchOptions.sessionToken.c_str());
         if (mimita::host::HostRuntime::instance().bootstrapGame(startup)) {
             while (!mimita::host::HostRuntime::instance().gameShouldClose()) {
                 mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, nullptr);
@@ -726,117 +744,16 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    Engine engine;
-    gameInit(argc, argv, engine);
-    engineSetRoomCodeFilePath(launchOptions.roomCodeFilePath);
-
-    bool startupCommandsExecuted = false;
-
-    // ── Export subprocess mode: run the export and exit ────────────────
-    if (gExportSubprocessMode) {
-        if (gExportClipPath.empty()) {
-            printf("[MAIN] --export-replay requires a clip path\n");
-            return 1;
-        }
-        runExportSubprocess(engine, gExportClipPath.c_str(),
-                            gExportOutputPath.c_str(),
-                            gExportWidth, gExportHeight);
-        return getReplayExportJob().state == ReplayExportJob::Done ? 0 : 1;
-    }
-
-    // Explicit launcher joins boot straight into gameplay. A room-code join
-    // uses the same asynchronous ICE path as the in-game server browser;
-    // --connect remains the direct-UDP path for local harnesses.
-    if (launchOptions.connectExplicit || launchOptions.roomCodeExplicit)
-    {
-        if (launchOptions.roomCodeExplicit)
-            Debug::log(Debug::Category::Networking,
-                       "[BOOT MODE] auto-join room %s\n",
-                       launchOptions.roomCode.c_str());
-        else
-            Debug::log(Debug::Category::Networking,
-                       "[BOOT MODE] auto-connect full-client to %s\n",
-                       launchOptions.connect.c_str());
-        GAME_STATE = GAME_PLAYING;
-        MultiplayerConnectInfo info;
-        info.shouldConnect = true;
-        info.directAddress = launchOptions.connect;
-        info.roomCode = launchOptions.roomCode;
-        info.playerName = launchOptions.name;
-        info.mapName = launchOptions.mapName;
-        setPendingMultiplayerConnect(info);
-    }
-
-    while (engine.running())
-    {
-        if (mimita::host::HostRuntime::instance().ownsGameFrame()) {
-            mimita::host::HostRuntime::instance().driveFrame(1.0 / 60.0, &engine);
-        } else {
-            engineTick(engine);
-        }
-        mimita::host::HostRuntime::instance().poll();
-
-        // Startup commands belong to the visible client terminal, not the
-        // headless server. Wait until the room connection and the gameplay
-        // world are both ready so commands such as crate_spawn can safely use
-        // the local player and camera.
-        const bool startupNeedsWeaponSet = std::any_of(
-            launchOptions.startupCommands.begin(),
-            launchOptions.startupCommands.end(),
-            [](const std::string& command) {
-                return command.rfind("equip", 0) == 0;
-            });
-        if (!startupCommandsExecuted && !launchOptions.startupCommands.empty() &&
-            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded &&
-            (!startupNeedsWeaponSet || gpMpContext->communityWeaponSetId > 0))
-        {
-            size_t startupIndex = 0;
-            for (const std::string& command : launchOptions.startupCommands)
-            {
-                const std::string requestId =
-                    "startup:" + std::to_string(gpMpContext->tick) + ":" +
-                    std::to_string(startupIndex++);
-                Debug::log(Debug::Category::General,
-                           "[STARTUP COMMAND] executing: %s", command.c_str());
-                StructuredLogger::instance().writeEvent(
-                    StructuredCategory::General,
-                    StructuredLevel::Important,
-                    "startup.command.dispatch",
-                    requestId,
-                    "client_startup_command_ready",
-                    gpMpContext->tick,
-                    {
-                        {"request_id", requestId},
-                        {"command", command},
-                        {"connected", gpMpContext->connected},
-                        {"game_world_loaded", *gpWorldLoaded},
-                        {"local_player_id", gpMpContext->localPlayerId}
-                    },
-                    __FILE__,
-                    __LINE__,
-                    __func__);
-                Terminal::instance().executeWithRequestId(command, requestId);
-            }
-            startupCommandsExecuted = true;
-        }
-
-        const bool gameplayReady =
-            gpMpContext && gpMpContext->connected && gpWorldLoaded && *gpWorldLoaded;
-        processAgentCommandQueue(
-            launchOptions.agentCommandFile,
-            gameplayReady,
-            gpMpContext ? gpMpContext->tick : 0);
-    }
-    AnalyticsManager::instance().shutdown();
-    mimita::host::HostTransportAdapter::instance().unbind();
-    mimita::host::HostRuntime::instance().clearTransportAdapter();
+    StructuredLogger::instance().writeEvent(
+        StructuredCategory::General, StructuredLevel::Errors,
+        "game.client.hot-required", "client",
+        "client refused to start without a frame-owning hot generation", 0,
+        {{"reason", "no-frame-owner"},
+         {"dll", std::getenv("MIMITA_GAME_DLL")
+                     ? std::getenv("MIMITA_GAME_DLL") : ""}},
+        __FILE__, __LINE__, __func__);
+    fprintf(stderr,
+            "[HOTRELOAD] client requires a frame-owning game generation\n");
     mimita::host::HostRuntime::instance().shutdown();
-    ModuleHost::instance().shutdown();
-    HotReloadSystem::instance().unloadGameDLL();
-    engine.shutdown();
-    perfStopResourceWatchdog();
-    StructuredLogger::instance().shutdown();
-    LogManager::instance().shutdown();
-    
-    return 0;
+    return 1;
 }

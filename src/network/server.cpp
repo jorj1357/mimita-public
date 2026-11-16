@@ -720,7 +720,7 @@ int runServer(const LaunchOptions& options)
     setvbuf(stdout, nullptr, _IONBF, 0);
 
     // Disable audio on dedicated server — it only wastes resources
-    setServerAudioMode(true);
+    // Audio disable is generation-owned server policy startup.
 
     ::StructuredLogger::instance().init();
     mimita::host::HostRuntime::instance().startFromEnvironment();
@@ -805,6 +805,7 @@ int runServer(const LaunchOptions& options)
     startupRequest.serverName = options.name.c_str();
     startupRequest.hostPlayerName = options.hostPlayerName.c_str();
     startupRequest.password = options.password.c_str();
+    startupRequest.sessionToken = options.sessionToken.c_str();
     startupRequest.proceduralMode = options.proceduralMode.c_str();
     startupRequest.proceduralSeed = options.proceduralSeed;
     startupRequest.npcCount = options.npcCount;

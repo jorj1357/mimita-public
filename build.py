@@ -120,17 +120,6 @@ _LAST_CURRENT_PROGRESS = 0.0
 # OBJ_DIR and PCH_OUTPUT are set per build mode after MODE is resolved below.
 
 EXE_NAME = os.environ.get("MIMITA_EXE_NAME", "mimita.exe")
-# Explicit, audited migration lane. The strict cold-core gate remains the final
-# authority; this only allows a development EXE to publish while the cutover is
-# still in progress. It must never be enabled by default. Enable it with
-# MIMITA_CUTOVER_MIGRATION=1 or build/hot-reload/migration-lane.enable.
-# The marker is removed at the Cutover-1 strict flip. Migration builds include
-# the game bridge modules so the development EXE can link; this list is
-# migration-only and not part of the cold EXE. Remove this list at the flip.
-MIGRATION_LANE = (
-    os.environ.get("MIMITA_CUTOVER_MIGRATION") == "1" or
-    os.path.isfile(os.path.join(ROOT, "build", "hot-reload",
-                                "migration-lane.enable")))
 # Machine-wide policy serializes EXE builds. Each active build uses all
 # logical processors unless the operator pins a lower job count for a
 # memory-constrained machine.
@@ -1176,7 +1165,6 @@ link_input_payload = {
     "exe": os.path.relpath(exe_path, ROOT).replace("\\", "/"),
     "revision": os.environ.get("MIMITA_SOURCE_REVISION", ""),
     "source_generation": os.environ.get("MIMITA_SOURCE_GENERATION", ""),
-    "migration_lane": MIGRATION_LANE,
     "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     "entries": link_source_entries,
 }
@@ -1236,19 +1224,11 @@ if not os.path.isfile(link_candidate) or os.path.getsize(link_candidate) == 0:
                    link_reason=link_reason)
     sys.exit(1)
 
-cold_gate_command = [
-    sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py"),
-    "--link-inputs", os.path.relpath(LINK_INPUTS, ROOT),
-]
-if MIGRATION_LANE:
-    # Audited exception: publish a development EXE while the cutover is in
-    # progress. The gate still writes the exact counts, and the final flip
-    # removes this lane and requires strict zero.
-    cold_gate_command.append("--report-only")
-    cold_gate_command.append("--require-cold-zero")
-    print("[COLD CORE] MIGRATION LANE active; publishing with reported "
-          "game/cold counts", file=sys.stderr, flush=True)
-cold_gate = subprocess.run(cold_gate_command, cwd=ROOT)
+cold_gate = subprocess.run(
+    [sys.executable, os.path.join(ROOT, "devscripts", "build_target_gate.py"),
+     "--link-inputs", os.path.relpath(LINK_INPUTS, ROOT),
+     "--require-cold-zero"],
+    cwd=ROOT)
 if cold_gate.returncode != 0:
     print("[COLD CORE] strict gate failed; refusing to publish EXE",
           file=sys.stderr, flush=True)
@@ -1261,19 +1241,6 @@ if cold_gate.returncode != 0:
     })
     write_progress("failed", phase_name="cold_core_gate", result="failed")
     sys.exit(1)
-
-if MIGRATION_LANE:
-    write_json_atomic(os.path.join(ROOT, "build", "hot-reload",
-                                   "migration-lane.json"), {
-        "schema_version": 1,
-        "enabled": True,
-        "mode": MODE,
-        "exe": os.path.relpath(link_candidate, ROOT).replace("\\", "/"),
-        "link_inputs": os.path.relpath(LINK_INPUTS, ROOT).replace("\\", "/"),
-        "revision": os.environ.get("MIMITA_SOURCE_REVISION", ""),
-        "written_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "warning": "development migration EXE; strict cold gate is not satisfied",
-    })
 
 try:
     os.replace(link_candidate, exe_path)

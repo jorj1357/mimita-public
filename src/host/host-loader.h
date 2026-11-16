@@ -34,6 +34,8 @@ struct LoadedGeneration {
     const GameModuleV1* api = nullptr;
     const GameServerV1* serverApi = nullptr;
     const GameServerPolicyV1* serverPolicy = nullptr;
+    const GameExportV1* exportApi = nullptr;
+    const GameModuleHostQueryV1* moduleHostQuery = nullptr;
     std::uint64_t generation = 0;
     std::string codeHash;
     std::wstring path;
@@ -45,6 +47,8 @@ struct LoadedGeneration {
         api = nullptr;
         serverApi = nullptr;
         serverPolicy = nullptr;
+        exportApi = nullptr;
+        moduleHostQuery = nullptr;
         generation = 0;
         codeHash.clear();
         path.clear();
@@ -128,6 +132,9 @@ public:
              !serverPolicy->configure ||              !serverPolicy->create_player ||
              !serverPolicy->destroy_player ||
              !serverPolicy->make_udp_connection_id ||
+             !serverPolicy->allocate_ice_connection_id ||
+             !serverPolicy->legacy_endpoint_for_connection ||
+             !serverPolicy->clear_actor_preset ||
              !serverPolicy->poll_reload ||
              !serverPolicy->auth_identity ||
              !serverPolicy->projectile_perf ||
@@ -136,10 +143,42 @@ public:
             serverPolicy = nullptr;
         }
 
+        const auto resolveExport = reinterpret_cast<GetGameExportFn>(
+            ::GetProcAddress(module, kGetGameExportSymbol));
+        const GameExportV1* exportApi =
+            resolveExport ? resolveExport(kGameExportAbiVersion) : nullptr;
+        if (exportApi &&
+            (exportApi->abiVersion != kGameExportAbiVersion ||
+             exportApi->structSize != sizeof(GameExportV1) ||
+             !exportApi->run_export)) {
+            exportApi = nullptr;
+        }
+
+        const auto resolveModuleHostQuery =
+            reinterpret_cast<GetGameModuleHostQueryFn>(
+                ::GetProcAddress(module, kGetGameModuleHostQuerySymbol));
+        const GameModuleHostQueryV1* moduleHostQuery =
+            resolveModuleHostQuery
+                ? resolveModuleHostQuery(kGameModuleHostQueryAbiVersion)
+                : nullptr;
+        if (moduleHostQuery &&
+            (moduleHostQuery->abiVersion != kGameModuleHostQueryAbiVersion ||
+             moduleHostQuery->structSize != sizeof(GameModuleHostQueryV1) ||
+             !moduleHostQuery->map_revision ||
+             !moduleHostQuery->map_objective_config ||
+             !moduleHostQuery->profile_footprint ||
+             !moduleHostQuery->npc_line_of_sight_blocked ||
+             !moduleHostQuery->npc_raycast_blocked ||
+             !moduleHostQuery->set_npc_world)) {
+            moduleHostQuery = nullptr;
+        }
+
         out->module = module;
         out->api = api;
         out->serverApi = serverApi;
         out->serverPolicy = serverPolicy;
+        out->exportApi = exportApi;
+        out->moduleHostQuery = moduleHostQuery;
         out->generation = api->generation;
         std::size_t hashLength = 0;
         while (hashLength < kCodeHashHexLength && api->codeHash[hashLength] != '\0') {

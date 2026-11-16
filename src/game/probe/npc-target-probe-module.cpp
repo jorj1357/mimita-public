@@ -29,9 +29,7 @@ namespace mimita::game {
 void initializeHostLog(const mimita::host::HostServicesV1* services);
 void initializeHostTransport(const mimita::host::HostServicesV1* services);
 void initializeHostModules(const mimita::host::HostServicesV1* services);
-void initializeHostAudio(const mimita::host::HostServicesV1* services);
 void initializeHostEffects(const mimita::host::HostServicesV1* services);
-void initializeHostDuel(const mimita::host::HostServicesV1* services);
 void initializeHostPersistence(const mimita::host::HostServicesV1* services);
 void initializeHostJobsWatch(const mimita::host::HostServicesV1* services);
 void initializeHostLifetime(const mimita::host::HostServicesV1* services);
@@ -52,9 +50,7 @@ HostResult probeInitialize(const HostServicesV1* services) {
     mimita::game::initializeHostLog(services);
     mimita::game::initializeHostTransport(services);
     mimita::game::initializeHostModules(services);
-    mimita::game::initializeHostAudio(services);
     mimita::game::initializeHostEffects(services);
-    mimita::game::initializeHostDuel(services);
     mimita::game::initializeHostPersistence(services);
     mimita::game::initializeHostJobsWatch(services);
     mimita::game::initializeHostEntity(services);

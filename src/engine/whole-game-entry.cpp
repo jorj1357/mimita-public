@@ -9,6 +9,7 @@
 #include "debug/structured-log.h"
 
 #include "engine/engine.h"
+#include "audio/audio.h"
 #include "main-init.h"
 #include "engine/engine-tick.h"
 #include "network/multiplayer-context.h"
@@ -107,8 +108,9 @@ void renderWholeGame(void* renderContext) {
 }
 
 void shutdownWholeGameEntry() {
-    // Stop the module-owned watchdog before unload so its thread cannot keep
-    // reading this generation's globals after the DLL is replaced.
+    // Stop generation-owned workers before unload so no thread can enter code
+    // that the host is about to replace.
+    shutdownAudio();
     perfStopResourceWatchdog();
     // The resident host owns the device and Renderer. Do not call
     // Engine::shutdown here: in DLL mode it would shut down the resident device.

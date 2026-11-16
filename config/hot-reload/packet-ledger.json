@@ -940,9 +940,9 @@
       "client": "dll",
       "client_handler": "",
       "client_inbound": false,
-      "client_line": 2656,
+      "client_line": 887,
       "client_owner": "game",
-      "client_source": "src/network/server-packets.cpp",
+      "client_source": "src/duel/duel-queue.cpp",
       "id": 57,
       "name": "PACKET_DUEL_REMATCH_REQUEST",
       "server": "dll",
@@ -1346,5 +1346,5 @@
   ],
   "protocol_version": 52,
   "schema_version": 1,
-  "source_sha256": "db63c640c9e8d137b1682d398328b14a6bf59f949c7318d1290cb85515acaf99"
+  "source_sha256": "aefdd650153d891ab4fba5691c39e6580e8f7ebdd26bfc8ff6d6b001b704a3cc"
 }
